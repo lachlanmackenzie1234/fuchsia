@@ -87,9 +87,9 @@ impl From<NetworkConfig> for storage::PersistentStorageData {
 /// Convert configs to the persistent data for configs. It takes in a map of NetworkConfigs
 /// corresponding to the way network configs are internally tracked.
 pub fn persistent_data_from_config_map(
-    network_config: &HashMap<NetworkIdentifier, Vec<NetworkConfig>>,
+    network_config: &HashMap<NetworkIdentifier, NetworkConfig>,
 ) -> Vec<storage::PersistentStorageData> {
-    network_config.values().flatten().map(|c| c.clone().into()).collect()
+    network_config.values().map(|c| c.clone().into()).collect()
 }
 
 #[cfg(test)]

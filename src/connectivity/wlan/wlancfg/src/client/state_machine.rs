@@ -246,8 +246,7 @@ impl CommonStateOptions {
             .saved_networks_manager
             .lookup(&options.connect_selection.target.network)
             .await
-            .iter()
-            .find(|&config| config.credential == options.connect_selection.target.credential)
+            .filter(|config| config.credential == options.connect_selection.target.credential)
         {
             Some(config) => config.is_hidden(),
             None => {
@@ -1334,11 +1333,15 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut save_fut), Poll::Ready(Ok(None)));
 
         // Check that the saved networks manager has the expected initial data
-        let saved_networks = exec.run_singlethreaded(
-            test_values.saved_networks_manager.lookup(&connect_selection.target.network.clone()),
-        );
-        assert!(!saved_networks[0].has_ever_connected);
-        assert!(saved_networks[0].hidden_probability > 0.0);
+        let saved_network = exec
+            .run_singlethreaded(
+                test_values
+                    .saved_networks_manager
+                    .lookup(&connect_selection.target.network.clone()),
+            )
+            .expect("failed to lookup network");
+        assert!(!saved_network.has_ever_connected);
+        assert!(saved_network.hidden_probability > 0.0);
 
         let connecting_options =
             ConnectingOptions { connect_selection: connect_selection.clone(), attempt_counter: 0 };

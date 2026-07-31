@@ -17,12 +17,10 @@ use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use log::{error, info};
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use wlan_storage::policy::{POLICY_STORAGE_ID, PolicyStorage};
 
-const MAX_CONFIGS_PER_SSID: usize = 1;
-pub const MAX_SAVED_NETWORKS: usize = 1000;
+const MAX_SAVED_NETWORKS: usize = 1000;
 
 /// The Saved Network Manager keeps track of saved networks and provides thread-safe access to
 /// saved networks. Networks are saved by NetworkConfig and accessed by their NetworkIdentifier
@@ -37,26 +35,20 @@ pub struct SavedNetworksManager {
     telemetry_sender: TelemetrySender,
 }
 
-/// Save multiple network configs per SSID in able to store multiple connections with different
-/// credentials, for different authentication credentials on the same network or for different
-/// networks with the same name.
-type NetworkConfigMap = HashMap<NetworkIdentifier, Vec<NetworkConfig>>;
+/// Save a single network config per NetworkIdentifier (which combines SSID and security type).
+type NetworkConfigMap = HashMap<NetworkIdentifier, NetworkConfig>;
 
 #[async_trait(?Send)]
 pub trait SavedNetworksManagerApi {
-    /// Attempt to remove the NetworkConfig described by the specified NetworkIdentifier and
-    /// Credential. Return true if a NetworkConfig is remove and false otherwise.
-    async fn remove(
-        &self,
-        network_id: NetworkIdentifier,
-        credential: Credential,
-    ) -> Result<bool, NetworkConfigError>;
+    /// Attempt to remove the NetworkConfig described by the specified NetworkIdentifier.
+    /// Return true if a NetworkConfig is removed and false otherwise.
+    async fn remove(&self, network_id: NetworkIdentifier) -> Result<bool, NetworkConfigError>;
 
     /// Get the count of networks in store, including multiple values with same SSID
     async fn known_network_count(&self) -> usize;
 
-    /// Return a list of network configs that match the given SSID.
-    async fn lookup(&self, id: &NetworkIdentifier) -> Vec<NetworkConfig>;
+    /// Return the network config that matches the given NetworkIdentifier.
+    async fn lookup(&self, id: &NetworkIdentifier) -> Option<NetworkConfig>;
 
     /// Return a list of network configs that could be used with the security type seen in a scan.
     /// This includes configs that have a lower security type that can be upgraded to match the
@@ -67,10 +59,8 @@ pub trait SavedNetworksManagerApi {
         scan_security: types::SecurityTypeDetailed,
     ) -> Vec<NetworkConfig>;
 
-    /// Save a network by SSID and password. If the SSID and password have been saved together
-    /// before, do not modify the saved config. Update the legacy storage to keep it consistent
-    /// with what it did before the new version. If a network is pushed out because of the newly
-    /// saved network, this will return the removed config.
+    /// Save a network. If a network with the same identifier already exists, it is overwritten
+    /// and the old configuration is returned.
     async fn store(
         &self,
         network_id: NetworkIdentifier,
@@ -141,7 +131,7 @@ impl SavedNetworksManager {
         mut store: PolicyStorage,
         telemetry_sender: TelemetrySender,
     ) -> Self {
-        let mut saved_networks: HashMap<NetworkIdentifier, Vec<NetworkConfig>> = HashMap::new();
+        let mut saved_networks: HashMap<NetworkIdentifier, NetworkConfig> = HashMap::new();
         // Load saved networks from persistent storage. An error loading would mean that there was
         // nothing saved in the current version of persistent store and there was an error loading
         // legacy stash data.
@@ -165,7 +155,9 @@ impl SavedNetworksManager {
                 persisted_data.hidden_probability,
             );
             match config {
-                Ok(config) => saved_networks.entry(id).or_default().push(config),
+                Ok(config) => {
+                    _ = saved_networks.insert(id, config);
+                }
                 Err(e) => {
                     _ = errors_building_configs.insert(e);
                 }
@@ -211,51 +203,19 @@ impl SavedNetworksManager {
 
 #[async_trait(?Send)]
 impl SavedNetworksManagerApi for SavedNetworksManager {
-    async fn remove(
-        &self,
-        network_id: NetworkIdentifier,
-        credential: Credential,
-    ) -> Result<bool, NetworkConfigError> {
-        // Find any matching NetworkConfig and remove it.
+    async fn remove(&self, network_id: NetworkIdentifier) -> Result<bool, NetworkConfigError> {
         let mut saved_networks = self.saved_networks.lock().await;
-        if let Some(network_configs) = saved_networks.get_mut(&network_id) {
-            let original_len = network_configs.len();
-            // Keep the configs that don't match provided NetworkIdentifier and Credential.
-            network_configs.retain(|cfg| cfg.credential != credential);
-            if original_len != network_configs.len() {
-                // If there was only one config with this ID before removing it, remove the ID.
-                if network_configs.is_empty() {
-                    _ = saved_networks.remove(&network_id);
-                }
-
-                // Update persistent storage
-                self.store
-                    .lock()
-                    .await
-                    .write(persistent_data_from_config_map(&saved_networks))
-                    .map_err(|e| {
-                        error!("error writing network to persistent storage: {}", e);
-                        NetworkConfigError::FileWriteError
-                    })?;
-
-                return Ok(true);
-            } else {
-                // Log whether there were any matching credential types without logging specific
-                // network data
-                let credential_types = network_configs
-                    .iter()
-                    .map(|nc| nc.credential.type_str())
-                    .collect::<HashSet<_>>();
-                if credential_types.contains(credential.type_str()) {
-                    info!("No matching network with the provided credential was found to remove.");
-                } else {
-                    info!(
-                        "No credential matching type {:?} found to remove for this network identifier. Help: found credential type(s): {:?}",
-                        credential.type_str(),
-                        credential_types
-                    );
-                }
-            }
+        if saved_networks.remove(&network_id).is_some() {
+            // Update persistent storage
+            self.store
+                .lock()
+                .await
+                .write(persistent_data_from_config_map(&saved_networks))
+                .map_err(|e| {
+                    error!("error writing network to persistent storage: {}", e);
+                    NetworkConfigError::FileWriteError
+                })?;
+            return Ok(true);
         } else {
             // Check whether there is another network with the same SSID but different security
             // type to remove.
@@ -278,16 +238,15 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
 
     /// Get the count of networks in store, including multiple values with same SSID
     async fn known_network_count(&self) -> usize {
-        self.saved_networks.lock().await.values().flatten().count()
+        self.saved_networks.lock().await.values().count()
     }
 
-    /// Return the network configs that have this network identifier. The configs may be different
-    /// because of their credentials. Note that these are copies of the current data, so if data
-    /// could have changed it should be looked up again. For example, data about roam scans change
-    /// throughout a connection so callers cannot keep using the same network config for that data
-    /// throughout the connection.
-    async fn lookup(&self, id: &NetworkIdentifier) -> Vec<NetworkConfig> {
-        self.saved_networks.lock().await.get(id).cloned().unwrap_or_default()
+    /// Return the network config that matches the given NetworkIdentifier. Note that this is a copy
+    /// of the current data, so if data could have changed it should be looked up again. For
+    /// example, data about roam scans change throughout a connection so callers cannot keep using
+    /// the same network config for that data throughout the connection.
+    async fn lookup(&self, id: &NetworkIdentifier) -> Option<NetworkConfig> {
+        self.saved_networks.lock().await.get(id).cloned()
     }
 
     async fn lookup_compatible(
@@ -299,15 +258,10 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
         let mut matching_configs = Vec::new();
         for security in compatible_policy_securities(&scan_security) {
             let id = NetworkIdentifier::new(ssid.clone(), security);
-            let saved_configs = saved_networks_guard.get(&id);
-            if let Some(configs) = saved_configs {
-                matching_configs.extend(
-                    configs
-                        .iter()
-                        // Check for conflicts; PSKs can't be used to connect to WPA3 networks.
-                        .filter(|config| security_is_compatible(&scan_security, &config.credential))
-                        .map(Clone::clone),
-                );
+            if let Some(config) = saved_networks_guard.get(&id)
+                && security_is_compatible(&scan_security, &config.credential)
+            {
+                matching_configs.push(config.clone());
             }
         }
         matching_configs
@@ -320,11 +274,9 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
     ) -> Result<Option<NetworkConfig>, NetworkConfigError> {
         let mut saved_networks = self.saved_networks.lock().await;
         let num_saved_networks = saved_networks.len();
-        let network_entry = saved_networks.entry(network_id.clone());
 
-        // Check if the network has already been saved.
-        if let Entry::Occupied(network_configs) = &network_entry
-            && network_configs.get().iter().any(|cfg| cfg.credential == credential)
+        if let Some(config) = saved_networks.get(&network_id)
+            && config.credential == credential
         {
             info!("Saving a previously saved network with same password.");
             return Ok(None);
@@ -337,9 +289,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
 
         let network_config =
             NetworkConfig::new(network_id.clone(), credential.clone(), false, None)?;
-        let network_configs = network_entry.or_default();
-        let evicted_config = evict_if_needed(network_configs);
-        network_configs.push(network_config);
+        let evicted_config = saved_networks.insert(network_id, network_config);
 
         self.store.lock().await.write(persistent_data_from_config_map(&saved_networks)).map_err(
             |e| {
@@ -360,70 +310,68 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
         scan_type: types::ScanObservation,
     ) {
         let mut saved_networks = self.saved_networks.lock().await;
-        let networks = match saved_networks.get_mut(&id) {
-            Some(networks) => networks,
+        let network = match saved_networks.get_mut(&id) {
+            Some(n) => n,
             None => {
                 error!("Failed to find network to record result of connect attempt.");
                 return;
             }
         };
-        for network in networks.iter_mut() {
-            if &network.credential == credential {
-                match (connect_result.code, connect_result.is_credential_rejected) {
-                    (fidl_ieee80211::StatusCode::Success, _) => {
-                        let mut has_change = false;
-                        let old_hidden_prob = network.hidden_probability;
-                        if !network.has_ever_connected {
-                            network.has_ever_connected = true;
-                            has_change = true;
-                        }
-                        // Update hidden network probabiltiy
-                        match scan_type {
-                            types::ScanObservation::Passive => {
-                                network.update_hidden_prob(HiddenProbEvent::ConnectPassive);
-                            }
-                            types::ScanObservation::Active => {
-                                network.update_hidden_prob(HiddenProbEvent::ConnectActive);
-                            }
-                            types::ScanObservation::Unknown => {}
-                        };
-
-                        if network.hidden_probability != old_hidden_prob {
-                            has_change = true;
-                        }
-
-                        if has_change {
-                            // Update persistent storage since a config has changed.
-                            let data = persistent_data_from_config_map(&saved_networks);
-                            if let Err(e) = self.store.lock().await.write(data) {
-                                info!("Failed to record successful connect in store: {}", e);
-                            }
-                        }
+        if &network.credential == credential {
+            match (connect_result.code, connect_result.is_credential_rejected) {
+                (fidl_ieee80211::StatusCode::Success, _) => {
+                    let mut has_change = false;
+                    let old_hidden_prob = network.hidden_probability;
+                    if !network.has_ever_connected {
+                        network.has_ever_connected = true;
+                        has_change = true;
                     }
-                    (fidl_ieee80211::StatusCode::Canceled, _) => {}
-                    (_, true) => {
-                        network.perf_stats.connect_failures.add(
-                            bssid,
-                            ConnectFailure {
-                                time: fasync::MonotonicInstant::now(),
-                                reason: FailureReason::CredentialRejected,
-                                bssid,
-                            },
-                        );
+                    // Update hidden network probabiltiy
+                    match scan_type {
+                        types::ScanObservation::Passive => {
+                            network.update_hidden_prob(HiddenProbEvent::ConnectPassive);
+                        }
+                        types::ScanObservation::Active => {
+                            network.update_hidden_prob(HiddenProbEvent::ConnectActive);
+                        }
+                        types::ScanObservation::Unknown => {}
+                    };
+
+                    if network.hidden_probability != old_hidden_prob {
+                        has_change = true;
                     }
-                    (_, _) => {
-                        network.perf_stats.connect_failures.add(
-                            bssid,
-                            ConnectFailure {
-                                time: fasync::MonotonicInstant::now(),
-                                reason: FailureReason::GeneralFailure,
-                                bssid,
-                            },
-                        );
+
+                    if has_change {
+                        // Update persistent storage since a config has changed.
+                        let data = persistent_data_from_config_map(&saved_networks);
+                        if let Err(e) = self.store.lock().await.write(data) {
+                            info!("Failed to record successful connect in store: {}", e);
+                        }
                     }
                 }
-                return;
+                (fidl_ieee80211::StatusCode::Canceled, _) => {}
+                (_, true) => {
+                    network.perf_stats.connect_failures.add(
+                        bssid,
+                        ConnectFailure {
+                            time: fasync::MonotonicInstant::now(),
+                            reason: FailureReason::CredentialRejected,
+                            bssid,
+                        },
+                    );
+                }
+                (_, _) => {
+                    network.perf_stats.connect_failures.add(
+                        bssid,
+                        ConnectFailure {
+                            time: fasync::MonotonicInstant::now(),
+                            reason: FailureReason::GeneralFailure,
+                            bssid,
+                        },
+                    );
+                }
             }
+            return;
         }
         // Will not reach here if we find the saved network with matching SSID and credential.
         error!("Failed to find matching network to record result of connect attempt.");
@@ -437,31 +385,22 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
     ) {
         let bssid = data.bssid;
         let mut saved_networks = self.saved_networks.lock().await;
-        let networks = match saved_networks.get_mut(id) {
-            Some(networks) => networks,
+        let network = match saved_networks.get_mut(id) {
+            Some(n) => n,
             None => {
                 info!("Failed to find network to record disconnect stats");
                 return;
             }
         };
-        for network in networks.iter_mut() {
-            if &network.credential == credential {
-                network.perf_stats.past_connections.add(bssid, data);
-                return;
-            }
+        if &network.credential == credential {
+            network.perf_stats.past_connections.add(bssid, data);
         }
     }
 
     async fn record_periodic_metrics(&self) {
         let saved_networks = self.saved_networks.lock().await;
         // Count the number of configs for each saved network
-        let config_counts = saved_networks
-            .iter()
-            .map(|saved_network| {
-                let configs = saved_network.1;
-                configs.len()
-            })
-            .collect();
+        let config_counts = saved_networks.iter().map(|_| 1).collect();
         self.telemetry_sender.send(TelemetryEvent::SavedNetworkCount {
             saved_network_count: saved_networks.len(),
             config_count_per_saved_network: config_counts,
@@ -486,18 +425,15 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                 // Look for compatible configs and record them as "SeenPassive" and with single
                 // or multi BSS data.
                 for security in compatible_policy_securities(&network.security_type) {
-                    let configs = match saved_networks
+                    let config = match saved_networks
                         .get_mut(&NetworkIdentifier::new(network.ssid.clone(), security))
                     {
-                        Some(configs) => configs,
+                        Some(config) => config,
                         None => continue,
                     };
                     // Check that the credential is compatible with the actual security type of
                     // the scan result.
-                    let compatible_configs = configs.iter_mut().filter(|config| {
-                        security_is_compatible(&network.security_type, &config.credential)
-                    });
-                    for config in compatible_configs {
+                    if security_is_compatible(&network.security_type, &config.credential) {
                         let old_hidden_prob = config.hidden_probability;
                         config.update_hidden_prob(HiddenProbEvent::SeenPassive);
                         config.update_seen_multiple_bss(has_multiple_bss);
@@ -510,7 +446,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
         }
 
         // Update saved networks that match one of the targeted SSIDs but were *not* in scan results.
-        for (id, configs) in saved_networks.iter_mut() {
+        for (id, config) in saved_networks.iter_mut() {
             if !target_ssids.contains(&id.ssid) {
                 continue;
             }
@@ -518,17 +454,14 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
             // could be used to connect. If not, update the hidden probability.
             let potential_scan_results =
                 results.iter().filter(|(scan_id, _)| scan_id.ssid == id.ssid).collect::<Vec<_>>();
-            for config in configs {
-                if !potential_scan_results.iter().any(|(scan_id, _)| {
-                    compatible_policy_securities(&scan_id.security_type)
-                        .contains(&config.security_type)
-                        && security_is_compatible(&scan_id.security_type, &config.credential)
-                }) {
-                    let old_hidden_prob = config.hidden_probability;
-                    config.update_hidden_prob(HiddenProbEvent::NotSeenActive);
-                    if config.hidden_probability != old_hidden_prob {
-                        has_change = true;
-                    }
+            if !potential_scan_results.iter().any(|(scan_id, _)| {
+                compatible_policy_securities(&scan_id.security_type).contains(&config.security_type)
+                    && security_is_compatible(&scan_id.security_type, &config.credential)
+            }) {
+                let old_hidden_prob = config.hidden_probability;
+                config.update_hidden_prob(HiddenProbEvent::NotSeenActive);
+                if config.hidden_probability != old_hidden_prob {
+                    has_change = true;
                 }
             }
         }
@@ -550,22 +483,21 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
         credential: &Credential,
     ) -> Result<bool, anyhow::Error> {
         let saved_networks_guard = self.saved_networks.lock().await;
-        let possible_configs = saved_networks_guard.get(id).ok_or_else(|| {
+        let config = saved_networks_guard.get(id).ok_or_else(|| {
             format_err!(
                 "error checking if network is single BSS; no config with matching identifier"
             )
         })?;
-        let config =
-            possible_configs.iter().find(|c| &c.credential == credential).ok_or_else(|| {
-                format_err!(
-                    "error checking if network is single BSS; no config with matching credential"
-                )
-            })?;
+        if &config.credential != credential {
+            return Err(format_err!(
+                "error checking if network is single BSS; saved credential does not match"
+            ));
+        }
         return Ok(config.is_likely_single_bss());
     }
 
     async fn get_networks(&self) -> Vec<NetworkConfig> {
-        self.saved_networks.lock().await.values().flat_map(|cfgs| cfgs.clone()).collect()
+        self.saved_networks.lock().await.values().cloned().collect()
     }
 
     async fn get_past_connections(
@@ -578,7 +510,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
             .lock()
             .await
             .get(id)
-            .and_then(|configs| configs.iter().find(|config| &config.credential == credential))
+            .filter(|config| &config.credential == credential)
             .map(|config| config.perf_stats.past_connections.get_list_for_bss(bssid))
             .unwrap_or_default()
     }
@@ -661,30 +593,6 @@ pub fn security_is_compatible(
     true
 }
 
-/// If the list of configs is at capacity for the number of saved configs per SSID,
-/// remove a saved network that has never been successfully connected to. If all have
-/// been successfully connected to, remove any. If a network config is evicted, that connection
-/// is forgotten for future connections.
-/// TODO(https://fxbug.dev/42117293) - when network configs record information about successful connections,
-/// use this to make a better decision what to forget if all networks have connected before.
-/// TODO(https://fxbug.dev/42117730) - make sure that we disconnect from the network if we evict a network config
-/// for a network we are currently connected to.
-fn evict_if_needed(configs: &mut Vec<NetworkConfig>) -> Option<NetworkConfig> {
-    if configs.len() < MAX_CONFIGS_PER_SSID {
-        return None;
-    }
-
-    for i in 0..configs.len() {
-        if let Some(config) = configs.get(i)
-            && !config.has_ever_connected
-        {
-            return Some(configs.remove(i));
-        }
-    }
-    // If all saved networks have connected, remove the first network
-    Some(configs.remove(0))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -705,7 +613,7 @@ mod tests {
         let saved_networks = create_saved_networks(&store_id).await;
         let network_id_foo = NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap();
 
-        assert!(saved_networks.lookup(&network_id_foo).await.is_empty());
+        assert!(saved_networks.lookup(&network_id_foo).await.is_none());
         assert_eq!(0, saved_networks.saved_networks.lock().await.len());
         assert_eq!(0, saved_networks.known_network_count().await);
 
@@ -718,7 +626,7 @@ mod tests {
                 .is_none()
         );
         assert_eq!(
-            vec![network_config("foo", "qwertyuio")],
+            Some(network_config("foo", "qwertyuio")),
             saved_networks.lookup(&network_id_foo).await
         );
         assert_eq!(1, saved_networks.known_network_count().await);
@@ -730,10 +638,10 @@ mod tests {
             .expect("storing 'foo' a second time failed");
         assert_eq!(popped_network, Some(network_config("foo", "qwertyuio")));
 
-        // There should only be one saved "foo" network because MAX_CONFIGS_PER_SSID is 1.
-        // When this constant becomes greater than 1, both network configs should be found
+        // There should only be one saved "foo" network because we only allow one network per SSID
+        // and security type. The second store should have replaced the first.
         assert_eq!(
-            vec![network_config("foo", "12345678")],
+            Some(network_config("foo", "12345678")),
             saved_networks.lookup(&network_id_foo).await
         );
         assert_eq!(1, saved_networks.known_network_count().await);
@@ -750,7 +658,7 @@ mod tests {
                 .expect("storing 'baz' with PSK failed")
                 .is_none()
         );
-        assert_eq!(vec![config_baz.clone()], saved_networks.lookup(&network_id_baz).await);
+        assert_eq!(Some(config_baz.clone()), saved_networks.lookup(&network_id_baz).await);
         assert_eq!(2, saved_networks.known_network_count().await);
 
         // Saved networks should persist when we create a saved networks manager with the same ID.
@@ -761,10 +669,10 @@ mod tests {
             SavedNetworksManager::new_with_storage(store, TelemetrySender::new(telemetry_sender))
                 .await;
         assert_eq!(
-            vec![network_config("foo", "12345678")],
+            Some(network_config("foo", "12345678")),
             saved_networks.lookup(&network_id_foo).await
         );
-        assert_eq!(vec![config_baz], saved_networks.lookup(&network_id_baz).await);
+        assert_eq!(Some(config_baz), saved_networks.lookup(&network_id_baz).await);
         assert_eq!(2, saved_networks.known_network_count().await);
     }
 
@@ -786,8 +694,8 @@ mod tests {
             .expect("storing 'foo' a second time failed");
         // Because the same network was stored twice, nothing was evicted, so popped_network == None
         assert_eq!(popped_network, None);
-        let expected_cfgs = vec![network_config("foo", "qwertyuio")];
-        assert_eq!(expected_cfgs, saved_networks.lookup(&network_id).await);
+        let expected_cfg = Some(network_config("foo", "qwertyuio"));
+        assert_eq!(expected_cfg, saved_networks.lookup(&network_id).await);
         assert_eq!(1, saved_networks.known_network_count().await);
     }
 
@@ -796,15 +704,15 @@ mod tests {
         let network_id = NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap();
         let saved_networks = SavedNetworksManager::new_for_test().await;
 
-        // save max + 1 networks with same SSID and different credentials
-        for i in 0..MAX_CONFIGS_PER_SSID + 1 {
+        // save multiple networks with same SSID and different credentials
+        for i in 0..3 {
             let mut password = b"password".to_vec();
             password.push(i as u8);
             let popped_network = saved_networks
                 .store(network_id.clone(), Credential::Password(password))
                 .await
                 .expect("Failed to saved network");
-            if i >= MAX_CONFIGS_PER_SSID {
+            if i >= 1 {
                 assert!(popped_network.is_some());
             } else {
                 assert!(popped_network.is_none());
@@ -812,7 +720,7 @@ mod tests {
         }
 
         // since none have been connected to yet, we don't care which config was removed
-        assert_eq!(MAX_CONFIGS_PER_SSID, saved_networks.lookup(&network_id).await.len());
+        assert!(saved_networks.lookup(&network_id).await.is_some());
     }
 
     #[fuchsia::test]
@@ -833,7 +741,7 @@ mod tests {
                 None,
             )
             .unwrap();
-            assert!(map.insert(network_id, vec![config]).is_none());
+            assert!(map.insert(network_id, config).is_none());
         }
 
         {
@@ -860,7 +768,7 @@ mod tests {
 
         let network_id = NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap();
         let credential = Credential::Password(b"qwertyuio".to_vec());
-        assert!(saved_networks.lookup(&network_id).await.is_empty());
+        assert!(saved_networks.lookup(&network_id).await.is_none());
         assert_eq!(0, saved_networks.known_network_count().await);
 
         // Store a network and verify it was stored.
@@ -872,39 +780,19 @@ mod tests {
                 .is_none()
         );
         assert_eq!(
-            vec![network_config("foo", "qwertyuio")],
+            Some(network_config("foo", "qwertyuio")),
             saved_networks.lookup(&network_id).await
         );
         assert_eq!(1, saved_networks.known_network_count().await);
 
-        // Remove a network with the same NetworkIdentifier but differenct credential and verify
-        // that the saved network is unaffected.
-        assert!(
-            !saved_networks
-                .remove(network_id.clone(), Credential::Password(b"diff-password".to_vec()))
-                .await
-                .expect("removing 'foo' failed")
-        );
-        assert_eq!(1, saved_networks.known_network_count().await);
-
         // Remove the network and check it is gone
-        assert!(
-            saved_networks
-                .remove(network_id.clone(), credential.clone())
-                .await
-                .expect("removing 'foo' failed")
-        );
+        assert!(saved_networks.remove(network_id.clone()).await.expect("removing 'foo' failed"));
         assert_eq!(0, saved_networks.known_network_count().await);
         // Check that the key in the saved networks manager's internal hashmap was removed.
         assert!(saved_networks.saved_networks.lock().await.get(&network_id).is_none());
 
         // If we try to remove the network again, we won't get an error and nothing happens
-        assert!(
-            !saved_networks
-                .remove(network_id.clone(), credential)
-                .await
-                .expect("removing 'foo' failed")
-        );
+        assert!(!saved_networks.remove(network_id.clone()).await.expect("removing 'foo' failed"));
 
         // Check that removal persists.
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
@@ -913,7 +801,7 @@ mod tests {
             SavedNetworksManager::new_with_storage(store, TelemetrySender::new(telemetry_sender))
                 .await;
         assert_eq!(0, saved_networks.known_network_count().await);
-        assert!(saved_networks.lookup(&network_id).await.is_empty());
+        assert!(saved_networks.lookup(&network_id).await.is_none());
     }
 
     #[fuchsia::test]
@@ -1055,7 +943,7 @@ mod tests {
                 types::ScanObservation::Unknown,
             )
             .await;
-        assert!(saved_networks.lookup(&network_id).await.is_empty());
+        assert!(saved_networks.lookup(&network_id).await.is_none());
         assert_eq!(saved_networks.saved_networks.lock().await.len(), 0);
         assert_eq!(0, saved_networks.known_network_count().await);
 
@@ -1069,7 +957,7 @@ mod tests {
         );
 
         let config = network_config("bar", "password");
-        assert_eq!(vec![config], saved_networks.lookup(&network_id).await);
+        assert_eq!(Some(config), saved_networks.lookup(&network_id).await);
 
         saved_networks
             .record_connect_result(
@@ -1083,7 +971,7 @@ mod tests {
 
         // The network should be saved with the connection recorded. We should not have recorded
         // that the network was connected to passively or actively.
-        assert_matches!(saved_networks.lookup(&network_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&network_id).await, Some(config) => {
             assert!(config.has_ever_connected);
             assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
         });
@@ -1098,7 +986,7 @@ mod tests {
             )
             .await;
         // We should now see that we connected to the network after an active scan.
-        assert_matches!(saved_networks.lookup(&network_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&network_id).await, Some(config) => {
             assert!(config.has_ever_connected);
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_CONNECT_ACTIVE);
         });
@@ -1113,7 +1001,7 @@ mod tests {
             )
             .await;
         // The config should have a lower hidden probability after connecting after a passive scan.
-        assert_matches!(saved_networks.lookup(&network_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&network_id).await, Some(config) => {
             assert!(config.has_ever_connected);
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_CONNECT_PASSIVE);
         });
@@ -1126,7 +1014,7 @@ mod tests {
             TelemetrySender::new(telemetry_sender_reloaded),
         )
         .await;
-        assert_matches!(saved_networks_reloaded.lookup(&network_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks_reloaded.lookup(&network_id).await, Some(config) => {
             assert!(config.has_ever_connected);
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_CONNECT_PASSIVE);
         });
@@ -1165,12 +1053,12 @@ mod tests {
             )
             .await;
 
-        assert_matches!(saved_networks.lookup(&net_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&net_id).await, Some(config) => {
             assert!(config.has_ever_connected);
         });
         // If the specified network identifier is found, record_conenct_result should not mark
         // another config even if it could also have been used for the connect attempt.
-        assert_matches!(saved_networks.lookup(&net_id_also_valid).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&net_id_also_valid).await, Some(config) => {
             assert!(!config.has_ever_connected);
         });
     }
@@ -1196,7 +1084,7 @@ mod tests {
                 types::ScanObservation::Unknown,
             )
             .await;
-        assert!(saved_networks.lookup(&network_id).await.is_empty());
+        assert!(saved_networks.lookup(&network_id).await.is_none());
         assert_eq!(0, saved_networks.saved_networks.lock().await.len());
         assert_eq!(0, saved_networks.known_network_count().await);
 
@@ -1236,11 +1124,8 @@ mod tests {
 
         // Check that the failures were recorded correctly.
         assert_eq!(1, saved_networks.known_network_count().await);
-        let saved_config = saved_networks
-            .lookup(&network_id)
-            .await
-            .pop()
-            .expect("Failed to get saved network config");
+        let saved_config =
+            saved_networks.lookup(&network_id).await.expect("Failed to get saved network config");
         let connect_failures =
             saved_config.perf_stats.connect_failures.get_recent_for_network(before_recording);
         assert_matches!(connect_failures, failures => {
@@ -1277,7 +1162,7 @@ mod tests {
                 types::ScanObservation::Unknown,
             )
             .await;
-        assert!(saved_networks.lookup(&network_id).await.is_empty());
+        assert!(saved_networks.lookup(&network_id).await.is_none());
         assert_eq!(saved_networks.saved_networks.lock().await.len(), 0);
         assert_eq!(0, saved_networks.known_network_count().await);
 
@@ -1304,11 +1189,8 @@ mod tests {
 
         // Check that there are no failures recorded for this saved network.
         assert_eq!(1, saved_networks.known_network_count().await);
-        let saved_config = saved_networks
-            .lookup(&network_id)
-            .await
-            .pop()
-            .expect("Failed to get saved network config");
+        let saved_config =
+            saved_networks.lookup(&network_id).await.expect("Failed to get saved network config");
         let connect_failures =
             saved_config.perf_stats.connect_failures.get_recent_for_network(before_recording);
         assert_eq!(0, connect_failures.len());
@@ -1340,7 +1222,6 @@ mod tests {
         let recent_connections = saved_networks
             .lookup(&id)
             .await
-            .pop()
             .expect("Failed to get saved network")
             .perf_stats
             .past_connections
@@ -1397,10 +1278,10 @@ mod tests {
             .record_scan_result(vec!["some_other_ssid".try_into().unwrap()], &results)
             .await;
 
-        assert_matches!(saved_networks.lookup(&saved_seen_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&saved_seen_id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_SEEN_PASSIVE);
         });
-        assert_matches!(saved_networks.lookup(&saved_unseen_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&saved_unseen_id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
         });
 
@@ -1412,10 +1293,10 @@ mod tests {
             TelemetrySender::new(telemetry_sender_reloaded),
         )
         .await;
-        assert_matches!(saved_networks_reloaded.lookup(&saved_seen_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks_reloaded.lookup(&saved_seen_id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_SEEN_PASSIVE);
         });
-        assert_matches!(saved_networks_reloaded.lookup(&saved_unseen_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks_reloaded.lookup(&saved_unseen_id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
         });
     }
@@ -1447,7 +1328,7 @@ mod tests {
         )]);
         saved_networks.record_scan_result(vec![], &results).await;
         // The network was seen in a passive scan, so hidden probability should be updated.
-        assert_matches!(saved_networks.lookup(&id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_SEEN_PASSIVE);
         });
     }
@@ -1480,7 +1361,7 @@ mod tests {
         saved_networks.record_scan_result(vec![], &results).await;
         // The network in the passive scan results was not compatible, so hidden probability should
         // not have been updated.
-        assert_matches!(saved_networks.lookup(&id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
         });
     }
@@ -1501,7 +1382,7 @@ mod tests {
                 .expect("Failed to save network")
                 .is_none()
         );
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
         // Record directed scan results. The config's probability hidden should not be lowered
@@ -1516,7 +1397,7 @@ mod tests {
         let target = vec![id.ssid.clone()];
         saved_networks.record_scan_result(target, &results).await;
 
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
     }
 
@@ -1537,7 +1418,7 @@ mod tests {
                 .expect("Failed to save network")
                 .is_none()
         );
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
         // Record directed scan results. The seen network does not match the saved network even
@@ -1553,7 +1434,7 @@ mod tests {
         saved_networks.record_scan_result(target, &results).await;
         // The hidden probability should have been lowered because a directed scan failed to find
         // the network.
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert!(config.hidden_probability < PROB_HIDDEN_DEFAULT);
     }
 
@@ -1575,7 +1456,7 @@ mod tests {
                 .expect("Failed to save network")
                 .is_none()
         );
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
         // Record directed scan results. We target the saved network but see a different one.
@@ -1589,7 +1470,7 @@ mod tests {
         )]);
         saved_networks.record_scan_result(target, &results).await;
 
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert!(config.hidden_probability < PROB_HIDDEN_DEFAULT);
     }
 
@@ -1610,7 +1491,7 @@ mod tests {
                 .expect("Failed to save network")
                 .is_none()
         );
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
 
         // Record directed scan results. We see one network with the same SSID that doesn't match,
@@ -1635,7 +1516,7 @@ mod tests {
         saved_networks.record_scan_result(target, &results).await;
         // Since the directed scan found a matching network, the hidden probability should not
         // have been lowered.
-        let config = saved_networks.lookup(&id).await.pop().expect("failed to lookup config");
+        let config = saved_networks.lookup(&id).await.expect("failed to lookup config");
         assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
     }
 
@@ -1667,7 +1548,7 @@ mod tests {
         );
 
         // Verify assumption
-        assert_matches!(saved_networks.lookup(&saved_directed_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&saved_directed_id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_DEFAULT);
         });
 
@@ -1679,48 +1560,13 @@ mod tests {
         saved_networks.record_scan_result(vec![saved_directed_id.ssid.clone()], &results).await;
 
         // The undirected (but seen) network is modified
-        assert_matches!(saved_networks.lookup(&saved_undirected_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&saved_undirected_id).await, Some(config) => {
             assert_eq!(config.hidden_probability, PROB_HIDDEN_IF_SEEN_PASSIVE);
         });
         // The directed (but *not* seen) network is modified
-        assert_matches!(saved_networks.lookup(&saved_directed_id).await.as_slice(), [config] => {
+        assert_matches!(saved_networks.lookup(&saved_directed_id).await, Some(config) => {
             assert!(config.hidden_probability < PROB_HIDDEN_DEFAULT);
         });
-    }
-
-    #[fuchsia::test]
-    fn evict_if_needed_removes_unconnected() {
-        // this test is less meaningful when MAX_CONFIGS_PER_SSID is greater than 1, otherwise
-        // the only saved configs should be removed when the max capacity is met, regardless of
-        // whether it has been connected to.
-        let unconnected_config = network_config("foo", "password");
-        let mut connected_config = unconnected_config.clone();
-        connected_config.has_ever_connected = false;
-        let mut network_configs = vec![connected_config; MAX_CONFIGS_PER_SSID - 1];
-        network_configs.insert(MAX_CONFIGS_PER_SSID / 2, unconnected_config.clone());
-
-        assert_eq!(evict_if_needed(&mut network_configs), Some(unconnected_config));
-        assert_eq!(MAX_CONFIGS_PER_SSID - 1, network_configs.len());
-        // check that everything left has been connected to before, only one removed is
-        // the one that has never been connected to
-        for config in network_configs.iter() {
-            assert!(config.has_ever_connected);
-        }
-    }
-
-    #[fuchsia::test]
-    fn evict_if_needed_already_has_space() {
-        let mut configs = vec![];
-        assert_eq!(evict_if_needed(&mut configs), None);
-        let expected_cfgs: Vec<NetworkConfig> = vec![];
-        assert_eq!(expected_cfgs, configs);
-
-        if MAX_CONFIGS_PER_SSID > 1 {
-            let mut configs = vec![network_config("foo", "password")];
-            assert_eq!(evict_if_needed(&mut configs), None);
-            // if MAX_CONFIGS_PER_SSID is 1, this wouldn't be true
-            assert_eq!(vec![network_config("foo", "password")], configs);
-        }
     }
 
     #[fuchsia::test]
@@ -1737,7 +1583,7 @@ mod tests {
                 .is_none()
         );
         assert_eq!(
-            vec![network_config("foo", "qwertyuio")],
+            Some(network_config("foo", "qwertyuio")),
             saved_networks.lookup(&network_id).await
         );
         assert_eq!(1, saved_networks.known_network_count().await);
@@ -1839,8 +1685,8 @@ mod tests {
         );
 
         // The network should have been saved temporarily even if saving the network gives an error.
-        assert_matches!(exec.run_until_stalled(&mut saved_networks.lookup(&network_id)), Poll::Ready(configs) => {
-            assert_eq!(configs, vec![network_config(ssid, "")]);
+        assert_matches!(exec.run_until_stalled(&mut saved_networks.lookup(&network_id)), Poll::Ready(config) => {
+            assert_eq!(config, Some(network_config(ssid, "")));
         });
         assert_matches!(exec.run_until_stalled(&mut saved_networks.known_network_count()), Poll::Ready(count) => {
             assert_eq!(count, 1);
@@ -1880,7 +1726,7 @@ mod tests {
         let network_id_foo = NetworkIdentifier::try_from("foo", SecurityType::Wpa2).unwrap();
         let network_id_baz = NetworkIdentifier::try_from("baz", SecurityType::Wpa2).unwrap();
 
-        assert!(saved_networks.lookup(&network_id_foo).await.is_empty());
+        assert!(saved_networks.lookup(&network_id_foo).await.is_none());
         assert_eq!(0, saved_networks.saved_networks.lock().await.len());
         assert_eq!(0, saved_networks.known_network_count().await);
 
@@ -2094,29 +1940,29 @@ mod tests {
         );
         // Check that the saved networks have the default hidden probability so later we can just
         // check that the probability has changed.
-        let config_1 = saved_networks.lookup(&id_1).await.pop().expect("failed to lookup");
+        let config_1 = saved_networks.lookup(&id_1).await.expect("failed to lookup");
         assert_eq!(config_1.hidden_probability, PROB_HIDDEN_DEFAULT);
-        let config_2 = saved_networks.lookup(&id_2).await.pop().expect("failed to lookup");
+        let config_2 = saved_networks.lookup(&id_2).await.expect("failed to lookup");
         assert_eq!(config_2.hidden_probability, PROB_HIDDEN_DEFAULT);
-        let config_4 = saved_networks.lookup(&id_4).await.pop().expect("failed to lookup");
+        let config_4 = saved_networks.lookup(&id_4).await.expect("failed to lookup");
         assert_eq!(config_4.hidden_probability, PROB_HIDDEN_DEFAULT);
 
         let not_seen_ids = vec![id_1.ssid.clone(), id_2.ssid.clone(), id_3.ssid.clone()];
         saved_networks.record_scan_result(not_seen_ids, &HashMap::new()).await;
 
         // Check that the configs' hidden probability has decreased
-        let config_1 = saved_networks.lookup(&id_1).await.pop().expect("failed to lookup");
+        let config_1 = saved_networks.lookup(&id_1).await.expect("failed to lookup");
         assert!(config_1.hidden_probability < PROB_HIDDEN_DEFAULT);
-        let config_2 = saved_networks.lookup(&id_2).await.pop().expect("failed to lookup");
+        let config_2 = saved_networks.lookup(&id_2).await.expect("failed to lookup");
         assert!(config_2.hidden_probability < PROB_HIDDEN_DEFAULT);
 
         // Check that for the network that was target but not seen in the active scan, its hidden
         // probability isn't lowered.
-        let config_4 = saved_networks.lookup(&id_4).await.pop().expect("failed to lookup");
+        let config_4 = saved_networks.lookup(&id_4).await.expect("failed to lookup");
         assert_eq!(config_4.hidden_probability, PROB_HIDDEN_DEFAULT);
 
         // Check that a config was not saved for the identifier that was not saved before.
-        assert!(saved_networks.lookup(&id_3).await.is_empty());
+        assert!(saved_networks.lookup(&id_3).await.is_none());
     }
 
     #[fuchsia::test]
@@ -2267,12 +2113,7 @@ mod tests {
 
         // Create SavedNetworksManager with configs that have past connections
         assert!(
-            saved_networks_manager
-                .saved_networks
-                .lock()
-                .await
-                .insert(id.clone(), vec![config])
-                .is_none()
+            saved_networks_manager.saved_networks.lock().await.insert(id.clone(), config).is_none()
         );
 
         // Check that get_past_connections gets the two PastConnectionLists for the BSSIDs.

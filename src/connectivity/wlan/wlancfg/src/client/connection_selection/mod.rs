@@ -458,8 +458,7 @@ impl ConnectionSelectorApi for ConnectionSelector {
                 .saved_network_manager
                 .lookup(&network)
                 .await
-                .into_iter()
-                .find(|c| &c.credential == credential)
+                .filter(|c| &c.credential == credential)
             {
                 candidates.append(&mut merge_config_and_scan_data(config, &mut s));
             } else {
@@ -931,7 +930,6 @@ mod tests {
             .real_saved_network_manager
             .lookup(&test_id_1.clone())
             .await
-            .first()
             .expect("failed to get config")
             .perf_stats
             .connect_failures

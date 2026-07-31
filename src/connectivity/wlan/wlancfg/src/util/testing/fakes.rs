@@ -22,7 +22,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 pub struct FakeSavedNetworksManager {
-    saved_networks: Mutex<HashMap<NetworkIdentifier, Vec<NetworkConfig>>>,
+    saved_networks: Mutex<HashMap<NetworkIdentifier, NetworkConfig>>,
     connections_recorded: Mutex<Vec<ConnectionRecord>>,
     connect_results_recorded: Mutex<Vec<ConnectResultRecord>>,
     lookup_compatible_response: Mutex<LookupCompatibleResponse>,
@@ -94,7 +94,7 @@ impl FakeSavedNetworksManager {
     /// Create FakeSavedNetworksManager, saving network configs with the specified
     /// network identifiers and credentials at init.
     pub fn new_with_saved_networks(network_configs: Vec<fidl_policy::NetworkConfig>) -> Self {
-        let mut saved_networks = HashMap::<NetworkIdentifier, Vec<NetworkConfig>>::new();
+        let mut saved_networks = HashMap::<NetworkIdentifier, NetworkConfig>::new();
         for config in network_configs.into_iter() {
             let id: NetworkIdentifier =
                 config.id.expect("test config is missing network identifier").into();
@@ -106,7 +106,7 @@ impl FakeSavedNetworksManager {
             let config = NetworkConfig::new(id.clone(), credential, false, None)
                 .expect("provided config is not valid");
 
-            saved_networks.entry(id).or_default().push(config);
+            _ = saved_networks.insert(id, config);
         }
 
         Self {
@@ -140,15 +140,10 @@ impl FakeSavedNetworksManager {
     /// Manually change the hidden network probabiltiy of a saved network.
     pub async fn update_hidden_prob(&self, id: NetworkIdentifier, hidden_prob: f32) {
         let mut saved_networks = self.saved_networks.lock().await;
-        let networks = match saved_networks.get_mut(&id) {
-            Some(networks) => networks,
-            None => {
-                info!("Failed to find network to update");
-                return;
-            }
-        };
-        for network in networks.iter_mut() {
+        if let Some(network) = saved_networks.get_mut(&id) {
             network.hidden_probability = hidden_prob;
+        } else {
+            info!("Failed to find network to update");
         }
     }
 
@@ -167,28 +162,17 @@ impl FakeSavedNetworksManager {
 
 #[async_trait(?Send)]
 impl SavedNetworksManagerApi for FakeSavedNetworksManager {
-    async fn remove(
-        &self,
-        network_id: NetworkIdentifier,
-        credential: Credential,
-    ) -> Result<bool, NetworkConfigError> {
+    async fn remove(&self, network_id: NetworkIdentifier) -> Result<bool, NetworkConfigError> {
         let mut saved_networks = self.saved_networks.lock().await;
-        if let Some(network_configs) = saved_networks.get_mut(&network_id) {
-            let original_len = network_configs.len();
-            network_configs.retain(|cfg| cfg.credential != credential);
-            if original_len != network_configs.len() {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+        Ok(saved_networks.remove(&network_id).is_some())
     }
 
     async fn known_network_count(&self) -> usize {
         unimplemented!()
     }
 
-    async fn lookup(&self, id: &NetworkIdentifier) -> Vec<NetworkConfig> {
-        self.saved_networks.lock().await.get(id).cloned().unwrap_or_default()
+    async fn lookup(&self, id: &NetworkIdentifier) -> Option<NetworkConfig> {
+        self.saved_networks.lock().await.get(id).cloned()
     }
 
     async fn lookup_compatible(
@@ -210,7 +194,6 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
                     .filter_map(
                         |(id, config)| if id.ssid == *ssid { Some(config.clone()) } else { None },
                     )
-                    .flatten()
                     .collect()
             }
         }
@@ -228,12 +211,7 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
             return Err(NetworkConfigError::FileWriteError);
         }
         let config = NetworkConfig::new(network_id.clone(), credential, false, None)?;
-        return Ok(self
-            .saved_networks
-            .lock()
-            .await
-            .insert(network_id, vec![config])
-            .and_then(|mut v| v.pop()));
+        return Ok(self.saved_networks.lock().await.insert(network_id, config));
     }
 
     async fn record_connect_result(
@@ -300,7 +278,7 @@ impl SavedNetworksManagerApi for FakeSavedNetworksManager {
     }
 
     async fn get_networks(&self) -> Vec<NetworkConfig> {
-        self.saved_networks.lock().await.values().flat_map(|cfgs| cfgs.clone()).collect()
+        self.saved_networks.lock().await.values().cloned().collect()
     }
 
     async fn get_past_connections(

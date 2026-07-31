@@ -5080,8 +5080,7 @@ mod tests {
             }
             NetworkSelectionMissingAttribute::SavedNetwork => {
                 // Remove the saved network so that there are no known networks to connect to.
-                let remove_network_fut =
-                    test_values.saved_networks.remove(network_id.clone(), credential);
+                let remove_network_fut = test_values.saved_networks.remove(network_id.clone());
                 let mut remove_network_fut = pin!(remove_network_fut);
                 assert_matches!(exec.run_until_stalled(&mut remove_network_fut), Poll::Ready(_));
             }

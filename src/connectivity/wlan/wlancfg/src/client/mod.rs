@@ -195,13 +195,18 @@ async fn handle_client_requests(
                 responder.send(response)?;
             }
             fidl_policy::ClientControllerRequest::RemoveNetwork { config, responder } => {
-                let err = handle_client_request_remove_network(
-                    saved_networks.clone(),
-                    config,
-                    iface_manager.clone(),
-                )
-                .map_err(|_| SaveError::GeneralError)
-                .await;
+                let id_opt = config.id;
+                let err = async {
+                    let id = id_opt.ok_or(NetworkConfigError::ConfigMissingId)?;
+                    handle_client_request_remove_network(
+                        saved_networks.clone(),
+                        id,
+                        iface_manager.clone(),
+                    )
+                    .await
+                }
+                .await
+                .map_err(|_| SaveError::GeneralError);
 
                 responder.send(err)?;
             }
@@ -227,7 +232,6 @@ async fn handle_client_request_connect(
             network.type_.into(),
         ))
         .await
-        .pop()
     {
         Some(config) => config,
         None => {
@@ -371,17 +375,11 @@ async fn handle_client_request_save_network(
 /// config change error if an error occurs while trying to remove the network.
 async fn handle_client_request_remove_network(
     saved_networks: SavedNetworksPtr,
-    network_config: fidl_policy::NetworkConfig,
+    network_id: fidl_policy::NetworkIdentifier,
     iface_manager: Arc<Mutex<dyn IfaceManagerApi>>,
 ) -> Result<(), NetworkConfigError> {
-    // The FIDL network config fields are defined as Options, and we consider it an error if either
-    // field is missing (ie None) here.
-    let net_id =
-        NetworkIdentifier::from(network_config.id.ok_or(NetworkConfigError::ConfigMissingId)?);
-    let credential = Credential::try_from(
-        network_config.credential.ok_or(NetworkConfigError::ConfigMissingCredential)?,
-    )?;
-    if saved_networks.remove(net_id.clone(), credential.clone()).await? {
+    let net_id = NetworkIdentifier::from(network_id);
+    if saved_networks.remove(net_id.clone()).await? {
         match iface_manager
             .lock()
             .await
@@ -767,7 +765,7 @@ mod tests {
         // since we did not successfully connect.
         let id = NetworkIdentifier::new(ssid, SecurityType::None);
         let lookup_fut = test_values.saved_networks.lookup(&id);
-        assert!(exec.run_singlethreaded(lookup_fut).is_empty());
+        assert!(exec.run_singlethreaded(lookup_fut).is_none());
     }
 
     #[fuchsia::test]
@@ -1066,7 +1064,7 @@ mod tests {
         let target_id = NetworkIdentifier::from(network_id);
         let target_config = NetworkConfig::new(target_id.clone(), Credential::None, false, None)
             .expect("Failed to create network config");
-        assert_eq!(exec.run_singlethreaded(saved_networks.lookup(&target_id)), vec![target_config]);
+        assert_eq!(exec.run_singlethreaded(saved_networks.lookup(&target_id)), Some(target_config));
     }
 
     #[fuchsia::test]
@@ -1136,7 +1134,7 @@ mod tests {
         let target_id = NetworkIdentifier::from(network_id);
         let target_config = NetworkConfig::new(target_id.clone(), Credential::None, false, None)
             .expect("Failed to create network config");
-        assert_eq!(exec.run_singlethreaded(saved_networks.lookup(&target_id)), vec![target_config]);
+        assert_eq!(exec.run_singlethreaded(saved_networks.lookup(&target_id)), Some(target_config));
     }
 
     #[fuchsia::test]
@@ -1251,7 +1249,7 @@ mod tests {
 
         // Check that the value was was not saved in saved networks manager.
         let target_id = NetworkIdentifier::from(bad_network_id);
-        assert_eq!(exec.run_singlethreaded(saved_networks.lookup(&target_id)), vec![]);
+        assert_eq!(exec.run_singlethreaded(saved_networks.lookup(&target_id)), None);
     }
 
     #[fuchsia::test]
@@ -1306,7 +1304,7 @@ mod tests {
             exec.run_singlethreaded(
                 test_values.saved_networks.lookup(&test_values.net_id_open.clone().into())
             )
-            .is_empty()
+            .is_none()
         );
 
         // Removing a network that is not saved should not trigger a disconnect.
