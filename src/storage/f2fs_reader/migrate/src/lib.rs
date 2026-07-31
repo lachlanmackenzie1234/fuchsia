@@ -135,7 +135,7 @@ async fn keys_from_context(
     if let Some(context) = context {
         ensure!(context.flags & fscrypt::POLICY_FLAGS_PAD_16 != 0, "require 16 byte padding");
         Ok((
-            Some([0; 16]),  // Presence of wrapping_key_id implies fscrypt. Value irrelevant.
+            Some(context.main_key_identifier),
             FSCRYPT_KEY_ID, // fscrypt always uses key_id = 1
             if context.flags & fscrypt::POLICY_FLAGS_INO_LBLK_32 != 0 {
                 if is_file {
@@ -164,7 +164,7 @@ async fn keys_from_context(
         let (key, _unwrapped_key) =
             crypt.create_key(object_id, fxfs_crypto::KeyPurpose::Data).await.unwrap();
         Ok((
-            if parent_is_fscrypt { Some([0; 16]) } else { None },
+            if parent_is_fscrypt { owner.wrapping_key_id() } else { None },
             VOLUME_DATA_KEY_ID,
             vec![(VOLUME_DATA_KEY_ID, EncryptionKey::Fxfs(key))],
         ))
@@ -612,8 +612,8 @@ pub async fn verify(
 
             // If f2fs inode has a context, we have an fscrypt file. In fxfs this is marked by the
             // presence of a wrapping_key_id.
-            if inode.context.is_some() {
-                wrapping_key_id = Some([0; 16]);
+            if let Some(context) = &inode.context {
+                wrapping_key_id = Some(context.main_key_identifier);
             }
 
             let flags = inode.header.flags;

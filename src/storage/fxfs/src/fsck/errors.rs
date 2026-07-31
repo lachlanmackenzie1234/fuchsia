@@ -699,7 +699,7 @@ impl FsckError {
                     child_id,
                     parent_wrapping_key_id:?,
                     child_wrapping_key_id:?;
-                    "Child directory encrypted with different wrapping key than parent"
+                    "Child object encrypted with different wrapping key than parent"
                 );
             }
             FsckError::DuplicateKey(store_id, oid, key_id) => {

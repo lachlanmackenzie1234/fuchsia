@@ -3081,8 +3081,17 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
         .await
         .expect_err("Fsck should fail");
 
-    assert_matches!(&test.errors()[..], [ FsckIssue::Error(FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(sid, oid, oid_child, parent_id, child_id)) ]
-    if *sid == store_id && *oid == parent_oid && *oid_child == child_oid && *parent_id == WRAPPING_KEY_ID && *child_id == CHILD_WRAPPING_KEY_ID);
+    assert_matches!(
+        &test.errors()[..],
+        [FsckIssue::Error(FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(
+            sid, oid, oid_child, parent_id, child_id
+        ))]
+        if *sid == store_id
+            && *oid == parent_oid
+            && *oid_child == child_oid
+            && *parent_id == WRAPPING_KEY_ID
+            && *child_id == CHILD_WRAPPING_KEY_ID
+    );
 }
 
 #[fuchsia::test]

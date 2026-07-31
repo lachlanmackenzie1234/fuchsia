@@ -52,6 +52,8 @@ pub enum FxfsError {
     Unavailable,
     #[error("No key")]
     NoKey,
+    #[error("Inconsistent encryption policy")]
+    InconsistentEncryptionPolicy,
 }
 
 impl FxfsError {
@@ -106,6 +108,7 @@ mod fuchsia {
                 FxfsError::IntegrityError => Status::IO_DATA_INTEGRITY,
                 FxfsError::Unavailable => Status::UNAVAILABLE,
                 FxfsError::NoKey => Status::ACCESS_DENIED,
+                FxfsError::InconsistentEncryptionPolicy => Status::BAD_STATE,
             }
         }
     }

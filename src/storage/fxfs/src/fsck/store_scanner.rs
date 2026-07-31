@@ -20,7 +20,7 @@ use crate::object_store::{
 use crate::range::RangeExt;
 use crate::round::round_up;
 use anyhow::{Error, bail};
-use fxfs_crypto::{Crypt, KeyType, WrappedKey, key_to_cipher};
+use fxfs_crypto::{Crypt, KeyType, WrappedKey, WrappingKeyId, key_to_cipher};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
@@ -81,6 +81,7 @@ struct ScannedFile {
     attributes: ScannedAttributes,
     // If fsverity-enabled, contains the hash size.
     verified: VerifiedType,
+    wrapping_key_id: Option<WrappingKeyId>,
 }
 
 #[derive(Debug)]
@@ -113,6 +114,7 @@ struct ScannedSymlink {
     // Attributes for this symlink
     attributes: ScannedAttributes,
     encrypted: bool,
+    wrapping_key_id: Option<WrappingKeyId>,
 }
 
 #[derive(Debug)]
@@ -123,6 +125,17 @@ enum ScannedObject {
     Symlink(ScannedSymlink),
     // A tombstoned object, which should have no other records associated with it.
     Tombstone,
+}
+
+impl ScannedObject {
+    fn wrapping_key_id(&self) -> Option<WrappingKeyId> {
+        match self {
+            ScannedObject::Directory(dir) => dir.dir_type.wrapping_key_id(),
+            ScannedObject::File(file) => file.wrapping_key_id,
+            ScannedObject::Symlink(symlink) => symlink.wrapping_key_id,
+            _ => None,
+        }
+    }
 }
 
 struct ScannedStore<'a> {
@@ -227,6 +240,7 @@ impl<'a> ScannedStore<'a> {
                                     extended_attributes: Vec::new(),
                                 },
                                 verified: VerifiedType::None,
+                                wrapping_key_id: None,
                             }),
                         );
                     }
@@ -312,6 +326,7 @@ impl<'a> ScannedStore<'a> {
                                     in_graveyard: false,
                                     extended_attributes: Vec::new(),
                                 },
+                                wrapping_key_id: None,
                             }),
                         );
                     }
@@ -344,6 +359,7 @@ impl<'a> ScannedStore<'a> {
                                     in_graveyard: false,
                                     extended_attributes: Vec::new(),
                                 },
+                                wrapping_key_id: None,
                             }),
                         );
                     }
@@ -401,10 +417,18 @@ impl<'a> ScannedStore<'a> {
                                 KeyType::Fxfs | KeyType::LegacyFxfs => {}
                             }
                             if *key_id == FSCRYPT_KEY_ID {
-                                if let Some(ScannedObject::Directory(dir)) =
-                                    self.objects.get_mut(&current_file.object_id)
-                                {
-                                    dir.fscrypt_key = Some(encryption_key.clone().into());
+                                let wrapping_key_id = encryption_key.wrapping_key_id();
+                                match self.objects.get_mut(&current_file.object_id) {
+                                    Some(ScannedObject::Directory(dir)) => {
+                                        dir.fscrypt_key = Some(encryption_key.clone().into());
+                                    }
+                                    Some(ScannedObject::File(file)) => {
+                                        file.wrapping_key_id = wrapping_key_id;
+                                    }
+                                    Some(ScannedObject::Symlink(symlink)) => {
+                                        symlink.wrapping_key_id = wrapping_key_id;
+                                    }
+                                    _ => {}
                                 }
                             }
                         }
@@ -695,7 +719,7 @@ impl<'a> ScannedStore<'a> {
         object_descriptor: &ObjectDescriptor,
         object_key_data: &ObjectKeyData,
     ) -> Result<(), Error> {
-        let mut child_wrapping_key_id = None;
+        let child_wrapping_key_id = self.objects.get(&child_id).and_then(|o| o.wrapping_key_id());
         if let Some(ScannedObject::Directory(dir)) = self.objects.get(&parent_id) {
             match object_key_data {
                 ObjectKeyData::Child { .. } => {
@@ -835,18 +859,12 @@ impl<'a> ScannedStore<'a> {
                 if matches!(
                     object_key_data,
                     ObjectKeyData::EncryptedChild(_) | ObjectKeyData::EncryptedCasefoldChild(_)
-                ) {
-                    match dir_type {
-                        DirType::Encrypted(id) | DirType::EncryptedCasefold(id) => {
-                            child_wrapping_key_id = Some(*id);
-                        }
-                        _ => {
-                            self.fsck.error(FsckError::EncryptedChildDirectoryNoWrappingKey(
-                                self.store_id,
-                                child_id,
-                            ))?;
-                        }
-                    }
+                ) && !dir_type.is_encrypted()
+                {
+                    self.fsck.error(FsckError::EncryptedChildDirectoryNoWrappingKey(
+                        self.store_id,
+                        child_id,
+                    ))?;
                 }
                 if parent.is_some() {
                     // TODO(https://fxbug.dev/42168496): Accumulating and reporting all parents
@@ -891,20 +909,24 @@ impl<'a> ScannedStore<'a> {
                 self.fsck.error(FsckError::ObjectHasChildren(self.store_id, parent_id))?;
             }
             Some(ScannedObject::Directory(ScannedDir { observed_sub_dirs, dir_type, .. })) => {
-                if let (Some(parent_wrapping_key_id), Some(child_wrapping_key_id)) =
-                    (dir_type.wrapping_key_id(), child_wrapping_key_id)
+                // Note: Unencrypted children in encrypted directories are checked earlier in
+                // process_child (via FsckError::EncryptedDirectoryHasUnencryptedChild), and
+                // missing key attributes on encrypted children are reported via MissingKey or
+                // EncryptedChildDirectoryNoWrappingKey. Here we only check for key mismatches when
+                // both parent and child have wrapping keys.
+                if let Some(parent_key) = dir_type.wrapping_key_id()
+                    && let Some(child_key) = child_wrapping_key_id
+                    && child_key != parent_key
                 {
-                    if child_wrapping_key_id != parent_wrapping_key_id {
-                        self.fsck.error(
-                            FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(
-                                self.store_id,
-                                parent_id,
-                                child_id,
-                                parent_wrapping_key_id,
-                                child_wrapping_key_id,
-                            ),
-                        )?;
-                    }
+                    self.fsck.error(
+                        FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                            parent_key,
+                            child_key,
+                        ),
+                    )?;
                 }
                 if *object_descriptor == ObjectDescriptor::Directory {
                     *observed_sub_dirs += 1;

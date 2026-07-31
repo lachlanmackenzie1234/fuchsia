@@ -256,7 +256,11 @@ impl FileSystemOps for RemoteFs {
                 .node
                 .io
                 .rename(get_name_str(old_name)?, &new_parent_ops.node.io, get_name_str(new_name)?)
-                .map_err(map_sync_io_client_error)
+                .map_err(|status| match status {
+                    zx::Status::BAD_STATE => errno!(EXDEV),
+                    zx::Status::ACCESS_DENIED => errno!(ENOKEY),
+                    s => map_sync_io_client_error(s),
+                })
         })
     }
 

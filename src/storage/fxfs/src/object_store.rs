@@ -1469,7 +1469,10 @@ impl ObjectStore {
     ) -> Result<bool, Error> {
         let mut mutation = self.txn_get_object_mutation(transaction, object_id).await?;
         let refs = if let ObjectValue::Object {
-            kind: ObjectKind::File { refs, .. } | ObjectKind::Symlink { refs, .. },
+            kind:
+                ObjectKind::File { refs, .. }
+                | ObjectKind::Symlink { refs, .. }
+                | ObjectKind::EncryptedSymlink { refs, .. },
             ..
         } = &mut mutation.item.value
         {

@@ -28,7 +28,7 @@ pub fn add_encryption_key_with_key_bytes(
         libc::ioctl(
             root_dir.as_raw_fd(),
             FS_IOC_ADD_ENCRYPTION_KEY.try_into().unwrap(),
-            arg_vec.as_ptr(),
+            arg_vec.as_mut_ptr(),
         )
     };
     (ret, arg_vec)

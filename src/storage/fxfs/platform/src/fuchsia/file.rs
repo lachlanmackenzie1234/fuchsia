@@ -567,7 +567,7 @@ impl vfs::node::Node for FxFile {
             .await
             .map_err(map_to_status)?;
 
-        dir.check_fscrypt_hard_link_conditions(self.fscrypt_wrapping_key_id().await?)?;
+        dir.check_fscrypt_policy_equivalence(self.fscrypt_wrapping_key_id().await?)?;
 
         let state = self.load_state();
         let is_unnamed_temporary = state.is_unnamed_temporary();

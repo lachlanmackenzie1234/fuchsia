@@ -153,6 +153,16 @@ pub enum EncryptionKey {
     Fxfs(FxfsKey),
 }
 
+impl EncryptionKey {
+    pub fn wrapping_key_id(&self) -> Option<WrappingKeyId> {
+        match self {
+            EncryptionKey::LegacyFxfs(key) | EncryptionKey::Fxfs(key) => Some(key.wrapping_key_id),
+            EncryptionKey::FscryptInoLblk32File { key_identifier }
+            | EncryptionKey::FscryptInoLblk32Dir { key_identifier, .. } => Some(*key_identifier),
+        }
+    }
+}
+
 impl<'a> arbitrary::Arbitrary<'a> for EncryptionKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(match u.int_in_range(0..=3)? {

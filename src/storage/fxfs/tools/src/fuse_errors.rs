@@ -38,6 +38,7 @@ pub fn fxfs_error_to_fuse_error(err: &anyhow::Error) -> Errno {
             FxfsError::IntegrityError => libc::EIO.into(),
             FxfsError::Unavailable => libc::EBUSY.into(),
             FxfsError::NoKey => libc::ENOKEY.into(),
+            FxfsError::InconsistentEncryptionPolicy => libc::EXDEV.into(),
         };
         info!("Converted from Fxfs error {:?} to libc error {:?}", root_cause, err);
         err

@@ -34,7 +34,7 @@ mod tests {
             libc::ioctl(
                 root_dir.as_raw_fd(),
                 FS_IOC_ADD_ENCRYPTION_KEY.try_into().unwrap(),
-                arg_vec.as_ptr(),
+                arg_vec.as_mut_ptr(),
             )
         };
         (ret, arg_vec)
@@ -54,7 +54,7 @@ mod tests {
             libc::ioctl(
                 root_dir.as_raw_fd(),
                 FS_IOC_ADD_ENCRYPTION_KEY.try_into().unwrap(),
-                arg_vec.as_ptr(),
+                arg_vec.as_mut_ptr(),
             )
         };
         (ret, arg_vec)
@@ -618,6 +618,90 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    fn rename_unencrypted_file_into_encrypted_dir() {
+        let Some(root_path) = get_root_path() else { return };
+        let root_dir = std::fs::File::open(&root_path).expect("open failed");
+        let unencrypted_dir_path = std::path::Path::new(&root_path).join("rename_unencrypted");
+        std::fs::create_dir_all(unencrypted_dir_path.clone()).unwrap();
+        std::fs::File::create_new(unencrypted_dir_path.clone().join("file"))
+            .expect("failed to create file in unencrypted directory");
+
+        let encrypted_dir_path = std::path::Path::new(&root_path).join("rename_encrypted");
+        std::fs::create_dir_all(encrypted_dir_path.clone()).unwrap();
+
+        let dir = std::fs::File::open(encrypted_dir_path.clone()).unwrap();
+        let (ret, arg_vec) = add_encryption_key(&root_dir);
+        assert!(ret == 0, "add encryption key failed: {:?}", std::io::Error::last_os_error());
+        let (arg_struct_bytes, _) = arg_vec.split_at(std::mem::size_of::<fscrypt_add_key_arg>());
+        let arg_struct_1 = fscrypt_add_key_arg::read_from_bytes(arg_struct_bytes).unwrap();
+
+        let ret = set_encryption_policy(&dir, unsafe { arg_struct_1.key_spec.u.identifier.value });
+        assert!(
+            ret == 0,
+            "set encryption policy ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+
+        let err =
+            std::fs::rename(unencrypted_dir_path.join("file"), encrypted_dir_path.join("file"))
+                .expect_err("renaming unencrypted file into encrypted dir should fail with EXDEV");
+        assert_eq!(err.raw_os_error(), Some(libc::EXDEV));
+
+        let ret =
+            remove_encryption_key(&root_dir, unsafe { arg_struct_1.key_spec.u.identifier.value });
+        assert!(
+            ret == 0,
+            "remove encryption key ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+        std::fs::remove_dir_all(unencrypted_dir_path).expect("failed to remove unencrypted dir");
+        std::fs::remove_dir_all(encrypted_dir_path).expect("failed to remove encrypted dir");
+    }
+
+    #[test]
+    #[serial]
+    fn rename_encrypted_file_into_unencrypted_dir() {
+        let Some(root_path) = get_root_path() else { return };
+        let root_dir = std::fs::File::open(&root_path).expect("open failed");
+        let unencrypted_dir_path = std::path::Path::new(&root_path).join("rename_unencrypted_2");
+        std::fs::create_dir_all(unencrypted_dir_path.clone()).unwrap();
+
+        let encrypted_dir_path = std::path::Path::new(&root_path).join("rename_encrypted_2");
+        std::fs::create_dir_all(encrypted_dir_path.clone()).unwrap();
+
+        let dir = std::fs::File::open(encrypted_dir_path.clone()).unwrap();
+        let (ret, arg_vec) = add_encryption_key(&root_dir);
+        assert!(ret == 0, "add encryption key failed: {:?}", std::io::Error::last_os_error());
+        let (arg_struct_bytes, _) = arg_vec.split_at(std::mem::size_of::<fscrypt_add_key_arg>());
+        let arg_struct_1 = fscrypt_add_key_arg::read_from_bytes(arg_struct_bytes).unwrap();
+
+        let ret = set_encryption_policy(&dir, unsafe { arg_struct_1.key_spec.u.identifier.value });
+        assert!(
+            ret == 0,
+            "set encryption policy ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+        std::fs::File::create_new(encrypted_dir_path.clone().join("file"))
+            .expect("failed to create file in encrypted directory");
+
+        let err =
+            std::fs::rename(encrypted_dir_path.join("file"), unencrypted_dir_path.join("file"))
+                .expect_err("renaming encrypted file into unencrypted dir should fail with EXDEV");
+        assert_eq!(err.raw_os_error(), Some(libc::EXDEV));
+
+        let ret =
+            remove_encryption_key(&root_dir, unsafe { arg_struct_1.key_spec.u.identifier.value });
+        assert!(
+            ret == 0,
+            "remove encryption key ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+        std::fs::remove_dir_all(unencrypted_dir_path).expect("failed to remove unencrypted dir");
+        std::fs::remove_dir_all(encrypted_dir_path).expect("failed to remove encrypted dir");
+    }
+
+    #[test]
     #[ignore] // TODO(https://fxbug.dev/359885449) use expectations
     #[serial]
     // TODO(https://fxbug.dev/358420498) Purge the key manager on FS_IOC_REMOVE_ENCRYPTION_KEY
@@ -696,6 +780,50 @@ mod tests {
         );
         std::fs::remove_dir_all(encrypted_1_dir_path).expect("failed to remove unencrypted dir");
         std::fs::remove_dir_all(encrypted_2_dir_path).expect("failed to remove encrypted dir");
+    }
+
+    #[test]
+    #[ignore] // TODO(https://fxbug.dev/359885449) use expectations
+    #[serial]
+    // TODO(https://fxbug.dev/358420498) Purge the key manager on FS_IOC_REMOVE_ENCRYPTION_KEY
+    fn rename_in_locked_encrypted_directory_fails() {
+        let Some(root_path) = get_root_path() else { return };
+        let root_dir = std::fs::File::open(&root_path).expect("open failed");
+        let encrypted_dir_path = std::path::Path::new(&root_path).join("rename_locked_encrypted");
+        std::fs::create_dir_all(encrypted_dir_path.clone()).unwrap();
+
+        let dir = std::fs::File::open(encrypted_dir_path.clone()).unwrap();
+        let (ret, arg_vec) = add_encryption_key(&root_dir);
+        assert!(ret == 0, "add encryption key failed: {:?}", std::io::Error::last_os_error());
+        let (arg_struct_bytes, _) = arg_vec.split_at(std::mem::size_of::<fscrypt_add_key_arg>());
+        let arg_struct_1 = fscrypt_add_key_arg::read_from_bytes(arg_struct_bytes).unwrap();
+
+        let ret = set_encryption_policy(&dir, unsafe { arg_struct_1.key_spec.u.identifier.value });
+        assert!(
+            ret == 0,
+            "set encryption policy ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+
+        std::fs::File::create_new(encrypted_dir_path.clone().join("file"))
+            .expect("failed to create file in encrypted directory");
+
+        let ret =
+            remove_encryption_key(&root_dir, unsafe { arg_struct_1.key_spec.u.identifier.value });
+        assert!(
+            ret == 0,
+            "remove encryption key ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+
+        let err = std::fs::rename(
+            encrypted_dir_path.join("file"),
+            encrypted_dir_path.join("file_renamed"),
+        )
+        .expect_err("renaming inside locked encrypted directory should fail with ENOKEY");
+        assert_eq!(err.raw_os_error(), Some(libc::ENOKEY));
+
+        std::fs::remove_dir_all(encrypted_dir_path).expect("failed to remove encrypted dir");
     }
 
     #[test]

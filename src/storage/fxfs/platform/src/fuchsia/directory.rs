@@ -354,10 +354,9 @@ impl FxDirectory {
         self.watchers.lock().send_event(&mut SingleNameEventProducer::added(name));
     }
 
-    /// As per fscrypt, a user cannot link an unencrypted file into an encrypted directory nor can
-    /// a user link an encrypted file into a directory encrypted with a different key. Appropriate
-    /// locks must be held by the caller.
-    pub fn check_fscrypt_hard_link_conditions(
+    /// As per fscrypt, files cannot be moved or linked across different encryption policies.
+    /// Appropriate locks must be held by the caller.
+    pub fn check_fscrypt_policy_equivalence(
         &self,
         source_wrapping_key_id: Option<WrappingKeyId>,
     ) -> Result<(), zx::Status> {
@@ -464,7 +463,7 @@ impl FxDirectory {
                 )
                 .await
                 .map_err(map_to_status)?;
-            self.check_fscrypt_hard_link_conditions(source_dir.directory().wrapping_key_id())?;
+            self.check_fscrypt_policy_equivalence(source_dir.directory().wrapping_key_id())?;
             // Ensure under lock that the file still exists there.
             match source_dir.directory.lookup(source_name).await.map_err(map_to_status)? {
                 Some((new_id, ObjectDescriptor::File, _)) => {
@@ -3529,7 +3528,8 @@ mod tests {
             .expect("update_attributes failed");
 
         {
-            root.create_symlink("symlink", b"target", None)
+            parent
+                .create_symlink("symlink", b"target", None)
                 .await
                 .expect("FIDL call failed")
                 .expect("create_symlink failed");
@@ -3562,7 +3562,7 @@ mod tests {
                 proxy
             }
 
-            let proxy = open_symlink(&root, "symlink").await;
+            let proxy = open_symlink(&parent, "symlink").await;
 
             let (status, dst_token) = parent.get_token().await.expect("FIDL call failed");
             zx::Status::ok(status).expect("get_token failed");
