@@ -114,9 +114,9 @@ StarnixCaptureStrategy::Finalize(OS& os, StarnixCaptureStrategy&& starnix_captur
   for (auto& [_, process] : starnix_capture_strategy.koid_to_process_) {
     auto starnix_proc = starnix_capture_strategy.starnix_jobs_.find(process.job);
     if (starnix_proc == starnix_capture_strategy.starnix_jobs_.end()) {
-      zx_status_t s =
-          base.OnNewProcess(os, std::move(process),
-                            std::move(starnix_capture_strategy.process_handles_[process.koid]));
+      zx_koid_t koid = process.koid;
+      zx_status_t s = base.OnNewProcess(os, std::move(process),
+                                        std::move(starnix_capture_strategy.process_handles_[koid]));
       // No error or a process-specific error (e.g.: the process exited), we continue.
       if (s != ZX_OK && s != ZX_ERR_BAD_STATE) {
         return zx::error(s);
