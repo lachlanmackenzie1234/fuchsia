@@ -20,7 +20,6 @@ zx_status_t rust_restricted_state_create(zx_exception_report_t* exception_report
                                          RestrictedState** out_ptr);
 void rust_restricted_state_destroy(RestrictedState* ptr);
 
-#if defined(__riscv) || defined(__x86_64__)
 void rust_arch_dump(const zx_restricted_state_t* state);
 zx_status_t rust_arch_validate_state_pre_restricted_entry(const zx_restricted_state_t* state);
 void rust_arch_save_state_pre_restricted_entry(ArchSavedNormalState* state);
@@ -34,12 +33,22 @@ void rust_arch_redirect_restricted_exception_to_normal(const ArchSavedNormalStat
                                                        zx_restricted_reason_t reason);
 [[noreturn]] void rust_arch_enter_full(const ArchSavedNormalState* arch_state,
                                        uintptr_t vector_table, uintptr_t context, uint64_t code);
-#endif  // defined(__riscv) || defined(__x86_64__)
 
 // Helpers called from Rust
 zx_status_t cpp_restricted_state_create_vmo_mapping(void** out_vmo, void** out_mapping,
                                                     zx_restricted_state_t** out_base);
 void cpp_restricted_state_destroy_vmo_mapping(void* raw_vmo, void* raw_mapping);
+
+#if defined(__aarch64__)
+bool cpp_arm64_ints_disabled();
+void cpp_arm64_get_tpidr_regs(uint64_t* tpidr_el0, uint64_t* tpidrro_el0);
+void cpp_arm64_set_tpidr_regs(uint64_t tpidr_el0, uint64_t tpidrro_el0);
+void cpp_arm64_enter_restricted_tpidr(uint64_t tpidr_el0, bool is_arm32);
+uint64_t cpp_arm64_get_tpidr_el0();
+[[noreturn]] void cpp_arm64_enter_uspace(const iframe_t* iframe);
+zx_status_t cpp_arm64_get_general_regs(zx_thread_state_general_regs_t* regs);
+zx_status_t cpp_arm64_set_general_regs(const zx_thread_state_general_regs_t* regs);
+#endif  // defined(__aarch64__)
 }
 
 // This function:
@@ -118,7 +127,6 @@ fbl::RefPtr<VmObjectPaged> RestrictedState::vmo() const {
   return fbl::RefPtr<VmObjectPaged>(reinterpret_cast<VmObjectPaged*>(vmo_));
 }
 
-#if defined(__riscv) || defined(__x86_64__)
 void RestrictedState::ArchDump(const zx_restricted_state_t& state) { rust_arch_dump(&state); }
 
 zx_status_t RestrictedState::ArchValidateStatePreRestrictedEntry(
@@ -159,4 +167,3 @@ void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
                                                  uint64_t code) {
   rust_arch_enter_full(&arch_state, vector_table, context, code);
 }
-#endif  // defined(__riscv) || defined(__x86_64__)

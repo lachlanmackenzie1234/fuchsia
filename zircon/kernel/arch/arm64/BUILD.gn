@@ -184,6 +184,11 @@ if (toolchain_environment == "kernel.phys" ||
     output_name = "arch_arm64"
     source_root = "src/mod.rs"
     sources = [ "src/mod.rs" ]
+    deps = [
+      "//sdk/rust/zx-status",
+      "//sdk/rust/zx-types",
+      "//zircon/kernel/lib/debug",
+    ]
   }
 
   source_set("tests") {
