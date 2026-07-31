@@ -2,12 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Macros for defining Fuchsia components in the Bazel SDK."""
+
 load(
     "@fuchsia_rules_common//components:fuchsia_component_common.bzl",
     "fuchsia_component_common",
 )
-
-# buildifier: disable=module-docstring
 load(":fuchsia_component_manifest.bzl", "ensure_compiled_component_manifest")
 
 def _manifest_target(name, manifest_in, tags, testonly):
@@ -48,7 +48,7 @@ def fuchsia_component(
         component_name: The name of the component.
             Defaults to the component manifest file's basename.
         deps: A list of targets that this component depends on.
-        tags: Typical meaning in Bazel. By default this target is manual.
+        tags: Standard meaning. Defaults to `["manual"]`.
         **kwargs: Extra attributes to forward to the build rule.
     """
 
@@ -88,7 +88,7 @@ def fuchsia_test_component(
         manifest: The component manifest file.
         component_name: The name of the component.
         deps: A list of targets that this component depends on.
-        tags: Typical meaning in Bazel. By default this target is manual.
+        tags: Standard meaning. Defaults to `["manual"]`.
         **kwargs: Extra attributes to forward to the build rule.
     """
 
@@ -136,7 +136,7 @@ def fuchsia_driver_component(
         bind_bytecode: The driver bind bytecode needed for binding the driver.
         component_name: The name of the component.
         deps: A list of targets that this component depends on.
-        tags: Typical meaning in Bazel. By default this target is manual.
+        tags: Standard meaning. Defaults to `["manual"]`.
         **kwargs: Extra attributes to forward to the build rule.
     """
 

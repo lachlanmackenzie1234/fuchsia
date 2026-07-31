@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""fuchsia_package() rule."""
+"""Macros for defining Fuchsia packages in the Bazel SDK."""
 
 load(
     "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
@@ -263,15 +263,19 @@ def fuchsia_unittest_package(
     See fuchsia_test_package for additional arguments.
 
     Args:
-        name: This target name.
+        name: The target name.
         unit_tests: The unit_test targets. These targets must have a generated
           fuchsia_test_component with the name <name>.unittest_component.
         **kwargs: Extra attributes to pass along to the `fuchsia_test_package`.
     """
 
+    # LINT.IfChange(unittest_component_suffix)
+    unittest_component_suffix = "unittest_component"
+    # LINT.ThenChange(fuchsia_cc.bzl:unittest_component_suffix)
+
     fuchsia_test_package(
         name = name,
-        test_components = [append_suffix_to_label(t, "unittest_component") for t in unit_tests],
+        test_components = [append_suffix_to_label(t, unittest_component_suffix) for t in unit_tests],
         **kwargs
     )
 

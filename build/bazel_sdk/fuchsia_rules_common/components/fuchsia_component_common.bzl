@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Common implementation for `fuchsia_*_component()` macros. Shared by platform and the Bazel SDK."""
+
 load(
     "@fuchsia_rules_common//:utils.bzl",
     "make_resource_struct",

@@ -261,20 +261,23 @@ def fuchsia_cc_binary(
     Args:
         name: The target name.
         bin_name: The filename to place under bin/. Defaults to name.
-        tags: Tags to set for all generated targets. This type of target is marked "manual" by default.
-        visibility: The visibility of all generated targets.
-        features: The normal bazel meaning.
+        tags: Standard meaning. Defaults to `["manual"]`.
+        visibility: Standard meaning.
+        features: Standard meaning.
         transitive_features: A list of feature flag names that apply to this target and all
             its transitive dependencies. Each name can be prefixed with "-" to disable the
             feature instead of enabling it.
-        deps: Forwarded to the underlying `cc_binary`.
+        deps: Standard meaning.
         **cc_binary_kwargs: Arguments to forward to `cc_binary`.
     """
 
-    fuchsia_cc_name = name
-
-    if transitive_features != []:
+    if transitive_features == []:
+        fuchsia_cc_name = name
+        fuchsia_cc_visibility = visibility
+    else:
         fuchsia_cc_name = "%s.actual" % name
+        fuchsia_cc_visibility = ["//visibility:private"]
+
         _fuchsia_cc_apply_transitive_features(
             name = name,
             actual = ":" + fuchsia_cc_name,
@@ -287,7 +290,7 @@ def fuchsia_cc_binary(
     cc_binary(
         name = native_target_name,
         tags = tags + ["manual"],
-        visibility = visibility,
+        visibility = ["//visibility:private"],
         features = features,
         deps = deps,
         **cc_binary_kwargs
@@ -299,7 +302,7 @@ def fuchsia_cc_binary(
         native_target = ":" + native_target_name,
         deps = deps,
         data = data_for_features(features),
-        visibility = visibility,
+        visibility = fuchsia_cc_visibility,
         tags = tags,
     )
 
@@ -325,19 +328,21 @@ def fuchsia_cc_test(
     Args:
         name: The target name.
         death_unittest: Whether this test is a gtest unittest that uses ASSERT_DEATH.
-        tags: Tags to set for all generated targets. This type of target is marked "manual" by default.
-        visibility: The visibility of all generated targets.
-        deps: Typical bazel meaning.
-        features: The normal bazel meaning.
+        tags: Standard meaning. Defaults to `["manual"]`.
+        visibility: Standard meaning.
+        deps: Standard meaning.
+        features: Standard meaning.
         transitive_features: A list of feature flag names that apply to this target and all
             its transitive dependencies. Each name can be prefixed with "-" to disable the
             feature instead of enabling it.
         **cc_test_kwargs: Arguments to forward to `cc_test`.
     """
-    fuchsia_cc_name = name
-
-    if transitive_features != []:
+    if transitive_features == []:
+        fuchsia_cc_name = name
+        fuchsia_cc_visibility = visibility
+    else:
         fuchsia_cc_name = "%s.actual" % name
+        fuchsia_cc_visibility = ["//visibility:private"]
 
         _fuchsia_cc_apply_transitive_features(
             name = name,
@@ -354,7 +359,8 @@ def fuchsia_cc_test(
         tags = tags + ["manual"],
         deps = deps,
         features = features,
-        visibility = visibility,
+        testonly = True,
+        visibility = ["//visibility:private"],
         **cc_test_kwargs
     )
 
@@ -366,7 +372,7 @@ def fuchsia_cc_test(
         data = data_for_features(features),
         tags = tags,
         testonly = True,
-        visibility = visibility,
+        visibility = fuchsia_cc_visibility,
     )
 
     _fuchsia_cc_test_manifest(
@@ -374,18 +380,23 @@ def fuchsia_cc_test(
         test_binary_name = name,
         deps = deps,
         death_unittest = death_unittest,
-        testonly = True,
         tags = tags + ["manual"],
-        visibility = visibility,
+        testonly = True,
+        visibility = ["//visibility:private"],
     )
+
+    # LINT.IfChange(unittest_component_suffix)
+    unittest_component_name = "%s.unittest_component" % name
+    # LINT.ThenChange(fuchsia_package.bzl:unittest_component_suffix)
 
     # Generate the default component.
     fuchsia_test_component(
-        name = "%s.unittest_component" % name,
+        name = unittest_component_name,
         component_name = name,
         manifest = ":%s_autogen_cml" % name,
         deps = [name],
         tags = tags + ["manual"],
+        # This is used by `fuchsia_unittest_package()`, so visibility must be specified.
         visibility = visibility,
     )
 
