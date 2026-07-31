@@ -213,6 +213,7 @@ sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
 sapphire-emboss = "0.1.0"
 sapphire-gatt = "0.1.0"
+sapphire-hci = "0.1.0"
 sapphire-peer-cache = "0.1.0"
 sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
@@ -370,6 +371,7 @@ sapphire-async = { path = "intree/sunstone/sapphire-async" }
 sapphire-collections = { path = "intree/sunstone/sapphire-collections" }
 sapphire-emboss = { path = "intree/sunstone/sapphire-emboss" }
 sapphire-gatt = { path = "intree/sunstone/sapphire-gatt" }
+sapphire-hci = { path = "intree/sunstone/sapphire-hci" }
 sapphire-peer-cache = { path = "intree/sunstone/sapphire-peer-cache" }
 sapphire-rpc-macro = { path = "intree/sunstone/sapphire-rpc-macro" }
 sapphire-sync = { path = "intree/sunstone/sapphire-sync" }
@@ -630,6 +632,9 @@ uses_fuchsia_license = true
 existing_gn_target = "//src/connectivity/bluetooth/sunstone/sapphire-emboss"
 
 [gn.package.sapphire-gatt."0.1.0"]
+uses_fuchsia_license = true
+
+[gn.package.sapphire-hci."0.1.0"]
 uses_fuchsia_license = true
 
 [gn.package.sapphire-peer-cache."0.1.0"]

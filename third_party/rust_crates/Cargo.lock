@@ -2005,6 +2005,7 @@ dependencies = [
  "sapphire-collections",
  "sapphire-emboss",
  "sapphire-gatt",
+ "sapphire-hci",
  "sapphire-peer-cache",
  "sapphire-rpc-macro",
  "sapphire-sync",
@@ -4757,6 +4758,18 @@ dependencies = [
  "strum_macros",
  "thiserror 2.0.18",
  "zerocopy",
+]
+
+[[package]]
+name = "sapphire-hci"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "sapphire-async",
+ "sapphire-collections",
+ "sapphire-rpc-macro",
+ "sapphire-sync",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
