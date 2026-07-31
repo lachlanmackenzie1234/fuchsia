@@ -122,14 +122,21 @@ impl TokenStore {
         object: &str,
     ) -> Result<Response<Body>> {
         log::debug!("download {:?}, {:?}", bucket, object);
+        if bucket.is_empty() {
+            bail!("bucket name cannot be empty for GCS download");
+        }
         // If the bucket and object are from a gs:// URL, the object may have a
         // undesirable leading slash. Trim it if present.
-        let object = if object.starts_with('/') { &object[1..] } else { object };
+        let object = object.strip_prefix('/').unwrap_or(object);
 
-        let url = self
-            .storage_base
-            .join(&format!("{}/{}", bucket, object))
-            .context("joining to storage base")?;
+        let mut url = self.storage_base.clone();
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .map_err(|_| anyhow::anyhow!("Internal error: GCS URL cannot be a base"))?;
+            segments.pop_if_empty().push(bucket).extend(object.split('/'));
+        }
+
         let req = Request::builder().method(Method::GET).uri(url.to_string()).body(Body::empty())?;
         self.request_with_retries(https_client, req).await.context("sending http(s) request")
     }
@@ -287,6 +294,10 @@ impl TokenStore {
         file_path: &PathBuf,
     ) -> Result<Url> {
         log::debug!("upload to gs://{}/{}", bucket, object_name);
+        if bucket.is_empty() {
+            bail!("bucket name cannot be empty for GCS upload");
+        }
+        let object_name = object_name.strip_prefix('/').unwrap_or(object_name);
         let file_data = std::fs::read(file_path)?;
 
         let mut upload_url = self.storage_base.to_owned();
@@ -337,10 +348,12 @@ impl TokenStore {
         // On success, construct and return the canonical URL for the created object.
         let mut final_url =
             Url::parse(AUTHENTICATED_STORAGE_BASE).expect("parse AUTHENTICATED_STORAGE_BASE");
-        final_url
-            .path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("Internal error: GCS URL cannot be a base"))?
-            .extend(&[bucket, object_name]);
+        {
+            let mut segments = final_url
+                .path_segments_mut()
+                .map_err(|_| anyhow::anyhow!("Internal error: GCS URL cannot be a base"))?;
+            segments.pop_if_empty().push(bucket).extend(object_name.split('/'));
+        }
 
         Ok(final_url)
     }
@@ -357,9 +370,12 @@ impl TokenStore {
         limit: Option<u32>,
     ) -> Result<Vec<String>> {
         log::debug!("attempt_list of gs://{}/{}", bucket, prefix);
+        if bucket.is_empty() {
+            bail!("bucket name cannot be empty for GCS list");
+        }
         // If the bucket and prefix are from a gs:// URL, the prefix may have a
         // undesirable leading slash. Trim it if present.
-        let prefix = if prefix.starts_with('/') { &prefix[1..] } else { prefix };
+        let prefix = prefix.strip_prefix('/').unwrap_or(prefix);
 
         let mut base_url = self.api_base.to_owned();
         base_url.path_segments_mut().unwrap().extend(&["b", bucket, "o"]);
@@ -480,6 +496,14 @@ mod test {
         let headers = req.headers_ref().unwrap();
         // The authorization is set because there is a token and an https url.
         assert_eq!(headers["Authorization"], "Bearer fake_token");
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_empty_bucket_download() {
+        let token_store = TokenStore::local_fake();
+        assert!(
+            token_store.download(&new_https_client(), "", "//attacker.com/steal").await.is_err()
+        );
     }
 
     // This test is marked "ignore" because it actually downloads from GCS,

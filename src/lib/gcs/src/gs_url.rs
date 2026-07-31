@@ -4,7 +4,7 @@
 
 //! A simple URL parser for gs:// used for Google Cloud Storage (GCS).
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Join one or more entries onto the url path.
 ///
@@ -29,27 +29,24 @@ pub fn extend_url_path(base: &mut url::Url, add: &str) -> Result<()> {
 /// Returns errors for incorrect prefix or missing slash between bucket and
 /// object.
 pub fn split_gs_url(gs_url: &str) -> Result<(&str, &str)> {
-    // Uri will create a local which we cannot return references to:
-    //    let url = Uri::try_from(gs_url)
-    // A regex is more than needed for this simple format.
-    // Instead this simple parser is used: skip past the prefix and find the
-    //   third slash.
     const PREFIX: &str = "gs://";
-    if !gs_url.starts_with(PREFIX) {
-        bail!("A gs url must start with \"{}\". Incorrect: {:?}", PREFIX, gs_url);
-    }
-    // The `starts_with` above proves this unwrap is infallible.
-    let past = gs_url.get(PREFIX.len()..).unwrap();
-    if let Some(end_of_bucket) = past.find('/') {
-        // The `find` just above proves both these unwraps are infallible.
-        Ok((past.get(..end_of_bucket).unwrap(), past.get(end_of_bucket + 1..).unwrap()))
-    } else {
-        bail!(
+    let past = gs_url.strip_prefix(PREFIX).ok_or_else(|| {
+        anyhow::anyhow!("A gs url must start with \"{}\". Incorrect: {:?}", PREFIX, gs_url)
+    })?;
+
+    let (bucket, object) = past.split_once('/').ok_or_else(|| {
+        anyhow::anyhow!(
             "A gs url requires at least three slashes, \
             e.g. gs://bucket/object. Incorrect: {:?}",
             gs_url
-        );
+        )
+    })?;
+
+    if bucket.is_empty() {
+        bail!("A gs url bucket name cannot be empty. Incorrect: {:?}", gs_url);
     }
+
+    Ok((bucket, object))
 }
 
 #[cfg(test)]
@@ -58,16 +55,14 @@ mod tests {
 
     #[test]
     fn test_split_gs_url() {
-        assert_eq!(
-            split_gs_url(&"gs://foo/bar/blah".to_string()).expect("bar/blah"),
-            ("foo", "bar/blah")
-        );
-        assert_eq!(split_gs_url(&"gs://foo/".to_string()).expect("empty object"), ("foo", ""));
-        assert_eq!(split_gs_url(&"gs:///".to_string()).expect("empty object"), ("", ""));
-        assert!(split_gs_url(&"gs://foo".to_string()).is_err());
-        assert!(split_gs_url(&"gs://".to_string()).is_err());
-        assert!(split_gs_url(&"g".to_string()).is_err());
-        assert!(split_gs_url(&"".to_string()).is_err());
+        assert_eq!(split_gs_url("gs://foo/bar/blah").expect("bar/blah"), ("foo", "bar/blah"));
+        assert_eq!(split_gs_url("gs://foo/").expect("empty object"), ("foo", ""));
+        assert!(split_gs_url("gs:///").is_err());
+        assert!(split_gs_url("gs://///attacker.com/steal").is_err());
+        assert!(split_gs_url("gs://foo").is_err());
+        assert!(split_gs_url("gs://").is_err());
+        assert!(split_gs_url("g").is_err());
+        assert!(split_gs_url("").is_err());
     }
 
     #[test]

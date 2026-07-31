@@ -240,7 +240,7 @@ mod test {
         let test_dir = tempfile::TempDir::new().expect("temp dir");
         let server = TestServer::builder()
             .handler(ForPath::new(
-                "/example/fake/transfer.json",
+                "/storage/example/fake/transfer.json",
                 StaticResponse::ok_body(
                     r#"
             {
