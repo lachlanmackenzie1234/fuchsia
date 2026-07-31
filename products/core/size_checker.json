@@ -238,9 +238,10 @@
                 "audio_listener",
                 "dsputil",
                 "signal_generator",
-                "virtual_audio_util",
                 "virtual-audio",
                 "virtual-audio-legacy",
+                "virtual_audio_legacy_util",
+                "virtual_audio_util",
                 "vol",
                 "wav_player",
                 "wav_recorder"

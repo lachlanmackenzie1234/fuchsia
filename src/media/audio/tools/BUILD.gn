@@ -11,6 +11,7 @@ group("tools") {
     "audio-effects-ctl",
     "audio_listener",
     "signal_generator",
+    "virtual_audio_legacy_util",
     "virtual_audio_util",
     "vol",
     "wav_player",

@@ -1407,6 +1407,7 @@ group("audio_driver_development_tools") {
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-codec-ctl",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-driver-ctl",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/dsputil",
+    "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
   ]
 }

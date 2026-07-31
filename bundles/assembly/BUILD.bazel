@@ -4060,6 +4060,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-codec-ctl",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-driver-ctl",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/dsputil",
+        "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
     ],
     # From //src/media/audio/tools.
@@ -4075,6 +4076,10 @@ assembly_input_bundle(
         {
             "package": "dsputil",
             "components": ["dsputil"],
+        },
+        {
+            "package": "virtual_audio_legacy_util",
+            "components": ["virtual_audio_legacy"],
         },
         {
             "package": "virtual_audio_util",
