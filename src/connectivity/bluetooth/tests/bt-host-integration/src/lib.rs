@@ -63,10 +63,11 @@ async fn wait_for_test_peer(
 /// Tests that creating and destroying a fake HCI device creates and destroys a bt-host component.
 #[test_harness::run_singlethreaded_test]
 async fn test_lifecycle(_: ()) {
-    let test_component = String::from(
+    let test_components = [
         "fuchsia-pkg://fuchsia.com/bt-host-integration-tests#meta/bt-host-integration-tests-component.cm",
-    );
-    let realm = Arc::new(HostRealm::create(test_component).await.unwrap());
+        "fuchsia-pkg://fuchsia.com/sunstone-host-integration-tests#meta/bt-host-integration-tests-component.cm",
+    ];
+    let realm = Arc::new(HostRealm::create_with_candidates(test_components).await.unwrap());
 
     // Create and publish an HCI device after HostRealm::create
     let dev_dir = realm.dev().unwrap();

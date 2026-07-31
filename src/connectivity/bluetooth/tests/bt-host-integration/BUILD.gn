@@ -47,3 +47,28 @@ fuchsia_test_package("bt-host-integration-tests") {
     "//src/connectivity/bluetooth/hci/virtual",
   ]
 }
+
+fuchsia_test_package("sunstone-host-integration-tests") {
+  test_components = [ ":bt-host-integration-tests-component" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+    test_filters = [ "test_lifecycle" ]
+  }
+  subpackages = [ "//src/connectivity/bluetooth/hci/virtual" ]
+  renameable_subpackages = [
+    {
+      name = "bt-host"
+      package = "//src/connectivity/bluetooth/sunstone/sunstone-fuchsia:sunstone-bt-host"
+    },
+  ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":bt-host-integration-tests",
+    ":sunstone-host-integration-tests",
+  ]
+}

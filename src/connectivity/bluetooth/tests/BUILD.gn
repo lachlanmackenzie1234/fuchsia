@@ -10,7 +10,7 @@ group("tests") {
     "bt-access-integration-tests",
     "bt-bonding-integration:bt-bonding-integration-tests",
     "bt-bootstrap-integration:bt-bootstrap-integration-tests",
-    "bt-host-integration:bt-host-integration-tests",
+    "bt-host-integration:tests",
     "bt-inspect-integration:bt-inspect-integration-tests",
     "bt-le-integration:bt-le-integration-tests",
     "bt-manifest-integration-tests:tests",

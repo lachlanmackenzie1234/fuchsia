@@ -210,6 +210,35 @@ pub async fn add_host_routes(
     Ok(())
 }
 
+async fn resolve_test_component(
+    test_components: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Result<fidl_fuchsia_component_resolution::Component, Error> {
+    // We need to resolve our test component manually. Eventually component framework could provide
+    // an introspection way of resolving your own component.
+    let resolver = fuchsia_component::client::connect_to_protocol_at_path::<
+        fidl_fuchsia_component_resolution::ResolverMarker,
+    >("/svc/fuchsia.component.resolution.Resolver-hermetic")?;
+
+    let mut resolved_test_component = None;
+    let mut last_err = None;
+
+    for url in test_components {
+        let url_str = url.as_ref();
+        match resolver.resolve(url_str).await {
+            Ok(Ok(component)) => {
+                resolved_test_component = Some(component);
+                break;
+            }
+            Ok(Err(e)) => last_err = Some(format_err!("Failed to resolve {url_str}: {e:?}")),
+            Err(e) => last_err = Some(format_err!("FIDL error resolving {url_str}: {e:?}")),
+        }
+    }
+
+    resolved_test_component.ok_or_else(|| {
+        last_err.unwrap_or_else(|| format_err!("No test component candidate URLs provided"))
+    })
+}
+
 pub struct HostRealm {
     realm: RealmInstance,
     receiver: Mutex<Option<Receiver<ClientEnd<HostMarker>>>>,
@@ -217,19 +246,15 @@ pub struct HostRealm {
 
 impl HostRealm {
     pub async fn create(test_component: String) -> Result<Self, Error> {
-        // We need to resolve our test component manually. Eventually component framework could provide
-        // an introspection way of resolving your own component.
-        let resolved_test_component = {
-            let client = fuchsia_component::client::connect_to_protocol_at_path::<
-                fidl_fuchsia_component_resolution::ResolverMarker,
-            >("/svc/fuchsia.component.resolution.Resolver-hermetic")
-            .unwrap();
-            client
-                .resolve(test_component.as_str())
-                .await
-                .unwrap()
-                .expect("Failed to resolve test component")
-        };
+        Self::create_with_candidates([test_component]).await
+    }
+
+    /// Attempts to create a [`HostRealm`] by resolving the test component from a list of
+    /// candidate URLs, using the first URL that resolves successfully.
+    pub async fn create_with_candidates(
+        test_components: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> Result<Self, Error> {
+        let resolved_test_component = resolve_test_component(test_components).await?;
 
         let builder = RealmBuilder::new().await?;
         let _ = builder.driver_test_realm_setup().await?;
