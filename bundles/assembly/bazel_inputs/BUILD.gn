@@ -631,6 +631,7 @@ group("network_realm_packages") {
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",
+    "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package",
     "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
   ]
@@ -641,6 +642,7 @@ group("network_realm_packages_gub") {
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package_gub",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package_gub",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package_gub",
+    "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package_gub",
     "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package_gub",
     "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package_gub",
   ]

@@ -1467,6 +1467,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package",
+        "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
     ],
 )
@@ -1487,6 +1488,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package_gub",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package_gub",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package_gub",
+        "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package_gub",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package_gub",
     ],
 )
@@ -2259,6 +2261,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/developer/memory/pressure_signaler",
         # Security
         "//src/security/bin/root_ssl_certificates",
+        "//src/security/bin/google_root_ssl_certificates",
     ],
     config_data = [
         {
@@ -5151,6 +5154,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/developer/adb/bin:adb",
         "//bundles/assembly/bazel_inputs/src/cobalt/bin/app:cobalt",
         "//src/security/bin/root_ssl_certificates",
+        "//src/security/bin/google_root_ssl_certificates",
     ],
     core_shards = [
         "//src/recovery/system/meta/core_shards:system_recovery_android.core_shard.cml",

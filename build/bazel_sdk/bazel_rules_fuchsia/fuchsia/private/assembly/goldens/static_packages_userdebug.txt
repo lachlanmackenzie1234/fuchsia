@@ -43,6 +43,8 @@ build-info-service
 ?font-server
 ?fonts
 forensics
+?google-http-client
+?google_root_ssl_certificates
 ?http-client
 ?httpsdate-time-source-pull
 ?hwinfo
