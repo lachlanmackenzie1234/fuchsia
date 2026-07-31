@@ -27,5 +27,17 @@
             to: "#tee_manager",
             availability: "same_as_target",
         },
+        {
+            // TODO(https://fxbug.dev/540953983): switch to accessing only the partitions of interest.
+            service: "fuchsia.storage.partitions.PartitionService",
+            from: "parent",
+            to: "#tee_manager",
+            availability: "same_as_target",
+        },
+        {
+            storage: "data",
+            from: "self",
+            to: "#tee_manager",
+        },
     ],
 }
