@@ -26,3 +26,14 @@ license_data("example") {
   # e.g.
   #   $FUCHSIA_OUT_DIR/tools/check-licenses/build/move_location/results.spdx.json
 }
+
+import("project_json.gni")
+
+project_json("always_generate_project_json") {
+  gen_output = "license/always_gen/project.json"
+  always_run_gn_desc = "true"
+}
+
+project_json("generate_project_json") {
+  gen_output = "license/gen/project.json"
+}

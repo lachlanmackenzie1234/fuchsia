@@ -359,7 +359,7 @@ group("non_hermetic_deps") {
   # TODO(https://fxbug.dev/42165766): License analysis uses the output of 'fx gn gen', which
   # can potentially touch every file in the repository. Remove this entry when
   # license management becomes a hermetic process.
-  visibility += [ "//tools/check-licenses/util/cmd/gn/*" ]
+  visibility += [ "//tools/check-licenses/build/*" ]
 
   visibility += [
     "//src/tests/early-boot-coverage/*",

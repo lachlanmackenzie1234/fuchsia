@@ -10,18 +10,18 @@
 ##     check-licenses
 ## ** Check //tools/check-licenses/README.md for more information
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/vars.sh || exit $?
+_script_dir="${BASH_SOURCE[0]%/*}";
+if [[ "${_script_dir}" == "${BASH_SOURCE[0]}" ]]; then _script_dir="."; fi
+readonly _script_dir
+
+source "${_script_dir}/../lib/vars.sh" || exit $?
 fx-config-read
+
+source "${_script_dir}/../lib/bazel_utils.sh" || exit $?
 
 export PREBUILT_3P_DIR HOST_PLATFORM
 
-BINARY="$(get_host_tools_dir)/check-licenses"
-if [[ ! -x "${BINARY}" ]]; then
-  fx-error "check-licenses binary not found."
-  echo "Please build it first by running:"
-  echo "    fx build --host //tools/check-licenses:host"
-  exit 1
-fi
-
-"${BINARY}" "$@"
-
+fx-run-bazel false "$(fx-get-bazel)" run --config=host \
+  --run_env=FUCHSIA_DIR="${FUCHSIA_DIR}" \
+  --run_env=FUCHSIA_BUILD_DIR="${FUCHSIA_BUILD_DIR}" \
+  '//tools/check-licenses' -- "$@"

@@ -19,14 +19,13 @@ Support:
 Run:
 
 ```
-$ fx set <PRODUCT>.<BOARD> --with //tools/check-licenses:host
-$ fx build tools/check-licenses:host
+$ fx build --host //build/bazel/host:bazel_root_host_tools.check-licenses.host_tool
 $ fx check-licenses
 ```
 
 Test:
 
 ```
-$ fx set <PRODUCT>.<BOARD> --with //tools/check-licenses:tests
+$ fx set <PRODUCT>.<BOARD> --args export_bazel_host_tests=true --with-test //tools:tests
 $ fx test check-licenses
 ```

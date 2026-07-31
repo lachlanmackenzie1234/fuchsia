@@ -21,7 +21,6 @@ test_suite(
         "//build/bazel/rules/build_flags/tests:host_tests",
         "//build/bazel/rules/host_tests/tests:host_tests",
         "//build/tools/json_validator/test:tests",
-        "//tools/check-licenses:tests",
     ],
     visibility = ["//:__subpackages__"],
 )

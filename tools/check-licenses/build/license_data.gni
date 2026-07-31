@@ -80,12 +80,12 @@ template("license_data") {
   # Step 1: Generate $root_build_dir/project.json by running "fx gn gen". Copy
   # the resulting project.json file to $root_build_dir/license/gen/project.json.
   # This is done in //tools/check-licenses/util/cmd/gn/generate_project_json
-  generate_project_json =
-      "//tools/check-licenses/util/cmd/gn/generate_project_json"
+  generate_project_json = "//tools/check-licenses/build:generate_project_json"
   generate_project_json_output = "$root_build_dir/license/gen/project.json"
 
   if (always_run_gn_desc) {
-    generate_project_json = "//tools/check-licenses/util/cmd/gn/generate_project_json:always_generate_project_json"
+    generate_project_json =
+        "//tools/check-licenses/build:always_generate_project_json"
     generate_project_json_output =
         "$root_build_dir/license/always_gen/project.json"
   }
@@ -106,7 +106,7 @@ template("license_data") {
                              "testonly",
                              "visibility",
                            ])
-    tool = "//tools/check-licenses/util/cmd/gn/generate_intermediate_json:generate_intermediate_json_cmd"
+    tool = "//build/bazel/host:bazel_root_host_tools.generate_intermediate_json_cmd"
 
     deps = [ generate_project_json ]
 
@@ -134,7 +134,7 @@ template("license_data") {
                              "testonly",
                              "visibility",
                            ])
-    tool = "//tools/check-licenses/util/cmd/gn/generate_intermediate_json:generate_intermediate_json_cmd"
+    tool = "//build/bazel/host:bazel_root_host_tools.generate_intermediate_json_cmd"
 
     deps = [ ":$generate_intermediate_json" ]
     sources = [ generate_intermediate_json_output ]
@@ -161,7 +161,7 @@ template("license_data") {
                              "testonly",
                              "visibility",
                            ])
-    tool = "//tools/check-licenses"
+    tool = "//build/bazel/host:bazel_root_host_tools.check-licenses"
 
     # The license tool scans the whole source tree, so it cannot be hermetic.
     # TODO(https://fxbug.dev/42165766): Improve the way notice files are generated.
