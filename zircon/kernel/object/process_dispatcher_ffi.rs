@@ -52,6 +52,20 @@ unsafe extern "C" {
         out_handle: *mut HandleValue,
     ) -> zx_status_t;
 
+    /// Creates and adds a handle from a RefPtr to the given process.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    /// `dispatcher` must be a valid `fbl::RefPtr<Dispatcher>`.
+    /// `out_handle` must point to writable memory.
+    pub(crate) fn cpp_process_dispatcher_make_and_add_handle_from_ref(
+        process: *const ProcessDispatcher,
+        raw_dispatcher: *const Dispatcher,
+        rights: zx_rights_t,
+        out_handle: *mut HandleValue,
+    ) -> zx_status_t;
+
     /// Retrieves a dispatcher and rights from the handle table of the current process.
     ///
     /// Upon success, the `out_dispatcher` argument is initialized by C++ to contain a

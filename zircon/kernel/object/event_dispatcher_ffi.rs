@@ -6,13 +6,42 @@
 
 use super::event_dispatcher::{EventDispatcher, EventDispatcherState};
 use super::handle::KernelHandle;
-use zx_types::zx_status_t;
+use zx_types::{zx_duration_mono_t, zx_rights_t, zx_status_t};
 
 // C++ FFI declarations
 unsafe extern "C" {
+    /// Calls into C++ implementation to create an event dispatcher.
+    ///
+    /// # Safety
+    ///
+    /// `handle_out` must point to uninitialized memory for a `KernelHandle<EventDispatcher>`.
     pub(crate) fn cpp_event_dispatcher_create(
         options: u32,
         handle_out: *mut KernelHandle<EventDispatcher>,
+    ) -> zx_status_t;
+
+    /// Retrieves a reference to the kernel-owned memory pressure event dispatcher for the given kind.
+    ///
+    /// # Safety
+    ///
+    /// `out_event` must point to uninitialized memory for a `fbl::RefPtr<EventDispatcher>`.
+    pub(crate) fn cpp_event_dispatcher_get_mem_pressure_event(
+        kind: u32,
+        out_event: *mut fbl::RefPtr<EventDispatcher>,
+    );
+
+    /// Calls into C++ implementation to create a memory stall event dispatcher.
+    ///
+    /// # Safety
+    ///
+    /// `out_handle` must point to uninitialized memory for a `KernelHandle<EventDispatcher>`.
+    /// `out_rights` must point to writable memory.
+    pub(crate) fn cpp_memory_stall_event_dispatcher_create(
+        kind: u32,
+        threshold: zx_duration_mono_t,
+        window: zx_duration_mono_t,
+        out_handle: *mut KernelHandle<EventDispatcher>,
+        out_rights: *mut zx_rights_t,
     ) -> zx_status_t;
 }
 

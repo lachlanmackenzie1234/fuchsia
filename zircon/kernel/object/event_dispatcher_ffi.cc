@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <kernel/ffi.h>
 #include <object/event_dispatcher.h>
 
 extern "C" {
@@ -18,6 +19,20 @@ zx_status_t cpp_event_dispatcher_create(uint32_t options,
 
   new (handle_out) KernelHandle<EventDispatcher>(ktl::move(disp));
   return ZX_OK;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_event_dispatcher_get_mem_pressure_event(
+    uint32_t kind, fbl::RefPtr<EventDispatcher>* out_event) {
+  *out_event = GetMemPressureEvent(kind);
+}
+
+zx_status_t cpp_memory_stall_event_dispatcher_create(uint32_t kind, zx_duration_mono_t threshold,
+                                                     zx_duration_mono_t window,
+                                                     KernelHandle<EventDispatcher>* out_handle,
+                                                     zx_rights_t* out_rights) {
+  return MemoryStallEventDispatcher::Create(static_cast<zx_system_memory_stall_type_t>(kind),
+                                            threshold, window, out_handle, out_rights);
 }
 
 }  // extern "C"

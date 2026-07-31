@@ -75,6 +75,33 @@ impl ProcessDispatcher {
         Ok(out)
     }
 
+    /// Creates a handle for the given dispatcher reference in this process's handle table.
+    pub fn make_and_add_handle_from_ref<T>(
+        &self,
+        dispatcher: fbl::RefPtr<T>,
+        rights: zx_rights_t,
+    ) -> Result<HandleValue, Status>
+    where
+        T: fbl::HasRefCount + fbl::Recyclable + DispatcherOps,
+    {
+        // SAFETY: T implements DispatcherOps and is layout-compatible with Dispatcher.
+        let raw_dispatcher =
+            fbl::RefPtr::into_raw(unsafe { dispatcher.cast::<super::Dispatcher>() });
+        let mut out = HandleValue::default();
+        // SAFETY: `self` is a valid `ProcessDispatcher`, `raw_dispatcher` carries an acquired reference count
+        // transferred to C++, and `out` points to writable memory.
+        let status = unsafe {
+            super::process_dispatcher_ffi::cpp_process_dispatcher_make_and_add_handle_from_ref(
+                self as *const _,
+                raw_dispatcher,
+                rights,
+                &mut out,
+            )
+        };
+        Status::ok(status)?;
+        Ok(out)
+    }
+
     /// Enforces basic policy for this process.
     pub fn enforce_basic_policy(&self, policy: u32) -> Result<(), Status> {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.

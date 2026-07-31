@@ -529,7 +529,7 @@ _ZX_SYSCALL_DECL(stream_writev_at, zx_status_t, /* no attributes */, 6,
 
 _ZX_SYSCALL_DECL(system_get_dcache_line_size, uint32_t, __CONST, 0, (), (void))
 
-_ZX_SYSCALL_DECL(system_get_event, zx_status_t, /* no attributes */, 3, (root_job, kind, event),
+_ZX_SYSCALL_DECL(system_get_event, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3, (root_job, kind, event),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t root_job, uint32_t kind,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* event))
 
@@ -540,7 +540,7 @@ _ZX_SYSCALL_DECL(system_get_num_cpus, uint32_t, __CONST, 0, (), (void))
 
 _ZX_SYSCALL_DECL(system_get_page_size, uint32_t, __CONST, 0, (), (void))
 
-_ZX_SYSCALL_DECL(system_get_performance_info, zx_status_t, /* no attributes */, 5,
+_ZX_SYSCALL_DECL(system_get_performance_info, zx_status_t, _ZX_SYSCALL_EXTERN_C, 5,
                  (resource, topic, count, info, output_count),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint32_t topic,
                   size_t count, void* info, size_t* output_count))
@@ -560,16 +560,16 @@ _ZX_SYSCALL_DECL(system_mexec_payload_get, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, void* buffer,
                   size_t buffer_size))
 
-_ZX_SYSCALL_DECL(system_powerctl, zx_status_t, /* no attributes */, 3, (resource, cmd, arg),
+_ZX_SYSCALL_DECL(system_powerctl, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3, (resource, cmd, arg),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint32_t cmd,
                   const zx_system_powerctl_arg_t* arg))
 
-_ZX_SYSCALL_DECL(system_set_performance_info, zx_status_t, /* no attributes */, 4,
+_ZX_SYSCALL_DECL(system_set_performance_info, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
                  (resource, topic, info, count),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint32_t topic,
                   const void* info, size_t count))
 
-_ZX_SYSCALL_DECL(system_watch_memory_stall, zx_status_t, /* no attributes */, 5,
+_ZX_SYSCALL_DECL(system_watch_memory_stall, zx_status_t, _ZX_SYSCALL_EXTERN_C, 5,
                  (resource, kind, threshold, window, event),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, uint32_t kind,
                   zx_duration_t threshold, zx_duration_t window,

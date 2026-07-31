@@ -57,6 +57,7 @@ pub type zx_vcpu_state_topic_t = u32;
 pub type zx_restricted_reason_t = u64;
 pub type zx_processor_power_level_options_t = u64;
 pub type zx_processor_power_control_t = u64;
+pub type zx_system_event_type_t = u32;
 pub type zx_system_memory_stall_type_t = u32;
 pub type zx_system_suspend_option_t = u64;
 pub type zx_system_wake_report_entry_flag_t = u32;
@@ -912,6 +913,15 @@ pub const ZX_TASK_RETCODE_EXCEPTION_KILL: i64 = -1028;
 
 // Resource flags.
 pub const ZX_RSRC_FLAG_EXCLUSIVE: zx_rsrc_flags_t = 0x00010000;
+
+// System event types.
+multiconst!(zx_system_event_type_t, [
+    ZX_SYSTEM_EVENT_OUT_OF_MEMORY = 1;
+    ZX_SYSTEM_EVENT_MEMORY_PRESSURE_CRITICAL = 2;
+    ZX_SYSTEM_EVENT_MEMORY_PRESSURE_WARNING = 3;
+    ZX_SYSTEM_EVENT_MEMORY_PRESSURE_NORMAL = 4;
+    ZX_SYSTEM_EVENT_IMMINENT_OUT_OF_MEMORY = 5;
+]);
 
 // Topics for CPU performance info syscalls
 pub const ZX_CPU_PERF_SCALE: u32 = 1;
@@ -2597,6 +2607,8 @@ multiconst!(zx_system_powerctl_cmd_t, [
 ]);
 
 #[repr(C)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_system_powerctl_arg_t {
     // rust can't express anonymous unions at this time
     // https://github.com/rust-lang/rust/issues/49804
@@ -2605,6 +2617,7 @@ pub struct zx_system_powerctl_arg_t {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub union zx_powerctl_union {
     acpi_transition_s_state: acpi_transition_s_state,
     x86_power_limit: x86_power_limit,
@@ -2612,6 +2625,7 @@ pub union zx_powerctl_union {
 
 #[repr(C)]
 #[derive(Default, Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct acpi_transition_s_state {
     target_s_state: u8, // Value between 1 and 5 indicating which S-state
     sleep_type_a: u8,   // Value from ACPI VM (SLP_TYPa)
@@ -2621,6 +2635,7 @@ pub struct acpi_transition_s_state {
 
 #[repr(C)]
 #[derive(Default, Debug, PartialEq, Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct x86_power_limit {
     power_limit: u32, // PL1 value in milliwatts
     time_window: u32, // PL1 time window in microseconds
@@ -2729,6 +2744,7 @@ pub struct zx_sched_deadline_params_t {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
 pub struct zx_cpu_performance_scale_t {
     pub integer_part: u32,
     pub fractional_part: u32,
@@ -2736,6 +2752,7 @@ pub struct zx_cpu_performance_scale_t {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
 pub struct zx_cpu_performance_info_t {
     pub logical_cpu_number: u32,
     pub performance_scale: zx_cpu_performance_scale_t,
@@ -2743,6 +2760,7 @@ pub struct zx_cpu_performance_info_t {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
 pub struct zx_cpu_perf_limit_t {
     pub logical_cpu_number: u32,
     pub limit_type: u32,

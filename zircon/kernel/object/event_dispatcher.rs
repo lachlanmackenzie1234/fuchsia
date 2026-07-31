@@ -4,6 +4,11 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::KernelHandle;
+use super::event_dispatcher_ffi::{
+    cpp_event_dispatcher_create, cpp_event_dispatcher_get_mem_pressure_event,
+    cpp_memory_stall_event_dispatcher_create,
+};
 use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::Canary;
@@ -12,11 +17,8 @@ use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
     ZX_OBJ_TYPE_EVENT, ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_SIGNAL, ZX_RIGHT_TRANSFER,
-    ZX_RIGHT_WAIT, zx_rights_t,
+    ZX_RIGHT_WAIT, zx_duration_mono_t, zx_rights_t,
 };
-
-use super::KernelHandle;
-use super::event_dispatcher_ffi::cpp_event_dispatcher_create;
 
 use object_constants_rs as object_constants;
 
@@ -81,5 +83,38 @@ impl EventDispatcher {
         Status::ok(status)?;
         // SAFETY: cpp_event_dispatcher_create initialized handle_out.
         unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+    }
+
+    /// Returns the kernel-owned memory pressure event dispatcher for the given kind.
+    pub fn get_mem_pressure_event(kind: u32) -> fbl::RefPtr<EventDispatcher> {
+        let mut out = MaybeUninit::<fbl::RefPtr<EventDispatcher>>::zeroed();
+        // SAFETY: `out` points to valid uninitialized memory for a `RefPtr`.
+        unsafe {
+            cpp_event_dispatcher_get_mem_pressure_event(kind, out.as_mut_ptr());
+            out.assume_init()
+        }
+    }
+
+    /// Creates a memory stall watch event dispatcher.
+    pub fn create_memory_stall(
+        kind: u32,
+        threshold: zx_duration_mono_t,
+        window: zx_duration_mono_t,
+    ) -> Result<(KernelHandle<EventDispatcher>, zx_rights_t), Status> {
+        let mut handle = MaybeUninit::<KernelHandle<EventDispatcher>>::zeroed();
+        let mut rights = 0;
+        // SAFETY: `handle` and `rights` point to valid uninitialized memory.
+        let status = unsafe {
+            cpp_memory_stall_event_dispatcher_create(
+                kind,
+                threshold,
+                window,
+                handle.as_mut_ptr(),
+                &mut rights,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: When `Status::ok` succeeds, `handle` and `rights` were initialized by C++.
+        unsafe { Ok((handle.assume_init(), rights)) }
     }
 }

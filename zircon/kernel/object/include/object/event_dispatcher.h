@@ -23,6 +23,12 @@ zx_status_t cpp_event_dispatcher_create(uint32_t options,
                                         KernelHandle<EventDispatcher>* handle_out);
 zx_status_t rust_event_dispatcher_create(uint32_t options, zx_rights_t* rights_out,
                                          KernelHandle<EventDispatcher>* handle_out);
+void cpp_event_dispatcher_get_mem_pressure_event(uint32_t kind,
+                                                 fbl::RefPtr<EventDispatcher>* out_event);
+zx_status_t cpp_memory_stall_event_dispatcher_create(uint32_t kind, zx_duration_mono_t threshold,
+                                                     zx_duration_mono_t window,
+                                                     KernelHandle<EventDispatcher>* out_handle,
+                                                     zx_rights_t* out_rights);
 }
 
 class EventDispatcher : public Dispatcher {

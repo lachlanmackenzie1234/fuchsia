@@ -67,7 +67,7 @@ _ZX_SYSCALL_DECL(sampler_stop, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (iobuffer),
 
 _ZX_SYSCALL_DECL(syscall_next_1, zx_status_t, /* no attributes */, 1, (arg), (int32_t arg))
 
-_ZX_SYSCALL_DECL(system_suspend_enter, zx_status_t, /* no attributes */, 7,
+_ZX_SYSCALL_DECL(system_suspend_enter, zx_status_t, _ZX_SYSCALL_EXTERN_C, 7,
                  (resource, resume_deadline, options, header, entries, num_entries, actual_entries),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource,
                   zx_instant_boot_t resume_deadline, zx_system_suspend_option_t options,

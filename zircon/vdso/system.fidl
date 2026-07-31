@@ -519,6 +519,7 @@ closed protocol System {
     ///
     /// `ZX_ERR_INVALID_ARGS` *kind* was not one of the supported values specified
     /// above.
+    @rust
     strict GetEvent(resource struct {
         root_job Handle:JOB;
         kind uint32;
@@ -602,6 +603,7 @@ closed protocol System {
     ///  - `ZX_INFO_MEMORY_STALL` topic in [`zx_object_get_info()`]
     ///
     /// [`zx_object_get_info()`]: object_get_info.md
+    @rust
     strict WatchMemoryStall(resource struct {
         resource Handle:RESOURCE;
         kind uint32;
@@ -697,6 +699,7 @@ closed protocol System {
     ///  - [`zx_system_get_performance_info()`]
     ///
     /// [`zx_system_get_performance_info()`]: system_get_performance_info.md
+    @rust
     strict SetPerformanceInfo(resource struct {
         resource Handle:RESOURCE;
         topic uint32;
@@ -798,6 +801,7 @@ closed protocol System {
     ///  - [`zx_system_set_performance_info()`]
     ///
     /// [`zx_system_set_performance_info()`]: system_set_performance_info.md
+    @rust
     strict GetPerformanceInfo(resource struct {
         resource Handle:RESOURCE;
         topic uint32;
@@ -1044,6 +1048,7 @@ closed protocol System {
     /// ## See also
     ///
     /// TODO(https://fxbug.dev/42108078)
+    @rust
     strict Powerctl(resource struct {
         resource Handle:RESOURCE;
         cmd uint32;
@@ -1158,6 +1163,7 @@ closed protocol System {
     ///
     ///options uint64;
     @next
+    @rust
     strict SuspendEnter(resource struct {
         resource Handle:RESOURCE;
         resume_deadline InstantBoot;
