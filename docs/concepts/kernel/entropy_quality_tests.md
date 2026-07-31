@@ -3,8 +3,6 @@
 This document describes how we test the quality of the entropy sources used to
 seed the Zircon CPRNG.
 
-[TOC]
-
 ## Theoretical concerns
 
 Approximately speaking, it's sometimes easy to tell that a stream of numbers is
@@ -22,16 +20,17 @@ For our purposes, a good measure of how much randomness is contained in a stream
 of non-perfectly random numbers is the min-entropy. This is related to the
 Shannon entropy used in information theory, but is always takes a smaller value.
 The min-entropy controls how much randomness we can reliably extract from the
-entropy source; see, for example
-<https://en.wikipedia.org/wiki/Randomness_extractor#Formal_definition_of_extractors>
+entropy source; see, for example,
+[Randomness extractor#Formal definition of extractors][randomness-extractor]{:.external}.
 
 From a practical standpoint, we can use the test suite described in US NIST
 SP800-90B to analyze samples of random from an entropy source. A prototype
 implementation for the tests is available from
-<https://github.com/usnistgov/SP800-90B_EntropyAssessment>. The suite takes a
-sample data file (say, 1MB of random bytes) as input. The nice thing about this
-test suite is that it can handle non-perfect RNGs, and it reports an estimate
-for how much min-entropy is contained in each byte of the random data stream.
+[NIST SP800-90B Entropy Assessment][nist-entropy-assessment]{:.external}. The
+suite takes a sample data file (say, 1MB of random bytes) as input. The nice
+thing about this test suite is that it can handle non-perfect RNGs, and it
+reports an estimate for how much min-entropy is contained in each byte of the
+random data stream.
 
 ### The importance of testing unprocessed data
 
@@ -46,8 +45,10 @@ For a stark example of why it's important to test unprocessed data if we want to
 test our actual entropy sources, here's an experiment. It should run on any
 modern linux system with OpenSSL installed.
 
+```none {:.devsite-disable-click-to-copy}
     head -c 1000000 /dev/zero >zero.bin
     openssl enc -aes-256-ctr -in zero.bin -out random.bin -nosalt -k "password"
+```
 
 This takes one million bytes from /dev/zero, encrypts them via AES-256, with a
 weak password and no salt (a terrible crypto scheme, of course!). The fact that
@@ -57,7 +58,7 @@ processed data: together, /dev/zero and "password" provide ~0 bits of entropy,
 but our tests are way more optimistic about the resulting data!
 
 For a more concrete Zircon-related example, consider jitterentropy (the RNG
-discussed here: <http://www.chronox.de/jent/doc/CPU-Jitter-NPTRNG.html>).
+discussed in [CPU-Jitter-NPTRNG][jitterentropy-doc]{:.external}).
 Jitterentropy draws entropy from variations in CPU timing. The unprocessed data
 are how long it took to run a certain block of CPU- and memory-intensive code
 (in nanoseconds). Naturally, these time data are not perfectly random: there's
@@ -133,10 +134,10 @@ statically allocated buffer. The default value if unspecified is 1MiB.
 
 The boot-time tests are controlled via kernel cmdlines. The relevant cmdlines
 are `kernel.entropy-test.*`, documented in
-[kernel\_cmdline.md](/docs/reference/kernel/kernel_cmdline.md).
+[kernel command line][kernel-cmdline].
 
 Some entropy sources, notably jitterentropy, have parameter values that can be
-tweaked via kernel cmdline. Again, see [kernel\_cmdline.md](/docs/reference/kernel/kernel_cmdline.md)
+tweaked via kernel cmdline. Again, see [kernel command line][kernel-cmdline]
 for further details.
 
 ### Boot-time tests: running
@@ -151,14 +152,14 @@ rpi3 can take around a minute, depending on the parameter values.
 
 ## Run-time tests
 
-*TODO(https://fxbug.dev/42098992): discuss actual user-mode test process*
+Note: User-mode run-time testing is currently unimplemented.
 
-*Current rough ideas: only the kernel can trigger hwrng reads. To test,
+Current rough ideas: only the kernel can trigger hwrng reads. To test,
 userspace issues a kernel command (e.g. `k hwrng test`), with some arguments to
 specify the test source and length. The kernel collects random bytes into the
 existing VMO-backed pseudo-file at `/boot/kernel/debug/entropy.bin`, assuming
 that this is safely writeable. Currently unimplemented; blocked by lack of a
-userspace HWRNG driver. Can test the VMO-rewriting mechanism first.*
+userspace HWRNG driver. Can test the VMO-rewriting mechanism first.
 
 ## Test data export
 
@@ -169,9 +170,9 @@ saving to persistent storage.
 
 ## Running the NIST test suite
 
-*Note: the NIST tests aren't actually mirrored in Fuchsia yet. Today, you need
-to clone the tests from the repo at
-<https://github.com/usnistgov/SP800-90B_EntropyAssessment>.*
+Note: The NIST tests aren't actually mirrored in Fuchsia yet. Today, you need
+to clone the tests from the [NIST SP800-90B Entropy Assessment][nist-entropy-assessment]{:.external}
+repository.
 
 The NIST test suite has three entry points (as of the version committed on Oct.
 25, 2016): `iid_main.py`, `noniid_main.py`, and `restart.py`. The two "main"
@@ -182,7 +183,7 @@ not be iid, so the `noniid_main.py` test implements several entropy estimators
 that don't require iid data.
 
 Note that the test binaries from the NIST repo are Python scripts without a
-shebang line, so you probably need to explicitly call `python` on the command
+shebang line, so you probably need to explicitly call `python3` on the command
 line when invoking them.
 
 The first two scripts take two arguments, both mandatory: the data file to read,
@@ -200,8 +201,8 @@ this test. In contrast, all the iid tests can run on 8-bit samples.
 
 A sample invocation of the `iid_main.py` script:
 
-```
-python2 -- $FUCHSIA_DIR/third_party/sp800-90b-entropy-assessment/iid_main.py -v /path/to/datafile.bin 8
+```posix-terminal
+python3 -- $FUCHSIA_DIR/third_party/sp800-90b-entropy-assessment/iid_main.py -v /path/to/datafile.bin 8
 ```
 
 The `restart.py` script takes the same two arguments, plus a third argument: the
@@ -219,3 +220,10 @@ perform these steps. Even better would be to use the testing infrastructure to
 run entropy collector quality tests this automatically, mostly to reduce bit-rot
 in the test code. Failing automation, we have to rely on humans to periodically
 run the tests (or to fix the tests when they break).
+
+<!-- Reference links -->
+
+[jitterentropy-doc]: http://www.chronox.de/jent/doc/CPU-Jitter-NPTRNG.html
+[kernel-cmdline]: /docs/reference/kernel/kernel_cmdline.md
+[nist-entropy-assessment]: https://github.com/usnistgov/SP800-90B_EntropyAssessment
+[randomness-extractor]: https://en.wikipedia.org/wiki/Randomness_extractor#Formal_definition_of_extractors
