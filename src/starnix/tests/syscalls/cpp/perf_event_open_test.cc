@@ -14,7 +14,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
+#include <thread>
 
 #include <gtest/gtest.h>
 #include <linux/perf_event.h>
@@ -643,17 +645,19 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
           break;
         }
 
-        // Otherwise, we do have at least 1 sample. Verify the sample_id.
-        char* record_details_start = record_start + sizeof(perf_event_header);
-        struct perf_record_sample {
-          uint64_t sample_id;
-          uint64_t id;
-        };
-        struct perf_record_sample* record_details =
-            (struct perf_record_sample*)record_details_start;
-        sample_id = record_details->sample_id;
-        id = record_details->id;
-        EXPECT_EQ(sample_id, id);
+        if (header->type == PERF_RECORD_SAMPLE) {
+          // Verify the sample_id.
+          char* record_details_start = record_start + sizeof(perf_event_header);
+          struct perf_record_sample {
+            uint64_t sample_id;
+            uint64_t id;
+          };
+          struct perf_record_sample* record_details =
+              (struct perf_record_sample*)record_details_start;
+          sample_id = record_details->sample_id;
+          id = record_details->id;
+          EXPECT_EQ(sample_id, id);
+        }
 
         curr_pointer += header->size;
       }
@@ -847,50 +851,50 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
           break;
         }
 
-        // Increment by sample size, so that we can read the next sample in the next iteration.
-        EXPECT_EQ(header->type, PERF_RECORD_SAMPLE /* 9 */);
-        EXPECT_THAT(header->misc, testing::AnyOf(testing::Eq(PERF_RECORD_MISC_KERNEL) /* 1 */,
-                                                 testing::Eq(PERF_RECORD_MISC_USER) /* 2 */));
-        EXPECT_GE(header->size, (uint16_t)8);  // Size of the whole sample, INCLUDING THIS HEADER.
+        if (header->type == PERF_RECORD_SAMPLE) {
+          EXPECT_THAT(header->misc, testing::AnyOf(testing::Eq(PERF_RECORD_MISC_KERNEL) /* 1 */,
+                                                   testing::Eq(PERF_RECORD_MISC_USER) /* 2 */));
+          EXPECT_GE(header->size, (uint16_t)8);  // Size of the whole sample, INCLUDING THIS HEADER.
 
-        // Parse record details.
-        char* record_details_start = record_start + sizeof(perf_event_header);
+          // Parse record details.
+          char* record_details_start = record_start + sizeof(perf_event_header);
 
-        // This is a subset of the real perf_record_sample which we will implement later.
-        struct perf_record_sample {
-          uint64_t sample_id;
-          uint64_t ip;
-          uint32_t pid;
-          uint32_t tid;
-          uint64_t id;
-          uint64_t sample_period;
-          uint64_t nr;
-        };
+          // This is a subset of the real perf_record_sample which we will implement later.
+          struct perf_record_sample {
+            uint64_t sample_id;
+            uint64_t ip;
+            uint32_t pid;
+            uint32_t tid;
+            uint64_t id;
+            uint64_t sample_period;
+            uint64_t nr;
+          };
 
-        struct perf_record_sample* record_details =
-            (struct perf_record_sample*)record_details_start;
-        EXPECT_GE(record_details->ip, (uint64_t)1);
-        EXPECT_GE(record_details->pid, (uint64_t)0);
-        EXPECT_GE(record_details->tid, (uint64_t)1);
-        EXPECT_EQ(record_details->id, record_details->sample_id);
-        EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
-        // We expect some nesting of at least 1, to maybe 200, for getpid().
-        EXPECT_GE(record_details->nr, (uint64_t)1);
-        EXPECT_LT(record_details->nr, (uint64_t)200);
+          struct perf_record_sample* record_details =
+              (struct perf_record_sample*)record_details_start;
+          EXPECT_GE(record_details->ip, (uint64_t)1);
+          EXPECT_GE(record_details->pid, (uint64_t)0);
+          EXPECT_GE(record_details->tid, (uint64_t)1);
+          EXPECT_EQ(record_details->id, record_details->sample_id);
+          EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
+          // We expect some nesting of at least 1, to maybe 200, for getpid().
+          EXPECT_GE(record_details->nr, (uint64_t)1);
+          EXPECT_LT(record_details->nr, (uint64_t)200);
 
-        // Read the next param of perf_record_sample ips[nr]. When we created the
-        // struct, we don't know the size of `ips`. So we iterate over `nr` times.
-        uint64_t number_of_ips = record_details->nr;
-        uint64_t* ips_start =
-            reinterpret_cast<uint64_t*>(record_details_start + sizeof(perf_record_sample));
-        std::span<uint64_t> ips{ips_start, static_cast<std::size_t>(number_of_ips)};
-        for (size_t i = 0; i < ips.size(); ++i) {
-          uint64_t ip = ips[i];
-          if (i == 0) {
-            EXPECT_EQ(ip, record_details->ip);
-          } else {
-            // The profiler may return 0 for frames at the end of the stack or when walking fails.
-            // We don't enforce non-zero for these frames.
+          // Read the next param of perf_record_sample ips[nr]. When we created the
+          // struct, we don't know the size of `ips`. So we iterate over `nr` times.
+          uint64_t number_of_ips = record_details->nr;
+          uint64_t* ips_start =
+              reinterpret_cast<uint64_t*>(record_details_start + sizeof(perf_record_sample));
+          std::span<uint64_t> ips{ips_start, static_cast<std::size_t>(number_of_ips)};
+          for (size_t i = 0; i < ips.size(); ++i) {
+            uint64_t ip = ips[i];
+            if (i == 0) {
+              EXPECT_EQ(ip, record_details->ip);
+            } else {
+              // The profiler may return 0 for frames at the end of the stack or when walking fails.
+              // We don't enforce non-zero for these frames.
+            }
           }
         }
 
@@ -919,12 +923,6 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
   }
 }
 
-// data_tail should always be <= data_head. However, because the user is the one
-// setting data_tail after reading, the kernel cannot control whether it actually IS
-// <= data_head. Expected behavior here is to just ignore any data between data_head
-// and data_tail.
-// Currently, the kernel doesn't do anything with data_tail anyway;
-// TODO(https://fxbug.dev/448762912): complete data_tail impl in mod.rs.
 TEST(PerfEventOpenTest, InvalidDataTailIgnoredByKernel) {
   if (test_helper::HasSysAdmin()) {
     perf_event_attr attr = example_sampling_attr(PERF_SAMPLE_TIME);
@@ -945,8 +943,13 @@ TEST(PerfEventOpenTest, InvalidDataTailIgnoredByKernel) {
     // Verify data_head is 0.
     EXPECT_EQ(data_head.load(), (uint64_t)0);
 
-    // User sets invalid data_tail without issue.
-    data_tail.store(1, std::memory_order_release);
+    // User sets an invalid data_tail (data_tail > data_head) that underflows
+    // and wraps in circular masking space, leaving enough free space for writes.
+    // data_size = num_pages * getpagesize() = 256 * 4096 = 1048576.
+    // Setting tail to data_size - 4096 results in used_space = data_size - 4096
+    // and free_space = 4096, which allows writes to succeed.
+    uint64_t data_size = num_pages * getpagesize();
+    data_tail.store(data_size - 4096, std::memory_order_release);
 
     // Start sampling.
     EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
@@ -960,9 +963,10 @@ TEST(PerfEventOpenTest, InvalidDataTailIgnoredByKernel) {
     }
     EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_DISABLE), -1);
 
-    // Verify that data was still written (data_head > 0), and that data_tail didn't change.
+    // Verify that the invalid data_tail was ignored, the kernel still wrote
+    // samples (data_head > 0) and that the kernel did not modify the invalid data_tail.
     EXPECT_GT(data_head.load(std::memory_order_acquire), (uint64_t)0);
-    EXPECT_EQ(data_tail.load(std::memory_order_acquire), (uint64_t)1);
+    EXPECT_EQ(data_tail.load(std::memory_order_acquire), data_size - 4096);
 
     EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
     EXPECT_NE(syscall(__NR_close, fd), EXIT_FAILURE);
@@ -974,10 +978,12 @@ TEST(PerfEventOpenTest, GroupLeaderCleanup) {
     perf_event_attr attr_a = {};
     attr_a.type = PERF_TYPE_SOFTWARE;
     attr_a.config = PERF_COUNT_SW_CPU_CLOCK;
+    attr_a.disabled = 1;
 
     perf_event_attr attr_b = {};
     attr_b.type = PERF_TYPE_SOFTWARE;
     attr_b.config = PERF_COUNT_SW_TASK_CLOCK;
+    attr_b.disabled = 1;
 
     // Create group A.
     int fd_a = sys_perf_event_open(&attr_a, example_pid, example_cpu, -1, 0);

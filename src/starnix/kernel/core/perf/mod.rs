@@ -13,7 +13,7 @@ use futures::channel::mpsc as future_mpsc;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, OnceLock, mpsc as sync_mpsc};
+use std::sync::{Arc, OnceLock, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
 
 use futures::io::{AsyncReadExt, Cursor};
@@ -21,7 +21,7 @@ use fxt::TraceRecord;
 use fxt::profiler::ProfilerRecord;
 use fxt::session::SessionParser;
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
-use starnix_logging::{log_info, log_warn, track_stub};
+use starnix_logging::{log_error, log_info, log_warn, track_stub};
 use starnix_sync::{LockDepMutex, LockDepRwLock, PerfEventLevel, PerfFormatIdLookupTableLock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arch32::{
@@ -32,7 +32,7 @@ use starnix_uapi::arch32::{
     perf_event_sample_format_PERF_SAMPLE_CALLCHAIN, perf_event_sample_format_PERF_SAMPLE_ID,
     perf_event_sample_format_PERF_SAMPLE_IDENTIFIER, perf_event_sample_format_PERF_SAMPLE_IP,
     perf_event_sample_format_PERF_SAMPLE_PERIOD, perf_event_sample_format_PERF_SAMPLE_TID,
-    perf_event_type_PERF_RECORD_SAMPLE,
+    perf_event_type_PERF_RECORD_LOST, perf_event_type_PERF_RECORD_SAMPLE,
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -49,10 +49,19 @@ use crate::security::{self, TargetTaskType};
 use crate::task::Kernel;
 
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
-// PAGE_SIZE * 10, runtime page size * 10.
-// If tests flake due to running out of buffer space, or if the profiling duration is
-// significantly increased, this buffer size may need further adjustment (expansion).
-static ESTIMATED_MMAP_BUFFER_SIZE: LazyLock<u64> = LazyLock::new(|| *PAGE_SIZE * 10);
+// Size of the VMO backing each event's metadata page and ring buffer; mmap
+// lengths up to this size are accepted. perf readers map one metadata page
+// plus a power-of-two data area, and commonly ask for megabytes (e.g. 256
+// data pages or more), so leave generous headroom. With circular writes the
+// data area no longer needs to hold a whole session's records.
+//
+// We currently preallocate a fixed size for the VMO because we do not dynamically
+// resize it when mapped.
+// TODO(https://fxbug.dev/540986386): Support dynamic resizing or pass the requested size.
+const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 16 * 1024 * 1024;
+// Size of a PERF_RECORD_LOST record in bytes:
+// perf_event_header (8) + sample_id (8) + lost_events (8) = 24.
+const LOST_RECORD_SIZE: u64 = 24;
 // FXT magic bytes (little endian).
 const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
 
@@ -60,6 +69,14 @@ mod event;
 pub use event::{TraceEvent, TraceEventQueue, TraceEventQueueList};
 
 pub mod lockless_ring_buffer;
+
+#[repr(C)]
+#[derive(Copy, Clone, IntoBytes, Immutable)]
+struct LostRecord {
+    header: perf_event_header,
+    sample_id: u64,
+    lost_events: u64,
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, IntoBytes, Immutable)]
@@ -394,7 +411,12 @@ impl FileOps for PerfEventFile {
         _prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
         let buffer_size: u64 = length.unwrap_or(0) as u64;
-        if buffer_size == 0 {
+        let page_size = zx::system_get_page_size() as u64;
+        if buffer_size <= page_size || buffer_size > ESTIMATED_MMAP_BUFFER_SIZE {
+            return error!(EINVAL);
+        }
+        let data_size = buffer_size - page_size;
+        if !data_size.is_power_of_two() {
             return error!(EINVAL);
         }
 
@@ -471,14 +493,37 @@ impl FileOps for PerfEventFile {
 //
 //    Returns the length of bytes written. In above case, 8 + 28 = 36.
 //    This information is used to increment the global offset.
+//
+//    If writing to the VMO fails, we log a warning and return the number of
+//    bytes successfully written so far (e.g. only the LOST record if that
+//    succeeded, or 0). The caller uses this returned length to increment the
+//    VMO write offset and update `data_head`, meaning failed writes are
+//    effectively skipped and not exposed to the reader.
 fn write_record_to_vmo(
     perf_record_sample: PerfRecordSample,
     perf_data_vmo: &zx::Vmo,
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
-    offset: u64,
+    head: u64,
+    metadata: &PerfMetadataValue,
+    lost_events: &mut u64,
 ) -> u64 {
+    let ring_buffer_size = metadata.data_size;
+    if ring_buffer_size == 0 {
+        return 0;
+    }
+
+    // A sample with no instruction pointers cannot fill the ip/callchain
+    // fields below; drop it.
+    if perf_record_sample.ips.is_empty()
+        && (sample_type
+            & (perf_event_sample_format_PERF_SAMPLE_IP as u64
+                | perf_event_sample_format_PERF_SAMPLE_CALLCHAIN as u64))
+            != 0
+    {
+        return 0;
+    }
     // First, build record to determine its size (so that we can fill out `size` in header).
     let mut sample = Vec::<u8>::new();
     // sample_id
@@ -521,7 +566,25 @@ fn write_record_to_vmo(
     // Now that we know the sample size, we can calculate the record size.
     // record_size = perf_event_header_size + sample_size.
     // perf_event_header is defined to be 8 bytes.
-    let record_size: u64 = (std::mem::size_of::<perf_event_header>() + sample.len()) as u64;
+    let record_len = std::mem::size_of::<perf_event_header>() + sample.len();
+    // Every field above is a u64 (or a u32 pair), so record sizes are always
+    // multiples of 8: ring positions stay 8-byte aligned. Since the
+    // perf_event_header is also 8 bytes, it can never straddle the end of
+    // the data area (which is page-aligned), meaning readers can always
+    // read the header contiguously.
+    if record_len % 8 != 0 {
+        log_error!("Record length {} is not 8-byte aligned, dropping", record_len);
+        *lost_events += 1;
+        return 0;
+    }
+    // The header's size field is a u16. A record that exceeds it would
+    // silently wrap the size and desynchronize every record after it, so
+    // drop it instead.
+    let Ok(record_size) = u16::try_from(record_len) else {
+        log_warn!("Dropping {} byte perf sample record: exceeds u16 record size", record_len);
+        *lost_events += 1;
+        return 0;
+    };
 
     track_stub!(
         TODO("https://fxbug.dev/432501467"),
@@ -530,37 +593,91 @@ fn write_record_to_vmo(
     let perf_event_header = perf_event_header {
         type_: perf_event_type_PERF_RECORD_SAMPLE,
         misc: PERF_RECORD_MISC_KERNEL as u16,
-        size: record_size as u16,
+        size: record_size,
     };
 
-    // Total data offset. This is where the record should start getting written.
-    // The first page is reserved for metadata, so we need to add the page size.
-    // Example:
-    //  You're writing the first record (size 100). Start writing at 0 + 4096.
-    //  You're writing the second record. Start writing at 100 + 4096.
-    let data_offset = offset + *PAGE_SIZE;
+    // data_tail is advanced by userspace as it consumes records and is untrusted.
+    // Calculate free space using the standard circular buffer formula, matching Linux's
+    // CIRC_SPACE. This naturally handles wrap-around and invalid future tails.
+    // ring_buffer_size is guaranteed to be a power of two by checks in get_memory().
+    let free_space =
+        (metadata.data_tail.wrapping_sub(head).wrapping_sub(1)) & (ring_buffer_size - 1);
 
-    // Write header to memory.
-    match perf_data_vmo.write(&perf_event_header.as_bytes(), data_offset) {
-        Ok(_) => (),
-        Err(e) => log_warn!("Failed to write perf_event_header: {}", e),
+    // Drop the sample if the ring buffer is full, matching Linux's
+    // non-overwrite mode; the drop is reported via PERF_RECORD_LOST once
+    // space frees up.
+    if free_space < record_len as u64 {
+        *lost_events += 1;
+        return 0;
     }
 
-    // Write sample to memory immediately after the header.
-    match perf_data_vmo
-        .write(&sample, data_offset + (std::mem::size_of::<perf_event_header>() as u64))
-    {
-        Ok(_) => {
-            // Return the total size we wrote (header + sample) so that we can
-            // increment offset counter.
-            return record_size;
+    let mut bytes_written: u64 = 0;
+
+    // If records were dropped earlier, surface a PERF_RECORD_LOST record as
+    // soon as there is room for it alongside the current sample.
+    if *lost_events > 0 && free_space >= record_len as u64 + LOST_RECORD_SIZE {
+        let lost_header = perf_event_header {
+            type_: perf_event_type_PERF_RECORD_LOST,
+            misc: 0,
+            size: LOST_RECORD_SIZE as u16,
+        };
+        let lost_record = LostRecord { header: lost_header, sample_id, lost_events: *lost_events };
+        if write_circular(
+            perf_data_vmo,
+            metadata.data_offset,
+            ring_buffer_size,
+            head,
+            lost_record.as_bytes(),
+        )
+        .is_ok()
+        {
+            *lost_events = 0;
+            bytes_written += LOST_RECORD_SIZE;
         }
+    }
+
+    let mut record = Vec::with_capacity(record_len);
+    record.extend_from_slice(perf_event_header.as_bytes());
+    record.extend_from_slice(&sample);
+
+    match write_circular(
+        perf_data_vmo,
+        metadata.data_offset,
+        ring_buffer_size,
+        head + bytes_written,
+        &record,
+    ) {
+        // Return the total size we wrote so the caller can advance data_head.
+        Ok(()) => bytes_written + record_len as u64,
         Err(e) => {
             log_warn!("Failed to write PerfRecordSample to VMO due to: {}", e);
-            // Failed to write. Don't increment offset counter.
-            return 0;
+            bytes_written
         }
     }
+}
+
+// Writes `data` into the ring buffer's data area at the position
+// corresponding to `head` (a free-running count of bytes ever written),
+// splitting the write across the end of the data area when it wraps around.
+// Readers read records by checking the header size, reading contiguously,
+// and wrapping around to the beginning of the data area if the record is split.
+fn write_circular(
+    vmo: &zx::Vmo,
+    data_offset: u64,
+    ring_buffer_size: u64,
+    head: u64,
+    data: &[u8],
+) -> Result<(), zx::Status> {
+    let position = head % ring_buffer_size;
+    let vmo_offset = data_offset + position;
+    if position + data.len() as u64 <= ring_buffer_size {
+        vmo.write(data, vmo_offset)?;
+    } else {
+        let first_len = (ring_buffer_size - position) as usize;
+        vmo.write(&data[..first_len], vmo_offset)?;
+        vmo.write(&data[first_len..], data_offset)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -678,6 +795,7 @@ async fn stop_and_collect_samples(
         let header_cursor = Cursor::new(header);
         let reader = header_cursor.chain(client);
         let (mut stream, _task) = SessionParser::new_async(reader);
+        let mut lost_events: u64 = 0;
         while let Some(record_result) = stream.next().await {
             match record_result {
                 Ok(TraceRecord::Profiler(ProfilerRecord::Backtrace(backtrace))) => {
@@ -686,6 +804,7 @@ async fn stop_and_collect_samples(
                         let pid = Some(backtrace.process.0 as u32);
                         let tid = Some(backtrace.thread.0 as u32);
                         let perf_record_sample = PerfRecordSample { pid, tid, ips };
+                        let metadata = seq_lock_wrapper.get();
                         let bytes_written = write_record_to_vmo(
                             perf_record_sample,
                             perf_data_vmo,
@@ -693,8 +812,12 @@ async fn stop_and_collect_samples(
                             sample_id,
                             sample_period,
                             *vmo_write_offset,
+                            &metadata,
+                            &mut lost_events,
                         );
-                        // Update data_head after writing sample.
+                        // Publish data_head after writing; set_value's
+                        // release-ordered stores make the record contents
+                        // visible to a reader that observes the new head.
                         if bytes_written > 0 {
                             *vmo_write_offset += bytes_written;
                             let mut metadata = seq_lock_wrapper.get();
@@ -861,7 +984,7 @@ pub fn sys_perf_event_open(
         0,
         perf_event_attrs.disabled(),
         perf_event_attrs.sample_type,
-        zx::Vmo::create(*ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
+        zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
         sender,
     );
 
@@ -1087,7 +1210,7 @@ mod tests {
 
         let client = fidl::AsyncSocket::from_socket(client_socket);
         let seq_lock = OnceLock::new();
-        let perf_data_vmo = zx::Vmo::create(*ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
         let mut vmo_write_offset = 0;
 
         let test_task = stop_and_collect_samples(
