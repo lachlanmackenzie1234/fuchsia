@@ -15,6 +15,7 @@ use fuchsia_sync::Mutex;
 use futures::future::{Fuse, FusedFuture, join};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select_biased};
+use mapping::reader::{BlockService, MAX_READ_BUFFER_SIZE};
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::future::{Future, poll_fn};
@@ -22,7 +23,7 @@ use std::mem::MaybeUninit;
 use std::pin::pin;
 use std::sync::{Arc, OnceLock};
 use std::task::{Poll, ready};
-use storage_device::buffer::Buffer;
+use storage_device::buffer::{Buffer, OwnedBuffer};
 use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 
 pub trait Interface: Send + Sync + Unpin + 'static {
@@ -823,5 +824,265 @@ impl<I: Interface> IntoOrchestrator for Arc<I> {
             active_requests: ActiveRequests::default(),
             buffer_allocator: OnceLock::new(),
         })
+    }
+}
+
+/// A generic adapter that presents any [`async_interface::Interface`] backend as a
+/// [`BlockService`], using [`BufferAllocator`] for concurrent read buffer management and
+/// [`fasync::ScopeHandle`] for thread-safe task spawning.
+pub struct AsyncBlockService<I: Interface> {
+    interface: Arc<I>,
+    allocator: Arc<BufferAllocator>,
+    block_size: u32,
+    scope: fasync::ScopeHandle,
+}
+
+impl<I: Interface> AsyncBlockService<I> {
+    pub async fn new(
+        interface: Arc<I>,
+        block_size: u32,
+        pool_capacity: usize,
+        scope: fasync::ScopeHandle,
+    ) -> Result<Self, zx::Status> {
+        let source = BufferSource::new(pool_capacity);
+        interface.on_attach_vmo(&source.vmo()).await?;
+        let allocator = Arc::new(BufferAllocator::new(
+            std::cmp::max(block_size as usize, zx::system_get_page_size() as usize),
+            source,
+        ));
+        Ok(Self { interface, allocator, block_size, scope })
+    }
+
+    pub fn new_with_allocator(
+        interface: Arc<I>,
+        block_size: u32,
+        allocator: Arc<BufferAllocator>,
+        scope: fasync::ScopeHandle,
+    ) -> Self {
+        Self { interface, allocator, block_size, scope }
+    }
+
+    pub fn interface(&self) -> &Arc<I> {
+        &self.interface
+    }
+
+    pub fn allocator(&self) -> &Arc<BufferAllocator> {
+        &self.allocator
+    }
+}
+
+impl<I: Interface> BlockService for AsyncBlockService<I> {
+    fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
+        let max_len = std::cmp::min(
+            std::cmp::min(max_len, MAX_READ_BUFFER_SIZE),
+            self.allocator.buffer_source().size(),
+        );
+        self.allocator.allocate_buffer_sync_owned(max_len)
+    }
+
+    fn read_blocks(
+        &self,
+        device_offset: u64,
+        dest_buffer: OwnedBuffer,
+        on_complete: Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>,
+    ) -> Result<(), Error> {
+        let block_size = self.block_size as u64;
+        let device_block_offset = device_offset / block_size;
+        let block_count = (dest_buffer.len() as u64 / block_size) as u32;
+
+        let vmo_offset = dest_buffer.range().start as u64;
+        let vmo = self.allocator.buffer_source().vmo().clone();
+        let interface = self.interface.clone();
+
+        self.scope.spawn(async move {
+            let res = interface
+                .read(
+                    device_block_offset,
+                    block_count,
+                    &vmo,
+                    vmo_offset,
+                    ReadOptions::default(),
+                    TraceFlowId::default(),
+                )
+                .await;
+            match res {
+                Ok(()) => on_complete(Ok(dest_buffer)),
+                Err(status) => on_complete(Err(anyhow::anyhow!("Read failed: {:?}", status))),
+            }
+        });
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fuchsia_async as fasync;
+    use mapping::Extents;
+    use mapping::reader::read_aligned_range;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    struct FakeInterface {
+        data: Vec<u8>,
+        block_size: u32,
+        read_count: AtomicU64,
+    }
+
+    impl FakeInterface {
+        fn new(data: Vec<u8>, block_size: u32) -> Self {
+            Self { data, block_size, read_count: AtomicU64::new(0) }
+        }
+    }
+
+    impl Interface for FakeInterface {
+        fn get_info(&self) -> Cow<'_, DeviceInfo> {
+            Cow::Owned(DeviceInfo::Block(crate::BlockInfo {
+                block_count: (self.data.len() / self.block_size as usize) as u64,
+                max_transfer_blocks: None,
+                device_flags: fblock::DeviceFlag::empty(),
+            }))
+        }
+
+        async fn read(
+            &self,
+            device_block_offset: u64,
+            block_count: u32,
+            vmo: &Arc<zx::Vmo>,
+            vmo_offset: u64,
+            _opts: ReadOptions,
+            _trace_flow_id: TraceFlowId,
+        ) -> Result<(), zx::Status> {
+            self.read_count.fetch_add(1, Ordering::Relaxed);
+            let byte_offset = (device_block_offset * self.block_size as u64) as usize;
+            let byte_len = (block_count * self.block_size) as usize;
+            let slice = &self.data[byte_offset..byte_offset + byte_len];
+            vmo.write(slice, vmo_offset).map_err(|_| zx::Status::IO)?;
+            Ok(())
+        }
+
+        async fn write(
+            &self,
+            _device_block_offset: u64,
+            _block_count: u32,
+            _vmo: &Arc<zx::Vmo>,
+            _vmo_offset: u64,
+            _opts: WriteOptions,
+            _trace_flow_id: TraceFlowId,
+        ) -> Result<(), zx::Status> {
+            Ok(())
+        }
+
+        async fn flush(&self, _trace_flow_id: TraceFlowId) -> Result<(), zx::Status> {
+            Ok(())
+        }
+
+        async fn trim(
+            &self,
+            _device_block_offset: u64,
+            _block_count: u32,
+            _trace_flow_id: TraceFlowId,
+        ) -> Result<(), zx::Status> {
+            Ok(())
+        }
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_async_block_service_read_aligned_range() {
+        let block_size = 512;
+        let test_data: Vec<u8> = (0..8192).map(|i| (i % 255) as u8).collect();
+        let interface = Arc::new(FakeInterface::new(test_data.clone(), block_size));
+        let scope = fasync::Scope::current();
+
+        let block_service = Arc::new(
+            AsyncBlockService::new(interface, block_size, 16384, scope)
+                .await
+                .expect("Failed to create AsyncBlockService"),
+        );
+
+        let encoded = (1u64 << 32) | 0u64;
+        let extents = Extents::from_encoded(&[encoded]).unwrap();
+        let service = block_service.clone();
+        let (send, recv) = futures::channel::oneshot::channel();
+        let send = std::sync::Mutex::new(Some(send));
+        let read_buf = std::sync::Mutex::new(Vec::new());
+
+        read_aligned_range(&extents, 0..4096, &*service, move |buffer_result| {
+            let buffer = buffer_result.unwrap();
+            let mut read_guard = read_buf.lock().unwrap();
+            read_guard.extend_from_slice(buffer.as_slice());
+            if read_guard.len() == 4096 {
+                if let Some(s) = send.lock().unwrap().take() {
+                    let _ = s.send(read_guard.clone());
+                }
+            }
+            std::ops::ControlFlow::Continue(())
+        });
+
+        let result = recv.await.unwrap();
+        assert_eq!(result, &test_data[0..4096]);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_async_block_service_concurrent_reads_larger_than_pool_capacity() {
+        let block_size = 512;
+        let total_size = 65536; // 16 * 4096 bytes
+        let test_data: Vec<u8> = (0..total_size).map(|i| (i % 251) as u8).collect();
+        let interface = Arc::new(FakeInterface::new(test_data.clone(), block_size));
+        let scope = fasync::Scope::current();
+
+        // Pool capacity is 8192 bytes (2 * 4096 bytes), while total concurrent reads
+        // request 65536 bytes.
+        let pool_capacity = 8192;
+        let source = BufferSource::new(pool_capacity);
+        interface.on_attach_vmo(&source.vmo()).await.unwrap();
+        let allocator = Arc::new(BufferAllocator::new(
+            std::cmp::max(block_size as usize, zx::system_get_page_size() as usize),
+            source,
+        ));
+        let block_service = Arc::new(AsyncBlockService::new_with_allocator(
+            interface, block_size, allocator, scope,
+        ));
+
+        let encoded = (16u64 << 32) | 0u64;
+        let extents = Arc::new(Extents::from_encoded(&[encoded]).unwrap());
+
+        // Spawn 4 concurrent read requests on background threads, each requesting 16384 bytes.
+        let ranges = [0..16384, 16384..32768, 32768..49152, 49152..65536];
+        let mut receivers = Vec::new();
+
+        for range in ranges {
+            let (send, recv) = futures::channel::oneshot::channel();
+            let service = block_service.clone();
+            let extents = extents.clone();
+
+            std::thread::spawn(move || {
+                let send = std::sync::Mutex::new(Some(send));
+                let read_buf = std::sync::Mutex::new(Vec::new());
+                let target_len = (range.end - range.start) as usize;
+
+                read_aligned_range(&extents, range, &*service, move |buffer_result| {
+                    let buffer = buffer_result.unwrap();
+                    let mut read_guard = read_buf.lock().unwrap();
+                    read_guard.extend_from_slice(buffer.as_slice());
+                    if read_guard.len() == target_len {
+                        if let Some(s) = send.lock().unwrap().take() {
+                            let _ = s.send(read_guard.clone());
+                        }
+                    }
+                    std::ops::ControlFlow::Continue(())
+                });
+            });
+
+            receivers.push(recv);
+        }
+
+        let results = futures::future::join_all(receivers).await;
+        for (i, res) in results.into_iter().enumerate() {
+            let data = res.unwrap();
+            let start = i * 16384;
+            let end = start + 16384;
+            assert_eq!(data, &test_data[start..end]);
+        }
     }
 }
