@@ -63,7 +63,10 @@ hermetic_source_set("startup") {
 
 group("tests") {
   testonly = true
-  deps = [ ":userboot-lib-tests" ]
+  deps = [
+    ":userboot-lib-tests",
+    "rust:tests",
+  ]
 }
 
 fuchsia_unittest_package("userboot-lib-tests") {
