@@ -430,7 +430,7 @@ fn validate_radio_cfg(
 
     // Avoid hosting an AP on a 5 GHz channel on a non-DFS devices. There is no 5 GHz
     // channel that is valid in all regulatory domains.
-    if channel.is_5ghz()
+    if channel.band == fidl_ieee80211::WlanBand::FiveGhz
         && !spectrum_management_support
             .dfs
             .as_ref()
@@ -496,7 +496,7 @@ fn validate_radio_cfg(
                 _ => (),
             }
 
-            if !channel.is_5ghz() {
+            if channel.band != fidl_ieee80211::WlanBand::FiveGhz {
                 return Err(StartResult::InvalidArguments(format!(
                     "VHT only supported on 5 GHz channels: {channel}"
                 )));

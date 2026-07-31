@@ -13,14 +13,6 @@ namespace fwlan_ieee80211 = ::fuchsia_wlan_ieee80211::wire;
 namespace wlan {
 namespace common {
 
-bool Is5Ghz(const fwlan_ieee80211::ChannelNumber& channel) {
-  return channel.band == fwlan_ieee80211::WlanBand::kFiveGhz;
-}
-
-bool Is2Ghz(const fwlan_ieee80211::ChannelNumber& channel) {
-  return channel.band == fwlan_ieee80211::WlanBand::kTwoGhz;
-}
-
 bool IsValidChan2Ghz(const Channel& channel) {
   if (channel.channel.band != fwlan_ieee80211::WlanBand::kTwoGhz) {
     return false;
@@ -130,7 +122,7 @@ Mhz GetCenterFreq(const Channel& channel) {
 
   Mhz spacing = 5;
   Mhz channel_starting_frequency;
-  if (Is2Ghz(channel.channel)) {
+  if (channel.channel.band == fwlan_ieee80211::WlanBand::kTwoGhz) {
     channel_starting_frequency = kBaseFreq2Ghz;
   } else {
     // 5 GHz

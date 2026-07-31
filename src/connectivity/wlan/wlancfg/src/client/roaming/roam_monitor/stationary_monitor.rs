@@ -11,13 +11,13 @@ use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use crate::util::historical_list::Timestamped;
 use crate::util::pseudo_energy::EwmaSignalData;
 use async_trait::async_trait;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use log::{error, info};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal,
-    fuchsia_async as fasync,
-};
 
 pub const MIN_BACKOFF_BETWEEN_ROAM_SCANS: zx::MonotonicDuration =
     zx::MonotonicDuration::from_minutes(1);
@@ -124,7 +124,10 @@ impl StationaryMonitor {
                 if let Some(oldest_roam_attempt) = recent_roams.first() {
                     self.next_roaming_enabled_time =
                         oldest_roam_attempt.time() + TIMESPAN_TO_LIMIT_SCANS;
-                    info!("Maximum number of roam attempts per day ({}) has been reached. Roam scanning is disabled until a reboot, or until fewer than {} roam attempts have occured in the past 24 hours.", NUM_MAX_ROAMS_PER_DAY, NUM_MAX_ROAMS_PER_DAY);
+                    info!(
+                        "Maximum number of roam attempts per day ({}) has been reached. Roam scanning is disabled until a reboot, or until fewer than {} roam attempts have occured in the past 24 hours.",
+                        NUM_MAX_ROAMS_PER_DAY, NUM_MAX_ROAMS_PER_DAY
+                    );
                 } else {
                     error!("Unexpectedly failed to get the oldest roam attempt.");
                 }
@@ -136,7 +139,9 @@ impl StationaryMonitor {
         let mut roam_reasons: Vec<RoamReason> = vec![];
 
         // Check RSSI threshold
-        let rssi_threshold = if self.connection_data.ap_state.tracked.channel.is_5ghz() {
+        let rssi_threshold = if self.connection_data.ap_state.tracked.channel.band
+            == fidl_ieee80211::WlanBand::FiveGhz
+        {
             LOCAL_ROAM_THRESHOLD_RSSI_5G
         } else {
             LOCAL_ROAM_THRESHOLD_RSSI_2G
@@ -225,8 +230,8 @@ impl RoamMonitorApi for StationaryMonitor {
 mod test {
     use super::*;
     use crate::util::testing::{
-        generate_random_bss, generate_random_password, generate_random_roaming_connection_data,
-        generate_random_scanned_candidate, FakeSavedNetworksManager,
+        FakeSavedNetworksManager, generate_random_bss, generate_random_password,
+        generate_random_roaming_connection_data, generate_random_scanned_candidate,
     };
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_internal as fidl_internal;
@@ -610,10 +615,12 @@ mod test {
             },
             ..generate_random_scanned_candidate()
         };
-        assert!(!test_values
-            .monitor
-            .should_send_roam_request(PolicyRoamRequest { candidate, reasons: vec![] })
-            .expect("failed to check roam request"));
+        assert!(
+            !test_values
+                .monitor
+                .should_send_roam_request(PolicyRoamRequest { candidate, reasons: vec![] })
+                .expect("failed to check roam request")
+        );
 
         // Verify that a roam recommendation is made if RSSI improvement exceeds threshold.
         let candidate = types::ScannedCandidate {
@@ -626,10 +633,12 @@ mod test {
             },
             ..generate_random_scanned_candidate()
         };
-        assert!(test_values
-            .monitor
-            .should_send_roam_request(PolicyRoamRequest { candidate, reasons: vec![] })
-            .expect("failed to check roam request"));
+        assert!(
+            test_values
+                .monitor
+                .should_send_roam_request(PolicyRoamRequest { candidate, reasons: vec![] })
+                .expect("failed to check roam request")
+        );
 
         // Verify that roam recommendations are blocked if the selected candidate is the currently
         // connected BSS. Set signal values high enough to isolate the dedupe function.
@@ -645,10 +654,12 @@ mod test {
             credential: generate_random_password(),
             ..generate_random_scanned_candidate()
         };
-        assert!(!test_values
-            .monitor
-            .should_send_roam_request(PolicyRoamRequest { candidate, reasons: vec![] })
-            .expect("failed to check roam reqeust"));
+        assert!(
+            !test_values
+                .monitor
+                .should_send_roam_request(PolicyRoamRequest { candidate, reasons: vec![] })
+                .expect("failed to check roam reqeust")
+        );
     }
 
     #[fuchsia::test]

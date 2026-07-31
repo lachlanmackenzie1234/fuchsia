@@ -26,9 +26,6 @@ typedef uint16_t Mhz;
 constexpr Mhz kBaseFreq2Ghz = 2407;
 constexpr Mhz kBaseFreq5Ghz = 5000;
 
-bool Is5Ghz(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel);
-bool Is2Ghz(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel);
-
 bool IsValidChan2Ghz(const Channel& channel);
 bool IsValidChan5Ghz(const Channel& channel);
 bool IsValidChan(const Channel& channel);

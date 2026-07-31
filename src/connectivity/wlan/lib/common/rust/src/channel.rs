@@ -103,28 +103,6 @@ impl Channel {
         Channel { primary, cbw, band }
     }
 
-    fn is_primary_2ghz(&self) -> bool {
-        self.band == fidl_ieee80211::WlanBand::TwoGhz
-    }
-
-    fn is_primary_5ghz(&self) -> bool {
-        if self.band != fidl_ieee80211::WlanBand::FiveGhz {
-            return false;
-        }
-
-        let p = self.primary;
-        match p {
-            36..=64 => (p - 36) % 4 == 0,
-            100..=144 => (p - 100) % 4 == 0,
-            149..=165 => (p - 149) % 4 == 0,
-            _ => false,
-        }
-    }
-
-    pub fn get_band(&self) -> Result<fidl_ieee80211::WlanBand, anyhow::Error> {
-        Ok(self.band)
-    }
-
     fn get_band_start_freq(&self) -> Result<MHz, anyhow::Error> {
         match self.band {
             fidl_ieee80211::WlanBand::TwoGhz => Ok(BASE_FREQ_2GHZ),
@@ -191,70 +169,6 @@ impl Channel {
         let center_chan_idx = self.get_center_chan_idx()?;
         let spacing: MHz = 5;
         Ok(start_freq + spacing * center_chan_idx as u16)
-    }
-
-    /// Returns true if the primary channel index, channel bandwidth, and the secondary consecutive
-    /// frequency segment (Cbw80P80 only) are all consistent and meet regulatory requirements of
-    /// the USA. TODO(https://fxbug.dev/42104247): Other countries.
-    pub fn is_valid_in_us(&self) -> bool {
-        match self.band {
-            fidl_ieee80211::WlanBand::TwoGhz => self.is_valid_2ghz_in_us(),
-            fidl_ieee80211::WlanBand::FiveGhz => self.is_valid_5ghz_in_us(),
-            _ => false,
-        }
-    }
-
-    fn is_valid_2ghz_in_us(&self) -> bool {
-        if !self.is_primary_2ghz() {
-            return false;
-        }
-        let p = self.primary;
-        match self.cbw {
-            Cbw::Cbw20 => p <= 11,
-            Cbw::Cbw40 => p <= 7,
-            Cbw::Cbw40Below => p >= 5,
-            _ => false,
-        }
-    }
-
-    fn is_valid_5ghz_in_us(&self) -> bool {
-        if !self.is_primary_5ghz() {
-            return false;
-        }
-        let p = self.primary;
-        match self.cbw {
-            Cbw::Cbw20 => true,
-            Cbw::Cbw40 => p != 165 && (p % 8) == (if p <= 144 { 4 } else { 5 }),
-            Cbw::Cbw40Below => p != 165 && (p % 8) == (if p <= 144 { 0 } else { 1 }),
-            Cbw::Cbw80 => p != 165,
-            Cbw::Cbw160 => p < 132,
-            Cbw::Cbw80P80 { secondary80 } => {
-                if p == 165 {
-                    return false;
-                }
-                let valid_secondary80: [u8; 6] = [42, 58, 106, 122, 138, 155];
-                if !valid_secondary80.contains(&secondary80) {
-                    return false;
-                }
-                let ccfs0 = match self.get_center_chan_idx() {
-                    Ok(v) => v,
-                    Err(_) => return false,
-                };
-                let ccfs1 = secondary80;
-                let gap = (ccfs0 as i16 - ccfs1 as i16).abs();
-                gap > 16
-            }
-        }
-    }
-
-    /// Returns true if the channel is 2GHz. Does not perform validity checks.
-    pub fn is_2ghz(&self) -> bool {
-        self.is_primary_2ghz()
-    }
-
-    /// Returns true if the channel is 5GHz. Does not perform validity checks.
-    pub fn is_5ghz(&self) -> bool {
-        self.is_primary_5ghz()
     }
 }
 
@@ -394,48 +308,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_primary_2ghz_or_5ghz() {
-        // Note Cbw is ignored in this test.
-        assert!(Channel::new(1, Cbw::Cbw160, TwoGhz).is_primary_2ghz());
-        assert!(!Channel::new(1, Cbw::Cbw160, TwoGhz).is_primary_5ghz());
-
-        assert!(Channel::new(12, Cbw::Cbw160, TwoGhz).is_primary_2ghz());
-        assert!(!Channel::new(12, Cbw::Cbw160, TwoGhz).is_primary_5ghz());
-
-        assert!(!Channel::new(36, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
-        assert!(Channel::new(36, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
-
-        assert!(!Channel::new(37, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
-        assert!(!Channel::new(37, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
-
-        assert!(!Channel::new(165, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
-        assert!(Channel::new(165, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
-
-        assert!(!Channel::new(166, Cbw::Cbw160, FiveGhz).is_primary_2ghz());
-        assert!(!Channel::new(166, Cbw::Cbw160, FiveGhz).is_primary_5ghz());
-    }
-
-    #[test]
-    fn test_get_band() {
-        assert_eq!(
-            fidl_ieee80211::WlanBand::TwoGhz,
-            Channel::new(1, Cbw::Cbw20, TwoGhz).get_band().unwrap()
-        );
-        assert_eq!(
-            fidl_ieee80211::WlanBand::TwoGhz,
-            Channel::new(14, Cbw::Cbw40, TwoGhz).get_band().unwrap()
-        );
-        assert_eq!(
-            fidl_ieee80211::WlanBand::FiveGhz,
-            Channel::new(36, Cbw::Cbw80, FiveGhz).get_band().unwrap()
-        );
-        assert_eq!(
-            fidl_ieee80211::WlanBand::FiveGhz,
-            Channel::new(165, Cbw::Cbw160, FiveGhz).get_band().unwrap()
-        );
-    }
-
-    #[test]
     fn test_band_start_freq() {
         assert_eq!(
             BASE_FREQ_2GHZ,
@@ -506,58 +378,6 @@ mod tests {
         assert_eq!(None, primary_channel_from_freq(5000));
         // This is above the range of recognized channels
         assert_eq!(None, primary_channel_from_freq(5885));
-    }
-
-    #[test]
-    fn test_valid_us_combo() {
-        assert!(Channel::new(1, Cbw::Cbw20, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(1, Cbw::Cbw40, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(5, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(6, Cbw::Cbw20, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(6, Cbw::Cbw40, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(6, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(7, Cbw::Cbw40, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(11, Cbw::Cbw20, TwoGhz).is_valid_in_us());
-        assert!(Channel::new(11, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
-
-        assert!(Channel::new(36, Cbw::Cbw20, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(36, Cbw::Cbw40, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(36, Cbw::Cbw160, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw20, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw40Below, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw160, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(40, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz).is_valid_in_us());
-        assert!(Channel::new(161, Cbw::Cbw80P80 { secondary80: 42 }, FiveGhz).is_valid_in_us());
-    }
-
-    #[test]
-    fn test_invalid_us_combo() {
-        assert!(!Channel::new(1, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
-        assert!(!Channel::new(4, Cbw::Cbw40Below, TwoGhz).is_valid_in_us());
-        assert!(!Channel::new(8, Cbw::Cbw40, TwoGhz).is_valid_in_us());
-        assert!(!Channel::new(11, Cbw::Cbw40, TwoGhz).is_valid_in_us());
-        assert!(!Channel::new(6, Cbw::Cbw80, TwoGhz).is_valid_in_us());
-        assert!(!Channel::new(6, Cbw::Cbw160, TwoGhz).is_valid_in_us());
-        assert!(!Channel::new(6, Cbw::Cbw80P80 { secondary80: 155 }, TwoGhz).is_valid_in_us());
-
-        assert!(!Channel::new(36, Cbw::Cbw40Below, FiveGhz).is_valid_in_us());
-        assert!(!Channel::new(36, Cbw::Cbw80P80 { secondary80: 58 }, FiveGhz).is_valid_in_us());
-        assert!(!Channel::new(40, Cbw::Cbw40, FiveGhz).is_valid_in_us());
-        assert!(!Channel::new(40, Cbw::Cbw80P80 { secondary80: 42 }, FiveGhz).is_valid_in_us());
-
-        assert!(!Channel::new(165, Cbw::Cbw80, FiveGhz).is_valid_in_us());
-        assert!(!Channel::new(165, Cbw::Cbw80P80 { secondary80: 42 }, FiveGhz).is_valid_in_us());
-    }
-
-    #[test]
-    fn test_is_2ghz_or_5ghz() {
-        assert!(Channel::new(1, Cbw::Cbw20, TwoGhz).is_2ghz());
-        assert!(!Channel::new(1, Cbw::Cbw20, TwoGhz).is_5ghz());
-        assert!(Channel::new(13, Cbw::Cbw20, TwoGhz).is_2ghz());
-        assert!(!Channel::new(13, Cbw::Cbw20, TwoGhz).is_5ghz());
-        assert!(Channel::new(36, Cbw::Cbw20, FiveGhz).is_5ghz());
-        assert!(!Channel::new(36, Cbw::Cbw20, FiveGhz).is_2ghz());
     }
 
     const RX_PRIMARY_CHAN: u8 = 11;

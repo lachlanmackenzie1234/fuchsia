@@ -155,7 +155,7 @@ pub fn get_band_cap_for_channel(
     bands: &[fidl_mlme::BandCapability],
     channel: Channel,
 ) -> Result<&fidl_mlme::BandCapability, anyhow::Error> {
-    let target = channel.get_band().context("Failed to retrieve band capabilities")?;
+    let target = channel.band;
     bands
         .iter()
         .find(|b| {

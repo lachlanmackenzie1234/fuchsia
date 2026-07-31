@@ -122,10 +122,10 @@ pub fn get_ghz_band_transition(
     origin_channel: &Channel,
     target_channel: &Channel,
 ) -> metrics::ConnectivityWlanMetricDimensionGhzBandTransition {
-    let origin_is_2g = origin_channel.is_2ghz();
-    let origin_is_5g = origin_channel.is_5ghz();
-    let target_is_2g = target_channel.is_2ghz();
-    let target_is_5g = target_channel.is_5ghz();
+    let origin_is_2g = origin_channel.band == fidl_ieee80211::WlanBand::TwoGhz;
+    let origin_is_5g = origin_channel.band == fidl_ieee80211::WlanBand::FiveGhz;
+    let target_is_2g = target_channel.band == fidl_ieee80211::WlanBand::TwoGhz;
+    let target_is_5g = target_channel.band == fidl_ieee80211::WlanBand::FiveGhz;
 
     match (origin_is_2g, origin_is_5g, target_is_2g, target_is_5g) {
         (true, false, true, false) => {

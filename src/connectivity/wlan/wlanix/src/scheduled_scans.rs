@@ -446,20 +446,18 @@ fn get_matching_scan_results(
                 .filter(|r| {
                     BssDescription::try_from(r.bss_description.clone())
                         .map(|bss| {
-                            let bss_band = bss.channel.get_band().ok();
+                            let bss_band = bss.channel.band;
                             match_sets.iter().any(|match_set| {
                                 let is_ssid_match = match_set
                                     .ssid
                                     .as_ref()
                                     .is_some_and(|match_ssid| *match_ssid == bss.ssid);
 
-                                let adjusted_rssi = bss_band
-                                    .and_then(|band| {
-                                        match_set
-                                            .band_rssi_adjustments
-                                            .as_ref()?
-                                            .iter()
-                                            .find(|a| a.band == band)
+                                let adjusted_rssi = match_set
+                                    .band_rssi_adjustments
+                                    .as_ref()
+                                    .and_then(|adjustments| {
+                                        adjustments.iter().find(|a| a.band == bss_band)
                                     })
                                     .map_or(r.bss_description.rssi_dbm, |adj| {
                                         r.bss_description

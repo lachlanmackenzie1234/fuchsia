@@ -4,6 +4,8 @@
 
 use std::cmp::max;
 
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+
 use crate::client::types;
 use crate::config_management::FailureReason::CredentialRejected;
 use crate::util::pseudo_energy::*;
@@ -30,7 +32,7 @@ pub fn score_bss_scanned_candidate(bss_candidate: types::ScannedCandidate) -> i1
     let channel = bss_candidate.bss.channel;
 
     // If the network is 5G and has a strong enough RSSI, give it a bonus.
-    if channel.is_5ghz() {
+    if channel.band == fidl_ieee80211::WlanBand::FiveGhz {
         score = score.saturating_add(calculate_5g_bonus(score));
     }
 

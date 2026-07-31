@@ -441,7 +441,7 @@ fn get_primary_channels_for_scan(
             if let &fidl_sme::ScanRequest::Passive(_) = scan_request {
                 return true;
             };
-            if channel.is_5ghz() {
+            if channel.band == fidl_ieee80211::WlanBand::FiveGhz {
                 return spectrum_management_support
                     .dfs
                     .as_ref()

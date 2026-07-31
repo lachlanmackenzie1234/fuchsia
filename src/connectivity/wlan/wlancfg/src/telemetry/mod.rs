@@ -3899,7 +3899,7 @@ impl StatsLogger {
 
                 let _ = unique_networks.insert(&candidate.network);
 
-                if candidate.bss.channel.is_2ghz() {
+                if candidate.bss.channel.band == fidl_ieee80211::WlanBand::TwoGhz {
                     best_score_2g = best_score_2g.or(Some(*score)).map(|s| max(s, *score));
                 } else {
                     best_score_5g = best_score_5g.or(Some(*score)).map(|s| max(s, *score));
