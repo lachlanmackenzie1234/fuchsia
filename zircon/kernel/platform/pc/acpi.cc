@@ -26,13 +26,20 @@
 
 #include <ktl/enforce.h>
 
+extern "C" {
+zx_status_t rust_acpi_parser_init(zx_paddr_t rsdp_pa, void* out_parser);
+void rust_acpi_parser_dump_tables(const void* parser);
+size_t rust_acpi_parser_num_tables(const void* parser);
+const acpi_lite::AcpiSdtHeader* rust_acpi_parser_get_table_at_index(const void* parser,
+                                                                    size_t index);
+}
+
 namespace {
 
 // System-wide ACPI parser.
-acpi_lite::AcpiParser* global_acpi_parser;
+AcpiLiteParser* global_acpi_parser;
 
-lazy_init::LazyInit<acpi_lite::AcpiParser, lazy_init::CheckType::None,
-                    lazy_init::Destructor::Disabled>
+lazy_init::LazyInit<AcpiLiteParser, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
     g_parser;
 
 int ConsoleAcpiDump(int argc, const cmd_args* argv, uint32_t flags) {
@@ -47,7 +54,7 @@ int ConsoleAcpiDump(int argc, const cmd_args* argv, uint32_t flags) {
 
 }  // namespace
 
-acpi_lite::AcpiParser& GlobalAcpiLiteParser() {
+AcpiLiteParser& GlobalAcpiLiteParser() {
   ASSERT_MSG(global_acpi_parser != nullptr, "PlatformInitAcpi() not called.");
   return *global_acpi_parser;
 }
@@ -56,17 +63,26 @@ void PlatformInitAcpi(zx_paddr_t acpi_rsdp) {
   ASSERT(global_acpi_parser == nullptr);
 
   // Create AcpiParser.
-  zx::result<acpi_lite::AcpiParser> result = acpi_lite::AcpiParserInit(acpi_rsdp);
-  if (result.is_error()) {
-    panic("Could not initialize ACPI. Error code: %d.", result.error_value());
+  RustAcpiLite parser;
+  zx_status_t status = rust_acpi_parser_init(acpi_rsdp, &parser);
+  if (status != ZX_OK) {
+    panic("Could not initialize ACPI. Error code: %d.", status);
   }
 
-  g_parser.Initialize(result.value());
+  g_parser.Initialize(parser);
   global_acpi_parser = &g_parser.Get();
 }
 
 static void platform_init_acpi(uint level) {
   PlatformInitAcpi(gPhysHandoff->acpi_rsdp.value_or(0));
+}
+
+void AcpiLiteParser::DumpTables() { rust_acpi_parser_dump_tables(&state_); }
+
+size_t AcpiLiteParser::num_tables() const { return rust_acpi_parser_num_tables(&state_); }
+
+const acpi_lite::AcpiSdtHeader* AcpiLiteParser::GetTableAtIndex(size_t index) const {
+  return rust_acpi_parser_get_table_at_index(&state_, index);
 }
 
 LK_INIT_HOOK(platform_init_acpi, platform_init_acpi, LK_INIT_LEVEL_VM)
