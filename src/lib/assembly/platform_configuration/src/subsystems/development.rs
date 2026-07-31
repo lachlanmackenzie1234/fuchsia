@@ -132,10 +132,13 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
         if config.tools.audio.driver_tools {
             context.ensure_build_type_and_feature_set_level(
                 &[BuildType::Eng],
-                &[FeatureSetLevel::Standard],
+                &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
                 "Audio driver development tools",
             )?;
             builder.platform_bundle("audio_driver_development_tools")?;
+            builder.platform_bundle("audio_legacy_driver_tools")?;
+            builder.platform_bundle("virtual_audio_util")?;
+            builder.platform_bundle("virtual_audio_legacy_util")?;
         }
         if config.tools.audio.full_stack_tools {
             context.ensure_build_type_and_feature_set_level(

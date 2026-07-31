@@ -1395,21 +1395,39 @@ export_fuchsia_package_to_bazel("intel_hda.bootfs_files_package.bazel_input") {
 }
 
 group("audio_development_support") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/media/audio/services/ffxdaemon:audio_ffx_daemon" ]
+}
+
+group("virtual_audio_driver") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio",
-    "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio-legacy",
-    "//bundles/assembly/bazel_inputs/src/media/audio/services/ffxdaemon:audio_ffx_daemon",
   ]
 }
 
-group("audio_driver_development_tools") {
+group("virtual_audio_legacy_driver") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio-legacy" ]
+}
+
+group("virtual_audio_util") {
+  deps = [
+    "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
+  ]
+}
+
+group("virtual_audio_legacy_util") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util" ]
+}
+
+group("audio_legacy_driver_tools") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-codec-ctl",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-driver-ctl",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/dsputil",
-    "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util",
-    "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
   ]
+}
+
+group("audio_driver_development_tools") {
+  deps = []
 }
 
 group("audio_full_stack_development_tools") {

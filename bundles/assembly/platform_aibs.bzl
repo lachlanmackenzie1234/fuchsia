@@ -436,6 +436,11 @@ platform_aib_names = bringup_platform_aib_names + [
     "audio_device_registry_eager",
     "audio_driver_development_tools",
     "audio_full_stack_development_tools",
+    "audio_legacy_driver_tools",
+    "virtual_audio_driver",
+    "virtual_audio_legacy_driver",
+    "virtual_audio_util",
+    "virtual_audio_legacy_util",
     "intel_hda",
 
     # Display development/debugging

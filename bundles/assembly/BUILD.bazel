@@ -4029,23 +4029,27 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    cache_packages = [
+        "//bundles/assembly/bazel_inputs/src/media/audio/services/ffxdaemon:audio_ffx_daemon",
+    ],
+    core_shards = [
+        "//src/media/audio/services/ffxdaemon:meta/audio_ffx_daemon.core_shard.cml",
+    ],
+)
+
+# Modern virtual-audio driver
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "virtual_audio_driver",
+    allowed_in = [
+        "eng",
+    ],
     drivers = [
         {
             "set": "base",
             "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio:virtual-audio",
             "driver_components": ["meta/virtual-audio-driver.cm"],
         },
-        {
-            "set": "base",
-            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio-legacy:virtual-audio-legacy",
-            "driver_components": ["meta/virtual-audio-legacy-driver.cm"],
-        },
-    ],
-    cache_packages = [
-        "//bundles/assembly/bazel_inputs/src/media/audio/services/ffxdaemon:audio_ffx_daemon",
-    ],
-    core_shards = [
-        "//src/media/audio/services/ffxdaemon:meta/audio_ffx_daemon.core_shard.cml",
     ],
 )
 
@@ -4056,13 +4060,73 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+)
+
+# Modern virtual-audio utility
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "virtual_audio_util",
+    allowed_in = [
+        "eng",
+    ],
+    cache_packages = [
+        "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
+    ],
+    shell_commands = [
+        {
+            "package": "virtual_audio_util",
+            "components": ["virtual_audio"],
+        },
+    ],
+)
+
+# Previous-generation test fixture: virtual-audio-legacy driver
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "virtual_audio_legacy_driver",
+    allowed_in = [
+        "eng",
+    ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio-legacy:virtual-audio-legacy",
+            "driver_components": ["meta/virtual-audio-legacy-driver.cm"],
+        },
+    ],
+)
+
+# Legacy virtual-audio utility
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "virtual_audio_legacy_util",
+    allowed_in = [
+        "eng",
+    ],
+    cache_packages = [
+        "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util",
+    ],
+    shell_commands = [
+        {
+            "package": "virtual_audio_legacy_util",
+            "components": ["virtual_audio_legacy_util"],
+        },
+    ],
+)
+
+# Tools for interactive debugging/development of previous-generation (legacy) audio drivers
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "audio_legacy_driver_tools",
+    allowed_in = [
+        "eng",
+    ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-codec-ctl",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-driver-ctl",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/dsputil",
-        "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util",
-        "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
     ],
+
     # From //src/media/audio/tools.
     shell_commands = [
         {
@@ -4077,14 +4141,6 @@ assembly_input_bundle(
             "package": "dsputil",
             "components": ["dsputil"],
         },
-        {
-            "package": "virtual_audio_legacy_util",
-            "components": ["virtual_audio_legacy"],
-        },
-        {
-            "package": "virtual_audio_util",
-            "components": ["virtual_audio"],
-        },
     ],
 )
 
@@ -4093,7 +4149,7 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "audio_full_stack_development_tools",
     allowed_in = [
-        "eng",
+        "standard::eng",
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-capture-timestamp-validator",

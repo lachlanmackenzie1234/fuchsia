@@ -19,6 +19,8 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
             && *context.build_type == BuildType::Eng
         {
             builder.platform_bundle("audio_development_support")?;
+            builder.platform_bundle("virtual_audio_driver")?;
+            builder.platform_bundle("virtual_audio_legacy_driver")?;
 
             if context.board_config.provides_feature(BoardFeature::VideoEncoders) {
                 builder.platform_bundle("video_development_support")?;
