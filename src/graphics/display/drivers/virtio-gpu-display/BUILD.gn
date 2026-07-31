@@ -14,28 +14,6 @@ declare_args() {
   virtio_gpu_display_flavor = "cpp"
 }
 
-if (virtio_gpu_display_flavor == "rust") {
-  cpp_component_name = "virtio-gpu-display-cpp"
-  cpp_package_name = "virtio-gpu-display-cpp"
-  cpp_output_name = "virtio-gpu-display-cpp"
-  cpp_manifest = "meta/virtio-gpu-display-cpp.cml"
-
-  rust_component_name = "virtio-gpu-display"
-  rust_package_name = "virtio-gpu-display"
-  rust_output_name = "virtio-gpu-display"
-  rust_manifest = "meta/virtio-gpu-display.cml"
-} else {
-  cpp_component_name = "virtio-gpu-display"
-  cpp_package_name = "virtio-gpu-display"
-  cpp_output_name = "virtio-gpu-display"
-  cpp_manifest = "meta/virtio-gpu-display.cml"
-
-  rust_component_name = "virtio-gpu-display-rust"
-  rust_package_name = "virtio-gpu-display-rust"
-  rust_output_name = "virtio-gpu-display-rust"
-  rust_manifest = "meta/virtio-gpu-display-rust.cml"
-}
-
 driver_bind_rules("virtio-gpu-display-bind") {
   rules = "meta/virtio-gpu-display.bind"
   bind_output = "virtio-gpu-display.bindbc"
@@ -121,9 +99,9 @@ test("driver_test") {
   ]
 }
 
-fuchsia_cc_driver("driver") {
+fuchsia_cc_driver("driver-cpp") {
   configs += [ "//build/config/fuchsia:enable_zircon_asserts" ]
-  output_name = cpp_output_name
+  output_name = "virtio-gpu-display-cpp"
   sources = [
     "cpp/gpu-device-driver.cc",
     "cpp/gpu-device-driver.h",
@@ -144,7 +122,7 @@ fuchsia_rust_driver("driver-rust") {
   edition = "2024"
   with_unit_tests = true
   source_root = "rust/src/lib.rs"
-  output_name = rust_output_name
+  output_name = "virtio-gpu-display-rust"
   sources = [
     "rust/src/driver.rs",
     "rust/src/imported_image.rs",
@@ -186,28 +164,35 @@ fuchsia_rust_driver("driver-rust") {
   test_deps = [ "//src/lib/fuchsia" ]
 }
 
-fuchsia_driver_component("component") {
-  component_name = cpp_component_name
+fuchsia_driver_component("component-cpp") {
+  component_name = "virtio-gpu-display"
   info = "meta/virtio-gpu-display-info.json"
-  manifest = cpp_manifest
-  deps = [ ":driver" ]
+  manifest = "meta/virtio-gpu-display-cpp.cml"
+  deps = [ ":driver-cpp" ]
 }
 
 fuchsia_driver_component("component-rust") {
-  component_name = rust_component_name
+  component_name = "virtio-gpu-display"
   info = "meta/virtio-gpu-display-info.json"
-  manifest = rust_manifest
+  manifest = "meta/virtio-gpu-display-rust.cml"
   deps = [ ":driver-rust" ]
 }
 
-fuchsia_driver_package("package") {
-  package_name = cpp_package_name
-  driver_components = [ ":component" ]
+group("component") {
+  if (virtio_gpu_display_flavor == "rust") {
+    public_deps = [ ":component-rust" ]
+  } else {
+    public_deps = [ ":component-cpp" ]
+  }
 }
 
-fuchsia_driver_package("package-rust") {
-  package_name = rust_package_name
-  driver_components = [ ":component-rust" ]
+fuchsia_driver_package("package") {
+  package_name = "virtio-gpu-display"
+  if (virtio_gpu_display_flavor == "rust") {
+    driver_components = [ ":component-rust" ]
+  } else {
+    driver_components = [ ":component-cpp" ]
+  }
 }
 
 fuchsia_unittest_package("driver-test-package") {
