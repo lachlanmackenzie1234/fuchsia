@@ -1753,7 +1753,7 @@ where
                 respond_not_supported!("syncudp::SetLinger", responder)
             }
             Request::GetLinger { responder } => {
-                warn!("syncudp::GetLinger is not supported, returning Ok((false, 0))");
+                // Return the default since we don't support `SetLinger`.
                 responder.send(Ok((false, 0))).unwrap_or_log("failed to respond")
             }
             Request::SetOutOfBandInline { value: _, responder } => {

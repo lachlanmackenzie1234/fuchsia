@@ -1001,7 +1001,7 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 respond_not_supported!("stream::SetLinger", responder);
             }
             fposix_socket::StreamSocketRequest::GetLinger { responder } => {
-                warn!("stream::GetLinger is not supported, returning Ok((false, 0))");
+                // Return the default since we don't support `SetLinger`.
                 responder.send(Ok((false, 0))).unwrap_or_log("failed to respond")
             }
             fposix_socket::StreamSocketRequest::SetReusePort { value: _, responder } => {

@@ -316,7 +316,8 @@ impl<'a, I: IpExt + IpSockAddrExt> RequestHandler<'a, I> {
                 respond_not_supported!("raw::SetLinger", responder)
             }
             fpraw::SocketRequest::GetLinger { responder } => {
-                respond_not_supported!("raw::GetLinger", responder)
+                // Return the default since we don't support `SetLinger`.
+                responder.send(Ok((false, 0))).unwrap_or_log("failed to respond")
             }
             fpraw::SocketRequest::SetReusePort { value: _, responder } => {
                 respond_not_supported!("raw::SetReusePort", responder)

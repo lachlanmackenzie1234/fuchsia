@@ -631,7 +631,8 @@ impl<'a> RequestHandler<'a> {
                 respond_not_supported!("packet::SetLinger", responder)
             }
             fppacket::SocketRequest::GetLinger { responder } => {
-                respond_not_supported!("packet::GetLinger", responder)
+                // Return the default since we don't support `SetLinger`.
+                responder.send(Ok((false, 0))).unwrap_or_log("failed to respond")
             }
             fppacket::SocketRequest::SetReusePort { value: _, responder } => {
                 respond_not_supported!("packet::SetReusePort", responder)
