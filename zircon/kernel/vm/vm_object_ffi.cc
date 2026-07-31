@@ -43,4 +43,13 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_set_name(VmObject* vmo, const char* 
   return vmo->set_name(name, len);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64_t offset,
+                                                           uint64_t len) {
+  if (!vmo) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return vmo->DecommitRange(offset, len);
+}
+
 }  // extern "C"

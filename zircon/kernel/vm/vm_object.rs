@@ -89,6 +89,13 @@ impl VmObject {
         };
         Status::ok(status)
     }
+
+    /// Decommit a range of pages from the VMO.
+    pub fn decommit_range(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status = unsafe { bindings::cpp_vm_object_decommit_range(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
 }
 
 impl HasRefCount for VmObject {

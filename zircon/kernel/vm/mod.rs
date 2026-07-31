@@ -8,6 +8,7 @@ pub mod arch_vm_aspace;
 pub mod page;
 pub mod page_state;
 pub mod physical_page_borrowing_config;
+pub mod pmm;
 pub mod scanner;
 pub mod vm;
 pub mod vm_address_region;

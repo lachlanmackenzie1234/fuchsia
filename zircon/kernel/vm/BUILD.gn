@@ -238,6 +238,21 @@ kernel_bindgen_crate("vm-constants-rs") {
   raw_lines = [ "#![no_std]" ]
 }
 
+kernel_bindgen_crate("pmm-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/pmm_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "pmm_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  var_allowlist = [ "PMM_ALLOC_FLAG_ANY" ]
+
+  edition = 2024
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = []
+}
+
 kernel_bindgen_crate("vm-object-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_object_ffi.h" ]
@@ -248,6 +263,7 @@ kernel_bindgen_crate("vm-object-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_object_decommit_range",
     "cpp_vm_object_free",
     "cpp_vm_object_get_ref_counted",
     "cpp_vm_object_is_resizable",
@@ -362,6 +378,7 @@ kernel_rust_mod("vm-rs") {
     "page.rs",
     "page_state.rs",
     "physical_page_borrowing_config.rs",
+    "pmm.rs",
     "scanner.rs",
     "vm.rs",
     "vm_address_region.rs",
@@ -375,6 +392,7 @@ kernel_rust_mod("vm-rs") {
 
   deps = [
     ":physical-page-borrowing-config-bindings",
+    ":pmm-bindings",
     ":scanner-bindings",
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",
