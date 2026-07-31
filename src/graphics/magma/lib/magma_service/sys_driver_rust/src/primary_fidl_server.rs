@@ -8,7 +8,7 @@ use crate::magma_system_connection::{
 };
 use crate::magma_system_context::{MagmaExecCommandBuffer, MagmaExecResource};
 use anyhow::Context;
-use fidl::endpoints::{ControlHandle, RequestStream};
+use fidl::endpoints::RequestStream;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 
@@ -207,7 +207,7 @@ impl PrimaryFidlServer {
             fidl_fuchsia_gpu_magma::PrimaryRequest::ExecuteInlineCommands { .. } => {
                 fuchsia_trace::duration!("magma", "PrimaryFidlServer::ExecuteInlineCommand");
                 self.flow_control(0, &control_handle);
-                control_handle.shutdown_with_epitaph(MagmaStatus::InvalidArgs.into());
+                control_handle.shutdown_with_epitaph(zx::Status::from(MagmaStatus::InvalidArgs));
                 return Err(anyhow::anyhow!("ExecuteInlineCommands unimplmented"));
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::Flush { responder } => {
@@ -381,7 +381,7 @@ impl CloseOnError for Result<(), MagmaStatus> {
     fn close_on_error(self, control_handle: &fidl_fuchsia_gpu_magma::PrimaryControlHandle) -> Self {
         match &self {
             Ok(_) => (),
-            Err(e) => control_handle.shutdown_with_epitaph((*e).into()),
+            Err(e) => control_handle.shutdown_with_epitaph(zx::Status::from(*e)),
         }
         self
     }

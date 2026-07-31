@@ -1682,8 +1682,11 @@ async fn watch_routing_events_already_hanging<I: Ip + FidlMulticastAdminIpExt, N
     ) {
         let err =
             controller.watch_routing_events().await.expect_err("should fail with PEER_CLOSED");
-        let status = assert_matches!(err, fidl::Error::ClientChannelClosed{status, ..} => status);
-        assert_eq!(status, zx::Status::PEER_CLOSED);
+        let epitaph = assert_matches!(
+            err,
+            fidl::Error::ClientChannelClosed { epitaph, .. } => epitaph
+        );
+        assert_eq!(epitaph, zx::Status::PEER_CLOSED);
     }
 
     let ((), ()) = futures::future::join(

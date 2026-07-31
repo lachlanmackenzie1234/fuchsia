@@ -1598,7 +1598,8 @@ mod tests {
             let proxy = client_ep.into_proxy();
             assert_matches!(
                 proxy.attach_all_nodes_to(&[0, 0, 0, 0, 0, 0, 0, 0]).await,
-                Err(fidl::Error::ClientChannelClosed { status: ZxStatus::NOT_SUPPORTED, .. })
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == ZxStatus::NOT_SUPPORTED
             );
         };
 

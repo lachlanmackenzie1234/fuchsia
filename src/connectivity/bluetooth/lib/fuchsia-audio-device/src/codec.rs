@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use async_utils::hanging_get::server as hanging_server;
-use fidl::endpoints::{ClientEnd, ControlHandle, Responder};
+use fidl::endpoints::{ClientEnd, Responder};
 use fidl_fuchsia_hardware_audio::{
     CodecMarker, CodecRequestStream, CodecStartResponder, CodecStopResponder,
     CodecWatchPlugStateResponder, PlugState,
@@ -671,13 +671,17 @@ pub(crate) mod tests {
         // The start that shut us down should fail
         let start_before_response = start_before_response_fut.await;
         let Err(_) = start_before_response else {
-            panic!("Expected error from the second start on the proxy before a response: {start_before_response:?}");
+            panic!(
+                "Expected error from the second start on the proxy before a response: {start_before_response:?}"
+            );
         };
 
         // The previous start call also will fail.
         let start_response = start_fut.await;
         let Err(_) = start_response else {
-            panic!("Expected error from the first start on the proxy before a response: {start_response:?}");
+            panic!(
+                "Expected error from the first start on the proxy before a response: {start_response:?}"
+            );
         };
         // The responder should be ok to call even though it has no effect.
         let response_time = fasync::MonotonicInstant::now();

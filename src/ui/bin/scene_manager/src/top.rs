@@ -572,7 +572,9 @@ pub async fn handle_graphical_presenter_request_stream(
 
 fn map_present_root_view_error(e: anyhow::Error) -> PresentRootViewError {
     if let Some(fidl_err) = e.downcast_ref::<fidl::Error>() {
-        if let fidl::Error::ClientChannelClosed { status: zx::Status::TIMED_OUT, .. } = fidl_err {
+        if let fidl::Error::ClientChannelClosed { epitaph, .. } = fidl_err
+            && *epitaph == zx::Status::TIMED_OUT
+        {
             return PresentRootViewError::ViewConnectionTimeout;
         }
     }

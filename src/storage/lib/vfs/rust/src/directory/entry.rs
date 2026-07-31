@@ -588,8 +588,8 @@ mod tests {
 
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status, .. }))
-                if status == Status::BAD_STATE
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                if epitaph == Status::BAD_STATE
         );
     }
 }

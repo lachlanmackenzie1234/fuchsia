@@ -5,16 +5,16 @@
 use crate::node::{Node, NodeComponent};
 use driver_manager_shutdown::RemovalSet;
 use driver_manager_types::{ShutdownState, StartRequestReceiver};
-use fidl::endpoints::{ControlHandle, ServerEnd};
+use fidl::endpoints::{ControlHandle as _, ServerEnd};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_host as fdh;
 use fuchsia_async::{self as fasync};
 use futures::channel::oneshot;
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, warn};
 use std::rc::Rc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as frunner,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_host as fdh,
-};
 
 #[derive(Debug)]
 pub struct NodeServerBinding {
@@ -33,7 +33,7 @@ impl NodeServerBinding {
     }
 
     pub fn close(self) {
-        self.node_ref.shutdown_with_epitaph(zx::Status::OK);
+        self.node_ref.shutdown_with_epitaph(Ok(()));
     }
 }
 
@@ -66,7 +66,7 @@ impl NodeControllerServerBinding {
     }
 
     pub fn close(self) {
-        self.node_controller_ref.shutdown_with_epitaph(zx::Status::OK);
+        self.node_controller_ref.shutdown_with_epitaph(Ok(()));
     }
 }
 
@@ -351,8 +351,8 @@ impl Node {
                 // TODO(b/322235974): Increase the log severity to ERROR once we resolve the
                 // component shutdown order in DriverTestRealm.
                 let Err(e) = event;
-                if let fidl::Error::ClientChannelClosed { status, .. } = e
-                    && status == zx::Status::OK
+                if let fidl::Error::ClientChannelClosed { epitaph, .. } = e
+                    && epitaph.is_ok()
                 {
                 } else {
                     warn!("Node: driver channel shutdown with: {e}");

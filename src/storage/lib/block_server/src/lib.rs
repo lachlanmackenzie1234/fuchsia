@@ -4086,10 +4086,8 @@ mod tests {
                     let res = session_proxy.get_fifo().await;
                     assert_matches!(
                         res,
-                        Err(fidl::Error::ClientChannelClosed {
-                            status: zx::Status::INVALID_ARGS,
-                            ..
-                        })
+                        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                            if epitaph == zx::Status::INVALID_ARGS
                     );
                 }
 
@@ -4105,10 +4103,8 @@ mod tests {
                     let res = session_proxy.get_fifo().await;
                     assert_matches!(
                         res,
-                        Err(fidl::Error::ClientChannelClosed {
-                            status: zx::Status::OUT_OF_RANGE,
-                            ..
-                        })
+                        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                            if epitaph == zx::Status::OUT_OF_RANGE
                     );
                 }
             }

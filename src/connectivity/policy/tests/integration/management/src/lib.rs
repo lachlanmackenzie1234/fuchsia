@@ -1591,8 +1591,9 @@ async fn test_prefix_provider_double_watch<M: Manager, N: Netstack>(name: &str) 
     let (res1, res2) =
         futures::future::join(prefix_control.watch_prefix(), prefix_control.watch_prefix()).await;
     for res in [res1, res2] {
-        assert_matches::assert_matches!(res, Err(fidl::Error::ClientChannelClosed { status, .. }) => {
-            assert_eq!(status, zx::Status::PEER_CLOSED);
+        assert_matches::assert_matches!(res,
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. }) => {
+            assert_eq!(epitaph, zx::Status::PEER_CLOSED);
         });
     }
     let fnet_dhcpv6::PrefixControlEvent::OnExit { reason } = prefix_control

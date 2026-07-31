@@ -18,7 +18,6 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.session.window:fuchsia.session.window_rust",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
-    "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

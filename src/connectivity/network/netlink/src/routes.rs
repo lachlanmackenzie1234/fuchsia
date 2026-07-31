@@ -440,13 +440,11 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         let grant = match control.get_authorization_for_interface().await {
             Ok(grant) => grant,
             Err(fnet_interfaces_ext::admin::TerminalError::Fidl(
-                fidl::Error::ClientChannelClosed { status, protocol_name, .. },
+                fidl::Error::ClientChannelClosed { epitaph, protocol_name, .. },
             )) => {
                 log_debug!(
-                    "{}: netstack dropped the {} channel, interface {} does not exist",
-                    status,
-                    protocol_name,
-                    interface_id
+                    "{epitaph:?}: netstack dropped the {protocol_name} channel, \
+                     interface {interface_id} does not exist"
                 );
                 return Err(RequestError::UnrecognizedInterface);
             }
@@ -1317,7 +1315,7 @@ fn view_existing_route_nlas(route: &RouteMessage) -> RouteNlaView<'_> {
             assert_eq!(table, None, "existing route has multiple `Table` NLAs");
             table = Some(t)
         }
-        nla => panic!("existing route has unexpected NLA: {:?}", nla),
+        nla => panic!("existing route has unexpected NLA: {nla:?}"),
     });
     if subnet.is_none() {
         assert_eq!(

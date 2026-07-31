@@ -190,7 +190,7 @@ mod tests {
         // result in `PEER_CLOSED`.
         assert_matches!(
             entry_iter.get_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
     }
 

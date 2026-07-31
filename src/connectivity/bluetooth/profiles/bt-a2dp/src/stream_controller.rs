@@ -15,7 +15,7 @@ use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 use futures::stream::{SelectAll, Stream};
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use log::{info, trace};
 use std::cell::RefCell;
 use std::sync::{Arc, Weak};
@@ -409,9 +409,8 @@ mod tests {
     async fn expect_fidl_error_for_client(client: &StreamSuspenderProxy) {
         let mut event_stream = client.take_event_stream();
         match event_stream.next().await {
-            Some(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::INTERNAL, ..
-            })) => {}
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                if epitaph == zx::Status::INTERNAL => {}
             x => panic!("Expected ready with INTERNAL error but got: {:?}", x),
         }
     }

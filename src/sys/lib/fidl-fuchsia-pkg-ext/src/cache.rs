@@ -220,7 +220,9 @@ async fn open_blob(
         OpenKind::Content => needed_blobs.open_blob(&blob_id.into(), allow_existing),
     };
     match open_fut.await {
-        Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }) => {
+        Err(fidl::Error::ClientChannelClosed {
+            epitaph: fidl::Epitaph::Explicit(Ok(())), ..
+        }) => {
             if let Some(pkg_present) = pkg_present {
                 pkg_present.set();
             }
@@ -718,7 +720,7 @@ impl From<fpkg::BlobWrittenError> for BlobWrittenError {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{ClientEnd, ControlHandle as _, RequestStream as _};
+    use fidl::endpoints::{ClientEnd, RequestStream as _};
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_pkg::{
         BlobInfoIteratorRequest, NeededBlobsRequest, NeededBlobsRequestStream,
@@ -782,13 +784,13 @@ mod tests {
         }
 
         fn finish_hold_stream_open(self) -> (NeededBlobsRequestStream, PackageDirProvider) {
-            self.stream.control_handle().shutdown_with_epitaph(Status::OK);
+            self.stream.control_handle().shutdown_with_epitaph(Ok(()));
             self.responder.send(Ok(())).unwrap();
             (self.stream, PackageDirProvider { stream: self.dir })
         }
 
         fn finish(self) -> PackageDirProvider {
-            self.stream.control_handle().shutdown_with_epitaph(Status::OK);
+            self.stream.control_handle().shutdown_with_epitaph(Ok(()));
             self.responder.send(Ok(())).unwrap();
             PackageDirProvider { stream: self.dir }
         }
@@ -959,7 +961,8 @@ mod tests {
 
                 assert_matches!(
                     pkg_dir.into_proxy().take_event_stream().next().await,
-                    Some(Err(fidl::Error::ClientChannelClosed { status: Status::NOT_EMPTY, .. }))
+                    Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                        if epitaph == Status::NOT_EMPTY
                 );
             },
         )
@@ -1000,7 +1003,8 @@ mod tests {
 
                 assert_matches!(
                     pkg_dir.into_proxy().take_event_stream().next().await,
-                    Some(Err(fidl::Error::ClientChannelClosed { status: Status::NOT_EMPTY, .. }))
+                    Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                        if epitaph == Status::NOT_EMPTY
                 );
             },
         )
@@ -1120,9 +1124,9 @@ mod tests {
         assert_matches!(
             get.get_missing_blobs().try_concat().await,
             Err(ListMissingBlobsError::CallNextOnBlobIterator(
-                fidl::Error::ClientChannelClosed{status, ..})
+                fidl::Error::ClientChannelClosed { epitaph, ..})
             )
-                if status == Status::PEER_CLOSED
+                if epitaph == Status::PEER_CLOSED
         );
     }
 
@@ -1135,9 +1139,9 @@ mod tests {
                 assert_matches!(
                     get.get_missing_blobs().try_concat().await,
                     Err(ListMissingBlobsError::CallNextOnBlobIterator(
-                        fidl::Error::ClientChannelClosed{status, ..}
+                        fidl::Error::ClientChannelClosed { epitaph, ..}
                     ))
-                        if status == Status::ADDRESS_IN_USE
+                        if epitaph == Status::ADDRESS_IN_USE
                 );
             })
             .await;
@@ -1412,7 +1416,8 @@ mod tests {
 
                 assert_matches!(
                     pkg_dir.into_proxy().take_event_stream().next().await,
-                    Some(Err(fidl::Error::ClientChannelClosed { status: Status::NOT_EMPTY, .. }))
+                    Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                        if epitaph == Status::NOT_EMPTY
                 );
             },
         )

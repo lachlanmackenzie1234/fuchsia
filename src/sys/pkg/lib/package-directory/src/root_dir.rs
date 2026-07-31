@@ -653,7 +653,8 @@ mod tests {
         let proxy = vfs::directory::serve(root_dir, ExecutionScope::new(), fio::PERM_WRITABLE);
         assert_matches!(
             proxy.take_event_stream().try_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::NOT_SUPPORTED
         );
     }
 

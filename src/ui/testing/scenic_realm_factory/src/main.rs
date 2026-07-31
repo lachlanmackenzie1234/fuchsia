@@ -4,7 +4,6 @@
 
 use anyhow::Error;
 use cm_rust::{self, FidlIntoNative};
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_scheduler::RoleManagerMarker;
 use fidl_fuchsia_ui_composition::{
     AllocatorMarker, FlatlandDisplayMarker, FlatlandMarker, ScreenCaptureMarker, ScreenshotMarker,

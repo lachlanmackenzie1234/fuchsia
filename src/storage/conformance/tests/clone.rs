@@ -61,7 +61,7 @@ async fn clone_file_node_reference() {
     let wrong_protocol = fio::FileProxy::from_channel(clone_proxy.into_channel().unwrap());
     assert_matches!(
         wrong_protocol.read(0).await,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
     );
 }
 

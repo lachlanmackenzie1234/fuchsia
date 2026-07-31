@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use super::{EscrowRequest, StopInfo};
+use fidl_fuchsia_component_runner as fcrunner;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Shared};
 use futures::{FutureExt, StreamExt};
 use std::ops::Deref;
 use std::sync::Arc;
-use {fidl_fuchsia_component_runner as fcrunner, fuchsia_async as fasync};
 
 /// Wrapper around the `ComponentControllerProxy` with utilities for handling events.
 pub struct ComponentController {
@@ -100,9 +101,17 @@ impl<'a> ComponentController {
         let mut termination_sender = Some(termination_sender);
         while let Some(value) = event_stream.next().await {
             match value {
-                Err(fidl::Error::ClientChannelClosed { status, .. }) => {
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. }) => {
                     termination_sender.take().and_then(|sender| {
-                        sender.send(StopInfo { termination_status: status, exit_code: None }).ok()
+                        sender
+                            .send(StopInfo {
+                                termination_status: match epitaph.into() {
+                                    Err(s) => s,
+                                    Ok(()) => zx::Status::OK,
+                                },
+                                exit_code: None,
+                            })
+                            .ok()
                     });
                 }
                 Err(_) => {

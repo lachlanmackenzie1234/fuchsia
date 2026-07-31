@@ -4,14 +4,16 @@
 
 use anyhow::Context;
 use fidl::endpoints::{ControlHandle, ServerEnd};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_ldsvc::{LoaderMarker, LoaderRequest};
+use fidl_fuchsia_test_runner as ftestrunner;
 use ftestrunner::LibraryLoaderCacheMarker;
+use fuchsia_async as fasync;
 use futures::lock::Mutex as FutMutex;
 use futures::prelude::*;
 use log::warn;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_test_runner as ftestrunner, fuchsia_async as fasync};
 
 /// maps vmo key with vmo result.
 type VmoKeyMap = HashMap<String, (i32, Option<zx::Vmo>)>;
@@ -103,7 +105,7 @@ fn serve_lib_loader(
                             match library_loader::load_object(&search_dirs, &object_name).await {
                                 Ok(b) => (b.into(), zx::sys::ZX_OK),
                                 Err(e) => {
-                                    warn!("failed to load object: {:?}", e);
+                                    warn!("failed to load object: {e:?}");
                                     (None, zx::sys::ZX_ERR_NOT_FOUND)
                                 }
                             };
@@ -129,7 +131,7 @@ fn serve_lib_loader(
                                 responder.send(zx::sys::ZX_OK)?;
                             }
                             Err(e) => {
-                                warn!("failed to parse config: {}", e);
+                                warn!("failed to parse config: {e}");
                                 responder.send(zx::sys::ZX_ERR_INVALID_ARGS)?;
                             }
                         }
@@ -142,7 +144,7 @@ fn serve_lib_loader(
             }
             Ok(())
         }
-        .unwrap_or_else(|e: anyhow::Error| warn!("couldn't run library loader service: {:?}", e)),
+        .unwrap_or_else(|e: anyhow::Error| warn!("couldn't run library loader service: {e:?}")),
     )
 }
 
@@ -239,8 +241,11 @@ mod tests {
             .await
             .expect_err("Should fail with PEER_CLOSED.");
 
-        let status = assert_matches!(err, fidl::Error::ClientChannelClosed{status, ..} => status);
-        assert_eq!(status, zx::Status::PEER_CLOSED);
+        let epitaph = assert_matches!(
+            err,
+            fidl::Error::ClientChannelClosed { epitaph, .. } => epitaph
+        );
+        assert_eq!(epitaph, zx::Status::PEER_CLOSED);
         Ok(())
     }
 

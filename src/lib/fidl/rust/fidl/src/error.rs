@@ -26,6 +26,114 @@ impl Drop for TransportError {
     fn drop(&mut self) {}
 }
 
+/// Represents the closure condition of a FIDL channel, either via an explicit epitaph or a direct
+/// peer closure.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Epitaph {
+    /// The channel was closed with an explicit epitaph status (`Ok(())` for `ZX_OK` success, or
+    /// `Err(Status)` for an error).
+    Explicit(std::result::Result<(), zx_status::Status>),
+    /// The channel was closed without an epitaph message (`PEER_CLOSED`).
+    PeerClosed,
+}
+
+impl std::fmt::Display for Epitaph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Epitaph::Explicit(Ok(())) => write!(f, "ZX_OK (0)"),
+            Epitaph::Explicit(Err(s)) => write!(f, "{}", s),
+            Epitaph::PeerClosed => write!(f, "{}", zx_status::Status::PEER_CLOSED),
+        }
+    }
+}
+
+impl std::error::Error for Epitaph {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Epitaph::Explicit(Ok(())) | Epitaph::PeerClosed => None,
+            Epitaph::Explicit(Err(s)) => Some(s),
+        }
+    }
+}
+
+impl Epitaph {
+    /// Returns `true` if an explicit epitaph was received or set (`Explicit`).
+    pub fn is_explicit(&self) -> bool {
+        matches!(self, Epitaph::Explicit(_))
+    }
+
+    /// Returns `true` if the channel was closed without an epitaph (`PEER_CLOSED`)
+    /// or with an explicit `PEER_CLOSED` epitaph.
+    pub fn is_peer_closed(&self) -> bool {
+        matches!(self, Epitaph::PeerClosed | Epitaph::Explicit(Err(zx_status::Status::PEER_CLOSED)))
+    }
+
+    /// Returns `true` if an explicit `ZX_OK` (`Ok(())`) epitaph was received.
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Epitaph::Explicit(Ok(())))
+    }
+}
+
+impl PartialEq<zx_status::Status> for Epitaph {
+    fn eq(&self, other: &zx_status::Status) -> bool {
+        match self {
+            Epitaph::Explicit(Ok(())) => *other == zx_status::Status::OK,
+            Epitaph::Explicit(Err(s)) => s == other,
+            Epitaph::PeerClosed => *other == zx_status::Status::PEER_CLOSED,
+        }
+    }
+}
+
+impl PartialEq<Epitaph> for zx_status::Status {
+    fn eq(&self, other: &Epitaph) -> bool {
+        other.eq(self)
+    }
+}
+
+impl PartialEq<std::result::Result<(), zx_status::Status>> for Epitaph {
+    fn eq(&self, other: &std::result::Result<(), zx_status::Status>) -> bool {
+        let res: std::result::Result<(), zx_status::Status> = (*self).into();
+        &res == other
+    }
+}
+
+impl PartialEq<Epitaph> for std::result::Result<(), zx_status::Status> {
+    fn eq(&self, other: &Epitaph) -> bool {
+        other.eq(self)
+    }
+}
+
+impl From<Epitaph> for std::result::Result<(), zx_status::Status> {
+    fn from(epitaph: Epitaph) -> Self {
+        match epitaph {
+            Epitaph::Explicit(res) => res,
+            Epitaph::PeerClosed => Err(zx_status::Status::PEER_CLOSED),
+        }
+    }
+}
+
+impl From<&Epitaph> for std::result::Result<(), zx_status::Status> {
+    fn from(epitaph: &Epitaph) -> Self {
+        (*epitaph).into()
+    }
+}
+
+impl From<zx_status::Status> for Epitaph {
+    fn from(status: zx_status::Status) -> Self {
+        if status == zx_status::Status::OK {
+            Epitaph::Explicit(Ok(()))
+        } else {
+            Epitaph::Explicit(Err(status))
+        }
+    }
+}
+
+impl From<std::result::Result<(), zx_status::Status>> for Epitaph {
+    fn from(res: std::result::Result<(), zx_status::Status>) -> Self {
+        Epitaph::Explicit(res)
+    }
+}
+
 /// The error type used by FIDL operations.
 #[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
@@ -190,35 +298,28 @@ pub enum Error {
     ClientEvent(#[source] Status),
 
     #[cfg(not(target_os = "fuchsia"))]
-    #[error("A FIDL client's channel to the protocol {protocol_name} was closed: {status}, reason: {}",
+    #[error(
+        "A FIDL client's channel to the protocol {protocol_name} was closed: {epitaph}, reason: {}",
         .reason.as_ref().map(String::as_str).unwrap_or("not given")
     )]
     ClientChannelClosed {
-        /// The epitaph or `Status::PEER_CLOSED`.
+        /// The epitaph or `Epitaph::PeerClosed`.
         #[source]
-        status: Status,
+        epitaph: Epitaph,
         /// The name of the protocol at the other end of the channel.
         protocol_name: &'static str,
-        /// The epitaph, if any. This can be used to discriminate channel closure with a
-        /// `Status::PEER_CLOSED` epitaph from a channel closure with no epitaph. Note that here,
-        /// the epitaph is treated as an opaque 32-bit integer.
-        epitaph: Option<u32>,
         /// Further details on why exactly the channel closed.
         reason: Option<String>,
     },
 
     #[cfg(target_os = "fuchsia")]
-    #[error("A FIDL client's channel to the protocol {protocol_name} was closed: {status}")]
+    #[error("A FIDL client's channel to the protocol {protocol_name} was closed: {epitaph}")]
     ClientChannelClosed {
-        /// The epitaph or `Status::PEER_CLOSED`.
+        /// The epitaph or `Epitaph::PeerClosed`.
         #[source]
-        status: Status,
+        epitaph: Epitaph,
         /// The name of the protocol at the other end of the channel.
         protocol_name: &'static str,
-        /// The epitaph, if any. This can be used to discriminate channel closure with a
-        /// `Status::PEER_CLOSED` epitaph from a channel closure with no epitaph. Note that here,
-        /// the epitaph is treated as an opaque 32-bit integer.
-        epitaph: Option<u32>,
     },
 
     #[error("There was an error attaching a FIDL channel to the async executor: {0}")]

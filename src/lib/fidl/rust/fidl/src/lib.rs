@@ -28,7 +28,7 @@ mod serializable;
 pub use serializable::*;
 
 mod error;
-pub use self::error::{Error, Result, TransportError};
+pub use self::error::{Epitaph, Error, Result, TransportError};
 
 pub use handle::*;
 pub use server::ServeInner;

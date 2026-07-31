@@ -231,7 +231,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_utils::PollExt;
-    use {fidl_fuchsia_bluetooth_bredr as bredr, fuchsia_async as fasync};
+    use fidl_fuchsia_bluetooth_bredr as bredr;
+    use fuchsia_async as fasync;
 
     #[fuchsia::test]
     fn new_gain_control_succeeds() {
@@ -322,7 +323,8 @@ mod tests {
         let result = proxy.watch_speaker_gain().await;
         assert_matches!(
             result,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::INVALID_ARGS, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::INVALID_ARGS
         );
     }
 

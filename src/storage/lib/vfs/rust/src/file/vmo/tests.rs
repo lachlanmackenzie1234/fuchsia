@@ -93,7 +93,8 @@ async fn read_only_write_is_not_supported() {
     let proxy = file::serve_proxy(file, fio::PERM_READABLE | fio::PERM_WRITABLE);
     assert_matches!(
         proxy.take_event_stream().next().await,
-        Some(Err(fidl::Error::ClientChannelClosed { status: Status::ACCESS_DENIED, .. }))
+        Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+            if epitaph == Status::ACCESS_DENIED
     );
 }
 

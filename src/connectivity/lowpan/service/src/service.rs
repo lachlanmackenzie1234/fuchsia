@@ -5,7 +5,7 @@
 use super::*;
 
 use anyhow::Context as _;
-use fidl::endpoints::{ControlHandle as _, RequestStream as _};
+use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_factory_lowpan::{
     FactoryDriverMarker, FactoryDriverProxy, FactoryLookupRequest, FactoryLookupRequestStream,
     FactoryRegisterRequest, FactoryRegisterRequestStream,
@@ -136,7 +136,7 @@ macro_rules! impl_serve_to_driver {
                                         $protocol_member: Some(server_end),
                                         ..Default::default()
                                     }),
-                                    Err(err) => server_end.close_with_epitaph(err.into()),
+                                    Err(err) => server_end.close_with_epitaph(err),
                                 } {
                                     warn!("{:?}", err);
                                 }
@@ -166,7 +166,7 @@ macro_rules! impl_serve_open_protocol_to_driver {
                                         $protocol_member: Some(server_end),
                                         ..Default::default()
                                     }),
-                                    Err(err) => server_end.close_with_epitaph(err.into()),
+                                    Err(err) => server_end.close_with_epitaph(err),
                                 } {
                                     warn!("{:?}", err);
                                 }
@@ -404,7 +404,7 @@ mod factory {
 
                             if let Err(err) = match self.lookup_factory(&name) {
                                 Ok(dev) => dev.get_factory_device(device_factory),
-                                Err(err) => device_factory.close_with_epitaph(err.into()),
+                                Err(err) => device_factory.close_with_epitaph(err),
                             } {
                                 error!("{:?}", err);
                             }

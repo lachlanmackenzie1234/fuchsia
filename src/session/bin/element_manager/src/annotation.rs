@@ -5,13 +5,14 @@
 use async_utils::hanging_get::error::HangingGetServerError;
 use async_utils::hanging_get::server as hanging_get;
 use derivative::Derivative;
-use fidl::endpoints::{ControlHandle, RequestStream};
+use fidl::endpoints::RequestStream;
+use fidl_fuchsia_element as felement;
+use fidl_fuchsia_mem as fmem;
 use futures::TryStreamExt;
 use futures::lock::Mutex;
 use log::error;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use {fidl_fuchsia_element as felement, fidl_fuchsia_mem as fmem};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Key {
@@ -365,14 +366,15 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use async_utils::hanging_get::error::HangingGetServerError;
-    use fidl::endpoints::{ControlHandle, RequestStream, create_proxy_and_stream};
+    use fidl::endpoints::{RequestStream, create_proxy_and_stream};
+    use fidl_fuchsia_element as felement;
     use fidl_test_util::spawn_stream_handler;
+    use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::stream::FusedStream;
     use futures::{StreamExt, TryStreamExt};
     use std::cmp::Ordering;
     use std::sync::Arc;
-    use {fidl_fuchsia_element as felement, fuchsia_async as fasync};
 
     fn make_annotation_key(namespace: &str, value: &str) -> felement::AnnotationKey {
         felement::AnnotationKey { namespace: namespace.to_string(), value: value.to_string() }

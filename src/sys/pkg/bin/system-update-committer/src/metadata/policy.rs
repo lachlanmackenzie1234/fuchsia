@@ -36,9 +36,9 @@ impl PolicyEngine {
             .into_boot_manager_result("query_current_configuration")
         {
             Err(BootManagerError::Fidl {
-                error: fidl::Error::ClientChannelClosed { status: Status::NOT_SUPPORTED, .. },
+                error: fidl::Error::ClientChannelClosed { epitaph, .. },
                 ..
-            }) => {
+            }) if epitaph == Status::NOT_SUPPORTED => {
                 info!("ABR not supported: skipping health verification and boot metadata updates");
                 return Ok(Self(State::NoOp));
             }

@@ -224,7 +224,8 @@ mod tests {
             );
             assert_matches!(
                 proxy.take_event_stream().try_next().await,
-                Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::NOT_SUPPORTED
             );
         }
     }
@@ -242,7 +243,8 @@ mod tests {
             );
             assert_matches!(
                 proxy.take_event_stream().try_next().await,
-                Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_FILE, .. })
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::NOT_FILE
             );
         }
 
@@ -255,7 +257,8 @@ mod tests {
             );
             assert_matches!(
                 proxy.take_event_stream().try_next().await,
-                Err(fidl::Error::ClientChannelClosed { status: zx::Status::INVALID_ARGS, .. })
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::INVALID_ARGS
             );
         }
     }

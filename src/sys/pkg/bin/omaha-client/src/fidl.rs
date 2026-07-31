@@ -8,7 +8,7 @@ use crate::inspect::{AppsNode, StateNode};
 use anyhow::{Context as _, Error, anyhow};
 use channel_config::ChannelConfigs;
 use event_queue::{ClosedClient, ControlHandle, Event, EventQueue, Notify};
-use fidl::endpoints::{ClientEnd, ControlHandle as _};
+use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_power::{CollaborativeRebootInitiatorMarker, CollaborativeRebootInitiatorProxy};
 use fidl_fuchsia_power_internal::{
     CollaborativeRebootReason, CollaborativeRebootSchedulerMarker,

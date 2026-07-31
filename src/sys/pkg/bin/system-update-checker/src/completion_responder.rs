@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
-use fidl::endpoints::ControlHandle as _;
+
 use fidl_fuchsia_update::{ListenerRequest, ListenerRequestStream, NotifierProxy};
 use fidl_fuchsia_update_ext::State;
 use futures::channel::mpsc;

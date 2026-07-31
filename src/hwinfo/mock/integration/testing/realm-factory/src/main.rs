@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
-use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_hwinfo as fhwinfo;
 use fidl_fuchsia_hwinfo_mock as fhwinfo_mock;
 use fidl_test_mock::{RealmFactoryRequest, RealmFactoryRequestStream, RealmOptions};

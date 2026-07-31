@@ -94,8 +94,8 @@ impl Updater {
         paver.find_boot_manager(remote).context("finding boot manager")?;
 
         let result = boot_manager.query_active_configuration().await;
-        if let Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. }) =
-            result
+        if let Err(fidl::Error::ClientChannelClosed { epitaph, .. }) = result
+            && epitaph == zx::Status::NOT_SUPPORTED
         {
             // board does not actually support ABR, so return.
             log::info!("ABR not supported, not configuring slots.");

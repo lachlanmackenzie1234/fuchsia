@@ -805,11 +805,10 @@ mod tests {
         let mut controller2_event_fut = pin!(controller2_event_fut);
         assert_matches!(
             exec.run_until_stalled(&mut controller2_event_fut),
-            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::ALREADY_BOUND,
-                ..
-            })))
+            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })))
+                if epitaph == zx::Status::ALREADY_BOUND
         );
+
         assert!(controller2.is_closed());
     }
 
@@ -843,11 +842,10 @@ mod tests {
         let mut controller2_event_fut = pin!(controller2_event_fut);
         assert_matches!(
             exec.run_until_stalled(&mut controller2_event_fut),
-            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::ALREADY_BOUND,
-                ..
-            })))
+            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })))
+                if epitaph == zx::Status::ALREADY_BOUND
         );
+
         assert!(controller2.is_closed());
 
         // Drop the initial client controller and make sure the second service instance can get a

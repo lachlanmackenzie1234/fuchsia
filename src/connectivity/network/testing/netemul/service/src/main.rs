@@ -79,9 +79,9 @@ enum CreateRealmError {
     WeakBindingUnsupported(String),
 }
 
-impl Into<zx::Status> for CreateRealmError {
-    fn into(self) -> zx::Status {
-        match self {
+impl From<CreateRealmError> for zx::Status {
+    fn from(err: CreateRealmError) -> zx::Status {
+        match err {
             CreateRealmError::SourceNotProvided
             | CreateRealmError::NameNotProvided
             | CreateRealmError::CapabilityNameNotProvided
@@ -1437,7 +1437,7 @@ async fn handle_sandbox(
                             Err(e) => {
                                 error!("error creating ManagedRealm: {}", e);
                                 server_end
-                                    .close_with_epitaph(e.into())
+                                    .close_with_epitaph(zx::Status::from(e))
                                     .unwrap_or_else(|e| error!("error sending epitaph: {:?}", e))
                             }
                         }
@@ -1799,10 +1799,10 @@ mod tests {
         // only exists in `COUNTER_COMPONENT_NAME`.
         match counter.increment().await {
             Err(fidl::Error::ClientChannelClosed {
-                status,
+                epitaph,
                 protocol_name: <CounterMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                 ..
-            }) if status == zx::Status::NOT_FOUND => (),
+            }) if epitaph == zx::Status::NOT_FOUND => (),
             event => panic!(
                 "expected channel close with epitaph NOT_FOUND, got \
                  unexpected event on realm channel: {:?}",
@@ -2490,11 +2490,11 @@ mod tests {
                 panic!("test case failed: \"{}\": epitaph should be sent on realm channel", name)
             }) {
                 Err(fidl::Error::ClientChannelClosed {
-                    status,
+                    epitaph: actual_epitaph,
                     protocol_name:
                         <ManagedRealmMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
                     ..
-                }) if status == epitaph => (),
+                }) if actual_epitaph == epitaph => (),
                 event => panic!(
                     "test case failed: \"{}\": expected channel close with epitaph {}, got \
                      unexpected event on realm channel: {:?}",
@@ -3208,8 +3208,8 @@ mod tests {
             counter.increment().await.expect_err("increment call on stopped child should fail");
         assert_matches::assert_matches!(
             err,
-            fidl::Error::ClientChannelClosed { status, protocol_name, .. }
-                if status == zx::Status::PEER_CLOSED &&
+            fidl::Error::ClientChannelClosed { epitaph, protocol_name, .. }
+                if epitaph == zx::Status::PEER_CLOSED &&
                     protocol_name == CounterMarker::PROTOCOL_NAME
         );
     }

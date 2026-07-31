@@ -7,6 +7,8 @@
 //! Typesafe wrappers around the /blob filesystem.
 
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
 use fuchsia_hash::{Hash, ParseHashError};
 use futures::{StreamExt as _, stream};
 use log::{error, info};
@@ -16,7 +18,6 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::file::StreamIoConnection;
 use vfs::{ObjectRequest, ObjectRequestRef, ProtocolsExt};
 use zx::{self as zx, Status};
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 pub mod mock;
 pub use mock::Mock;
@@ -413,9 +414,12 @@ fn open_blob_with_reader<P: ProtocolsExt + Send>(
 ) {
     scope.clone().spawn(object_request.handle_async(async move |object_request| {
         let get_vmo_result = reader.get_vmo(&blob_hash.into()).await.map_err(|fidl_error| {
-            if let fidl::Error::ClientChannelClosed { status, .. } = fidl_error {
-                error!("Blob reader channel closed: {:?}", status);
-                status
+            if let fidl::Error::ClientChannelClosed { epitaph, .. } = fidl_error {
+                error!("Blob reader channel closed: {epitaph:?}");
+                match epitaph.into() {
+                    Err(status) => status,
+                    Ok(()) => zx::Status::PEER_CLOSED,
+                }
             } else {
                 error!("Transport error on get_vmo: {:?}", fidl_error);
                 zx::Status::INTERNAL

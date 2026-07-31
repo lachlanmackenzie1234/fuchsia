@@ -73,6 +73,6 @@ async fn dhcpv6_client_bind_to_other_interface_address() {
                 "expected peer to close the channel"
             ))
             .await,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
     );
 }

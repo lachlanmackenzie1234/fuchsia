@@ -3052,7 +3052,7 @@ impl_result_union! {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct EpitaphBody {
     /// The error status.
-    pub error: zx_status::Status,
+    pub error: Result<(), zx_status::Status>,
 }
 
 unsafe impl TypeMarker for EpitaphBody {
@@ -3086,7 +3086,7 @@ unsafe impl<D: ResourceDialect> Encode<EpitaphBody, D> for &EpitaphBody {
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<EpitaphBody>(offset);
-        unsafe { encoder.write_num::<i32>(self.error.into_raw(), offset) };
+        unsafe { encoder.write_num::<i32>(zx_status::Status::result_into_raw(self.error), offset) };
         Ok(())
     }
 }
@@ -3094,7 +3094,7 @@ unsafe impl<D: ResourceDialect> Encode<EpitaphBody, D> for &EpitaphBody {
 impl<D: ResourceDialect> Decode<Self, D> for EpitaphBody {
     #[inline(always)]
     fn new_empty() -> Self {
-        Self { error: zx_status::Status::from_raw(0) }
+        Self { error: Ok(()) }
     }
 
     #[inline]
@@ -3105,7 +3105,7 @@ impl<D: ResourceDialect> Decode<Self, D> for EpitaphBody {
         _depth: Depth,
     ) -> Result<()> {
         decoder.debug_check_bounds::<Self>(offset);
-        self.error = zx_status::Status::from_raw(decoder.read_num::<i32>(offset));
+        self.error = zx_status::Status::ok(decoder.read_num::<i32>(offset));
         Ok(())
     }
 }
@@ -4166,7 +4166,7 @@ mod test {
                 ctx,
                 buf,
                 handle_buf,
-                &EpitaphBody { error: zx_status::Status::UNAVAILABLE },
+                &EpitaphBody { error: Err(zx_status::Status::UNAVAILABLE) },
             )
             .expect("encoding failed");
             assert_eq!(buf, &[0xe4, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00]);
@@ -4179,7 +4179,7 @@ mod test {
                 &mut out,
             )
             .expect("Decoding failed");
-            assert_eq!(EpitaphBody { error: zx_status::Status::UNAVAILABLE }, out);
+            assert_eq!(EpitaphBody { error: Err(zx_status::Status::UNAVAILABLE) }, out);
         }
     }
 }

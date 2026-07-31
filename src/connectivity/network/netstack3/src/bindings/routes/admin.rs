@@ -49,7 +49,7 @@ pub(crate) async fn serve_route_set<
     loop {
         futures::select_biased! {
             () = cancel_token => {
-                control_handle.shutdown_with_epitaph(zx::Status::UNAVAILABLE);
+                control_handle.shutdown_with_epitaph(zx::Status::UNAVAILABLE.into());
                 return Ok(());
             },
             request = stream.try_next() => match request? {
@@ -81,7 +81,7 @@ pub(crate) fn spawn_user_route_set_and_keep_alive<
 ) {
     let Some(guard) = scope.active_guard() else {
         warn!("aborted serving user route set because scope is finished");
-        stream.control_handle().shutdown_with_epitaph(zx::Status::UNAVAILABLE);
+        stream.control_handle().shutdown_with_epitaph(zx::Status::UNAVAILABLE.into());
         return;
     };
     let mut user_route_set = create_route_set();
@@ -169,7 +169,7 @@ pub(crate) async fn serve_route_table_provider<I: Ip + FidlRouteIpExt + FidlRout
                         UserRouteTable::new(token, table_id, route_work_sink)
                     }
                     Err(routes::TableIdOverflowsError) => {
-                        control_handle.shutdown_with_epitaph(zx::Status::NO_SPACE);
+                        control_handle.shutdown_with_epitaph(zx::Status::NO_SPACE.into());
                         break;
                     }
                 };
@@ -606,7 +606,9 @@ pub(crate) trait RouteSet<I: FidlRouteAdminIpExt>: Send + Sync {
                     Err(ModifyTableError::Fidl(err)) => Err(err),
                     Err(ModifyTableError::RouteSetError(err)) => responder.send(Err(err)),
                     Err(ModifyTableError::TableRemoved) => {
-                        responder.control_handle().shutdown_with_epitaph(zx::Status::UNAVAILABLE);
+                        responder
+                            .control_handle()
+                            .shutdown_with_epitaph(zx::Status::UNAVAILABLE.into());
                         Ok(())
                     }
                 }
@@ -624,7 +626,9 @@ pub(crate) trait RouteSet<I: FidlRouteAdminIpExt>: Send + Sync {
                     Err(ModifyTableError::Fidl(err)) => Err(err),
                     Err(ModifyTableError::RouteSetError(err)) => responder.send(Err(err)),
                     Err(ModifyTableError::TableRemoved) => {
-                        responder.control_handle().shutdown_with_epitaph(zx::Status::UNAVAILABLE);
+                        responder
+                            .control_handle()
+                            .shutdown_with_epitaph(zx::Status::UNAVAILABLE.into());
                         Ok(())
                     }
                 }

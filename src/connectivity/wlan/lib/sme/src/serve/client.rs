@@ -7,7 +7,7 @@ use crate::client::{
     RoamResult, ScheduledScanReceiver,
 };
 use crate::{MlmeEventStream, MlmeSink, MlmeStream};
-use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use fidl::endpoints::{RequestStream, ServerEnd};
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
@@ -292,7 +292,8 @@ async fn serve_sched_scan_session(
                     txn_handle.send_on_scheduled_scan_matches_available(vmo)?;
                 } else {
                     // Stream closed naturally (SME dropped sender because firmware stopped it).
-                    txn_handle.shutdown_with_epitaph(zx::Status::OK);
+                    txn_handle.shutdown_with_epitaph(Ok(()));
+
                     break;
                 }
             },

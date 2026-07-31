@@ -4,7 +4,6 @@
 
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
-use fidl::endpoints::ControlHandle as _;
 use futures::{StreamExt as _, TryStreamExt as _};
 use itertools::Itertools;
 use regex::Regex;
@@ -142,8 +141,8 @@ async fn handle_suite_get_tests(
                 let tests = match proxy.get_next().await {
                     Ok(tests) => tests,
                     Err(err) => match err {
-                        fidl::Error::ClientChannelClosed { status, .. } => {
-                            handle.shutdown_with_epitaph(status);
+                        fidl::Error::ClientChannelClosed { epitaph, .. } => {
+                            handle.shutdown_with_epitaph(epitaph);
                             return Ok(());
                         }
                         err => {

@@ -437,7 +437,7 @@ pub trait ControlHandle {
 
     /// Sets the server to shutdown with an epitaph. The underlying channel is
     /// only closed the next time the stream is polled.
-    fn shutdown_with_epitaph(&self, status: zx_status::Status);
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph);
 
     /// Returns true if the server has received the `PEER_CLOSED` signal.
     fn is_closed(&self) -> bool;
@@ -607,7 +607,10 @@ impl<T: ProtocolMarker> ServerEnd<T> {
     }
 
     /// Writes an epitaph into the underlying channel before closing it.
-    pub fn close_with_epitaph(self, status: fidl::Status) -> Result<(), fidl::Error> {
+    pub fn close_with_epitaph(
+        self,
+        status: impl Into<Result<(), fidl::Status>>,
+    ) -> Result<(), fidl::Error> {
         self.inner.close_with_epitaph(status)
     }
 }

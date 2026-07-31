@@ -280,8 +280,8 @@ mod tests {
         // Second get should cause channel closure with BAD_STATE
         let result = proxy.get().await;
         assert!(result.is_err());
-        if let Err(fidl::Error::ClientChannelClosed { status, .. }) = result {
-            assert_eq!(status, zx::Status::BAD_STATE);
+        if let Err(fidl::Error::ClientChannelClosed { epitaph, .. }) = result {
+            assert_eq!(epitaph, zx::Status::BAD_STATE);
         } else {
             panic!("Expected ClientChannelClosed(BAD_STATE), got {:?}", result);
         }

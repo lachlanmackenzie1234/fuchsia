@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::logs::error::LogsError;
-use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fuchsia_async::Scope;
 use futures::StreamExt;

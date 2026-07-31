@@ -12,7 +12,7 @@ use std::num::NonZeroUsize;
 use std::pin::pin;
 use std::sync::Arc;
 
-use fidl::endpoints::{ControlHandle as _, RequestStream as _};
+use fidl::endpoints::RequestStream as _;
 use futures::channel::mpsc;
 use futures::future::FusedFuture as _;
 use futures::lock::Mutex;

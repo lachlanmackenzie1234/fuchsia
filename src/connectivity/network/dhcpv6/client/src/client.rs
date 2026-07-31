@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::str::FromStr as _;
 use std::time::Duration;
 
-use fidl::endpoints::{ControlHandle as _, ServerEnd};
+use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_dhcpv6::{
     ClientMarker, ClientRequest, ClientRequestStream, ClientWatchAddressResponder,
@@ -1054,11 +1054,11 @@ mod tests {
 
         assert_matches!(
             caller1_res,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
         assert_matches!(
             caller2_res,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
         assert!(
             client_res
@@ -1257,7 +1257,8 @@ mod tests {
             // `INVALID_ARGS`.
             assert_matches!(
                 client_proxy.watch_servers().await,
-                Err(fidl::Error::ClientChannelClosed { status: zx::Status::INVALID_ARGS, .. })
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::INVALID_ARGS
             );
         }
     }
@@ -1555,12 +1556,13 @@ mod tests {
         .await
         .expect("failed to create test client");
 
-        let ReceivedMessage { transaction_id: initial_txid, client_id: _ } = assert_received_message(
-            &server_socket,
-            client_addr,
-            v6::MessageType::InformationRequest,
-        )
-        .await;
+        let ReceivedMessage { transaction_id: initial_txid, client_id: _ } =
+            assert_received_message(
+                &server_socket,
+                client_addr,
+                v6::MessageType::InformationRequest,
+            )
+            .await;
 
         let dns_servers = [net_ip_v6!("fe80::1:2"), net_ip_v6!("1234::5:6")];
         send_msg_with_options(

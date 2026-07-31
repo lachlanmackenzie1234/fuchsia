@@ -395,7 +395,7 @@ mod tests {
         assert_matches!(
             events.pop(),
             Some(Err(EntryIteratorError::Fidl(fidl::Error::ClientChannelClosed {
-                status: zx_status::Status::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 ..
             })))
         );
@@ -443,7 +443,7 @@ mod tests {
                     assert_matches!(
                         events.pop_front(),
                         Some(Err(EntryIteratorError::Fidl(fidl::Error::ClientChannelClosed {
-                            status: zx_status::Status::PEER_CLOSED,
+                            epitaph: fidl::Epitaph::PeerClosed,
                             ..
                         })))
                     );

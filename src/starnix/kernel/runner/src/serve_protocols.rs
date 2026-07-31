@@ -4,7 +4,7 @@
 
 use crate::Container;
 use anyhow::{Context as _, Error};
-use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use fidl::endpoints::{RequestStream, ServerEnd};
 use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_element as felement;
 use fidl_fuchsia_io as fio;

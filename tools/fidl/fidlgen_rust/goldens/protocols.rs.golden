@@ -439,12 +439,18 @@ pub struct AnotherDiscoverableProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl AnotherDiscoverableProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for AnotherDiscoverableProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -1057,12 +1063,18 @@ pub struct ChannelProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl ChannelProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for ChannelProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -1609,12 +1621,18 @@ pub struct DiscoverableProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl DiscoverableProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for DiscoverableProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -2063,12 +2081,18 @@ pub struct HandleRightsProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl HandleRightsProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for HandleRightsProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -2628,12 +2652,18 @@ pub struct ManyParametersControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl ManyParametersControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for ManyParametersControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -3020,12 +3050,18 @@ pub struct MethodWithUnionControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl MethodWithUnionControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for MethodWithUnionControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -3385,12 +3421,18 @@ pub struct PlatformServer_ControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl PlatformServer_ControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for PlatformServer_ControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -4194,12 +4236,18 @@ pub struct WithAndWithoutRequestResponseControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl WithAndWithoutRequestResponseControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for WithAndWithoutRequestResponseControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -5120,12 +5168,18 @@ pub struct WithErrorSyntaxControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl WithErrorSyntaxControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for WithErrorSyntaxControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -6003,12 +6057,18 @@ pub struct WithProtocolEndsControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl WithProtocolEndsControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for WithProtocolEndsControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 

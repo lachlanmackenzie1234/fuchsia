@@ -5,7 +5,7 @@
 //! Implements fuchsia.net.policy.socketproxy.NetworkRegistry.
 
 use anyhow::{Context, Error, anyhow};
-use fidl::endpoints::{ControlHandle, RequestStream};
+use fidl::endpoints::RequestStream;
 use fidl_fuchsia_net_policy_socketproxy::{
     self as fnp_socketproxy, FuchsiaNetworkInfo, FuchsiaNetworksRequest, Network, NetworkInfo,
     NetworkRegistryAddError, NetworkRegistryRemoveError, NetworkRegistrySetDefaultError,

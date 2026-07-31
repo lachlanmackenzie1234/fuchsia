@@ -5,7 +5,7 @@
 mod realm_factory;
 
 use anyhow::{Context, Result};
-use fidl::endpoints::{self, ClientEnd, ControlHandle, Proxy};
+use fidl::endpoints::{self, ClientEnd, Proxy};
 use fidl_fuchsia_metrics_test as ffmt;
 use fidl_test_time_realm as fttr;
 use fuchsia_async as fasync;

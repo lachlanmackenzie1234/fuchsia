@@ -938,9 +938,9 @@ async fn diagnostics_recent_destructions_concurrent_watch(name: &str) {
     assert_matches!(
         futures::join!(first_watch, second_watch),
         (
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::ALREADY_EXISTS, .. }),
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::ALREADY_EXISTS, .. }),
-        )
+            Err(fidl::Error::ClientChannelClosed { epitaph: epitaph1, .. }),
+            Err(fidl::Error::ClientChannelClosed { epitaph: epitaph2, .. }),
+        ) if epitaph1 == zx::Status::ALREADY_EXISTS && epitaph2 == zx::Status::ALREADY_EXISTS
     );
 
     assert_eq!(watcher.on_closed().await, Ok(zx::Signals::CHANNEL_PEER_CLOSED));
@@ -985,6 +985,6 @@ async fn diagnostics_recent_destructions_queue_limit<I: Ip>(name: &str) {
 
     assert_matches!(
         watcher.watch().await,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::NO_RESOURCES, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. }) if epitaph == zx::Status::NO_RESOURCES
     );
 }

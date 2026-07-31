@@ -713,7 +713,9 @@ impl MulticastRoutingManager {
                         "Got error in waiting for routing events: {:?}", err
                     );
 
-                    if let ClientChannelClosed { status: ZxStatus::PEER_CLOSED, .. } = err {
+                    if let ClientChannelClosed { epitaph, .. } = err
+                        && epitaph.is_peer_closed()
+                    {
                         match routing_table_controller_proxy.take_event_stream().try_next().await {
                             Ok(Some(fnet_mcast::Ipv6RoutingTableControllerEvent::OnClose {
                                 error: reason,

@@ -690,7 +690,8 @@ mod tests {
         let mut node = node.take_event_stream();
         assert_matches!(
             node.try_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::ACCESS_DENIED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::ACCESS_DENIED
         );
 
         // Try to open as read-only. Should succeed.

@@ -58,10 +58,14 @@ impl<D: ResourceDialect> ServeInner<D> {
     /// TODO(https://fxbug.dev/42153903): This should cause the channel to close on the
     /// next poll, but in fact the channel won't close until the user of the
     /// bindings drops their request stream, responders, and control handles.
-    pub fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<crate::Epitaph>) {
         let already_shutting_down = self.shutdown.swap(true, atomic::Ordering::Relaxed);
         if !already_shutting_down {
             // Ignore the error, best effort sending an epitaph.
+            let status = match status.into() {
+                crate::Epitaph::Explicit(res) => res,
+                crate::Epitaph::PeerClosed => Err(zx_status::Status::PEER_CLOSED),
+            };
             let _ = epitaph::write_epitaph_impl(self.channel.as_channel(), status);
             self.waker.wake();
         }

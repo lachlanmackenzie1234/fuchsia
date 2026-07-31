@@ -217,8 +217,11 @@ async fn open_node_impl<T: ProtocolMarker>(
     } else {
         // We use GetAttributes to test that opening the resource succeeded.
         let _ = proxy.get_attributes(Default::default()).await.map_err(|e| {
-            if let fidl::Error::ClientChannelClosed { status, .. } = e {
-                status
+            if let fidl::Error::ClientChannelClosed { epitaph, .. } = e {
+                match epitaph.into() {
+                    Err(s) => s,
+                    Ok(()) => zx::Status::PEER_CLOSED,
+                }
             } else {
                 panic!("Unhandled FIDL error: {:?}", e);
             }
@@ -238,8 +241,11 @@ async fn get_on_representation_event(
         .try_next()
         .await
         .map_err(|e| {
-            if let fidl::Error::ClientChannelClosed { status, .. } = e {
-                status
+            if let fidl::Error::ClientChannelClosed { epitaph, .. } = e {
+                match epitaph.into() {
+                    Err(s) => s,
+                    Ok(()) => zx::Status::PEER_CLOSED,
+                }
             } else {
                 panic!("Unhandled FIDL error: {:?}", e);
             }

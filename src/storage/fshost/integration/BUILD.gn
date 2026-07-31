@@ -460,7 +460,6 @@ template("fshost_integration_test_package") {
       source_root = "tests/bad_provision_fxfs.rs"
       deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-        "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
         "//third_party/rust_crates:assert_matches",
       ]
@@ -496,7 +495,6 @@ template("fshost_integration_test_package") {
       source_root = "tests/volume_death.rs"
       deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-        "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-async",
         "//src/lib/fuchsia-fs",

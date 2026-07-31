@@ -3217,15 +3217,13 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream};
 
     use crate::ifaces::test_utils::{
         ClientIfaceCall, FAKE_IFACE_RESPONSE, IfaceManagerCall, TestIfaceManager,
     };
     use anyhow::format_err;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{
-        ControlHandle, Proxy, create_proxy, create_proxy_and_stream, create_request_stream,
-    };
     use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
     use fidl_fuchsia_wlan_internal as fidl_internal;
     use futures::Future;
@@ -6016,7 +6014,7 @@ mod tests {
         let control_handle = client_iface.pno_transaction_handle.lock().take().unwrap();
 
         // Send Epitaph instead of event
-        control_handle.shutdown_with_epitaph(zx::Status::OK);
+        control_handle.shutdown_with_epitaph(Ok(()));
 
         // Run executor to let task process it
         assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);

@@ -250,7 +250,9 @@ async fn verify_package_cached(
     // GetMissingBlobs needs to be performed (but the iterator obtained with GetMissingBlobs should
     // be empty).
     let epitaph_received = match needed_blobs.open_meta_blob().await {
-        Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }) => true,
+        Err(fidl::Error::ClientChannelClosed {
+            epitaph: fidl::Epitaph::Explicit(Ok(())), ..
+        }) => true,
         Ok(Ok(None)) => false,
         Ok(r) => {
             panic!("Meta blob not cached: unexpected response {r:?}")
@@ -269,7 +271,7 @@ async fn verify_package_cached(
         // The server closed the channel, so the iterator gets closed too.
         assert_matches!(
             chunk,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
     } else {
         // All subpackage meta.fars and content blobs should be cached, so iterator should be empty.

@@ -173,10 +173,10 @@ mod tests {
         assert_matches!(
             event_receiver.next().await,
             Some(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::NOT_FOUND,
+                epitaph,
                 protocol_name: "binder_service",
                 ..
-            }))
+            })) if epitaph == zx::Status::NOT_FOUND
         );
         assert_matches!(event_receiver.next().await, None);
     }

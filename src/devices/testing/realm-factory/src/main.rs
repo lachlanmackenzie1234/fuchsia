@@ -4,7 +4,7 @@
 
 use anyhow::{Error, Result};
 use cm_rust::push_box;
-use fidl::endpoints::{ClientEnd, ControlHandle};
+use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_driver_test as fdt;
 use fidl_fuchsia_driver_testing::*;
 use fidl_fuchsia_io as fio;

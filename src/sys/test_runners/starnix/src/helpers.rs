@@ -213,7 +213,10 @@ pub async fn read_component_epitaph(
     mut event_stream: frunner::ComponentControllerEventStream,
 ) -> zx::Status {
     match event_stream.next().await {
-        Some(Err(fidl::Error::ClientChannelClosed { status, .. })) => status,
+        Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })) => match epitaph.into() {
+            Err(s) => s,
+            Ok(()) => zx::Status::OK,
+        },
         result => {
             log::error!(
                 "Didn't get epitaph from the component controller, instead got: {:?}",

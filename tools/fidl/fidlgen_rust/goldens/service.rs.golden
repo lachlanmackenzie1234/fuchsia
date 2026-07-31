@@ -334,12 +334,18 @@ pub struct FirstProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl FirstProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for FirstProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -685,12 +691,18 @@ pub struct SecondProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl SecondProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for SecondProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 

@@ -2037,9 +2037,8 @@ mod tests {
     async fn test_proxy_command_already_bound() {
         let result: Result<(), Error> = run_proxy_command(Box::pin(async {
             Err(fidl::Error::ClientChannelClosed {
-                status: zx_status::Status::ALREADY_BOUND,
+                epitaph: fidl::Epitaph::Explicit(Err(zx_status::Status::ALREADY_BOUND)),
                 protocol_name: "test",
-                epitaph: Some(zx_status::Status::ALREADY_BOUND.into_raw() as u32),
             })
         }))
         .await;

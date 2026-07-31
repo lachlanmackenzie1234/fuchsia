@@ -550,7 +550,6 @@ mod tests {
     use futures::FutureExt;
     use ip_test_macro::ip_test;
     use test_case::test_case;
-    use zx_status;
 
     // Tests the `fake_watcher_impl` with various "shapes". The test parameter
     // is a vec of ranges, where each range corresponds to the batch of events
@@ -613,7 +612,7 @@ mod tests {
         // result in `PEER_CLOSED`.
         assert_matches!(
             watch::<I>(&watcher).await,
-            Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
     }
 

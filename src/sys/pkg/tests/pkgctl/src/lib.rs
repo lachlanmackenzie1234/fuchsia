@@ -5,7 +5,8 @@
 #![allow(clippy::let_unit_value)]
 #![cfg(test)]
 use anyhow::Error;
-use fidl::endpoints::{ControlHandle as _, ServerEnd};
+use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::{
     self as fpkg, PackageCacheRequest, PackageCacheRequestStream, PackageResolverRequest,
     PackageResolverRequestStream, RepositoryIteratorRequest, RepositoryManagerRequest,
@@ -14,11 +15,13 @@ use fidl_fuchsia_pkg::{
 use fidl_fuchsia_pkg_ext::{
     MirrorConfig, MirrorConfigBuilder, RepositoryConfig, RepositoryConfigBuilder, RepositoryKey,
 };
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fidl_fuchsia_pkg_rewrite::{
     EditTransactionRequest, EngineRequest, EngineRequestStream, RuleIteratorMarker,
     RuleIteratorRequest,
 };
 use fidl_fuchsia_pkg_rewrite_ext::Rule;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_hyper_test_support::TestServer;
 use fuchsia_hyper_test_support::handler::StaticResponse;
@@ -33,9 +36,6 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use vfs::directory::entry_container::Directory;
 use zx::Status;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fuchsia_async as fasync,
-};
 
 const BINARY_PATH: &str = "/pkg/bin/pkgctl";
 
@@ -486,7 +486,7 @@ impl MockPackageCacheService {
         match behavior {
             GetBehavior::AlreadyCached => {
                 let (_, control) = needed_blobs.into_stream_and_control_handle();
-                let () = control.shutdown_with_epitaph(zx::Status::OK);
+                let () = control.shutdown_with_epitaph(Ok(()));
                 let () = get_responder.send(Ok(())).unwrap();
             }
             GetBehavior::NotCached => {

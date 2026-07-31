@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use fidl::Error::ClientChannelClosed;
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_memory_attribution as fattribution;
 use fuchsia_sync::Mutex;
 use log::error;
@@ -396,7 +395,7 @@ impl AttributionConsumer {
             Ok(()) => {} // indicates that the observer was successfully updated
             Err(e) => {
                 // `send()` ensures that the channel is shut down in case of error.
-                if let ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. } = e {
+                if let ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. } = e {
                     // Skip if this is simply our client closing the channel.
                     return;
                 }
@@ -515,7 +514,10 @@ mod tests {
 
         drop(observer);
         let result = exec.run_singlethreaded(snapshot_provider.get());
-        assert_matches!(result, Err(ClientChannelClosed { status: zx::Status::CANCELED, .. }));
+        assert_matches!(
+            result,
+            Err(ClientChannelClosed { epitaph, .. }) if epitaph == zx::Status::CANCELED
+        );
 
         let result = exec.run_singlethreaded(new_snapshot_provider.get());
         assert!(result.is_ok());
@@ -569,8 +571,14 @@ mod tests {
 
         let result2 = exec.run_singlethreaded(future);
 
-        assert_matches!(result2, Err(ClientChannelClosed { status: zx::Status::BAD_STATE, .. }));
-        assert_matches!(result, Err(ClientChannelClosed { status: zx::Status::BAD_STATE, .. }));
+        assert_matches!(
+            result2,
+            Err(ClientChannelClosed { epitaph, .. }) if epitaph == zx::Status::BAD_STATE
+        );
+        assert_matches!(
+            result,
+            Err(ClientChannelClosed { epitaph, .. }) if epitaph == zx::Status::BAD_STATE
+        );
     }
 
     /// Tests that the first get call returns the full state, not updates.

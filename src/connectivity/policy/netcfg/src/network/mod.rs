@@ -8,7 +8,7 @@ use crate::telemetry::{NetworkEventMetadata, TelemetryEvent, TelemetrySender};
 use anyhow::Context as _;
 use async_utils::stream::{Tagged, WithTag as _};
 use dns_server_watcher::DnsServers;
-use fidl::endpoints::{ControlHandle as _, Responder as _};
+use fidl::endpoints::Responder as _;
 use log::{error, info, warn};
 use policy_properties::NetworkTokenExt as _;
 use std::collections::HashMap;

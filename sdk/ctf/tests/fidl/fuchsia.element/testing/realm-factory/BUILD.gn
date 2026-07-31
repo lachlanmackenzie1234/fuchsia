@@ -16,7 +16,6 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
     "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_rust",
     "//sdk/rust/zx-status",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::logs::error::LogsError;
-use fidl::prelude::*;
 use fidl_fuchsia_diagnostics::BatchIteratorControlHandle;
 use log::warn;
 use thiserror::Error;

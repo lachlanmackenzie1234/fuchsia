@@ -477,7 +477,7 @@ pub mod testutil {
                                         // client is shut down, so rather than returning an
                                         // error, simply end the stream.
                                         Error::Fidl(fidl::Error::ClientChannelClosed {
-                                            status: zx::Status::PEER_CLOSED,
+                                            epitaph: fidl::Epitaph::PeerClosed,
                                             ..
                                         }) => None,
                                         Error::Fidl(_)

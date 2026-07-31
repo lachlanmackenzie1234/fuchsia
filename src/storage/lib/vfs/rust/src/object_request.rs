@@ -8,7 +8,7 @@ use crate::node::{self, Node};
 use fidl::epitaph::ChannelEpitaphExt;
 #[cfg(feature = "fdomain")]
 use flex_client::AsHandleRef;
-use flex_client::fidl::{ControlHandle, ProtocolMarker, RequestStream, ServerEnd};
+use flex_client::fidl::{ProtocolMarker, RequestStream, ServerEnd};
 use flex_fuchsia_io as fio;
 #[cfg(not(feature = "fdomain"))]
 use fuchsia_async as fasync;

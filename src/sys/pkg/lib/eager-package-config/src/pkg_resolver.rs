@@ -54,8 +54,8 @@ impl EagerPackageConfigs {
                         Ok(EagerPackageConfigs { packages: Vec::new() })
                     }
                     // If not found, Open3 sends the will close the channel with NOT_FOUND status.
-                    Some(Err(fidl::Error::ClientChannelClosed { status, .. }))
-                        if status == zx::Status::NOT_FOUND =>
+                    Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                        if epitaph == zx::Status::NOT_FOUND =>
                     {
                         Ok(EagerPackageConfigs { packages: Vec::new() })
                     }

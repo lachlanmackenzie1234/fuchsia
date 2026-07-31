@@ -56,8 +56,8 @@ impl Control {
                     // Check to see the result of the suspend future.  It should finish, and it
                     // might have finished because we couldn't connect (delayed)
                     match suspend_fut.await {
-                        Err(fidl::Error::ClientChannelClosed { status, .. })
-                            if status == zx::Status::NOT_FOUND =>
+                        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                            if epitaph == zx::Status::NOT_FOUND =>
                         {
                             Ok(None)
                         }

@@ -8,7 +8,12 @@ use driver_manager_node::Node;
 use driver_manager_shutdown::RemovalSet;
 use driver_manager_types::to_deprecated_property;
 use fdd::ManagerRequest::*;
-use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, Responder, ServerEnd};
+use fidl::endpoints::{DiscoverableProtocolMarker, Responder, ServerEnd};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_index as fdi;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::prelude::*;
@@ -16,11 +21,6 @@ use log::{error, warn};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::{Rc, Weak};
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_driver_development as fdd,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi,
-    fuchsia_async as fasync,
-};
 
 pub struct DriverDevelopmentService {
     driver_runner: Rc<DriverRunner>,
@@ -395,11 +395,11 @@ impl DriverDevelopmentService {
             }
             Err(e) => {
                 error!("Failed to call DriverIndex::DisableDriver: {}", e);
-                let status = match e {
-                    fidl::Error::ClientChannelClosed { status, .. } => status,
-                    _ => zx::Status::INTERNAL,
+                let epitaph = match e {
+                    fidl::Error::ClientChannelClosed { epitaph, .. } => epitaph,
+                    _ => zx::Status::INTERNAL.into(),
                 };
-                responder.control_handle().shutdown_with_epitaph(status);
+                responder.control_handle().shutdown_with_epitaph(epitaph);
             }
         }
     }
@@ -429,11 +429,11 @@ impl DriverDevelopmentService {
             }
             Err(e) => {
                 error!("Failed to call DriverIndex::EnableDriver: {}", e);
-                let status = match e {
-                    fidl::Error::ClientChannelClosed { status, .. } => status,
-                    _ => zx::Status::INTERNAL,
+                let epitaph = match e {
+                    fidl::Error::ClientChannelClosed { epitaph, .. } => epitaph,
+                    _ => zx::Status::INTERNAL.into(),
                 };
-                responder.control_handle().shutdown_with_epitaph(status);
+                responder.control_handle().shutdown_with_epitaph(epitaph);
             }
         }
     }
@@ -472,7 +472,10 @@ impl DriverDevelopmentService {
             Err(e) => {
                 error!("Failed to call DriverIndex::RebindCompositesWithDriver: {}", e);
                 let status = match e {
-                    fidl::Error::ClientChannelClosed { status, .. } => status,
+                    fidl::Error::ClientChannelClosed { epitaph, .. } => match epitaph.into() {
+                        Err(s) => s,
+                        Ok(()) => zx::Status::PEER_CLOSED,
+                    },
                     _ => zx::Status::INTERNAL,
                 };
                 let _ = responder.send(Err(status.into_raw()));

@@ -218,7 +218,9 @@ async fn get_asset_reader(
     let () = paver.find_boot_manager(server_end).context("connect to fuchsia.paver.BootManager")?;
     let configuration = match boot_manager.query_current_configuration().await {
         Ok(res) => res.map_err(zx::Status::from_raw).context("querying current configuration")?,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. }) => {
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+            if epitaph == zx::Status::NOT_SUPPORTED =>
+        {
             warn!("device does not support ABR. Checking image in slot A");
             fpaver::Configuration::A
         }

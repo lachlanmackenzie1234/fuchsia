@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Context, Error};
+use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_stash as fidl_stash;
 use std::collections::HashMap;
 use wlan_storage_constants::{
-    NetworkIdentifier, PersistentData, NODE_SEPARATOR, POLICY_DATA_KEY, POLICY_STASH_PREFIX,
+    NODE_SEPARATOR, NetworkIdentifier, POLICY_DATA_KEY, POLICY_STASH_PREFIX, PersistentData,
 };
 
 struct StashNode {
@@ -71,13 +71,14 @@ impl StashNode {
         let parent_key_len = self.key.len();
         let mut children = Vec::new();
         loop {
-            let key_list = local.get_next().await.map_err(|e| {
-                match e {
-                    fidl::Error::ClientChannelClosed { status, .. } => {
-                        format_err!("Failed to get stash data from closed channel: {}. Any networks saved this boot will not be persisted in stash", status)
-                    }
-                    _ => format_err!(e)
+            let key_list = local.get_next().await.map_err(|e| match e {
+                fidl::Error::ClientChannelClosed { epitaph, .. } => {
+                    format_err!(
+                        "Failed to get stash data from closed channel: {epitaph:?}. Any networks \
+                         saved this boot will not be persisted in stash"
+                    )
                 }
+                _ => format_err!(e),
             })?;
             if key_list.is_empty() {
                 break;

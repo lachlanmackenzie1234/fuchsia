@@ -629,10 +629,10 @@ mod tests {
         assert_matches!(
             node_proxy.query().await,
             Err(fidl::Error::ClientChannelClosed {
-                status: Status::NOT_FOUND,
+                epitaph,
                 protocol_name: "fuchsia.io.Node",
                 ..
-            })
+            }) if epitaph == Status::NOT_FOUND
         );
     }
 
@@ -654,10 +654,10 @@ mod tests {
         assert_matches!(
             node_proxy.query().await,
             Err(fidl::Error::ClientChannelClosed {
-                status: Status::NOT_FOUND,
+                epitaph,
                 protocol_name: "fuchsia.io.Node",
                 ..
-            })
+            }) if epitaph == Status::NOT_FOUND
         );
     }
 }

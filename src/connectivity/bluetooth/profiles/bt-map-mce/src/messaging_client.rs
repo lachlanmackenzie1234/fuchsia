@@ -4,7 +4,7 @@
 
 use anyhow::format_err;
 use bt_map::Error;
-use fidl::endpoints::{ClientEnd, ControlHandle, DiscoverableProtocolMarker, RequestStream};
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_bluetooth_map::{
     AccessorMarker, AccessorRequest, AccessorRequestStream, MessagingClientMarker,

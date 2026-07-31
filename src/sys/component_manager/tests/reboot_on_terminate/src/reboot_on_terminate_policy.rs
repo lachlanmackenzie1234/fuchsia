@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
+use fidl_fidl_examples_routing_echo as fecho;
+use fidl_fidl_test_components as ftest;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client;
 use futures::StreamExt;
 use log::*;
-use {
-    fidl_fidl_examples_routing_echo as fecho, fidl_fidl_test_components as ftest,
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio,
-};
 
 #[fuchsia::main]
 async fn main() {
@@ -29,8 +29,14 @@ async fn main() {
         .unwrap();
     let echo = client::connect_to_protocol_at_dir_root::<fecho::EchoMarker>(&exposed_dir).unwrap();
     let mut stream = echo.take_event_stream();
-    assert_matches!(stream.next().await, Some(Err(fidl::Error::ClientChannelClosed { status, ..}))
-        if status == zx::Status::ACCESS_DENIED);
+    assert_matches!(
+
+        stream.next().await,
+
+        Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+            if epitaph == zx::Status::ACCESS_DENIED
+
+    );
 
     let trigger = client::connect_to_protocol::<ftest::TriggerMarker>().unwrap();
     trigger.run().await.unwrap();

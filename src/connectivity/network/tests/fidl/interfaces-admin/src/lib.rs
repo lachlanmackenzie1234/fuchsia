@@ -54,7 +54,6 @@ use std::ops::Not as _;
 use std::pin::pin;
 use std::u16;
 use test_case::test_case;
-use zx_status;
 
 #[netstack_test]
 #[variant(N, Netstack)]
@@ -960,8 +959,8 @@ async fn duplicate_watch_address_assignment_state<N: Netstack>(name: &str, detac
         )
         .await,
         (
-            Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. }),
-            Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. }),
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. }),
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. }),
         )
     );
     assert_matches!(

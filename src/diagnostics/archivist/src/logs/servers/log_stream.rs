@@ -7,7 +7,7 @@ use crate::logs::repository::LogsRepository;
 use crate::logs::shared_buffer::FilterCursor;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
 use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, MONIKER, Record, URL};
-use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
+use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics::StreamMode;
 use fidl_fuchsia_diagnostics_types::Severity;

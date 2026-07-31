@@ -12,12 +12,13 @@ use driver_manager_shutdown::{NodeRemover, RemovalSet};
 use driver_manager_types::BindResultTracker;
 use driver_manager_utils::DictionaryUtil;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_index as fdi;
 use futures::channel::oneshot;
 use log::info;
 use rand::rngs::StdRng;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use {fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi};
 
 #[async_trait(?Send)]
 impl NodeRemover for DriverRunner {
@@ -179,17 +180,15 @@ impl BindManagerBridge for DriverRunnerBridge {
             match runner.driver_index.match_driver(&args).await {
                 Ok(Ok(result)) => Ok(result),
                 Ok(Err(e)) => Err(fidl::Error::ClientChannelClosed {
-                    status: zx::Status::from_raw(e),
+                    epitaph: fidl::Epitaph::Explicit(Err(zx::Status::from_raw(e))),
                     protocol_name: fdi::DriverIndexMarker::PROTOCOL_NAME,
-                    epitaph: None,
                 }),
                 Err(e) => Err(e),
             }
         } else {
             Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::UNAVAILABLE,
+                epitaph: fidl::Epitaph::Explicit(Err(zx::Status::UNAVAILABLE)),
                 protocol_name: fdi::DriverIndexMarker::PROTOCOL_NAME,
-                epitaph: None,
             })
         }
     }

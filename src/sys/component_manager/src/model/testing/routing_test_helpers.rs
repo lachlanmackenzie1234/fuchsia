@@ -827,11 +827,11 @@ impl RoutingTestModel for RoutingTest {
                         assert_eq!(expected_res, ExpectedResult::Ok);
                         response
                     }
-                    Err(fidl::Error::ClientChannelClosed { status, .. }) => {
+                    Err(fidl::Error::ClientChannelClosed { epitaph, .. }) => {
                         let ExpectedResult::Err(expected_status) = expected_res else {
-                            panic!("StorageAdmin client channel closed: {:?}", status);
+                            panic!("StorageAdmin client channel closed: {epitaph:?}");
                         };
-                        assert_eq!(status, expected_status);
+                        assert_eq!(epitaph, expected_status);
                         return;
                     }
                     Err(e) => panic!("Unexpected transport error: {:?}", e),
@@ -1104,9 +1104,8 @@ pub mod capability_util {
                 let epitaph = dir_proxy.take_event_stream().next().await.expect("no epitaph");
                 assert_matches!(
                     epitaph,
-                    Err(fidl::Error::ClientChannelClosed {
-                        status, ..
-                    }) if status == s
+                    Err(fidl::Error::ClientChannelClosed { epitaph, ..
+                    }) if epitaph == s
                 );
             }
             ExpectedResult::ErrWithNoEpitaph => {
@@ -1157,9 +1156,8 @@ pub mod capability_util {
                 let epitaph = dir_proxy.take_event_stream().next().await.expect("no epitaph");
                 assert_matches!(
                     epitaph,
-                    Err(fidl::Error::ClientChannelClosed {
-                        status, ..
-                    }) if status == s
+                    Err(fidl::Error::ClientChannelClosed { epitaph, ..
+                    }) if epitaph == s
                 );
             }
             ExpectedResult::ErrWithNoEpitaph => {
@@ -1279,9 +1277,10 @@ pub mod capability_util {
         let service_dir = service_dir
             // `open_directory` could fail if service capability routing fails.
             .map_err(|e| match e {
-                OpenError::OpenError(status) => {
-                    fidl::Error::ClientChannelClosed { status, protocol_name: "", epitaph: None }
-                }
+                OpenError::OpenError(status) => fidl::Error::ClientChannelClosed {
+                    epitaph: fidl::Epitaph::Explicit(Err(status)),
+                    protocol_name: "",
+                },
                 _ => panic!("Unexpected open error {:?}", e),
             })?;
 
@@ -1290,9 +1289,8 @@ pub mod capability_util {
                 .await
                 .map_err(|e| match e {
                     OpenError::OpenError(status) => fidl::Error::ClientChannelClosed {
-                        status,
+                        epitaph: fidl::Epitaph::Explicit(Err(status)),
                         protocol_name: "",
-                        epitaph: None,
                     },
                     _ => panic!("Unexpected open error {:?}", e),
                 })?;
@@ -1386,9 +1384,8 @@ pub mod capability_util {
                 assert!(err.is_closed(), "expected closed error, got: {:?}", err);
                 assert_matches!(
                     err,
-                    fidl::Error::ClientChannelClosed {
-                        status, ..
-                    } if status == s,
+                    fidl::Error::ClientChannelClosed { epitaph, ..
+                    } if epitaph == s,
                     "Actual err {err}, Expected status {s}"
                 );
             }
@@ -1448,9 +1445,8 @@ pub mod capability_util {
                     let epitaph = dir_proxy.take_event_stream().next().await.expect("no epitaph");
                     assert_matches!(
                         epitaph,
-                        Err(fidl::Error::ClientChannelClosed {
-                            status, ..
-                        }) if status == s
+                        Err(fidl::Error::ClientChannelClosed { epitaph, ..
+                        }) if epitaph == s
                     );
                 }
             },

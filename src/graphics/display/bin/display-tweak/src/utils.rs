@@ -57,9 +57,8 @@ mod tests {
     #[fuchsia::test]
     fn flatten_zx_error_with_fidl_error() {
         let fidl_error = fidl::Error::ClientChannelClosed {
-            status: zx::Status::PEER_CLOSED,
+            epitaph: fidl::Epitaph::PeerClosed,
             protocol_name: "TestService",
-            epitaph: None,
         };
         let fidl_result: std::result::Result<
             std::result::Result<i32, zx::sys::zx_status_t>,

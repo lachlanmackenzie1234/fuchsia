@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result, bail, format_err};
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_wlan_phy as fidl_wlan_phy;
 use fidl_fuchsia_wlan_tap as fidl_wlan_tap;

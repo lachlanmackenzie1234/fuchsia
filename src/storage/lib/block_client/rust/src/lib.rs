@@ -46,7 +46,10 @@ pub use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
 
 fn fidl_to_status(error: fidl::Error) -> zx::Status {
     match error {
-        fidl::Error::ClientChannelClosed { status, .. } => status,
+        fidl::Error::ClientChannelClosed { epitaph, .. } => match epitaph.into() {
+            Err(s) => s,
+            Ok(()) => zx::Status::PEER_CLOSED,
+        },
         _ => zx::Status::INTERNAL,
     }
 }

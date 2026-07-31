@@ -9,7 +9,6 @@ use flex_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use flex_fuchsia_net_resources as fnet_resources;
 use futures::{Future, FutureExt as _, Stream, StreamExt as _, TryStreamExt as _};
 use thiserror::Error;
-use zx_status as zx;
 
 /// Error type when using a [`fnet_interfaces_admin::AddressStateProviderProxy`].
 #[derive(Error, Debug)]
@@ -241,11 +240,10 @@ where
                 match event.map_err(|e| TerminalError::Fidl(e))? {
                     Some(removal_reason) => Err(TerminalError::Terminal(removal_reason)),
                     None => Err(TerminalError::Fidl(fidl::Error::ClientChannelClosed {
-                        status: zx::Status::PEER_CLOSED,
+                        epitaph: fidl::Epitaph::PeerClosed,
                         protocol_name: <fnet_interfaces_admin::ControlMarker as flex_client::fidl::ProtocolMarker>::DEBUG_NAME,
                         #[cfg(not(target_os = "fuchsia"))]
                         reason: None,
-                        epitaph: None,
                     })),
                 }
             }
@@ -384,11 +382,10 @@ impl Control {
         match terminal_event_fut.await {
             Ok(Some(event)) => TerminalError::Terminal(event),
             Ok(None) => TerminalError::Fidl(fidl::Error::ClientChannelClosed {
-                status: zx::Status::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 protocol_name: <fnet_interfaces_admin::ControlMarker as flex_client::fidl::ProtocolMarker>::DEBUG_NAME,
                 #[cfg(not(target_os = "fuchsia"))]
                 reason: None,
-                epitaph: None,
             }),
             Err(e) => TerminalError::Fidl(e),
         }
@@ -532,7 +529,6 @@ mod test {
     use flex_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
     use fnet_interfaces_admin::InterfaceRemovedReason;
     use test_case::test_case;
-    use zx_status as zx;
 
     use super::*;
 
@@ -605,7 +601,7 @@ mod test {
         assert_matches::assert_matches!(
             states.as_slice(),
             [Err(AddressStateProviderError::Fidl(fidl::Error::ClientChannelClosed {
-                status: fidl::Status::INTERNAL,
+                epitaph: fidl::Epitaph::Explicit(Err(fidl::Status::INTERNAL)),
                 #[cfg(not(target_os = "fuchsia"))]
                 reason: None,
                 ..
@@ -708,7 +704,7 @@ mod test {
                 assert_matches::assert_matches!(
                     control.get_id().await,
                     Err(super::TerminalError::Fidl(fidl::Error::ClientChannelClosed {
-                        status: zx::Status::PEER_CLOSED,
+                        epitaph: fidl::Epitaph::PeerClosed,
                         protocol_name: flex_fuchsia_net_interfaces_admin::ControlMarker::DEBUG_NAME,
                         #[cfg(not(target_os = "fuchsia"))]
                         reason: None,
@@ -755,18 +751,17 @@ mod test {
         assert_matches::assert_matches!(control.or_terminal_event_no_return(Ok(())), Ok(()));
         assert_matches::assert_matches!(
             control.or_terminal_event_no_return(Err(fidl::Error::ClientWrite(
-                zx::Status::INTERNAL.into()
+                zx_status::Status::INTERNAL.into()
             ))),
             Err(super::TerminalError::Fidl(fidl::Error::ClientWrite(
-                fidl::TransportError::Status(zx::Status::INTERNAL)
+                fidl::TransportError::Status(zx_status::Status::INTERNAL)
             )))
         );
         #[cfg(target_os = "fuchsia")]
         assert_matches::assert_matches!(
             control.or_terminal_event_no_return(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
-                epitaph: None,
             })),
             Err(super::TerminalError::Terminal(CLOSE_REASON))
         );
@@ -829,11 +824,10 @@ mod test {
     )]
     #[test_case(
         Err(fidl::Error::ClientChannelClosed {
-            status: zx::Status::PEER_CLOSED,
+            epitaph: fidl::Epitaph::PeerClosed,
             protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
             #[cfg(not(target_os = "fuchsia"))]
             reason: None,
-            epitaph: None,
         }),
         Ok(Some(InterfaceRemovedReason::User)),
         Err(TerminalError::Terminal(InterfaceRemovedReason::User));
@@ -841,40 +835,36 @@ mod test {
     )]
     #[test_case(
         Err(fidl::Error::ClientChannelClosed {
-            status: zx::Status::PEER_CLOSED,
+            epitaph: fidl::Epitaph::PeerClosed,
             protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
             #[cfg(not(target_os = "fuchsia"))]
             reason: None,
-            epitaph: None,
         }),
         Ok(None),
         Err(TerminalError::Fidl(
             fidl::Error::ClientChannelClosed {
-                status: zx::Status::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
                 #[cfg(not(target_os = "fuchsia"))]
                 reason: None,
-                epitaph: None,
             }
         ));
         "returns query error when no terminal error"
     )]
     #[test_case(
         Err(fidl::Error::ClientChannelClosed {
-            status: zx::Status::PEER_CLOSED,
+            epitaph: fidl::Epitaph::PeerClosed,
             protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
             #[cfg(not(target_os = "fuchsia"))]
             reason: None,
-            epitaph: None,
         }),
         Err(fidl::Error::InvalidHeader),
         Err(TerminalError::Fidl(
             fidl::Error::ClientChannelClosed {
-                status: zx::Status::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
                 #[cfg(not(target_os = "fuchsia"))]
                 reason: None,
-                epitaph: None,
             }
         ));
         "returns query error when terminal event returns a fidl error"

@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use crate::socket;
-use flex_client::fidl::{ControlHandle as _, Responder as _};
+use flex_client::fidl::Responder as _;
+use flex_fuchsia_developer_ffx_speedtest as fspeedtest;
+use fuchsia_async as fasync;
 use log::{error, warn};
-use {flex_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
 
 pub struct Server {
     scope: fasync::Scope,

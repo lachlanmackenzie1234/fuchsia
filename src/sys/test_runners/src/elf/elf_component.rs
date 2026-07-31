@@ -736,7 +736,12 @@ mod tests {
         );
         let s = assert_matches!(
             client_controller.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: s, .. })) => s
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph: s, .. })) => {
+                match s.into() {
+                    Err(st) => st,
+                    Ok(()) => zx::Status::PEER_CLOSED,
+                }
+            }
         );
         assert_eq!(s, expected_status);
     }

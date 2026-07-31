@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
-use fidl::endpoints::{ControlHandle as _, RequestStream as _};
+use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_process_lifecycle as fprocess_lifecycle;
 use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_channel as fupdate_channel;

@@ -885,11 +885,7 @@ impl SceneManager {
 }
 
 fn make_timeout_error<T>(protocol_name: &'static str) -> Result<T, fidl::Error> {
-    Err(fidl::Error::ClientChannelClosed {
-        status: zx::Status::TIMED_OUT,
-        protocol_name,
-        epitaph: None,
-    })
+    Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, protocol_name })
 }
 
 pub fn create_viewport_hanging_get(

@@ -21,7 +21,6 @@ template("fidl_fuchsia_net_routes_ext_lib") {
            ] + invoker.deps
 
     test_deps = [
-      "//sdk/rust/zx-status",
       "//src/connectivity/lib/ip-test-macro",
       "//src/connectivity/lib/net-declare",
       "//src/lib/fuchsia-async",

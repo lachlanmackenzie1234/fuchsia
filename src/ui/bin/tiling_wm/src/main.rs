@@ -3,22 +3,23 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
-use fidl::endpoints::{create_proxy, ControlHandle, Proxy, RequestStream};
+use fidl::endpoints::{Proxy, RequestStream, create_proxy};
+use fidl_fuchsia_element as element;
+use fidl_fuchsia_session_scene as scene;
+use fidl_fuchsia_session_window as window;
+use fidl_fuchsia_ui_composition as ui_comp;
+use fidl_fuchsia_ui_views as ui_views;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
-use fuchsia_scenic::flatland::{IdGenerator, ViewCreationTokenPair};
 use fuchsia_scenic::ViewRefPair;
+use fuchsia_scenic::flatland::{IdGenerator, ViewCreationTokenPair};
 use futures::channel::mpsc::UnboundedSender;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
 use rand::distr::{Alphanumeric, SampleString};
 use rand::rng;
 use std::collections::{HashMap, VecDeque};
-use {
-    fidl_fuchsia_element as element, fidl_fuchsia_session_scene as scene,
-    fidl_fuchsia_session_window as window, fidl_fuchsia_ui_composition as ui_comp,
-    fidl_fuchsia_ui_views as ui_views, fuchsia_async as fasync,
-};
 
 // The maximum number of concurrent services to serve.
 const NUM_CONCURRENT_REQUESTS: usize = 5;
@@ -119,7 +120,10 @@ impl TilingWm {
                 let viewport_creation_token = match view_spec.viewport_creation_token {
                     Some(token) => token,
                     None => {
-                        warn!("Client attempted to present Gfx component but only Flatland is supported.");
+                        warn!(
+                            "Client attempted to present Gfx component but only Flatland is \
+                             supported."
+                        );
                         return Ok(());
                     }
                 };
@@ -200,7 +204,7 @@ impl TilingWm {
             MessageInternal::DismissClient { tile_id, control_handle } => {
                 // Explicitly shutting down the handle indicates intentionality, instead of
                 // (for example) because this component crashed and the handle was auto-closed.
-                control_handle.shutdown_with_epitaph(zx::Status::OK);
+                control_handle.shutdown_with_epitaph(Ok(()));
                 match &mut self.tiles.remove(&tile_id) {
                     Some(tile) => {
                         self.layout_tiles()?;

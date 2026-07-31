@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 
 use derivative::Derivative;
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
 use fidl_fuchsia_net_filter_ext::{CommitError, Matchers, PushChangesError, RuleId};
@@ -907,7 +906,8 @@ pub mod test {
         let event = client_proxy.take_event_stream().next().await;
         assert_matches!(
             event,
-            Some(Err(fidl::Error::ClientChannelClosed { status: fidl::Status::NOT_FOUND, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                if epitaph == fidl::Status::NOT_FOUND
         );
     }
 

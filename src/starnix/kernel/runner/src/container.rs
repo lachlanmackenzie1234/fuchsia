@@ -12,7 +12,7 @@ use bootreason::get_or_init_android_bootreason;
 use bstr::{BString, ByteSlice};
 use devicetree::parser::parse_devicetree;
 use devicetree::types::Devicetree;
-use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use fidl::endpoints::{RequestStream, ServerEnd};
 use fidl_fuchsia_boot as fboot;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner as frunner;

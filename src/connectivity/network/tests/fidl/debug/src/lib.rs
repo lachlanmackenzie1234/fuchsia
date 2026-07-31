@@ -48,7 +48,7 @@ async fn get_admin_unknown<N: Netstack>(name: &str) {
     let events = admin_control.take_event_stream().try_collect::<Vec<_>>().await;
     assert_matches!(
         events,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_FOUND, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. }) if epitaph == zx::Status::NOT_FOUND
     );
 }
 
@@ -206,7 +206,8 @@ async fn get_port<N: Netstack>(name: &str) {
         debug_interfaces.get_port(id + 100, server_end).expect("calling get_port");
         assert_matches!(
             port.get_info().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_FOUND, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::NOT_FOUND
         );
     }
 }

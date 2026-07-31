@@ -469,7 +469,10 @@ mod tests {
         match events.next().await? {
             Ok(fio::NodeEvent::OnOpen_ { s: status, .. }) => Some(zx::Status::from_raw(status)),
             Ok(fio::NodeEvent::OnRepresentation { .. }) => Some(zx::Status::OK),
-            Err(fidl::Error::ClientChannelClosed { status, .. }) => Some(status),
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. }) => match epitaph.into() {
+                Err(s) => Some(s),
+                Ok(()) => Some(zx::Status::PEER_CLOSED),
+            },
             other => panic!("unexpected stream event or error: {other:?}"),
         }
     }

@@ -43,7 +43,7 @@ pub(super) async fn start(
         match Component::launch(start_info, &env, thread_role, terminate_cb).await {
             Ok(c) => c,
             Err(e) => {
-                _ = controller_server.close_with_epitaph((&e).into());
+                _ = controller_server.close_with_epitaph(zx::Status::from(&e));
                 return Err(e);
             }
         };

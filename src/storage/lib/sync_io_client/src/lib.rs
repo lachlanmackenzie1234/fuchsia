@@ -135,7 +135,10 @@ pub fn create_with_on_representation<F: Factory>(
             }
             _ => Err(zx::Status::NOT_SUPPORTED),
         },
-        Err(fidl::Error::ClientChannelClosed { status, .. }) => Err(status),
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. }) => match epitaph.into() {
+            Err(status) => Err(status),
+            Ok(()) => Err(zx::Status::PEER_CLOSED),
+        },
         _ => Err(zx::Status::IO),
     }
 }
@@ -845,7 +848,7 @@ impl RemoteDirectory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::endpoints::{ControlHandle, RequestStream};
+    use fidl::endpoints::RequestStream;
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use std::sync::Arc;

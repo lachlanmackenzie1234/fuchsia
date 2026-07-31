@@ -1189,7 +1189,7 @@ impl Driver {
                 // is invoked from the main driver_host thread, it's not guaranteed.
                 this.inner.lock().destroy();
 
-                driver_request.close_with_epitaph(zx::Status::OK).ok();
+                let _ = driver_request.close_with_epitaph(Ok(()));
             });
         };
     }

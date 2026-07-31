@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::common_utils::common::LazyProxy;
-use anyhow::{bail, Error};
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use anyhow::{Error, bail};
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use fidl_fuchsia_paver::{PaverMarker, PaverProxy};
 use serde::{Deserialize, Serialize};
 use zx::Status;
@@ -54,7 +54,9 @@ impl PaverFacade {
         match boot_manager.query_active_configuration().await {
             Ok(Ok(config)) => Ok(QueryActiveConfigurationResult::Success(config.into())),
             Ok(Err(err)) => bail!("unexpected failure status: {}", err),
-            Err(fidl::Error::ClientChannelClosed { status: Status::NOT_SUPPORTED, .. }) => {
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == Status::NOT_SUPPORTED =>
+            {
                 Ok(QueryActiveConfigurationResult::NotSupported)
             }
             Err(err) => bail!("unexpected failure status: {}", err),
@@ -78,7 +80,9 @@ impl PaverFacade {
         match boot_manager.query_current_configuration().await {
             Ok(Ok(config)) => Ok(QueryCurrentConfigurationResult::Success(config.into())),
             Ok(Err(err)) => bail!("unexpected failure status: {}", err),
-            Err(fidl::Error::ClientChannelClosed { status: Status::NOT_SUPPORTED, .. }) => {
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == Status::NOT_SUPPORTED =>
+            {
                 Ok(QueryCurrentConfigurationResult::NotSupported)
             }
             Err(err) => bail!("unexpected failure status: {}", err),
@@ -104,7 +108,9 @@ impl PaverFacade {
         match boot_manager.query_configuration_status(args.configuration.into()).await {
             Ok(Ok(status)) => Ok(QueryConfigurationStatusResult::Success(status.into())),
             Ok(Err(err)) => bail!("unexpected failure status: {}", err),
-            Err(fidl::Error::ClientChannelClosed { status: Status::NOT_SUPPORTED, .. }) => {
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == Status::NOT_SUPPORTED =>
+            {
                 Ok(QueryConfigurationStatusResult::NotSupported)
             }
             Err(err) => bail!("unexpected failure status: {}", err),

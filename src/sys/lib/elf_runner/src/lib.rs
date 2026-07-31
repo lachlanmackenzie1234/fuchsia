@@ -1449,7 +1449,8 @@ mod tests {
         runner.start(start_info, server_controller).await;
         assert_matches!(
             controller.take_event_stream().try_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::ACCESS_DENIED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::ACCESS_DENIED
         );
 
         Ok(())
@@ -1513,7 +1514,8 @@ mod tests {
         runner.start(start_info, server_controller).await;
         assert_matches!(
             controller.take_event_stream().try_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::ACCESS_DENIED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::ACCESS_DENIED
         );
 
         Ok(())

@@ -1060,7 +1060,8 @@ async fn test_socket_proxy_no_double_connect() -> Result<(), Error> {
     // The second connection should fail
     assert_matches!(
         starnix_networks2.remove(1).await,
-        Err(fidl::Error::ClientChannelClosed { status: fidl::Status::ACCESS_DENIED, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+            if epitaph == fidl::Status::ACCESS_DENIED
     );
 
     Ok(())

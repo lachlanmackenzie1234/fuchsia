@@ -12,24 +12,23 @@ use crate::scheduler::Scheduler;
 use crate::self_diagnostics::DiagnosticNode;
 use crate::{facet, running_suite, scheduler};
 use anyhow::Error;
-use fidl::endpoints::{ControlHandle, Responder};
+use fidl::endpoints::Responder;
 use fidl_fuchsia_component::RealmProxy;
 use fidl_fuchsia_component_resolution::ResolverProxy;
+use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_pkg::PackageResolverProxy;
+use fidl_fuchsia_test_manager as ftest_manager;
 use ftest_manager::{
     LaunchError, RunControllerRequest, RunControllerRequestStream, SchedulingOptions,
     SuiteControllerRequest, SuiteControllerRequestStream,
 };
+use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use futures::future::Either;
 use futures::prelude::*;
-use futures::StreamExt;
 use log::{error, info, warn};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component_test as ftest, fidl_fuchsia_test_manager as ftest_manager,
-    fuchsia_async as fasync,
-};
 
 const EXECUTION_PROPERTY: &'static str = "execution";
 
@@ -690,7 +689,8 @@ fn use_debug_agent_for_runs(options: &ftest_manager::RunOptions) -> bool {
 mod tests {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
-    use {fidl_fuchsia_component_resolution as fresolution, fuchsia_async as fasync};
+    use fidl_fuchsia_component_resolution as fresolution;
+    use fuchsia_async as fasync;
 
     fn new_run_inspect_node() -> DiagnosticNode {
         DiagnosticNode::new("root", Arc::new(fuchsia_inspect::types::Node::default()))

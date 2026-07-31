@@ -15,11 +15,17 @@ use zx_status;
 /// Extension trait that provides Channel-like objects with the ability to send a FIDL epitaph.
 pub trait ChannelEpitaphExt {
     /// Consumes the channel and writes an epitaph.
-    fn close_with_epitaph(self, status: zx_status::Status) -> Result<(), Error>;
+    fn close_with_epitaph(
+        self,
+        status: impl Into<Result<(), zx_status::Status>>,
+    ) -> Result<(), Error>;
 }
 
 impl<T: ChannelLike> ChannelEpitaphExt for T {
-    fn close_with_epitaph(self, status: zx_status::Status) -> Result<(), Error> {
+    fn close_with_epitaph(
+        self,
+        status: impl Into<Result<(), zx_status::Status>>,
+    ) -> Result<(), Error> {
         write_epitaph_impl(&self, status)
     }
 }
@@ -44,11 +50,11 @@ impl ChannelLike for AsyncChannel {
 
 pub(crate) fn write_epitaph_impl<T: ChannelLike>(
     channel: &T,
-    status: zx_status::Status,
+    status: impl Into<Result<(), zx_status::Status>>,
 ) -> Result<(), Error> {
     let msg = TransactionMessage {
         header: TransactionHeader::new(0, encoding::EPITAPH_ORDINAL, DynamicFlags::empty()),
-        body: &EpitaphBody { error: status },
+        body: &EpitaphBody { error: status.into() },
     };
     encoding::with_tls_encoded::<TransactionMessageType<EpitaphBody>, NoHandleResourceDialect, ()>(
         msg,

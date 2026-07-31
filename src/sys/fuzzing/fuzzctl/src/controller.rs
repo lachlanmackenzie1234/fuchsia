@@ -200,8 +200,8 @@ impl<O: OutputSink> Controller<O> {
     ///
     pub async fn get_status(&self) -> Result<fuzz::Status> {
         match self.proxy.get_status().await {
-            Err(fidl::Error::ClientChannelClosed { status, .. })
-                if status == zx::Status::PEER_CLOSED =>
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::PEER_CLOSED =>
             {
                 return Ok(fuzz::Status::default());
             }
@@ -377,7 +377,14 @@ impl<O: OutputSink> Controller<O> {
                             }
                             fidl_artifact
                         }
-                        Err(fidl::Error::ClientChannelClosed { status, .. }) if status == zx::Status::PEER_CLOSED => FidlArtifact { error: Some(zx::Status::CANCELED.into_raw()), ..Default::default() },
+                        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                            if epitaph == zx::Status::PEER_CLOSED =>
+                        {
+                            FidlArtifact {
+                                error: Some(zx::Status::CANCELED.into_raw()),
+                                ..Default::default()
+                            }
+                        }
                         Err(e) => bail!("fuchsia.fuzzer/Controller.WatchArtifact: {:?}", e),
                     };
                     remaining -= 1;
@@ -401,8 +408,8 @@ fn check_response(
     response: Result<Result<(), i32>, fidl::Error>,
 ) -> Result<zx::Status> {
     match response {
-        Err(fidl::Error::ClientChannelClosed { status, .. })
-            if status == zx::Status::PEER_CLOSED =>
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+            if epitaph == zx::Status::PEER_CLOSED =>
         {
             Ok(zx::Status::OK)
         }

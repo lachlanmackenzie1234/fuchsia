@@ -317,8 +317,11 @@ where
     T: OnOpenEventProducer,
 {
     node.take_event_stream().next().await.ok_or(OpenError::OnOpenEventStreamClosed)?.map_err(|e| {
-        if let fidl::Error::ClientChannelClosed { status, .. } = e {
-            OpenError::OpenError(status)
+        if let fidl::Error::ClientChannelClosed { epitaph, .. } = e {
+            OpenError::OpenError(match epitaph.into() {
+                Err(s) => s,
+                Ok(()) => zx_status::Status::PEER_CLOSED,
+            })
         } else {
             OpenError::OnOpenDecode(e)
         }

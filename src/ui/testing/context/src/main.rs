@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_logger::LogSinkMarker;
 use fidl_fuchsia_scheduler::RoleManagerMarker;
 use fidl_fuchsia_sysmem as fsysmem;

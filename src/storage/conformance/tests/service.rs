@@ -134,8 +134,11 @@ async fn open_service_with_other_flags_should_fail() {
         let echo_response_status = proxy
             .echo_string(Some(TEST_STRING))
             .map_err(|e| {
-                if let fidl::Error::ClientChannelClosed { status, .. } = e {
-                    status
+                if let fidl::Error::ClientChannelClosed { epitaph, .. } = e {
+                    match epitaph.into() {
+                        Err(s) => s,
+                        Ok(()) => zx::Status::PEER_CLOSED,
+                    }
                 } else {
                     panic!("Unhandled FIDL error: {:?}", e);
                 }

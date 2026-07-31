@@ -2068,7 +2068,10 @@ pub fn directory_open_directory_async(
 
 fn map_fidl_error(error: fidl::Error) -> zx::Status {
     match error {
-        fidl::Error::ClientChannelClosed { status, .. } => status,
+        fidl::Error::ClientChannelClosed { epitaph, .. } => match epitaph.into() {
+            Err(s) => s,
+            Ok(()) => zx::Status::PEER_CLOSED,
+        },
         _ => zx::Status::IO,
     }
 }

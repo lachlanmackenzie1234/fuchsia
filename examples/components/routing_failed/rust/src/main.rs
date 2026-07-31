@@ -19,7 +19,8 @@ async fn main() {
     let err =
         echo.echo_string(Some("Hippos rule!")).await.expect_err("echo_string should have failed");
     info!("Connecting to Echo protocol failed with error \"{}\"", err);
-    assert_matches!(err, fidl::Error::ClientChannelClosed { status: zx::Status::UNAVAILABLE, .. });
+    assert_matches!(err, fidl::Error::ClientChannelClosed { epitaph, .. }
+        if epitaph == zx::Status::UNAVAILABLE);
 
     // The `echo2` channel should be closed because routing succeeded but the runner failed to
     // start the component. The channel won't have an epitaph set; the runner closes the source
@@ -32,5 +33,6 @@ async fn main() {
     let err =
         echo2.echo_string(Some("Hippos rule!")).await.expect_err("echo_string should have failed");
     info!("Connecting to Echo2 protocol failed with error \"{}\"", err);
-    assert_matches!(err, fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. });
+    assert_matches!(err, fidl::Error::ClientChannelClosed { epitaph, .. }
+        if epitaph == zx::Status::PEER_CLOSED);
 }

@@ -6,15 +6,15 @@ use crate::bind_node_set::BindNodeSet;
 use async_trait::async_trait;
 use driver_manager_node::Node;
 use driver_manager_types::{BindResult, BindResultTracker, NodeType};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_index as fdi;
+use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use log::{error, warn};
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_index as fdi, fuchsia_async as fasync,
-};
 
 pub type NodeBindingInfoResultCompleter = oneshot::Sender<Vec<fdd::NodeBindingInfo>>;
 
@@ -231,12 +231,12 @@ impl BindManager {
         let matched_driver = match result {
             Ok(res) => res,
             Err(e) => {
-                if let fidl::Error::ClientChannelClosed { status, .. } = e {
-                    if status != zx::Status::NOT_FOUND || !has_tracker {
+                if let fidl::Error::ClientChannelClosed { epitaph, .. } = e {
+                    if epitaph != zx::Status::NOT_FOUND || !has_tracker {
                         warn!(
                             "Failed to match Node '{}': {}",
                             node.make_component_moniker(),
-                            status
+                            epitaph
                         );
                     }
                 } else {

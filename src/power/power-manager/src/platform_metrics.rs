@@ -14,6 +14,8 @@ use async_trait::async_trait;
 use fidl_contrib::ProtocolConnector;
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
+
+use fuchsia_async as fasync;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_inspect::{self as inspect, HistogramProperty, LinearHistogramParams, Property};
 use futures::future::{self, LocalBoxFuture};
@@ -23,10 +25,10 @@ use log::*;
 use power_manager_metrics::power_manager_metrics as power_metrics_registry;
 use power_metrics_registry::ThermalLimitResultMigratedMetricDimensionResult as thermal_limit_result;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
-use {fuchsia_async as fasync, serde_json as json};
 
 /// Node: PlatformMetrics
 ///
@@ -103,8 +105,8 @@ impl fidl_contrib::protocol_connector::ConnectedProtocol for CobaltConnectedServ
     fn should_retry_on_connect_error(&self, error: &Self::ConnectError) -> bool {
         for cause in error.chain() {
             if let Some(fidl_err) = cause.downcast_ref::<fidl::Error>() {
-                if let fidl::Error::ClientChannelClosed { status, .. } = fidl_err {
-                    if *status == zx::Status::NOT_FOUND {
+                if let fidl::Error::ClientChannelClosed { epitaph, .. } = fidl_err {
+                    if *epitaph == zx::Status::NOT_FOUND {
                         error!("Server is not in package");
                         return false; // Do not retry on NOT_FOUND
                     }

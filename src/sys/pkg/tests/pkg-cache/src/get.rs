@@ -167,7 +167,7 @@ async fn get_and_hold_directory() {
     // `OpenMetaBlob()` for already cached package closes the channel with with a `ZX_OK` epitaph.
     assert_matches!(
         needed_blobs.open_meta_blob().await,
-        Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::Explicit(Ok(())), .. })
     );
 
     let () = get_fut.await.unwrap().unwrap();
@@ -305,7 +305,7 @@ async fn get_package_already_present_on_fs() {
     // `OpenMetaBlob()` for already cached package closes the channel with with a `ZX_OK` epitaph.
     assert_matches!(
         needed_blobs.open_meta_blob().await,
-        Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::Explicit(Ok(())), .. })
     );
 
     let () = get_fut.await.unwrap().unwrap();
@@ -763,8 +763,8 @@ async fn get_uses_open_packages_to_short_circuit() {
         // NeededBlobs closed with OK because no blobs are needed.
         assert_matches!(
             needed_blobs.open_meta_blob().await,
-            Err(fidl::Error::ClientChannelClosed{status, ..})
-                if status == Status::OK
+            Err(fidl::Error::ClientChannelClosed { epitaph, ..})
+                if epitaph.is_ok()
         );
     }
 

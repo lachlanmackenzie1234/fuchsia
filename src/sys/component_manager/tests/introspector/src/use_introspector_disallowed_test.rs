@@ -19,7 +19,7 @@ async fn use_realm_moniker_disallowed() {
     let error = events.next().await.unwrap().unwrap_err();
     assert_matches!(
         error,
-        Error::ClientChannelClosed { status, .. }
-        if status == zx::Status::ACCESS_DENIED
+        Error::ClientChannelClosed { epitaph, .. }
+        if epitaph == zx::Status::ACCESS_DENIED
     );
 }

@@ -13,9 +13,7 @@ use crate::node::{Node, OpenNode};
 use crate::object_request::{ConnectionCreator, Representation, run_synchronous_future_or_spawn};
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest};
-use flex_client::fidl::{
-    ControlHandle as _, DiscoverableProtocolMarker as _, Responder, ServerEnd,
-};
+use flex_client::fidl::{DiscoverableProtocolMarker as _, Responder, ServerEnd};
 use flex_fuchsia_io as fio;
 use std::future::Future;
 use std::ops::ControlFlow;
@@ -551,7 +549,8 @@ mod tests {
         ] {
             assert_matches!(
                 check(fio::PERM_READABLE | flags).await,
-                Err(fidl::Error::ClientChannelClosed { status: Status::WRONG_TYPE, .. }),
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == Status::WRONG_TYPE,
                 "{flags:?}"
             );
         }
@@ -724,6 +723,7 @@ mod tests {
             .expect("no event")
             .expect_err("error expected");
 
-        assert_matches!(error, fidl::Error::ClientChannelClosed { status: Status::NOT_DIR, .. });
+        assert_matches!(error, fidl::Error::ClientChannelClosed { epitaph, .. }
+            if epitaph == Status::NOT_DIR);
     }
 }

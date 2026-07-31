@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, anyhow};
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_paver as fpaver;
 use log::{info, warn};
-use {fidl_fuchsia_mem as fmem, fidl_fuchsia_paver as fpaver};
 
 mod configuration;
 pub use configuration::{CurrentConfiguration, NonCurrentConfiguration, TargetConfiguration};
@@ -198,7 +199,9 @@ pub async fn query_current_configuration(
             "query_current_configuration responded with {}",
             zx::Status::from_raw(status)
         )),
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. }) => {
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+            if epitaph == zx::Status::NOT_SUPPORTED =>
+        {
             warn!("device does not support ABR. Kernel image updates will not be atomic.");
             Ok(CurrentConfiguration::NotSupported)
         }

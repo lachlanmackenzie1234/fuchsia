@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use attribution_server::{AttributionServer, AttributionServerHandle};
-use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
+use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_memory_attribution as fattribution;
 use futures::TryStreamExt;

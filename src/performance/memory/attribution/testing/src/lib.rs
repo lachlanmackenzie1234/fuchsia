@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_memory_attribution as fattribution;
 use futures::stream::{BoxStream, SelectAll};
 use futures::{FutureExt, Stream, StreamExt};
 use pin_project::pin_project;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_memory_attribution as fattribution};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct PrincipalIdentifier(pub u64);
@@ -246,7 +247,8 @@ fn hanging_get_stream(
                     .attributions
                     .unwrap_or_else(|| panic!("Failed memory attribution for {name}")),
                 Err(fidl::Error::ClientChannelClosed {
-                    status: zx::Status::PEER_CLOSED, ..
+                    epitaph: fidl::Epitaph::PeerClosed,
+                    ..
                 }) => {
                     // If the hanging-get failed due to peer closed, consider there are no more
                     // updates to this principal. The closing of this hanging-get races with the

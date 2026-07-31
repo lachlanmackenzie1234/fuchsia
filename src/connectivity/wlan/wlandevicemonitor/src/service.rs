@@ -236,16 +236,15 @@ async fn handle_single_new_iface(
     while !event_stream.is_done() {
         match event_stream.next().await {
             None => (),
-            Some(Err(fidl::Error::ClientChannelClosed { status, .. })) => match status {
-                zx::Status::OK => {
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })) => {
+                if epitaph.is_ok() {
                     info!("Generic SME event stream closed cleanly.");
                     return;
-                }
-                e => {
-                    error!("Generic SME event stream closed with error: {}", e);
+                } else {
+                    error!("Generic SME event stream closed with error: {epitaph:?}");
                     break;
                 }
-            },
+            }
             Some(message) => {
                 error!(
                     "Unexpected message from Generic SME event stream: {:?}. Aborting Generic SME.",
@@ -705,7 +704,7 @@ mod tests {
     use crate::device::PhyOwnership;
     use crate::inspect::IfacesTree;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{ControlHandle, create_proxy, create_proxy_and_stream};
+    use fidl::endpoints::{create_proxy, create_proxy_and_stream};
     use fidl_fuchsia_wlan_common as fidl_wlan_common;
     use fuchsia_async as fasync;
     use fuchsia_inspect::Inspector;

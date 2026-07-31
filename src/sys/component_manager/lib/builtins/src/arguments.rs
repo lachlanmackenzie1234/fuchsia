@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Error, anyhow};
 use cm_types::Name;
-use fidl::endpoints::{ControlHandle as _, Responder as _};
+use fidl::endpoints::Responder as _;
 use fidl_fuchsia_boot as fboot;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::file;
@@ -130,14 +130,11 @@ impl Arguments {
             // file not found should be surfaced.
             match file::read_to_string(&config_file.unwrap()).await {
                 Ok(config) => Arguments::parse_legacy_arguments(&mut result, config),
-                Err(ReadError::Fidl(fidl::Error::ClientChannelClosed {
-                    status: Status::NOT_FOUND,
-                    ..
-                })) => (),
-                Err(ReadError::Fidl(fidl::Error::ClientChannelClosed {
-                    status: Status::PEER_CLOSED,
-                    ..
-                })) => (),
+                Err(ReadError::Fidl(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                    if epitaph == Status::NOT_FOUND || epitaph == Status::PEER_CLOSED =>
+                {
+                    ()
+                }
                 Err(err) => return Err(anyhow!("Failed to read {}: {}", BOOT_CONFIG_FILE, err)),
             }
         }

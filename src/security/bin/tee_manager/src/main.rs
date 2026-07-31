@@ -146,11 +146,12 @@ mod tests {
     use super::*;
     use fidl::{Error, endpoints};
     use fidl_fuchsia_hardware_tee::DeviceConnectorRequest;
+    use fidl_fuchsia_io as fio;
     use fidl_fuchsia_tee::ApplicationMarker;
     use fidl_fuchsia_tee_manager::ProviderProxy;
+    use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use zx_status::Status;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     fn spawn_device_connector<F>(
         request_handler: impl Fn(DeviceConnectorRequest) -> F + 'static,
@@ -178,7 +179,7 @@ mod tests {
 
     fn is_closed_with_status(error: Error, status: Status) -> bool {
         match error {
-            Error::ClientChannelClosed { status: s, .. } => s == status,
+            Error::ClientChannelClosed { epitaph: s, .. } => s == status,
             _ => false,
         }
     }
@@ -213,7 +214,7 @@ mod tests {
                     assert_is_valid_storage(&get_storage(&provider_proxy)).await;
 
                     application_request
-                        .close_with_epitaph(Status::OK)
+                        .close_with_epitaph(Ok(()))
                         .expect("Unable to close tee_request");
                 }
                 _ => {
@@ -251,7 +252,7 @@ mod tests {
                 } => {
                     assert!(!device_info_request.channel().is_invalid());
                     device_info_request
-                        .close_with_epitaph(Status::OK)
+                        .close_with_epitaph(Ok(()))
                         .expect("Unable to close device_info_request");
                 }
                 _ => {

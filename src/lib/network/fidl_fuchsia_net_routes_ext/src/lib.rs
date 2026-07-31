@@ -1195,7 +1195,6 @@ mod tests {
         net_ip_v6, net_subnet_v4, net_subnet_v6,
     };
     use test_case::test_case;
-    use zx_status;
 
     const ARBITRARY_TABLE_ID: TableId = TableId::new(0);
 
@@ -1868,7 +1867,7 @@ mod tests {
         assert_matches!(
             events.pop(),
             Some(Err(WatchError::Fidl(fidl::Error::ClientChannelClosed {
-                status: zx_status::Status::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 ..
             })))
         );
@@ -1919,7 +1918,7 @@ mod tests {
                     assert_matches!(
                         events.pop_front(),
                         Some(Err(WatchError::Fidl(fidl::Error::ClientChannelClosed {
-                            status: zx_status::Status::PEER_CLOSED,
+                            epitaph: fidl::Epitaph::PeerClosed,
                             ..
                         })))
                     );

@@ -38,7 +38,6 @@ use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
-use zx_status;
 
 async fn resolve(
     routes: &fidl_fuchsia_net_routes::StateProxy,
@@ -738,8 +737,8 @@ async fn watcher_already_pending<N: Netstack, I: fnet_routes_ext::FidlRouteIpExt
         )
         .await,
         (
-            Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. }),
-            Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. }),
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. }),
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. }),
         )
     );
     assert!(watcher_proxy.is_closed());

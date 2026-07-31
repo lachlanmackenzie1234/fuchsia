@@ -533,11 +533,11 @@ impl<I: IpExt> RulesWorker<I> {
                     .map_err(|e| match e {
                         // We allow bubbling up error that indicates a priority conflict
                         // to allow the caller to retry.
-                        fidl::Error::ClientChannelClosed {
-                            status: fidl::Status::ALREADY_EXISTS,
-                            protocol_name: _,
-                            epitaph: _,
-                        } => AddRuleError::PriorityConflict,
+                        fidl::Error::ClientChannelClosed { epitaph, .. }
+                            if epitaph == fidl::Status::ALREADY_EXISTS =>
+                        {
+                            AddRuleError::PriorityConflict
+                        }
                         _ => {
                             panic!("should not get FIDL error: {e:?}");
                         }

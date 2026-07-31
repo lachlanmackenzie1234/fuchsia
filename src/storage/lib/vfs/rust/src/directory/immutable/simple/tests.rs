@@ -47,7 +47,7 @@ async fn assert_open_file_err(
     let file = open_file_async(&root, path, flags).unwrap();
     assert_matches!(
         file.take_event_stream().next().await,
-        Some(Err(fidl::Error::ClientChannelClosed { status, .. })) if status == expected_status
+        Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })) if epitaph == expected_status
     );
 }
 
@@ -60,7 +60,7 @@ async fn assert_open_directory_err(
     let file = open_directory_async(&root, path, flags).unwrap();
     assert_matches!(
         file.take_event_stream().next().await,
-        Some(Err(fidl::Error::ClientChannelClosed { status, .. })) if status == expected_status
+        Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })) if epitaph == expected_status
     );
 }
 

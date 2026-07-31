@@ -270,7 +270,9 @@ impl PeerTask {
         // If the call returns an error, do not set up the handler.
         let info = match handler.watch_network_information().await {
             Ok(info) => info,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }) => {
+            Err(fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::PeerClosed, ..
+            }) => {
                 return Ok(());
             }
             Err(e) => {
@@ -319,7 +321,9 @@ impl PeerTask {
         // If the call returns an error, do not set up the handler.
         let info = match handler.watch_network_information().await {
             Ok(info) => info,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }) => {
+            Err(fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::PeerClosed, ..
+            }) => {
                 return Ok(());
             }
             Err(e) => {

@@ -910,7 +910,8 @@ mod tests {
         );
         assert_matches!(
             batch_iterator.get_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::INVALID_ARGS, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx_status::Status::INVALID_ARGS
         );
 
         // A selector of the form `component:root` is accepted.

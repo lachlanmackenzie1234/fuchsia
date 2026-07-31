@@ -384,7 +384,7 @@ impl RunnerServer {
             }
             RunnerRequest::ShutdownWithEpitaph { epitaph_status, responder } => {
                 let status = Status::from_raw(epitaph_status);
-                self.target_ctrl().as_trait().shutdown_with_epitaph(status);
+                self.target_ctrl().as_trait().shutdown_with_epitaph(status.into());
                 responder.send().unwrap();
             }
             RunnerRequest::SendOpenTargetStrictEvent { responder } => {

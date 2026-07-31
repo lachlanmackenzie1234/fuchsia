@@ -7,13 +7,14 @@
 use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use fidl_fuchsia_mem::Buffer;
+use fidl_fuchsia_paver as paver;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::lock::Mutex as AsyncMutex;
 use futures::prelude::*;
 use std::sync::Arc;
 use zx::{Status, Vmo, VmoOptions};
-use {fidl_fuchsia_paver as paver, fuchsia_async as fasync};
 
 fn verify_buffer(buffer: &mut Buffer) {
     // The paver service requires VMOs to be resizable. Assert that the buffer provided by the
@@ -1060,7 +1061,8 @@ pub mod tests {
         let result = paver.boot_manager.query_active_configuration().await;
         assert_matches!(
             result,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::NOT_SUPPORTED
         );
         Ok(())
     }

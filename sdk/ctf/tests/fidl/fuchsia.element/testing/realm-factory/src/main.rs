@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_element::ManagerMarker;
 use fidl_fuchsia_element_test::*;

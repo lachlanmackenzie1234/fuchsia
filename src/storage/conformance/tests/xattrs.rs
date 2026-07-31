@@ -71,7 +71,8 @@ async fn test_xattr_read_permissions() {
         file.list_extended_attributes(iterator_server).expect("list_extended_attributes failed");
         assert_matches!(
             iterator_client.get_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::BAD_HANDLE, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::BAD_HANDLE
         );
     }
 }
@@ -188,7 +189,8 @@ async fn test_xattr_node_reference() {
     node_ref.list_extended_attributes(iterator_server).expect("list_extended_attributes failed");
     assert_matches!(
         iterator_client.get_next().await,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+            if epitaph == zx::Status::NOT_SUPPORTED
     );
 }
 
@@ -274,7 +276,8 @@ async fn test_xattr_symlink_permissions() {
         symlink.list_extended_attributes(iterator_server).expect("list_extended_attributes failed");
         assert_matches!(
             iterator_client.get_next().await,
-            Err(fidl::Error::ClientChannelClosed { status: zx::Status::BAD_HANDLE, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::BAD_HANDLE
         );
     }
 
@@ -382,7 +385,8 @@ async fn test_xattr_unsupported() {
     file.list_extended_attributes(iterator_server).expect("list_extended_attributes failed");
     assert_matches!(
         iterator_client.get_next().await,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::NOT_SUPPORTED, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+            if epitaph == zx::Status::NOT_SUPPORTED
     );
 
     // 2. Without rights, expect BAD_HANDLE (rights check happens first).

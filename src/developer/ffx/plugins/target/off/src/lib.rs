@@ -43,7 +43,7 @@ async fn off(admin_proxy: AdminProxy, _cmd: OffCommand) -> fho::Result<()> {
     match res {
         Ok(_) => Ok(()),
         Err(ref e) => match e {
-            fidl::Error::ClientChannelClosed { status: fidl::Status::PEER_CLOSED, .. } => Ok(()),
+            fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. } => Ok(()),
             _ => res
                 .bug()?
                 .map_err(fidl::Status::from_raw)

@@ -78,7 +78,7 @@ async fn test_fshost_reboots_on_volume_death() {
     let status = data_dir.query_filesystem().await;
     assert_matches!(
         status,
-        Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. })
+        Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
     );
 
     // Tear down (clean test termination)

@@ -6,7 +6,8 @@
 
 use crate::epitaph::ChannelEpitaphExt;
 use crate::{
-    AsHandleRef, AsyncChannel, Channel, Error, HandleRef, NullableHandle, OnSignalsRef, ServeInner,
+    AsHandleRef, AsyncChannel, Channel, Epitaph, Error, HandleRef, NullableHandle, OnSignalsRef,
+    ServeInner,
 };
 use futures::{Stream, TryStream};
 use std::marker::PhantomData;
@@ -239,7 +240,7 @@ pub trait ControlHandle {
     /// Sets the server to shutdown with an epitaph. The underlying channel is
     /// only closed the next time the stream is polled.
     // TODO(https://fxbug.dev/42161447): Fix behavior or above docs.
-    fn shutdown_with_epitaph(&self, status: zx_status::Status);
+    fn shutdown_with_epitaph(&self, status: Epitaph);
 
     /// Returns true if the server has received the `PEER_CLOSED` signal.
     fn is_closed(&self) -> bool;
@@ -482,7 +483,10 @@ impl<T> ServerEnd<T> {
     }
 
     /// Writes an epitaph into the underlying channel before closing it.
-    pub fn close_with_epitaph(self, status: zx_status::Status) -> Result<(), Error> {
+    pub fn close_with_epitaph(
+        self,
+        status: impl Into<Result<(), zx_status::Status>>,
+    ) -> Result<(), Error> {
         self.inner.close_with_epitaph(status)
     }
 }

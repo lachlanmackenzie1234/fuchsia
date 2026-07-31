@@ -4,8 +4,8 @@
 
 use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::{
-    ClientEnd, ControlHandle, DiscoverableProtocolMarker, RequestStream, ServerEnd, ServiceMarker,
-    ServiceProxy, create_request_stream,
+    ClientEnd, DiscoverableProtocolMarker, RequestStream, ServerEnd, ServiceMarker, ServiceProxy,
+    create_request_stream,
 };
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner as fcrunner;

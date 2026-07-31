@@ -1511,10 +1511,8 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
         assert_matches!(
             exec.run_until_stalled(&mut connect_fut),
-            Poll::Ready(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::ALREADY_BOUND,
-                ..
-            }))
+            Poll::Ready(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                if epitaph == zx::Status::ALREADY_BOUND
         );
 
         // Drop first controller. A new controller can now take control.
@@ -1570,11 +1568,10 @@ mod tests {
         let mut controller2_event_fut = pin!(controller2_event_fut);
         assert_matches!(
             exec.run_until_stalled(&mut controller2_event_fut),
-            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::ALREADY_BOUND,
-                ..
-            })))
+            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })))
+                if epitaph == zx::Status::ALREADY_BOUND
         );
+
         assert!(controller2.is_closed());
     }
 
@@ -1792,11 +1789,10 @@ mod tests {
         let mut controller2_event_fut = pin!(controller2_event_fut);
         assert_matches!(
             exec.run_until_stalled(&mut controller2_event_fut),
-            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed {
-                status: zx::Status::ALREADY_BOUND,
-                ..
-            })))
+            Poll::Ready(Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })))
+                if epitaph == zx::Status::ALREADY_BOUND
         );
+
         assert!(controller2.is_closed());
 
         // Drop the first controller and verify that the second provider client can get a

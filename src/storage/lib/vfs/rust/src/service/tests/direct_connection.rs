@@ -193,7 +193,8 @@ async fn test_epitaph() {
     let mut event_stream = proxy.take_event_stream();
     assert_matches!(
         event_stream.next().await,
-        Some(Err(Error::ClientChannelClosed { status: Status::NOT_DIR, .. }))
+        Some(Err(Error::ClientChannelClosed { epitaph, .. }))
+            if epitaph == Status::NOT_DIR
     );
 
     assert_matches!(event_stream.next().await, None);

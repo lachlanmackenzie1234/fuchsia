@@ -5,7 +5,7 @@
 //! A Netstack3 worker to serve fuchsia.net.root.Interfaces API requests.
 
 use async_utils::channel::TrySend as _;
-use fidl::endpoints::{ControlHandle as _, ProtocolMarker as _, ServerEnd};
+use fidl::endpoints::{ProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_root as fnet_root;
 use fuchsia_async as fasync;

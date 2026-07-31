@@ -5,7 +5,7 @@
 use crate::{MountAction, run_component_features};
 use anyhow::{Context, Error, anyhow, bail};
 use fidl::AsyncChannel;
-use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use fidl::endpoints::{RequestStream, ServerEnd};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner::{
     ComponentControllerMarker, ComponentControllerRequest, ComponentControllerRequestStream,
@@ -361,9 +361,8 @@ async fn serve_component_controller(
                 }
             },
             Event::Completion(result) => match result {
-                Ok(Ok(ExitStatus::Exit(0))) => {
-                    controller_handle.shutdown_with_epitaph(zx::Status::OK)
-                }
+                Ok(Ok(ExitStatus::Exit(0))) => controller_handle.shutdown_with_epitaph(Ok(())),
+
                 Ok(Ok(ExitStatus::Exit(n))) => controller_handle.shutdown_with_epitaph(
                     zx::Status::from_raw(COMPONENT_EXIT_CODE_BASE + n as i32),
                 ),

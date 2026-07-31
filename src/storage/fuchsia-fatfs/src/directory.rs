@@ -1292,7 +1292,7 @@ mod tests {
 
         assert_matches!(
             event,
-            fidl::Error::ClientChannelClosed { status: Status::ALREADY_EXISTS, .. }
+            fidl::Error::ClientChannelClosed { epitaph, .. } if epitaph == Status::ALREADY_EXISTS
         );
 
         root.close();

@@ -4,7 +4,9 @@
 
 use anyhow::{Context, Error};
 use fidl::endpoints;
+use fidl_fuchsia_test_manager as ftest_manager;
 use ftest_manager::{CaseStatus, RunOptions, RunSuiteOptions, SuiteStatus};
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use futures::channel::mpsc;
 use futures::{StreamExt, stream};
@@ -15,7 +17,6 @@ use test_manager_test_lib::{
     TestRunEventPayload, collect_string_from_socket_helper, collect_suite_events,
     collect_suite_events_with_watch, default_run_option, default_run_suite_options,
 };
-use {fidl_fuchsia_test_manager as ftest_manager, fuchsia_async as fasync};
 
 macro_rules! connect_run_builder {
     () => {
@@ -1362,8 +1363,8 @@ async fn collect_isolated_logs_using_invalid_iterator_type_for_suite() {
 
     let err = err.downcast::<fidl::Error>().expect("expected fidl::Error");
     match err {
-        fidl::Error::ClientChannelClosed { status, protocol_name: _, epitaph: _ } => {
-            assert_eq!(status, fidl::Status::PEER_CLOSED);
+        fidl::Error::ClientChannelClosed { epitaph, protocol_name: _ } => {
+            assert_eq!(epitaph, fidl::Status::PEER_CLOSED);
         }
         _ => {
             assert!(false, "expected ClientChannelClosed");

@@ -77,9 +77,8 @@ impl DeviceProxyInterface for MockDeviceProxy {
             .lock()
             .start_send(DeviceRequest::GetMaxFrameSize)
             .map_err(|_| fidl::Error::ClientChannelClosed {
-                status: ZxStatus::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 protocol_name: "mock",
-                epitaph: None,
             })
             .map(|()| self.max_frame_size);
 
@@ -89,9 +88,8 @@ impl DeviceProxyInterface for MockDeviceProxy {
     fn send_frame(&self, data: &[u8]) -> Result<(), fidl::Error> {
         self.sender.lock().start_send(DeviceRequest::SendFrame(data.to_vec())).map_err(|_| {
             fidl::Error::ClientChannelClosed {
-                status: ZxStatus::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 protocol_name: "mock",
-                epitaph: None,
             }
         })
     }
@@ -101,9 +99,8 @@ impl DeviceProxyInterface for MockDeviceProxy {
             .lock()
             .start_send(DeviceRequest::ReadyToReceiveFrames(number_of_frames))
             .map_err(|_| fidl::Error::ClientChannelClosed {
-                status: ZxStatus::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 protocol_name: "mock",
-                epitaph: None,
             })
     }
 }

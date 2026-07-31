@@ -11,7 +11,6 @@ use crate::self_diagnostics::RootDiagnosticNode;
 use crate::test_suite::{Suite, SuiteRealm, TestRunBuilder};
 use crate::{constants, debug_data_server, facet};
 use fidl::Error;
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_component_resolution::ResolverProxy;
 use fidl_fuchsia_pkg::PackageResolverProxy;
 use fidl_fuchsia_test_manager as ftest_manager;

@@ -14,7 +14,7 @@ use crate::annotation::{
 use crate::element::Element;
 use anyhow::{Context, Error, anyhow, bail, format_err};
 use fidl::endpoints::{
-    ClientEnd, ControlHandle, Proxy, RequestStream, ServerEnd, create_proxy, create_request_stream,
+    ClientEnd, Proxy, RequestStream, ServerEnd, create_proxy, create_request_stream,
 };
 use fidl_connector::Connect;
 use fidl_fuchsia_component as fcomponent;

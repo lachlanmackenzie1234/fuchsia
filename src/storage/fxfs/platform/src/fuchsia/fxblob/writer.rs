@@ -16,7 +16,7 @@ use delivery_blob::compression::{
     ChunkInfo, ChunkedDecompressor, CompressionAlgorithm, CompressionInfo, decode_archive,
 };
 use delivery_blob::{DeliveryBlob, MINIMUM_HEADER_SIZE};
-use fidl::endpoints::{ControlHandle as _, RequestStream as _};
+use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_fxfs::{BlobWriterRequest, BlobWriterRequestStream};
 use fuchsia_merkle::{BufferedMerkleRootBuilder, Hash};
 use futures::{TryStreamExt as _, try_join};

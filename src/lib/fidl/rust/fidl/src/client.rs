@@ -22,7 +22,6 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{RawWaker, RawWakerVTable};
-use zx_status;
 
 /// Decodes the body of `buf` as the FIDL type `T`.
 #[doc(hidden)] // only exported for use in macros or generated code
@@ -406,7 +405,9 @@ impl<D: ResourceDialect> Stream for EventReceiver<D> {
 
         Poll::Ready(match ready!(self.inner.poll_recv_event(cx)) {
             Ok(x) => Some(Ok(x)),
-            Err(Error::ClientChannelClosed { status: zx_status::Status::PEER_CLOSED, .. }) => {
+            Err(Error::ClientChannelClosed {
+                epitaph: crate::error::Epitaph::PeerClosed, ..
+            }) => {
                 // The channel is closed, with no epitaph. Set our internal state so that on
                 // the next poll_next() we panic and is_terminated() returns an appropriate value.
                 self.state = EventReceiverState::Terminated;
@@ -697,9 +698,8 @@ impl<D: ResourceDialect> ClientInner<D> {
                     // The channel has been closed, and no epitaph was received.
                     // Set the epitaph to PEER_CLOSED.
                     return Err(Error::ClientChannelClosed {
-                        status: zx_status::Status::PEER_CLOSED,
+                        epitaph: crate::error::Epitaph::PeerClosed,
                         protocol_name: self.protocol_name,
-                        epitaph: None,
                         #[cfg(not(target_os = "fuchsia"))]
                         reason: self.channel.closed_reason(),
                     });
@@ -721,9 +721,8 @@ impl<D: ResourceDialect> ClientInner<D> {
                     &mut epitaph_body,
                 )?;
                 return Err(Error::ClientChannelClosed {
-                    status: epitaph_body.error,
+                    epitaph: crate::error::Epitaph::Explicit(epitaph_body.error),
                     protocol_name: self.protocol_name,
-                    epitaph: Some(epitaph_body.error.into_raw() as u32),
                     #[cfg(not(target_os = "fuchsia"))]
                     reason: self.channel.closed_reason(),
                 });
@@ -1015,9 +1014,8 @@ pub mod sync {
                                 &mut epitaph_body,
                             )?;
                             return Err(Error::ClientChannelClosed {
-                                status: epitaph_body.error,
+                                epitaph: crate::error::Epitaph::Explicit(epitaph_body.error),
                                 protocol_name: P::DEBUG_NAME,
-                                epitaph: Some(epitaph_body.error.into_raw() as u32),
                             });
                         }
                         if header.tx_id != 0 {
@@ -1046,9 +1044,8 @@ pub mod sync {
         ) -> Error {
             if err == zx_status::Status::PEER_CLOSED {
                 Error::ClientChannelClosed {
-                    status: zx_status::Status::PEER_CLOSED,
+                    epitaph: crate::error::Epitaph::PeerClosed,
                     protocol_name: P::DEBUG_NAME,
-                    epitaph: None,
                 }
             } else {
                 variant(err)
@@ -1150,7 +1147,7 @@ mod tests {
         fn shutdown(&self) {
             unimplemented!();
         }
-        fn shutdown_with_epitaph(&self, _status: zx_status::Status) {
+        fn shutdown_with_epitaph(&self, _status: crate::Epitaph) {
             unimplemented!();
         }
         fn is_closed(&self) -> bool {
@@ -1375,9 +1372,8 @@ mod tests {
                 zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5))
             ),
             Err(crate::Error::ClientChannelClosed {
-                status: zx_status::Status::PEER_CLOSED,
+                epitaph: crate::error::Epitaph::PeerClosed,
                 protocol_name: "test_protocol",
-                epitaph: None,
             })
         );
         Ok(())
@@ -1401,9 +1397,8 @@ mod tests {
                 zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5))
             ),
             Err(crate::Error::ClientChannelClosed {
-                status: zx_status::Status::PEER_CLOSED,
+                epitaph: crate::error::Epitaph::PeerClosed,
                 protocol_name: "test_protocol",
-                epitaph: None,
             })
         );
         Ok(())
@@ -1422,10 +1417,9 @@ mod tests {
                 zx::MonotonicDuration::from_seconds(5)
             )),
             Err(crate::Error::ClientChannelClosed {
-                status: zx_status::Status::UNAVAILABLE,
+                epitaph: crate::error::Epitaph::Explicit(Err(zx_status::Status::UNAVAILABLE)),
                 protocol_name: "test_protocol",
-                epitaph: Some(epitaph),
-            }) if epitaph == zx_types::ZX_ERR_UNAVAILABLE as u32
+            })
         );
         Ok(())
     }
@@ -1530,10 +1524,9 @@ mod tests {
             assert_matches!(
                 result,
                 Err(crate::Error::ClientChannelClosed {
-                    status: zx_status::Status::UNAVAILABLE,
+                    epitaph: crate::error::Epitaph::Explicit(Err(zx_status::Status::UNAVAILABLE)),
                     protocol_name: "test_protocol",
-                    epitaph: Some(epitaph),
-                }) if epitaph == zx_types::ZX_ERR_UNAVAILABLE as u32
+                })
             );
         };
         // add a timeout to sender so if test is broken it doesn't take forever
@@ -1601,17 +1594,16 @@ mod tests {
         let client = Client::<DefaultFuchsiaResourceDialect>::new(client_end, "test_protocol");
         let mut stream = client.take_event_receiver();
 
-        epitaph::write_epitaph_impl(&server_end, zx_status::Status::UNAVAILABLE)
+        epitaph::write_epitaph_impl(&server_end, Err(zx_status::Status::UNAVAILABLE))
             .expect("wrote epitaph");
         drop(server_end);
 
         assert_matches!(
             stream.next().await,
             Some(Err(crate::Error::ClientChannelClosed {
-                status: zx_status::Status::UNAVAILABLE,
+                epitaph: crate::error::Epitaph::Explicit(Err(zx_status::Status::UNAVAILABLE)),
                 protocol_name: "test_protocol",
-                epitaph: Some(epitaph),
-            })) if epitaph == zx_types::ZX_ERR_UNAVAILABLE as u32
+            }))
         );
         assert_matches!(stream.next().await, None);
         // this should panic
@@ -1865,7 +1857,7 @@ mod tests {
         assert_eq!(0, wakers.iter().fold(0, |acc, x| acc + x.get()));
 
         // next, simulate an epitaph without closing
-        epitaph::write_epitaph_impl(&server_end, zx_status::Status::UNAVAILABLE)
+        epitaph::write_epitaph_impl(&server_end, Err(zx_status::Status::UNAVAILABLE))
             .expect("wrote epitaph");
 
         // get event loop to deliver readiness notifications to channels
@@ -1881,10 +1873,9 @@ mod tests {
         assert_matches!(
             response1_future.poll_unpin(response1_cx),
             Poll::Ready(Err(crate::Error::ClientChannelClosed {
-                status: zx_status::Status::UNAVAILABLE,
+                epitaph: crate::error::Epitaph::Explicit(Err(zx_status::Status::UNAVAILABLE)),
                 protocol_name: "test_protocol",
-                epitaph: Some(epitaph),
-            })) if epitaph == zx_types::ZX_ERR_UNAVAILABLE as u32
+            }))
         );
 
         // get event loop to deliver readiness notifications to channels
@@ -1894,10 +1885,9 @@ mod tests {
         assert_matches!(
             response2_future.poll_unpin(response2_cx),
             Poll::Ready(Err(crate::Error::ClientChannelClosed {
-                status: zx_status::Status::UNAVAILABLE,
+                epitaph: crate::error::Epitaph::Explicit(Err(zx_status::Status::UNAVAILABLE)),
                 protocol_name: "test_protocol",
-                epitaph: Some(epitaph),
-            })) if epitaph == zx_types::ZX_ERR_UNAVAILABLE as u32
+            }))
         );
 
         // poll the event stream to completion.
@@ -1998,10 +1988,10 @@ mod tests {
                         "expected epitaph, but succeeded.\n{details}"
                     ),
                     Some(crate::Error::ClientChannelClosed {
-                        status: zx_status::Status::UNAVAILABLE,
+                        epitaph:
+                            crate::error::Epitaph::Explicit(Err(zx_status::Status::UNAVAILABLE)),
                         protocol_name: "test_protocol",
-                        epitaph: Some(epitaph),
-                    }) if epitaph == zx_types::ZX_ERR_UNAVAILABLE as u32 => assert!(
+                    }) => assert!(
                         action.should_report_epitaph(),
                         "got epitaph unexpectedly.\n{details}",
                     ),
@@ -2059,9 +2049,8 @@ mod tests {
         assert_matches!(
             executor.run_singlethreaded(&mut checked_fut),
             Err(crate::Error::ClientChannelClosed {
-                status: zx_status::Status::PEER_CLOSED,
+                epitaph: crate::error::Epitaph::PeerClosed,
                 protocol_name: "test_protocol",
-                epitaph: None,
             })
         );
     }

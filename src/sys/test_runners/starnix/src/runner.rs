@@ -7,16 +7,16 @@ use crate::helpers::clone_start_info;
 use crate::test_suite::handle_suite_requests;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_test as ftest;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_test as ftest, fuchsia_async as fasync,
-    zx,
-};
 
 /// Handles a `fcrunner::ComponentRunnerRequestStream`.
+
 ///
 /// When a run request arrives, the test suite protocol is served in the test component's outgoing
 /// namespace, and then the component is run in response to `ftest::SuiteRequest::Run` requests.
@@ -90,7 +90,7 @@ async fn serve_test_suite(
                     .await
                     .expect("Starnix test runner failed to serve suite requests");
                 log::info!("Finished serving test suite requests.");
-                let _ = controller.lock().take().map(|c| c.close_with_epitaph(zx::Status::OK));
+                let _ = controller.lock().take().map(|c| c.close_with_epitaph(Ok(())));
             }
         }
     })

@@ -126,9 +126,8 @@ impl FocusListener {
                                     fasync::MonotonicInstant::after(DEFAULT_TEXT_MANAGER_TIMEOUT),
                                     || {
                                         Err(fidl::Error::ClientChannelClosed {
-                                            status: zx::Status::TIMED_OUT,
+                                            epitaph: fidl::Epitaph::PeerClosed,
                                             protocol_name: "fuchsia.ui.keyboard.focus.Controller",
-                                            epitaph: None,
                                         })
                                     },
                                 )

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::node_remover::NodeRemover;
-use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_kernel as fkernel;
 use fidl_fuchsia_process_lifecycle as flifecycle;

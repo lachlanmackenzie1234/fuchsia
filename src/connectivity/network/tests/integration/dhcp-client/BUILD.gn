@@ -13,7 +13,6 @@ rustc_test("dhcp-client") {
     "//sdk/fidl/fuchsia.net.dhcp:fuchsia.net.dhcp_rust",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
-    "//sdk/rust/zx",
     "//src/connectivity/lib/net-declare",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/network/dhcpv4/protocol",

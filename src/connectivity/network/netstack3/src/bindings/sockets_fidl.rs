@@ -7,7 +7,7 @@
 use std::convert::Infallible as Never;
 use std::sync::Arc;
 
-use fidl::endpoints::{ControlHandle as _, ProtocolMarker, RequestStream as _, Responder as _};
+use fidl::endpoints::{ProtocolMarker, RequestStream as _, Responder as _};
 use fidl_fuchsia_net_sockets as fnet_sockets;
 use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use fidl_fuchsia_net_sockets_ext::IpSocketMatcherError;

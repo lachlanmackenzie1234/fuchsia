@@ -348,11 +348,11 @@ async fn get_impl(
                     })?
                 }
                 PackageAvailability::Open(root_dir) => {
-                    let () = needed_blobs.control_handle().shutdown_with_epitaph(Status::OK);
+                    let () = needed_blobs.control_handle().shutdown_with_epitaph(Ok(()));
                     root_dir
                 }
                 PackageAvailability::Always => {
-                    let () = needed_blobs.control_handle().shutdown_with_epitaph(Status::OK);
+                    let () = needed_blobs.control_handle().shutdown_with_epitaph(Ok(()));
                     open_packages.get_or_insert(pkg, None).await.map_err(|e| {
                         error!("get: open_packages.get_or_insert {}: {:#}", pkg, anyhow!(e));
                         cobalt_sender.open_io_error();
@@ -1088,7 +1088,7 @@ mod serve_needed_blobs_tests {
         proxy.get_missing_blobs(iter_server_end).unwrap();
         assert_matches!(
             iter.next().await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
 
         assert_matches!(
@@ -1175,7 +1175,7 @@ mod serve_needed_blobs_tests {
         // violation.
         assert_matches!(
             proxy.open_meta_blob().await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
 
         assert_matches!(
@@ -1243,7 +1243,7 @@ mod serve_needed_blobs_tests {
         // for the correct hash now should fail.
         assert_matches!(
             proxy.blob_written(&BlobId::from([0; 32]).into()).await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::BAD_STATE, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. }) if epitaph == Status::BAD_STATE
         );
 
         assert_matches!(
@@ -1293,7 +1293,7 @@ mod serve_needed_blobs_tests {
         // again should fail.
         assert_matches!(
             proxy.open_meta_blob().await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::BAD_STATE, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. }) if epitaph == Status::BAD_STATE
         );
 
         assert_matches!(
@@ -1337,7 +1337,7 @@ mod serve_needed_blobs_tests {
         // violation.
         assert_matches!(
             proxy.open_meta_blob().await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
 
         assert_matches!(
@@ -1464,7 +1464,7 @@ mod serve_needed_blobs_tests {
         // Task moves to next state after retried write operation succeeds.
         assert_matches!(
             proxy.open_meta_blob().await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
         assert_matches!(
             serve_needed_task.await,
@@ -1584,7 +1584,10 @@ mod serve_needed_blobs_tests {
         assert_matches!(serve_needed_task.await, Ok(()));
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::Explicit(Ok(())),
+                ..
+            }))
         );
         blobfs.expect_done().await;
     }
@@ -1663,7 +1666,10 @@ mod serve_needed_blobs_tests {
                 drop(proxy);
                 assert_matches!(
                     missing_blobs_iter.next().await,
-                    Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+                    Err(fidl::Error::ClientChannelClosed {
+                        epitaph: fidl::Epitaph::PeerClosed,
+                        ..
+                    })
                 );
             },
         )
@@ -1821,7 +1827,10 @@ mod serve_needed_blobs_tests {
         assert_matches!(serve_needed_task.await, Ok(()));
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::Explicit(Ok(())),
+                ..
+            }))
         );
         blobfs.expect_done().await;
     }
@@ -1872,7 +1881,10 @@ mod serve_needed_blobs_tests {
         assert_matches!(serve_needed_task.await, Ok(()));
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::Explicit(Ok(())),
+                ..
+            }))
         );
         blobfs.expect_done().await;
     }
@@ -1959,7 +1971,10 @@ mod serve_needed_blobs_tests {
         assert_matches!(serve_needed_task.await, Ok(()));
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::Explicit(Ok(())),
+                ..
+            }))
         );
         blobfs.expect_done().await;
     }
@@ -2003,7 +2018,10 @@ mod serve_needed_blobs_tests {
         assert_matches!(serve_needed_task.await, Ok(()));
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::Explicit(Ok(())),
+                ..
+            }))
         );
         blobfs.expect_done().await;
     }
@@ -2181,7 +2199,8 @@ mod serve_needed_blobs_tests {
 
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: Status::BAD_STATE, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                if epitaph == Status::BAD_STATE
         );
         assert_matches!(
             serve_needed_task.await,
@@ -2214,7 +2233,8 @@ mod serve_needed_blobs_tests {
 
         assert_matches!(
             proxy.take_event_stream().next().await,
-            Some(Err(fidl::Error::ClientChannelClosed { status: Status::BAD_STATE, .. }))
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                if epitaph == Status::BAD_STATE
         );
         assert_matches!(
             serve_needed_task.await,
@@ -2363,7 +2383,7 @@ mod serve_needed_blobs_tests {
         assert_matches!(task.await, Err(ServeNeededBlobsError::Aborted));
         assert_matches!(
             abort_fut.await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
         blobfs.expect_done().await;
     }
@@ -2383,7 +2403,7 @@ mod serve_needed_blobs_tests {
         assert_matches!(serve_needed_task.await, Err(ServeNeededBlobsError::Aborted));
         assert_matches!(
             abort_fut.await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
         blobfs.expect_done().await;
     }
@@ -2410,7 +2430,7 @@ mod serve_needed_blobs_tests {
         assert_matches!(serve_needed_task.await, Err(ServeNeededBlobsError::Aborted));
         assert_matches!(
             abort_fut.await,
-            Err(fidl::Error::ClientChannelClosed { status: Status::PEER_CLOSED, .. })
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. })
         );
         blobfs.expect_done().await;
     }

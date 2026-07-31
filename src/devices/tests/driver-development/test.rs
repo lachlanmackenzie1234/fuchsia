@@ -5,13 +5,13 @@
 mod test_utils;
 
 use anyhow::{Context, Result};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_async::{self as fasync};
 use fuchsia_component_test::{RealmBuilder, RealmInstance};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
-use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_test as fdt, zx_status,
-};
+use zx_status;
 
 const SAMPLE_DRIVER_URL: &str = "fuchsia-boot:///dtr#meta/sample_driver.cm";
 const PARENT_DRIVER_URL: &str = "fuchsia-boot:///dtr#meta/test-parent-sys.cm";
@@ -37,8 +37,8 @@ fn get_test_parent_property_list() -> Option<[fdf::NodeProperty; 2]> {
 }
 
 fn assert_not_found_error(error: fidl::Error) {
-    if let fidl::Error::ClientChannelClosed { status, .. } = error {
-        assert_eq!(status, zx_status::Status::NOT_FOUND);
+    if let fidl::Error::ClientChannelClosed { epitaph, .. } = error {
+        assert_eq!(epitaph, zx_status::Status::NOT_FOUND);
     } else {
         panic!("Expcted ClientChannelClosed error");
     }

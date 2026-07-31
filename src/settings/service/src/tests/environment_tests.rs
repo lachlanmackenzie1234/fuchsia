@@ -76,45 +76,78 @@ async fn test_channel_failure_watch() {
 
     let audio_proxy = env.connect_to_protocol::<AudioMarker>().expect("should get");
     let result = audio_proxy.watch2().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let a11y_proxy = env.connect_to_protocol::<AccessibilityMarker>().expect("should get");
     let result = a11y_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let display_proxy = env.connect_to_protocol::<DisplayMarker>().expect("should get");
     let result = display_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let dnd_proxy = env.connect_to_protocol::<DoNotDisturbMarker>().expect("should get");
     let result = dnd_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let factory_reset_proxy = env.connect_to_protocol::<FactoryResetMarker>().expect("should get");
     let result = factory_reset_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let input_proxy = env.connect_to_protocol::<InputMarker>().expect("should get");
     let result = input_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let intl_proxy = env.connect_to_protocol::<IntlMarker>().expect("should get");
     let result = intl_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let keyboard_proxy = env.connect_to_protocol::<KeyboardMarker>().expect("should get");
     let result = keyboard_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let night_mode_proxy = env.connect_to_protocol::<NightModeMarker>().expect("should get");
     let result = night_mode_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let privacy_proxy = env.connect_to_protocol::<PrivacyMarker>().expect("should get");
     let result = privacy_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 
     let setup_proxy = env.connect_to_protocol::<SetupMarker>().expect("should get");
     let result = setup_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
+    assert_matches!(
+        result,
+        Err(ClientChannelClosed { epitaph, .. }) if epitaph == Status::NOT_FOUND
+    );
 }

@@ -31,7 +31,7 @@ async fn test_fshost_crashes_when_provision_fxfs_fails() {
         .expect_err("Opening connection to data should have failed if fshost panicked");
     assert_matches!(
         status,
-        fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }
+        fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. }
     );
 
     fixture.tear_down().await;

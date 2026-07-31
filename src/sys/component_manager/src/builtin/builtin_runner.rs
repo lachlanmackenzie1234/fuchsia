@@ -331,7 +331,7 @@ impl BuiltinRunnerFactory for BuiltinRunner {
                             }
                             Err(err) => {
                                 warn!("Builtin runner failed to run component: {err}");
-                                let _ = controller.close_with_epitaph(err.into());
+                                let _ = controller.close_with_epitaph(zx::Status::from(err));
                             }
                         },
                         fcrunner::ComponentRunnerRequest::_UnknownMethod { ordinal, .. } => {

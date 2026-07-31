@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use std::task::{Poll, ready};
 
 use derivative::Derivative;
-use fidl::endpoints::{ControlHandle as _, Responder as _};
+use fidl::endpoints::Responder as _;
 use futures::channel::mpsc;
 use futures::{Future, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{debug, error, info, warn};
@@ -919,7 +919,8 @@ mod test {
         for r in [r1, r2] {
             assert_matches!(
                 r,
-                Err(fidl::Error::ClientChannelClosed { status: zx::Status::ALREADY_EXISTS, .. })
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::ALREADY_EXISTS
             );
         }
         // Need to keep the router advertisement sink alive in order for the

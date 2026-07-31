@@ -11,7 +11,6 @@ template("fidl_fuchsia_net_interfaces_ext_lib") {
     edition = "2024"
 
     deps = [
-             "//sdk/rust/zx-status",
              "//sdk/rust/zx-types",
              "//src/connectivity/lib/net-types",
              "//src/lib/async-utils",
@@ -23,6 +22,7 @@ template("fidl_fuchsia_net_interfaces_ext_lib") {
            ] + invoker.deps
 
     test_deps = [
+      "//sdk/rust/zx-status",
       "//src/connectivity/lib/net-declare",
       "//src/lib/fuchsia-async",
       "//third_party/rust_crates:anyhow",

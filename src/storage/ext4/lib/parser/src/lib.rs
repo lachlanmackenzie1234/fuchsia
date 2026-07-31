@@ -754,7 +754,9 @@ mod tests {
         let mut event_stream = node_proxy.take_event_stream();
         let event = event_stream.next().await.unwrap().expect_err("expected closed channel error");
         match event {
-            fidl::Error::ClientChannelClosed { status, .. } => assert_eq!(status, Status::NOT_DIR),
+            fidl::Error::ClientChannelClosed { epitaph, .. } => {
+                assert_eq!(epitaph, Status::NOT_DIR)
+            }
             other => panic!("Unexpected event error: {:?}", other),
         }
 

@@ -335,7 +335,11 @@ async fn gather_update_show(
     let current_channel = channel_provider.get_current().await?;
     let next_channel = match channel_control.get_target().await {
         Ok(channel) => Some(channel),
-        Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::NOT_FOUND, .. }) => None,
+        Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+            if epitaph == zx_status::Status::NOT_FOUND =>
+        {
+            None
+        }
         Err(e) => Err(e)?,
     };
 

@@ -4,7 +4,7 @@
 
 use crate::bindings::Ctx;
 use crate::bindings::bpf::{CgroupSkbProgram, EbpfManager, ValidVerifiedProgram};
-use fidl::endpoints::{ControlHandle, Responder};
+use fidl::endpoints::Responder;
 use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_table_validation::ValidFidlTable;
 use futures::TryStreamExt;

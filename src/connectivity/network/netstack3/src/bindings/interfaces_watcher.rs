@@ -2569,7 +2569,8 @@ mod tests {
         for r in [r1, r2] {
             assert_matches!(
                 r,
-                Err(fidl::Error::ClientChannelClosed { status: zx::Status::ALREADY_EXISTS, .. })
+                Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                    if epitaph == zx::Status::ALREADY_EXISTS
             );
         }
     }

@@ -145,9 +145,13 @@ fn handle_fidl_error<T>(res: Result<T, fidl::Error>) -> Result<T> {
 
 fn handle_peer_closed(err: fidl::Error) -> errors::FfxError {
     match err {
-        fidl::Error::ClientChannelClosed { status, protocol_name, reason, .. } => {
-            errors::ffx_error!("An attempt to access {} resulted in a bad status: {} reason: {}.
-This can happen if tracing is not supported on the product configuration you are running or if it is missing from the base image.", protocol_name, status, reason.as_ref().map(String::as_str).unwrap_or("not given"))
+        fidl::Error::ClientChannelClosed { epitaph, protocol_name, reason, .. } => {
+            errors::ffx_error!(
+                "An attempt to access {protocol_name} resulted in a bad status: {epitaph:?} reason: {}. \
+                 This can happen if tracing is not supported on the product configuration \
+                 you are running or if it is missing from the base image.",
+                reason.as_ref().map(String::as_str).unwrap_or("not given")
+            )
         }
         _ => {
             errors::ffx_error!("Accessing the tracing controller failed: {:#?}", err)
@@ -242,8 +246,7 @@ fn symbolize_ordinal(ordinal: u64, ordinals: &FidlLibraries, mut writer: Writer)
         writer.line(format!("{} -> {}", ordinal, name))?;
     } else {
         writer.line(format!(
-            "Unable to symbolize ordinal {}. This could be because either:",
-            ordinal
+            "Unable to symbolize ordinal {ordinal}. This could be because either:"
         ))?;
         writer.line("1. The ordinal is incorrect")?;
         writer.line("2. The ordinal is not found in IR files in $FUCHSIA_BUILD_DIR/all_fidl_json.txt or the input IR files")?;
@@ -585,7 +588,7 @@ impl TraceTool {
             let mut ordinals = match FidlLibraries::from_context(&self.context) {
                 Ok(ordinals) => ordinals,
                 Err(err) => {
-                    writer.line(format!("Unable to load FIDL symbolization map: {}", err))?;
+                    writer.line(format!("Unable to load FIDL symbolization map: {err}"))?;
                     FidlLibraries::default()
                 }
             };
@@ -661,7 +664,7 @@ fn post_process(
         context,
     )?;
     for warning in warnings {
-        writer.line(format!("{}", warning))?;
+        writer.line(format!("{warning}"))?;
     }
     Ok(())
 }
@@ -772,32 +775,30 @@ https://fuchsia.dev/fuchsia-src/development/sdk/ffx/record-traces"
             )
         }
         RecordingError::DuplicateTraceFile => {
-            format!("Trace already running for file {}", output)
+            format!("Trace already running for file {output}")
         }
         RecordingError::RecordingStart => {
             let log_file: String = context.get("log.dir").unwrap();
             format!(
-                "Error starting Fuchsia trace. See {}/ffx.daemon.log\n
+                "Error starting Fuchsia trace. See {log_file}/ffx.daemon.log\n
 Search for lines tagged with `ffx_daemon_service_tracing`. A common issue is a
 peer closed error from `fuchsia.tracing.controller.Controller`. If this is the
 case either tracing is not supported in the product configuration or the tracing
-package is missing from the device's system image.",
-                log_file
+package is missing from the device's system image."
             )
         }
         RecordingError::RecordingStop => {
             let log_file: String = context.get("log.dir").unwrap();
             format!(
-                "Error stopping Fuchsia trace. See {}/ffx.daemon.log\n
+                "Error stopping Fuchsia trace. See {log_file}/ffx.daemon.log\n
 Search for lines tagged with `ffx_daemon_service_tracing`. A common issue is a
 peer closed error from `fuchsia.tracing.controller.Controller`. If this is the
 case either tracing is not supported in the product configuration or the tracing
-package is missing from the device's system image.",
-                log_file
+package is missing from the device's system image."
             )
         }
         RecordingError::NoSuchTraceFile => {
-            format!("Could not stop trace. No active traces for {}.", output)
+            format!("Could not stop trace. No active traces for {output}.")
         }
         RecordingError::NoSuchTarget => {
             format!(
@@ -846,7 +847,7 @@ fn canonical_path<T: ToString>(output_path: T) -> Result<String> {
     }
     res.into_os_string()
         .into_string()
-        .map_err(|e| anyhow!("unable to convert OsString to string {:?}", e))
+        .map_err(|e| anyhow!("unable to convert OsString to string {e:?}"))
 }
 
 #[cfg(test)]
@@ -854,7 +855,7 @@ mod tests {
     use super::*;
     use errors::ResultExt as _;
     use fdomain_client::Client as FDomainClient;
-    use fdomain_client::fidl::{ControlHandle, Responder};
+    use fdomain_client::fidl::{ControlHandle as _, Responder};
     use fdomain_fuchsia_tracing as tracing;
     use fdomain_fuchsia_tracing_controller::{
         self as tracing_controller, Action, TraceStatus, Trigger,
@@ -993,7 +994,7 @@ mod tests {
                     }))
                     .expect("should respond");
             }
-            r => panic!("unsupported req: {:?}", r),
+            r => panic!("unsupported req: {r:?}"),
         })))
     }
 
@@ -1052,7 +1053,7 @@ mod tests {
             tracing_controller::ProvisionerRequest::GetProviders { responder, .. } => {
                 responder.control_handle().shutdown();
             }
-            r => panic!("unsupported req: {:?}", r),
+            r => panic!("unsupported req: {r:?}"),
         })))
     }
 

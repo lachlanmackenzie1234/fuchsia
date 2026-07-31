@@ -803,12 +803,12 @@ mod tests {
         let result =
             proxy.add_composite_node_spec(&fdf::CompositeNodeSpec { ..Default::default() }).await;
         assert_eq!(true, result.is_err());
-        let fidl::Error::ClientChannelClosed { status, protocol_name, .. } = result.err().unwrap()
+        let fidl::Error::ClientChannelClosed { epitaph, protocol_name, .. } = result.err().unwrap()
         else {
             panic!("wrong error");
         };
         assert_eq!(fdi::DriverIndexMarker::PROTOCOL_NAME, protocol_name);
-        assert_eq!(status.into_raw(), Status::NOT_FOUND.into_raw());
+        assert_eq!(epitaph, Status::NOT_FOUND);
     }
 
     // This test depends on '/pkg/config/drivers_for_test.json' existing in the test package.

@@ -13,7 +13,7 @@ use fidl_fuchsia_time_external::{
     PushSourceWatchStatusResponder, Status, TimeSample,
 };
 
-use futures::channel::mpsc::{channel, Receiver, Sender};
+use futures::channel::mpsc::{Receiver, Sender, channel};
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::warn;
@@ -273,8 +273,8 @@ impl UpdateAlgorithm for TestUpdateAlgorithm {
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::create_proxy_and_stream;
     use fidl::Error as FidlError;
+    use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_time_external::{PushSourceMarker, PushSourceProxy};
     use fuchsia_async as fasync;
     use futures::{FutureExt, SinkExt};
@@ -338,11 +338,11 @@ mod test {
         // Calling again while second watch is active should close the channel.
         assert_matches!(
             proxy.watch_sample().await.unwrap_err(),
-            FidlError::ClientChannelClosed { status: zx::Status::BAD_STATE, .. }
+            FidlError::ClientChannelClosed { epitaph, .. } if epitaph == zx::Status::BAD_STATE
         );
         assert_matches!(
             first_watch_fut.await.unwrap_err(),
-            FidlError::ClientChannelClosed { status: zx::Status::BAD_STATE, .. }
+            FidlError::ClientChannelClosed { epitaph, .. } if epitaph == zx::Status::BAD_STATE
         );
     }
 
@@ -358,11 +358,11 @@ mod test {
         // Calling again while second watch is active should close the channel.
         assert_matches!(
             proxy.watch_status().await.unwrap_err(),
-            FidlError::ClientChannelClosed { status: zx::Status::BAD_STATE, .. }
+            FidlError::ClientChannelClosed { epitaph, .. } if epitaph == zx::Status::BAD_STATE
         );
         assert_matches!(
             second_watch_fut.await.unwrap_err(),
-            FidlError::ClientChannelClosed { status: zx::Status::BAD_STATE, .. }
+            FidlError::ClientChannelClosed { epitaph, .. } if epitaph == zx::Status::BAD_STATE
         );
     }
 

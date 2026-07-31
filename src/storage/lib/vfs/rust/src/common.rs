@@ -5,8 +5,6 @@
 //! Common utilities used by both directory and file traits.
 
 use crate::node::Node;
-#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
-use flex_client::fidl::ControlHandle;
 use flex_client::fidl::ServerEnd;
 
 use flex_fuchsia_io as fio;

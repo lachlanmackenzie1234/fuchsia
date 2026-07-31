@@ -7,7 +7,7 @@ use attribution_data::AttributionDataProviderImpl;
 use attribution_processing::digest::BucketDefinition;
 use attribution_processing::{AttributionDataProvider, PrincipalDescription};
 use cobalt::{collect_stalls_forever, create_metric_event_logger};
-use fidl::endpoints::{ControlHandle, RequestStream};
+use fidl::endpoints::RequestStream;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::Property;

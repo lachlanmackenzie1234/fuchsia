@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fifo::{FIFO_SIZE, Fifo};
-use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream, Responder};
+use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream, Responder};
 use fidl_fuchsia_device::DeviceSignal;
 use fidl_fuchsia_hardware_pty::{self as fpty, DeviceRequest, DeviceRequestStream, WindowSize};
 use fuchsia_async as fasync;

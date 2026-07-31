@@ -31,9 +31,7 @@ use crate::vfs::{CacheConfig, FileOps, FsNodeHandle, FsString, Mounts, Namespace
 use bstr::{BString, ByteSlice};
 use devicetree::types::Devicetree;
 use expando::Expando;
-use fidl::endpoints::{
-    ClientEnd, ControlHandle, DiscoverableProtocolMarker, ProtocolMarker, create_endpoints,
-};
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, ProtocolMarker, create_endpoints};
 use fidl_fuchsia_component_runner::{ComponentControllerControlHandle, ComponentStopInfo};
 use fidl_fuchsia_feedback::CrashReporterProxy;
 use fidl_fuchsia_io as fio;
@@ -774,7 +772,7 @@ impl Kernel {
                     ..ComponentStopInfo::default()
                 })
                 .unwrap();
-            control_handle.shutdown_with_epitaph(zx::Status::OK);
+            control_handle.shutdown_with_epitaph(Ok(()));
         } else {
             log_warn!("Shutdown invoked without a container controller control handle.");
         }

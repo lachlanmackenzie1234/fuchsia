@@ -383,8 +383,8 @@ async fn read_file(dir: &fio::DirectoryProxy, path: &str) -> Result<Vec<u8>, Ver
                 }
             },
             // If not found, Open3 will send an epitaph when closing the channel.
-            Err(fidl::Error::ClientChannelClosed { status, .. })
-                if status == zx::Status::NOT_FOUND =>
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::NOT_FOUND =>
             {
                 return Err(VerificationError::MissingFile { path: path.to_owned() });
             }

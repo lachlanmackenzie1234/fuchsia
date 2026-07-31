@@ -2260,12 +2260,18 @@ pub struct UnknownInteractionsAjarProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl UnknownInteractionsAjarProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for UnknownInteractionsAjarProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -4980,12 +4986,18 @@ pub struct UnknownInteractionsClosedProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl UnknownInteractionsClosedProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for UnknownInteractionsClosedProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 
@@ -9376,12 +9388,18 @@ pub struct UnknownInteractionsProtocolControlHandle {
     inner: std::sync::Arc<fidl::ServeInner<fidl::encoding::DefaultFuchsiaResourceDialect>>,
 }
 
+impl UnknownInteractionsProtocolControlHandle {
+    pub fn shutdown_with_epitaph(&self, status: impl Into<fidl::Epitaph>) {
+        self.inner.shutdown_with_epitaph(status.into())
+    }
+}
+
 impl fidl::endpoints::ControlHandle for UnknownInteractionsProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
 
-    fn shutdown_with_epitaph(&self, status: zx_status::Status) {
+    fn shutdown_with_epitaph(&self, status: fidl::Epitaph) {
         self.inner.shutdown_with_epitaph(status)
     }
 

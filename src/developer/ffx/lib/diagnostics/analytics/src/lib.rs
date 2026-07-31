@@ -321,9 +321,8 @@ mod tests {
     #[test]
     fn test_unable_to_get_info_conversion() {
         let error = fidl::Error::ClientChannelClosed {
-            status: fidl::Status::PEER_CLOSED,
+            epitaph: fidl::Epitaph::Explicit(Err(fidl::Status::from_raw(23))),
             protocol_name: "something-made-up",
-            epitaph: Some(23u32),
             reason: None,
         };
         let pof = PointOfFailure::UnableToGetInfo { error: &error };

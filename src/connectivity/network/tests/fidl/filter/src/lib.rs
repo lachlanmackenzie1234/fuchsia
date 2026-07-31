@@ -299,8 +299,8 @@ async fn watcher_already_pending(name: &str) {
     assert_matches!(
         futures::future::join(watcher.watch(), watcher.watch()).await,
         (
-            Err(fidl::Error::ClientChannelClosed { status: fidl::Status::PEER_CLOSED, .. }),
-            Err(fidl::Error::ClientChannelClosed { status: fidl::Status::PEER_CLOSED, .. }),
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. }),
+            Err(fidl::Error::ClientChannelClosed { epitaph: fidl::Epitaph::PeerClosed, .. }),
         )
     );
     assert!(watcher.is_closed());

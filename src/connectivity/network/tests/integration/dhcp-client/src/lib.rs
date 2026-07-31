@@ -825,7 +825,7 @@ async fn watch_configuration_handles_interface_removal<N: Netstack>(name: &str) 
             assert_matches!(
                 watch_config_result,
                 Err(fnet_dhcp_ext::Error::Fidl(fidl::Error::ClientChannelClosed {
-                    status: zx::Status::PEER_CLOSED,
+                    epitaph: fidl::Epitaph::PeerClosed,
                     ..
                 }))
             );
@@ -990,7 +990,7 @@ async fn client_handles_address_removal<N: Netstack>(
         assert_matches!(
             config_stream.try_next().await,
             Err(fnet_dhcp_ext::Error::Fidl(fidl::Error::ClientChannelClosed {
-                status: zx::Status::PEER_CLOSED,
+                epitaph: fidl::Epitaph::PeerClosed,
                 ..
             }))
         );
