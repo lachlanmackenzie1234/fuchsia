@@ -4,7 +4,6 @@
 
 composite aml_thermal_pll;
 
-using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.platform;
 using fuchsia.amlogic.platform;
@@ -12,6 +11,7 @@ using fuchsia.gpio;
 using fuchsia.hardware.clock;
 using fuchsia.hardware.pwm;
 using fuchsia.pwm;
+using fuchsia.clock;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
@@ -40,22 +40,22 @@ optional parent "pwm-ao-d" {
 
 parent "clock-1" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_PLL_DIV16";
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_PLL_DIV16;
 }
 
 parent "clock-2" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPU_DIV16";
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_CPU_DIV16;
 }
 
 optional parent "clock-3" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_PLLB_DIV16";
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_PLLB_DIV16;
 }
 
 optional parent "clock-4" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "SYS_CPUB_DIV16";
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_CPUB_DIV16;
 }
 
 optional parent "pin-states-0" {

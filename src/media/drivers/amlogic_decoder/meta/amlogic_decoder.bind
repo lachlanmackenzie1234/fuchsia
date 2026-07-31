@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 composite aml_video;
-using fuchsia;
 
 
 primary parent "pdev" {
@@ -32,12 +31,12 @@ parent "canvas" {
 
 parent "clock-dos-vdec" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "DOS_GCLK_VDEC";
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.DOS_GCLK_VDEC;
 }
 
 parent "clock-dos" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.NAME == "DOS";
+  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.DOS;
 }
 
 optional parent "tee" {
