@@ -73,18 +73,10 @@ impl RingBufferState {
     }
 
     /// Access the memory at `position` as a `RingBufferRecordHeader`.
-    fn header_mut(&mut self, position: u64) -> &mut RingBufferRecordHeader {
-        // SAFETY
-        //
-        // Reading / writing to the header is safe because the access is exclusive thanks to the
-        // mutable reference to `self` and userspace has only a read only access to this memory.
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            &mut *(self.data_position(position) as *mut RingBufferRecordHeader)
-        }
+    fn header(&self, position: u64) -> &RingBufferRecordHeader {
+        // SAFETY: Accessing the header is safe because `RingBufferRecordHeader`
+        // contains only atomic fields.
+        unsafe { &*(self.data_position(position) as *const RingBufferRecordHeader) }
     }
 }
 
@@ -330,7 +322,7 @@ impl RingBuffer {
                 as *const RingBufferRecordHeader)
         };
         let addr_page = addr / page_size;
-        let mapping_start_page = addr_page - header.page_count as usize - 1;
+        let mapping_start_page = addr_page - header.page_count.load(Ordering::Acquire) as usize - 1;
         let mapping_start_address = mapping_start_page * page_size;
         #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
         let ringbuf_impl = unsafe { &*(mapping_start_address as *const &RingBuffer) };
@@ -360,7 +352,7 @@ impl MapImpl for RingBuffer {
     }
 
     fn can_read(&self) -> Option<bool> {
-        let mut state = self.state().write();
+        let state = self.state().read();
         let consumer_position = state.consumer_position().load(Ordering::Acquire);
         let producer_position = state.producer_position().load(Ordering::Acquire);
 
@@ -370,7 +362,8 @@ impl MapImpl for RingBuffer {
 
         // Read the header at the consumer position, and check that the entry is not busy.
         let can_read = consumer_position < producer_position
-            && ((*state.header_mut(consumer_position).length.get_mut()) & BPF_RINGBUF_BUSY_BIT
+            && ((state.header(consumer_position).length.load(Ordering::Acquire))
+                & BPF_RINGBUF_BUSY_BIT
                 == 0);
         Some(can_read)
     }
@@ -385,7 +378,7 @@ impl MapImpl for RingBuffer {
             return Err(MapError::InvalidParam);
         }
 
-        let mut state = self.state().write();
+        let state = self.state().write();
         let consumer_position = state.consumer_position().load(Ordering::Acquire);
         let producer_position = state.producer_position().load(Ordering::Acquire);
         let max_size = (self.mask + 1) as u64;
@@ -412,9 +405,9 @@ impl MapImpl for RingBuffer {
         let page_count = ((data_position - state.data_addr()) / *MapBuffer::PAGE_SIZE + 3)
             .try_into()
             .map_err(|_| MapError::SizeLimit)?;
-        let header = state.header_mut(producer_position);
-        *header.length.get_mut() = data_length;
-        header.page_count = page_count;
+        let header = state.header(producer_position);
+        header.length.store(data_length, Ordering::Relaxed);
+        header.page_count.store(page_count, Ordering::Relaxed);
         state
             .producer_position()
             .store(producer_position + u64::from(total_size), Ordering::Release);
@@ -448,7 +441,7 @@ impl From<BpfValue> for RingBufferWakeupPolicy {
 #[derive(Debug)]
 struct RingBufferRecordHeader {
     length: AtomicU32,
-    page_count: u32,
+    page_count: AtomicU32,
 }
 
 const_assert!(std::mem::size_of::<RingBufferRecordHeader>() == BPF_RINGBUF_HDR_SZ as usize);
@@ -508,8 +501,11 @@ mod test {
 
         // 4. If consumer position advances to match producer, can_read should
         //    be false again.
-        let producer_pos = ringbuf.state().read().producer_position().load(Ordering::Acquire);
-        ringbuf.state().write().consumer_position().store(producer_pos, Ordering::Release);
+        {
+            let state = ringbuf.state().write();
+            let producer_pos = state.producer_position().load(Ordering::Acquire);
+            state.consumer_position().store(producer_pos, Ordering::Release);
+        }
         assert_eq!(ringbuf.can_read(), Some(false));
     }
 
@@ -637,5 +633,4 @@ mod test {
         assert_eq!(ringbuf.ringbuf_reserve(0xffff_fff1, 0), Err(MapError::InvalidParam));
         assert_eq!(ringbuf.ringbuf_reserve(0x3fff_ffff, 0), Err(MapError::SizeLimit));
     }
-
 }
