@@ -341,6 +341,7 @@ pub fn vmo_name_to_digest_zxname(name: &ZXName) -> &ZXName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Claim, ClaimType, GlobalPrincipalIdentifier, InflatedPrincipal, InflatedResource};
 
     #[test]
     fn rename_zx_test() {
@@ -400,5 +401,245 @@ mod tests {
             vmo_name_to_digest_name("restricted_state_vmo:119723"),
             "[restricted_state_vmo]"
         );
+    }
+
+    fn make_test_principal(id: u64, name: &str) -> InflatedPrincipal {
+        InflatedPrincipal::new(
+            fplugin::Principal {
+                identifier: Some(fplugin::PrincipalIdentifier { id }),
+                description: Some(fplugin::Description::Component(name.to_owned())),
+                principal_type: Some(fplugin::PrincipalType::Runnable),
+                parent: None,
+                ..Default::default()
+            }
+            .into(),
+        )
+    }
+
+    fn make_test_vmo_resource(
+        koid: u64,
+        name_index: usize,
+        committed: u64,
+        populated: u64,
+        claims: Vec<(u64, u64)>,
+    ) -> InflatedResource {
+        let mut res = InflatedResource::new(
+            fplugin::Resource {
+                koid: Some(koid),
+                name_index: Some(name_index as u64),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_committed_bytes: Some(committed),
+                    private_populated_bytes: Some(populated),
+                    scaled_committed_bytes: Some(committed),
+                    scaled_populated_bytes: Some(populated),
+                    total_committed_bytes: Some(committed),
+                    total_populated_bytes: Some(populated),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }
+            .into(),
+        );
+        for (source, subject) in claims {
+            res.claims.insert(Claim {
+                source: GlobalPrincipalIdentifier::new_for_test(source),
+                subject: GlobalPrincipalIdentifier::new_for_test(subject),
+                claim_type: ClaimType::Direct,
+            });
+        }
+        res
+    }
+
+    /// What is tested: `MemorySummary::build` sorting of `PrincipalSummary` entries by
+    /// `populated_total` in descending order.
+    ///
+    /// Expectations verified:
+    /// - Principals in `summary.principals` are ordered descending by their total populated bytes
+    ///   (`1_000_000_000` -> `500_000_000` -> `100_000_000`).
+    /// - Verifies that large unsigned byte totals are handled correctly without sign-overflow when
+    ///   sorting comparator logic is refactored.
+    #[test]
+    fn test_memory_summary_build_sorting_and_overflow() {
+        let mut principals = HashMap::new();
+        let mut p1 = make_test_principal(1, "small_principal");
+        p1.resources.insert(101);
+        let mut p2 = make_test_principal(2, "large_principal");
+        p2.resources.insert(102);
+        let mut p3 = make_test_principal(3, "medium_principal");
+        p3.resources.insert(103);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(2), p2);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(3), p3);
+
+        let mut resources = HashMap::new();
+        resources
+            .insert(101, make_test_vmo_resource(101, 0, 100_000_000, 100_000_000, vec![(1, 1)]));
+        resources.insert(
+            102,
+            make_test_vmo_resource(102, 1, 1_000_000_000, 1_000_000_000, vec![(2, 2)]),
+        );
+        resources
+            .insert(103, make_test_vmo_resource(103, 2, 500_000_000, 500_000_000, vec![(3, 3)]));
+
+        let resource_names = vec![
+            ZXName::from_string_lossy("vmo_1"),
+            ZXName::from_string_lossy("vmo_2"),
+            ZXName::from_string_lossy("vmo_3"),
+        ];
+
+        let summary = MemorySummary::build(&principals, &resources, &resource_names);
+        assert_eq!(summary.principals.len(), 3);
+        assert_eq!(summary.principals[0].name, "large_principal");
+        assert_eq!(summary.principals[0].populated_total, 1_000_000_000);
+        assert_eq!(summary.principals[1].name, "medium_principal");
+        assert_eq!(summary.principals[1].populated_total, 500_000_000);
+        assert_eq!(summary.principals[2].name, "small_principal");
+        assert_eq!(summary.principals[2].populated_total, 100_000_000);
+    }
+
+    /// What is tested: VMO digest aggregation and merging when they have the same name.
+    ///
+    /// Expectations verified:
+    /// - When multiple VMOs owned by a principal have distinct names ("blob-1111", "blob-2222")
+    ///   that digest to the same bucket ("[blobs]"), they are merged into a single `VmoSummary`
+    ///   entry.
+    /// - Verifies `vmo_summary.count == 2` and that all committed/populated byte metrics (total and
+    ///   private) are accurately summed across the aggregated VMOs.
+    #[test]
+    fn test_memory_summary_vmo_digest_aggregation() {
+        let mut principals = HashMap::new();
+        let mut p1 = make_test_principal(1, "blob_owner");
+        p1.resources.insert(1001);
+        p1.resources.insert(1002);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
+
+        let mut resources = HashMap::new();
+        resources.insert(1001, make_test_vmo_resource(1001, 0, 100, 200, vec![(1, 1)]));
+        resources.insert(1002, make_test_vmo_resource(1002, 1, 300, 400, vec![(1, 1)]));
+
+        let resource_names =
+            vec![ZXName::from_string_lossy("blob-1111"), ZXName::from_string_lossy("blob-2222")];
+
+        let summary = MemorySummary::build(&principals, &resources, &resource_names);
+        assert_eq!(summary.principals.len(), 1);
+        let p_summary = &summary.principals[0];
+        assert_eq!(p_summary.vmos.len(), 1);
+
+        let blob_digest = ZXName::from_string_lossy("[blobs]");
+        let vmo_summary = p_summary.vmos.get(&blob_digest).expect("Should aggregate under [blobs]");
+        assert_eq!(vmo_summary.count, 2);
+        assert_eq!(vmo_summary.committed_total, 400);
+        assert_eq!(vmo_summary.populated_total, 600);
+        assert_eq!(vmo_summary.committed_private, 400);
+        assert_eq!(vmo_summary.populated_private, 600);
+    }
+
+    /// What is tested: Process formatting and alphabetical sorting of process strings in
+    /// `PrincipalSummary.processes`.
+    ///
+    /// Expectations verified:
+    /// - Multiple distinct process resources attributed to a principal are formatted as `"name (koid)"`
+    ///   and sorted alphabetically (`"alpha_process (2002)"` before `"zeta_process (2001)"`).
+    #[test]
+    fn test_memory_summary_process_formatting_and_sorting() {
+        let mut principals = HashMap::new();
+        let mut p1 = make_test_principal(1, "proc_owner");
+        p1.resources.insert(2001);
+        p1.resources.insert(2002);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
+
+        let mut resources = HashMap::new();
+        let r1 = InflatedResource::new(
+            fplugin::Resource {
+                koid: Some(2001),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Process(fplugin::Process {
+                    vmos: Some(vec![]),
+                    mappings: None,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }
+            .into(),
+        );
+        let r2 = InflatedResource::new(
+            fplugin::Resource {
+                koid: Some(2002),
+                name_index: Some(1),
+                resource_type: Some(fplugin::ResourceType::Process(fplugin::Process {
+                    vmos: Some(vec![]),
+                    mappings: None,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }
+            .into(),
+        );
+        resources.insert(2001, r1);
+        resources.insert(2002, r2);
+
+        let resource_names = vec![
+            ZXName::from_string_lossy("zeta_process"),
+            ZXName::from_string_lossy("alpha_process"),
+        ];
+
+        let summary = MemorySummary::build(&principals, &resources, &resource_names);
+        assert_eq!(summary.principals.len(), 1);
+        assert_eq!(
+            summary.principals[0].processes,
+            vec!["alpha_process (2002)".to_owned(), "zeta_process (2001)".to_owned()]
+        );
+    }
+
+    /// What is tested: `share_count` division and private vs. scaled memory calculations when a VMO
+    /// is shared across multiple principals.
+    ///
+    /// Expectations verified:
+    /// - When a VMO is shared among 2 distinct principals (`share_count == 2`), scaled bytes equal
+    ///   `total / 2.0`.
+    /// - Because `share_count > 1`, `committed_private` and `populated_private` are exactly 0 for
+    ///   both sharing principals.
+    #[test]
+    fn test_memory_summary_share_count_calculation() {
+        let mut principals = HashMap::new();
+        let mut p1 = make_test_principal(1, "owner1");
+        let mut p2 = make_test_principal(2, "owner2");
+        p1.resources.insert(3001);
+        p2.resources.insert(3001);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(2), p2);
+
+        let mut resources = HashMap::new();
+        resources.insert(3001, make_test_vmo_resource(3001, 0, 1000, 2000, vec![(1, 1), (2, 2)]));
+
+        let resource_names = vec![ZXName::from_string_lossy("shared_mem")];
+        let summary = MemorySummary::build(&principals, &resources, &resource_names);
+
+        assert_eq!(summary.principals.len(), 2);
+        for p_sum in &summary.principals {
+            assert_eq!(p_sum.committed_total, 1000);
+            assert_eq!(p_sum.populated_total, 2000);
+            assert_eq!(p_sum.committed_scaled, 500.0);
+            assert_eq!(p_sum.populated_scaled, 1000.0);
+            assert_eq!(p_sum.committed_private, 0);
+            assert_eq!(p_sum.populated_private, 0);
+        }
+    }
+
+    /// What is tested: Aggregation of unclaimed VMOs (VMO resources with an empty claims list) into
+    /// `MemorySummary.unclaimed`.
+    ///
+    /// Expectations verified:
+    /// - A VMO with no attribution claims has its `scaled_populated_bytes` added to `summary.
+    ///   unclaimed`.
+    #[test]
+    fn test_memory_summary_unclaimed_vmos() {
+        let principals = HashMap::new();
+        let mut resources = HashMap::new();
+        resources.insert(4001, make_test_vmo_resource(4001, 0, 500, 1234, vec![]));
+
+        let resource_names = vec![ZXName::from_string_lossy("unclaimed_vmo")];
+        let summary = MemorySummary::build(&principals, &resources, &resource_names);
+        assert_eq!(summary.unclaimed, 1234);
     }
 }

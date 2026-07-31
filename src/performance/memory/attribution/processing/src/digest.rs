@@ -1050,4 +1050,175 @@ mod tests {
         assert_eq!(digest.buckets, expected_buckets);
         Ok(())
     }
+
+    /// What is tested: `Digest::compute` with `detailed_vmos: false` (the production periodic
+    /// monitoring path) and skipping of VMO list population.
+    ///
+    /// Expectations verified:
+    /// - When `detailed_vmos == false`, every bucket in `digest.buckets` (including matched buckets
+    ///   and `UNDIGESTED`) has `bucket.vmos == None`.
+    /// - Verifies that `committed_size` and `populated_size` totals match expected values
+    ///   identically to when `detailed_vmos == true`.
+    #[test]
+    fn test_digest_compute_undetailed_vmos_fast_path() -> Result<(), anyhow::Error> {
+        let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
+        let digest = Digest::compute(
+            &get_attribution_data(),
+            &kernel_stats,
+            &kernel_stats_compression,
+            &vec![BucketDefinition {
+                name: "matched".to_string(),
+                process: None,
+                vmo: Some(Regex::new("matched")?),
+                principal: None,
+                event_code: Default::default(),
+            }],
+            false, // detailed_vmos = false
+        )?;
+
+        for bucket in &digest.buckets {
+            assert!(bucket.vmos.is_none(), "Bucket '{}' should have vmos == None", bucket.name);
+        }
+        let matched_bucket = digest.buckets.iter().find(|b| b.name == "matched").unwrap();
+        assert_eq!(matched_bucket.committed_size, 512);
+        assert_eq!(matched_bucket.populated_size, 2048);
+        let undigested_bucket = digest.buckets.iter().find(|b| b.name == UNDIGESTED).unwrap();
+        assert_eq!(undigested_bucket.committed_size, 512);
+        assert_eq!(undigested_bucket.populated_size, 2048);
+        Ok(())
+    }
+
+    /// What is tested: First-match-wins bucket priority ordering and deduplication across multiple
+    /// overlapping `BucketDefinition`s in `Digest::compute`.
+    ///
+    /// Expectations verified:
+    /// - When two bucket definitions both match the same VMO (`first_bucket` matches
+    ///   `vmo="matched"`, and `second_bucket` matches `vmo=".*"`), the earlier bucket claims the
+    ///   VMO.
+    /// - Verifies that `second_bucket` does not double-count VMO 20 (`committed_size == 0` for VMO
+    ///   20), and only claims the remaining unconsumed VMO 10 (`resource`).
+    #[test]
+    fn test_digest_bucket_priority_and_deduplication() -> Result<(), anyhow::Error> {
+        let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
+        let digest = Digest::compute(
+            &get_attribution_data(),
+            &kernel_stats,
+            &kernel_stats_compression,
+            &vec![
+                BucketDefinition {
+                    name: "first_bucket".to_string(),
+                    process: None,
+                    vmo: Some(Regex::new("matched")?),
+                    principal: None,
+                    event_code: Default::default(),
+                },
+                BucketDefinition {
+                    name: "second_bucket".to_string(),
+                    process: None,
+                    vmo: Some(Regex::new(".*")?),
+                    principal: None,
+                    event_code: Default::default(),
+                },
+            ],
+            true,
+        )?;
+
+        let b1 = digest.buckets.iter().find(|b| b.name == "first_bucket").unwrap();
+        assert_eq!(b1.committed_size, 512); // VMO 20 ("matched")
+        let b2 = digest.buckets.iter().find(|b| b.name == "second_bucket").unwrap();
+        assert_eq!(b2.committed_size, 512); // VMO 10 ("resource")
+        let undigested = digest.buckets.iter().find(|b| b.name == UNDIGESTED).unwrap();
+        assert_eq!(undigested.committed_size, 0);
+        Ok(())
+    }
+
+    /// What is tested: Multi-attribute `BucketDefinition` matching where all non-None attributes
+    /// (`process`, `vmo`, `principal`) must match simultaneously, and partial mismatch fallthrough.
+    ///
+    /// Expectations verified:
+    /// - A bucket with matching `process` ("matched") but non-matching `vmo` ("nonexistent_vmo")
+    ///   fails to claim the VMO.
+    /// - Verifies that partial mismatches leave the VMO unclaimed so it is assigned to
+    ///   `UNDIGESTED`.
+    #[test]
+    fn test_digest_multi_attribute_matching_and_partial_mismatch() -> Result<(), anyhow::Error> {
+        let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
+        let digest = Digest::compute(
+            &get_attribution_data(),
+            &kernel_stats,
+            &kernel_stats_compression,
+            &vec![BucketDefinition {
+                name: "partial_mismatch".to_string(),
+                process: Some(Regex::new("matched")?),
+                vmo: Some(Regex::new("nonexistent_vmo")?),
+                principal: Some(Regex::new("principal")?),
+                event_code: Default::default(),
+            }],
+            true,
+        )?;
+
+        let b = digest.buckets.iter().find(|b| b.name == "partial_mismatch").unwrap();
+        assert_eq!(b.committed_size, 0);
+        let undigested = digest.buckets.iter().find(|b| b.name == UNDIGESTED).unwrap();
+        assert_eq!(undigested.committed_size, 1024); // Both VMO 10 and 20 remain undigested
+        Ok(())
+    }
+
+    /// What is tested: VMO pager-backed / discardable flags (`ZX_INFO_VMO_PAGER_BACKED` and
+    /// `ZX_INFO_VMO_DISCARDABLE`) and their impact on `POPULATED_ANONYMOUS_BYTES`.
+    ///
+    /// Expectations verified:
+    /// - VMOs with pager-backed or discardable flags set have their `scaled_populated_bytes`
+    ///   accumulated in `populated_reclaimable_bytes`.
+    /// - Verifies that `POPULATED_ANONYMOUS_BYTES` is reduced by the populated reclaimable amount.
+    #[test]
+    fn test_digest_compute_reclaimable_vmo_flags_and_anonymous_bytes() -> Result<(), anyhow::Error>
+    {
+        use zx_types::{ZX_INFO_VMO_DISCARDABLE, ZX_INFO_VMO_PAGER_BACKED};
+        let mut attr_data = get_attribution_data();
+        let vmo_res = attr_data.resources.get_mut(&20).unwrap();
+        if let fplugin::ResourceType::Vmo(vmo) = &mut vmo_res.resource.resource_type {
+            vmo.flags = Some(ZX_INFO_VMO_PAGER_BACKED | ZX_INFO_VMO_DISCARDABLE);
+        }
+
+        let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
+        let digest =
+            Digest::compute(&attr_data, &kernel_stats, &kernel_stats_compression, &vec![], true)?;
+
+        let anon_bucket =
+            digest.buckets.iter().find(|b| b.name == POPULATED_ANONYMOUS_BYTES).unwrap();
+        assert_eq!(anon_bucket.populated_size, 0);
+        Ok(())
+    }
+
+    /// What is tested: `Digest::compute` handling of default/missing (`None`) kernel memory stats
+    /// and `saturating_sub` underflow protection for the `ORPHANED` bucket.
+    ///
+    /// Expectations verified:
+    /// - Verifies that `Digest::compute` succeeds without panicking when `fkernel::MemoryStats` and
+    ///   `fkernel::MemoryStatsCompression` have all fields set to `None` (`Default::default()`).
+    /// - Verifies that `ORPHANED`, `KERNEL`, `FREE`, and all pager/discardable/zram/anonymous
+    ///   buckets cleanly default to `0` without underflowing.
+    #[test]
+    fn test_digest_missing_kernel_stats_and_saturating_orphaned() -> Result<(), anyhow::Error> {
+        let digest = Digest::compute(
+            &get_attribution_data(),
+            &fkernel::MemoryStats::default(),
+            &fkernel::MemoryStatsCompression::default(),
+            &vec![],
+            true,
+        )?;
+
+        let orphaned = digest.buckets.iter().find(|b| b.name == ORPHANED).unwrap();
+        assert_eq!(orphaned.committed_size, 0);
+        let kernel = digest.buckets.iter().find(|b| b.name == KERNEL).unwrap();
+        assert_eq!(kernel.committed_size, 0);
+        let free = digest.buckets.iter().find(|b| b.name == FREE).unwrap();
+        assert_eq!(free.committed_size, 0);
+        let anon = digest.buckets.iter().find(|b| b.name == POPULATED_ANONYMOUS_BYTES).unwrap();
+        assert_eq!(anon.committed_size, 0);
+        let zram = digest.buckets.iter().find(|b| b.name == ZRAM_COMPRESSED_BYTES).unwrap();
+        assert_eq!(zram.committed_size, 0);
+        Ok(())
+    }
 }

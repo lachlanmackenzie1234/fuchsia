@@ -1736,4 +1736,387 @@ mod tests {
             }
         );
     }
+
+    fn make_principal_def(id: u64, name: &str) -> fplugin::Principal {
+        fplugin::Principal {
+            identifier: Some(fplugin::PrincipalIdentifier { id }),
+            description: Some(fplugin::Description::Component(name.to_owned())),
+            principal_type: Some(fplugin::PrincipalType::Runnable),
+            parent: None,
+            ..Default::default()
+        }
+    }
+
+    fn make_attribution_def(
+        source: u64,
+        subject: u64,
+        resources: Vec<fplugin::ResourceReference>,
+    ) -> fplugin::Attribution {
+        fplugin::Attribution {
+            source: Some(fplugin::PrincipalIdentifier { id: source }),
+            subject: Some(fplugin::PrincipalIdentifier { id: subject }),
+            resources: Some(resources),
+            ..Default::default()
+        }
+    }
+
+    fn make_test_attribution_data(
+        principals: Vec<fplugin::Principal>,
+        resources: Vec<fplugin::Resource>,
+        resource_names: Vec<name::ZXName>,
+        attributions: Vec<fplugin::Attribution>,
+    ) -> AttributionData {
+        AttributionData {
+            principals_vec: principals.into_iter().map(|p| p.into()).collect(),
+            resources_vec: resources.into_iter().map(|r| r.into()).collect(),
+            resource_names,
+            attributions: attributions.into_iter().map(|a| a.into()).collect(),
+        }
+    }
+
+    /// What is tested: Reassigned claim DAG resolution (`InflatedResource::process_claims`) across
+    /// diamond / branching claim topologies.
+    ///
+    /// Expectations verified:
+    /// - Given a resource with claims `1 -> 2`, `2 -> 3`, and `2 -> 4`, `process_claims()` resolves
+    ///   the reassignment chain so that Principal 1's claim is reattributed to both leaf subjects
+    ///   (`3` and `4`).
+    /// - Verifies that the final set of claim subjects on the resource is exactly `{3, 4}`.
+    #[test]
+    fn test_process_claims_fast_path_and_dag() {
+        let mut res = InflatedResource::new(
+            fplugin::Resource {
+                koid: Some(100),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo::default())),
+                ..Default::default()
+            }
+            .into(),
+        );
+        res.claims.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(1),
+            subject: GlobalPrincipalIdentifier::new_for_test(2),
+            claim_type: ClaimType::Direct,
+        });
+        res.claims.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(2),
+            subject: GlobalPrincipalIdentifier::new_for_test(3),
+            claim_type: ClaimType::Direct,
+        });
+        res.claims.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(2),
+            subject: GlobalPrincipalIdentifier::new_for_test(4),
+            claim_type: ClaimType::Direct,
+        });
+
+        res.process_claims();
+
+        let mut final_subjects: Vec<u64> = res.claims.iter().map(|c| c.subject.0.get()).collect();
+        final_subjects.sort_unstable();
+        assert_eq!(final_subjects, vec![3, 4]);
+    }
+
+    /// What is tested: Top-down indirect claim propagation across multi-level resource hierarchies
+    /// (`Job -> Child Job -> Process -> VMO`) and direct claim overriding.
+    ///
+    /// Expectations verified:
+    /// - When a parent Job (1000) is claimed by Principal 1 and a child Job (1001) is claimed by
+    ///   Principal 2, the child Job's direct claim overrides propagation from the parent Job.
+    /// - Verifies that the descendant VMO (1003) receives ONLY Principal 2's claim (`subject == 2`)
+    ///   and not Principal 1's claim.
+    #[test]
+    fn test_claim_propagation_hierarchy_and_overrides() {
+        let resource_names = vec![
+            name::ZXName::from_string_lossy("root_job"),
+            name::ZXName::from_string_lossy("child_job"),
+            name::ZXName::from_string_lossy("child_proc"),
+            name::ZXName::from_string_lossy("child_vmo"),
+        ];
+        let principals = vec![
+            make_principal_def(1, "parent_principal"),
+            make_principal_def(2, "child_principal"),
+        ];
+        let resources = vec![
+            fplugin::Resource {
+                koid: Some(1000),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Job(fplugin::Job {
+                    child_jobs: Some(vec![1001]),
+                    processes: Some(vec![]),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(1001),
+                name_index: Some(1),
+                resource_type: Some(fplugin::ResourceType::Job(fplugin::Job {
+                    child_jobs: Some(vec![]),
+                    processes: Some(vec![1002]),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(1002),
+                name_index: Some(2),
+                resource_type: Some(fplugin::ResourceType::Process(fplugin::Process {
+                    vmos: Some(vec![1003]),
+                    mappings: None,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(1003),
+                name_index: Some(3),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_populated_bytes: Some(1000),
+                    scaled_populated_bytes: Some(1000),
+                    total_populated_bytes: Some(1000),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        ];
+        let attributions = vec![
+            make_attribution_def(1, 1, vec![fplugin::ResourceReference::KernelObject(1000)]),
+            make_attribution_def(2, 2, vec![fplugin::ResourceReference::KernelObject(1001)]),
+        ];
+
+        let processed = attribute_vmos(make_test_attribution_data(
+            principals,
+            resources,
+            resource_names,
+            attributions,
+        ));
+
+        let vmo_res = processed.resources.get(&1003).expect("VMO 1003 should exist");
+        let vmo_subjects: HashSet<u64> = vmo_res.claims.iter().map(|c| c.subject.0.get()).collect();
+        assert_eq!(vmo_subjects, HashSet::from([2]));
+    }
+
+    /// What is tested: VMO ancestry traversal in `attribute_vmos` when a child VMO has 0 populated
+    /// bytes (`total_populated_bytes == 0`).
+    ///
+    /// Expectations verified:
+    /// - Multi-generation ancestry (`Child VMO 2003 -> Parent VMO 2002 -> Grandparent VMO 2001`):
+    ///   verifies that `ClaimType::Child` claims are added to both parent (2002) and grandparent
+    ///   (2001) when the child has 0 populated bytes.
+    /// - Self-referential VMO parent (`koid 2004` where `parent = 2004`): verifies that the
+    ///   ancestry loop breaks early without infinite looping or hanging.
+    /// - Verifies that the principal's `resources` set includes all traversed ancestor KOIDs
+    ///   (`2001, 2002, 2003, 2004`).
+    #[test]
+    fn test_vmo_ancestry_edge_cases() {
+        let resource_names = vec![
+            name::ZXName::from_string_lossy("grandparent"),
+            name::ZXName::from_string_lossy("parent"),
+            name::ZXName::from_string_lossy("child"),
+            name::ZXName::from_string_lossy("self_ref"),
+        ];
+        let principals = vec![make_principal_def(1, "vmo_owner")];
+        let resources = vec![
+            fplugin::Resource {
+                koid: Some(2001),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: None,
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(2002),
+                name_index: Some(1),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: Some(2001),
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(2003),
+                name_index: Some(2),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: Some(2002),
+                    total_populated_bytes: Some(0),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(2004),
+                name_index: Some(3),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: Some(2004),
+                    total_populated_bytes: Some(0),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        ];
+        let attributions = vec![
+            make_attribution_def(1, 1, vec![fplugin::ResourceReference::KernelObject(2003)]),
+            make_attribution_def(1, 1, vec![fplugin::ResourceReference::KernelObject(2004)]),
+        ];
+
+        let processed = attribute_vmos(make_test_attribution_data(
+            principals,
+            resources,
+            resource_names,
+            attributions,
+        ));
+
+        let parent_res = processed.resources.get(&2002).unwrap();
+        assert!(parent_res.claims.iter().any(|c| c.claim_type == ClaimType::Child));
+        let grandparent_res = processed.resources.get(&2001).unwrap();
+        assert!(grandparent_res.claims.iter().any(|c| c.claim_type == ClaimType::Child));
+
+        let p1 = processed.principals.get(&GlobalPrincipalIdentifier::new_for_test(1)).unwrap();
+        assert!(p1.resources.contains(&2001));
+        assert!(p1.resources.contains(&2002));
+        assert!(p1.resources.contains(&2003));
+        assert!(p1.resources.contains(&2004));
+    }
+
+    /// What is tested: `ResourceReference::ProcessMapped` attribution mapping in `attribute_vmos`
+    /// and resilience against missing process KOIDs.
+    ///
+    /// Expectations verified:
+    /// - A valid `ProcessMapped` reference pointing to Process 3001 correctly attributes its
+    ///   mapped VMO (3002) to Principal 1.
+    /// - A `ProcessMapped` reference pointing to a non-existent Process KOID (`9999`) is silently
+    ///   ignored without panicking or aborting attribution processing.
+    #[test]
+    fn test_process_mapped_attributions() {
+        let resource_names =
+            vec![name::ZXName::from_string_lossy("proc1"), name::ZXName::from_string_lossy("vmo1")];
+        let principals = vec![make_principal_def(1, "mapper_principal")];
+        let resources = vec![
+            fplugin::Resource {
+                koid: Some(3001),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Process(fplugin::Process {
+                    vmos: Some(vec![3002]),
+                    mappings: Some(vec![fplugin::Mapping {
+                        vmo: Some(3002),
+                        address_base: Some(0x1000),
+                        size: Some(0x1000),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(3002),
+                name_index: Some(1),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        ];
+        let attributions = vec![make_attribution_def(
+            1,
+            1,
+            vec![
+                fplugin::ResourceReference::ProcessMapped(fplugin::ProcessMapped {
+                    process: 3001,
+                    base: 0x1000,
+                    len: 0x1000,
+                    hint_skip_handle_table: false,
+                }),
+                fplugin::ResourceReference::ProcessMapped(fplugin::ProcessMapped {
+                    process: 9999,
+                    base: 0x2000,
+                    len: 0x1000,
+                    hint_skip_handle_table: false,
+                }),
+            ],
+        )];
+
+        let processed = attribute_vmos(make_test_attribution_data(
+            principals,
+            resources,
+            resource_names,
+            attributions,
+        ));
+
+        let vmo_res = processed.resources.get(&3002).unwrap();
+        let vmo_subjects: HashSet<u64> = vmo_res.claims.iter().map(|c| c.subject.0.get()).collect();
+        assert_eq!(vmo_subjects, HashSet::from([1]));
+    }
+
+    /// What is tested: Deduplication of KOIDs in `principal.resources` when multiple claims
+    /// (Direct, Indirect, Child) apply to the same hierarchy.
+    ///
+    /// Expectations verified:
+    /// - When a principal has both a direct claim on Job 5001 and a direct claim on VMO 5003,
+    ///   `principal.resources` contains exactly 2 KOIDs (Process 5002 and VMO 5003, since Jobs are
+    ///   not stored in `principal.resources`) without duplicates.
+    #[test]
+    fn test_attribute_vmos_principal_resources_dedup() {
+        let resource_names = vec![
+            name::ZXName::from_string_lossy("job"),
+            name::ZXName::from_string_lossy("proc"),
+            name::ZXName::from_string_lossy("vmo"),
+        ];
+        let principals = vec![make_principal_def(1, "p1")];
+        let resources = vec![
+            fplugin::Resource {
+                koid: Some(5001),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Job(fplugin::Job {
+                    child_jobs: Some(vec![]),
+                    processes: Some(vec![5002]),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(5002),
+                name_index: Some(1),
+                resource_type: Some(fplugin::ResourceType::Process(fplugin::Process {
+                    vmos: Some(vec![5003]),
+                    mappings: None,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(5003),
+                name_index: Some(2),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        ];
+        let attributions = vec![make_attribution_def(
+            1,
+            1,
+            vec![
+                fplugin::ResourceReference::KernelObject(5001),
+                fplugin::ResourceReference::KernelObject(5003),
+            ],
+        )];
+
+        let processed = attribute_vmos(make_test_attribution_data(
+            principals,
+            resources,
+            resource_names,
+            attributions,
+        ));
+
+        let p1 = processed.principals.get(&GlobalPrincipalIdentifier::new_for_test(1)).unwrap();
+        assert_eq!(p1.resources.len(), 2);
+        assert!(p1.resources.contains(&5002));
+        assert!(p1.resources.contains(&5003));
+    }
 }
