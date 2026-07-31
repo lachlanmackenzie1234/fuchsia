@@ -119,7 +119,7 @@ static void platform_init_apic(uint level) {
   pic_map(PIC1_BASE, PIC2_BASE);
   pic_disable();
 
-  AcpiLiteParser& parser = GlobalAcpiLiteParser();
+  acpi_lite::AcpiParser& parser = GlobalAcpiLiteParser();
 
   // Enumerate the IO APICs
   fbl::Vector<io_apic_descriptor> descriptors;
