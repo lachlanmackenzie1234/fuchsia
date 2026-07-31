@@ -718,13 +718,7 @@ mod test {
 
         // Access a value directly the way eBPF programs do.
         let value_ref = map.lookup(&key).unwrap();
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            *value_ref.ptr().get_ptr::<u32>(0).unwrap().deref_mut() = 0xabacadae;
-        }
+        value_ref.ptr().slice(0..4).unwrap().store(&[0xae, 0xad, 0xac, 0xab]);
 
         assert_eq!(&map.load(&key).unwrap()[..], &[0xae, 0xad, 0xac, 0xab, 4, 5, 6, 7, 8, 9, 10]);
     }

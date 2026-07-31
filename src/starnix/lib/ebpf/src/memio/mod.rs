@@ -65,15 +65,6 @@ where
         }
     }
 
-    /// # Safety
-    /// Caller must ensure that the value is not being used by other threads.
-    pub unsafe fn deref_mut(&self) -> &'a mut T {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            &mut *self.ptr
-        }
-    }
-
     pub fn get_field<F, const OFFSET: usize>(&self) -> EbpfPtr<'a, F> {
         assert!(OFFSET + std::mem::size_of::<F>() <= std::mem::size_of::<T>());
         // SAFETY: offset is guaranteed to be within the bounds of the struct,

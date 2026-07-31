@@ -342,7 +342,7 @@ mod internal {
     }
 
     pub(super) struct HeapState<'a> {
-        header: &'a mut HeapHeader,
+        header: &'a HeapHeader,
         store: LpmTrieStore<'a>,
     }
 
@@ -354,12 +354,12 @@ mod internal {
             // the heap is synchronized.
             unsafe {
                 let lpm_trie_header =
-                    store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref_mut();
+                    store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref();
                 RwMapLock::new(
                     &lpm_trie_header.heap_lock,
                     store.buf.vmo().as_handle_ref(),
                     LOCK_SIGNAL,
-                    HeapState { header: &mut lpm_trie_header.heap_header, store },
+                    HeapState { header: &lpm_trie_header.heap_header, store },
                 )
             }
         }
@@ -510,7 +510,7 @@ mod internal {
     // release unused nodes. This type is not responsible for
     // consistency of the trie.
     pub(super) struct LpmTrieState<'a> {
-        header: &'a mut LpmTrieStateHeader,
+        header: &'a LpmTrieStateHeader,
         store: LpmTrieStore<'a>,
     }
 
@@ -522,12 +522,12 @@ mod internal {
             // the free list is synchronized.
             unsafe {
                 let lpm_trie_header =
-                    store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref_mut();
+                    store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref();
                 RwMapLock::new(
                     &lpm_trie_header.lock,
                     store.buf.vmo().as_handle_ref(),
                     LOCK_SIGNAL,
-                    LpmTrieState { header: &mut lpm_trie_header.state, store },
+                    LpmTrieState { header: &lpm_trie_header.state, store },
                 )
             }
         }
