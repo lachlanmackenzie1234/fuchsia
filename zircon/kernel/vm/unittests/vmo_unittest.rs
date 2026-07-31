@@ -6,6 +6,7 @@
 #[cfg(ktest)]
 #[unittest::suite]
 mod vmo_rs {
+    use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::scanner::AutoVmScannerDisable;
 
     /// Tests HintRange(AlwaysNeed) evicts loaned pages.
@@ -18,6 +19,8 @@ mod vmo_rs {
         // uses are added.
 
         let try_count = 30;
-        for _try_ordinal in 0..try_count {}
+        for _try_ordinal in 0..try_count {
+            let _enable_loaning = ScopedLoaningEnabled::new(true);
+        }
     }
 }

@@ -32,6 +32,7 @@ source_set("vm") {
     "page_source.cc",
     "page_state.cc",
     "physical_page_borrowing_config.cc",
+    "physical_page_borrowing_config_ffi.cc",
     "physical_page_provider.cc",
     "pinned_vm_object.cc",
     "pmm.cc",
@@ -156,6 +157,21 @@ kernel_bindgen_crate("scanner-bindings") {
     "cpp_scanner_push_disable_count",
     "cpp_scanner_pop_disable_count",
   ]
+
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = []
+}
+
+kernel_bindgen_crate("physical-page-borrowing-config-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/physical_page_borrowing_config_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "physical_page_borrowing_config_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [ "cpp_set_loaning_enabled" ]
 
   raw_lines = [ "#![no_std]" ]
   expect_lints = []
@@ -345,6 +361,7 @@ kernel_rust_mod("vm-rs") {
     "mod.rs",
     "page.rs",
     "page_state.rs",
+    "physical_page_borrowing_config.rs",
     "scanner.rs",
     "vm.rs",
     "vm_address_region.rs",
@@ -357,6 +374,7 @@ kernel_rust_mod("vm-rs") {
   ]
 
   deps = [
+    ":physical-page-borrowing-config-bindings",
     ":scanner-bindings",
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",

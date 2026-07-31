@@ -7,6 +7,8 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_PHYSICAL_PAGE_BORROWING_CONFIG_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_PHYSICAL_PAGE_BORROWING_CONFIG_H_
 
+#include <assert.h>
+
 #include <ktl/atomic.h>
 
 // Allow the ppb kernel command to dynamically control whether physical page borrowing is enabled
