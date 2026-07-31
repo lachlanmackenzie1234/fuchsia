@@ -385,7 +385,8 @@
 //src/ui/input/drivers/focaltech:driver-cpp-sherlock
 //src/ui/input/drivers/focaltech:driver-rust
 //src/ui/input/drivers/focaltech:driver-rust-sherlock
-//src/ui/input/drivers/goodix:goodix-module-driver
+//src/ui/input/drivers/goodix:driver-cpp
+//src/ui/input/drivers/goodix:driver-rust
 //src/ui/input/drivers/gt6853:driver-cpp
 //src/ui/input/drivers/gt6853:driver-rust
 //src/ui/input/drivers/hid-input-report:hid-input-report-driver

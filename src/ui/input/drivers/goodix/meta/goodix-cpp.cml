@@ -10,7 +10,7 @@
     program: {
         runner: "driver",
         bind: "meta/bind/goodix.bindbc",
-        compat: "driver/goodix.so",
+        compat: "driver/goodix-cpp.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         allowed_scheduler_roles: [ "fuchsia.ui.input.drivers.goodix.gt92xx.device" ],
     },
