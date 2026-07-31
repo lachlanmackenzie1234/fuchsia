@@ -27,7 +27,7 @@ impl Connection {
             // TODO(https://fxbug.dev/355699182): Properly support self-connected
             // connections.
             state: if self_connected {
-                Untracked {}.into()
+                State::Untracked
             } else {
                 State::new(segment, payload_len)?
             },
@@ -52,8 +52,8 @@ impl Connection {
         }
 
         match self.state {
-            State::Closed(_) => Ok(ConnectionUpdateAction::RemoveEntry),
-            State::Untracked(_) | State::Opening(_) | State::Established(_) => {
+            State::Closed => Ok(ConnectionUpdateAction::RemoveEntry),
+            State::Untracked | State::Opening(_) | State::Established(_) => {
                 Ok(ConnectionUpdateAction::NoAction)
             }
         }
@@ -73,13 +73,13 @@ enum State {
     /// state does a good-enough job tracking the connection.
     ///
     /// This is a short-circuit state that can never be left.
-    Untracked(Untracked),
+    Untracked,
 
     /// The connection has been closed, either by the FIN handshake or valid
     /// RST.
     ///
     /// This is a short-circuit state that can never be left.
-    Closed(Closed),
+    Closed,
 
     /// The initial SYN for this connection has been sent. State contained
     /// within is everything that can be gleaned from the initial SYN packet
@@ -132,7 +132,7 @@ impl State {
         // conservative with our timeouts and setting the most aggressive one to
         // the standard MSL of 120 seconds.
         match self {
-            State::Untracked(_) => {
+            State::Untracked => {
                 match establishment_lifecycle {
                     // This is small because it's just meant to be the time for
                     // the initial handshake.
@@ -142,7 +142,7 @@ impl State {
                     EstablishmentLifecycle::Established => Duration::from_secs(6 * 60 * 60),
                 }
             }
-            State::Closed(_) => Duration::ZERO,
+            State::Closed => Duration::ZERO,
             State::Opening(_) => MAXIMUM_SEGMENT_LIFETIME,
             State::Established(Established { original, reply }) => {
                 // If there is no data outstanding, make the timeout large, and
@@ -177,8 +177,8 @@ impl State {
         dir: ConnectionDirection,
     ) -> (State, bool) {
         match self {
-            State::Untracked(s) => s.update(segment, payload_len, dir),
-            State::Closed(s) => s.update(segment, payload_len, dir),
+            State::Untracked => (State::Untracked, true),
+            State::Closed => (State::Closed, true),
             State::Opening(s) => s.update(segment, payload_len, dir),
             State::Established(s) => s.update(segment, payload_len, dir),
         }
@@ -509,42 +509,6 @@ fn do_established_update(
     EstablishedUpdateResult::Success { new_original, new_reply }
 }
 
-/// State for the Untracked state.
-///
-/// This state never transitions to another state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Untracked {}
-state_from_state_struct!(Untracked);
-
-impl Untracked {
-    fn update(
-        self,
-        _segment: &SegmentHeader,
-        _payload_len: usize,
-        _dir: ConnectionDirection,
-    ) -> (State, bool) {
-        (Self {}.into(), true)
-    }
-}
-
-/// State for the Closed state.
-///
-/// This state never transitions to another state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Closed {}
-state_from_state_struct!(Closed);
-
-impl Closed {
-    fn update(
-        self,
-        _segment: &SegmentHeader,
-        _payload_len: usize,
-        _dir: ConnectionDirection,
-    ) -> (State, bool) {
-        (self.into(), true)
-    }
-}
-
 /// State for the Opening state.
 ///
 /// State transitions for in-range segments by direction:
@@ -653,7 +617,7 @@ impl Opening {
                     // know the receiver will tear down the connection.
                     Some(Control::RST) => match segment.ack {
                         None => (self.into(), false),
-                        Some(_) => (Closed {}.into(), true),
+                        Some(_) => (State::Closed, true),
                     },
 
                     Some(Control::SYN) => {
@@ -664,7 +628,7 @@ impl Opening {
                                 "Unsupported TCP simultaneous open. Giving up on detailed tracking"
                             );
 
-                            return (Untracked {}.into(), true);
+                            return (State::Untracked, true);
                         };
 
                         let reply_window_scale = segment.options.window_scale();
@@ -781,7 +745,7 @@ impl Established {
                     //
                     // TODO(https://fxbug.dev/355200767): Add TimeWait and reopening
                     // connections once simultaneous open is supported.
-                    (Closed {}.into(), true)
+                    (State::Closed, true)
                 } else {
                     (Established { original: new_original, reply: new_reply }.into(), true)
                 }
@@ -789,7 +753,7 @@ impl Established {
             EstablishedUpdateResult::Invalid { original, reply } => {
                 (Self { original, reply }.into(), false)
             }
-            EstablishedUpdateResult::Reset => (Closed {}.into(), true),
+            EstablishedUpdateResult::Reset => (State::Closed, true),
         }
     }
 }
@@ -797,8 +761,8 @@ impl Established {
 #[cfg(test)]
 mod tests {
     use super::{
-        Closed, Established, EstablishedUpdateResult, FinState, Opening, Peer, State, Untracked,
-        UpdatePeers, do_established_update,
+        Established, EstablishedUpdateResult, FinState, Opening, Peer, State, UpdatePeers,
+        do_established_update,
     };
 
     use assert_matches::assert_matches;
@@ -975,12 +939,12 @@ mod tests {
 
     #[test_case(ORIGINAL_ISS, None; "small invalid")]
     #[test_case(
-        ORIGINAL_ISS + 1, Some(Closed {}.into());
+        ORIGINAL_ISS + 1, Some(State::Closed);
         "smallest valid"
     )]
     #[test_case(
         ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN as u32 + 1,
-        Some(Closed {}.into());
+        Some(State::Closed);
         "largest valid"
     )]
     #[test_case(
@@ -1033,7 +997,7 @@ mod tests {
 
         assert_eq!(
             state.update(&segment, /*payload_len*/ 0, ConnectionDirection::Reply),
-            (Untracked {}.into(), true)
+            (State::Untracked, true)
         );
     }
 
@@ -1544,7 +1508,7 @@ mod tests {
             },
             payload_len: 24,
             dir: ConnectionDirection::Original,
-            expected: Some(Closed {}.into()),
+            expected: Some(State::Closed),
         }; "rst"
     )]
     fn established_test(args: StateUpdateTestArgs) {
@@ -1605,7 +1569,7 @@ mod tests {
 
         assert_matches!(
             state.update(&segment, /* payload_len */ 0, ConnectionDirection::Reply),
-            (State::Closed(_), true)
+            (State::Closed, true)
         );
     }
 }
