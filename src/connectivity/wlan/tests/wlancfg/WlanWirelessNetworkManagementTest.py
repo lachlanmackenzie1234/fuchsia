@@ -51,9 +51,6 @@ class WlanWirelessNetworkManagementTest(
     Testbed Requirements:
     * One Fuchsia device
     * One Whirlwind access point
-
-    Existing Fuchsia drivers do not yet support WNM features out-of-the-box, so this
-    suite skips certain tests depending on whether specific WNM features are enabled.
     """
 
     async def setup_class(self) -> None:
@@ -152,11 +149,6 @@ class WlanWirelessNetworkManagementTest(
     async def test_bss_transition_is_not_advertised_when_ap_supported_dut_unsupported(
         self,
     ) -> None:
-        if self.dut.feature_is_present("BSS_TRANSITION_MANAGEMENT"):
-            raise signals.TestSkip(
-                "skipping test because BTM feature is present"
-            )
-
         ssid = AccessPointConfig.random_string(
             hostapd_constants.AP_SSID_LENGTH_2G
         )
@@ -230,11 +222,6 @@ class WlanWirelessNetworkManagementTest(
     async def test_wnm_sleep_mode_is_not_advertised_when_ap_supported_dut_unsupported(
         self,
     ) -> None:
-        if self.dut.feature_is_present("WNM_SLEEP_MODE"):
-            raise signals.TestSkip(
-                "skipping test because WNM feature is present"
-            )
-
         ssid = AccessPointConfig.random_string(
             hostapd_constants.AP_SSID_LENGTH_2G
         )
@@ -302,11 +289,6 @@ class WlanWirelessNetworkManagementTest(
             )
 
     async def test_btm_req_ignored_dut_unsupported(self) -> None:
-        if self.dut.feature_is_present("BSS_TRANSITION_MANAGEMENT"):
-            raise signals.TestSkip(
-                "skipping test because BTM feature is present"
-            )
-
         ssid = AccessPointConfig.random_string(
             hostapd_constants.AP_SSID_LENGTH_2G
         )

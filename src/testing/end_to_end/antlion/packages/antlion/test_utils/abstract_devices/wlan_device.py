@@ -173,17 +173,6 @@ class SupportsWLAN(Protocol):
         """
         ...
 
-    def feature_is_present(self, feature: str) -> bool:
-        """Check if a WLAN feature is present.
-
-        Args:
-            feature: WLAN feature to query
-
-        Returns:
-            True if `feature` is present; otherwise, False.
-        """
-        ...
-
     def wifi_toggle_state(self, state: bool | None) -> None:
         """Toggle the state of Wi-Fi.
 
@@ -319,9 +308,6 @@ class AndroidWlanDevice(SupportsWLAN):
         return iperf_client.IPerfClientOverAdb(
             android_device=self.device, test_interface=test_interface
         )
-
-    def feature_is_present(self, feature: str) -> bool:
-        raise NotImplementedError("feature_is_present is not implemented")
 
 
 class AssociationMode(enum.Enum):
@@ -570,9 +556,6 @@ class FuchsiaWlanDevice(SupportsWLAN):
             # Fuchsia's date tool does not support setting system date/time.
             sync_date=False,
         )
-
-    def feature_is_present(self, feature: str) -> bool:
-        return feature in self.device.wlan_features
 
 
 def create_wlan_device(

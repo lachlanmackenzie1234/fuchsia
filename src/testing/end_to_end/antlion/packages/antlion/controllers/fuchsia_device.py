@@ -37,7 +37,7 @@ from antlion.utils import (
     get_fuchsia_mdns_ipv6_address,
     get_interface_ip_addresses,
 )
-from antlion.validation import FieldNotFoundError, MapValidator
+from antlion.validation import MapValidator
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from honeydew.auxiliary_devices.power_switch.power_switch_using_dmc import (
     PowerSwitchDmcError,
@@ -216,12 +216,6 @@ class FuchsiaDevice:
         self.wlan_ap_test_interface_name = config.get(
             str, "wlan_ap_test_interface", None
         )
-        try:
-            self.wlan_features: list[str] = config.list("wlan_features").all(
-                str
-            )
-        except FieldNotFoundError:
-            self.wlan_features = []
 
         # Whether to use 'policy' or 'drivers' for WLAN connect/disconnect calls
         # If set to None, wlan is not configured.
