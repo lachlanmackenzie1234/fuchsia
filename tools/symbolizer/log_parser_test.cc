@@ -106,7 +106,178 @@ TEST_F(LogParserTest, Backtrace) {
 TEST_F(LogParserTest, DumpFile) {
   EXPECT_CALL(symbolizer_, DumpFile("type", "name"));
   ProcessOneLine("{{{dumpfile:type:name}}}");
-  ASSERT_EQ(output_.str(), "");
+}
+
+TEST_F(LogParserTest, MultipleMarkup) {
+  // Multiple bt tags on the same line.
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_0_symbolized"); });
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_1_symbolized"); });
+  ProcessOneLine("prefix {{{bt:0:0x1000}}} middle {{{bt:1:0x2000}}} suffix");
+  EXPECT_EQ(output_.str(), "prefix frame_0_symbolized\n middle frame_1_symbolized suffix\n");
+  output_.str("");
+  output_.clear();
+
+  // module + bt tags on the same line.
+  EXPECT_CALL(symbolizer_, Module(0, "libc.so", "8ce60b"));
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x3000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_bt_symbolized"); });
+  ProcessOneLine(
+      "context1: {{{module:0x0:libc.so:elf:8ce60b}}} context2: {{{bt:0:0x3000}}} suffix");
+  EXPECT_EQ(output_.str(), "context1:  context2: frame_bt_symbolized suffix\n");
+  output_.str("");
+  output_.clear();
+
+  // Invalid tags intermingled with valid tags.
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x4000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_valid_symbolized"); });
+  ProcessOneLine("foo {{{invalid:tag}}} bar {{{bt:0:0x4000}}} baz {{{unclosed:tag");
+  EXPECT_EQ(output_.str(),
+            "foo {{{invalid:tag}}} bar frame_valid_symbolized baz {{{unclosed:tag\n");
+  output_.str("");
+  output_.clear();
+
+  // Zero-length prefix and suffix logic.
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x5000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_zero_len"); });
+  ProcessOneLine("{{{bt:0:0x5000}}}");
+  EXPECT_EQ(output_.str(), "frame_zero_len\n");
+  output_.str("");
+  output_.clear();
+
+  // 10+ consecutive tags on a single line.
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f0"); });
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f1"); });
+  EXPECT_CALL(symbolizer_, Backtrace(2, 0x3000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f2"); });
+  EXPECT_CALL(symbolizer_, Backtrace(3, 0x4000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f3"); });
+  EXPECT_CALL(symbolizer_, Backtrace(4, 0x5000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f4"); });
+  EXPECT_CALL(symbolizer_, Backtrace(5, 0x6000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f5"); });
+  EXPECT_CALL(symbolizer_, Backtrace(6, 0x7000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f6"); });
+  EXPECT_CALL(symbolizer_, Backtrace(7, 0x8000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f7"); });
+  EXPECT_CALL(symbolizer_, Backtrace(8, 0x9000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f8"); });
+  EXPECT_CALL(symbolizer_, Backtrace(9, 0xa000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) { output("f9"); });
+  ProcessOneLine(
+      "{{{bt:0:0x1000}}}{{{bt:1:0x2000}}}{{{bt:2:0x3000}}}{{{bt:3:0x4000}}}{{{bt:4:0x5000}}}{{{"
+      "bt:5:0x6000}}}{{{bt:6:0x7000}}}{{{bt:7:0x8000}}}{{{bt:8:0x9000}}}{{{bt:9:0xa000}}}");
+  EXPECT_EQ(output_.str(), "f0\nf1\nf2\nf3\nf4\nf5\nf6\nf7\nf8\nf9\n");
+  output_.str("");
+  output_.clear();
+
+  // Intermingled valid backtraces, module resets, and arbitrary text.
+  EXPECT_CALL(symbolizer_, Module(0, "libc.so", "8ce60b"));
+  EXPECT_CALL(symbolizer_, Reset(false, Symbolizer::ResetType::kUnknown));
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_0"); });
+  EXPECT_CALL(symbolizer_, DumpFile("type", "name"));
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_1"); });
+
+  ProcessOneLine(
+      "text1 {{{module:0x0:libc.so:elf:8ce60b}}} text2 {{{reset}}} text3 "
+      "{{{bt:0:0x1000}}} text4 {{{dumpfile:type:name}}} text5 {{{bt:1:0x2000}}} text6");
+  EXPECT_EQ(output_.str(), "text1  text2  text3 frame_0\n text4  text5 frame_1 text6\n");
+}
+
+TEST_F(LogParserTest, MalformedAndUnclosedTagsMixed) {
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x100, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_0"); });
+  ProcessOneLine("{{{bt:0:0x100}}}{{{invalid{{{reset}}}");
+  EXPECT_EQ(output_.str(), "frame_0\n{{{invalid{{{reset}}}\n");
+  output_.str("");
+  output_.clear();
+
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_valid"); });
+  ProcessOneLine("prefix {{{bt:0:0x1000}}} middle {{{unclosed_tag_without_end");
+  EXPECT_EQ(output_.str(), "prefix frame_valid middle {{{unclosed_tag_without_end\n");
+}
+
+TEST_F(LogParserTest, ZeroLengthPrefixesAndSuffixes) {
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_0"); });
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_1"); });
+  ProcessOneLine("{{{bt:0:0x1000}}}{{{bt:1:0x2000}}}");
+  EXPECT_EQ(output_.str(), "frame_0\nframe_1\n");
+}
+
+TEST_F(LogParserTest, TenPlusConsecutiveTagsOnSingleLine) {
+  for (uint64_t i = 0; i < 12; ++i) {
+    EXPECT_CALL(symbolizer_,
+                Backtrace(i, 0x1000 + i * 0x10, Symbolizer::AddressType::kUnknown, "", _))
+        .WillOnce([i](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                      std::string_view message,
+                      Symbolizer::StringOutputFn output) { output("frame_" + std::to_string(i)); });
+  }
+  ProcessOneLine(
+      "{{{bt:0:0x1000}}}{{{bt:1:0x1010}}}{{{bt:2:0x1020}}}{{{bt:3:0x1030}}}"
+      "{{{bt:4:0x1040}}}{{{bt:5:0x1050}}}{{{bt:6:0x1060}}}{{{bt:7:0x1070}}}"
+      "{{{bt:8:0x1080}}}{{{bt:9:0x1090}}}{{{bt:10:0x10a0}}}{{{bt:11:0x10b0}}}");
+  EXPECT_EQ(output_.str(),
+            "frame_0\nframe_1\nframe_2\nframe_3\nframe_4\nframe_5\n"
+            "frame_6\nframe_7\nframe_8\nframe_9\nframe_10\nframe_11\n");
+}
+
+TEST_F(LogParserTest, IntermingledTagsAndArbitraryText) {
+  EXPECT_CALL(symbolizer_, Module(0, "libc.so", "8ce60b"));
+  EXPECT_CALL(symbolizer_, Reset(false, Symbolizer::ResetType::kUnknown));
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_0"); });
+  EXPECT_CALL(symbolizer_, DumpFile("type", "name"));
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                   std::string_view message,
+                   Symbolizer::StringOutputFn output) { output("frame_1"); });
+
+  ProcessOneLine(
+      "text1 {{{module:0x0:libc.so:elf:8ce60b}}} text2 {{{reset}}} text3 "
+      "{{{bt:0:0x1000}}} text4 {{{dumpfile:type:name}}} text5 {{{bt:1:0x2000}}} text6");
+  EXPECT_EQ(output_.str(), "text1  text2  text3 frame_0\n text4  text5 frame_1 text6\n");
 }
 
 TEST_F(LogParserTest, OutputBufferQueueLifecycle) {

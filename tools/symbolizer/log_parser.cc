@@ -6,8 +6,12 @@
 
 #include <charconv>
 #include <cstdint>
+#include <deque>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "lib/fit/defer.h"
 #include "lib/syslog/cpp/macros.h"
@@ -43,6 +47,9 @@ bool ParseInt(std::string_view string, int_t &i, int base = 10) {
 
 }  // namespace
 
+// TODO(https://fxbug.dev/541229517): Investigate a two-pass tokenizing parser to replace the
+// single-pass string scanner in ProcessNextLine, improving delimiter recovery and text
+// preservation.
 bool LogParser::ProcessNextLine() {
   std::string line;
 
@@ -52,17 +59,92 @@ bool LogParser::ProcessNextLine() {
   }
 
   // Handle symbolizer markup.
-  auto start = line.find("{{{");
-  auto end = std::string::npos;
-
-  if (start != std::string::npos) {
-    end = line.find("}}}", start);
+  struct MarkupMatch {
+    size_t start;
+    size_t end;
+  };
+  std::vector<MarkupMatch> matches;
+  size_t pos = 0;
+  while (pos < line.size()) {
+    auto start = line.find("{{{", pos);
+    if (start == std::string::npos) {
+      break;
+    }
+    auto end = line.find("}}}", start + 3);
+    if (end == std::string::npos) {
+      break;
+    }
+    matches.push_back({.start = start, .end = end});
+    pos = end + 3;
   }
-  if (end != std::string::npos) {
+
+  if (!matches.empty()) {
+    bool has_valid_markup = false;
+    bool has_active_output = false;
+    bool last_tag_dropped = false;
     std::string_view line_view(line);
-    auto [output, entry] = CreateOutputFn(line_view.substr(0, start), line_view.substr(end + 3));
-    if (ProcessMarkup(line_view.substr(start + 3, end - start - 3), std::move(output))) {
-      // Skip outputting only if we have the starting and the ending braces and the markup is valid.
+    size_t last_end = 0;
+    std::string pending_prefix;
+
+    for (size_t i = 0; i < matches.size(); ++i) {
+      const size_t start = matches[i].start;
+      const size_t end = matches[i].end;
+
+      // Extract text surrounding the current markup tag `{{{...}}}`:
+      // - prefix_segment: text between previous tag end (last_end) and current tag start.
+      // - markup_text: text inside `{{{` and `}}}`.
+      // - suffix_segment: text after the last tag's `}}}` (only provided to the final tag's
+      // callback).
+      const std::string_view prefix_segment = line_view.substr(last_end, start - last_end);
+      const std::string_view markup_text = line_view.substr(start + 3, end - start - 3);
+      const std::string_view suffix_segment =
+          (i == matches.size() - 1) ? line_view.substr(end + 3) : "";
+
+      // Combine any unprinted preceding text/markup with the current segment's prefix.
+      std::string current_prefix = pending_prefix + std::string(prefix_segment);
+      pending_prefix = "";
+
+      auto [output, entry] = CreateOutputFn(current_prefix, suffix_segment);
+      const bool ok = ProcessMarkup(markup_text, std::move(output));
+      if (ok) {
+        has_valid_markup = true;
+      }
+
+      if (entry->state != OutputEntry::State::kDropped) {
+        has_active_output = true;
+        last_tag_dropped = false;
+      } else {
+        last_tag_dropped = true;
+        // If the callback was dropped without emitting output (e.g. for non-printing tags like
+        // module/reset, or invalid/unrecognized tags), defer outputting current_prefix.
+        // - If markup was invalid (!ok), preserve the original raw tag `{{{...}}}` in
+        // pending_prefix.
+        // - If markup was valid (e.g. `reset` tag), drop the tag text and carry forward only
+        // current_prefix.
+        if (!ok) {
+          pending_prefix = current_prefix + std::string(line_view.substr(start, end + 3 - start));
+        } else {
+          pending_prefix = current_prefix;
+        }
+      }
+      last_end = end + 3;
+    }
+
+    if (last_tag_dropped) {
+      if (matches.back().end + 3 <= line.size()) {
+        const std::string_view trailing_suffix = line_view.substr(matches.back().end + 3);
+        pending_prefix += std::string(trailing_suffix);
+      }
+      // Note: Surrounding text (e.g. syslog prefixes like "context1: ") is intentionally
+      // discarded when a line contains only valid non-printing tags (like module/reset/mmap)
+      // and no active output tags.
+      if (!pending_prefix.empty() && (has_active_output || !has_valid_markup)) {
+        OutputRaw(pending_prefix);
+        return true;
+      }
+    }
+
+    if (has_valid_markup) {
       return true;
     }
   }

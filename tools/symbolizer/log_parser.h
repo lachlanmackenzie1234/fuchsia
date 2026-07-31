@@ -25,7 +25,11 @@ namespace symbolizer {
 // 1. Interleaved stack traces are not supported. There can be at most 1 stack trace at a time.
 // 2. Log will presume its order. When a symbolizer markup is being processed, e.g., downloading the
 //    symbol file, the output will stall, even if the next line contains no markup.
-// 3. Only one markup per line is supported.
+// 3. Multiple markups per line are supported.
+//
+// TODO(https://fxbug.dev/541229517): Investigate a two-pass tokenizing parser to replace the
+// single-pass string scanner in ProcessNextLine, improving delimiter recovery and text
+// preservation.
 //
 // In addition to the symbolizer markup format described above, this class also supports symbolizing
 // Dart stack traces in AOT mode with --dwarf_stack_traces option, which looks like
