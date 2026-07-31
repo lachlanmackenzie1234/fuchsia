@@ -42,26 +42,26 @@ FUCHSIA_DEBUG_SYMBOLS_ATTRS = {
 def strip_resources(ctx, resources, build_id_path = None, source_search_root = "BUILD_WORKSPACE_DIRECTORY"):
     """Generate an action to strip resources.
 
-    The generated action will output a single .build-id directory which will contain
-    symlinks to all unstripped ELF binaries from the given resources. This action will
+    The generated action will output a single ".build-id" directory that will contain
+    symlinks to all unstripped ELF binaries from the given `resources`. This action will
     always generate a directory even if there are no resources to strip.
 
-    In addition, the action will generate a file in the build id directory named
-    .stamp which will contain the full names of all of the debug symbols that were
+    In addition, the action will generate a file in the ".build-id" directory named
+    ".stamp", which will contain the full names of all of the debug symbols that were
     generated.
 
     Args:
-      ctx: rule context.
+      ctx: Rule context.
       resources: A list of unstripped input resource_struct() values.
-      build_id_path: (optional) A string which will be used when declaring
-        the build id directory. Defaults to `ctx.label.name + "/.build-id"`.
+      build_id_path: (optional) A string that will be used when declaring
+        the build ID directory. Defaults to `ctx.label.name + "/.build-id"`.
       source_search_root: (optional) Either a string or File value, see
-        FuchsiaDebugSymbolInfo documentation.
+        `FuchsiaDebugSymbolInfo` documentation.
 
     Returns:
-      a pair whose first item is a list of stripped resource_struct() instances,
-      and the second item is a FuchsiaDebugSymbolInfo provider for the
-      corresponding .build-id directory that contains a single
+      A pair whose first item is a list of stripped resource_struct() instances,
+      and the second item is a `FuchsiaDebugSymbolInfo` provider for the
+      corresponding ".build-id" directory that contains a single
       (source_search_root, build_dirs_depset) pair.
     """
     elf_strip_tool = ctx.executable._elf_strip_tool
@@ -79,7 +79,7 @@ def strip_resources(ctx, resources, build_id_path = None, source_search_root = "
     all_ids_txt = []
 
     # We need to make sure we have a unique set of inputs. If we have duplicate
-    # resources then the ctx.actions.declare_file below will fail because it
+    # resources, the `ctx.actions.declare_file` below will fail because it
     # will try to declare the same file twice. We only need to strip the resource
     # once so there is no need to attempt to strip duplicates.
     for r in depset(resources).to_list():
@@ -129,26 +129,47 @@ def _maybe_process_elf(ctx, r, ids_txt, elf_strip_tool):
     )
 
 def merge_debug_symbol_infos(*targets_or_providers):
-    """Merge the FuchsiaDebugSymbolInfo values from a list of targets or providers.
+    """Merges debug symbol infos from targets or providers.
+
+    Finds `FuchsiaDebugSymbolInfo` provider instances in `targets_or_providers`
+    and merges them into a single `FuchsiaDebugSymbolInfo` provider instance.
 
     Args:
-        *targets_or_providers: a list whose flattened elements must be provider
-           or target values.
+        *targets_or_providers: A list whose flattened elements must be
+            either a `FuchsiaDebugSymbolInfo` provider instance or a target.
     Returns:
-        A new FuchsiaDebugSymbolInfo resulting from merging the input
-        FuchsiaDebugSymbolInfo values together.
+        A new `FuchsiaDebugSymbolInfo` provider instance resulting from merging
+        all of the `FuchsiaDebugSymbolInfo` provider instances from the inputs together.
     """
 
     # { source_search_root -> list[depset[build_id_dir]]}
     source_search_root_map = {}
 
     for target_or_provider in flatten(targets_or_providers):
-        if hasattr(target_or_provider, "build_id_dirs_mapping"):
-            build_id_dirs_map = target_or_provider.build_id_dirs_mapping
-        elif FuchsiaDebugSymbolInfo in target_or_provider:
-            build_id_dirs_map = target_or_provider[FuchsiaDebugSymbolInfo].build_id_dirs_mapping
+        if type(target_or_provider) == "struct":
+            provider = target_or_provider
+            if hasattr(provider, "build_id_dirs_mapping"):
+                # `target_or_provider` *is* a `FuchsiaDebugSymbolInfo` provider instance.
+                build_id_dirs_map = provider.build_id_dirs_mapping
+            else:
+                # `target_or_provider` is a provider instance other than `FuchsiaDebugSymbolInfo`
+                # or some other struct. This should not have been included.
+                fail("Unexpected provider type or other `struct`: {}".format(repr(provider)))
+        elif type(target_or_provider) == "Target":
+            target = target_or_provider
+            if FuchsiaDebugSymbolInfo in target:
+                # `target_or_provider` *has* a `FuchsiaDebugSymbolInfo` provider instance.
+                build_id_dirs_map = target[FuchsiaDebugSymbolInfo].build_id_dirs_mapping
+            else:
+                # `target_or_provider` is a Target but does not have debug
+                # symbol info. Skip it.
+                continue
         else:
-            continue
+            # `target_or_provider` is not a target or provider and should not have been included.
+            fail("Unexpected type '{}' of provider/target value: {}".format(
+                type(target_or_provider),
+                repr(target_or_provider),
+            ))
 
         for source_search_root, build_id_dirs_depset in build_id_dirs_map.items():
             if source_search_root not in source_search_root_map:
@@ -162,13 +183,14 @@ def merge_debug_symbol_infos(*targets_or_providers):
         },
     )
 
-def _convert_unstripped_binary_info(binary_info):
-    """Converts a FuchsiaUnstrippedBinaryInfo provider to a FuchsiaCollectedUnstrippedBinariesInfo.
+def _convert_fuchsia_unstripped_binary_info(binary_info):
+    """Converts a `FuchsiaUnstrippedBinaryInfo` provider to a `FuchsiaCollectedUnstrippedBinariesInfo`.
 
     Args:
-        binary_info: A FuchsiaUnstrippedBinaryInfo provider instance.
+        binary_info: A `FuchsiaUnstrippedBinaryInfo` provider instance.
     Returns:
-        A FuchsiaCollectedUnstrippedBinariesInfo provider instance containing the converted unstripped binary.
+        A `FuchsiaCollectedUnstrippedBinariesInfo` provider instance containing
+        info about the unstripped binary.
     """
     source_search_root = binary_info.source_search_root
     if source_search_root == None:
@@ -185,39 +207,65 @@ def _convert_unstripped_binary_info(binary_info):
         },
     )
 
-def merge_unstripped_binaries_infos(*targets_or_providers):
-    """Merges collected unstripped binaries from targets, providers, or lists.
+def _merge_unstripped_binaries_infos(*targets_or_providers):
+    """Merges collected info for unstripped binaries from targets or providers, or lists.
+
+    Finds `FuchsiaCollectedUnstrippedBinariesInfo` and `FuchsiaUnstrippedBinaryInfo`
+    provider instances in `targets_or_providers` and adds info about all the
+    unstripped binaries into a `FuchsiaCollectedUnstrippedBinariesInfo` provider instance.
+
+    Handles both provider instances and targets that have them.
+
+    `FuchsiaUnstrippedBinaryInfo` provider instances are converted into
+    `FuchsiaCollectedUnstrippedBinariesInfo` provider instances for the merge.
 
     Args:
-       *targets_or_providers: the list of arguments will be flattened, and items that
-            are FuchsiaCollectedUnstrippedBinariesInfo providers, or targets that provide
-            such values will be used as direct inputs for the merge. Items that
-            are FuchsiaUnstrippedBinaryInfo or targets that provide such values will
-            first be converted into a FuchsiaCollectedUnstrippedBinariesInfo value and
-            the result will be used as input for the merge.
-
+        *targets_or_providers: A list whose flattened elements must be
+            either a `FuchsiaCollectedUnstrippedBinariesInfo` or
+            `FuchsiaUnstrippedBinaryInfo` provider instance or a target.
     Returns:
-        A new FuchsiaCollectedUnstrippedBinariesInfo value, merging the content of
+        A new `FuchsiaCollectedUnstrippedBinariesInfo` provider instance, merging the content of
         the input arguments.
     """
 
-    # Map { source_search_root -> list[depset[struct(dest, unstripped_file, stripped_file)]] }
-    # will be turned into a source_search_root_to_unstripped_binary dict.
+    # A `Map { source_search_root -> list[depset[struct(dest, unstripped_file, stripped_file)]] }`.
+    # This is used to populate the `source_search_root_to_unstripped_binary`
+    # field in the returned provider.
     source_search_root_map = {}
-    for t in flatten(targets_or_providers):
-        if hasattr(t, "source_search_root_to_unstripped_binary"):
-            collected_info = t
-        elif hasattr(t, "unstripped_binary") and hasattr(t, "dest"):
-            collected_info = _convert_unstripped_binary_info(t)
-        elif type(t) == "Target":
-            if FuchsiaCollectedUnstrippedBinariesInfo in t:
-                collected_info = t[FuchsiaCollectedUnstrippedBinariesInfo]
-            elif FuchsiaUnstrippedBinaryInfo in t:
-                collected_info = _convert_unstripped_binary_info(t[FuchsiaUnstrippedBinaryInfo])
+
+    for target_or_provider in flatten(targets_or_providers):
+        if type(target_or_provider) == "struct":
+            provider = target_or_provider
+            if hasattr(provider, "source_search_root_to_unstripped_binary"):
+                # `target_or_provider` *is* a `FuchsiaCollectedUnstrippedBinariesInfo` provider instance.
+                collected_info = provider
+            elif hasattr(provider, "unstripped_file") and hasattr(provider, "dest"):
+                # `target_or_provider` *is* a `FuchsiaUnstrippedBinaryInfo` provider instance.
+                collected_info = _convert_fuchsia_unstripped_binary_info(provider)
             else:
+                # `target_or_provider` is a provider instance other than `FuchsiaDebugSymbolInfo`
+                # or some other struct. This should not have been included.
+                fail("Unexpected provider type or other `struct`: {}".format(repr(provider)))
+        elif type(target_or_provider) == "Target":
+            target = target_or_provider
+            if FuchsiaCollectedUnstrippedBinariesInfo in target:
+                # `target_or_provider` *has* a `FuchsiaCollectedUnstrippedBinariesInfo` provider instance.
+                collected_info = target[FuchsiaCollectedUnstrippedBinariesInfo]
+            elif FuchsiaUnstrippedBinaryInfo in target:
+                # `target_or_provider` *has* a `FuchsiaUnstrippedBinaryInfo` provider instance.
+                collected_info = _convert_fuchsia_unstripped_binary_info(
+                    target[FuchsiaUnstrippedBinaryInfo],
+                )
+            else:
+                # `target_or_provider` is a Target but does not have debug
+                # symbol info. Skip it.
                 continue
         else:
-            fail("Invalid type {} of provider/target value {}".format(type(t), repr(t)))
+            # `target_or_provider` is not a target or provider and should not have been included.
+            fail("Unexpected type '{}' of provider/target value: {}".format(
+                type(target_or_provider),
+                repr(target_or_provider),
+            ))
 
         for source_search_root, binary_info_depset in collected_info.source_search_root_to_unstripped_binary.items():
             if source_search_root not in source_search_root_map:
@@ -261,14 +309,14 @@ def _fuchsia_collect_unstripped_binaries_aspect_impl(target, aspect_ctx):
         target: Target being analyzed.
         aspect_ctx: Aspect context.
     Returns:
-        FuchsiaCollectedUnstrippedBinariesInfo provider instance.
+        A `FuchsiaCollectedUnstrippedBinariesInfo` provider instance.
     """
-    return merge_unstripped_binaries_infos(
+    return _merge_unstripped_binaries_infos(
         target,
         _get_target_deps_from_attributes(aspect_ctx.rule.attr, aspect_ctx.rule.kind),
     )
 
-fuchsia_collect_unstripped_binaries_aspect = aspect(
+_fuchsia_collect_unstripped_binaries_aspect = aspect(
     doc = """Collect FuchsiaUnstrippedBinaryInfo values across a DAG of dependencies,
         and provide a corresponding FuchsiaCollectedUnstrippedBinariesInfo value.""",
     implementation = _fuchsia_collect_unstripped_binaries_aspect_impl,
@@ -277,15 +325,7 @@ fuchsia_collect_unstripped_binaries_aspect = aspect(
 )
 
 def _find_and_process_unstripped_binaries_impl(ctx):
-    """Common implementation to find, strip, and index unstripped binaries.
-
-    Args:
-        ctx: Rule context.
-    Returns:
-        A list of provider instances including DefaultInfo, FuchsiaPackageResourcesInfo,
-        FuchsiaDebugSymbolInfo, and FuchsiaCollectedUnstrippedBinariesInfo.
-    """
-    all_collected_unstripped_binaries_info = merge_unstripped_binaries_infos(ctx.attr.deps)
+    all_collected_unstripped_binaries_info = _merge_unstripped_binaries_infos(ctx.attr.deps)
 
     prebuilt_resources = []
 
@@ -321,8 +361,8 @@ def _find_and_process_unstripped_binaries_impl(ctx):
 
     outputs = depset(
         direct = [r.src for r in generated_resources],
-        # strip_resources creates a FuchsiaDebugSymbol mapping with a single (key, value) pair.
-        # the value is a depset() covering the generated .build-id directories.
+        # `strip_resources` creates a `FuchsiaDebugSymbolInfo` containing a mapping with a single
+        # (key, value) pair. The value is a `depset` containing the generated ".build-id" directory.
         transitive = [debug_symbol_info.build_id_dirs_mapping.values()[0] for debug_symbol_info in stripped_debug_symbol_infos],
     )
 
@@ -330,34 +370,42 @@ def _find_and_process_unstripped_binaries_impl(ctx):
         DefaultInfo(files = outputs),
         FuchsiaPackageResourcesInfo(resources = prebuilt_resources + generated_resources),
         merge_debug_symbol_infos(stripped_debug_symbol_infos),
-        all_collected_unstripped_binaries_info,  # A FuchsiaCollectedUnstrippedBinaryInfo value.
+        all_collected_unstripped_binaries_info,  # A `FuchsiaCollectedUnstrippedBinariesInfo` provider instance.
     ]
     return result
 
 find_and_process_unstripped_binaries = rule(
-    doc = """Find all fuchsia_unstripped_binary() targets from a DAG of dependencies.
+    doc = """Collects unstripped binary info from a DAG of targets.
+
+        Find all targets providing `FuchsiaUnstrippedBinaryInfo` from the DAG of
+        dependencies starting from `deps`.
 
         Then generate actions to strip those that need it, plus other actions to
-        generate a .build-id/  directory populated with symlinks to the original
+        generate a ".build-id" directory populated with symlinks to the original
         unstripped files.
 
-        Returns a FuchsiaPackageResourcesInfo provider to list all stripped binaries
-        and their installation path (as used by fuchsia_package()).
+        Returns a `FuchsiaPackageResourcesInfo` provider to list all stripped binaries
+        and their installation path (as used by `fuchsia_package()`).
 
-        Returns a FuchsiaDebugSymbolInfo provider to list the .build-id directories
+        Returns a `FuchsiaDebugSymbolInfo` provider to list the ".build-id" directories
         and the corresponding source search roots.
 
-        Returns a FuchsiaCollectedUnstrippedBinariesInfo provider to list all the
-        collected files.
+        Returns a `FuchsiaCollectedUnstrippedBinariesInfo` provider listing
+        information about all the collected files.
         """,
     implementation = _find_and_process_unstripped_binaries_impl,
     toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
-    provides = [DefaultInfo, FuchsiaPackageResourcesInfo, FuchsiaDebugSymbolInfo],
+    provides = [
+        DefaultInfo,
+        FuchsiaPackageResourcesInfo,
+        FuchsiaDebugSymbolInfo,
+        FuchsiaCollectedUnstrippedBinariesInfo,
+    ],
     attrs = {
         "deps": attr.label_list(
             doc = "A list of roots for the DAG of dependencies to scan.",
             mandatory = True,
-            aspects = [fuchsia_collect_unstripped_binaries_aspect],
+            aspects = [_fuchsia_collect_unstripped_binaries_aspect],
         ),
     } | FUCHSIA_DEBUG_SYMBOLS_ATTRS,
 )
@@ -365,16 +413,16 @@ find_and_process_unstripped_binaries = rule(
 # Debug Symbols Collection aspect & helpers
 
 def transform_collected_debug_symbols_infos(*targets):
-    """Transforms a list targets which into a FuchsiaDebugSymbolsInfo
+    """Transforms a list of targets processed by an aspect into a `FuchsiaDebugSymbolInfo`.
 
-    Given a list of targets which have had the fuchsia_collect_all_debug_symbols_infos_aspect
-    run against them, collect all the debug symbols into a single FuchsiaDebugSymbolsInfo.
+    Given a list of targets that have had the `fuchsia_collect_all_debug_symbols_infos_aspect`
+    run against them, collect all the debug symbols into a single `FuchsiaDebugSymbolInfo`.
 
     Args:
       *targets: A list of targets. It is ok to pass a list that contains None values
 
     Returns:
-      A FuchsiaDebugSymbolsInfo provider.
+      A `FuchsiaDebugSymbolInfo` provider instance.
     """
     valid_targets = []
     for target_or_list in targets:
@@ -401,14 +449,15 @@ def _fuchsia_collect_all_debug_symbols_infos_aspect_impl(target, ctx):
     )
 
 fuchsia_collect_all_debug_symbols_infos_aspect = aspect(
-    doc = """Collects all of the FuchsiaDebugSymbolInfo providers in the graph.
+    doc = """Collects all of the `FuchsiaDebugSymbolInfo` providers in the graph.
 
-    This aspect will walk the dependency tree finding all of the targets that
-    expose the FuchsiaDebugSymbolInfo provider and collect them into a top top
-    level provider.
+    Walks the dependency tree finding all of the targets that expose the
+    `FuchsiaDebugSymbolInfo` provider and collect them into a single
+    `FuchsiaCollectedDebugSymbolsInfo` provider instance.
 
-    To convert the collected resources back into a FuchsiaDebugSymbolInfo object
-    call the transform_collected_debug_symbols_infos method with the teop
+    To convert the collected resources back into a `FuchsiaDebugSymbolInfo`
+    object, call the `transform_collected_debug_symbols_infos()` function with
+    the top level target(s) as the argument.
     """,
     implementation = _fuchsia_collect_all_debug_symbols_infos_aspect_impl,
     attr_aspects = ["*"],
