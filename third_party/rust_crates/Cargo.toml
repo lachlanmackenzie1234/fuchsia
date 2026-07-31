@@ -211,6 +211,7 @@ rustyline = "18.0.1"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
+sapphire-emboss = "0.1.0"
 sapphire-gatt = "0.1.0"
 sapphire-peer-cache = "0.1.0"
 sapphire-rpc-macro = "0.1.0"
@@ -367,6 +368,7 @@ bssl-sys = { path = "intree/bssl-sys" }
 fuchsia-cprng = { path = "intree/fuchsia-cprng" }
 sapphire-async = { path = "intree/sunstone/sapphire-async" }
 sapphire-collections = { path = "intree/sunstone/sapphire-collections" }
+sapphire-emboss = { path = "intree/sunstone/sapphire-emboss" }
 sapphire-gatt = { path = "intree/sunstone/sapphire-gatt" }
 sapphire-peer-cache = { path = "intree/sunstone/sapphire-peer-cache" }
 sapphire-rpc-macro = { path = "intree/sunstone/sapphire-rpc-macro" }
@@ -623,6 +625,9 @@ uses_fuchsia_license = true
 
 [gn.package.sapphire-collections."0.1.0"]
 uses_fuchsia_license = true
+
+[gn.package.sapphire-emboss."0.1.0"]
+existing_gn_target = "//src/connectivity/bluetooth/sunstone/sapphire-emboss"
 
 [gn.package.sapphire-gatt."0.1.0"]
 uses_fuchsia_license = true

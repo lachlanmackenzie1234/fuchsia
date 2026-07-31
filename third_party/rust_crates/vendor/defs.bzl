@@ -449,6 +449,7 @@ _NORMAL_DEPENDENCIES = {
             "rutabaga_gfx": Label("//third_party/rust_crates/vendor/rutabaga_gfx-0.1.75:rutabaga_gfx"),
             "sapphire-async": Label("//third_party/rust_crates/vendor/sapphire-async-0.1.0:sapphire_async"),
             "sapphire-collections": Label("//third_party/rust_crates/vendor/sapphire-collections-0.1.0:sapphire_collections"),
+            "sapphire-emboss": Label("//third_party/rust_crates/vendor/sapphire-emboss-0.1.0:sapphire_emboss"),
             "sapphire-gatt": Label("//third_party/rust_crates/vendor/sapphire-gatt-0.1.0:sapphire_gatt"),
             "sapphire-peer-cache": Label("//third_party/rust_crates/vendor/sapphire-peer-cache-0.1.0:sapphire_peer_cache"),
             "sapphire-sync": Label("//third_party/rust_crates/vendor/sapphire-sync-0.1.0:sapphire_sync"),

@@ -1853,6 +1853,14 @@ group("sapphire-collections-0.1.0") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
 }
 
+group("sapphire-emboss") {
+  public_deps = [ ":sapphire-emboss-v0_1_0" ]
+}
+
+group("sapphire-emboss-0.1.0") {
+  public_deps = [ ":sapphire-emboss-v0_1_0" ]
+}
+
 group("sapphire-gatt") {
   public_deps = [ ":sapphire-gatt-v0_1_0" ]
 }
@@ -19232,6 +19240,10 @@ rustc_library("sapphire-collections-v0_1_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+group("sapphire-emboss-v0_1_0") {
+  public_deps = [ "//src/connectivity/bluetooth/sunstone/sapphire-emboss" ]
 }
 
 rustc_library("sapphire-gatt-v0_1_0") {
