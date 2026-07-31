@@ -154,8 +154,11 @@ impl RecordsImpl for Mldv2ReportRecords {
 
     fn parse_with_context<'a, BV: BufferView<&'a [u8]>>(
         data: &mut BV,
-        _ctx: &mut usize,
+        ctx: &mut usize,
     ) -> RecordParseResult<MulticastRecord<&'a [u8]>, ParseError> {
+        if *ctx == 0 {
+            return Ok(ParsedRecord::Done);
+        }
         let header = data
             .take_obj_front::<Mldv2ReportRecordHeader>()
             .ok_or_else(debug_err_fn!(ParseError::Format, "Can't take multicast record header"))?;
@@ -168,6 +171,7 @@ impl RecordsImpl for Mldv2ReportRecords {
             .take_front(usize::from(header.aux_data_len) * 4)
             .ok_or_else(debug_err_fn!(ParseError::Format, "Can't skip auxiliary data"))?;
 
+        *ctx -= 1;
         Ok(ParsedRecord::Parsed(Self::Record { header, sources }))
     }
 }
@@ -862,13 +866,14 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
-    use crate::gmp::ExactConversionError;
+    use crate::gmp::{ExactConversionError, GroupRecordType};
     use crate::icmp::{IcmpPacketBuilder, IcmpParseArgs};
     use crate::ip::Ipv6Proto;
     use crate::ipv6::ext_hdrs::{
         ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, Ipv6ExtensionHeader,
     };
     use crate::ipv6::{Ipv6Header, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketBuilderWithHbhOptions};
+    use net_declare::net_ip_v6;
 
     fn serialize_to_bytes<B: SplitByteSlice + Debug, M: IcmpMessage<Ipv6> + Debug>(
         src_ip: Ipv6Addr,
@@ -1599,5 +1604,31 @@ mod tests {
 
         let duration = Duration::from_secs((Mldv2QQIC::MAX_VALUE - 1).into());
         assert_eq!(Mldv2QQIC::exact_try_from(duration), Err(ExactConversionError::NotExact));
+    }
+
+    #[test]
+    fn test_mld_too_few_records() {
+        let src_ip = net_ip_v6!("::1");
+        let group_addr = MulticastAddr::new(net_ip_v6!("ff02::2")).unwrap();
+
+        // Serialize 1 record.
+        let builder = Mldv2ReportMessageBuilder::new(
+            [(group_addr, GroupRecordType::ModeIsInclude, core::iter::once(src_ip))].into_iter(),
+        );
+        let serialized = builder
+            .into_serializer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap()
+            .unwrap_b()
+            .into_inner();
+
+        // Skip MLDv2 report header to get only the record bytes.
+        let header_size = core::mem::size_of::<Mldv2ReportHeader>();
+        let record_bytes = &serialized[header_size..];
+
+        let mut ctx = 2; // Expect 2 records, but only 1 is present in record_bytes
+        let res = Records::<_, Mldv2ReportRecords>::parse_with_mut_context(record_bytes, &mut ctx);
+        assert_eq!(res.unwrap_err(), ParseError::Format);
+        assert_eq!(ctx, 1); // Parsed one record, so counter decremented to 1
     }
 }

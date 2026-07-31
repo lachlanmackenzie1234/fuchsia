@@ -102,16 +102,10 @@ impl Ipv6ExtensionHeaderParsingContext {
 }
 
 impl RecordsContext for Ipv6ExtensionHeaderParsingContext {
-    type Counter = ();
-
     fn clone_for_iter(&self) -> Self {
         let mut ret = self.clone();
         ret.iter = true;
         ret
-    }
-
-    fn counter_mut(&mut self) -> &mut () {
-        get_empty_tuple_mut_ref()
     }
 }
 
@@ -789,13 +783,7 @@ impl<C: Sized + Clone + Default> ExtensionHeaderOptionContext<C> {
     }
 }
 
-impl<C: Sized + Clone> RecordsContext for ExtensionHeaderOptionContext<C> {
-    type Counter = ();
-
-    fn counter_mut(&mut self) -> &mut () {
-        get_empty_tuple_mut_ref()
-    }
-}
+impl<C: Sized + Clone> RecordsContext for ExtensionHeaderOptionContext<C> {}
 
 /// Basic associated types required by `ExtensionHeaderOptionDataImpl`.
 pub(super) trait ExtensionHeaderOptionDataImplLayout {
@@ -1115,12 +1103,6 @@ fn ext_hdr_opt_err_to_ext_hdr_err(
             Ipv6ExtensionHeaderParsingError::BufferExhausted
         }
     }
-}
-
-fn get_empty_tuple_mut_ref<'a>() -> &'a mut () {
-    // This is a hack since `&mut ()` is invalid.
-    let bytes: &mut [u8] = &mut [];
-    zerocopy::Ref::into_mut(zerocopy::Ref::<_, ()>::from_bytes(bytes).unwrap())
 }
 
 #[cfg(test)]

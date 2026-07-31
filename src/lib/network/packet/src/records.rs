@@ -221,85 +221,12 @@ pub struct RecordsBytesIter<'a, B, R: RecordsImpl> {
     _marker: PhantomData<&'a ()>,
 }
 
-/// The error returned when fewer records were found than expected.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct TooFewRecordsErr;
-
-/// A counter used to keep track of how many records are remaining to be parsed.
-///
-/// Some record sequence formats include an indication of how many records
-/// should be expected. For example, the [IGMPv3 Membership Report Message]
-/// includes a "Number of Group Records" field in its header which indicates how
-/// many Group Records are present following the header. A `RecordsCounter` is a
-/// type used by these protocols to keep track of how many records are remaining
-/// to be parsed. It is implemented for all unsigned numeric primitive types
-/// (`usize`, `u8`, `u16`, `u32`, `u64`, and `u128`). A no-op implementation
-/// which does not track the number of remaining records is provided for `()`.
-///
-/// [IGMPv3 Membership Report Message]: https://www.rfc-editor.org/rfc/rfc3376#section-4.2
-pub trait RecordsCounter: Sized {
-    /// The error returned from [`result_for_end_of_records`] when fewer records
-    /// were found than expected.
-    ///
-    /// Some formats which store the number of records out-of-band consider it
-    /// an error to provide fewer records than this out-of-band value.
-    /// `TooFewRecordsErr` is the error returned by
-    /// [`result_for_end_of_records`] when this condition is encountered. If the
-    /// number of records is not tracked (usually, when `Self = ()`) or if it is
-    /// not an error to provide fewer records than expected, it is recommended
-    /// that `TooFewRecordsErr` be set to an uninhabited type like [`Never`].
-    ///
-    /// [`result_for_end_of_records`]: RecordsCounter::result_for_end_of_records
-    type TooFewRecordsErr;
-
-    /// Gets the next lowest value unless the counter is already at 0.
-    ///
-    /// During parsing, this value will be queried prior to parsing a record. If
-    /// the counter has already reached zero (`next_lowest_value` returns
-    /// `None`), parsing will be terminated. If the counter has not yet reached
-    /// zero and a record is successfully parsed, the previous counter value
-    /// will be overwritten with the one provided by `next_lowest_value`. In
-    /// other words, the parsing logic will look something like the following
-    /// pseudocode:
-    ///
-    /// ```rust,ignore
-    /// let next = counter.next_lowest_value()?;
-    /// let record = parse()?;
-    /// *counter = next;
-    /// ```
-    ///
-    /// If `Self` is a type which does not impose a limit on the number of
-    /// records parsed (usually, `()`), `next_lowest_value` must always return
-    /// `Some`. The value contained in the `Some` is irrelevant - it will just
-    /// be written back verbatim after a record is successfully parsed.
-    fn next_lowest_value(&self) -> Option<Self>;
-
-    /// Gets a result which can be used to determine whether it is an error that
-    /// there are no more records left to parse.
-    ///
-    /// Some formats which store the number of records out-of-band consider it
-    /// an error to provide fewer records than this out-of-band value.
-    /// `result_for_end_of_records` is called when there are no more records
-    /// left to parse. If the counter is still at a non-zero value, and the
-    /// protocol considers this to be an error, `result_for_end_of_records`
-    /// should return an appropriate error. Otherwise, it should return
-    /// `Ok(())`.
-    fn result_for_end_of_records(&self) -> Result<(), Self::TooFewRecordsErr> {
-        Ok(())
-    }
-}
-
 /// The context kept while performing records parsing.
 ///
 /// Types which implement `RecordsContext` can be used as the long-lived context
 /// which is kept during records parsing. This context allows parsers to keep
 /// running computations over the span of multiple records.
 pub trait RecordsContext: Sized + Clone {
-    /// A counter used to keep track of how many records are left to parse.
-    ///
-    /// See the documentation on [`RecordsCounter`] for more details.
-    type Counter: RecordsCounter;
-
     /// Clones a context for iterator purposes.
     ///
     /// `clone_for_iter` is useful for cloning a context to be used by
@@ -315,57 +242,10 @@ pub trait RecordsContext: Sized + Clone {
     fn clone_for_iter(&self) -> Self {
         self.clone()
     }
-
-    /// Gets the counter mutably.
-    fn counter_mut(&mut self) -> &mut Self::Counter;
 }
 
-macro_rules! impl_records_counter_and_context_for_uxxx {
-    ($ty:ty) => {
-        impl RecordsCounter for $ty {
-            type TooFewRecordsErr = TooFewRecordsErr;
-
-            fn next_lowest_value(&self) -> Option<Self> {
-                self.checked_sub(1)
-            }
-
-            fn result_for_end_of_records(&self) -> Result<(), TooFewRecordsErr> {
-                if *self == 0 { Ok(()) } else { Err(TooFewRecordsErr) }
-            }
-        }
-
-        impl RecordsContext for $ty {
-            type Counter = $ty;
-
-            fn counter_mut(&mut self) -> &mut $ty {
-                self
-            }
-        }
-    };
-}
-
-impl_records_counter_and_context_for_uxxx!(usize);
-impl_records_counter_and_context_for_uxxx!(u128);
-impl_records_counter_and_context_for_uxxx!(u64);
-impl_records_counter_and_context_for_uxxx!(u32);
-impl_records_counter_and_context_for_uxxx!(u16);
-impl_records_counter_and_context_for_uxxx!(u8);
-
-impl RecordsCounter for () {
-    type TooFewRecordsErr = Never;
-
-    fn next_lowest_value(&self) -> Option<()> {
-        Some(())
-    }
-}
-
-impl RecordsContext for () {
-    type Counter = ();
-
-    fn counter_mut(&mut self) -> &mut () {
-        self
-    }
-}
+impl RecordsContext for usize {}
+impl RecordsContext for () {}
 
 /// Basic associated types used by a [`RecordsImpl`].
 ///
@@ -381,9 +261,7 @@ pub trait RecordsImplLayout {
 
     /// The type of errors that may be returned by a call to
     /// [`RecordsImpl::parse_with_context`].
-    type Error: From<
-        <<Self::Context as RecordsContext>::Counter as RecordsCounter>::TooFewRecordsErr,
-    >;
+    type Error;
 }
 
 /// An implementation of a records parser.
@@ -960,22 +838,12 @@ where
     BV: BufferView<&'a [u8]>,
 {
     loop {
-        // If we're already at 0, don't attempt to parse any more records.
-        let next_lowest_counter_val = match context.counter_mut().next_lowest_value() {
-            Some(val) => val,
-            None => return Ok(None),
-        };
         match R::parse_with_context(bytes, context)? {
             ParsedRecord::Done => {
-                return context
-                    .counter_mut()
-                    .result_for_end_of_records()
-                    .map_err(Into::into)
-                    .map(|()| None);
+                return Ok(None);
             }
             ParsedRecord::Skipped => {}
             ParsedRecord::Parsed(o) => {
-                *context.counter_mut() = next_lowest_counter_val;
                 return Ok(Some(o));
             }
         }
@@ -1029,12 +897,6 @@ mod tests {
         0x04,
     ];
 
-    fn get_empty_tuple_mut_ref<'a>() -> &'a mut () {
-        // This is a hack since `&mut ()` is invalid.
-        let bytes: &mut [u8] = &mut [];
-        zerocopy::Ref::into_mut(zerocopy::Ref::<_, ()>::from_bytes(bytes).unwrap())
-    }
-
     #[derive(Debug, IntoBytes, KnownLayout, FromBytes, Immutable, Unaligned)]
     #[repr(C)]
     struct DummyRecord {
@@ -1052,12 +914,6 @@ mod tests {
     impl From<Never> for DummyRecordErr {
         fn from(err: Never) -> DummyRecordErr {
             match err {}
-        }
-    }
-
-    impl From<TooFewRecordsErr> for DummyRecordErr {
-        fn from(_: TooFewRecordsErr) -> DummyRecordErr {
-            DummyRecordErr::TooFewRecords
         }
     }
 
@@ -1117,9 +973,19 @@ mod tests {
 
         fn parse_with_context<'a, BV: BufferView<&'a [u8]>>(
             data: &mut BV,
-            _context: &mut usize,
+            context: &mut usize,
         ) -> RecordParseResult<Self::Record<'a>, Self::Error> {
-            parse_dummy_rec(data)
+            if *context == 0 {
+                return Ok(ParsedRecord::Done);
+            }
+            match parse_dummy_rec(data)? {
+                ParsedRecord::Done => Err(DummyRecordErr::TooFewRecords),
+                ParsedRecord::Skipped => Ok(ParsedRecord::Skipped),
+                ParsedRecord::Parsed(res) => {
+                    *context -= 1;
+                    Ok(ParsedRecord::Parsed(res))
+                }
+            }
         }
     }
 
@@ -1135,12 +1001,7 @@ mod tests {
         pub disallowed: [bool; 256],
     }
 
-    impl RecordsContext for FilterContext {
-        type Counter = ();
-        fn counter_mut(&mut self) -> &mut () {
-            get_empty_tuple_mut_ref()
-        }
-    }
+    impl RecordsContext for FilterContext {}
 
     impl RecordsImplLayout for FilterContextRecordImpl {
         type Context = FilterContext;
@@ -1205,16 +1066,10 @@ mod tests {
     }
 
     impl RecordsContext for StatefulContext {
-        type Counter = ();
-
         fn clone_for_iter(&self) -> Self {
             let mut x = self.clone();
             x.iter = true;
             x
-        }
-
-        fn counter_mut(&mut self) -> &mut () {
-            get_empty_tuple_mut_ref()
         }
     }
 

@@ -9,7 +9,6 @@ use core::convert::Infallible as Never;
 use crate::icmp::Icmpv6ParameterProblemCode;
 use net_types::MulticastAddress;
 use net_types::ip::{IpAddress, Ipv6Addr};
-use packet::records::TooFewRecordsErr;
 use packet::records::options::OptionParseErr;
 use thiserror::Error;
 
@@ -39,12 +38,6 @@ pub enum ParseError {
 impl From<Never> for ParseError {
     fn from(err: Never) -> ParseError {
         match err {}
-    }
-}
-
-impl From<TooFewRecordsErr> for ParseError {
-    fn from(TooFewRecordsErr: TooFewRecordsErr) -> ParseError {
-        ParseError::Format
     }
 }
 

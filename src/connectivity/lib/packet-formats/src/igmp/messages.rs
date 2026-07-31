@@ -407,8 +407,11 @@ impl RecordsImpl for IgmpMembershipReportV3 {
 
     fn parse_with_context<'a, BV: BufferView<&'a [u8]>>(
         data: &mut BV,
-        _ctx: &mut usize,
+        ctx: &mut usize,
     ) -> RecordParseResult<GroupRecord<&'a [u8]>, ParseError> {
+        if *ctx == 0 {
+            return Ok(ParsedRecord::Done);
+        }
         let header = data
             .take_obj_front::<GroupRecordHeader>()
             .ok_or_else(debug_err_fn!(ParseError::Format, "Can't take group record header"))?;
@@ -421,6 +424,7 @@ impl RecordsImpl for IgmpMembershipReportV3 {
             .take_front(usize::from(header.aux_data_len) * 4)
             .ok_or_else(debug_err_fn!(ParseError::Format, "Can't skip auxiliary data"))?;
 
+        *ctx -= 1;
         Ok(ParsedRecord::Parsed(Self::Record { header, sources }))
     }
 }
@@ -731,6 +735,7 @@ mod tests {
     use crate::ipv4::options::Ipv4Option;
     use crate::ipv4::{Ipv4Packet, Ipv4PacketBuilder, Ipv4PacketBuilderWithOptions};
     use crate::testutil::set_logger_for_test;
+    use net_declare::net_ip_v4;
 
     const ALL_BUFFERS: [&[u8]; 6] = [
         igmp_router_queries::v2::QUERY,
@@ -1177,5 +1182,32 @@ mod tests {
         assert_message_length::<IgmpMembershipReportV1>(igmp_reports::v1::MEMBER_REPORT);
         assert_message_length::<IgmpMembershipReportV2>(igmp_reports::v2::MEMBER_REPORT);
         assert_message_length::<IgmpLeaveGroup>(igmp_leave_group::LEAVE_GROUP);
+    }
+
+    #[test]
+    fn test_igmp_too_few_records() {
+        let src = net_ip_v4!("192.168.0.1");
+        let group_addr = MulticastAddr::new(net_ip_v4!("224.0.0.1")).unwrap();
+
+        // Serialize 1 record.
+        let builder = IgmpMembershipReportV3Builder::new(
+            [(group_addr, IgmpGroupRecordType::ModeIsInclude, core::iter::once(src))].into_iter(),
+        );
+        let serialized = builder
+            .into_serializer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap()
+            .unwrap_b()
+            .into_inner();
+
+        // Skip IGMPv3 report header to get only the record bytes.
+        let header_size = crate::igmp::total_header_size::<MembershipReportV3Data>();
+        let record_bytes = &serialized[header_size..];
+
+        let mut ctx = 2; // Expect 2 records, but only 1 is present in record_bytes
+        let res =
+            Records::<_, IgmpMembershipReportV3>::parse_with_mut_context(record_bytes, &mut ctx);
+        assert_eq!(res.unwrap_err(), ParseError::Format);
+        assert_eq!(ctx, 1); // Parsed one record, so counter decremented to 1
     }
 }

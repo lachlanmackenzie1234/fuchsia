@@ -1398,7 +1398,7 @@ where
         );
         // take the first two bytes to write in proto and length information.
         let mut hbh_header = buffer.take_front(aligned_hbh_len).unwrap();
-        let hbh_header = hbh_header.as_mut();
+        let hbh_header: &mut [u8] = hbh_header.as_mut();
         hbh_header[0] = next_header.into();
         hbh_header[1] = u8::try_from((aligned_hbh_len - 8) / 8).expect("extension header too big");
         self.hbh_options.serialize_into(&mut hbh_header[2..]);
