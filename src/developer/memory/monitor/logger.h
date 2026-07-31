@@ -43,6 +43,7 @@ class Logger {
   inspect::Node root_node_;
   inspect::BoundedListNode inspect_bucket_digest_node_;
   std::optional<inspect::StringArray> bucket_names_;
+  std::once_flag bucket_names_flag_;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(Logger);
 };

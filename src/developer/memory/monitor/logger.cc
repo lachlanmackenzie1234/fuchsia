@@ -19,8 +19,6 @@ constexpr std::string_view kTimestamp{"@timestamp"};
 constexpr std::string_view kMeasurementsKey{"measurements"};
 constexpr std::string_view kBucketsKey{"buckets"};
 
-std::once_flag bucket_names_flag;
-
 void PushDigestToInspect(inspect::BoundedListNode& node, const memory::Digest& digest) {
   node.CreateEntry([&digest](inspect::Node& n) {
     n.RecordUint(kTimestamp, digest.time());
@@ -104,7 +102,7 @@ void Logger::Log() {
   }
 
   // Enshrine the order of buckets, once they have been populated.
-  std::call_once(bucket_names_flag, [this, &buckets = d.buckets()]() {
+  std::call_once(bucket_names_flag_, [this, &buckets = d.buckets()] {
     bucket_names_ = root_node_.CreateStringArray(kBucketsKey, buckets.size());
     for (size_t i = 0; i < buckets.size(); i++) {
       bucket_names_->Set(i, buckets[i].name());
