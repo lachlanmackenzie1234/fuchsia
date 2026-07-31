@@ -279,37 +279,24 @@ func (b *Builder) LoadManifests() error {
 
 			isPrivate := strings.Contains(filepath.ToSlash(path), "/internal")
 
-			// Map projects
+			addEntry := func(path, name string) {
+				if path != "" && name != "" {
+					cleanPath := filepath.Clean(path)
+					b.Config.ManifestProjectNames[cleanPath] = name
+					if isPrivate {
+						b.Config.ManifestPrivateProjects[cleanPath] = true
+					}
+				}
+			}
+
 			for _, p := range m.Projects {
-				if p.Path != "" && p.Name != "" {
-					cleanPath := filepath.Clean(p.Path)
-					b.Config.ManifestProjectNames[cleanPath] = p.Name
-					if isPrivate {
-						b.Config.ManifestPrivateProjects[cleanPath] = true
-					}
-				}
+				addEntry(p.Path, p.Name)
 			}
-
-			// Map projects (grouped)
 			for _, p := range m.ProjectsGrouped {
-				if p.Path != "" && p.Name != "" {
-					cleanPath := filepath.Clean(p.Path)
-					b.Config.ManifestProjectNames[cleanPath] = p.Name
-					if isPrivate {
-						b.Config.ManifestPrivateProjects[cleanPath] = true
-					}
-				}
+				addEntry(p.Path, p.Name)
 			}
-
-			// Map packages (prebuilts)
 			for _, p := range m.Packages {
-				if p.Path != "" && p.Name != "" {
-					cleanPath := filepath.Clean(p.Path)
-					b.Config.ManifestProjectNames[cleanPath] = p.Name
-					if isPrivate {
-						b.Config.ManifestPrivateProjects[cleanPath] = true
-					}
-				}
+				addEntry(p.Path, p.Name)
 			}
 
 			return nil
