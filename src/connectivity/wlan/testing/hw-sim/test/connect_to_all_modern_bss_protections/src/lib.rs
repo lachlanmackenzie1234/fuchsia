@@ -79,13 +79,7 @@ async fn connect_to_modern_wpa_network() {
         // Remove the network and await disconnection
         let (client_controller, mut client_state_update_stream) =
             wlan_hw_sim::init_client_controller(&test_ns_prefix).await;
-        remove_network(
-            &client_controller,
-            &ssid,
-            policy_security_type,
-            password_or_psk_to_policy_credential(credential),
-        )
-        .await;
+        forget_network(&client_controller, &ssid, policy_security_type).await;
         let id =
             fidl_policy::NetworkIdentifier { ssid: ssid.to_vec(), type_: policy_security_type };
         wait_until_client_state(&mut client_state_update_stream, |update| {

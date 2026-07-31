@@ -251,24 +251,18 @@ pub async fn save_network(
         .expect("client controller failed to save network");
 }
 
-pub async fn remove_network(
+pub async fn forget_network(
     client_controller: &fidl_policy::ClientControllerProxy,
     ssid: &Ssid,
     security_type: SecurityType,
-    credential: fidl_policy::Credential,
 ) {
-    info!(
-        "Removing network. SSID: {}, Credential: {:?}",
-        ssid.to_string_not_redactable(),
-        credential_to_string(&credential)
-    );
-    let network_config = create_network_config(ssid, security_type, credential);
+    info!("Removing network. SSID: {}", ssid.to_string_not_redactable(),);
+    let network_id = NetworkIdentifier { ssid: ssid.to_vec(), type_: security_type };
     client_controller
-        .remove_network(&network_config)
+        .forget_network(&network_id)
         .await
-        .expect("remove_network future failed")
-        .expect("client controller failed to remove network");
-    info!("Network removed. TODO(https://fxbug.dev/42081001#c4): remove this logging")
+        .expect("forget_network future failed")
+        .expect("client controller failed to forget network");
 }
 
 pub async fn remove_all_networks(client_controller: &fidl_policy::ClientControllerProxy) {
@@ -291,11 +285,10 @@ pub async fn remove_all_networks(client_controller: &fidl_policy::ClientControll
 
     // Remove each saved network
     for network in saved_networks {
-        remove_network(
+        forget_network(
             client_controller,
             &network.id.clone().unwrap().ssid.try_into().unwrap(),
             network.id.unwrap().type_.into(),
-            network.credential.unwrap(),
         )
         .await;
     }

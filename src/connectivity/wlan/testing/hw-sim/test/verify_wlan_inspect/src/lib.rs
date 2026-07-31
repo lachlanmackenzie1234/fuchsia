@@ -176,13 +176,7 @@ async fn verify_wlan_inspect() {
         },
     });
 
-    remove_network(
-        &client_controller,
-        &AP_SSID,
-        fidl_policy::SecurityType::None,
-        password_or_psk_to_policy_credential::<String>(None),
-    )
-    .await;
+    forget_network(&client_controller, &AP_SSID, fidl_policy::SecurityType::None).await;
 
     let id = fidl_policy::NetworkIdentifier { ssid: AP_SSID.to_vec(), type_: security_type };
     wait_until_client_state(&mut client_state_update_stream, |update| {

@@ -24,7 +24,7 @@ async fn connect_and_wait_for_failure(supplicant: Supplicant<'_>) {
         fidl_policy::DisconnectStatus::ConnectionFailed,
     )
     .await;
-    remove_network(supplicant.controller, &AP_SSID, supplicant.security_type, credential).await;
+    forget_network(supplicant.controller, &AP_SSID, supplicant.security_type).await;
     info!(
         "Connection failed as expected. TODO(https://fxbug.dev/42081001#c4): remove this logging"
     );

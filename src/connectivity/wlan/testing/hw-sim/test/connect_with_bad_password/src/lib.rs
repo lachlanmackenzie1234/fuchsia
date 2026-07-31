@@ -26,7 +26,7 @@ async fn connect_and_wait_for_failure(
         fidl_policy::NetworkIdentifier { ssid: ssid.to_vec(), type_: supplicant.security_type };
     await_failed(supplicant.state_update_stream, network_identifier.clone(), expected_failure)
         .await;
-    remove_network(supplicant.controller, ssid, supplicant.security_type, credential).await;
+    forget_network(supplicant.controller, ssid, supplicant.security_type).await;
 }
 
 async fn fail_to_connect_or_timeout(
