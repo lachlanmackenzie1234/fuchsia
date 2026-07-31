@@ -8,6 +8,14 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+declare_args() {
+  # Toggles between the C++ and Rust driver implementations.
+  #
+  # TODO(https://fxbug.dev/527192080): Remove the toggle after the Rust port is completed.
+  # Valid values: "cpp", "rust"
+  focaltech_driver_flavor = "cpp"
+}
+
 driver_bind_rules("focaltech_touch_bind") {
   rules = "meta/focaltech.bind"
   bind_output = "focaltech.bindbc"
@@ -24,26 +32,18 @@ driver_bind_rules("focaltech_touch_bind") {
   ]
 }
 
-group("tests") {
-  testonly = true
-  deps = [
-    ":focaltech-test",
-    ":focaltech_touch_bind_test",
-  ]
-}
-
 source_set("firmware-sherlock") {
-  sources = [ "ft_firmware_sherlock.cc" ]
+  sources = [ "cpp/ft_firmware_sherlock.cc" ]
   deps = [ ":common" ]
   cflags_cc = [ "-Wno-newline-eof" ]
 }
 
 source_set("common") {
   sources = [
-    "ft_device.cc",
-    "ft_device.h",
-    "ft_firmware.cc",
-    "ft_firmware.h",
+    "cpp/ft_device.cc",
+    "cpp/ft_device.h",
+    "cpp/ft_firmware.cc",
+    "cpp/ft_firmware.h",
   ]
   deps = [
     "//sdk/lib/driver/compat/cpp",
@@ -51,7 +51,6 @@ source_set("common") {
     "//src/lib/ddk:ddk_metadata",
   ]
   public_deps = [
-    ":focaltech_touch_bind",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
@@ -70,64 +69,141 @@ source_set("common") {
   ]
 }
 
-fuchsia_cc_driver("focaltech-driver") {
-  output_name = "focaltech"
+fuchsia_cc_driver("driver-cpp") {
+  output_name = "focaltech-cpp"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [ "ft_firmware_none.cc" ]
+  sources = [ "cpp/ft_firmware_none.cc" ]
   deps = [
     ":common",
     "//src/devices/lib/driver:driver_runtime",
   ]
 }
 
-fuchsia_driver_component("focaltech") {
-  component_name = "focaltech"
-  deps = [ ":focaltech-driver" ]
-  info = "meta/focaltech-info.json"
-  manifest = "meta/focaltech.cml"
-}
-
-fuchsia_driver_package("package") {
-  package_name = "focaltech"
-  export_to_bazel = true
-  driver_components = [ ":focaltech" ]
-}
-
-fuchsia_cc_driver("focaltech-sherlock-driver") {
-  output_name = "focaltech-sherlock"
+fuchsia_cc_driver("driver-cpp-sherlock") {
+  output_name = "focaltech-sherlock-cpp"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  deps = [ ":common" ]
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
 
   if (internal_access) {
     deps += [ ":firmware-sherlock" ]
   } else {
-    sources = [ "ft_firmware_none.cc" ]
+    sources = [ "cpp/ft_firmware_none.cc" ]
   }
 }
 
-fuchsia_driver_component("focaltech-sherlock") {
-  component_name = "focaltech-sherlock"
-  deps = [ ":focaltech-sherlock-driver" ]
-  info = "meta/focaltech-sherlock-info.json"
-  manifest = "meta/focaltech-sherlock.cml"
+focaltech_rust_shared_sources = [
+  "rust/src/driver.rs",
+  "rust/src/lib.rs",
+]
+
+focaltech_rust_shared_deps = [
+  "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+  "//sdk/lib/driver/component/rust",
+  "//sdk/rust/zx",
+  "//third_party/rust_crates:log",
+]
+
+fuchsia_rust_driver("driver-rust") {
+  edition = "2024"
+  source_root = "rust/src/lib.rs"
+  output_name = "focaltech-rust"
+  with_unit_tests = true
+  sources = focaltech_rust_shared_sources
+  deps = focaltech_rust_shared_deps
 }
 
-fuchsia_driver_package("focaltech-sherlock-package") {
-  package_name = "focaltech-sherlock"
+fuchsia_rust_driver("driver-rust-sherlock") {
+  edition = "2024"
+  source_root = "rust/src/lib.rs"
+  output_name = "focaltech-sherlock-rust"
+  with_unit_tests = true
+  sources = focaltech_rust_shared_sources
+  deps = focaltech_rust_shared_deps
+}
+
+fuchsia_driver_component("component-cpp") {
+  component_name = "focaltech"
+  deps = [
+    ":driver-cpp",
+    ":focaltech_touch_bind",
+  ]
+  info = "meta/focaltech-info.json"
+  manifest = "meta/focaltech-cpp.cml"
+}
+
+fuchsia_driver_component("component-sherlock-cpp") {
+  component_name = "focaltech-sherlock"
+  deps = [
+    ":driver-cpp-sherlock",
+    ":focaltech_touch_bind",
+  ]
+  info = "meta/focaltech-sherlock-info.json"
+  manifest = "meta/focaltech-sherlock-cpp.cml"
+}
+
+fuchsia_driver_component("component-rust") {
+  component_name = "focaltech"
+  deps = [
+    ":driver-rust",
+    ":focaltech_touch_bind",
+  ]
+  info = "meta/focaltech-info.json"
+  manifest = "meta/focaltech-rust.cml"
+}
+
+fuchsia_driver_component("component-sherlock-rust") {
+  component_name = "focaltech-sherlock"
+  deps = [
+    ":driver-rust-sherlock",
+    ":focaltech_touch_bind",
+  ]
+  info = "meta/focaltech-sherlock-info.json"
+  manifest = "meta/focaltech-sherlock-rust.cml"
+}
+
+group("component") {
+  if (focaltech_driver_flavor == "rust") {
+    deps = [ ":component-rust" ]
+  } else {
+    deps = [ ":component-cpp" ]
+  }
+}
+
+group("component-sherlock") {
+  if (focaltech_driver_flavor == "rust") {
+    deps = [ ":component-sherlock-rust" ]
+  } else {
+    deps = [ ":component-sherlock-cpp" ]
+  }
+}
+
+# Active Package Generic
+fuchsia_driver_package("package") {
   export_to_bazel = true
-  driver_components = [ ":focaltech-sherlock" ]
+  package_name = "focaltech"
+  driver_components = [ ":component" ]
+}
+
+# Active Package Sherlock
+fuchsia_driver_package("focaltech-sherlock-package") {
+  export_to_bazel = true
+  package_name = "focaltech-sherlock"
+  driver_components = [ ":component-sherlock" ]
 }
 
 test("focaltech-test-bin") {
   output_name = "focaltech-test"
   configs += [ "//build/config:all_source" ]
-  sources = [ "ft_device_test.cc" ]
+  sources = [ "cpp/ft_device_test.cc" ]
   deps = [
     ":common",
     "//sdk/lib/driver/compat/cpp",
@@ -149,4 +225,17 @@ fuchsia_unittest_package("focaltech-test") {
       max_severity = "ERROR"
     }
   }
+}
+
+fuchsia_unittest_package("focaltech-rust-test") {
+  deps = [ ":driver-rust_test" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":focaltech-rust-test",
+    ":focaltech-test",
+    ":focaltech_touch_bind_test",
+  ]
 }

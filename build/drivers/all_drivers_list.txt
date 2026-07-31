@@ -381,8 +381,10 @@
 //src/ui/backlight/drivers/ti-lp8556:ti-lp8556-driver
 //src/ui/input/drivers/adc-buttons:bazel_package.bazel_build
 //src/ui/input/drivers/buttons:buttons-driver
-//src/ui/input/drivers/focaltech:focaltech-driver
-//src/ui/input/drivers/focaltech:focaltech-sherlock-driver
+//src/ui/input/drivers/focaltech:driver-cpp
+//src/ui/input/drivers/focaltech:driver-cpp-sherlock
+//src/ui/input/drivers/focaltech:driver-rust
+//src/ui/input/drivers/focaltech:driver-rust-sherlock
 //src/ui/input/drivers/goodix:goodix-module-driver
 //src/ui/input/drivers/gt6853:driver-cpp
 //src/ui/input/drivers/gt6853:driver-rust

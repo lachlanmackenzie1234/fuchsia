@@ -7,7 +7,7 @@
         "driver_component/driver.shard.cml",
     ],
     program: {
-        binary: "driver/focaltech.so",
+        binary: "driver/focaltech-sherlock-cpp.so",
         bind: "meta/bind/focaltech.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         default_dispatcher_scheduler_role: "fuchsia.ui.input.drivers.focaltech.device",
