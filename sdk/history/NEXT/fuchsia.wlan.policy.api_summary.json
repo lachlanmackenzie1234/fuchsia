@@ -241,6 +241,16 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.wlan.policy/ClientController.ForgetNetwork",
+        "strictness": "strict",
+        "ordinal": "5917550266196993661",
+        "direction": "two_way",
+        "request": "fuchsia.wlan.policy/ClientControllerForgetNetworkRequest",
+        "response": "fuchsia.wlan.policy/ClientController_ForgetNetwork_Response",
+        "error": "fuchsia.wlan.policy/NetworkConfigChangeError"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.wlan.policy/ClientController.GetSavedNetworks",
         "strictness": "strict",
         "ordinal": "4244079249407414902",
@@ -316,6 +326,16 @@
     {
         "kind": "struct",
         "name": "fuchsia.wlan.policy/ClientControllerConnectResponse"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.wlan.policy/ClientControllerForgetNetworkRequest.id",
+        "ordinal": "1",
+        "type": "fuchsia.wlan.policy/NetworkIdentifier"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.wlan.policy/ClientControllerForgetNetworkRequest"
     },
     {
         "kind": "struct/member",

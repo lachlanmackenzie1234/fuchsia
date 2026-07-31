@@ -14,7 +14,7 @@ using zx;
 /// The second aim of this API design is to eliminate the "last-caller wins"
 /// paradigm by limiting the number of controlling applications.  A single caller
 /// at a time is permitted to make API calls that impact wlan state.
-@discoverable
+@discoverable(server="platform")
 closed protocol ClientProvider {
     /// Control channel used by a single caller to trigger wlan client mode state
     /// changes.  The caller also provides a channel to receive wlan updates.
@@ -29,7 +29,7 @@ closed protocol ClientProvider {
 
 /// The ClientListener API provides a mechanism for callers to receive state change
 /// updates about wlan operation.
-@discoverable
+@discoverable(server="platform")
 closed protocol ClientListener {
     /// Registration for callers to receive wlan client mode state updates.
     strict GetListener(resource struct {
@@ -88,8 +88,20 @@ closed protocol ClientController {
     /// Removes a saved network configuration, if one exists.  This method will
     /// automatically trigger a disconnection if the NetworkConfig was used to
     /// establish the connection.
+    ///
+    /// Deprecated in favor of ForgetNetwork, which doesn't require passing in
+    /// a credential when removing the network.
+    @available(deprecated=NEXT, note="use ForgetNetwork")
     strict RemoveNetwork(struct {
         config NetworkConfig;
+    }) -> () error NetworkConfigChangeError;
+
+    /// Forgets a saved network configuration, if one exists. This method will
+    /// automatically trigger a disconnection if the NetworkIdentifier was used to
+    /// establish the current connection.
+    @available(added=NEXT)
+    strict ForgetNetwork(struct {
+        id NetworkIdentifier;
     }) -> () error NetworkConfigChangeError;
 
     /// Retrieve the currently saved networks using the provided iterator.

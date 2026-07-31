@@ -130,6 +130,7 @@ fn log_client_request(request: &fidl_policy::ClientControllerRequest) {
             fidl_policy::ClientControllerRequest::ScanForNetworks { .. } => "ScanForNetworks",
             fidl_policy::ClientControllerRequest::SaveNetwork { .. } => "SaveNetwork",
             fidl_policy::ClientControllerRequest::RemoveNetwork { .. } => "RemoveNetwork",
+            fidl_policy::ClientControllerRequest::ForgetNetwork { .. } => "ForgetNetwork",
             fidl_policy::ClientControllerRequest::GetSavedNetworks { .. } => "GetSavedNetworks",
         }
     );
@@ -208,6 +209,16 @@ async fn handle_client_requests(
                 .await
                 .map_err(|_| SaveError::GeneralError);
 
+                responder.send(err)?;
+            }
+            fidl_policy::ClientControllerRequest::ForgetNetwork { id, responder } => {
+                let err = handle_client_request_remove_network(
+                    saved_networks.clone(),
+                    id,
+                    iface_manager.clone(),
+                )
+                .map_err(|_| SaveError::GeneralError)
+                .await;
                 responder.send(err)?;
             }
             fidl_policy::ClientControllerRequest::GetSavedNetworks { iterator, .. } => {
@@ -1280,12 +1291,7 @@ mod tests {
         );
 
         // Request to a network that is saved
-        let network_config = fidl_policy::NetworkConfig {
-            id: Some(test_values.net_id_open.clone()),
-            credential: Some(fidl_policy::Credential::None(fidl_policy::Empty)),
-            ..Default::default()
-        };
-        let mut remove_fut = controller.remove_network(&network_config);
+        let mut remove_fut = controller.forget_network(&test_values.net_id_open);
 
         // Process the remove request on the server side and handle requests to stash on the way.
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
@@ -1308,7 +1314,7 @@ mod tests {
         );
 
         // Removing a network that is not saved should not trigger a disconnect.
-        let mut remove_fut = controller.remove_network(&network_config);
+        let mut remove_fut = controller.forget_network(&test_values.net_id_open);
         // Process the remove request on the server side and handle requests to stash on the way.
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
         assert_matches!(
@@ -1688,15 +1694,7 @@ mod tests {
         id: NetworkIdentifier,
         cred: Credential,
     ) -> Option<NetworkConfig> {
-        let mut cfgs = saved_networks
-            .lookup(&id)
-            .await
-            .into_iter()
-            .filter(|cfg| cfg.credential == cred)
-            .collect::<Vec<_>>();
-        // there should not be multiple configs with the same SSID, security type, and credential.
-        assert!(cfgs.len() <= 1);
-        cfgs.pop()
+        saved_networks.lookup(&id).await.filter(|cfg| cfg.credential == cred)
     }
 
     #[fuchsia::test]

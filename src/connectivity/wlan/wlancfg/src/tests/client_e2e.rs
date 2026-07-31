@@ -2402,8 +2402,7 @@ fn listener_updates_connecting_network_correctly_on_removal() {
     assert_eq!(network.state.unwrap(), types::ConnectionState::Connecting);
 
     // Remove network before connection has completed.
-    let remove_fut =
-        test_values.external_interfaces.client_controller.remove_network(&network_config);
+    let remove_fut = test_values.external_interfaces.client_controller.forget_network(&network_id);
     let remove_fut = pin!(remove_fut);
 
     // Continue processing the remove request.
@@ -2533,7 +2532,7 @@ fn listener_updates_connecting_network_correctly_on_new_saved_network() {
 
     // Remove the second network before connection has completed.
     let remove_fut =
-        test_values.external_interfaces.client_controller.remove_network(&second_network_config);
+        test_values.external_interfaces.client_controller.forget_network(&second_network_id);
     let remove_fut = pin!(remove_fut);
 
     // Continue processing the remove request.
@@ -2649,7 +2648,7 @@ fn listener_updates_not_affected_by_unrelated_network_removal() {
 
     // Remove the second network (unrelated to the connection)
     let remove_fut =
-        test_values.external_interfaces.client_controller.remove_network(&second_network_config);
+        test_values.external_interfaces.client_controller.forget_network(&second_network_id);
     let remove_fut = pin!(remove_fut);
     let remove_resp =
         run_while(&mut exec, &mut test_values.internal_objects.internal_futures, remove_fut);
