@@ -95,7 +95,7 @@ enum State {
     ///
     /// The connection stays in this state until it is completely torn down
     /// by the closing handshake or a valid RST.
-    Established(Established),
+    Established(PeerPair),
 }
 
 impl State {
@@ -144,7 +144,7 @@ impl State {
             }
             State::Closed => Duration::ZERO,
             State::Opening(_) => MAXIMUM_SEGMENT_LIFETIME,
-            State::Established(Established { original, reply }) => {
+            State::Established(PeerPair { original, reply }) => {
                 // If there is no data outstanding, make the timeout large, and
                 // otherwise small so we can purge the connection quickly if one
                 // of the endpoints disappears.
@@ -180,7 +180,9 @@ impl State {
             State::Untracked => (State::Untracked, true),
             State::Closed => (State::Closed, true),
             State::Opening(s) => s.update(segment, payload_len, dir),
-            State::Established(s) => s.update(segment, payload_len, dir),
+            State::Established(peers) => {
+                update_for_established(peers.into_update_peers(dir), segment, payload_len)
+            }
         }
     }
 }
@@ -428,10 +430,37 @@ impl FinState {
     }
 }
 
-fn swap_peers(original: Peer, reply: Peer, dir: ConnectionDirection) -> (Peer, Peer) {
-    match dir {
-        ConnectionDirection::Original => (original, reply),
-        ConnectionDirection::Reply => (reply, original),
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PeerPair {
+    original: Peer,
+    reply: Peer,
+}
+
+impl PeerPair {
+    fn into_update_peers(self, dir: ConnectionDirection) -> UpdatePeers {
+        let Self { original, reply } = self;
+        match dir {
+            ConnectionDirection::Original => UpdatePeers { sender: original, receiver: reply, dir },
+            ConnectionDirection::Reply => UpdatePeers { sender: reply, receiver: original, dir },
+        }
+    }
+}
+
+/// Centralizes and names the peers for performing updates. Avoids ambiguity
+/// about which peer is the sender/receiver.
+struct UpdatePeers {
+    sender: Peer,
+    receiver: Peer,
+    dir: ConnectionDirection,
+}
+
+impl UpdatePeers {
+    fn into_peer_pair(self) -> PeerPair {
+        let Self { sender, receiver, dir } = self;
+        match dir {
+            ConnectionDirection::Original => PeerPair { original: sender, reply: receiver },
+            ConnectionDirection::Reply => PeerPair { original: receiver, reply: sender },
+        }
     }
 }
 
@@ -451,7 +480,7 @@ fn swap_peers(original: Peer, reply: Peer, dir: ConnectionDirection) -> (Peer, P
 ///   - FIN: Invalid
 ///   - ACK: Invalid
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Opening {
+struct Opening {
     /// The ISS (initial send sequence number) for the original TCP stack.
     iss: SeqNum,
 
@@ -575,7 +604,7 @@ impl Opening {
                         let original_max_next_seq = iss + logical_len;
 
                         (
-                            Established {
+                            State::Established(PeerPair {
                                 original: Peer {
                                     window_scale: original_window_scale,
                                     max_wnd: window_size,
@@ -602,8 +631,7 @@ impl Opening {
                                     unacked_data: true,
                                     fin_state: FinState::NotSent,
                                 },
-                            }
-                            .into(),
+                            }),
                             true,
                         )
                     }
@@ -613,8 +641,6 @@ impl Opening {
     }
 }
 
-/// State for the Established state.
-///
 /// State transitions for in-range segments regardless of direction:
 /// - SYN: Invalid
 /// - RST: Delete connection
@@ -622,95 +648,76 @@ impl Opening {
 /// - ACK: Established
 ///
 /// This state deletes the connection once FINs from both peers have been ACKed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Established {
-    original: Peer,
-    reply: Peer,
-}
-state_from_state_struct!(Established);
+fn update_for_established(
+    mut peers: UpdatePeers,
+    segment: &SegmentHeader,
+    payload_len: usize,
+) -> (State, bool) {
+    // NOTE: Segments after a FIN are somewhat invalid, but we do not
+    // attempt to handle them specially. Per RFC 9293 3.10.7.4:
+    //
+    //   Seventh, process the segment text. [After FIN,] this should not
+    //   occur since a FIN has been received from the remote side. Ignore
+    //   the segment text.
+    //
+    // Because these segments aren't completely invalid, handling them
+    // properly (and consistently with the endpoints) is difficult. It is
+    // not needed for correctness, since the connection will be torn down as
+    // soon as there's an ACK for both FINs anyway. This extra invalid data
+    // does not change that.
+    //
+    // Neither Linux nor gVisor do anything special for these segments.
 
-impl Established {
-    fn update(
-        self,
-        segment: &SegmentHeader,
-        payload_len: usize,
-        dir: ConnectionDirection,
-    ) -> (State, bool) {
-        let Self { original, reply } = self;
+    let logical_len = segment.len(payload_len);
+    let SegmentHeader { seq, ack, wnd, control, options: _, push: _ } = segment;
 
-        // NOTE: Segments after a FIN are somewhat invalid, but we do not
-        // attempt to handle them specially. Per RFC 9293 3.10.7.4:
-        //
-        //   Seventh, process the segment text. [After FIN,] this should not
-        //   occur since a FIN has been received from the remote side. Ignore
-        //   the segment text.
-        //
-        // Because these segments aren't completely invalid, handling them
-        // properly (and consistently with the endpoints) is difficult. It is
-        // not needed for correctness, since the connection will be torn down as
-        // soon as there's an ACK for both FINs anyway. This extra invalid data
-        // does not change that.
-        //
-        // Neither Linux nor gVisor do anything special for these segments.
-
-        let logical_len = segment.len(payload_len);
-        let SegmentHeader { seq, ack, wnd, control, options: _, push: _ } = segment;
-
-        let (sender, receiver) = swap_peers(original, reply, dir);
-
-        // From RFC 9293:
-        //   If the ACK control bit is set, this field contains the value of the
-        //   next sequence number the sender of the segment is expecting to receive.
-        //   Once a connection is established, this is always sent.
-        let ack = match ack {
-            Some(ack) => ack,
-            None => {
-                let (original, reply) = swap_peers(sender, receiver, dir);
-                return (Established { original, reply }.into(), false);
-            }
-        };
-
-        if !Peer::ack_segment_valid(&sender, &receiver, *seq, logical_len, *ack) {
-            let (original, reply) = swap_peers(sender, receiver, dir);
-            return (Established { original, reply }.into(), false);
+    // From RFC 9293:
+    //   If the ACK control bit is set, this field contains the value of the
+    //   next sequence number the sender of the segment is expecting to receive.
+    //   Once a connection is established, this is always sent.
+    let ack = match ack {
+        Some(ack) => ack,
+        None => {
+            return (State::Established(peers.into_peer_pair()), false);
         }
+    };
 
-        let fin_seen = match control {
-            Some(Control::SYN) => {
-                let (original, reply) = swap_peers(sender, receiver, dir);
-                return (Established { original, reply }.into(), false);
-            }
-            Some(Control::RST) => return (State::Closed, true),
-            Some(Control::FIN) => true,
-            None => false,
-        };
+    if !Peer::ack_segment_valid(&peers.sender, &peers.receiver, *seq, logical_len, *ack) {
+        return (State::Established(peers.into_peer_pair()), false);
+    }
 
-        let new_sender = sender.update_sender(*seq, logical_len, *ack, *wnd, fin_seen);
-        let new_receiver = receiver.update_receiver(*ack);
-
-        let (new_original, new_reply) = swap_peers(new_sender, new_receiver, dir);
-
-        if new_original.fin_state.acked() && new_reply.fin_state.acked() {
-            // Removing the entry immediately is not expected to break any
-            // use-cases. The endpoints are ultimately responsible for
-            // respecting the TIME_WAIT state.
-            //
-            // The NAT entry will be removed as a consequence, but this is only
-            // a problem if a server wanted to reopen the connection with the
-            // client (but only during TIME_WAIT).
-            //
-            // TODO(https://fxbug.dev/355200767): Add TimeWait and reopening
-            // connections once simultaneous open is supported.
-            (State::Closed, true)
-        } else {
-            (Established { original: new_original, reply: new_reply }.into(), true)
+    let fin_seen = match control {
+        Some(Control::SYN) => {
+            return (State::Established(peers.into_peer_pair()), false);
         }
+        Some(Control::RST) => return (State::Closed, true),
+        Some(Control::FIN) => true,
+        None => false,
+    };
+
+    peers.sender = peers.sender.update_sender(*seq, logical_len, *ack, *wnd, fin_seen);
+    peers.receiver = peers.receiver.update_receiver(*ack);
+
+    if peers.sender.fin_state.acked() && peers.receiver.fin_state.acked() {
+        // Removing the entry immediately is not expected to break any
+        // use-cases. The endpoints are ultimately responsible for
+        // respecting the TIME_WAIT state.
+        //
+        // The NAT entry will be removed as a consequence, but this is only
+        // a problem if a server wanted to reopen the connection with the
+        // client (but only during TIME_WAIT).
+        //
+        // TODO(https://fxbug.dev/355200767): Add TimeWait and reopening
+        // connections once simultaneous open is supported.
+        (State::Closed, true)
+    } else {
+        (State::Established(peers.into_peer_pair()), true)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Established, FinState, Opening, Peer, State};
+    use super::{FinState, Opening, Peer, PeerPair, State};
 
     use assert_matches::assert_matches;
     use netstack3_base::{
@@ -1009,7 +1016,7 @@ mod tests {
 
         assert_eq!(
             new_state,
-            Established {
+            PeerPair {
                 original: Peer {
                     window_scale: original_window_scale,
                     max_wnd: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
@@ -1202,7 +1209,7 @@ mod tests {
             },
             payload_len: 24,
             dir: ConnectionDirection::Original,
-            expected: Some(Established {
+            expected: Some(State::Established(PeerPair {
                 original: Peer {
                     window_scale: WindowScale::new(2).unwrap(),
                     max_wnd: WindowSize::new(40).unwrap(),
@@ -1221,7 +1228,7 @@ mod tests {
                     unacked_data: false,
                     fin_state: FinState::NotSent,
                 },
-            }.into()),
+            })),
         }; "update original"
     )]
     #[test_case(
@@ -1235,7 +1242,7 @@ mod tests {
             },
             payload_len: 0,
             dir: ConnectionDirection::Reply,
-            expected: Some(Established {
+            expected: Some(State::Established(PeerPair {
                 original: Peer {
                     window_scale: WindowScale::new(2).unwrap(),
                     max_wnd: WindowSize::new(0).unwrap(),
@@ -1252,7 +1259,7 @@ mod tests {
                     unacked_data: true,
                     fin_state: FinState::Sent(SeqNum::new(66_100)),
                 },
-            }.into()),
+            })),
         }; "closing"
     )]
     #[test_case(
@@ -1324,7 +1331,7 @@ mod tests {
         }; "rst"
     )]
     fn established_test(args: StateUpdateTestArgs) {
-        let state = Established {
+        let state = State::Established(PeerPair {
             original: Peer {
                 window_scale: WindowScale::new(2).unwrap(),
                 max_wnd: WindowSize::new(0).unwrap(),
@@ -1341,11 +1348,11 @@ mod tests {
                 unacked_data: true,
                 fin_state: FinState::NotSent,
             },
-        };
+        });
 
         let (new_state, valid) = match args.expected {
             Some(new_state) => (new_state, true),
-            None => (state.clone().into(), false),
+            None => (state.clone(), false),
         };
 
         assert_eq!(state.update(&args.segment, args.payload_len, args.dir), (new_state, valid));
@@ -1353,7 +1360,7 @@ mod tests {
 
     #[test]
     fn closing_complete_test() {
-        let state = Established {
+        let state = State::Established(PeerPair {
             original: Peer {
                 window_scale: WindowScale::new(2).unwrap(),
                 max_wnd: WindowSize::new(0).unwrap(),
@@ -1370,7 +1377,7 @@ mod tests {
                 unacked_data: false,
                 fin_state: FinState::Acked,
             },
-        };
+        });
 
         let segment = SegmentHeader {
             seq: SeqNum::new(66_100),
