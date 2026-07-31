@@ -48,12 +48,24 @@ func removeCmdlineEntropy(args []string) []string {
 	return filteredArgs
 }
 
+func unpackDistro(t *testing.T) *emulatortest.Distribution {
+	if *customPbPath == "" {
+		t.Fatal("-product-bundle flag is required")
+	}
+	absPbPath, err := filepath.Abs(*customPbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exDir := execDir(t)
+	return emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
+		Emulator:          emulator.Qemu,
+		ProductBundlePath: absPbPath,
+	})
+}
+
 // See that the kernel doesn't boot if no cmdline entropy is provided.
 func TestMissingCmdlineEntropyPanics(t *testing.T) {
-	exDir := execDir(t)
-	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator: emulator.Qemu,
-	})
+	distro := unpackDistro(t)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
@@ -72,10 +84,7 @@ func TestMissingCmdlineEntropyPanics(t *testing.T) {
 
 // See that the kernel doesn't boot if the cmdline entropy is incomplete.
 func TestIncompleteCmdlineEntropyPanics(t *testing.T) {
-	exDir := execDir(t)
-	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator: emulator.Qemu,
-	})
+	distro := unpackDistro(t)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
@@ -95,15 +104,11 @@ func TestIncompleteCmdlineEntropyPanics(t *testing.T) {
 
 // See that the kernel boots if enough cmdline entropy is provided.
 func TestCmdlineEntropyBoots(t *testing.T) {
-	exDir := execDir(t)
-	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator: emulator.Qemu,
-	})
+	distro := unpackDistro(t)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	device.KernelArgs = append(device.KernelArgs, cmdlineRequireEntropy)
-	device.KernelArgs = append(device.KernelArgs, cmdlineAutorunShK)
 	device.KernelArgs = removeCmdlineEntropy(device.KernelArgs)
 
 	zeroEntropy := make([]byte, 64)
@@ -116,22 +121,11 @@ func TestCmdlineEntropyBoots(t *testing.T) {
 	i.Start()
 
 	// Wait for the system to finish booting.
-	i.WaitForLogMessage("usage: k <command>")
+	i.WaitForLogMessage("-- cprng-draw-end --")
 }
 
 func captureCPRNGDraws(t *testing.T, entropy []byte, extraKernelArgs []string) map[string]bool {
-	if *customPbPath == "" {
-		t.Fatal("-product-bundle flag is required")
-	}
-	absPbPath, err := filepath.Abs(*customPbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	exDir := execDir(t)
-	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator:          emulator.Qemu,
-		ProductBundlePath: absPbPath,
-	})
+	distro := unpackDistro(t)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 
@@ -250,16 +244,12 @@ func TestDisabledJitterEntropyAndRequiredForReseedDoesntReachUserspace(t *testin
 	// Note that drawing from JitterEntropy requires Invariant TSC which
 	// is only available in KVM.
 
-	exDir := execDir(t)
-	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator: emulator.Qemu,
-	})
+	distro := unpackDistro(t)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	device.KernelArgs = append(device.KernelArgs, cmdlineRequireEntropy)
-	device.KernelArgs = append(device.KernelArgs, cmdlineAutorunShK)
 	device.KernelArgs = removeCmdlineEntropy(device.KernelArgs)
 
 	zeroEntropy := make([]byte, 64)
@@ -279,7 +269,7 @@ func TestDisabledJitterEntropyAndRequiredForReseedDoesntReachUserspace(t *testin
 	// available if we have Invalid TSC.
 	i.Start()
 
-	lines := i.CaptureLinesContaining("usage: k <command>", "ZIRCON KERNEL PANIC")
+	lines := i.CaptureLinesContaining("-- cprng-draw-start --", "ZIRCON KERNEL PANIC")
 	if len(lines) != 0 {
 		t.Fatalf("device reached userspace")
 	}
@@ -287,15 +277,11 @@ func TestDisabledJitterEntropyAndRequiredForReseedDoesntReachUserspace(t *testin
 }
 
 func TestDisabledJitterEntropyAndRequiredDoesntBoot(t *testing.T) {
-	exDir := execDir(t)
-	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator: emulator.Qemu,
-	})
+	distro := unpackDistro(t)
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
 	device.KernelArgs = append(device.KernelArgs, cmdline...)
 	device.KernelArgs = append(device.KernelArgs, cmdlineRequireEntropy)
-	device.KernelArgs = append(device.KernelArgs, cmdlineAutorunShK)
 	device.KernelArgs = removeCmdlineEntropy(device.KernelArgs)
 
 	zeroEntropy := make([]byte, 64)
