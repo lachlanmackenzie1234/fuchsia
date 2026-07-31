@@ -41,7 +41,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.SYS_PLL_DIV16",
+                    "fuchsia.NAME": "\"SYS_PLL_DIV16\"",
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport"
                 }
             }
@@ -55,7 +55,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.SYS_CPU_DIV16"
+                    "fuchsia.NAME": "\"SYS_CPU_DIV16\""
                 }
             }
         ]
@@ -68,7 +68,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.SYS_CPU_BIG_CLK"
+                    "fuchsia.NAME": "\"SYS_CPU_BIG_CLK\""
                 }
             }
         ]
@@ -93,7 +93,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.SYS_PLLB_DIV16",
+                    "fuchsia.NAME": "\"SYS_PLLB_DIV16\"",
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport"
                 }
             }
@@ -107,7 +107,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.SYS_CPUB_DIV16"
+                    "fuchsia.NAME": "\"SYS_CPUB_DIV16\""
                 }
             }
         ]
@@ -120,7 +120,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.SYS_CPU_LITTLE_CLK"
+                    "fuchsia.NAME": "\"SYS_CPU_LITTLE_CLK\""
                 }
             }
         ]

@@ -31,12 +31,12 @@ primary parent "pdev" {
 
 optional parent "clock-gate" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_GATE;
+  fuchsia.NAME == "AUDIO_GATE";
 }
 
 optional parent "clock-pll" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_PLL;
+  fuchsia.NAME == "AUDIO_PLL";
 }
 
 optional parent "gpio-init" {

@@ -6,7 +6,6 @@ composite imx227_sensor;
 
 using fuchsia;
 using fuchsia.hardware.pin;
-using fuchsia.clock;
 using fuchsia.gpio;
 using fuchsia.hardware.clock;
 using fuchsia.hardware.gpio;
@@ -52,7 +51,7 @@ parent "gpio-vdig" {
 
 parent "clock-sensor" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.CAMERA_SENSOR;
+  fuchsia.NAME == "CAMERA_SENSOR";
 }
 
 optional parent "gpio-init" {
