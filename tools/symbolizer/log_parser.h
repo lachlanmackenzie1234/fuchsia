@@ -7,8 +7,11 @@
 
 #include <deque>
 #include <iostream>
+#include <string>
 #include <string_view>
 
+#include "src/lib/fxl/memory/ref_counted.h"
+#include "src/lib/fxl/memory/ref_ptr.h"
 #include "tools/symbolizer/symbolizer.h"
 
 namespace symbolizer {
@@ -44,14 +47,34 @@ class LogParser {
   bool ProcessNextLine();
 
  private:
+  struct OutputEntry : public fxl::RefCountedThreadSafe<OutputEntry> {
+    // Lifecycle state of an async symbolizer output callback:
+    // - kPending: Output callback object has been created, but not yet invoked or destroyed.
+    // - kInvoked: Output callback was invoked to emit text.
+    // - kDropped: Output callback was destroyed (dropped) without being invoked.
+    enum class State {
+      kPending,
+      kInvoked,
+      kDropped,
+    };
+
+    std::string text;
+    bool ready = false;
+    State state = State::kPending;
+  };
+
   // Processes one markup. Returns whether the markup could be processed successfully.
   bool ProcessMarkup(std::string_view markup, Symbolizer::StringOutputFn output);
 
   // Processes one line of Dart stack traces. Return false if it's not valid.
   bool ProcessDart(std::string_view line, Symbolizer::StringOutputFn output);
 
-  // Create an async output function for the symbolizer.
-  Symbolizer::StringOutputFn CreateOutputFn(std::string_view prefix, std::string_view suffix);
+  // Create an async output function for the symbolizer and its corresponding OutputEntry.
+  std::pair<Symbolizer::StringOutputFn, fxl::RefPtr<OutputEntry>> CreateOutputFn(
+      std::string_view prefix, std::string_view suffix);
+
+  // Flushes output_buffers_ from the front while entries are ready.
+  void FlushOutputBuffers();
 
   // Output a raw message. If there's no async output pending, output directly. Otherwise, append
   // the output to the output buffer.
@@ -68,7 +91,7 @@ class LogParser {
   // To facilitate async output of the symbolizer while keeping the same order, we cache input lines
   // following the symbolization markups if they are pending. It's a deque because there might be
   // multiple pending symbolization markups. See the comments in |CreateOutputFn|.
-  std::deque<std::string> output_buffers_;
+  std::deque<fxl::RefPtr<OutputEntry>> output_buffers_;
 };
 
 }  // namespace symbolizer

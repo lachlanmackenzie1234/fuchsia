@@ -60,7 +60,7 @@ bool LogParser::ProcessNextLine() {
   }
   if (end != std::string::npos) {
     std::string_view line_view(line);
-    auto output = CreateOutputFn(line_view.substr(0, start), line_view.substr(end + 3));
+    auto [output, entry] = CreateOutputFn(line_view.substr(0, start), line_view.substr(end + 3));
     if (ProcessMarkup(line_view.substr(start + 3, end - start - 3), std::move(output))) {
       // Skip outputting only if we have the starting and the ending braces and the markup is valid.
       return true;
@@ -71,7 +71,8 @@ bool LogParser::ProcessNextLine() {
   if (line == kDartStackTraceMagic) {
     symbolizing_dart_ = true;
   } else if (symbolizing_dart_) {
-    if (ProcessDart(line, CreateOutputFn("", ""))) {
+    auto [output, entry] = CreateOutputFn("", "");
+    if (ProcessDart(line, std::move(output))) {
       return true;
     }
     symbolizing_dart_ = false;
@@ -240,29 +241,47 @@ bool LogParser::ProcessDart(std::string_view line, Symbolizer::StringOutputFn ou
   return true;
 }
 
-Symbolizer::StringOutputFn LogParser::CreateOutputFn(std::string_view prefix,
-                                                     std::string_view suffix) {
-  // Our design requires that the output must be in the same order of the input, which means the
-  // the destruction of OutputFn must be in the same order of the construction.
-  output_buffers_.emplace_back();
-  // Use a pointer to the buffer as a guard to ensure such order, because std::deque won't
-  // invalidate reference on resizing.
-  std::string *buffer = &output_buffers_.back();
-  auto on_drop = fit::defer([this, buffer]() {
-    FX_CHECK(buffer == &output_buffers_.front());
-    output_ << output_buffers_.front();
-    output_buffers_.pop_front();
+std::pair<Symbolizer::StringOutputFn, fxl::RefPtr<LogParser::OutputEntry>>
+LogParser::CreateOutputFn(std::string_view prefix, std::string_view suffix) {
+  auto entry = fxl::MakeRefCounted<OutputEntry>();
+  output_buffers_.push_back(entry);
+
+  auto on_drop = fit::defer([this, entry]() {
+    if (entry->state == OutputEntry::State::kPending) {
+      entry->state = OutputEntry::State::kDropped;
+      entry->ready = true;
+      FlushOutputBuffers();
+    }
   });
-  return [this, prefix = std::string(prefix), suffix = std::string(suffix),
-          on_drop = std::move(on_drop)](std::string_view content) {
-    output_ << prefix << content << suffix << '\n';
+
+  auto output = [this, prefix = std::string(prefix), suffix = std::string(suffix), entry,
+                 on_drop = std::move(on_drop)](std::string_view content) {
+    entry->state = OutputEntry::State::kInvoked;
+    entry->text += prefix;
+    entry->text += content;
+    entry->text += suffix;
+    entry->text += '\n';
+    entry->ready = true;
+    FlushOutputBuffers();
   };
+
+  return {std::move(output), entry};
+}
+
+void LogParser::FlushOutputBuffers() {
+  while (!output_buffers_.empty() && output_buffers_.front()->ready) {
+    output_ << output_buffers_.front()->text;
+    output_buffers_.pop_front();
+  }
 }
 
 void LogParser::OutputRaw(std::string_view message) {
   if (!output_buffers_.empty()) {
-    output_buffers_.back() += message;
-    output_buffers_.back() += '\n';
+    auto entry = fxl::MakeRefCounted<OutputEntry>();
+    entry->text = std::string(message) + '\n';
+    entry->ready = true;
+    output_buffers_.push_back(std::move(entry));
+    FlushOutputBuffers();
   } else {
     output_ << message << '\n';
   }

@@ -109,6 +109,87 @@ TEST_F(LogParserTest, DumpFile) {
   ASSERT_EQ(output_.str(), "");
 }
 
+TEST_F(LogParserTest, OutputBufferQueueLifecycle) {
+  Symbolizer::StringOutputFn cb1;
+  Symbolizer::StringOutputFn cb2;
+
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                       std::string_view message,
+                       Symbolizer::StringOutputFn output) { cb1 = std::move(output); });
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([&cb2](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                       std::string_view message,
+                       Symbolizer::StringOutputFn output) { cb2 = std::move(output); });
+
+  ProcessOneLine("line1 {{{bt:0:0x1000}}}");
+  ProcessOneLine("line2 {{{bt:1:0x2000}}}");
+
+  // Output hasn't completed yet.
+  EXPECT_EQ(output_.str(), "");
+
+  // Out of order callback destruction: destroy cb2 first.
+  cb2("frame_1_symbolized");
+  cb2 = nullptr;
+
+  // cb2 completion is buffered because cb1 (front of queue) is not ready yet.
+  EXPECT_EQ(output_.str(), "");
+
+  // Now complete cb1.
+  cb1("frame_0_symbolized");
+  cb1 = nullptr;
+
+  // Both should now be flushed in FIFO order.
+  EXPECT_EQ(output_.str(), "line1 frame_0_symbolized\nline2 frame_1_symbolized\n");
+}
+
+TEST_F(LogParserTest, OutputRawWithPendingBuffer) {
+  Symbolizer::StringOutputFn cb1;
+
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                       std::string_view message,
+                       Symbolizer::StringOutputFn output) { cb1 = std::move(output); });
+
+  ProcessOneLine("line1 {{{bt:0:0x1000}}}");
+  ProcessOneLine("raw line 1");
+  ProcessOneLine("raw line 2");
+
+  // Output is buffered waiting for cb1.
+  EXPECT_EQ(output_.str(), "");
+
+  // Invoking cb1 flushes cb1 output followed by raw lines in order.
+  cb1("frame_0_symbolized");
+  EXPECT_EQ(output_.str(), "line1 frame_0_symbolized\nraw line 1\nraw line 2\n");
+}
+
+TEST_F(LogParserTest, DroppedCallback) {
+  Symbolizer::StringOutputFn cb1;
+  Symbolizer::StringOutputFn cb2;
+
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                       std::string_view message,
+                       Symbolizer::StringOutputFn output) { cb1 = std::move(output); });
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
+      .WillOnce([&cb2](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+                       std::string_view message,
+                       Symbolizer::StringOutputFn output) { cb2 = std::move(output); });
+
+  ProcessOneLine("line1 {{{bt:0:0x1000}}}");
+  ProcessOneLine("line2 {{{bt:1:0x2000}}}");
+
+  // cb1 is dropped without being invoked.
+  cb1 = nullptr;
+
+  // cb1 dropped, so queue advances to cb2, which is still pending.
+  EXPECT_EQ(output_.str(), "");
+
+  // cb2 is invoked.
+  cb2("frame_1_symbolized");
+  EXPECT_EQ(output_.str(), "line2 frame_1_symbolized\n");
+}
+
 TEST_F(LogParserTest, Dart) {
   {
     EXPECT_CALL(symbolizer_, Reset(true, Symbolizer::ResetType::kUnknown));
