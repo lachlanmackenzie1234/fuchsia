@@ -34,7 +34,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"GPIO_ALERT_PWR_L\""
+                    "fuchsia.gpio.FUNCTION": " fuchsia.gpio.FUNCTION.GPIO_ALERT_PWR_L"
                 }
             }
         ]

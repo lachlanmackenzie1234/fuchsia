@@ -4,8 +4,6 @@
 
 composite audio_codec_tas27xx;
 
-using fuchsia;
-
 primary parent "i2c" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.ti.platform.BIND_PLATFORM_DEV_DID.TAS2770 {
     fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
@@ -18,7 +16,7 @@ primary parent "i2c" {
 
 parent "gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "SOC_AUDIO_FAULT";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.SOC_AUDIO_FAULT;
 }
 
 optional parent "gpio-init" {

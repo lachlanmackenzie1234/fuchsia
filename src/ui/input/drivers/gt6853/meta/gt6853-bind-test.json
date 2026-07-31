@@ -21,7 +21,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"TOUCH_INTERRUPT\""
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.TOUCH_INTERRUPT"
                 }
             }
         ]
@@ -34,7 +34,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"TOUCH_RESET\""
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.TOUCH_RESET"
                 }
             }
         ]

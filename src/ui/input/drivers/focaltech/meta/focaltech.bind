@@ -4,7 +4,6 @@
 
 composite focaltech_touch;
 
-using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.hardware.gpio;
@@ -19,12 +18,12 @@ primary parent "i2c" {
 
 parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "TOUCH_INTERRUPT";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_INTERRUPT;
 }
 
 parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "TOUCH_RESET";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_RESET;
 }
 
 parent "pdev" {

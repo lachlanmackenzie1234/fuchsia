@@ -4,7 +4,6 @@
 
 composite display;
 
-using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.hardware.amlogiccanvas;
 using fuchsia.hardware.gpio;
@@ -31,12 +30,12 @@ primary parent "pdev" {
 
 parent "gpio-lcd-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "LCD_RESET";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.LCD_RESET;
 }
 
 optional parent "gpio-hdmi-hotplug-detect" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "HDMI_HOTPLUG_DETECT";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.HDMI_HOTPLUG_DETECT;
 }
 
 parent "canvas" {

@@ -4,7 +4,6 @@
 
 composite aml_tdm_composite;
 
-using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform.a311d;
 using fuchsia.amlogic.platform;
@@ -53,15 +52,15 @@ optional parent "clock-init" {
 }
 
 optional parent "gpio-tdm-a-sclk" {
-  fuchsia.NAME == "TDM_A_SCLK";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TDM_A_SCLK;
 }
 
 optional parent "gpio-tdm-b-sclk" {
-  fuchsia.NAME == "TDM_B_SCLK";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TDM_B_SCLK;
 }
 
 optional parent "gpio-tdm-c-sclk" {
-  fuchsia.NAME == "TDM_C_SCLK";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TDM_C_SCLK;
 }
 
 optional parent "pin-states-0" {

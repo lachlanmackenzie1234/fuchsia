@@ -51,7 +51,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.NAME": "\"SDMMC_RESET\""
+                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.SDMMC_RESET"
                 }
             }
         ]

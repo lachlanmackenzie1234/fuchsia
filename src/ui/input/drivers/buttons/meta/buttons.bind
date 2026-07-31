@@ -4,7 +4,6 @@
 
 composite buttons;
 
-using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.hardware.gpio;
@@ -26,27 +25,27 @@ optional parent "gpio-init" {
 
 optional parent "mic-privacy" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-    fuchsia.NAME == "MIC_MUTE";
+    fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.MIC_MUTE;
 }
 
 optional parent "volume-up" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-    fuchsia.NAME == "VOLUME_UP";
+    fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VOLUME_UP;
 }
 
 optional parent "volume-down" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-    fuchsia.NAME == "VOLUME_DOWN";
+    fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VOLUME_DOWN;
 }
 
 optional parent "volume-both" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-    fuchsia.NAME == "VOLUME_BOTH";
+    fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VOLUME_BOTH;
 }
 
 optional parent "power" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-    fuchsia.NAME == "POWER";
+    fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.POWER;
 }
 
 optional parent "pin-states-0" {

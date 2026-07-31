@@ -4,8 +4,6 @@
 
 composite ot_radio;
 
-using fuchsia;
-
 primary parent "spi" {
   fuchsia.hardware.spi.Service == fuchsia.hardware.spi.Service.ZirconTransport;
 }
@@ -24,17 +22,17 @@ parent "pdev" {
 
 parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "OT_RADIO_INTERRUPT";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.OT_RADIO_INTERRUPT;
 }
 
 parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "OT_RADIO_RESET";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.OT_RADIO_RESET;
 }
 
 parent "gpio-bootloader" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "OT_RADIO_BOOTLOADER";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.OT_RADIO_BOOTLOADER;
 }
 
 optional parent "gpio-init" {

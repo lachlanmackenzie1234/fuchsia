@@ -21,7 +21,6 @@ fuchsia_driver_bind_bytecode(
     output = "aml-sdmmc.bindbc",
     rules = "meta/aml-sdmmc.bind",
     deps = [
-        "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.amlogic.platform",
         "@fuchsia_sdk//bind/fuchsia.devicetree",
         "@fuchsia_sdk//bind/fuchsia.gpio",

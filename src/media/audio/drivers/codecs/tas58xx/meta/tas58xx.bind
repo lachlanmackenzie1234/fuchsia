@@ -4,7 +4,6 @@
 
 composite tas58xx;
 
-using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.hardware.gpio;
@@ -20,7 +19,7 @@ primary parent "i2c" {
 
 parent "gpio-fault" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.NAME == "SOC_AUDIO_FAULT";
+  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.SOC_AUDIO_FAULT;
 }
 
 optional parent "gpio-init" {
