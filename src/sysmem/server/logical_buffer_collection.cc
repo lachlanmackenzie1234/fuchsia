@@ -5123,11 +5123,24 @@ void LogicalBufferCollection::LogConstraints(
         // scope indent
         auto indent = indent_tracker.Nested();
         for (size_t i = 0; i < bmc.permitted_heaps()->size(); i++) {
-          LogInfo(FROM_HERE, "%*spermitted_heaps[%zu].heap_type : %s", indent.num_spaces(), "", i,
-                  bmc.permitted_heaps()->at(i).heap_type()->c_str());
-          LogInfo(FROM_HERE, "%*spermitted_heaps[%zu].id : 0x%" PRIx64, indent.num_spaces(), "", i,
-                  bmc.permitted_heaps()->at(i).id().value());
+          const auto& heap = bmc.permitted_heaps()->at(i);
+          if (heap.heap_type().has_value()) {
+            LogInfo(FROM_HERE, "%*spermitted_heaps[%zu].heap_type : %s", indent.num_spaces(), "", i,
+                    heap.heap_type()->c_str());
+          } else {
+            LogInfo(FROM_HERE, "%*s!permitted_heaps[%zu].heap_type.has_value()",
+                    indent.num_spaces(), "", i);
+          }
+          if (heap.id().has_value()) {
+            LogInfo(FROM_HERE, "%*spermitted_heaps[%zu].id : 0x%" PRIx64, indent.num_spaces(), "",
+                    i, *heap.id());
+          } else {
+            LogInfo(FROM_HERE, "%*s!permitted_heaps[%zu].id.has_value()", indent.num_spaces(), "",
+                    i);
+          }
         }
+      } else {
+        LogInfo(FROM_HERE, "%*s!bmc.permitted_heaps().has_value()", indent.num_spaces(), "");
       }
     }
 
@@ -5156,31 +5169,57 @@ void LogicalBufferCollection::LogBufferCollectionInfo(
 
   LOG_UINT64_FIELD(FROM_HERE, indent, bci, buffer_collection_id);
   LogInfo(FROM_HERE, "%*ssettings:", indent.num_spaces(), "");
-  {  // scope indent
+  if (!bci.settings().has_value()) {
+    LogInfo(FROM_HERE, "%*s!bci.settings().has_value()", indent.num_spaces(), "");
+  } else {
     auto indent = indent_tracker.Nested();
     const auto& sbs = *bci.settings();
-    LogInfo(FROM_HERE, "%*sbuffer_settings:", indent.num_spaces(), "");
-    {  // scope indent
+    if (!sbs.buffer_settings().has_value()) {
+      LogInfo(FROM_HERE, "%*s!sbs.buffer_settings().has_value()", indent.num_spaces(), "");
+    } else {
+      LogInfo(FROM_HERE, "%*sbuffer_settings:", indent.num_spaces(), "");
       auto indent = indent_tracker.Nested();
       const auto& bms = *sbs.buffer_settings();
       LOG_UINT64_FIELD(FROM_HERE, indent, bms, size_bytes);
       LOG_UINT64_FIELD(FROM_HERE, indent, bms, raw_vmo_size);
       LOG_BOOL_FIELD(FROM_HERE, indent, bms, is_physically_contiguous);
       LOG_BOOL_FIELD(FROM_HERE, indent, bms, is_secure);
-      LogInfo(FROM_HERE, "%*scoherency_domain: %u", indent.num_spaces(), "",
-              *bms.coherency_domain());
-      LogInfo(FROM_HERE, "%*sheap.heap_type: %s", indent.num_spaces(), "",
-              bms.heap()->heap_type().value().c_str());
-      LogInfo(FROM_HERE, "%*sheap.id: 0x%" PRIx64, indent.num_spaces(), "",
-              bms.heap()->id().value());
+      if (bms.coherency_domain().has_value()) {
+        LogInfo(FROM_HERE, "%*scoherency_domain: %u", indent.num_spaces(), "",
+                *bms.coherency_domain());
+      } else {
+        LogInfo(FROM_HERE, "%*s!bms.coherency_domain().has_value()", indent.num_spaces(), "");
+      }
+      if (!bms.heap().has_value()) {
+        LogInfo(FROM_HERE, "%*s!bms.heap().has_value()", indent.num_spaces(), "");
+      } else {
+        if (bms.heap()->heap_type().has_value()) {
+          LogInfo(FROM_HERE, "%*sheap.heap_type: %s", indent.num_spaces(), "",
+                  bms.heap()->heap_type().value().c_str());
+        } else {
+          LogInfo(FROM_HERE, "%*s!bms.heap()->heap_type().has_value()", indent.num_spaces(), "");
+        }
+        if (bms.heap()->id().has_value()) {
+          LogInfo(FROM_HERE, "%*sheap.id: 0x%" PRIx64, indent.num_spaces(), "",
+                  bms.heap()->id().value());
+        } else {
+          LogInfo(FROM_HERE, "%*s!bms.heap()->id().has_value()", indent.num_spaces(), "");
+        }
+      }
     }
-    LogInfo(FROM_HERE, "%*simage_format_constraints:", indent.num_spaces(), "");
-    {  // scope ifc, and to have indent level mirror output indent level
+    if (!sbs.image_format_constraints().has_value()) {
+      LogInfo(FROM_HERE, "%*s!sbs.image_format_constraints().has_value()", indent.num_spaces(), "");
+    } else {
+      LogInfo(FROM_HERE, "%*simage_format_constraints:", indent.num_spaces(), "");
       const auto& ifc = *sbs.image_format_constraints();
       LogImageFormatConstraints(indent_tracker, nullptr, ifc);
     }
   }
-  LogInfo(FROM_HERE, "%*sbuffers.size(): %zu", indent.num_spaces(), "", bci.buffers()->size());
+  if (bci.buffers().has_value()) {
+    LogInfo(FROM_HERE, "%*sbuffers.size(): %zu", indent.num_spaces(), "", bci.buffers()->size());
+  } else {
+    LogInfo(FROM_HERE, "%*s!bci.buffers().has_value()", indent.num_spaces(), "");
+  }
   // For now we don't log per-buffer info.
 }
 
@@ -5189,9 +5228,9 @@ void LogicalBufferCollection::LogPixelFormatAndModifier(
     const fuchsia_sysmem2::PixelFormatAndModifier& pixel_format_and_modifier) const {
   auto indent = indent_tracker.Current();
   LogInfo(FROM_HERE, "%*spixel_format(): %u", indent.num_spaces(), "",
-          pixel_format_and_modifier.pixel_format());
+          sysmem::fidl_underlying_cast(pixel_format_and_modifier.pixel_format()));
   LogInfo(FROM_HERE, "%*spixel_format_modifier(): 0x%" PRIx64, indent.num_spaces(), "",
-          pixel_format_and_modifier.pixel_format_modifier());
+          sysmem::fidl_underlying_cast(pixel_format_and_modifier.pixel_format_modifier()));
 }
 
 void LogicalBufferCollection::LogImageFormatConstraints(
