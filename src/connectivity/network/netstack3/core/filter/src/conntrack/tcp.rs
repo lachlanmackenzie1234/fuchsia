@@ -53,11 +53,9 @@ impl Connection {
 
         match self.state {
             State::Closed(_) => Ok(ConnectionUpdateAction::RemoveEntry),
-            State::Untracked(_)
-            | State::SynSent(_)
-            | State::WaitingOnOpeningAck(_)
-            | State::Closing(_)
-            | State::Established(_) => Ok(ConnectionUpdateAction::NoAction),
+            State::Untracked(_) | State::SynSent(_) | State::Established(_) => {
+                Ok(ConnectionUpdateAction::NoAction)
+            }
         }
     }
 }
@@ -66,8 +64,9 @@ impl Connection {
 ///
 /// These vaguely correspond to states from RFC 9293, but since they apply to
 /// the whole connection, and we're just snooping in the middle, they can't line
-/// up perfectly 1:1. See the doc comments on each state for the expected state
-/// of each of the peers assuming that all packets are received and are valid.
+/// up perfectly 1:1. They exist to encode assumptions about the state of the
+/// connection that would otherwise be unwieldy to manage if they were all
+/// stuffed into [`Peer`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum State {
     /// The connection has properties that break standard state tracking. This
@@ -91,32 +90,12 @@ enum State {
     /// - Reply: `SYN_RECEIVED` (upon receipt)
     SynSent(SynSent),
 
-    /// The reply peer has sent a valid SYN/ACK segment. All that remains is for
-    /// the original peer to ACK.
+    /// The handshake has completed, save for the final ACK (i.e. the last `ACK`
+    /// of `SYN`, `SYN/ACK`, `ACK`).
     ///
-    /// Expected peer states.
-    /// - Original: ESTABLISHED
-    /// - Reply: SYN_RECEIVED
-    WaitingOnOpeningAck(WaitingOnOpeningAck),
-
-    /// The handshake has completed and data may begin flowing at any time. This
-    /// is where most connections will spend the vast majority of their time.
-    ///
-    /// Expected peer states:
-    /// - Original: ESTABLISHED
-    /// - Reply: ESTABLISHED
+    /// The connection stays in this state until it is completely torn down
+    /// by the closing handshake or a valid RST.
     Established(Established),
-
-    /// The process of closing down a connection starting from when the first
-    /// FIN is seen and until FINs from both peers have been ACKed.
-    ///
-    /// Expected peer states are any of:
-    /// - FIN_WAIT_1
-    /// - FIN_WAIT_2
-    /// - CLOSING
-    /// - CLOSE_WAIT
-    /// - LAST_ACK
-    Closing(Closing),
 }
 
 impl State {
@@ -165,18 +144,24 @@ impl State {
             }
             State::Closed(_) => Duration::ZERO,
             State::SynSent(_) => MAXIMUM_SEGMENT_LIFETIME,
-            State::WaitingOnOpeningAck(_) => MAXIMUM_SEGMENT_LIFETIME,
             State::Established(Established { original, reply }) => {
                 // If there is no data outstanding, make the timeout large, and
                 // otherwise small so we can purge the connection quickly if one
                 // of the endpoints disappears.
-                if original.unacked_data || reply.unacked_data {
+                //
+                // We treat a connection that's ever had a valid FIN the same
+                // way. This pessimizes things for half-closed connections, but
+                // that's a very uncommon case.
+                if original.unacked_data
+                    || reply.unacked_data
+                    || original.fin_state.sent()
+                    || reply.fin_state.sent()
+                {
                     MAXIMUM_SEGMENT_LIFETIME
                 } else {
                     Duration::from_secs(5 * 60 * 60 * 24)
                 }
             }
-            State::Closing(_) => MAXIMUM_SEGMENT_LIFETIME,
         }
     }
 
@@ -195,9 +180,7 @@ impl State {
             State::Untracked(s) => s.update(segment, payload_len, dir),
             State::Closed(s) => s.update(segment, payload_len, dir),
             State::SynSent(s) => s.update(segment, payload_len, dir),
-            State::WaitingOnOpeningAck(s) => s.update(segment, payload_len, dir),
             State::Established(s) => s.update(segment, payload_len, dir),
-            State::Closing(s) => s.update(segment, payload_len, dir),
         }
     }
 }
@@ -260,12 +243,12 @@ struct Peer {
     /// itself or the sequence number plus the length of the packet.
     max_next_seq: SeqNum,
 
-    /// Has this peer sent data that has yet to be ACKed?
+    /// Whether this peer has sent unACKed sequence numbers, accounting for SYN
+    /// and FIN.
     ///
-    /// Set when max_next_seq is increased.
-    ///
-    /// Unset when a reply segment is seen that has an ACK number equal to
-    /// `max_next_seq` (larger would mean an invalid packet).
+    /// Set when max_next_seq is increased. Unset when a reply segment is seen
+    /// that has an ACK number equal to `max_next_seq` (larger would mean an
+    /// invalid packet).
     unacked_data: bool,
 
     /// The state of the first FIN segment sent by this peer.
@@ -434,6 +417,15 @@ impl FinState {
             FinState::Acked => true,
         }
     }
+
+    /// Has this FIN been sent?
+    fn sent(&self) -> bool {
+        match self {
+            FinState::NotSent => false,
+            FinState::Sent(_) => true,
+            FinState::Acked => true,
+        }
+    }
 }
 
 /// The return value from [`do_established_update`] indicating further action.
@@ -443,7 +435,7 @@ enum EstablishedUpdateResult {
     ///
     /// `new_original` and `new_reply` are the updated versions of the original
     /// and reply peers that were provided to the function.
-    Success { new_original: Peer, new_reply: Peer, fin_seen: bool },
+    Success { new_original: Peer, new_reply: Peer },
 
     /// A valid RST was seen.
     Reset,
@@ -514,7 +506,7 @@ fn do_established_update(
     let new_receiver = receiver.update_receiver(*ack);
 
     let (new_original, new_reply) = swap_peers(new_sender, new_receiver, dir);
-    EstablishedUpdateResult::Success { new_original, new_reply, fin_seen }
+    EstablishedUpdateResult::Success { new_original, new_reply }
 }
 
 /// State for the Untracked state.
@@ -564,7 +556,7 @@ impl Closed {
 ///   - ACK: Invalid
 /// - Reply
 ///   - SYN: Untracked, until we support simultaneous open.
-///   - SYN/ACK: WaitingOnOpeningAck
+///   - SYN/ACK: Established
 ///   - RST: Delete connection
 ///   - FIN: Invalid
 ///   - ACK: Invalid
@@ -693,7 +685,7 @@ impl SynSent {
                         let original_max_next_seq = iss + logical_len;
 
                         (
-                            WaitingOnOpeningAck {
+                            Established {
                                 original: Peer {
                                     window_scale: original_window_scale,
                                     max_wnd: window_size,
@@ -731,79 +723,15 @@ impl SynSent {
     }
 }
 
-/// State for the WaitingOnOpeningAck state.
-///
-/// Note this expects the ACK to come from the original direction.
-///
-/// State transitions for in-range segments by direction:
-/// - Original
-///   - SYN: Invalid
-///   - RST: Delete connection
-///   - FIN: Closing
-///   - ACK: Established
-/// - Reply
-///   - SYN: Invalid
-///   - RST: Delete connection
-///   - FIN: Closing
-///   - ACK: WaitingOnOpeningAck
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WaitingOnOpeningAck {
-    /// State for the "original" TCP stack (the one that we first saw a packet
-    /// for).
-    original: Peer,
-
-    /// State for the "reply" TCP stack.
-    reply: Peer,
-}
-state_from_state_struct!(WaitingOnOpeningAck);
-
-impl WaitingOnOpeningAck {
-    fn update(
-        self,
-        segment: &SegmentHeader,
-        payload_len: usize,
-        dir: ConnectionDirection,
-    ) -> (State, bool) {
-        let Self { original, reply } = self;
-
-        let (original, reply, fin_seen) = match do_established_update(
-            UpdatePeers { original, reply },
-            segment,
-            payload_len,
-            dir.clone(),
-        ) {
-            EstablishedUpdateResult::Success { new_original, new_reply, fin_seen } => {
-                (new_original, new_reply, fin_seen)
-            }
-            EstablishedUpdateResult::Invalid { original, reply } => {
-                return (Self { original, reply }.into(), false);
-            }
-            EstablishedUpdateResult::Reset => return (Closed {}.into(), true),
-        };
-
-        let new_state = if fin_seen {
-            Closing { original, reply }.into()
-        } else {
-            match dir {
-                // We move to Established because we know that if the ACK was
-                // valid (checked by do_established_update), the ACK must
-                // include the SYN, which is the first possible octet.
-                ConnectionDirection::Original => Established { original, reply }.into(),
-                ConnectionDirection::Reply => WaitingOnOpeningAck { original, reply }.into(),
-            }
-        };
-
-        (new_state, true)
-    }
-}
-
 /// State for the Established state.
 ///
-/// State transitions for in-range segments, regardless of direction:
+/// State transitions for in-range segments regardless of direction:
 /// - SYN: Invalid
 /// - RST: Delete connection
-/// - FIN: Closing
+/// - FIN: Established (Closing)
 /// - ACK: Established
+///
+/// This state deletes the connection once FINs from both peers have been ACKed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Established {
     original: Peer,
@@ -812,57 +740,6 @@ struct Established {
 state_from_state_struct!(Established);
 
 impl Established {
-    fn update(
-        self,
-        segment: &SegmentHeader,
-        payload_len: usize,
-        dir: ConnectionDirection,
-    ) -> (State, bool) {
-        let Self { original, reply } = self;
-
-        let (original, reply, fin_seen) = match do_established_update(
-            UpdatePeers { original, reply },
-            segment,
-            payload_len,
-            dir.clone(),
-        ) {
-            EstablishedUpdateResult::Success { new_original, new_reply, fin_seen } => {
-                (new_original, new_reply, fin_seen)
-            }
-            EstablishedUpdateResult::Invalid { original, reply } => {
-                return (Self { original, reply }.into(), false);
-            }
-            EstablishedUpdateResult::Reset => return (Closed {}.into(), true),
-        };
-
-        let new_state = if fin_seen {
-            Closing { original, reply }.into()
-        } else {
-            Established { original, reply }.into()
-        };
-
-        (new_state, true)
-    }
-}
-
-/// State for the Closing state.
-///
-/// State transitions for in-range segments regardless of direction:
-/// - SYN: Invalid
-/// - RST: Delete connection
-/// - FIN: Closing
-/// - ACK: Closing
-///
-/// The Closing state deletes the connection once FINs from both peers have been
-/// ACKed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Closing {
-    original: Peer,
-    reply: Peer,
-}
-state_from_state_struct!(Closing);
-
-impl Closing {
     fn update(
         self,
         segment: &SegmentHeader,
@@ -886,35 +763,33 @@ impl Closing {
         //
         // Neither Linux nor gVisor do anything special for these segments.
 
-        let (original, reply) = match do_established_update(
+        match do_established_update(
             UpdatePeers { original, reply },
             segment,
             payload_len,
             dir.clone(),
         ) {
-            EstablishedUpdateResult::Success { new_original, new_reply, fin_seen: _ } => {
-                (new_original, new_reply)
+            EstablishedUpdateResult::Success { new_original, new_reply } => {
+                if new_original.fin_state.acked() && new_reply.fin_state.acked() {
+                    // Removing the entry immediately is not expected to break any
+                    // use-cases. The endpoints are ultimately responsible for
+                    // respecting the TIME_WAIT state.
+                    //
+                    // The NAT entry will be removed as a consequence, but this is only
+                    // a problem if a server wanted to reopen the connection with the
+                    // client (but only during TIME_WAIT).
+                    //
+                    // TODO(https://fxbug.dev/355200767): Add TimeWait and reopening
+                    // connections once simultaneous open is supported.
+                    (Closed {}.into(), true)
+                } else {
+                    (Established { original: new_original, reply: new_reply }.into(), true)
+                }
             }
             EstablishedUpdateResult::Invalid { original, reply } => {
-                return (Self { original, reply }.into(), false);
+                (Self { original, reply }.into(), false)
             }
-            EstablishedUpdateResult::Reset => return (Closed {}.into(), true),
-        };
-
-        if original.fin_state.acked() && reply.fin_state.acked() {
-            // Removing the entry immediately is not expected to break any
-            // use-cases. The endpoints are ultimately responsible for
-            // respecting the TIME_WAIT state.
-            //
-            // The NAT entry will be removed as a consequence, but this is only
-            // a problem if a server wanted to reopen the connection with the
-            // client (but only during TIME_WAIT).
-            //
-            // TODO(https://fxbug.dev/355200767): Add TimeWait and reopening
-            // connections once simultaneous open is supported.
-            (Closed {}.into(), true)
-        } else {
-            (Closing { original, reply }.into(), true)
+            EstablishedUpdateResult::Reset => (Closed {}.into(), true),
         }
     }
 }
@@ -922,8 +797,8 @@ impl Closing {
 #[cfg(test)]
 mod tests {
     use super::{
-        Closed, Closing, Established, EstablishedUpdateResult, FinState, Peer, State, SynSent,
-        Untracked, UpdatePeers, WaitingOnOpeningAck, do_established_update,
+        Closed, Established, EstablishedUpdateResult, FinState, Peer, State, SynSent, Untracked,
+        UpdatePeers, do_established_update,
     };
 
     use assert_matches::assert_matches;
@@ -1213,7 +1088,7 @@ mod tests {
                 REPLY_PAYLOAD_LEN,
                 ConnectionDirection::Reply
             ),
-            (State::WaitingOnOpeningAck(s), true) => s
+            (State::Established(s), true) => s
         );
 
         let (original_window_scale, reply_window_scale) = match reply_window_scale {
@@ -1223,7 +1098,7 @@ mod tests {
 
         assert_eq!(
             new_state,
-            WaitingOnOpeningAck {
+            Established {
                 original: Peer {
                     window_scale: original_window_scale,
                     max_wnd: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
@@ -1400,7 +1275,7 @@ mod tests {
     }
 
     enum EstablishedUpdateTestResult {
-        Success { new_original: Peer, new_reply: Peer, fin_seen: bool },
+        Success { new_original: Peer, new_reply: Peer },
         Invalid,
         Reset,
     }
@@ -1443,7 +1318,6 @@ mod tests {
                     unacked_data: false,
                     fin_state: FinState::NotSent,
                 },
-                fin_seen: false,
             }
         }; "success original"
     )]
@@ -1476,7 +1350,6 @@ mod tests {
                   unacked_data: true,
                   fin_state: FinState::Sent(SeqNum::new(66_100)),
               },
-              fin_seen: true,
             }
         }; "success reply"
     )]
@@ -1555,8 +1428,8 @@ mod tests {
         };
 
         let expected_result = match args.expected {
-            EstablishedUpdateTestResult::Success { new_original, new_reply, fin_seen } => {
-                EstablishedUpdateResult::Success { new_original, new_reply, fin_seen }
+            EstablishedUpdateTestResult::Success { new_original, new_reply } => {
+                EstablishedUpdateResult::Success { new_original, new_reply }
             }
             EstablishedUpdateTestResult::Invalid => EstablishedUpdateResult::Invalid {
                 original: original.clone(),
@@ -1581,153 +1454,6 @@ mod tests {
         payload_len: usize,
         dir: ConnectionDirection,
         expected: Option<State>,
-    }
-
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: Some(Established {
-                original: Peer {
-                    window_scale: WindowScale::new(2).unwrap(),
-                    max_wnd: WindowSize::new(40).unwrap(),
-                    max_wnd_seq: SeqNum::new(70_000),
-                    max_next_seq: SeqNum::new(1424),
-                    unacked_data: true,
-                    fin_state: FinState::NotSent,
-                },
-                reply: Peer {
-                    window_scale: WindowScale::new(0).unwrap(),
-                    max_wnd: WindowSize::new(400).unwrap(),
-                    max_wnd_seq: SeqNum::new(1424),
-                    max_next_seq: SeqNum::new(66_001),
-                    unacked_data: false,
-                    fin_state: FinState::NotSent,
-                },
-            }.into()),
-        }; "established"
-    )]
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(66_100),
-                ack: Some(SeqNum::new(1024)),
-                wnd: UnscaledWindowSize::from(10),
-                control: Some(Control::FIN),
-                ..Default::default()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Reply,
-            expected: Some(Closing {
-                original: Peer {
-                    window_scale: WindowScale::new(2).unwrap(),
-                    max_wnd: WindowSize::new(0).unwrap(),
-                    max_wnd_seq: SeqNum::new(70_000),
-                    max_next_seq: SeqNum::new(1024),
-                    unacked_data: false,
-                    fin_state: FinState::NotSent,
-                },
-                reply: Peer {
-                    window_scale: WindowScale::new(0).unwrap(),
-                    max_wnd: WindowSize::new(400).unwrap(),
-                    max_wnd_seq: SeqNum::new(1424),
-                    max_next_seq: SeqNum::new(66_101),
-                    unacked_data: true,
-                    fin_state: FinState::Sent(SeqNum::new(66_100)),
-                },
-            }.into()),
-        }; "closing"
-    )]
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(66_100),
-                ack: Some(SeqNum::new(1024)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Reply,
-            expected: Some(WaitingOnOpeningAck {
-                original: Peer {
-                    window_scale: WindowScale::new(2).unwrap(),
-                    max_wnd: WindowSize::new(0).unwrap(),
-                    max_wnd_seq: SeqNum::new(70_000),
-                    max_next_seq: SeqNum::new(1024),
-                    unacked_data: false,
-                    fin_state: FinState::NotSent,
-                },
-                reply: Peer {
-                    window_scale: WindowScale::new(0).unwrap(),
-                    max_wnd: WindowSize::new(400).unwrap(),
-                    max_wnd_seq: SeqNum::new(1424),
-                    max_next_seq: SeqNum::new(66_100),
-                    unacked_data: true,
-                    fin_state: FinState::NotSent,
-                },
-            }.into())
-        }; "update in place"
-    )]
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                // Fails equation I.
-                seq: SeqNum::new(100_000),
-                ack: Some(SeqNum::new(1024)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Reply,
-            expected: None
-        }; "invalid"
-    )]
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                control: Some(Control::RST),
-                ..Default::default()
-            },
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: Some(Closed {}.into()),
-        }; "rst"
-    )]
-    fn waiting_on_opening_ack_test(args: StateUpdateTestArgs) {
-        let state = WaitingOnOpeningAck {
-            original: Peer {
-                window_scale: WindowScale::new(2).unwrap(),
-                max_wnd: WindowSize::new(0).unwrap(),
-                max_wnd_seq: SeqNum::new(70_000),
-                max_next_seq: SeqNum::new(1024),
-                unacked_data: false,
-                fin_state: FinState::NotSent,
-            },
-            reply: Peer {
-                window_scale: WindowScale::new(0).unwrap(),
-                max_wnd: WindowSize::new(400).unwrap(),
-                max_wnd_seq: SeqNum::new(1424),
-                max_next_seq: SeqNum::new(66_001),
-                unacked_data: true,
-                fin_state: FinState::NotSent,
-            },
-        };
-
-        let (new_state, valid) = match args.expected {
-            Some(new_state) => (new_state, true),
-            None => (state.clone().into(), false),
-        };
-
-        assert_eq!(state.update(&args.segment, args.payload_len, args.dir), (new_state, valid));
     }
 
     #[test_case(
@@ -1773,7 +1499,7 @@ mod tests {
             },
             payload_len: 0,
             dir: ConnectionDirection::Reply,
-            expected: Some(Closing {
+            expected: Some(Established {
                 original: Peer {
                     window_scale: WindowScale::new(2).unwrap(),
                     max_wnd: WindowSize::new(0).unwrap(),
@@ -1849,95 +1575,9 @@ mod tests {
         assert_eq!(state.update(&args.segment, args.payload_len, args.dir), (new_state, valid));
     }
 
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: Some(Closing {
-                original: Peer {
-                    window_scale: WindowScale::new(2).unwrap(),
-                    max_wnd: WindowSize::new(40).unwrap(),
-                    max_wnd_seq: SeqNum::new(70_000),
-                    max_next_seq: SeqNum::new(1424),
-                    unacked_data: true,
-                    fin_state: FinState::NotSent,
-                },
-                reply: Peer {
-                    window_scale: WindowScale::new(0).unwrap(),
-                    max_wnd: WindowSize::new(400).unwrap(),
-                    max_wnd_seq: SeqNum::new(1424),
-                    max_next_seq: SeqNum::new(66_001),
-                    unacked_data: false,
-                    fin_state: FinState::Acked,
-                },
-            }.into()),
-        }; "update original"
-    )]
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                // Fails equation III.
-                ack: Some(SeqNum::new(100_000)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: None,
-        }; "invalid"
-    )]
-    #[test_case(
-        StateUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                control: Some(Control::RST),
-                ..Default::default()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Original,
-            expected: Some (Closed {}.into())
-        }; "rst"
-    )]
-    fn closing_test(args: StateUpdateTestArgs) {
-        let state = Closing {
-            original: Peer {
-                window_scale: WindowScale::new(2).unwrap(),
-                max_wnd: WindowSize::new(0).unwrap(),
-                max_wnd_seq: SeqNum::new(70_000),
-                max_next_seq: SeqNum::new(1024),
-                unacked_data: true,
-                fin_state: FinState::NotSent,
-            },
-            reply: Peer {
-                window_scale: WindowScale::new(0).unwrap(),
-                max_wnd: WindowSize::new(400).unwrap(),
-                max_wnd_seq: SeqNum::new(1424),
-                max_next_seq: SeqNum::new(66_001),
-                unacked_data: false,
-                fin_state: FinState::Acked,
-            },
-        };
-
-        let (new_state, valid) = match args.expected {
-            Some(new_state) => (new_state, true),
-            None => (state.clone().into(), false),
-        };
-
-        assert_eq!(state.update(&args.segment, args.payload_len, args.dir), (new_state, valid));
-    }
-
     #[test]
     fn closing_complete_test() {
-        let state = Closing {
+        let state = Established {
             original: Peer {
                 window_scale: WindowScale::new(2).unwrap(),
                 max_wnd: WindowSize::new(0).unwrap(),
