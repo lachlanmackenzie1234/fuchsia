@@ -35,7 +35,8 @@ zx::result<> RequestList::Init(zx::unowned_bti bti, size_t entry_size, uint8_t e
   request_slots_.resize(entry_count);
 
   // Allocate slots.
-  for (auto &slot : request_slots_) {
+  for (size_t i = 0; i < entry_count; ++i) {
+    auto &slot = request_slots_[i];
     slot.state = SlotState::kFree;
     zx::result<> result = IoBufferInit(bti, &slot.command_descriptor_io, kUtpCommandDescriptorSize);
     if (result.is_error()) {
@@ -68,7 +69,6 @@ zx::result<> RequestList::IoBufferInit(zx::unowned_bti &bti,
 void RequestList::ForEachSlot(RequestSlotCallback callback) {
   for (uint8_t slot_num = 0; slot_num < GetSlotCount(); ++slot_num) {
     RequestSlot &request_slot = GetSlot(slot_num);
-    // TODO: slot_num should be removed because it is a member variable of RequestSlot.
     callback(slot_num, request_slot);
   }
 }

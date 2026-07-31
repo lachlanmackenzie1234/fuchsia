@@ -104,8 +104,10 @@ zx::result<> TransferRequestProcessor::Init() {
 }
 
 zx::result<uint8_t> TransferRequestProcessor::ReserveAdminSlot() {
-  RequestSlot &slot = request_list_.GetSlot(kAdminCommandSlotNumber);
-  if (slot.state == SlotState::kFree) {
+  std::lock_guard<std::mutex> lock(slot_allocation_lock_);
+  if ((allocated_slots_mask_ & (1u << kAdminCommandSlotNumber)) == 0) {
+    allocated_slots_mask_ |= (1u << kAdminCommandSlotNumber);
+    RequestSlot &slot = request_list_.GetSlot(kAdminCommandSlotNumber);
     slot.is_scsi_command = false;
     slot.is_sync = false;
     slot.io_cmd = nullptr;
@@ -310,19 +312,31 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
     zx_status_t status =
         sync_completion_wait_deadline(&request_slot.complete, request_slot.deadline);
     zx_status_t request_result = request_slot.result;
-    if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
-      return result.take_error();
-    }
     if (status != ZX_OK) {
       fdf::error("SendRequestUsingSlot request timed out: {}", zx_status_get_string(status));
+      uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+      if (doorbell & (1u << slot)) {
+        // Hardware still owns the slot; mark as timed out but keep PMT pinned until reset or abort.
+        MarkSlotTimedOut(slot);
+      } else {
+        if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
+          return result.take_error();
+        }
+      }
       return zx::error(status);
+    }
+
+    if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
+      return result.take_error();
     }
     const bool is_admin_cmd = (io_cmd == nullptr);
     if (is_admin_cmd && request_result != ZX_OK) {
       return zx::error(request_result);
     }
-    UtrListCompletionNotificationReg::Get().FromValue(0).set_notification(1 << slot).WriteTo(
-        &register_);
+    UtrListCompletionNotificationReg::Get()
+        .FromValue(0)
+        .set_notification(1u << slot)
+        .WriteTo(&register_);
   }
 
   return zx::ok(response);
@@ -365,6 +379,14 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
     // Until native UFS IO commands are defined by the UFS specification, we assume that only SCSI
     // commands can be IO commands.
     request_result = controller_.ScsiComplete(status_message, sense_data);
+
+    uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+    if (is_timeout && (doorbell & (1u << slot_num))) {
+      // Hardware still owns the slot; do not unpin PMT memory until hardware doorbell clears
+      // or controller reset / task abort finishes.
+      MarkSlotTimedOut(slot_num);
+      return ZX_ERR_TIMED_OUT;
+    }
 
     // Unpin data buffer before signalling request completion to the upper layer. This is
     // necessary because the filesystem is allowed to transfer pages directly out of this
@@ -418,17 +440,17 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
   request_slot.result = status;
 
   if (is_timeout) {
-    request_slot.state = SlotState::kTimeout;
+    MarkSlotTimedOut(slot_num);
     uint32_t current_db = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
-    if (current_db & (1 << slot_num)) {
-      UtrListClearReg::Get().FromValue(1 << slot_num).WriteTo(&register_);
+    if (current_db & (1u << slot_num)) {
+      UtrListClearReg::Get().FromValue(1u << slot_num).WriteTo(&register_);
     }
   } else if (request_slot.is_sync) {
     sync_completion_signal(&request_slot.complete);
   } else {
     UtrListCompletionNotificationReg::Get()
         .FromValue(0)
-        .set_notification(1 << slot_num)
+        .set_notification(1u << slot_num)
         .WriteTo(&register_);
 
     if (zx::result result = ClearSlot(request_slot); result.is_error()) {
@@ -442,11 +464,9 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
 bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num) {
   bool is_completed = false;
   RequestSlot &request_slot = request_list_.GetSlot(slot_num);
-  // Use acquire load to synchronize with release stores in RingRequestDoorbell.
-  SlotState current_state = request_slot.state.load(std::memory_order_acquire);
-  if (current_state == SlotState::kScheduled) {
+  if (request_slot.state == SlotState::kScheduled) {
     auto descriptor = request_list_.GetRequestDescriptor<TransferRequestDescriptor>(slot_num);
-    if (!(UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1 << slot_num))) {
+    if (!(UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1u << slot_num))) {
       // Hardware cleared doorbell; ensure descriptor DMA writes are visible before checking status.
       // Tight spin-wait for DMA write-posting interconnect buffer settling (typically < 100ns).
       for (uint32_t retry = 0;
@@ -456,12 +476,10 @@ bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num) {
         std::atomic_thread_fence(std::memory_order_acquire);
       }
       if (descriptor->overall_command_status() == OverallCommandStatus::kInvalid) {
-        if (zx_clock_get_monotonic() >= request_slot.deadline) {
-          RequestCompletion(slot_num, request_slot, /*timeout*/ true);
-          return true;
-        }
         fdf::warn("Doorbell cleared for slot[{}] but OCS remained invalid", slot_num);
-        return false;
+        RequestCompletion(slot_num, request_slot,
+                          /*timeout*/ zx_clock_get_monotonic() >= request_slot.deadline);
+        return true;
       }
       RequestCompletion(slot_num, request_slot, /*timeout*/ false);
       is_completed = true;

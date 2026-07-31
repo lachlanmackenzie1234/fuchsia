@@ -27,14 +27,13 @@ enum class SlotState {
   kFree = 0,
   kReserved,
   kScheduled,
-  kTimeout,
   kNeedErrorHandling,
 };
 
 struct RequestSlot {
-  std::atomic<SlotState> state{SlotState::kFree};
+  SlotState state = SlotState::kFree;
   std::unique_ptr<dma_buffer::ContiguousBuffer> command_descriptor_io;
-  sync_completion_t complete;
+  sync_completion_t complete{};
   zx::pmt pmt;
   IoCommand *io_cmd = nullptr;
   zx::unowned_vmo data_vmo;
@@ -48,41 +47,8 @@ struct RequestSlot {
   zx_time_t deadline = 0;
 
   RequestSlot() = default;
-  RequestSlot(RequestSlot &&other) noexcept
-      : state(other.state.load()),
-        command_descriptor_io(std::move(other.command_descriptor_io)),
-        complete(other.complete),
-        pmt(std::move(other.pmt)),
-        io_cmd(other.io_cmd),
-        data_vmo(std::move(other.data_vmo)),
-        dma_offset(other.dma_offset),
-        dma_length(other.dma_length),
-        is_read(other.is_read),
-        is_scsi_command(other.is_scsi_command),
-        is_sync(other.is_sync),
-        response_upiu_offset(other.response_upiu_offset),
-        result(other.result),
-        deadline(other.deadline) {}
-
-  RequestSlot &operator=(RequestSlot &&other) noexcept {
-    if (this != &other) {
-      state.store(other.state.load());
-      command_descriptor_io = std::move(other.command_descriptor_io);
-      complete = other.complete;
-      pmt = std::move(other.pmt);
-      io_cmd = other.io_cmd;
-      data_vmo = std::move(other.data_vmo);
-      dma_offset = other.dma_offset;
-      dma_length = other.dma_length;
-      is_read = other.is_read;
-      is_scsi_command = other.is_scsi_command;
-      is_sync = other.is_sync;
-      response_upiu_offset = other.response_upiu_offset;
-      result = other.result;
-      deadline = other.deadline;
-    }
-    return *this;
-  }
+  RequestSlot(RequestSlot &&) noexcept = default;
+  RequestSlot &operator=(RequestSlot &&) noexcept = default;
 };
 
 using RequestSlotCallback = fit::function<void(uint8_t slot_num, RequestSlot &request_slot)>;
@@ -109,6 +75,17 @@ class RequestList {
     return request_slots_[entry_num];
   }
   uint8_t GetSlotCount() const { return safemath::checked_cast<uint8_t>(request_slots_.size()); }
+  uint32_t GetSlotMask() const {
+    const uint8_t count = GetSlotCount();
+    // Handle full 32-slot mask to avoid 1u << 32 bitshift overflow (UB in C++).
+    return count == kMaxRequestListSize ? 0xFFFFFFFFu : ((1u << count) - 1u);
+  }
+
+  uint8_t GetSlotNum(const RequestSlot &slot) const {
+    ZX_ASSERT(&slot >= request_slots_.data() &&
+              &slot < request_slots_.data() + request_slots_.size());
+    return safemath::checked_cast<uint8_t>(&slot - request_slots_.data());
+  }
 
   void ForEachSlot(RequestSlotCallback callback);
 

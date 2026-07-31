@@ -52,7 +52,7 @@ class TransferRequestProcessor : public RequestProcessor {
 
   zx::result<> Init() override;
   // Allocate a slot to submit an Admin command. Use slot 31 to avoid conflicts with I/O commands.
-  zx::result<uint8_t> ReserveAdminSlot() TA_REQ(admin_slot_lock_);
+  zx::result<uint8_t> ReserveAdminSlot() TA_REQ(admin_slot_lock_) TA_EXCL(slot_allocation_lock_);
 
   uint32_t ProcessCompletionOfAdminRequests();
   uint32_t ProcessCompletionOfIoRequests() override;
@@ -147,7 +147,10 @@ class TransferRequestProcessor : public RequestProcessor {
   }
 
   void SetDoorBellRegister(uint8_t slot_num) override {
-    UtrListDoorBellReg::Get().FromValue(1 << slot_num).WriteTo(&register_);
+    UtrListDoorBellReg::Get().FromValue(1u << slot_num).WriteTo(&register_);
+  }
+  uint32_t ReadDoorBellRegister() override {
+    return UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
   }
   bool ProcessSlotCompletion(uint8_t slot_num);
 

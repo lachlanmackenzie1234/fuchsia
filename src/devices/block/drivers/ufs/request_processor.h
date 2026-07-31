@@ -48,13 +48,16 @@ class RequestProcessor {
   zx::duration GetTimeout() const { return timeout_; }
   void DisableCompletion() { disable_completion_ = true; }
   void EnableCompletion() { disable_completion_ = false; }
+  bool IsSlotTimedOut(uint8_t slot_num) TA_EXCL(slot_allocation_lock_);
 
  protected:
   zx::unowned_bti &GetBti() { return bti_; }
 
   // Get the number of the free slot and mark it as |SlotState::kReserved|.
-  zx::result<uint8_t> ReserveSlot();
-  zx::result<> ClearSlot(RequestSlot &request_slot);
+  zx::result<uint8_t> ReserveSlot() TA_EXCL(slot_allocation_lock_);
+  zx::result<> ClearSlot(RequestSlot &request_slot) TA_EXCL(slot_allocation_lock_);
+  zx::result<> ClearSlotLocked(RequestSlot &request_slot) TA_REQ(slot_allocation_lock_);
+  void MarkSlotTimedOut(uint8_t slot_num) TA_EXCL(slot_allocation_lock_);
 
   // Ring the door bell.
   void RingRequestDoorbell(uint8_t slot_num);
@@ -74,6 +77,10 @@ class RequestProcessor {
 
   zx::duration timeout_ = kCommandTimeout;
 
+  std::mutex slot_allocation_lock_;
+  uint32_t allocated_slots_mask_ TA_GUARDED(slot_allocation_lock_) = 0;
+  uint32_t timed_out_slots_mask_ TA_GUARDED(slot_allocation_lock_) = 0;
+
   bool disable_completion_ = false;
 
  private:
@@ -82,6 +89,7 @@ class RequestProcessor {
   }
 
   virtual void SetDoorBellRegister(uint8_t slot_num) = 0;
+  virtual uint32_t ReadDoorBellRegister() = 0;
 
   zx::unowned_bti bti_;
 };

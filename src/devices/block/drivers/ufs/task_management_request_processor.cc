@@ -48,7 +48,7 @@ uint32_t TaskManagementRequestProcessor::ProcessCompletionOfIoRequests() {
   // Search for all pending slots and signed the ones already done.
   request_list_.ForEachSlot([&](uint8_t slot_num, RequestSlot &request_slot) {
     if (request_slot.state == SlotState::kScheduled) {
-      if (!(UtmrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1 << slot_num))) {
+      if (!(UtmrListDoorBellReg::Get().ReadFrom(&register_).door_bell() & (1u << slot_num))) {
         zx::result<> result = zx::ok();
         // Check task management response.
         auto descriptor =

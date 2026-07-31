@@ -56,7 +56,10 @@ class TaskManagementRequestProcessor : public RequestProcessor {
   zx::result<> FillDescriptorAndSendRequest(uint8_t slot, TaskManagementRequestUpiu &request);
 
   void SetDoorBellRegister(uint8_t slot_num) override {
-    UtmrListDoorBellReg::Get().FromValue(1 << slot_num).WriteTo(&register_);
+    UtmrListDoorBellReg::Get().FromValue(1u << slot_num).WriteTo(&register_);
+  }
+  uint32_t ReadDoorBellRegister() override {
+    return UtmrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
   }
 };
 

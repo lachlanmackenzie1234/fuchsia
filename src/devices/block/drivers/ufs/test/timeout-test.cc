@@ -113,15 +113,13 @@ TEST_F(TimeoutTest, AsyncCommandTimeout) {
                             {nullptr, 0});
 
   auto wait_for = [&]() -> bool {
-    return dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(target_task_tag).state ==
-           SlotState::kTimeout;
+    return dut_->GetTransferRequestProcessor().IsSlotTimedOut(target_task_tag);
   };
   fbl::String timeout_message = "Timeout waiting for SCSI command timeout";
   ASSERT_OK(dut_->WaitWithTimeout(wait_for, kWaitLimit, timeout_message, zx::msec(100)));
 
   // Check that the timed out command is aborted and not in the request list
-  ASSERT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(target_task_tag).state,
-            SlotState::kTimeout);
+  ASSERT_TRUE(dut_->GetTransferRequestProcessor().IsSlotTimedOut(target_task_tag));
   mock_device_.GetScsiCommandProcessor().Reset();
 }
 
@@ -175,8 +173,7 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
   auto wait_for = [&]() -> bool {
     bool all_timed_out = true;
     for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
-      if (dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state !=
-          SlotState::kTimeout) {
+      if (!dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num)) {
         all_timed_out = false;
       }
     }
@@ -187,8 +184,7 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
 
   // Check that the timed out command.
   for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
-    EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state,
-              SlotState::kTimeout);
+    EXPECT_TRUE(dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num));
     EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).result,
               ZX_ERR_TIMED_OUT);
   }
@@ -270,8 +266,7 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
   auto wait_for = [&]() -> bool {
     bool all_done = true;
     for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
-      if (dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state !=
-          SlotState::kTimeout) {
+      if (!dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num)) {
         all_done = false;
       }
     }
@@ -288,8 +283,7 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
 
   // Check that the timed out command.
   for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
-    EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).state,
-              SlotState::kTimeout);
+    EXPECT_TRUE(dut_->GetTransferRequestProcessor().IsSlotTimedOut(slot_num));
     EXPECT_EQ(dut_->GetTransferRequestProcessor().GetRequestList().GetSlot(slot_num).result,
               ZX_ERR_TIMED_OUT);
   }
