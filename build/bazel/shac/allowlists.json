@@ -1,0 +1,11 @@
+{
+  "ignored_files": [],
+  "ignored_prefixes": [
+    "build/bazel/fuchsia_idk",
+    "build/bazel_sdk",
+    "prebuilt",
+    "third_party",
+    "src/connectivity/wlan/drivers/third_party",
+    "src/lib/fuchsia-cprng"
+  ]
+}
