@@ -16,7 +16,7 @@ use crate::vfs::{
 use anyhow::{Error, anyhow, ensure};
 use ext4_metadata::{Metadata, Node, NodeInfo};
 use fidl_fuchsia_io as fio;
-use starnix_logging::{impossible_error, log_warn};
+use starnix_logging::{impossible_error, log_warn, track_stub};
 use starnix_sync::{
     DynamicLockDepRwLock, LockDepMutex, LockDepReadGuard, LockDepWriteGuard, RemoteBundleInnerLock,
 };
@@ -152,7 +152,13 @@ impl RemoteBundle {
 impl FileSystemOps for RemoteBundle {
     fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
         const REMOTE_BUNDLE_FS_MAGIC: u32 = u32::from_be_bytes(*b"bndl");
-        Ok(default_statfs(REMOTE_BUNDLE_FS_MAGIC))
+        let mut stats = default_statfs(REMOTE_BUNDLE_FS_MAGIC);
+        // Provide a placeholder non-zero block count to satisfy CTS StatFsTest.
+        // 100,000 blocks (approx 400MB with 4KB page size) is safe and adequate
+        // to prevent other applications from thinking the disk is full/too small.
+        track_stub!(TODO("https://fxbug.dev/540853536"), "RemoteBundle statfs block count");
+        stats.f_blocks = 100000;
+        Ok(stats)
     }
     fn name(&self) -> &'static FsStr {
         "remote_bundle".into()
