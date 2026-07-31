@@ -54,9 +54,9 @@ TEST_F(PowerTest, PowerSuspendResume) {
   UfsPowerMode power_mode = UfsPowerMode::kSleep;
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), power_mode);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].first);
+            GetPowerModeInfo(power_mode).power_condition);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].second);
+            GetPowerModeInfo(power_mode).link_state);
 
   const zx::vmo inspect_vmo = dut_->inspect().DuplicateVmo();
   ASSERT_TRUE(inspect_vmo.is_valid());
@@ -142,9 +142,9 @@ TEST_F(PowerTest, PowerSuspendResume) {
   power_mode = UfsPowerMode::kSleep;
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), power_mode);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].first);
+            GetPowerModeInfo(power_mode).power_condition);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].second);
+            GetPowerModeInfo(power_mode).link_state);
 
   hierarchy = fpromise::run_single_threaded(inspect::ReadFromInspector(dut_->inspect()));
   ASSERT_TRUE(hierarchy.is_ok());
@@ -171,9 +171,9 @@ TEST_F(PowerTest, PowerSuspendResume) {
   power_mode = UfsPowerMode::kActive;
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), power_mode);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].first);
+            GetPowerModeInfo(power_mode).power_condition);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].second);
+            GetPowerModeInfo(power_mode).link_state);
 
   hierarchy = fpromise::run_single_threaded(inspect::ReadFromInspector(dut_->inspect()));
   ASSERT_TRUE(hierarchy.is_ok());
@@ -200,9 +200,9 @@ TEST_F(PowerTest, PowerSuspendResume) {
   power_mode = UfsPowerMode::kSleep;
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), power_mode);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].first);
+            GetPowerModeInfo(power_mode).power_condition);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].second);
+            GetPowerModeInfo(power_mode).link_state);
 
   hierarchy = fpromise::run_single_threaded(inspect::ReadFromInspector(dut_->inspect()));
   ASSERT_TRUE(hierarchy.is_ok());
@@ -258,9 +258,9 @@ TEST_F(PowerTest, BackgroundOperations) {
   UfsPowerMode power_mode = UfsPowerMode::kSleep;
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), power_mode);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].first);
+            GetPowerModeInfo(power_mode).power_condition);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].second);
+            GetPowerModeInfo(power_mode).link_state);
 
   const zx::vmo inspect_vmo = dut_->inspect().DuplicateVmo();
   ASSERT_TRUE(inspect_vmo.is_valid());
@@ -297,9 +297,9 @@ TEST_F(PowerTest, BackgroundOperations) {
   power_mode = UfsPowerMode::kActive;
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), power_mode);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].first);
+            GetPowerModeInfo(power_mode).power_condition);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].second);
+            GetPowerModeInfo(power_mode).link_state);
 
   hierarchy = fpromise::run_single_threaded(inspect::ReadFromInspector(dut_->inspect()));
   ASSERT_TRUE(hierarchy.is_ok());
@@ -374,9 +374,9 @@ TEST_F(PowerTest, BackgroundOperations) {
   power_mode = UfsPowerMode::kSleep;
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerMode(), power_mode);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentPowerCondition(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].first);
+            GetPowerModeInfo(power_mode).power_condition);
   ASSERT_EQ(dut_->GetDeviceManager().GetCurrentLinkState(),
-            dut_->GetDeviceManager().GetPowerModeMap()[power_mode].second);
+            GetPowerModeInfo(power_mode).link_state);
 
   hierarchy = fpromise::run_single_threaded(inspect::ReadFromInspector(dut_->inspect()));
   ASSERT_TRUE(hierarchy.is_ok());

@@ -837,11 +837,8 @@ zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
 }
 
 zx::result<> DeviceManager::SetPowerCondition(scsi::PowerCondition target_power_condition) {
-  {
-    std::lock_guard<std::mutex> lock(power_lock_);
-    if (current_power_condition_ == target_power_condition) {
-      return zx::ok();
-    }
+  if (current_power_condition_ == target_power_condition) {
+    return zx::ok();
   }
 
   auto scsi_lun = Ufs::TranslateUfsLunToScsiLun(static_cast<uint8_t>(WellKnownLuns::kUfsDevice));
@@ -857,31 +854,28 @@ zx::result<> DeviceManager::SetPowerCondition(scsi::PowerCondition target_power_
     return zx::error(status);
   }
 
-  {
-    std::lock_guard<std::mutex> lock(power_lock_);
-    current_power_condition_ = target_power_condition;
-  }
+  current_power_condition_ = target_power_condition;
   return zx::ok();
 }
 
 zx::result<> DeviceManager::SuspendPower() {
   const UfsPowerMode target_power_mode = UfsPowerMode::kSleep;
-  const scsi::PowerCondition target_power_condition = power_mode_map_[target_power_mode].first;
-  const LinkState target_link_state = power_mode_map_[target_power_mode].second;
+  const scsi::PowerCondition target_power_condition =
+      GetPowerModeInfo(target_power_mode).power_condition;
+  const LinkState target_link_state = GetPowerModeInfo(target_power_mode).link_state;
 
-  {
-    std::lock_guard<std::mutex> lock(power_lock_);
-    if (current_power_mode_ == target_power_mode &&
-        current_power_condition_ == target_power_condition &&
-        current_link_state_ == target_link_state) {
-      return zx::ok();
-    }
+  std::lock_guard<std::mutex> lock(power_lock_);
 
-    if (current_power_mode_ != UfsPowerMode::kActive ||
-        current_power_condition_ != scsi::PowerCondition::kActive ||
-        current_link_state_ != LinkState::kActive) {
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
+  if (current_power_mode_ == target_power_mode &&
+      current_power_condition_ == target_power_condition &&
+      current_link_state_ == target_link_state) {
+    return zx::ok();
+  }
+
+  if (current_power_mode_ != UfsPowerMode::kActive ||
+      current_power_condition_ != scsi::PowerCondition::kActive ||
+      current_link_state_ != LinkState::kActive) {
+    return zx::error(ZX_ERR_BAD_STATE);
   }
 
   // TODO(b/42075643): We need to wait for the in flight I/O.
@@ -930,35 +924,33 @@ zx::result<> DeviceManager::SuspendPower() {
     return result.take_error();
   }
 
-  {
-    std::lock_guard<std::mutex> lock(power_lock_);
-    current_link_state_ = target_link_state;
-    current_power_mode_ = target_power_mode;
-    current_power_condition_ = target_power_condition;
-    properties_.power_suspended.Set(true);
-  }
+  current_link_state_ = target_link_state;
+  current_power_mode_ = target_power_mode;
+  current_power_condition_ = target_power_condition;
+  properties_.power_suspended.Set(true);
+
   fdf::info("Power suspended.");
   return zx::ok();
 }
 
 zx::result<> DeviceManager::ResumePower() {
   const UfsPowerMode target_power_mode = UfsPowerMode::kActive;
-  const scsi::PowerCondition target_power_condition = power_mode_map_[target_power_mode].first;
-  const LinkState target_link_state = power_mode_map_[target_power_mode].second;
+  const scsi::PowerCondition target_power_condition =
+      GetPowerModeInfo(target_power_mode).power_condition;
+  const LinkState target_link_state = GetPowerModeInfo(target_power_mode).link_state;
 
-  {
-    std::lock_guard<std::mutex> lock(power_lock_);
-    if (current_power_mode_ == target_power_mode &&
-        current_power_condition_ == target_power_condition &&
-        current_link_state_ == target_link_state) {
-      return zx::ok();
-    }
+  std::lock_guard<std::mutex> lock(power_lock_);
 
-    if (current_power_mode_ != UfsPowerMode::kSleep ||
-        current_power_condition_ != scsi::PowerCondition::kIdle ||
-        current_link_state_ != LinkState::kHibernate) {
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
+  if (current_power_mode_ == target_power_mode &&
+      current_power_condition_ == target_power_condition &&
+      current_link_state_ == target_link_state) {
+    return zx::ok();
+  }
+
+  if (current_power_mode_ != UfsPowerMode::kSleep ||
+      current_power_condition_ != scsi::PowerCondition::kIdle ||
+      current_link_state_ != LinkState::kHibernate) {
+    return zx::error(ZX_ERR_BAD_STATE);
   }
 
   if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
@@ -976,6 +968,11 @@ zx::result<> DeviceManager::ResumePower() {
     return result.take_error();
   }
 
+  current_link_state_ = target_link_state;
+  current_power_mode_ = target_power_mode;
+  current_power_condition_ = target_power_condition;
+  properties_.power_suspended.Set(false);
+
   if (zx::result<> result = controller_.Notify(NotifyEvent::kPostPowerModeChange, 0);
       result.is_error()) {
     return result.take_error();
@@ -986,13 +983,6 @@ zx::result<> DeviceManager::ResumePower() {
     return result.take_error();
   }
 
-  {
-    std::lock_guard<std::mutex> lock(power_lock_);
-    current_link_state_ = target_link_state;
-    current_power_mode_ = target_power_mode;
-    current_power_condition_ = target_power_condition;
-    properties_.power_suspended.Set(false);
-  }
   fdf::info("Power resumed.");
   return zx::ok();
 }
@@ -1027,8 +1017,8 @@ zx::result<> DeviceManager::InitUfsPowerMode(inspect::Node &controller_node,
   // Acquire power_lock_ only for the immediate, non-blocking in-memory state update.
   std::lock_guard<std::mutex> lock(power_lock_);
   current_power_mode_ = target_power_mode;
-  current_power_condition_ = power_mode_map_[current_power_mode_].first;
-  current_link_state_ = power_mode_map_[current_power_mode_].second;
+  current_power_condition_ = GetPowerModeInfo(current_power_mode_).power_condition;
+  current_link_state_ = GetPowerModeInfo(current_power_mode_).link_state;
 
   // TODO(https://fxbug.dev/42075643): Enable auto hibernate
 

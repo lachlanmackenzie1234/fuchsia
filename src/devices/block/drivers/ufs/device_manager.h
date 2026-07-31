@@ -9,8 +9,6 @@
 #include <lib/trace/event.h>
 #include <lib/zx/result.h>
 
-#include <map>
-
 #include "src/devices/block/drivers/ufs/transfer_request_processor.h"
 #include "src/devices/block/drivers/ufs/upiu/attributes.h"
 #include "src/devices/block/drivers/ufs/upiu/descriptors.h"
@@ -23,7 +21,6 @@ enum class UfsPowerMode : uint8_t {
   kIdle = 0x00,
   kPreActive = 0x10,
   kActive = 0x11,
-  kPreSleep = 0x20,
   kSleep = 0x21,
   kPrePowerDown = 0x30,
   kPowerDown = 0x33,
@@ -50,7 +47,21 @@ enum class UserSpaceConfigurationOption : uint8_t {
   kPreserveUserSpace = 0x01,
 };
 
-using PowerModeMap = std::map<UfsPowerMode, std::pair<scsi::PowerCondition, LinkState>>;
+struct PowerModeInfo {
+  scsi::PowerCondition power_condition;
+  LinkState link_state;
+};
+
+constexpr PowerModeInfo GetPowerModeInfo(UfsPowerMode mode) {
+  switch (mode) {
+    case UfsPowerMode::kActive:
+      return {scsi::PowerCondition::kActive, LinkState::kActive};
+    case UfsPowerMode::kSleep:
+      return {scsi::PowerCondition::kIdle, LinkState::kHibernate};
+    default:
+      return {scsi::PowerCondition::kIdle, LinkState::kOff};
+  }
+}
 
 // UFS Specification Version 3.1, section 5.1.2 "UFS Device Manager"
 // The device manager has the following two responsibilities:
@@ -77,7 +88,7 @@ class DeviceManager {
         properties_(properties) {}
 
   // Device initialization.
-  zx::result<> SendLinkStartUp();
+  zx::result<> SendLinkStartUp() TA_EXCL(power_lock_);
   zx::result<> DeviceInit();
   zx::result<uint32_t> GetBootLunEnabled();
   zx::result<> GetControllerDescriptor();
@@ -125,15 +136,14 @@ class DeviceManager {
   void SetCurrentPowerMode(UfsPowerMode power_mode) TA_EXCL(power_lock_) {
     std::lock_guard<std::mutex> lock(power_lock_);
     current_power_mode_ = power_mode;
-    current_power_condition_ = power_mode_map_[power_mode].first;
-    current_link_state_ = power_mode_map_[power_mode].second;
+    current_power_condition_ = GetPowerModeInfo(power_mode).power_condition;
+    current_link_state_ = GetPowerModeInfo(power_mode).link_state;
   }
 
   uint8_t GetMaxLunCount() const { return max_lun_count_; }
 
   // for test
   DeviceDescriptor &GetDeviceDescriptor() { return device_descriptor_; }
-  PowerModeMap &GetPowerModeMap() { return power_mode_map_; }
   UfsPowerMode GetCurrentPowerMode() TA_EXCL(power_lock_) {
     std::lock_guard<std::mutex> lock(power_lock_);
     return current_power_mode_;
@@ -163,7 +173,7 @@ class DeviceManager {
   zx::result<> SetFlag(Flags type);
   zx::result<> ClearFlag(Flags type);
 
-  zx::result<> SetPowerCondition(scsi::PowerCondition power_condition) TA_EXCL(power_lock_);
+  zx::result<> SetPowerCondition(scsi::PowerCondition power_condition) TA_REQ(power_lock_);
 
   zx::result<> SetExceptionEventControl(ExceptionEventControl control);
   zx::result<ExceptionEventStatus> GetExceptionEventStatus();
@@ -210,13 +220,6 @@ class DeviceManager {
   scsi::PowerCondition current_power_condition_ TA_GUARDED(power_lock_) =
       scsi::PowerCondition::kIdle;
   LinkState current_link_state_ TA_GUARDED(power_lock_) = LinkState::kOff;
-
-  // There are 3 power modes for UFS devices: UFS power mode, SCSI power condition, and Unipro link
-  // state. We need to relate and use them appropriately.
-  PowerModeMap power_mode_map_ = {
-      {UfsPowerMode::kActive, {scsi::PowerCondition::kActive, LinkState::kActive}},
-      {UfsPowerMode::kSleep, {scsi::PowerCondition::kIdle, LinkState::kHibernate}},
-  };
 };
 
 }  // namespace ufs
