@@ -7,6 +7,7 @@
 pub mod arch_vm_aspace;
 pub mod page;
 pub mod page_state;
+pub mod scanner;
 pub mod vm;
 pub mod vm_address_region;
 pub mod vm_aspace;

@@ -40,6 +40,7 @@ source_set("vm") {
     "pmm_node.cc",
     "ppb_command.cc",
     "scanner.cc",
+    "scanner_ffi.cc",
     "slot_page_storage.cc",
     "stream_size_manager.cc",
     "vm.cc",
@@ -140,6 +141,24 @@ group("bindgen_common_deps") {
     "//zircon/kernel/object:headers",
     "//zircon/system/ulib/page_tables:headers",
   ]
+}
+
+kernel_bindgen_crate("scanner-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/scanner_ffi.h" ]
+  non_rust_deps = [ ":headers" ]
+  output_name = "scanner_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_scanner_push_disable_count",
+    "cpp_scanner_pop_disable_count",
+  ]
+
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = []
 }
 
 library_headers("headers") {
@@ -326,6 +345,7 @@ kernel_rust_mod("vm-rs") {
     "mod.rs",
     "page.rs",
     "page_state.rs",
+    "scanner.rs",
     "vm.rs",
     "vm_address_region.rs",
     "vm_aspace.rs",
@@ -337,6 +357,7 @@ kernel_rust_mod("vm-rs") {
   ]
 
   deps = [
+    ":scanner-bindings",
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",
     ":vm-object-bindings",

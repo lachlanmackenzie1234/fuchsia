@@ -6,9 +6,13 @@
 #[cfg(ktest)]
 #[unittest::suite]
 mod vmo_rs {
+    use crate::vm::scanner::AutoVmScannerDisable;
+
     /// Tests HintRange(AlwaysNeed) evicts loaned pages.
     #[test]
     fn incomplete_vmo_always_need_evicts_loaned_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
         // TODO(https://fxbug.dev/531878732): This test is intentionally incomplete. This test will
         // become progessively more complete as bindings for all of the constructs that the test
         // uses are added.
