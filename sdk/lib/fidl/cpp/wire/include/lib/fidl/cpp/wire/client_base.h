@@ -269,7 +269,7 @@ class ClientBase final : public std::enable_shared_from_this<ClientBase> {
 
   // Creates an unbound ClientBase. Only use it with |std::make_shared|.
   ClientBase() = default;
-  ~ClientBase() = default;
+  ~ClientBase();
 
   // Neither copyable nor movable.
   ClientBase(const ClientBase& other) = delete;

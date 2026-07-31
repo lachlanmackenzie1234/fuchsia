@@ -18,6 +18,12 @@ ResponseContext::~ResponseContext() {
   }
 }
 
+ClientBase::~ClientBase() {
+  // If transactions race with teardown, there may still be lingering
+  // |ResponseContext|s. Clear them again to avoid triggering debug asserts.
+  ReleaseResponseContexts(UnbindInfo::Unbind());
+}
+
 std::shared_ptr<ClientBase> ClientBase::Create(
     AnyTransport&& transport, async_dispatcher_t* dispatcher,
     AnyIncomingEventDispatcher&& event_dispatcher, AsyncEventHandler* error_handler,
