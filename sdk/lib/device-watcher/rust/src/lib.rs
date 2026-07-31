@@ -205,7 +205,6 @@ pub async fn recursive_wait_and_open<P: fidl::endpoints::ProtocolMarker>(
 mod tests {
     use super::*;
     use fidl_fuchsia_device as fdev;
-    use fuchsia_async as fasync;
     use futures::StreamExt;
     use std::collections::HashSet;
     use std::str::FromStr;
@@ -223,7 +222,7 @@ mod tests {
         })
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn wait_for_device_by_topological_path() {
         let dir = vfs::pseudo_directory! {
           "a" => vfs::pseudo_directory! {
@@ -249,7 +248,7 @@ mod tests {
         assert_eq!("x", path);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn watch_for_two_files() {
         let dir = vfs::pseudo_directory! {
           "a" => read_only(b"/a"),
@@ -272,7 +271,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn wait_for_device_topo_path_allows_files_and_dirs() {
         let dir = vfs::pseudo_directory! {
           "1" => vfs::pseudo_directory! {
@@ -296,7 +295,7 @@ mod tests {
         assert_eq!("x", path);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn open_two_directories() {
         let root = vfs::pseudo_directory! {
             "test" => vfs::pseudo_directory! {
@@ -309,7 +308,7 @@ mod tests {
         let () = directory.close().await.unwrap().unwrap();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn open_directory_with_leading_slash() {
         let root = vfs::pseudo_directory! {
             "test" => vfs::pseudo_directory! {},
