@@ -20,8 +20,8 @@ use tokio::process::{self, Command};
 const STDIO_BUFFER_SIZE: usize = 2 * 1024;
 const ENV_PATH: &str = "PATH";
 
-const ARTIFACT_TYPE_STDOUT: &str = "stdout";
-const ARTIFACT_TYPE_STDERR: &str = "stderr";
+const ARTIFACT_TYPE_STDOUT: &str = "STDOUT";
+const ARTIFACT_TYPE_STDERR: &str = "STDERR";
 
 pub async fn run_test(
     test_config: &TestConfig,
@@ -48,8 +48,10 @@ async fn run_test_inner(
         create_test_launch_command(test_config, &outdir.test_config(), path_env_var_value);
 
     let exit_status = {
-        let mut stdout_writer = StdWriter::new(outdir.test_stdout(), Box::new(io::stdout()))?;
-        let mut stderr_writer = StdWriter::new(outdir.test_stderr(), Box::new(io::stderr()))?;
+        let mut stdout_writer =
+            StdWriter::new(outdir.test_invocation_stdout(), Box::new(io::stdout()))?;
+        let mut stderr_writer =
+            StdWriter::new(outdir.test_invocation_stderr(), Box::new(io::stderr()))?;
         let start_time = Instant::now();
         let exit_status = run_command(&mut cmd, &mut stdout_writer, &mut stderr_writer).await?;
         log.record_test(
@@ -119,11 +121,11 @@ async fn run_test_inner(
 
         {
             let mut stdout_writer = StdWriter::new(
-                outdir.postprocessor_stdout(&output_processor.binary),
+                outdir.postprocessor_invocation_stdout(&output_processor.binary),
                 Box::new(io::stdout()),
             )?;
             let mut stderr_writer = StdWriter::new(
-                outdir.postprocessor_stderr(&output_processor.binary),
+                outdir.postprocessor_invocation_stderr(&output_processor.binary),
                 Box::new(io::stderr()),
             )?;
             let exit_status = run_command(&mut cmd, &mut stdout_writer, &mut stderr_writer).await?;
@@ -417,11 +419,12 @@ mod tests {
         assert_eq!(ExitStatus::from_raw(0), exit_status);
         assert_eq!(
             b"should_end_up_in_test_stdout\n".to_vec(),
-            fs::read(output_directory.test_stdout()).expect("read from test stdout succeeds")
+            fs::read(output_directory.test_invocation_stdout())
+                .expect("read from test stdout succeeds")
         );
         assert_eq!(
             b"should_end_up_in_proc_stdout\n".to_vec(),
-            fs::read(output_directory.postprocessor_stdout(&PathBuf::from("echo")))
+            fs::read(output_directory.postprocessor_invocation_stdout(&PathBuf::from("echo")))
                 .expect("read from post-processor stdout succeeds")
         );
 
@@ -440,7 +443,7 @@ mod tests {
                         "envs": {"PATH": "/usr/bin"},
                         "exit_status": 0,
                         "program_path": "echo",
-                        "stdout_artifact": "echo/stdout.txt"
+                        "stdout_artifact": "echo/invocation_stdout.txt"
                     }
                 },
                 "test": {
@@ -449,7 +452,7 @@ mod tests {
                     "envs": {"PATH": "/usr/bin"},
                     "exit_status": 0,
                     "program_path": "echo",
-                    "stdout_artifact": "test/stdout.txt"
+                    "stdout_artifact": "test/invocation_stdout.txt"
                 }
             }),
             log
@@ -484,10 +487,12 @@ mod tests {
         assert_eq!(ExitStatus::from_raw(0), exit_status);
         assert_eq!(
             b"should_end_up_in_test_stdout\n".to_vec(),
-            fs::read(output_directory.test_stdout()).expect("read from test stdout succeeds")
+            fs::read(output_directory.test_invocation_stdout())
+                .expect("read from test stdout succeeds")
         );
         assert!(
-            !fs::exists(output_directory.postprocessor_stdout(&PathBuf::from("echo"))).unwrap()
+            !fs::exists(output_directory.postprocessor_invocation_stdout(&PathBuf::from("echo")))
+                .unwrap()
         );
 
         let mut log_reader = std::io::BufReader::new(
@@ -504,7 +509,7 @@ mod tests {
                     "envs": {"PATH": "/usr/bin"},
                     "exit_status": 0,
                     "program_path": "echo",
-                    "stdout_artifact": "test/stdout.txt"
+                    "stdout_artifact": "test/invocation_stdout.txt"
                 }
             }),
             log

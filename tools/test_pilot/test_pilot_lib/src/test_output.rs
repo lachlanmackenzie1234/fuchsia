@@ -286,8 +286,8 @@ const TEST_SUBDIR: &str = "test";
 const EXECUTION_LOG_FILE_PATH: &str = "execution_log.json";
 const TEST_CONFIG_FILE_PATH: &str = "test_config.json";
 const OUTPUT_SUMMARY_FILE_PATH: &str = "output_summary.json";
-const STDOUT_FILE_PATH: &str = "stdout.txt";
-const STDERR_FILE_PATH: &str = "stderr.txt";
+const INVOCATION_STDOUT_FILE_PATH: &str = "invocation_stdout.txt";
+const INVOCATION_STDERR_FILE_PATH: &str = "invocation_stderr.txt";
 
 /// Creates path values based on output directory structure.
 pub struct OutputDirectory<'a> {
@@ -332,14 +332,14 @@ impl<'a> OutputDirectory<'a> {
         self.join(TEST_CONFIG_FILE_PATH)
     }
 
-    /// Returns the full path of the test's stdout file.
-    pub fn test_stdout(&self) -> PathBuf {
-        self.test_subdir().join(STDOUT_FILE_PATH)
+    /// Returns the full path of the file to which test-pilot writes the test's stdout.
+    pub fn test_invocation_stdout(&self) -> PathBuf {
+        self.test_subdir().join(INVOCATION_STDOUT_FILE_PATH)
     }
 
-    /// Returns the full path of the test's stderr file.
-    pub fn test_stderr(&self) -> PathBuf {
-        self.test_subdir().join(STDERR_FILE_PATH)
+    /// Returns the full path of the file to which test-pilot writes the test's stderr.
+    pub fn test_invocation_stderr(&self) -> PathBuf {
+        self.test_subdir().join(INVOCATION_STDERR_FILE_PATH)
     }
 
     /// Returns the full path of the subdirectory for the specified postprocessor.
@@ -352,14 +352,14 @@ impl<'a> OutputDirectory<'a> {
         self.postprocessor_subdir(binary).join(OUTPUT_SUMMARY_FILE_PATH)
     }
 
-    /// Returns the full path of a post-processor's stdout file.
-    pub fn postprocessor_stdout(&self, binary: &PathBuf) -> PathBuf {
-        self.postprocessor_subdir(binary).join(STDOUT_FILE_PATH)
+    /// Returns the full path of the file to which test-pilot writes a post-processor's stdout.
+    pub fn postprocessor_invocation_stdout(&self, binary: &PathBuf) -> PathBuf {
+        self.postprocessor_subdir(binary).join(INVOCATION_STDOUT_FILE_PATH)
     }
 
-    /// Returns the full path of a post-processor's stderr file.
-    pub fn postprocessor_stderr(&self, binary: &PathBuf) -> PathBuf {
-        self.postprocessor_subdir(binary).join(STDERR_FILE_PATH)
+    /// Returns the full path of the file to which test-pilot writes a post-processor's stderr.
+    pub fn postprocessor_invocation_stderr(&self, binary: &PathBuf) -> PathBuf {
+        self.postprocessor_subdir(binary).join(INVOCATION_STDERR_FILE_PATH)
     }
 
     /// Converts a full path into a path relative to the output directory.
