@@ -44,6 +44,8 @@ should be migrated to:
 load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
+package(default_applicable_licenses = ["//:license"])
+
 rustc_binary(
     name = "tool_bin",
     srcs = ["src/main.rs"],

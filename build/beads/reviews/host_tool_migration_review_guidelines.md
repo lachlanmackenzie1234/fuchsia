@@ -9,15 +9,16 @@ This document outlines the criteria, standards, and rule-based checks for valida
 When reviewing a CL that migrates host tools from GN to Bazel:
 
 - **Role:** Assume the role of a Fuchsia build system expert, knowledgeable in GN, Bazel, and how to migrate build targets between the two systems.
-- **Goal:** Ensure target parity, correct root target registration, root target references in dependent GN targets, proper `bazel2gn` synchronization setup, dependency strictness, formatting, and commit message.
+- **Goal:** Ensure target parity, licensing, visibility scoping, correct root target registration, root target references in dependent GN targets, proper `bazel2gn` synchronization setup, dependency strictness, formatting, and commit message.
 
 ---
 
 ## 2. Rule-Based Review Checks
 
-### Rule 2.1: Copyright Header & Naming
+### Rule 2.1: Copyright Header, Licensing & Naming
 
 - **Copyright Header:** Newly created `BUILD.bazel` files MUST include standard Fuchsia copyright headers with the current year (or original upload year).
+- **Default Applicable Licenses:** Newly created `BUILD.bazel` files MUST include `package(default_applicable_licenses = ["//:license"])`, placed after any `load(...)` statements to comply with Bazel syntax and repository licensing rules.
 - **Target Name Parity:** The target name defined in `BUILD.bazel` MUST match the legacy target name in `BUILD.gn`.
 
 ### Rule 2.2: Target Compatibility (`target_compatible_with`)
@@ -29,6 +30,9 @@ When reviewing a CL that migrates host tools from GN to Bazel:
 
 ```bazel
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
 
 rustc_binary(
     name = "my_tool",
@@ -41,7 +45,14 @@ rustc_binary(
 
 ---
 
-### Rule 2.3: Root Target Registration (`bazel_root_targets_list.gni`)
+### Rule 2.3: Visibility Scoping
+
+- **Package-Level Visibility:** Avoid setting default visibility on the package level (`package(default_visibility = [...])`).
+- **Target-Level Visibility:** Set target-level `visibility` as restrictively as possible on individual targets (e.g., restrict visibility to specific packages that require access rather than `"//visibility:public"`) to prevent unintended dependencies across packages.
+
+---
+
+### Rule 2.4: Root Target Registration (`bazel_root_targets_list.gni`)
 
 - **List Choice:**
   - Tools under `//tools` MUST be added to `tools_bazel_root_targets` in `//tools/bazel_root_targets_list.gni`.
@@ -68,14 +79,14 @@ rustc_binary(
 
 ---
 
-### Rule 2.4: GN References Update
+### Rule 2.5: GN References Update
 
 - Dependent GN targets MUST be updated from legacy GN target labels (e.g., `//tools/my_tool:my_tool`) to the Bazel root target wrapper:
   `//build/bazel/host:bazel_root_host_tools.{target_name}`
 
 ---
 
-### Rule 2.5: Synchronizer (`bazel2gn`) & Verification Targets
+### Rule 2.6: Synchronizer (`bazel2gn`) & Verification Targets
 
 - **`# @bazel2gn:skip` Directive:**
   - MUST add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` IF a `BUILD.gn` file remains in that directory for synced libraries/tests.
@@ -96,7 +107,7 @@ go_binary_host_tool(
 
 ---
 
-### Rule 2.6: Language-Specific Guidelines
+### Rule 2.7: Language-Specific Guidelines
 
 #### Go Host Tools
 

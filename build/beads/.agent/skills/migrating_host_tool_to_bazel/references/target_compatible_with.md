@@ -12,6 +12,8 @@ to:
 ...
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
 ...
 
 go_binary_host_tool(

@@ -42,11 +42,17 @@ description: >-
 1. Create a `BUILD.bazel` file in the same directory as the `BUILD.gn` of the
    migrated target.
 
-2. Refer to the template in `assets/copyright_header_template.md` to add the
-   copyright header to the top of the `BUILD.bazel` file.
+2. Refer to the template in `assets/build_bazel_header_template.md` to add the
+   copyright header and `package(default_applicable_licenses = ["//:license"])`
+   declaration to the top of the `BUILD.bazel` file.
+   - **NOTE:** Place `package(...)` after any `load(...)` statements, as
+     required by Bazel syntax.
 
 3. Refer to language-specific guides and examples to create bazel targets in
    the BUILD.bazel file.
+   - **NOTE:** Avoid setting package-level default visibility (`package(default_visibility = [...])`).
+     Instead, set `visibility` explicitly on individual targets to be as
+     restrictive as possible, preventing unintended dependencies.
 
 - [Go Migration Guide](references/go_migration.md)
   (See **Common Pitfalls** for `importpath` and dependency gotchas).
