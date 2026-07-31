@@ -428,85 +428,11 @@ impl FinState {
     }
 }
 
-/// The return value from [`do_established_update`] indicating further action.
-#[derive(Debug, PartialEq, Eq)]
-enum EstablishedUpdateResult {
-    /// The update was successful.
-    ///
-    /// `new_original` and `new_reply` are the updated versions of the original
-    /// and reply peers that were provided to the function.
-    Success { new_original: Peer, new_reply: Peer },
-
-    /// A valid RST was seen.
-    Reset,
-
-    /// The segment was invalid.
-    ///
-    /// Includes the non-updated peers so the state can be reset.
-    Invalid { original: Peer, reply: Peer },
-}
-
 fn swap_peers(original: Peer, reply: Peer, dir: ConnectionDirection) -> (Peer, Peer) {
     match dir {
         ConnectionDirection::Original => (original, reply),
         ConnectionDirection::Reply => (reply, original),
     }
-}
-
-/// Holds and names the peers passed into [`do_established_update`] to avoid
-/// ambiguous argument order.
-struct UpdatePeers {
-    original: Peer,
-    reply: Peer,
-}
-
-/// The core functionality for handling segments once the handshake is complete.
-///
-/// Validates that segments fall within the bounds described in the comment on
-/// [`Peer`].
-fn do_established_update(
-    UpdatePeers { original, reply }: UpdatePeers,
-    segment: &SegmentHeader,
-    payload_len: usize,
-    dir: ConnectionDirection,
-) -> EstablishedUpdateResult {
-    let logical_len = segment.len(payload_len);
-    let SegmentHeader { seq, ack, wnd, control, options: _, push: _ } = segment;
-
-    let (sender, receiver) = swap_peers(original, reply, dir);
-
-    // From RFC 9293:
-    //   If the ACK control bit is set, this field contains the value of the
-    //   next sequence number the sender of the segment is expecting to receive.
-    //   Once a connection is established, this is always sent.
-    let ack = match ack {
-        Some(ack) => ack,
-        None => {
-            let (original, reply) = swap_peers(sender, receiver, dir);
-            return EstablishedUpdateResult::Invalid { original, reply };
-        }
-    };
-
-    if !Peer::ack_segment_valid(&sender, &receiver, *seq, logical_len, *ack) {
-        let (original, reply) = swap_peers(sender, receiver, dir);
-        return EstablishedUpdateResult::Invalid { original, reply };
-    }
-
-    let fin_seen = match control {
-        Some(Control::SYN) => {
-            let (original, reply) = swap_peers(sender, receiver, dir);
-            return EstablishedUpdateResult::Invalid { original, reply };
-        }
-        Some(Control::RST) => return EstablishedUpdateResult::Reset,
-        Some(Control::FIN) => true,
-        None => false,
-    };
-
-    let new_sender = sender.update_sender(*seq, logical_len, *ack, *wnd, fin_seen);
-    let new_receiver = receiver.update_receiver(*ack);
-
-    let (new_original, new_reply) = swap_peers(new_sender, new_receiver, dir);
-    EstablishedUpdateResult::Success { new_original, new_reply }
 }
 
 /// State for the Opening state.
@@ -727,43 +653,64 @@ impl Established {
         //
         // Neither Linux nor gVisor do anything special for these segments.
 
-        match do_established_update(
-            UpdatePeers { original, reply },
-            segment,
-            payload_len,
-            dir.clone(),
-        ) {
-            EstablishedUpdateResult::Success { new_original, new_reply } => {
-                if new_original.fin_state.acked() && new_reply.fin_state.acked() {
-                    // Removing the entry immediately is not expected to break any
-                    // use-cases. The endpoints are ultimately responsible for
-                    // respecting the TIME_WAIT state.
-                    //
-                    // The NAT entry will be removed as a consequence, but this is only
-                    // a problem if a server wanted to reopen the connection with the
-                    // client (but only during TIME_WAIT).
-                    //
-                    // TODO(https://fxbug.dev/355200767): Add TimeWait and reopening
-                    // connections once simultaneous open is supported.
-                    (State::Closed, true)
-                } else {
-                    (Established { original: new_original, reply: new_reply }.into(), true)
-                }
+        let logical_len = segment.len(payload_len);
+        let SegmentHeader { seq, ack, wnd, control, options: _, push: _ } = segment;
+
+        let (sender, receiver) = swap_peers(original, reply, dir);
+
+        // From RFC 9293:
+        //   If the ACK control bit is set, this field contains the value of the
+        //   next sequence number the sender of the segment is expecting to receive.
+        //   Once a connection is established, this is always sent.
+        let ack = match ack {
+            Some(ack) => ack,
+            None => {
+                let (original, reply) = swap_peers(sender, receiver, dir);
+                return (Established { original, reply }.into(), false);
             }
-            EstablishedUpdateResult::Invalid { original, reply } => {
-                (Self { original, reply }.into(), false)
+        };
+
+        if !Peer::ack_segment_valid(&sender, &receiver, *seq, logical_len, *ack) {
+            let (original, reply) = swap_peers(sender, receiver, dir);
+            return (Established { original, reply }.into(), false);
+        }
+
+        let fin_seen = match control {
+            Some(Control::SYN) => {
+                let (original, reply) = swap_peers(sender, receiver, dir);
+                return (Established { original, reply }.into(), false);
             }
-            EstablishedUpdateResult::Reset => (State::Closed, true),
+            Some(Control::RST) => return (State::Closed, true),
+            Some(Control::FIN) => true,
+            None => false,
+        };
+
+        let new_sender = sender.update_sender(*seq, logical_len, *ack, *wnd, fin_seen);
+        let new_receiver = receiver.update_receiver(*ack);
+
+        let (new_original, new_reply) = swap_peers(new_sender, new_receiver, dir);
+
+        if new_original.fin_state.acked() && new_reply.fin_state.acked() {
+            // Removing the entry immediately is not expected to break any
+            // use-cases. The endpoints are ultimately responsible for
+            // respecting the TIME_WAIT state.
+            //
+            // The NAT entry will be removed as a consequence, but this is only
+            // a problem if a server wanted to reopen the connection with the
+            // client (but only during TIME_WAIT).
+            //
+            // TODO(https://fxbug.dev/355200767): Add TimeWait and reopening
+            // connections once simultaneous open is supported.
+            (State::Closed, true)
+        } else {
+            (Established { original: new_original, reply: new_reply }.into(), true)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Established, EstablishedUpdateResult, FinState, Opening, Peer, State, UpdatePeers,
-        do_established_update,
-    };
+    use super::{Established, FinState, Opening, Peer, State};
 
     use assert_matches::assert_matches;
     use netstack3_base::{
@@ -1238,181 +1185,6 @@ mod tests {
         assert_eq!(min_peer.max_ack_window(), 66_000u32);
     }
 
-    enum EstablishedUpdateTestResult {
-        Success { new_original: Peer, new_reply: Peer },
-        Invalid,
-        Reset,
-    }
-
-    struct EstablishedUpdateTestArgs {
-        segment: SegmentHeader,
-        payload_len: usize,
-        dir: ConnectionDirection,
-        expected: EstablishedUpdateTestResult,
-    }
-
-    #[test_case(
-        EstablishedUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: EstablishedUpdateTestResult::Success {
-                new_original: Peer {
-                    window_scale: WindowScale::new(2).unwrap(),
-                    // Changed.
-                    max_wnd: WindowSize::new(40).unwrap(),
-                    max_wnd_seq: SeqNum::new(70_000),
-                    // Changed.
-                    max_next_seq: SeqNum::new(1424),
-                    // Changed.
-                    unacked_data: true,
-                    fin_state: FinState::NotSent,
-                },
-                new_reply: Peer {
-                    window_scale: WindowScale::new(0).unwrap(),
-                    max_wnd: WindowSize::new(400).unwrap(),
-                    max_wnd_seq: SeqNum::new(1424),
-                    max_next_seq: SeqNum::new(66_001),
-                    // Changed.
-                    unacked_data: false,
-                    fin_state: FinState::NotSent,
-                },
-            }
-        }; "success original"
-    )]
-    #[test_case(
-        EstablishedUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(66_100),
-                ack: Some(SeqNum::new(1024)),
-                wnd: UnscaledWindowSize::from(10),
-                control: Some(Control::FIN),
-                ..Default::default()
-            },
-            payload_len: 0,
-            dir: ConnectionDirection::Reply,
-            expected: EstablishedUpdateTestResult::Success {
-              // No changes in new_original.
-              new_original: Peer {
-                  window_scale: WindowScale::new(2).unwrap(),
-                  max_wnd: WindowSize::new(0).unwrap(),
-                  max_wnd_seq: SeqNum::new(70_000),
-                  max_next_seq: SeqNum::new(1024),
-                  unacked_data: false,
-                  fin_state: FinState::NotSent,
-              },
-              new_reply: Peer {
-                  window_scale: WindowScale::new(0).unwrap(),
-                  max_wnd: WindowSize::new(400).unwrap(),
-                  max_wnd_seq: SeqNum::new(1424),
-                  max_next_seq: SeqNum::new(66_101),
-                  unacked_data: true,
-                  fin_state: FinState::Sent(SeqNum::new(66_100)),
-              },
-            }
-        }; "success reply"
-    )]
-    #[test_case(
-        EstablishedUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                control: Some(Control::RST),
-                ..Default::default()
-            },
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: EstablishedUpdateTestResult::Reset,
-        }; "RST"
-    )]
-    #[test_case(
-        EstablishedUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            // These don't matter for the test
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: EstablishedUpdateTestResult::Invalid,
-        }; "missing ack"
-    )]
-    #[test_case(
-        EstablishedUpdateTestArgs {
-            segment: SegmentHeader {
-                // Too low. Doesn't meet equation II.
-                seq: SeqNum::new(0),
-                wnd: UnscaledWindowSize::from(10),
-                ..Default::default()
-            },
-            // These don't matter for the test
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: EstablishedUpdateTestResult::Invalid,
-        }; "invalid equation bounds"
-    )]
-    #[test_case(
-        EstablishedUpdateTestArgs {
-            segment: SegmentHeader {
-                seq: SeqNum::new(1400),
-                ack: Some(SeqNum::new(66_001)),
-                wnd: UnscaledWindowSize::from(10),
-                control: Some(Control::SYN),
-                ..Default::default()
-            },
-            payload_len: 24,
-            dir: ConnectionDirection::Original,
-            expected: EstablishedUpdateTestResult::Invalid,
-        }; "SYN not allowed"
-    )]
-    fn do_established_update_test(args: EstablishedUpdateTestArgs) {
-        let original = Peer {
-            window_scale: WindowScale::new(2).unwrap(),
-            max_wnd: WindowSize::new(0).unwrap(),
-            max_wnd_seq: SeqNum::new(70_000),
-            max_next_seq: SeqNum::new(1024),
-            unacked_data: false,
-            fin_state: FinState::NotSent,
-        };
-
-        let reply = Peer {
-            window_scale: WindowScale::new(0).unwrap(),
-            max_wnd: WindowSize::new(400).unwrap(),
-            max_wnd_seq: SeqNum::new(1424),
-            max_next_seq: SeqNum::new(66_001),
-            unacked_data: true,
-            fin_state: FinState::NotSent,
-        };
-
-        let expected_result = match args.expected {
-            EstablishedUpdateTestResult::Success { new_original, new_reply } => {
-                EstablishedUpdateResult::Success { new_original, new_reply }
-            }
-            EstablishedUpdateTestResult::Invalid => EstablishedUpdateResult::Invalid {
-                original: original.clone(),
-                reply: reply.clone(),
-            },
-            EstablishedUpdateTestResult::Reset => EstablishedUpdateResult::Reset,
-        };
-
-        assert_eq!(
-            do_established_update(
-                UpdatePeers { original: original, reply: reply },
-                &args.segment,
-                args.payload_len,
-                args.dir,
-            ),
-            expected_result
-        );
-    }
-
     struct StateUpdateTestArgs {
         segment: SegmentHeader,
         payload_len: usize,
@@ -1487,6 +1259,46 @@ mod tests {
         StateUpdateTestArgs {
             segment: SegmentHeader {
                 seq: SeqNum::new(1400),
+                wnd: UnscaledWindowSize::from(10),
+                ..Default::default()
+            },
+            payload_len: 24,
+            dir: ConnectionDirection::Original,
+            expected: None,
+        }; "missing ack"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                // Too low. Doesn't meet equation II.
+                seq: SeqNum::new(0),
+                ack: Some(SeqNum::new(66_001)),
+                wnd: UnscaledWindowSize::from(10),
+                ..Default::default()
+            },
+            payload_len: 24,
+            dir: ConnectionDirection::Original,
+            expected: None,
+        }; "invalid equation bounds"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                seq: SeqNum::new(1400),
+                ack: Some(SeqNum::new(66_001)),
+                wnd: UnscaledWindowSize::from(10),
+                control: Some(Control::SYN),
+                ..Default::default()
+            },
+            payload_len: 24,
+            dir: ConnectionDirection::Original,
+            expected: None,
+        }; "SYN not allowed"
+    )]
+    #[test_case(
+        StateUpdateTestArgs {
+            segment: SegmentHeader {
+                seq: SeqNum::new(1400),
                 // Fails equation III.
                 ack: Some(SeqNum::new(100_000)),
                 wnd: UnscaledWindowSize::from(10),
@@ -1495,7 +1307,7 @@ mod tests {
             payload_len: 24,
             dir: ConnectionDirection::Original,
             expected: None,
-        }; "invalid"
+        }; "invalid ack"
     )]
     #[test_case(
         StateUpdateTestArgs {
