@@ -69,7 +69,7 @@ impl Connection {
 /// up perfectly 1:1. See the doc comments on each state for the expected state
 /// of each of the peers assuming that all packets are received and are valid.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum State {
+enum State {
     /// The connection has properties that break standard state tracking. This
     /// state does a good-enough job tracking the connection.
     ///
@@ -521,7 +521,7 @@ fn do_established_update(
 ///
 /// This state never transitions to another state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Untracked {}
+struct Untracked {}
 state_from_state_struct!(Untracked);
 
 impl Untracked {
@@ -539,7 +539,7 @@ impl Untracked {
 ///
 /// This state never transitions to another state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Closed {}
+struct Closed {}
 state_from_state_struct!(Closed);
 
 impl Closed {
@@ -569,7 +569,7 @@ impl Closed {
 ///   - FIN: Invalid
 ///   - ACK: Invalid
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SynSent {
+struct SynSent {
     /// The ISS (initial send sequence number) for the original TCP stack.
     iss: SeqNum,
 
@@ -747,7 +747,7 @@ impl SynSent {
 ///   - FIN: Closing
 ///   - ACK: WaitingOnOpeningAck
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WaitingOnOpeningAck {
+struct WaitingOnOpeningAck {
     /// State for the "original" TCP stack (the one that we first saw a packet
     /// for).
     original: Peer,
@@ -805,7 +805,7 @@ impl WaitingOnOpeningAck {
 /// - FIN: Closing
 /// - ACK: Established
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Established {
+struct Established {
     original: Peer,
     reply: Peer,
 }
@@ -856,7 +856,7 @@ impl Established {
 /// The Closing state deletes the connection once FINs from both peers have been
 /// ACKed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Closing {
+struct Closing {
     original: Peer,
     reply: Peer,
 }
