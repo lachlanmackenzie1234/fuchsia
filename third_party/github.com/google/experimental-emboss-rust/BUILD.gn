@@ -46,8 +46,5 @@ rustc_library("emboss_runtime") {
 
   # This backend is still experimental and as such should only be used
   # by the `sunstone` project.
-  visibility += [
-    "//src/connectivity/bluetooth/sunstone:*",
-    "//src/connectivity/bluetooth/sunstone/*",
-  ]
+  visibility += [ "//src/connectivity/bluetooth/sunstone:*" ]
 }

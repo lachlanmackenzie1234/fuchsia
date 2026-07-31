@@ -2467,18 +2467,6 @@ alias(
 )
 
 alias(
-    name = "sapphire-emboss-0.1.0",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-emboss:sapphire_emboss",
-    tags = ["manual"],
-)
-
-alias(
-    name = "sapphire-emboss",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-emboss:sapphire_emboss",
-    tags = ["manual"],
-)
-
-alias(
     name = "sapphire-gatt-0.1.0",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-gatt:sapphire_gatt",
     tags = ["manual"],

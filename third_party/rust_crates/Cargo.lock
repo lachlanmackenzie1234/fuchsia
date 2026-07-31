@@ -2003,7 +2003,6 @@ dependencies = [
  "rutabaga_gfx",
  "sapphire-async",
  "sapphire-collections",
- "sapphire-emboss",
  "sapphire-gatt",
  "sapphire-hci",
  "sapphire-peer-cache",
@@ -4738,10 +4737,6 @@ dependencies = [
 
 [[package]]
 name = "sapphire-collections"
-version = "0.1.0"
-
-[[package]]
-name = "sapphire-emboss"
 version = "0.1.0"
 
 [[package]]

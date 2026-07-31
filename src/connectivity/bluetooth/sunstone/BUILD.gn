@@ -148,11 +148,6 @@ if (is_host) {
       "//third_party/rust_crates:sapphire-sync",
     ]
   }
-
-  group("sapphire_emboss_test") {
-    testonly = true
-    public_deps = [ "sapphire-emboss:tests" ]
-  }
 }
 
 group("tests") {
@@ -160,7 +155,6 @@ group("tests") {
   deps = [
     ":sapphire_async_test($host_toolchain)",
     ":sapphire_collections_test($host_toolchain)",
-    ":sapphire_emboss_test($host_toolchain)",
     ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_hci_test($host_toolchain)",
     ":sapphire_peer_cache_test($host_toolchain)",
