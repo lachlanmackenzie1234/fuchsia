@@ -7,7 +7,7 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_DISPATCHER_H_
 
-#include <lib/zircon-internal/thread_annotations.h>
+#include <lib/object-constants.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
 #include <zircon/rights.h>
@@ -15,30 +15,52 @@
 
 #include <fbl/ref_ptr.h>
 #include <object/dispatcher.h>
+#include <object/handle.h>
 #include <object/msi_allocation.h>
+#include <object/opaque_storage.h>
 
-class MsiDispatcher final : public SoloDispatcher<MsiDispatcher, ZX_DEFAULT_MSI_RIGHTS> {
+class MsiDispatcher;
+
+extern "C" {
+
+zx_status_t cpp_msi_dispatcher_create(MsiAllocation* msi_alloc_raw,
+                                      KernelHandle<MsiDispatcher>* handle_out);
+void rust_msi_dispatcher_state_init(void* storage, void* dispatcher, MsiAllocation* msi_alloc);
+void rust_msi_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_msi_dispatcher_state_get_lock(const void* state);
+zx_info_msi_t rust_msi_dispatcher_get_info(const MsiDispatcher* disp);
+
+}  // extern "C"
+
+class MsiDispatcher final : public Dispatcher {
  public:
-  static zx_status_t Create(fbl::RefPtr<MsiAllocation> msi_alloc,
-                            KernelHandle<MsiDispatcher>* handle, zx_rights_t* rights) {
-    fbl::AllocChecker ac;
-    KernelHandle new_handle(fbl::AdoptRef(new (&ac) MsiDispatcher(ktl::move(msi_alloc))));
-    if (!ac.check()) {
-      return ZX_ERR_NO_MEMORY;
-    }
-
-    *rights = default_rights();
-    *handle = ktl::move(new_handle);
-    return ZX_OK;
-  }
+  ~MsiDispatcher() final;
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_MSI; }
-  zx_info_msi_t GetInfo() const { return msi_alloc_->GetInfo(); }
-  const fbl::RefPtr<MsiAllocation>& msi_allocation() const { return msi_alloc_; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return false; }
+
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return UserSignalSelfSolo(this, clear_mask, set_mask, 0);
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  using Dispatcher::UpdateState;
+  using Dispatcher::UpdateStateLocked;
+
+  zx_info_msi_t GetInfo() const;
+
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  explicit MsiDispatcher(fbl::RefPtr<MsiAllocation>&& msi_alloc)
-      : msi_alloc_(ktl::move(msi_alloc)) {}
-  const fbl::RefPtr<MsiAllocation> msi_alloc_;
+  friend zx_status_t cpp_msi_dispatcher_create(MsiAllocation* msi_alloc_raw,
+                                               KernelHandle<MsiDispatcher>* handle_out);
+  explicit MsiDispatcher(fbl::RefPtr<MsiAllocation> msi_alloc);
+
+  OpaqueStorage<kMsiDispatcherStateSize, kMsiDispatcherStateAlign> opaque_storage_;
 };
+
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_DISPATCHER_H_

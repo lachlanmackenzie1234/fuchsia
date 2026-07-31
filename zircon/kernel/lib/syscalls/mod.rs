@@ -8,6 +8,7 @@ mod counter;
 mod debuglog;
 mod event;
 mod iommu;
+mod msi;
 mod profile;
 mod restricted;
 mod sampler;

@@ -205,6 +205,19 @@ impl Dispatcher {
         }
     }
 
+    /// Resolves a handle to a dispatcher of type T without requiring any rights.
+    ///
+    /// # Errors
+    ///
+    /// - `ZX_ERR_BAD_HANDLE` if `handle` is not valid.
+    /// - `ZX_ERR_WRONG_TYPE` if the dispatcher's type does not match `T::TYPE`.
+    pub fn get<T>(handle: HandleValue) -> Result<fbl::RefPtr<T>, Status>
+    where
+        T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
+    {
+        Self::get_with_rights::<T>(handle, zx_types::ZX_RIGHT_NONE)
+    }
+
     /// Resolves a handle to a dispatcher of type T with required rights.
     ///
     /// # Errors

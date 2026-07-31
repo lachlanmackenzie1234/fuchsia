@@ -24,6 +24,12 @@
 #include <vm/stream_size_manager.h>
 #include <vm/vm_object.h>
 
+class VmObjectDispatcher;
+
+extern "C" {
+const fbl::RefPtr<VmObject>* cpp_vm_object_dispatcher_get_vmo(const VmObjectDispatcher* disp);
+}
+
 class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DEFAULT_VMO_RIGHTS>,
                                  public VmObjectChildObserver {
  public:

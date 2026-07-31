@@ -56,6 +56,7 @@ closed protocol Msi {
     ///  - [`zx_msi_create()`]
     ///
     /// [`zx_msi_create()`]: msi_create.md
+    @rust
     strict Allocate(resource struct {
         handle Handle:RESOURCE;
         count uint32;
@@ -150,6 +151,7 @@ closed protocol Msi {
     /// [`zx_vmo_create_contiguous()`]: vmo_create_contiguous.md
     /// [`zx_vmo_create_physical()`]: vmo_create_physical.md
     /// [`zx_vmo_set_cache_policy()`]: vmo_set_cache_policy.md
+    @rust
     strict Create(resource struct {
         handle Handle;
         options uint32;

@@ -2337,6 +2337,21 @@ struct_decl_macro! {
 
 zx_info_bti_t!(zx_info_bti_t);
 
+struct_decl_macro! {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+    #[derive(zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable)]
+    pub struct <zx_info_msi_t> {
+        pub target_addr: u64,
+        pub target_data: u32,
+        pub base_irq_id: u32,
+        pub num_irq: u32,
+        pub interrupt_count: u32,
+    }
+}
+
+zx_info_msi_t!(zx_info_msi_t);
+
 pub type zx_thread_state_t = u32;
 
 multiconst!(zx_thread_state_t, [
@@ -2848,6 +2863,11 @@ multiconst!(u32, [
 multiconst!(u32, [
     ZX_INTERRUPT_VIRTUAL = 0x10;
     ZX_INTERRUPT_TIMESTAMP_MONO = 1 << 6;
+]);
+
+// Options for zx_msi_create
+multiconst!(u32, [
+    ZX_MSI_MODE_MSI_X = 0x1;
 ]);
 
 // Options for zx_interrupt_bind

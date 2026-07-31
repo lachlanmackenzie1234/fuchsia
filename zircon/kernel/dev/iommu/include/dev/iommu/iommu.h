@@ -19,6 +19,14 @@
 
 namespace iommu {
 
+class Iommu;
+
+}  // namespace iommu
+
+extern "C" void cpp_iommu_recycle(iommu::Iommu* iommu);
+
+namespace iommu {
+
 class Bti;  // fwd decl, object declaration in iommu/bti.h
 
 class Iommu : public fbl::RefCounted<Iommu> {
@@ -33,6 +41,7 @@ class Iommu : public fbl::RefCounted<Iommu> {
 
  protected:
   friend class fbl::RefPtr<Iommu>;
+  friend void ::cpp_iommu_recycle(iommu::Iommu*);
   virtual ~Iommu() {}
 };
 

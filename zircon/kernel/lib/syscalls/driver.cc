@@ -30,8 +30,6 @@
 #include <object/interrupt_dispatcher.h>
 #include <object/interrupt_event_dispatcher.h>
 #include <object/iommu_dispatcher.h>
-#include <object/msi_dispatcher.h>
-#include <object/msi_interrupt_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/resource.h>
 #include <object/vcpu_dispatcher.h>
@@ -194,55 +192,6 @@ zx_status_t sys_ioports_release(zx_handle_t hrsrc, uint16_t io_addr, uint32_t le
   return ZX_ERR_NOT_SUPPORTED;
 }
 #endif
-
-// zx_status_t zx_msi_allocate
-zx_status_t sys_msi_allocate(zx_handle_t msi, uint32_t count, zx_handle_t* out) {
-  zx_status_t status;
-  if ((status = validate_resource_kind_base(msi, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MSI_BASE)) !=
-      ZX_OK) {
-    return status;
-  }
-
-  fbl::RefPtr<MsiAllocation> alloc;
-  if ((status = MsiAllocation::Create(count, &alloc)) != ZX_OK) {
-    return status;
-  }
-
-  zx_rights_t rights;
-  KernelHandle<MsiDispatcher> alloc_handle;
-  if ((status = MsiDispatcher::Create(ktl::move(alloc), &alloc_handle, &rights)) != ZX_OK) {
-    return status;
-  }
-
-  return ProcessDispatcher::GetCurrent()->MakeAndAddHandle(ktl::move(alloc_handle), rights, out);
-}
-
-// zx_status_t zx_msi_create
-zx_status_t sys_msi_create(zx_handle_t msi_alloc, uint32_t options, uint32_t msi_id,
-                           zx_handle_t vmo, size_t vmo_offset, zx_handle_t* out) {
-  auto* up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<MsiDispatcher> msi_alloc_disp;
-
-  zx_status_t status;
-  if ((status = up->handle_table().GetDispatcher(*up, msi_alloc, &msi_alloc_disp)) != ZX_OK) {
-    return status;
-  }
-
-  fbl::RefPtr<VmObjectDispatcher> vmo_disp;
-  if ((status = up->handle_table().GetDispatcherWithRights(*up, vmo, ZX_RIGHT_MAP, &vmo_disp)) !=
-      ZX_OK) {
-    return status;
-  }
-
-  zx_rights_t rights;
-  KernelHandle<InterruptDispatcher> msi_handle;
-  if ((status = MsiInterruptDispatcher::Create(
-           msi_alloc_disp->msi_allocation(), /* msi_id= */ msi_id, vmo_disp->vmo(),
-           /* cap_offset= */ vmo_offset, /* options= */ options, &rights, &msi_handle)) != ZX_OK) {
-    return status;
-  }
-  return up->MakeAndAddHandle(ktl::move(msi_handle), rights, out);
-}
 
 // zx_status_t zx_bti_create
 zx_status_t sys_bti_create(zx_handle_t iommu, uint32_t options, uint64_t bti_id, zx_handle_t* out) {

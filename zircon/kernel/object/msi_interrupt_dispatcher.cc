@@ -289,3 +289,14 @@ MsixInterruptDispatcherImpl::~MsixInterruptDispatcherImpl() {
   MmioWrite32(0, &table_entries_[msi_id()].msg_data);
   arch::DeviceMemoryBarrier();
 }
+
+#include <kernel/ffi.h>
+
+extern "C" zx_status_t cpp_msi_interrupt_dispatcher_create(
+    const fbl::RefPtr<MsiAllocation>* alloc, uint32_t msi_id, const fbl::RefPtr<VmObject>* vmo,
+    size_t cap_offset, uint32_t options, zx_rights_t* rights_out,
+    KernelHandle<MsiInterruptDispatcher>* handle_out) {
+  return MsiInterruptDispatcher::Create(
+      *alloc, msi_id, *vmo, cap_offset, options, rights_out,
+      reinterpret_cast<KernelHandle<InterruptDispatcher>*>(handle_out));
+}

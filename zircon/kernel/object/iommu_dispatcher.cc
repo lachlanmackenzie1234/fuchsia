@@ -36,8 +36,4 @@ IMPLEMENT_DISPATCHER_RUST_STATE(IommuDispatcher, rust_iommu_dispatcher_state_get
 iommu::Iommu& IommuDispatcher::iommu() const { return *rust_iommu_dispatcher_get_iommu(this); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE void cpp_iommu_release(iommu::Iommu* iommu) {
-  if (iommu) {
-    fbl::RefPtr<iommu::Iommu> drop_me = fbl::ImportFromRawPtr(iommu);
-  }
-}
+extern "C" FFI_ALWAYS_INLINE void cpp_iommu_recycle(iommu::Iommu* iommu) { delete iommu; }

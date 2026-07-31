@@ -119,3 +119,18 @@ zx_info_msi MsiAllocation::GetInfo() const TA_EXCL(lock_) {
       .interrupt_count = static_cast<uint32_t>(ktl::popcount(ids_in_use_.load())),
   };
 }
+
+#include <kernel/ffi.h>
+
+static_assert(kMsiDispatcherStateSize == 64, "MsiDispatcherState size mismatch");
+static_assert(kMsiDispatcherStateAlign == 8, "MsiDispatcherState alignment mismatch");
+
+MsiDispatcher::MsiDispatcher(fbl::RefPtr<MsiAllocation> msi_alloc) : Dispatcher(0u) {
+  DISPATCHER_VERIFY_OFFSET(MsiDispatcher, kMsiDispatcherStateOffset);
+  rust_msi_dispatcher_state_init(&opaque_storage_, this, fbl::ExportToRawPtr(&msi_alloc));
+}
+
+IMPLEMENT_DISPATCHER_RUST_STATE(MsiDispatcher, rust_msi_dispatcher_state_get_lock,
+                                rust_msi_dispatcher_state_destroy)
+
+zx_info_msi MsiDispatcher::GetInfo() const { return rust_msi_dispatcher_get_info(this); }

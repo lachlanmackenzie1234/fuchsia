@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::iommu_dispatcher_ffi::cpp_iommu_release;
+use super::iommu_dispatcher_ffi::cpp_iommu_recycle;
 
 fbl::impl_opaque_ref_counted_facade!(
     pub struct Iommu,
-    cpp_iommu_release,
+    cpp_iommu_recycle,
 );

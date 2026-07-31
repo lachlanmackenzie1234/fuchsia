@@ -16,6 +16,11 @@ mod iommu_dispatcher;
 mod iommu_dispatcher_ffi;
 mod log_dispatcher;
 mod log_dispatcher_ffi;
+mod msi_allocation;
+mod msi_dispatcher;
+mod msi_dispatcher_ffi;
+mod msi_interrupt_dispatcher;
+mod msi_interrupt_dispatcher_ffi;
 mod process_dispatcher;
 mod process_dispatcher_ffi;
 mod profile_dispatcher;
@@ -29,6 +34,8 @@ mod thread_dispatcher;
 mod thread_dispatcher_ffi;
 mod vm_address_region_dispatcher;
 mod vm_address_region_dispatcher_ffi;
+mod vm_object_dispatcher;
+mod vm_object_dispatcher_ffi;
 
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
@@ -36,6 +43,9 @@ pub use event_dispatcher::EventDispatcher;
 pub use handle::{HandleValue, KernelHandle};
 pub use iommu_dispatcher::IommuDispatcher;
 pub use log_dispatcher::*;
+pub use msi_allocation::MsiAllocation;
+pub use msi_dispatcher::MsiDispatcher;
+pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
 pub use process_dispatcher::ProcessDispatcher;
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource_ffi::{
@@ -52,3 +62,4 @@ pub use thread_dispatcher::ThreadDispatcher;
 pub use thread_dispatcher_ffi::*;
 #[allow(unused_imports)]
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
+pub use vm_object_dispatcher::VmObjectDispatcher;

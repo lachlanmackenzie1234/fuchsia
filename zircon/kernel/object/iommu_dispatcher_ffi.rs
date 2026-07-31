@@ -18,7 +18,7 @@ unsafe extern "C" {
         desc_len: usize,
         handle_out: *mut KernelHandle<IommuDispatcher>,
     ) -> zx_status_t;
-    pub(crate) fn cpp_iommu_release(iommu: *mut Iommu);
+    pub(crate) fn cpp_iommu_recycle(iommu: *mut Iommu);
 }
 
 // FFI trampolines for C++ calling into Rust IommuDispatcherState

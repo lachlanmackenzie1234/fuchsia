@@ -45,7 +45,9 @@ source_set("object") {
     "mbuf.cc",
     "memory_watchdog.cc",
     "message_packet.cc",
+    "msi_allocation_ffi.cc",
     "msi_dispatcher.cc",
+    "msi_dispatcher_ffi.cc",
     "msi_interrupt_dispatcher.cc",
     "pager_dispatcher.cc",
     "pager_proxy.cc",
@@ -202,6 +204,11 @@ kernel_rust_mod("object-rs") {
     "iommu_dispatcher_ffi.rs",
     "log_dispatcher.rs",
     "log_dispatcher_ffi.rs",
+    "msi_allocation.rs",
+    "msi_dispatcher.rs",
+    "msi_dispatcher_ffi.rs",
+    "msi_interrupt_dispatcher.rs",
+    "msi_interrupt_dispatcher_ffi.rs",
     "object.rs",
     "process_dispatcher.rs",
     "process_dispatcher_ffi.rs",
@@ -216,6 +223,8 @@ kernel_rust_mod("object-rs") {
     "thread_dispatcher_ffi.rs",
     "vm_address_region_dispatcher.rs",
     "vm_address_region_dispatcher_ffi.rs",
+    "vm_object_dispatcher.rs",
+    "vm_object_dispatcher_ffi.rs",
   ]
 
   deps = [

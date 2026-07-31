@@ -26,6 +26,16 @@
 // to zx_msi_create contains the table entries, not the device's MSI capability.
 #define ZX_MSI_VALID_OPTIONS (ZX_MSI_MODE_MSI_X)
 
+class MsiInterruptDispatcher;
+
+extern "C" {
+zx_status_t cpp_msi_interrupt_dispatcher_create(const fbl::RefPtr<MsiAllocation>* alloc,
+                                                uint32_t msi_id, const fbl::RefPtr<VmObject>* vmo,
+                                                size_t cap_offset, uint32_t options,
+                                                zx_rights_t* rights_out,
+                                                KernelHandle<MsiInterruptDispatcher>* handle_out);
+}
+
 // The common interface for all MSI related interrupt handling. This encompasses MSI and MSI-X.
 class MsiInterruptDispatcher : public InterruptDispatcher {
  public:

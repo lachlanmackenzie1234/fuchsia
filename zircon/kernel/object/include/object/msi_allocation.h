@@ -77,4 +77,10 @@ class MsiAllocation : public fbl::RefCounted<MsiAllocation> {
   ktl::atomic<IdBitMaskType> ids_in_use_ = 0;
 };
 
+extern "C" {
+zx_status_t cpp_msi_allocation_create(uint32_t count, MsiAllocation** alloc_out);
+void cpp_msi_allocation_recycle(MsiAllocation* msi_alloc);
+zx_info_msi_t cpp_msi_allocation_get_info(const MsiAllocation* alloc);
+}
+
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_ALLOCATION_H_

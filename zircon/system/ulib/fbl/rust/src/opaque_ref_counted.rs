@@ -101,7 +101,7 @@ unsafe impl<T: IsOpaqueRefCounted> Recyclable for T {
 /// fbl::impl_opaque_ref_counted_facade!(
 ///     /// Facade type representing the C++ `iommu::Iommu` object.
 ///     pub struct Iommu,
-///     cpp_iommu_release,
+///     cpp_iommu_recycle,
 /// );
 /// ```
 /// 2. Where `fbl::RefCounted` is at a non-zero offset or requires a C++ helper function:
@@ -118,7 +118,7 @@ macro_rules! impl_opaque_ref_counted_facade {
     (
         $(#[$meta:meta])*
         $vis:vis struct $name:ident,
-        $release_fn:path $(,)?
+        $recycle_fn:path $(,)?
     ) => {
         $(#[$meta])*
         #[repr(C)]
@@ -139,7 +139,7 @@ macro_rules! impl_opaque_ref_counted_facade {
             unsafe fn recycle(ptr: core::ptr::NonNull<Self>) {
                 // SAFETY: `ptr` was constructed from `RefPtr::into_raw` on a valid `$name` facade.
                 unsafe {
-                    $release_fn(ptr.as_ptr() as *mut Self);
+                    $recycle_fn(ptr.as_ptr() as *mut Self);
                 }
             }
         }
@@ -147,7 +147,7 @@ macro_rules! impl_opaque_ref_counted_facade {
     (
         $(#[$meta:meta])*
         $vis:vis struct $name:ident,
-        $release_fn:path,
+        $recycle_fn:path,
         $get_ref_counted_fn:path $(,)?
     ) => {
         $(#[$meta])*
@@ -172,7 +172,7 @@ macro_rules! impl_opaque_ref_counted_facade {
             unsafe fn recycle(ptr: core::ptr::NonNull<Self>) {
                 // SAFETY: `ptr` was constructed from `RefPtr::into_raw` on a valid `$name` facade.
                 unsafe {
-                    $release_fn(ptr.as_ptr() as *mut Self);
+                    $recycle_fn(ptr.as_ptr() as *mut Self);
                 }
             }
         }

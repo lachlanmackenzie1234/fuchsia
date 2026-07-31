@@ -137,6 +137,7 @@ kernel_rust_mod("syscalls-rs") {
     "event.rs",
     "iommu.rs",
     "lib.rs",
+    "msi.rs",
     "profile.rs",
     "restricted.rs",
     "sampler.rs",

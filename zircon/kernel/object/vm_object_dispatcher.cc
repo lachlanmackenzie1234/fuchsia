@@ -585,3 +585,11 @@ zx::result<fbl::RefPtr<StreamSizeManager>> VmObjectDispatcher::stream_size_manag
   }
   return zx::ok(stream_size_mgr_);
 }
+
+#include <kernel/ffi.h>
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE const fbl::RefPtr<VmObject>* cpp_vm_object_dispatcher_get_vmo(
+    const VmObjectDispatcher* disp) {
+  return &disp->vmo();
+}

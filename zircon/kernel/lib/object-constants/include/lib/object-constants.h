@@ -29,6 +29,11 @@ constexpr size_t kIommuDispatcherStateSize = 48;
 constexpr size_t kIommuDispatcherStateAlign = 8;
 constexpr size_t kIommuDispatcherStateOffset = 48;
 
+// Size and alignment for MsiDispatcherState.
+constexpr size_t kMsiDispatcherStateSize = 64;
+constexpr size_t kMsiDispatcherStateAlign = 8;
+constexpr size_t kMsiDispatcherStateOffset = 48;
+
 // Size and alignment for LogDispatcherState.
 constexpr size_t kLogDispatcherStateSize = 112;
 constexpr size_t kLogDispatcherStateAlign = 8;

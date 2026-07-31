@@ -317,11 +317,12 @@ _ZX_SYSCALL_DECL(membarrier_sync_process_data, void, /* no attributes */, 0, (),
 
 _ZX_SYSCALL_DECL(membarrier_sync_process_insn, void, /* no attributes */, 0, (), (void))
 
-_ZX_SYSCALL_DECL(msi_allocate, zx_status_t, /* no attributes */, 3, (handle, count, out_allocation),
+_ZX_SYSCALL_DECL(msi_allocate, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
+                 (handle, count, out_allocation),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t count,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out_allocation))
 
-_ZX_SYSCALL_DECL(msi_create, zx_status_t, /* no attributes */, 6,
+_ZX_SYSCALL_DECL(msi_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 6,
                  (handle, options, msi_id, vmo, vmo_offset, out_interrupt),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t options,
                   uint32_t msi_id, _ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t vmo,
