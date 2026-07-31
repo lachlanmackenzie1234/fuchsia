@@ -603,6 +603,8 @@ mod tests {
                 .expect("Lookup failed")
                 .expect("Last created file wasn't present");
         }
+
+        fs.close().await.expect("close failed");
     }
 
     #[fuchsia::test(threads = 10)]
