@@ -7,7 +7,7 @@
 
 #include <fuchsia/update/channelcontrol/cpp/fidl.h>
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider.h"
+#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
 
 namespace forensics::feedback {
@@ -20,11 +20,12 @@ struct TargetChannelToAnnotations {
 // Responsible for collecting annotations for
 // fuchsia.update.channelcontrol/ChannelControl::GetTarget.
 class TargetChannelProvider
-    : public DynamicSingleFidlMethodAnnotationProvider<
+    : public DynamicSingleHlcppFidlMethodAnnotationProvider<
           fuchsia::update::channelcontrol::ChannelControl,
           &fuchsia::update::channelcontrol::ChannelControl::GetTarget, TargetChannelToAnnotations> {
  public:
-  using DynamicSingleFidlMethodAnnotationProvider::DynamicSingleFidlMethodAnnotationProvider;
+  using DynamicSingleHlcppFidlMethodAnnotationProvider::
+      DynamicSingleHlcppFidlMethodAnnotationProvider;
 
   virtual ~TargetChannelProvider() = default;
 

@@ -7,7 +7,7 @@
 
 #include <fuchsia/hwinfo/cpp/fidl.h>
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider.h"
+#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
 
 namespace forensics::feedback {
@@ -18,10 +18,11 @@ struct BoardInfoToAnnotations {
 
 // Responsible for collecting annotations for fuchsia.hwinfo/Board.
 class BoardInfoProvider
-    : public StaticSingleFidlMethodAnnotationProvider<
+    : public StaticSingleHlcppFidlMethodAnnotationProvider<
           fuchsia::hwinfo::Board, &fuchsia::hwinfo::Board::GetInfo, BoardInfoToAnnotations> {
  public:
-  using StaticSingleFidlMethodAnnotationProvider::StaticSingleFidlMethodAnnotationProvider;
+  using StaticSingleHlcppFidlMethodAnnotationProvider::
+      StaticSingleHlcppFidlMethodAnnotationProvider;
 
   virtual ~BoardInfoProvider() = default;
 

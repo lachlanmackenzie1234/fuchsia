@@ -59,7 +59,6 @@ source_set("battery_info_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
     "//src/developer/forensics/feedback/annotations",
   ]
@@ -74,7 +73,7 @@ source_set("board_info_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider",
+    ":fidl_provider_hlcpp",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
     "//src/developer/forensics/feedback/annotations",
   ]
@@ -87,7 +86,7 @@ source_set("current_channel_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider",
+    ":fidl_provider_hlcpp",
     "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_hlcpp",
     "//src/developer/forensics/feedback/annotations",
   ]
@@ -121,7 +120,7 @@ source_set("device_id_provider") {
     "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
     "//src/developer/forensics/feedback/annotations",
-    "//src/developer/forensics/feedback/annotations:fidl_provider",
+    "//src/developer/forensics/feedback/annotations:fidl_provider_hlcpp",
     "//src/developer/forensics/utils:errors",
     "//zircon/system/ulib/zx",
   ]
@@ -132,8 +131,8 @@ source_set("device_id_provider") {
   ]
 }
 
-source_set("fidl_provider") {
-  sources = [ "fidl_provider.h" ]
+source_set("fidl_provider_hlcpp") {
+  sources = [ "fidl_provider_hlcpp.h" ]
 
   public_deps = [
     "//sdk/lib/async",
@@ -171,7 +170,7 @@ source_set("product_info_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider",
+    ":fidl_provider_hlcpp",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
     "//src/developer/forensics/feedback/annotations",
   ]
@@ -184,7 +183,7 @@ source_set("target_channel_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider",
+    ":fidl_provider_hlcpp",
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_hlcpp",
     "//src/developer/forensics/feedback/annotations",
   ]

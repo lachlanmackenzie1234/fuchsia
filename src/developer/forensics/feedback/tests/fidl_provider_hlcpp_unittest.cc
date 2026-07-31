@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider.h"
+#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
 
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/update/channelcontrol/cpp/fidl.h>
@@ -28,7 +28,7 @@ using ::testing::UnorderedElementsAreArray;
 constexpr char kChannelKey[] = "current_channel";
 constexpr char kChannelValue[] = "channel";
 
-using StaticSingleFidlMethodAnnotationProviderTest = UnitTestFixture;
+using StaticSingleHlcppFidlMethodAnnotationProviderTest = UnitTestFixture;
 
 struct ConvertChannel {
   Annotations operator()(const std::string& channel) {
@@ -41,16 +41,17 @@ struct ConvertChannel {
 };
 
 class StaticCurrentChannelProvider
-    : public StaticSingleFidlMethodAnnotationProvider<
+    : public StaticSingleHlcppFidlMethodAnnotationProvider<
           fuchsia::update::channelcontrol::ChannelControl,
           &fuchsia::update::channelcontrol::ChannelControl::GetCurrent, ConvertChannel> {
  public:
-  using StaticSingleFidlMethodAnnotationProvider::StaticSingleFidlMethodAnnotationProvider;
+  using StaticSingleHlcppFidlMethodAnnotationProvider::
+      StaticSingleHlcppFidlMethodAnnotationProvider;
 
   std::set<std::string> GetKeys() const override { return {kChannelKey}; }
 };
 
-TEST_F(StaticSingleFidlMethodAnnotationProviderTest, GetAll) {
+TEST_F(StaticSingleHlcppFidlMethodAnnotationProviderTest, GetAll) {
   StaticCurrentChannelProvider provider(dispatcher(), services(),
                                         std::make_unique<MonotonicBackoff>());
 
@@ -70,7 +71,7 @@ TEST_F(StaticSingleFidlMethodAnnotationProviderTest, GetAll) {
   EXPECT_EQ(channel_server->NumConnections(), 0u);
 }
 
-TEST_F(StaticSingleFidlMethodAnnotationProviderTest, Reconnects) {
+TEST_F(StaticSingleHlcppFidlMethodAnnotationProviderTest, Reconnects) {
   StaticCurrentChannelProvider provider(dispatcher(), services(),
                                         std::make_unique<MonotonicBackoff>());
 
@@ -95,19 +96,20 @@ TEST_F(StaticSingleFidlMethodAnnotationProviderTest, Reconnects) {
   EXPECT_EQ(channel_server->NumConnections(), 0u);
 }
 
-using DynamicSingleFidlMethodAnnotationProviderTest = UnitTestFixture;
+using DynamicSingleHlcppFidlMethodAnnotationProviderTest = UnitTestFixture;
 
 class DynamicCurrentChannelProvider
-    : public DynamicSingleFidlMethodAnnotationProvider<
+    : public DynamicSingleHlcppFidlMethodAnnotationProvider<
           fuchsia::update::channelcontrol::ChannelControl,
           &fuchsia::update::channelcontrol::ChannelControl::GetCurrent, ConvertChannel> {
  public:
-  using DynamicSingleFidlMethodAnnotationProvider::DynamicSingleFidlMethodAnnotationProvider;
+  using DynamicSingleHlcppFidlMethodAnnotationProvider::
+      DynamicSingleHlcppFidlMethodAnnotationProvider;
 
   std::set<std::string> GetKeys() const override { return {kChannelKey}; }
 };
 
-TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, Get) {
+TEST_F(DynamicSingleHlcppFidlMethodAnnotationProviderTest, Get) {
   DynamicCurrentChannelProvider provider(dispatcher(), services(),
                                          std::make_unique<MonotonicBackoff>());
 
@@ -127,7 +129,7 @@ TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, Get) {
   EXPECT_EQ(channel_server->NumConnections(), 1u);
 }
 
-TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, Reconnects) {
+TEST_F(DynamicSingleHlcppFidlMethodAnnotationProviderTest, Reconnects) {
   DynamicCurrentChannelProvider provider(dispatcher(), services(),
                                          std::make_unique<MonotonicBackoff>());
 
@@ -166,7 +168,8 @@ TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, Reconnects) {
   EXPECT_EQ(channel_server->NumConnections(), 0u);
 }
 
-TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, ReconnectsAfterErrorOnInitialConnection) {
+TEST_F(DynamicSingleHlcppFidlMethodAnnotationProviderTest,
+       ReconnectsAfterErrorOnInitialConnection) {
   DynamicCurrentChannelProvider provider(dispatcher(), services(),
                                          std::make_unique<MonotonicBackoff>());
   // Inject a service provider which rejects connections until we allow them.
@@ -205,7 +208,7 @@ TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, ReconnectsAfterErrorOnInit
               UnorderedElementsAreArray({Pair(kChannelKey, ErrorOrString(kChannelValue))}));
 }
 
-TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, DoesNotReconnectIfUnavailable) {
+TEST_F(DynamicSingleHlcppFidlMethodAnnotationProviderTest, DoesNotReconnectIfUnavailable) {
   DynamicCurrentChannelProvider provider(dispatcher(), services(),
                                          std::make_unique<MonotonicBackoff>());
 
@@ -239,7 +242,7 @@ TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, DoesNotReconnectIfUnavaila
                                {Pair(kChannelKey, ErrorOrString(Error::kNotAvailableInProduct))}));
 }
 
-TEST_F(DynamicSingleFidlMethodAnnotationProviderTest, DoesNotReconnectIfNotFound) {
+TEST_F(DynamicSingleHlcppFidlMethodAnnotationProviderTest, DoesNotReconnectIfNotFound) {
   DynamicCurrentChannelProvider provider(dispatcher(), services(),
                                          std::make_unique<MonotonicBackoff>());
 
@@ -286,16 +289,17 @@ struct ConvertDeviceId {
 };
 
 class HangingGetDeviceIdProvider
-    : public HangingGetSingleFidlMethodAnnotationProvider<
+    : public HangingGetSingleHlcppFidlMethodAnnotationProvider<
           fuchsia::feedback::DeviceIdProvider, &fuchsia::feedback::DeviceIdProvider::GetId,
           ConvertDeviceId> {
  public:
-  using HangingGetSingleFidlMethodAnnotationProvider::HangingGetSingleFidlMethodAnnotationProvider;
+  using HangingGetSingleHlcppFidlMethodAnnotationProvider::
+      HangingGetSingleHlcppFidlMethodAnnotationProvider;
 
   std::set<std::string> GetKeys() const override { return {kDeviceIdKey}; }
 };
 
-class HangingGetSingleFidlMethodAnnotationProviderTest : public UnitTestFixture {
+class HangingGetSingleHlcppFidlMethodAnnotationProviderTest : public UnitTestFixture {
  protected:
   void SetUpDeviceIdProviderServer(
       std::unique_ptr<stubs::DeviceIdProviderBase> device_id_provider_server) {
@@ -308,7 +312,7 @@ class HangingGetSingleFidlMethodAnnotationProviderTest : public UnitTestFixture 
   std::unique_ptr<stubs::DeviceIdProviderBase> device_id_provider_server_;
 };
 
-TEST_F(HangingGetSingleFidlMethodAnnotationProviderTest, Get) {
+TEST_F(HangingGetSingleHlcppFidlMethodAnnotationProviderTest, Get) {
   SetUpDeviceIdProviderServer(std::make_unique<stubs::DeviceIdProvider>(kDeviceIdValues[0]));
   HangingGetDeviceIdProvider device_id_provider(dispatcher(), services(),
                                                 std::make_unique<MonotonicBackoff>());
@@ -345,7 +349,7 @@ TEST_F(HangingGetSingleFidlMethodAnnotationProviderTest, Get) {
                            }));
 }
 
-TEST_F(HangingGetSingleFidlMethodAnnotationProviderTest, Reconnects) {
+TEST_F(HangingGetSingleHlcppFidlMethodAnnotationProviderTest, Reconnects) {
   SetUpDeviceIdProviderServer(std::make_unique<stubs::DeviceIdProviderNeverReturns>());
   HangingGetDeviceIdProvider device_id_provider(dispatcher(), services(),
                                                 std::make_unique<MonotonicBackoff>());

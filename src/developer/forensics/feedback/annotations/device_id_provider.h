@@ -11,7 +11,7 @@
 #include <set>
 #include <string>
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider.h"
+#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
 #include "src/developer/forensics/feedback/annotations/provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
 
@@ -36,11 +36,12 @@ class LocalDeviceIdProvider : public CachedAsyncAnnotationProvider {
 
 // Fetches the device id from a FIDL server.
 class RemoteDeviceIdProvider
-    : public HangingGetSingleFidlMethodAnnotationProvider<
+    : public HangingGetSingleHlcppFidlMethodAnnotationProvider<
           fuchsia::feedback::DeviceIdProvider, &fuchsia::feedback::DeviceIdProvider::GetId,
           DeviceIdToAnnotations> {
  public:
-  using HangingGetSingleFidlMethodAnnotationProvider::HangingGetSingleFidlMethodAnnotationProvider;
+  using HangingGetSingleHlcppFidlMethodAnnotationProvider::
+      HangingGetSingleHlcppFidlMethodAnnotationProvider;
 
   std::set<std::string> GetKeys() const override;
 };
