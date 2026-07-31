@@ -261,23 +261,56 @@ Please consider contributing aliases for your shell of choice.
 3.  Following the directions at
     <https://fuchsia.dev/fuchsia-src/get-started/get_fuchsia_source>, download
     fuchsia into `$MULTIFUCHSIA_ROOT/clean`, making sure to make it a btrfs
-    subvolume. The best way to do that is:
+    subvolume.
 
-    ```
-    $ btrfs subvolume create "$MULTIFUCHSIA_ROOT/clean"
-    $ cd "$MULTIFUCHSIA_ROOT/clean"
-    $ curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode | bash
-    $ mv fuchsia to-delete && mv to-delete/* to-delete/.* ./ && rmdir to-delete
-    ```
+    * {Steps}
 
-    Note: If you are a Google employee, you need a security exception to run this
-    command. See the internal documentation [Get the source code][internal-setup-link]
-    for details.
+        1.  Create the subvolume and change into it:
+
+            ```posix-terminal
+            btrfs subvolume create "$MULTIFUCHSIA_ROOT/clean"
+
+            cd "$MULTIFUCHSIA_ROOT/clean"
+            ```
+
+        2.  Download and decode the script:
+
+            ```posix-terminal
+            curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode > bootstrap.sh
+            ```
+
+        3.  (Recommended) Verify the contents of the `bootstrap.sh` script.
+
+        4.  Run the script:
+
+            ```posix-terminal
+            bash bootstrap.sh
+            ```
+
+        5.  Move the files to the root of the subvolume:
+
+            ```posix-terminal
+            mv fuchsia to-delete && mv to-delete/* to-delete/.* ./ && rmdir to-delete
+            ```
+
+    * {One-liner}
+
+        If you prefer to run it in a single command, you can use the following:
+
+        ```posix-terminal
+        btrfs subvolume create "$MULTIFUCHSIA_ROOT/clean"
+
+        cd "$MULTIFUCHSIA_ROOT/clean"
+
+        curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode > bootstrap.sh && bash bootstrap.sh
+
+        mv fuchsia to-delete && mv to-delete/* to-delete/.* ./ && rmdir to-delete
+        ```
 
 4.  Symlink the multifuchsia script to your root work dir:
 
-    ```
-    $ ln -s "$MULTIFUCHSIA_ROOT/clean/tools/multifuchsia/multifuchsia" "$MULTIFUCHSIA_ROOT/"
+    ```posix-terminal
+    ln -s "$MULTIFUCHSIA_ROOT/clean/tools/multifuchsia/multifuchsia" "$MULTIFUCHSIA_ROOT/"
     ```
 
     Important: When running `multifuchsia`, make sure to run it via this
@@ -286,19 +319,22 @@ Please consider contributing aliases for your shell of choice.
 5.  Copy `multifuchsia.rc.example` to `$MULTIFUCHSIA_ROOT/multifuchsia.rc` and
     edit it to your preference:
 
-    ```
-    $ cp \
+    ```posix-terminal
+    cp \
         "$MULTIFUCHSIA_ROOT/clean/tools/multifuchsia/multifuchsia.rc.example" \
         "$MULTIFUCHSIA_ROOT/multifuchsia.rc"
     ```
 
 6.  Set up the fuchsia build in clean by doing:
 
-    ```
-    $ cd $MULTIFUCHSIA_ROOT
-    $ ./multifuchsia enter ./clean
-    $ ./scripts/fx set core.x64 --release
-    $ exit
+    ```posix-terminal
+    cd $MULTIFUCHSIA_ROOT
+
+    ./multifuchsia enter ./clean
+
+    ./scripts/fx set core.x64 --release
+
+    exit
     ```
 
     With your choice of fx set arguments. Although consider setting `--args
@@ -307,21 +343,22 @@ Please consider contributing aliases for your shell of choice.
 
 8.  Make parent directories for snapshots and checkouts:
 
-    ```
-    $ mkdir -p "$MULTIFUCHSIA_ROOT/snapshots" "$MULTIFUCHSIA_ROOT/checkouts"
+    ```posix-terminal
+    mkdir -p "$MULTIFUCHSIA_ROOT/snapshots" "$MULTIFUCHSIA_ROOT/checkouts"
     ```
 
 9.  (Optional) Try your first build without using the systemd unit with:
 
-    ```
-    $ "$MULTIFUCHSIA_ROOT/multifuchsia" sync_and_build
+    ```posix-terminal
+    "$MULTIFUCHSIA_ROOT/multifuchsia" sync_and_build
     ```
 
 10. Make symlinks for systemd units:
 
-    ```
-    $ mkdir -p ~/.config/systemd/user/
-    $ ln \
+    ```posix-terminal
+    mkdir -p ~/.config/systemd/user/
+
+    ln \
           -s "$MULTIFUCHSIA_ROOT/clean/tools/multifuchsia/systemd/"* \
           ~/.config/systemd/user/
     ```
@@ -329,9 +366,10 @@ Please consider contributing aliases for your shell of choice.
 11. Create systemd drop-in in
     `~/.config/systemd/user/fuchsia_update_and_build.service.d/workdir.conf`
 
-    ```
-    $ mkdir -p ~/.config/systemd/user/fuchsia_update_and_build.service.d
-    $ cat <<EOF > ~/.config/systemd/user/fuchsia_update_and_build.service.d/workdir.conf
+    ```posix-terminal
+    mkdir -p ~/.config/systemd/user/fuchsia_update_and_build.service.d
+
+    cat <<EOF > ~/.config/systemd/user/fuchsia_update_and_build.service.d/workdir.conf
     [Service]
     WorkingDirectory=$MULTIFUCHSIA_ROOT
     EOF
@@ -339,36 +377,38 @@ Please consider contributing aliases for your shell of choice.
 
 12. Try to run the unit:
 
-    ```
-    $ systemctl --user daemon-reload
-    $ systemctl --user start fuchsia_update_and_build.service
-    $ systemctl --user status fuchsia_update_and_build.service
+    ```posix-terminal
+    systemctl --user daemon-reload
+
+    systemctl --user start fuchsia_update_and_build.service
+
+    systemctl --user status fuchsia_update_and_build.service
     ```
 
 13. If it all seems to be working, enable the timer to run it nightly:
 
-    ```
-    $ systemctl --user enable --now fuchsia_update_and_build.timer
+    ```posix-terminal
+    systemctl --user enable --now fuchsia_update_and_build.timer
     ```
 
 14. Enable your timers to run when you are logged out:
 
-    ```
-    $ loginctl enable-linger $(whoami)
+    ```posix-terminal
+    loginctl enable-linger $(whoami)
     ```
 
 15. (Optional) If you use bash or zsh, enable the `mfcd` and `mfenter` aliases:
 
     bash:
 
-    ```
-    $ echo 'eval "$("'"$MULTIFUCHSIA_ROOT"'/multifuchsia" env bash)"' >> ~/.bashrc
+    ```posix-terminal
+    echo 'eval "$("'"$MULTIFUCHSIA_ROOT"'/multifuchsia" env bash)"' >> ~/.bashrc
     ```
 
     zsh:
 
-    ```
-    $ echo 'eval "$("'"$MULTIFUCHSIA_ROOT"'/multifuchsia" env zsh)"' >> ~/.zshrc
+    ```posix-terminal
+    echo 'eval "$("'"$MULTIFUCHSIA_ROOT"'/multifuchsia" env zsh)"' >> ~/.zshrc
     ```
 
     If you use a different shell, please consider contributing patch with support for
@@ -389,5 +429,3 @@ Extra notes:
     for `fx`, leveraging tools like `direnv` or `dotenv` is highly recommended.
 
 <!-- Reference links -->
-
-[internal-setup-link]: https://fuchsia.dev/internal/intree/development/fuchsia-source-setup/get-the-source-code#glinux-security-exception

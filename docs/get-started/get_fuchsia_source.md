@@ -68,30 +68,48 @@ To download the Fuchsia source, do the following:
     cd $HOME
     ```
 
-1.  Run the bootstrap script:
+1.  Run the bootstrap script to create the `fuchsia` directory and download the source code:
 
     Note: Depending on your network speed, downloading the Fuchsia source code
     (about 2 GB) can take a while.
 
-    ```posix-terminal
-    curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode | bash
-    ```
+    * {Steps}
 
-    This script creates the `fuchsia` directory and downloads the source code.
+        1.  Download and decode the script:
 
-    Note: If you are a Google employee, you need a security exception to run this
-    command. See the internal documentation [Get the source code][internal-setup-link]
-    for details.
+            ```posix-terminal
+            curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode > bootstrap.sh
+            ```
+
+        2.  (Recommended) Verify the contents of the `bootstrap.sh` script.
+
+        3.  Run the script:
+
+            ```posix-terminal
+            bash bootstrap.sh
+            ```
+
+            Note: The script is configured to automatically delete the
+            temporary `bootstrap.sh` file upon completion or exit.
+
+            Note: If you have a slower internet connection and run into
+            timeouts, edit the `bootstrap.sh` script directly to increase the
+            values of `-fetch-packages-timeout` and `-hook-timeout`. These
+            timeouts are in minutes, and indicate a 2 hour timeout for
+            package downloads. (The `-hook-timeout` value is multiplied
+            by 5 when downloading CIPD packages.)
+
+    * {One-liner}
+
+        If you prefer to run it in a single command, you can use the following:
+
+        ```posix-terminal
+        curl -s "https://fuchsia.googlesource.com/fuchsia/+/HEAD/scripts/bootstrap?format=TEXT" | base64 --decode > bootstrap.sh && bash bootstrap.sh
+        ```
 
     If you see the `Invalid authentication credentials` error during the
     bootstrapping process, see [Authentication error](#authentication-error) for
     help.
-
-    If you have a slower internet connection and run into timeouts, you may wish
-    to download the bootstrap script directly and increase the values of
-    `-fetch-packages-timeout` and `-hook-timeout`. These timeouts are in
-    minutes, and indicate a 2 hour timeout for package downloads. (The
-    `-hook-timeout` value is multiplied by 5 when downloading CIPD packages.)
 
 ## 4. Set up environment variables {#set-up-environment-variables}
 
@@ -284,5 +302,4 @@ do the following:
 [femu]: set_up_femu.md
 [tuntap]: https://en.wikipedia.org/wiki/TUN/TAP
 [tap-networking]: https://wiki.qemu.org/Documentation/Networking#Tap
-[internal-setup-link]: https://fuchsia.dev/internal/intree/development/fuchsia-source-setup/get-the-source-code#glinux-security-exception
 

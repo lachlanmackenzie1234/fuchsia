@@ -5,6 +5,24 @@
 
 set -e
 
+SCRIPT_TO_DELETE=""
+if [[ "$0" != *"scripts/bootstrap" ]]; then
+  SCRIPT_TO_DELETE=$(realpath "$0")
+fi
+
+temp_bootstrap_jiri=""
+
+cleanup() {
+  if [[ -n "$temp_bootstrap_jiri" ]]; then
+    rm -f "$temp_bootstrap_jiri"
+  fi
+  if [[ -n "$SCRIPT_TO_DELETE" ]]; then
+    rm -f "$SCRIPT_TO_DELETE"
+  fi
+}
+
+trap cleanup EXIT SIGINT SIGTERM
+
 function usage {
   cat <<END
 usage: bootstrap
@@ -21,7 +39,13 @@ fi
 # The fetched script will
 # - create "fuchsia" directory if it does not exist,
 # - download "jiri" command to "fuchsia/.jiri_root/bin"
-curl -s "https://fuchsia.googlesource.com/jiri/+/HEAD/scripts/bootstrap_jiri?format=TEXT" | base64 --decode | bash -s fuchsia
+temp_bootstrap_jiri=$(mktemp)
+
+# Download and decode to the temporary file
+curl -s "https://fuchsia.googlesource.com/jiri/+/HEAD/scripts/bootstrap_jiri?format=TEXT" | base64 --decode > "$temp_bootstrap_jiri"
+
+# Execute the script from the file
+bash "$temp_bootstrap_jiri" fuchsia
 cd fuchsia
 
 .jiri_root/bin/jiri import -name=integration flower https://fuchsia.googlesource.com/integration
