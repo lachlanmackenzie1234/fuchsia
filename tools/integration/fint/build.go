@@ -16,6 +16,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -562,7 +563,10 @@ func buildImpl(
 			return artifacts, err
 		}
 	}
-	if err := buildBazelHostTests(ctx, runner, contextSpec.CheckoutDir, contextSpec.BuildDir, modules.TestSpecs()); err != nil {
+	if summary, err := buildBazelHostTests(ctx, runner, contextSpec.CheckoutDir, contextSpec.BuildDir, modules.TestSpecs()); err != nil {
+		if summary != "" {
+			artifacts.FailureSummary = summary
+		}
 		return artifacts, err
 	}
 
@@ -1065,7 +1069,7 @@ func exportDebugSymbols(ctx context.Context, buildAPIClient buildAPIClient, cont
 	return string(b), nil
 }
 
-func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutDir, buildDir string, testSpecs []build.TestSpec) error {
+func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutDir, buildDir string, testSpecs []build.TestSpec) (string, error) {
 	var bazelLabels []string
 	for _, spec := range testSpecs {
 		// Bazel tests are differentiated from GN tests by having a "@" prefix
@@ -1075,21 +1079,21 @@ func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutD
 		}
 	}
 	if len(bazelLabels) == 0 {
-		return nil
+		return "", nil
 	}
 
 	topDirConfigPath := filepath.Join(checkoutDir, "build", "bazel", "config", "bazel_top_dir")
 	data, err := os.ReadFile(topDirConfigPath)
 	if err != nil {
-		return fmt.Errorf("failed to read bazel_top_dir config at %s: %w", topDirConfigPath, err)
+		return "", fmt.Errorf("failed to read bazel_top_dir config at %s: %w", topDirConfigPath, err)
 	}
 	bazelTopDir := strings.TrimSpace(string(data))
 	bazelLauncher := filepath.Join(buildDir, bazelTopDir, "bazel")
 	if _, err := os.Stat(bazelLauncher); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("bazel launcher not found at %s: check if the workspace was properly initialized by GN/Ninja", bazelLauncher)
+			return "", fmt.Errorf("bazel launcher not found at %s: check if the workspace was properly initialized by GN/Ninja", bazelLauncher)
 		}
-		return err
+		return "", err
 	}
 
 	cmd := append([]string{
@@ -1104,11 +1108,52 @@ func buildBazelHostTests(ctx context.Context, runner subprocessRunner, checkoutD
 		"--enable_runfiles=true",
 	}, bazelLabels...)
 
+	var stderrBuf bytes.Buffer
 	if err := runner.Run(ctx, cmd, subprocess.RunOptions{
 		Stdout: os.Stdout,
-		Stderr: os.Stderr,
+		Stderr: io.MultiWriter(os.Stderr, &stderrBuf),
 	}); err != nil {
-		return fmt.Errorf("failed to build Bazel host tests: %w", err)
+		return parseBazelError(stderrBuf.String()), fmt.Errorf("failed to build Bazel host tests: %w", err)
 	}
-	return nil
+	return "", nil
+}
+
+var bazelProgressRe = regexp.MustCompile(`^\[\d+(?:,\d+)* / \d+(?:,\d+)*\]`)
+
+// parseBazelError parses the standard error output of a bazel command and
+// extracts the meaningful error messages, filtering out progress and unhelpful
+// log messages.
+func parseBazelError(stderr string) string {
+	var out []string
+	lines := strings.Split(stderr, "\n")
+
+	ignorePrefixes := []string{
+		"INFO:",
+		"WARNING:",
+		"Loading:",
+		"Analyzing:",
+		"Computing main repo mapping:",
+		"ERROR: Build did NOT complete successfully",
+		"Use --verbose_failures to see the command lines of failed build steps.",
+	}
+
+	for _, line := range lines {
+		ignore := false
+		for _, prefix := range ignorePrefixes {
+			if strings.HasPrefix(line, prefix) {
+				ignore = true
+			}
+		}
+		if ignore {
+			continue
+		}
+
+		if bazelProgressRe.MatchString(line) {
+			continue
+		}
+
+		out = append(out, line)
+	}
+
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }

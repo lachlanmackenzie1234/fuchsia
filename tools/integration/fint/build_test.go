@@ -979,7 +979,7 @@ func TestBuildBazelHostTests(t *testing.T) {
 
 	ctx := context.Background()
 	runner := &mockSubprocessRunner{}
-	if err := buildBazelHostTests(ctx, runner, checkoutDir, buildDir, testSpecs); err != nil {
+	if _, err := buildBazelHostTests(ctx, runner, checkoutDir, buildDir, testSpecs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1004,5 +1004,27 @@ func TestBuildBazelHostTests(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantCmd, gotCmd); diff != "" {
 		t.Errorf("command differs (-want +got):\n%s", diff)
+	}
+}
+
+func TestParseBazelError(t *testing.T) {
+	stderr := `Computing main repo mapping:
+Loading:
+Loading: 6 packages loaded
+WARNING: Build options --define, --enable_runfiles, --features, and 1 more have changed, discarding analysis cache (this can be expensive, see https://bazel.build/advanced/performance/iteration-speed).
+Analyzing: 36 targets (19 packages loaded, 9 targets configured)
+INFO: Analyzed 36 targets (302 packages loaded, 18934 targets configured).
+[509 / 812] Action build/bazel/rules/host_tests/tests/py/test_with_unittests; 0s local ... (24 actions, 22 running)
+ERROR: /foo/bar.bazel:55:18: Linking failed
+FAILED
+[542 / 812] GoToolchainBinaryBuild ...
+ERROR: Build did NOT complete successfully
+Use --verbose_failures to see the command lines of failed build steps.`
+
+	want := `ERROR: /foo/bar.bazel:55:18: Linking failed
+FAILED`
+
+	if got := parseBazelError(stderr); got != want {
+		t.Errorf("parseBazelError() = %q, want %q", got, want)
 	}
 }
