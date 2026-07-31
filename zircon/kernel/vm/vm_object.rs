@@ -9,6 +9,7 @@ use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use kalloc::AllocError;
 use vm_object_bindings as bindings;
+use zx_status::Status;
 
 /// The base vm object that holds a range of bytes of data
 ///
@@ -48,6 +49,45 @@ impl VmObject {
     /// use `VmObject::as_raw` instead.
     pub fn cast_raw(ptr: *mut VmObject) -> *mut bindings::VmObject {
         ptr.cast()
+    }
+
+    /// Returns the size of the VMO in bytes.
+    pub fn size(&self) -> u64 {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_size(self.as_raw()) }
+    }
+
+    /// Returns whether the VMO is resizable.
+    pub fn is_resizable(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_is_resizable(self.as_raw()) }
+    }
+
+    /// Resizes the VMO to the given size.
+    pub fn resize(&self, size: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status = unsafe { bindings::cpp_vm_object_resize(self.as_raw(), size) };
+        Status::ok(status)
+    }
+
+    /// Writes data from `data` slice into the VMO at `offset`.
+    pub fn write(&self, offset: u64, data: &[u8]) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer and `data` points to
+        // `data.len()` bytes of valid memory.
+        let status = unsafe {
+            bindings::cpp_vm_object_write(self.as_raw(), data.as_ptr().cast(), offset, data.len())
+        };
+        Status::ok(status)
+    }
+
+    /// Sets the name of the VMO.
+    pub fn set_name(&self, name: &[u8]) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer and `name` points to
+        // `name.len()` bytes of valid memory.
+        let status = unsafe {
+            bindings::cpp_vm_object_set_name(self.as_raw(), name.as_ptr().cast(), name.len())
+        };
+        Status::ok(status)
     }
 }
 

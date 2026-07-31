@@ -215,6 +215,11 @@ kernel_bindgen_crate("vm-object-bindings") {
   function_allowlist = [
     "cpp_vm_object_free",
     "cpp_vm_object_get_ref_counted",
+    "cpp_vm_object_is_resizable",
+    "cpp_vm_object_resize",
+    "cpp_vm_object_set_name",
+    "cpp_vm_object_size",
+    "cpp_vm_object_write",
   ]
   type_allowlist = [ "VmObject" ]
   type_blocklist = [
@@ -237,7 +242,11 @@ kernel_bindgen_crate("vm-object-bindings") {
     "--no-recursive-allowlist",
     "--blocklist-function=VmObject_.*",
   ]
-  raw_lines = [ "#![no_std]" ]
+  deps = [ "//sdk/rust/zx-types" ]
+  raw_lines = [
+    "#![no_std]",
+    "use zx_types::zx_status_t;",
+  ]
   expect_lints = []
 }
 
