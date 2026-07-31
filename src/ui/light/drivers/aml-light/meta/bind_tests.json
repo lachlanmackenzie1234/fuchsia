@@ -28,7 +28,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.GPIO_AMBER_LED",
+                    "fuchsia.NAME": "\"GPIO_AMBER_LED\"",
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport"
                 }
             }
@@ -54,7 +54,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.GPIO_GREEN_LED",
+                    "fuchsia.NAME": "\"GPIO_GREEN_LED\"",
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport"
                 }
             }

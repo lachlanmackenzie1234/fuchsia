@@ -4,6 +4,7 @@
 
 composite fusb302;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.hardware.i2c;
@@ -11,7 +12,7 @@ using fuchsia.hardware.gpio;
 
 primary parent "gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.USB_POWER_DELIVERY;
+  fuchsia.NAME == "USB_POWER_DELIVERY";
 }
 
 parent "i2c" {

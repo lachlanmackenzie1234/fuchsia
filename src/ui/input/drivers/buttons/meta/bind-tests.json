@@ -31,7 +31,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.MIC_MUTE"
+                    "fuchsia.NAME": "\"MIC_MUTE\""
                 }
             },
             {
@@ -39,7 +39,7 @@
                 "expected": "abort",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.NOT_A_KNOWN_FUNCTION"
+                    "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }
         ]
@@ -52,7 +52,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.VOLUME_UP"
+                    "fuchsia.NAME": "\"VOLUME_UP\""
                 }
             },
             {
@@ -60,7 +60,7 @@
                 "expected": "abort",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.NOT_A_KNOWN_FUNCTION"
+                    "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }
         ]
@@ -73,7 +73,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.VOLUME_DOWN"
+                    "fuchsia.NAME": "\"VOLUME_DOWN\""
                 }
             },
             {
@@ -81,7 +81,7 @@
                 "expected": "abort",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.NOT_A_KNOWN_FUNCTION"
+                    "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }
         ]
@@ -94,7 +94,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.VOLUME_BOTH"
+                    "fuchsia.NAME": "\"VOLUME_BOTH\""
                 }
             },
             {
@@ -102,7 +102,7 @@
                 "expected": "abort",
                 "device": {
                     "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
-                    "fuchsia.gpio.FUNCTION": "fuchsia.gpio.FUNCTION.NOT_A_KNOWN_FUNCTION"
+                    "fuchsia.NAME": "\"NOT_A_KNOWN_FUNCTION\""
                 }
             }
         ]

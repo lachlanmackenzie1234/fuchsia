@@ -4,6 +4,7 @@
 
 composite aml_light;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
@@ -26,7 +27,7 @@ primary parent "pdev" {
 
 parent "gpio-amber-led" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.GPIO_AMBER_LED;
+  fuchsia.NAME == "GPIO_AMBER_LED";
 }
 
 parent "pwm-amber-led" {
@@ -36,7 +37,7 @@ parent "pwm-amber-led" {
 
 optional parent "gpio-green-led" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.GPIO_GREEN_LED;
+  fuchsia.NAME == "GPIO_GREEN_LED";
 }
 
 optional parent "pwm-green-led" {
