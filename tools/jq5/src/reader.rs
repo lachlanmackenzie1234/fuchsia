@@ -44,8 +44,8 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
     use std::fs::OpenOptions;
-    use std::io::prelude::*;
     use std::io::Cursor;
+    use std::io::prelude::*;
 
     /*
     The following test fails with the current implementation.

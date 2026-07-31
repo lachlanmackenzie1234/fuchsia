@@ -5,15 +5,14 @@
 use anyhow::Error;
 use diagnostics_data::{Data, Logs};
 use example_tester::{
-    assert_filtered_logs_eq_to_golden, logs_to_str, run_test, Client, Proxy, Server, TestKind,
+    Client, Proxy, Server, TestKind, assert_filtered_logs_eq_to_golden, logs_to_str, run_test,
 };
 use fidl::prelude::*;
-use fuchsia_async as fasync;
 use fuchsia_component_test::{ChildRef, RealmBuilder};
 
 // Tests the framework for a single component running locally. This is useful for testing things
 // like local logging and persistent FIDL.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_one_component_log_by_log() -> Result<(), Error> {
     let client = Client::new("test_one_component", "#meta/example_tester_example_client.cm");
 
@@ -43,7 +42,7 @@ async fn test_one_component_log_by_log() -> Result<(), Error> {
 }
 
 // Same as above, but does the test using a log golden, rather than asserting against specific logs.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_one_component() -> Result<(), Error> {
     let client = Client::new("test_one_component", "#meta/example_tester_example_client.cm");
     let filter = |raw_log: &&Data<Logs>| {
@@ -77,7 +76,7 @@ async fn test_one_component() -> Result<(), Error> {
 }
 
 // Tests the standard FIDL IPC scenario, with a client talking to a server.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_two_component_log_by_log() -> Result<(), Error> {
     let augend = 1u8;
     let addend = 2u8;
@@ -124,7 +123,7 @@ async fn test_two_component_log_by_log() -> Result<(), Error> {
 }
 
 // Same as above, but does the test using log goldens, rather than asserting against specific logs.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_two_component() -> Result<(), Error> {
     let test_name = "test_two_component";
     let client = Client::new(test_name, "#meta/example_tester_example_client.cm");
@@ -162,7 +161,7 @@ async fn test_two_component() -> Result<(), Error> {
 }
 
 // Tests a client-server IPC interaction mediated by a proxy in the middle.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_three_component_log_by_log() -> Result<(), Error> {
     let augend = 4u8;
     let addend = 5u8;
@@ -211,7 +210,7 @@ async fn test_three_component_log_by_log() -> Result<(), Error> {
 }
 
 // Same as above, but does the test using log goldens, rather than asserting against specific logs.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_three_component() -> Result<(), Error> {
     let test_name = "test_three_component";
     let client = Client::new(test_name, "#meta/example_tester_example_client.cm");

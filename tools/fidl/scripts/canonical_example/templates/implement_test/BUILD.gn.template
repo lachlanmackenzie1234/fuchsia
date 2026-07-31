@@ -14,6 +14,7 @@ rustc_test("runner_bin") {
     "//examples/fidl/new/${series_snake_case}/${variant_snake_case}/fidl:examples.${series_flat_case}.${variant_flat_case}_rust",
     "//src/lib/diagnostics/data/rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",

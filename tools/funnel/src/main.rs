@@ -152,7 +152,7 @@ struct SubCommandListTargets {
     watch: bool,
 }
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<()> {
     let args: Funnel = argh::from_env();
 

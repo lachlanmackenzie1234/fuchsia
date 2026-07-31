@@ -68,7 +68,7 @@ fn validate_downsampling_interval(value: &str) -> Result<(), String> {
     }
 }
 
-#[fuchsia_async::run(1)]
+#[fuchsia::main(threads = 1)]
 async fn main() -> Result<(), Error> {
     let matches = Command::new("zedmon")
         .about("Utility for interacting with Zedmon power measurement device")

@@ -29,7 +29,7 @@ fn fill_comments_helper(json5_val: &Value, jq_output_val: &mut Value) -> Result<
                 Value::Object { val: out_val, comments: out_comments } => {
                     *out_comments = comments.clone();
                     *out_val.trailing_comments_mut() = val.trailing_comments().clone();
-                    let mut out_properties : Vec<_> = out_val.properties_mut().collect();
+                    let mut out_properties: Vec<_> = out_val.properties_mut().collect();
                     for property in val.properties() {
                         let index = out_properties
                             .iter()
@@ -49,37 +49,31 @@ fn fill_comments_helper(json5_val: &Value, jq_output_val: &mut Value) -> Result<
                 }
                 _ => {
                     return Err(anyhow::anyhow!(
-                      "fill_comments_helper was called on mismatched Value variants.\njson5_val was: {:?}\njq_output_val was: {:?}",
-                      json5_val,
-                      jq_output_val
-                  ))
+                        "fill_comments_helper was called on mismatched Value variants.\njson5_val was: {:?}\njq_output_val was: {:?}",
+                        json5_val,
+                        jq_output_val
+                    ));
                 }
             }
         }
-        Value::Array { val, comments } => {
-            match jq_output_val {
-                Value::Array { val: out_val, comments: out_comments } => {
-                    *out_comments = comments.clone();
-                    *out_val.trailing_comments_mut() = val.trailing_comments().clone();
-                    for (sub_val, mut out_sub_val) in val.items().zip(out_val.items_mut()) {
-                        if discriminant(&(*sub_val)) == discriminant(&(*out_sub_val))
-                        {
-                            fill_comments_helper(
-                                &sub_val,
-                                &mut out_sub_val,
-                            )?;
-                        }
+        Value::Array { val, comments } => match jq_output_val {
+            Value::Array { val: out_val, comments: out_comments } => {
+                *out_comments = comments.clone();
+                *out_val.trailing_comments_mut() = val.trailing_comments().clone();
+                for (sub_val, mut out_sub_val) in val.items().zip(out_val.items_mut()) {
+                    if discriminant(&(*sub_val)) == discriminant(&(*out_sub_val)) {
+                        fill_comments_helper(&sub_val, &mut out_sub_val)?;
                     }
                 }
-                _ => {
-                    return Err(anyhow::anyhow!(
-                      "fill_comments_helper was called on mismatched Value variants.\njson5_val was: {:?}\njq_output_val was: {:?}",
-                      json5_val,
-                      jq_output_val
-                  ))
-                }
             }
-        }
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "fill_comments_helper was called on mismatched Value variants.\njson5_val was: {:?}\njq_output_val was: {:?}",
+                    json5_val,
+                    jq_output_val
+                ));
+            }
+        },
         Value::Primitive { comments, .. } => match jq_output_val {
             Value::Primitive { comments: out_comments, .. } => {
                 *out_comments = comments.clone();
@@ -89,7 +83,7 @@ fn fill_comments_helper(json5_val: &Value, jq_output_val: &mut Value) -> Result<
                     "fill_comments_helper was called on mismatched Value variants.\njson5_val was: {:?}\njq_output_val was: {:?}",
                     json5_val,
                     jq_output_val
-                ))
+                ));
             }
         },
     };

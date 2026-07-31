@@ -140,7 +140,7 @@ mod test {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_prompt_for_first_target() -> Result<()> {
         let input = b"0";
         let output = Vec::new();
@@ -154,7 +154,7 @@ mod test {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_prompt_for_last_target() -> Result<()> {
         let input = b"1";
         let output = Vec::new();
@@ -168,7 +168,7 @@ mod test {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_prompt_for_negative_target() -> Result<()> {
         let input = b"-1";
         let output = Vec::new();
@@ -183,7 +183,7 @@ mod test {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_prompt_for_target_not_usize_error() -> Result<()> {
         let input = b"asdf";
         let output = Vec::new();
@@ -198,7 +198,7 @@ mod test {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_prompt_for_target_out_of_range_error() -> Result<()> {
         let input = b"2";
         let output = Vec::new();

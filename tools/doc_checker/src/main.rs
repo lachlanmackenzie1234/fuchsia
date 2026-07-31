@@ -348,7 +348,7 @@ mod test {
     use super::*;
     use std::env;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_project_test() -> Result<()> {
         let opt = DocCheckerArgs {
             root: PathBuf::from("doc_checker_test_data"),

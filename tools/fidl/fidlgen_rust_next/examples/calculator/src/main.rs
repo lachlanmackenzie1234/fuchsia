@@ -120,7 +120,7 @@ async fn on_error(server: &Server<Calculator, Endpoint>) {
     server.on_error(100u32).await.expect("failed to send event");
 }
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let (client_end, server_end) = create_endpoints();
     let (client, client_task) = client_end.spawn_handler_full_with(MyCalculatorClient::with_client);
@@ -139,7 +139,7 @@ async fn main() {
 mod tests {
     use super::*;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add() {
         let (client_end, server_end) = create_endpoints();
         let (client, client_task) =
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(server_task.await.unwrap().unwrap().last_result, Some(42));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_divide() {
         let (client_end, server_end) = create_endpoints();
         let (client, client_task) =
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(server_task.await.unwrap().unwrap().last_result, Some(33));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_clear() {
         let (client_end, server_end) = create_endpoints();
         let (client, client_task) =
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(server_task.await.unwrap().unwrap().last_result, None);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_on_error() {
         let (client_end, server_end) = create_endpoints();
         let (client, client_task) =
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(server_task.await.unwrap().unwrap().last_result, None);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_send_handlers_run_locally() {
         let (client_end, server_end) = create_endpoints();
         let (client, client_task) =
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(server_task.await.unwrap().unwrap().last_result, Some(42));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_local_handlers_run_locally() {
         use std::rc::Rc;
 

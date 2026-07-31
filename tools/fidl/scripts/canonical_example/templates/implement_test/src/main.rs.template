@@ -8,12 +8,11 @@ use {
     example_tester::{assert_filtered_logs_eq_to_golden, run_test, Client, Server, TestKind},
     fidl::prelude::*,
     fidl_examples_${series_flat_case}_${variant_flat_case}::${protocol_pascal_case}Marker,
-    fuchsia_async as fasync,
     fuchsia_component_test::{ChildRef, RealmBuilder},
 };
 
 // TODO(${dns}): Consider renaming the test to something more descriptive than "default".
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_default() -> Result<(), Error> {
     let test_name = "test_default";
     let client = Client::new(test_name, "#meta/${series_flat_case}_${variant_flat_case}_client.cm");

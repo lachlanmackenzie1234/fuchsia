@@ -137,24 +137,26 @@ async fn run(
     Ok(trusted_outs)
 }
 
-#[fuchsia_async::run_singlethreaded]
-async fn main() -> Result<(), anyhow::Error> {
-    eprintln!("{}", "This tool is a work in progress: use with caution.\n");
-    let args = Opt::parse();
+fn main() -> Result<(), anyhow::Error> {
+    let mut executor = fuchsia_async::LocalExecutor::new();
+    executor.run_singlethreaded(async {
+        eprintln!("{}", "This tool is a work in progress: use with caution.\n");
+        let args = Opt::parse();
 
-    if args.files.len() == 0 {
-        let (parsed_json5, json_string) = reader::read_json5_from_input(&mut io::stdin())?;
+        if args.files.len() == 0 {
+            let (parsed_json5, json_string) = reader::read_json5_from_input(&mut io::stdin())?;
 
-        let out = run_jq5(&args.filter, parsed_json5, json_string, &args.jq_path).await?;
-        io::stdout().write_all(out.as_bytes())?;
-    } else {
-        let outs = run(args.filter, args.files, &args.jq_path).await?;
-
-        for out in outs {
+            let out = run_jq5(&args.filter, parsed_json5, json_string, &args.jq_path).await?;
             io::stdout().write_all(out.as_bytes())?;
+        } else {
+            let outs = run(args.filter, args.files, &args.jq_path).await?;
+
+            for out in outs {
+                io::stdout().write_all(out.as_bytes())?;
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 #[derive(Debug, Parser)]
 #[command(
@@ -181,90 +183,104 @@ mod tests {
 
     // Tests that run_jq successfully invokes jq using the identity filter and
     // an empty JSON object.
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn run_jq_id_filter_1() {
-        let filter = String::from(".");
-        let input = String::from("{}");
-        let jq_path = Some(PathBuf::from(JQ_PATH_STR));
-        assert_eq!(run_jq(&filter, input, &jq_path).await.unwrap(), "{}\n");
+    #[test]
+    fn run_jq_id_filter_1() {
+        let mut executor = fuchsia_async::LocalExecutor::new();
+        executor.run_singlethreaded(async {
+            let filter = String::from(".");
+            let input = String::from("{}");
+            let jq_path = Some(PathBuf::from(JQ_PATH_STR));
+            assert_eq!(run_jq(&filter, input, &jq_path).await.unwrap(), "{}\n");
+        })
     }
 
     // Tests that run_jq successfully invokes jq using the identity filter and a
     // simple JSON object.
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn run_jq_id_filter_2() {
-        let filter = String::from(".");
-        let input = String::from(r#"{"foo": 1, "bar": 2}"#);
-        let jq_path = Some(PathBuf::from(JQ_PATH_STR));
-        assert_eq!(
-            run_jq(&filter, input, &jq_path).await.unwrap(),
-            r##"{
+    #[test]
+    fn run_jq_id_filter_2() {
+        let mut executor = fuchsia_async::LocalExecutor::new();
+        executor.run_singlethreaded(async {
+            let filter = String::from(".");
+            let input = String::from(r#"{"foo": 1, "bar": 2}"#);
+            let jq_path = Some(PathBuf::from(JQ_PATH_STR));
+            assert_eq!(
+                run_jq(&filter, input, &jq_path).await.unwrap(),
+                r##"{
   "foo": 1,
   "bar": 2
 }
 "##
-        );
+            );
+        })
     }
 
     // Tests a simple filter and simple object.
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn run_jq_deconstruct_filter() {
-        let filter = String::from("{foo2: .foo1, bar2: .bar1}");
-        let input = String::from(r#"{"foo1": 0, "bar1": 42}"#);
-        let jq_path = Some(PathBuf::from(JQ_PATH_STR));
-        assert_eq!(
-            run_jq(&filter, input, &jq_path).await.unwrap(),
-            r##"{
+    #[test]
+    fn run_jq_deconstruct_filter() {
+        let mut executor = fuchsia_async::LocalExecutor::new();
+        executor.run_singlethreaded(async {
+            let filter = String::from("{foo2: .foo1, bar2: .bar1}");
+            let input = String::from(r#"{"foo1": 0, "bar1": 42}"#);
+            let jq_path = Some(PathBuf::from(JQ_PATH_STR));
+            assert_eq!(
+                run_jq(&filter, input, &jq_path).await.unwrap(),
+                r##"{
   "foo2": 0,
   "bar2": 42
 }
 "##
-        );
+            );
+        })
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn run_jq5_deconstruct_filter() {
-        let filter = String::from("{foo: .foo, baz: .bar}");
-        let json5_string = String::from(
-            r##"{
+    #[test]
+    fn run_jq5_deconstruct_filter() {
+        let mut executor = fuchsia_async::LocalExecutor::new();
+        executor.run_singlethreaded(async {
+            let filter = String::from("{foo: .foo, baz: .bar}");
+            let json5_string = String::from(
+                r##"{
   //Foo
   foo: 0,
   //Bar
   bar: 42
 }"##,
-        );
-        let format = Json5Format::new().unwrap();
-        let (parsed_json5, json_string) = reader::read_json5(json5_string).unwrap();
-        let jq_path = Some(PathBuf::from(JQ_PATH_STR));
-        assert_eq!(
-            run_jq5(&filter, parsed_json5, json_string, &jq_path).await.unwrap(),
-            format
-                .to_string(
-                    &ParsedDocument::from_str(
-                        r##"{
+            );
+            let format = Json5Format::new().unwrap();
+            let (parsed_json5, json_string) = reader::read_json5(json5_string).unwrap();
+            let jq_path = Some(PathBuf::from(JQ_PATH_STR));
+            assert_eq!(
+                run_jq5(&filter, parsed_json5, json_string, &jq_path).await.unwrap(),
+                format
+                    .to_string(
+                        &ParsedDocument::from_str(
+                            r##"{
   //Foo
   foo: 0,
   baz: 42
 }"##,
-                        None
+                            None
+                        )
+                        .unwrap()
                     )
                     .unwrap()
-                )
-                .unwrap()
-        );
+            );
+        })
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn run_jq5_on_file_w_id_filter() {
-        let tmp_path = PathBuf::from(r"/tmp/read_from_file_2.json5");
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(tmp_path.as_path())
-            .unwrap();
-        let json5_string = String::from(
-            r##"{
+    #[test]
+    fn run_jq5_on_file_w_id_filter() {
+        let mut executor = fuchsia_async::LocalExecutor::new();
+        executor.run_singlethreaded(async {
+            let tmp_path = PathBuf::from(r"/tmp/read_from_file_2.json5");
+            let mut file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(tmp_path.as_path())
+                .unwrap();
+            let json5_string = String::from(
+                r##"{
     "name": {
         "last": "Smith",
         "first": "John",
@@ -308,14 +324,15 @@ mod tests {
     }
 }
 "##,
-        );
-        file.write_all(json5_string.as_bytes()).unwrap();
+            );
+            file.write_all(json5_string.as_bytes()).unwrap();
 
-        let (parsed_json5, json_string) = reader::read_json5_fromfile(&tmp_path).unwrap();
-        let jq_path = Some(PathBuf::from(JQ_PATH_STR));
-        assert_eq!(
-            run_jq5(&".".to_string(), parsed_json5, json_string, &jq_path).await.unwrap(),
-            run_jq5_on_file(&".".to_string(), &tmp_path, &jq_path).await.unwrap()
-        )
+            let (parsed_json5, json_string) = reader::read_json5_fromfile(&tmp_path).unwrap();
+            let jq_path = Some(PathBuf::from(JQ_PATH_STR));
+            assert_eq!(
+                run_jq5(&".".to_string(), parsed_json5, json_string, &jq_path).await.unwrap(),
+                run_jq5_on_file(&".".to_string(), &tmp_path, &jq_path).await.unwrap()
+            )
+        })
     }
 }

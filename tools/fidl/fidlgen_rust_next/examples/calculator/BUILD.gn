@@ -22,7 +22,7 @@ rustc_binary("bin") {
   deps = [
     ":fidl_rust_next",
     "//src/lib/fidl/rust_next/fidl_next",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
   ]
   if (is_fuchsia) {
     deps += [ "//sdk/rust/zx" ]
