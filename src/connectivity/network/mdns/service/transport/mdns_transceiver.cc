@@ -164,10 +164,12 @@ bool MdnsTransceiver::StartInterfaceTransceivers(const net::interfaces::Properti
       return false;
   }
 
-  std::vector<inet::IpAddress> addresses;
-  std::transform(
-      properties.addresses().begin(), properties.addresses().end(), std::back_inserter(addresses),
-      [](const auto& address) { return MdnsFidlUtil::IpAddressFrom(address.addr().addr); });
+  std::vector<IpSubnet> addresses;
+  std::transform(properties.addresses().begin(), properties.addresses().end(),
+                 std::back_inserter(addresses), [](const auto& address) {
+                   return IpSubnet(MdnsFidlUtil::IpAddressFrom(address.addr().addr),
+                                   address.addr().prefix_len);
+                 });
 
   bool started = false;
   for (const auto& net_interfaces_addr : properties.addresses()) {
@@ -316,9 +318,10 @@ void MdnsTransceiver::OnInterfacesEvent(fuchsia::net::interfaces::Event event) {
   }
 }
 
-bool MdnsTransceiver::EnsureInterfaceTransceiver(
-    const inet::IpAddress& address, const std::vector<inet::IpAddress>& interface_addresses,
-    uint32_t id, Media media, const std::string& name) {
+bool MdnsTransceiver::EnsureInterfaceTransceiver(const inet::IpAddress& address,
+                                                 const std::vector<IpSubnet>& interface_addresses,
+                                                 uint32_t id, Media media,
+                                                 const std::string& name) {
   if (!address.is_valid()) {
     return false;
   }

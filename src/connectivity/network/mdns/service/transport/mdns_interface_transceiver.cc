@@ -10,10 +10,12 @@
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
 #include <net/if.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 
 #include <algorithm>
+#include <cstring>
 #include <iostream>
 #include <iterator>
 
@@ -29,6 +31,43 @@
 #include "src/lib/fostr/hex_dump.h"
 
 namespace mdns {
+
+bool IpSubnet::Contains(const inet::IpAddress& address) const {
+  if (!address_.is_valid() || !address.is_valid()) {
+    return false;
+  }
+
+  inet::IpAddress subnet_addr =
+      address_.is_mapped_from_v4() ? address_.mapped_v4_address() : address_;
+  inet::IpAddress target_addr = address.is_mapped_from_v4() ? address.mapped_v4_address() : address;
+
+  if (subnet_addr.family() != target_addr.family()) {
+    return false;
+  }
+
+  size_t total_bytes = subnet_addr.byte_count();
+  size_t max_prefix_len = total_bytes * 8;
+  size_t effective_prefix_len = std::min(static_cast<size_t>(prefix_len_), max_prefix_len);
+
+  size_t full_bytes = effective_prefix_len / 8;
+  size_t remaining_bits = effective_prefix_len % 8;
+
+  const uint8_t* b1 = subnet_addr.as_bytes();
+  const uint8_t* b2 = target_addr.as_bytes();
+
+  if (full_bytes > 0 && std::memcmp(b1, b2, full_bytes) != 0) {
+    return false;
+  }
+
+  if (remaining_bits > 0) {
+    uint8_t mask = static_cast<uint8_t>(0xFF << (8 - remaining_bits));
+    if ((b1[full_bytes] & mask) != (b2[full_bytes] & mask)) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 // static
 std::unique_ptr<MdnsInterfaceTransceiver> MdnsInterfaceTransceiver::Create(inet::IpAddress address,
@@ -92,13 +131,23 @@ void MdnsInterfaceTransceiver::Stop() {
 }
 
 void MdnsInterfaceTransceiver::SetInterfaceAddresses(
-    const std::vector<inet::IpAddress>& interface_addresses) {
+    const std::vector<IpSubnet>& interface_addresses) {
   FX_DCHECK(!interface_addresses.empty());
 
   interface_addresses_ = interface_addresses;
 
   // These resources are a cached version of |interface_addresses_|. Make sure they get regenerated.
   interface_address_resources_.clear();
+}
+
+bool MdnsInterfaceTransceiver::IsOnLocalSubnet(const inet::IpAddress& address) const {
+  for (const auto& subnet : interface_addresses_) {
+    if (subnet.Contains(address)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void MdnsInterfaceTransceiver::SendMessage(const DnsMessage& message,
@@ -199,11 +248,27 @@ void MdnsInterfaceTransceiver::WaitForInbound() {
 void MdnsInterfaceTransceiver::InboundReady(zx_status_t status, uint32_t events) {
   sockaddr_storage source_address_storage;
   socklen_t source_address_length = address_.is_v4() ? sizeof(sockaddr_in) : sizeof(sockaddr_in6);
-  ssize_t result =
-      recvfrom(socket_fd_.get(), inbound_buffer_.data(), inbound_buffer_.size(), 0,
-               reinterpret_cast<sockaddr*>(&source_address_storage), &source_address_length);
+
+  iovec iov;
+  iov.iov_base = inbound_buffer_.data();
+  iov.iov_len = inbound_buffer_.size();
+
+  // Control message buffer size.
+  // We need enough space for either in_pktinfo (v4) or in6_pktinfo (v6).
+  alignas(struct cmsghdr) char
+      control_buffer[CMSG_SPACE(std::max(sizeof(in_pktinfo), sizeof(in6_pktinfo)))];
+
+  msghdr msg = {};
+  msg.msg_name = &source_address_storage;
+  msg.msg_namelen = source_address_length;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = control_buffer;
+  msg.msg_controllen = sizeof(control_buffer);
+
+  ssize_t result = ReceiveMessage(socket_fd_.get(), &msg, 0);
   if (result < 0) {
-    FX_LOGS(ERROR) << "Failed to recvfrom, " << strerror(errno);
+    FX_LOGS(ERROR) << "Failed to recvmsg, " << strerror(errno);
     // Wait a bit before trying again to avoid spamming the log.
     async::PostDelayedTask(
         async_get_default_dispatcher(), [this]() { WaitForInbound(); }, zx::sec(10));
@@ -213,6 +278,17 @@ void MdnsInterfaceTransceiver::InboundReady(zx_status_t status, uint32_t events)
   ++messages_received_;
   bytes_received_ += result;
 
+  inet::IpAddress destination_address;
+  for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+    if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
+      auto* pktinfo = reinterpret_cast<in_pktinfo*>(CMSG_DATA(cmsg));
+      destination_address = inet::IpAddress(pktinfo->ipi_addr);
+    } else if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO) {
+      auto* pktinfo = reinterpret_cast<in6_pktinfo*>(CMSG_DATA(cmsg));
+      destination_address = inet::IpAddress(pktinfo->ipi6_addr);
+    }
+  }
+
   ReplyAddress reply_address(source_address_storage, address_, id_, media_, IpVersions());
 
   if (reply_address.socket_address().address() == address_) {
@@ -221,12 +297,35 @@ void MdnsInterfaceTransceiver::InboundReady(zx_status_t status, uint32_t events)
     return;
   }
 
+  // The following logic prevents attacks originating from outside the local segment
+  // per https://datatracker.ietf.org/doc/html/rfc6762#section-11.
+  bool force_multicast_response = false;
+  bool is_from_local_subnet = IsOnLocalSubnet(reply_address.socket_address().address());
+  if (destination_address == MdnsAddresses::v4_multicast().address() ||
+      destination_address == MdnsAddresses::v6_multicast().address()) {
+    // This message was sent to a multicast address. If it originated from outside the
+    // local segment, we will force multicast responses so we don't send unicast messages
+    // outside the local segment.
+    force_multicast_response = !is_from_local_subnet;
+  } else if (!is_from_local_subnet) {
+    // This message was sent to a unicast address from somewhere outside the local segment.
+    // Drop it.
+    WaitForInbound();
+    return;
+  }
+
   PacketReader reader(inbound_buffer_);
   reader.SetBytesRemaining(static_cast<size_t>(result));
   std::unique_ptr<DnsMessage> message = std::make_unique<DnsMessage>();
-  reader >> *message.get();
+  reader >> *message;
 
   if (reader.complete()) {
+    if (force_multicast_response) {
+      for (auto& question : message->questions_) {
+        question->unicast_response_ = false;
+      }
+    }
+
     FX_DCHECK(inbound_message_callback_);
     inbound_message_callback_(std::move(message), reply_address);
   } else {
@@ -240,6 +339,10 @@ void MdnsInterfaceTransceiver::InboundReady(zx_status_t status, uint32_t events)
   }
 
   WaitForInbound();
+}
+
+ssize_t MdnsInterfaceTransceiver::ReceiveMessage(int sockfd, struct msghdr* msg, int flags) {
+  return recvmsg(sockfd, msg, flags);
 }
 
 std::shared_ptr<DnsResource> MdnsInterfaceTransceiver::GetAddressResource(
@@ -268,22 +371,22 @@ MdnsInterfaceTransceiver::GetInterfaceAddressResources(const DnsName& host_full_
     // should not.
     bool v4_cache_flush = true;
     bool v6_cache_flush = true;
-    std::transform(
-        interface_addresses_.begin(), interface_addresses_.end(),
-        std::back_inserter(interface_address_resources_),
-        [&host_full_name, &v4_cache_flush, &v6_cache_flush](const inet::IpAddress& address) {
-          bool cache_flush;
-          if (address.is_v4()) {
-            // Set cache_flush on the first A resource but not subsequent ones.
-            cache_flush = v4_cache_flush;
-            v4_cache_flush = false;
-          } else {
-            // Set cache_flush on the first AAAA resource but not subsequent ones.
-            cache_flush = v6_cache_flush;
-            v6_cache_flush = false;
-          }
-          return std::make_shared<DnsResource>(host_full_name, address, cache_flush);
-        });
+    std::transform(interface_addresses_.begin(), interface_addresses_.end(),
+                   std::back_inserter(interface_address_resources_),
+                   [&host_full_name, &v4_cache_flush, &v6_cache_flush](const IpSubnet& ip_subnet) {
+                     bool cache_flush;
+                     if (ip_subnet.address().is_v4()) {
+                       // Set cache_flush on the first A resource but not subsequent ones.
+                       cache_flush = v4_cache_flush;
+                       v4_cache_flush = false;
+                     } else {
+                       // Set cache_flush on the first AAAA resource but not subsequent ones.
+                       cache_flush = v6_cache_flush;
+                       v6_cache_flush = false;
+                     }
+                     return std::make_shared<DnsResource>(host_full_name, ip_subnet.address(),
+                                                          cache_flush);
+                   });
   }
 
   return interface_address_resources_;

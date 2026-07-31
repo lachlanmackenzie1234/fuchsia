@@ -110,10 +110,16 @@ int MdnsInterfaceTransceiverV6::SetOptionFamilySpecific() {
   int result = setsockopt(socket_fd().get(), IPPROTO_IPV6, IPV6_V6ONLY, &param, sizeof(param));
   if (result < 0) {
     FX_LOGS(ERROR) << "Failed to set socket option IPV6_V6ONLY, " << strerror(errno);
-    return false;
+    return result;
   }
 
-  return result;
+  result = setsockopt(socket_fd().get(), IPPROTO_IPV6, IPV6_RECVPKTINFO, &param, sizeof(param));
+  if (result < 0) {
+    FX_LOGS(ERROR) << "Failed to set socket option IPV6_RECVPKTINFO, " << strerror(errno);
+    return result;
+  }
+
+  return 0;
 }
 
 int MdnsInterfaceTransceiverV6::Bind() {

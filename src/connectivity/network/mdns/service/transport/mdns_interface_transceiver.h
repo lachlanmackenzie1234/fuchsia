@@ -22,6 +22,30 @@
 
 namespace mdns {
 
+// Represents an IP subnet consisting of an IP address and a prefix length.
+class IpSubnet {
+ public:
+  IpSubnet() = default;
+
+  IpSubnet(inet::IpAddress address, uint8_t prefix_len = 0)
+      : address_(address), prefix_len_(prefix_len) {}
+
+  const inet::IpAddress& address() const { return address_; }
+  uint8_t prefix_len() const { return prefix_len_; }
+
+  // Determines if |address| is within this subnet.
+  bool Contains(const inet::IpAddress& address) const;
+
+  bool operator==(const IpSubnet& other) const {
+    return address_ == other.address_ && prefix_len_ == other.prefix_len_;
+  }
+  bool operator!=(const IpSubnet& other) const { return !(*this == other); }
+
+ private:
+  inet::IpAddress address_;
+  uint8_t prefix_len_ = 0;
+};
+
 // Handles mDNS communication for a single NIC. This class is abstract and has
 // two concrete implementations providing family-specific behavior:
 // |MdnsInterfaceTransceiverV4| and |MdnsInterfaceTransceiverV6|.
@@ -54,7 +78,11 @@ class MdnsInterfaceTransceiver {
   virtual void Stop();
 
   // Sets the list of all addresses for the interface.
-  void SetInterfaceAddresses(const std::vector<inet::IpAddress>& interface_addresses);
+  void SetInterfaceAddresses(const std::vector<IpSubnet>& interface_addresses);
+
+  // Determines if |address| is link local by checking if it is in any of the subnets
+  // listed in |interface_addresses_| or is link-local.
+  bool IsOnLocalSubnet(const inet::IpAddress& address) const;
 
   // Sends a message to the specified address. A V6 interface will send to
   // |MdnsAddresses::V6Multicast| if |address| is |MdnsAddresses::V4Multicast|. If any resource
@@ -100,14 +128,26 @@ class MdnsInterfaceTransceiver {
   const std::vector<std::shared_ptr<DnsResource>>& GetInterfaceAddressResources(
       const DnsName& host_full_name);
 
+  // Starts |fd_waiter_| waiting for inbound messages on the socket. This is virtual and
+  // protected to enable testing.
+  virtual void WaitForInbound();
+
+  // Handles inbound messages. The signature matches |fsl::FDWaiter::Callback|. This
+  // is protected to enable testing.
+  void InboundReady(zx_status_t status, uint32_t events);
+
+  // Wrapper for |recvmsg|. This is virtual and protected to enable testing.
+  virtual ssize_t ReceiveMessage(int sockfd, struct msghdr* msg, int flags);
+
+  // Sets the inbound message callback. This is protected to enable testing.
+  void set_inbound_message_callback(InboundMessageCallback callback) {
+    inbound_message_callback_ = std::move(callback);
+  }
+
  private:
   int SetOptionShareAddress();
   int SetOptionSharePort();
   int SetOptionBindToDevice();
-
-  void WaitForInbound();
-
-  void InboundReady(zx_status_t status, uint32_t events);
 
   // Returns an address resource (A/AAAA) record with the given name and the
   // address contained in |address_|, which must be valid.
@@ -119,7 +159,7 @@ class MdnsInterfaceTransceiver {
       const std::vector<std::shared_ptr<DnsResource>>& resources);
 
   inet::IpAddress address_;
-  std::vector<inet::IpAddress> interface_addresses_;
+  std::vector<IpSubnet> interface_addresses_;
   std::string name_;
   uint32_t id_;
   Media media_;

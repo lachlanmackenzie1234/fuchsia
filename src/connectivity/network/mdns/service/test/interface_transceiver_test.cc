@@ -4,7 +4,11 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async-testing/test_loop.h>
 #include <lib/syslog/cpp/macros.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
 
 #include <iomanip>
 #include <iostream>
@@ -13,7 +17,9 @@
 
 #include "src/connectivity/network/mdns/service/common/types.h"
 #include "src/connectivity/network/mdns/service/encoding/dns_reading.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_writing.h"
 #include "src/connectivity/network/mdns/service/encoding/packet_reader.h"
+#include "src/connectivity/network/mdns/service/encoding/packet_writer.h"
 #include "src/connectivity/network/mdns/service/transport/mdns_interface_transceiver.h"
 #include "src/lib/fostr/hex_dump.h"
 
@@ -27,6 +33,26 @@ class MdnsInterfaceTransceiverTest : public MdnsInterfaceTransceiver {
         ip_versions_(address.is_v4() ? IpVersions::kV4 : IpVersions::kV6) {}
 
   virtual ~MdnsInterfaceTransceiverTest() override {}
+
+  bool Start(InboundMessageCallback callback) override {
+    set_inbound_message_callback(std::move(callback));
+    WaitForInbound();
+    return true;
+  }
+
+  using MdnsInterfaceTransceiver::InboundReady;
+
+  // Configured by the test before calling InboundReady.
+  ssize_t receive_message_result_ = 0;
+  std::vector<uint8_t> receive_message_packet_;
+  inet::SocketAddress receive_message_source_address_;
+  inet::IpAddress receive_message_destination_address_;
+
+  // Set by ReceiveMessage during test.
+  int receive_message_sockfd_ = -1;
+  int receive_message_flags_ = -1;
+  uint32_t receive_message_count_ = 0;
+  uint32_t wait_for_inbound_count_ = 0;
 
   // Set by |SendTo|.
   const void* send_to_buffer_{};
@@ -71,6 +97,58 @@ class MdnsInterfaceTransceiverTest : public MdnsInterfaceTransceiver {
     send_to_size_ = size;
     send_to_address_ = address;
     return 0;
+  }
+
+  void WaitForInbound() override { ++wait_for_inbound_count_; }
+
+  ssize_t ReceiveMessage(int sockfd, struct msghdr* msg, int flags) override {
+    ++receive_message_count_;
+    receive_message_sockfd_ = sockfd;
+    receive_message_flags_ = flags;
+
+    if (receive_message_result_ < 0) {
+      return receive_message_result_;
+    }
+
+    // Copy packet payload
+    size_t copy_size = std::min(receive_message_packet_.size(), msg->msg_iov[0].iov_len);
+    std::memcpy(msg->msg_iov[0].iov_base, receive_message_packet_.data(), copy_size);
+
+    // Set source address
+    if (receive_message_source_address_.is_v4()) {
+      auto* sin = reinterpret_cast<sockaddr_in*>(msg->msg_name);
+      *sin = receive_message_source_address_.as_sockaddr_in();
+      msg->msg_namelen = sizeof(sockaddr_in);
+    } else {
+      auto* sin6 = reinterpret_cast<sockaddr_in6*>(msg->msg_name);
+      *sin6 = receive_message_source_address_.as_sockaddr_in6();
+      msg->msg_namelen = sizeof(sockaddr_in6);
+    }
+
+    // Set destination address in control message
+    if (receive_message_destination_address_.is_v4()) {
+      cmsghdr* cmsg = CMSG_FIRSTHDR(msg);
+      cmsg->cmsg_level = IPPROTO_IP;
+      cmsg->cmsg_type = IP_PKTINFO;
+      cmsg->cmsg_len = CMSG_LEN(sizeof(in_pktinfo));
+
+      auto* pktinfo = reinterpret_cast<in_pktinfo*>(CMSG_DATA(cmsg));
+      pktinfo->ipi_addr = receive_message_destination_address_.as_in_addr();
+      msg->msg_controllen = CMSG_SPACE(sizeof(in_pktinfo));
+    } else if (receive_message_destination_address_.is_v6()) {
+      cmsghdr* cmsg = CMSG_FIRSTHDR(msg);
+      cmsg->cmsg_level = IPPROTO_IPV6;
+      cmsg->cmsg_type = IPV6_PKTINFO;
+      cmsg->cmsg_len = CMSG_LEN(sizeof(in6_pktinfo));
+
+      auto* pktinfo = reinterpret_cast<in6_pktinfo*>(CMSG_DATA(cmsg));
+      pktinfo->ipi6_addr = receive_message_destination_address_.as_in6_addr();
+      msg->msg_controllen = CMSG_SPACE(sizeof(in6_pktinfo));
+    } else {
+      msg->msg_controllen = 0;
+    }
+
+    return static_cast<ssize_t>(copy_size);
   }
 
  private:
@@ -539,6 +617,226 @@ TEST(InterfaceTransceiverTest, SendMultipleAddresses) {
   EXPECT_EQ(DnsName("host2.local."), res2->name_);
   EXPECT_EQ(DnsType::kA, res2->type_);
   EXPECT_EQ(nic_address, res2->a_.address_.address_);
+}
+
+// Verifies that InboundReady handles a normal inbound packet correctly.
+TEST(InterfaceTransceiverTest, InboundReadyNormal) {
+  async::TestLoop loop;
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
+
+  // Setup a valid inbound message
+  DnsMessage inbound_msg;
+  inbound_msg.questions_.push_back(
+      std::make_shared<DnsQuestion>(DnsName("test.local."), DnsType::kAny));
+  inbound_msg.UpdateCounts();
+
+  std::vector<uint8_t> buffer(1024);
+  PacketWriter writer(std::move(buffer));
+  writer << inbound_msg;
+  size_t packet_size = writer.position();
+  buffer = writer.GetPacket();
+  buffer.resize(packet_size);
+
+  under_test.receive_message_packet_ = std::move(buffer);
+  under_test.receive_message_source_address_ =
+      inet::SocketAddress(inet::IpAddress(169, 254, 1, 2), inet::IpPort::From_uint16_t(5353));
+  under_test.receive_message_destination_address_ = MdnsAddresses::v4_multicast().address();
+
+  bool callback_called = false;
+  std::unique_ptr<DnsMessage> received_msg;
+  ReplyAddress received_reply_address;
+  under_test.Start([&](std::unique_ptr<DnsMessage> message, const ReplyAddress& reply_address) {
+    callback_called = true;
+    received_msg = std::move(message);
+    received_reply_address = reply_address;
+  });
+
+  // Verify Start called WaitForInbound
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  under_test.InboundReady(ZX_OK, POLLIN);
+
+  EXPECT_EQ(1u, under_test.receive_message_count_);
+  EXPECT_EQ(2u, under_test.wait_for_inbound_count_);
+  EXPECT_TRUE(callback_called);
+  ASSERT_NE(nullptr, received_msg);
+  ASSERT_EQ(1u, received_msg->questions_.size());
+  EXPECT_EQ(DnsName("test.local."), received_msg->questions_[0]->name_);
+  EXPECT_EQ(inet::IpAddress(169, 254, 1, 2), received_reply_address.socket_address().address());
+}
+
+// Verifies that a packet originating from outside the local segment is discarded if sent to a
+// unicast address.
+TEST(InterfaceTransceiverTest, InboundReadyDiscardFromOutsideLocalSegment) {
+  async::TestLoop loop;
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
+
+  // Setup a valid inbound message
+  DnsMessage inbound_msg;
+  inbound_msg.questions_.push_back(
+      std::make_shared<DnsQuestion>(DnsName("test.local."), DnsType::kAny));
+  inbound_msg.UpdateCounts();
+
+  std::vector<uint8_t> buffer(1024);
+  PacketWriter writer(std::move(buffer));
+  writer << inbound_msg;
+  size_t packet_size = writer.position();
+  buffer = writer.GetPacket();
+  buffer.resize(packet_size);
+
+  under_test.receive_message_packet_ = std::move(buffer);
+  // Source address is 5.6.7.8 (not link-local)
+  under_test.receive_message_source_address_ =
+      inet::SocketAddress(inet::IpAddress(5, 6, 7, 8), inet::IpPort::From_uint16_t(5353));
+  // Destination address is unicast address of the transceiver
+  under_test.receive_message_destination_address_ = nic_address;
+
+  bool callback_called = false;
+  under_test.Start([&](std::unique_ptr<DnsMessage> message, const ReplyAddress& reply_address) {
+    callback_called = true;
+  });
+
+  under_test.InboundReady(ZX_OK, POLLIN);
+
+  EXPECT_EQ(1u, under_test.receive_message_count_);
+  EXPECT_EQ(2u, under_test.wait_for_inbound_count_);
+  // The callback should NOT have been called because the packet is discarded
+  EXPECT_FALSE(callback_called);
+}
+
+// Verifies that unicast queries from outside the local segment to multicast are converted to
+// multicast responses.
+TEST(InterfaceTransceiverTest, InboundReadyForceMulticastResponseFromOutsideLocalSegment) {
+  async::TestLoop loop;
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
+
+  // Setup a valid inbound message requesting unicast response (unicast_response_ = true)
+  DnsMessage inbound_msg;
+  inbound_msg.questions_.push_back(
+      std::make_shared<DnsQuestion>(DnsName("test.local."), DnsType::kAny, true));
+  inbound_msg.UpdateCounts();
+
+  std::vector<uint8_t> buffer(1024);
+  PacketWriter writer(std::move(buffer));
+  writer << inbound_msg;
+  size_t packet_size = writer.position();
+  buffer = writer.GetPacket();
+  buffer.resize(packet_size);
+
+  under_test.receive_message_packet_ = std::move(buffer);
+  // Source address is 5.6.7.8 (not link-local)
+  under_test.receive_message_source_address_ =
+      inet::SocketAddress(inet::IpAddress(5, 6, 7, 8), inet::IpPort::From_uint16_t(5353));
+  // Destination address is multicast
+  under_test.receive_message_destination_address_ = MdnsAddresses::v4_multicast().address();
+
+  bool callback_called = false;
+  std::unique_ptr<DnsMessage> received_msg;
+  under_test.Start([&](std::unique_ptr<DnsMessage> message, const ReplyAddress& reply_address) {
+    callback_called = true;
+    received_msg = std::move(message);
+  });
+
+  under_test.InboundReady(ZX_OK, POLLIN);
+
+  EXPECT_EQ(1u, under_test.receive_message_count_);
+  EXPECT_EQ(2u, under_test.wait_for_inbound_count_);
+  EXPECT_TRUE(callback_called);
+  ASSERT_NE(nullptr, received_msg);
+  ASSERT_EQ(1u, received_msg->questions_.size());
+  // The unicast_response_ field of the question should have been forced to false
+  EXPECT_FALSE(received_msg->questions_[0]->unicast_response_);
+}
+
+// Verifies that when ReceiveMessage fails, InboundReady schedules a task to call WaitForInbound.
+TEST(InterfaceTransceiverTest, InboundReadyReceiveMessageFailure) {
+  async::TestLoop loop;
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
+
+  under_test.receive_message_result_ = -1;
+
+  bool callback_called = false;
+  under_test.Start([&](std::unique_ptr<DnsMessage> message, const ReplyAddress& reply_address) {
+    callback_called = true;
+  });
+
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  under_test.InboundReady(ZX_OK, POLLIN);
+
+  EXPECT_EQ(1u, under_test.receive_message_count_);
+  // After a failed ReceiveMessage, WaitForInbound is called after a 10s delay.
+  // So it shouldn't have been called immediately.
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  loop.RunFor(zx::sec(10));
+  EXPECT_EQ(2u, under_test.wait_for_inbound_count_);
+  EXPECT_FALSE(callback_called);
+}
+
+// Verifies IpSubnet properties and SetInterfaces with explicit IpSubnet.
+TEST(InterfaceTransceiverTest, SetInterfacesWithIpSubnet) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  IpSubnet subnet(nic_address, 24);
+  EXPECT_EQ(nic_address, subnet.address());
+  EXPECT_EQ(24, subnet.prefix_len());
+  EXPECT_EQ(subnet, IpSubnet(nic_address, 24));
+  EXPECT_NE(subnet, IpSubnet(nic_address, 16));
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, "testnic", 1234, Media::kWired);
+  under_test.SetInterfaceAddresses({subnet});
+  EXPECT_EQ(nic_address, under_test.address());
+}
+
+TEST(InterfaceTransceiverTest, IpSubnetContains) {
+  // IPv4 /24
+  IpSubnet v4_subnet(inet::IpAddress(192, 168, 1, 1), 24);
+  EXPECT_TRUE(v4_subnet.Contains(inet::IpAddress(192, 168, 1, 1)));
+  EXPECT_TRUE(v4_subnet.Contains(inet::IpAddress(192, 168, 1, 254)));
+  EXPECT_FALSE(v4_subnet.Contains(inet::IpAddress(192, 168, 2, 1)));
+
+  // IPv4 /16
+  IpSubnet v4_subnet16(inet::IpAddress(172, 16, 0, 1), 16);
+  EXPECT_TRUE(v4_subnet16.Contains(inet::IpAddress(172, 16, 255, 254)));
+  EXPECT_FALSE(v4_subnet16.Contains(inet::IpAddress(172, 17, 0, 1)));
+
+  // IPv6 /64
+  IpSubnet v6_subnet(inet::IpAddress(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1), 64);
+  EXPECT_TRUE(v6_subnet.Contains(inet::IpAddress(0x2001, 0xdb8, 0, 0, 0, 0, 0, 2)));
+  EXPECT_FALSE(v6_subnet.Contains(inet::IpAddress(0x2001, 0xdb9, 0, 0, 0, 0, 0, 1)));
+
+  // Invalid / mismatched family
+  EXPECT_FALSE(v4_subnet.Contains(inet::IpAddress::kInvalid));
+  EXPECT_FALSE(v4_subnet.Contains(inet::IpAddress(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)));
+}
+
+TEST(InterfaceTransceiverTest, IsOnLocalSubnet) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  inet::IpAddress nic_address(192, 168, 1, 10);
+  MdnsInterfaceTransceiverTest under_test(nic_address, "testnic", 1234, Media::kWired);
+
+  // After setting interface_addresses_, addresses in those subnets are link local.
+  under_test.SetInterfaceAddresses({IpSubnet(nic_address, 24)});
+  EXPECT_TRUE(under_test.IsOnLocalSubnet(inet::IpAddress(192, 168, 1, 50)));
+  EXPECT_FALSE(under_test.IsOnLocalSubnet(inet::IpAddress(192, 168, 2, 50)));
+  EXPECT_FALSE(under_test.IsOnLocalSubnet(inet::IpAddress(5, 6, 7, 8)));
 }
 
 }  // namespace mdns::test

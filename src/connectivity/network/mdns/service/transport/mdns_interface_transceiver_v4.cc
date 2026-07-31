@@ -80,8 +80,13 @@ int MdnsInterfaceTransceiverV4::SetOptionMulticastTtl() {
 }
 
 int MdnsInterfaceTransceiverV4::SetOptionFamilySpecific() {
-  // Nothing to do.
-  return 0;
+  int param = 1;
+  int result = setsockopt(socket_fd().get(), IPPROTO_IP, IP_PKTINFO, &param, sizeof(param));
+  if (result < 0) {
+    FX_LOGS(ERROR) << "Failed to set socket option IP_PKTINFO, " << strerror(errno);
+  }
+
+  return result;
 }
 
 int MdnsInterfaceTransceiverV4::Bind() {
