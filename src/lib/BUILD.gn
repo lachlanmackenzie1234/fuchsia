@@ -78,6 +78,7 @@ group("tests") {
     "kstring:tests",
     "ksync:tests",
     "libdoc:tests($host_toolchain)",
+    "line-editor:tests",
     "line_input:tests",
     "listnode:tests",
     "llvm-profdata:tests",
