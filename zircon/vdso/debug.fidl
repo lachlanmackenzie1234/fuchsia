@@ -66,6 +66,7 @@ closed protocol Debug {
     /// [`zx_debug_write()`]: debug_write.md
     /// [`zx_debuglog_read()`]: debuglog_read.md
     /// [`zx_debuglog_write()`]: debuglog_write.md
+    @rust
     strict Read(resource struct {
         handle Handle:RESOURCE;
     }) -> (struct {
@@ -124,6 +125,7 @@ closed protocol Debug {
     /// [`zx_debug_read()`]: debug_read.md
     /// [`zx_debuglog_read()`]: debuglog_read.md
     /// [`zx_debuglog_write()`]: debuglog_write.md
+    @rust
     strict Write(struct {
         buffer vector<uchar>:MAX;
     }) -> () error Status;
@@ -166,6 +168,7 @@ closed protocol Debug {
     /// ## See also
     ///
     /// TODO(https://fxbug.dev/42108078)
+    @rust
     strict SendCommand(resource struct {
         resource Handle:RESOURCE;
         buffer vector<uchar>:MAX;

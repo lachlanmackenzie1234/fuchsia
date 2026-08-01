@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 mod counter;
+mod debug;
 mod debuglog;
 mod event;
 mod iommu;

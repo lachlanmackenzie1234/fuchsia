@@ -116,17 +116,17 @@ _ZX_SYSCALL_DECL(cprng_draw, void, /* no attributes */, 2, (buffer, buffer_size)
 _ZX_SYSCALL_DECL(deadline_after, zx_instant_mono_t, /* no attributes */, 1, (nanoseconds),
                  (zx_duration_mono_t nanoseconds))
 
-_ZX_SYSCALL_DECL(debug_read, zx_status_t, /* no attributes */, 4,
+_ZX_SYSCALL_DECL(debug_read, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
                  (handle, buffer, buffer_size, actual),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, char* buffer,
                   size_t buffer_size, size_t* actual))
 
-_ZX_SYSCALL_DECL(debug_send_command, zx_status_t, /* no attributes */, 3,
+_ZX_SYSCALL_DECL(debug_send_command, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
                  (resource, buffer, buffer_size),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t resource, const char* buffer,
                   size_t buffer_size))
 
-_ZX_SYSCALL_DECL(debug_write, zx_status_t, /* no attributes */, 2, (buffer, buffer_size),
+_ZX_SYSCALL_DECL(debug_write, zx_status_t, _ZX_SYSCALL_EXTERN_C, 2, (buffer, buffer_size),
                  (const char* buffer, size_t buffer_size))
 
 _ZX_SYSCALL_DECL(debuglog_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3, (resource, options, out),
@@ -303,12 +303,12 @@ _ZX_SYSCALL_DECL(job_set_policy, zx_status_t, /* no attributes */, 5,
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t options,
                   uint32_t topic, const void* policy, uint32_t policy_size))
 
-_ZX_SYSCALL_DECL(ktrace_control, zx_status_t, /* no attributes */, 4,
+_ZX_SYSCALL_DECL(ktrace_control, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
                  (handle, action, options, ptr),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t action,
                   uint32_t options, void* ptr))
 
-_ZX_SYSCALL_DECL(ktrace_read, zx_status_t, /* no attributes */, 5,
+_ZX_SYSCALL_DECL(ktrace_read, zx_status_t, _ZX_SYSCALL_EXTERN_C, 5,
                  (handle, data, offset, data_size, actual),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, void* data,
                   uint32_t offset, size_t data_size, size_t* actual))
