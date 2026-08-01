@@ -15,7 +15,6 @@
 #include "vp9/common/vp9_loopfilter.h"
 #include "vpx_dsp/vpx_dsp_common.h"
 #include "vpx_ports/mem.h"
-
 #include "vp9/common/vp9_seg_common.h"
 
 static void update_sharpness(loop_filter_info_n *lfi, int sharpness_lvl) {
@@ -60,12 +59,16 @@ void vp9_loop_filter_frame_init(struct loopfilter *lf, loop_filter_info_n *lfi,
   // 2 when filter_lvl is between 32 and 63
   const int scale = 1 << (default_filt_lvl >> 5);
 
-  *sharpness_updated_out = false;
+  if (sharpness_updated_out) {
+    *sharpness_updated_out = false;
+  }
   // update limits if sharpness has changed
   if (lf->last_sharpness_level != lf->sharpness_level) {
     update_sharpness(lfi, lf->sharpness_level);
     lf->last_sharpness_level = lf->sharpness_level;
-    *sharpness_updated_out = true;
+    if (sharpness_updated_out) {
+      *sharpness_updated_out = true;
+    }
   }
 
   for (seg_id = 0; seg_id < MAX_SEGMENTS; seg_id++) {

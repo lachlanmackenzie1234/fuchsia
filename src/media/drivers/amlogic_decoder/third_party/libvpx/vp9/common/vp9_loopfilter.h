@@ -8,8 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef VP9_COMMON_VP9_LOOPFILTER_H_
-#define VP9_COMMON_VP9_LOOPFILTER_H_
+#ifndef VPX_VP9_COMMON_VP9_LOOPFILTER_H_
+#define VPX_VP9_COMMON_VP9_LOOPFILTER_H_
 
 #include "vpx_ports/mem.h"
 #include "./vpx_config.h"
@@ -95,6 +95,7 @@ struct loopfilter {
   int lfm_stride;
 };
 
+struct segmentation;
 void vp9_loop_filter_init(loop_filter_info_n *lfi, struct loopfilter *lf);
 void vp9_loop_filter_frame_init(struct loopfilter *lf, loop_filter_info_n *lfi,
                                 struct segmentation *seg, int default_filt_lvl,
@@ -104,4 +105,4 @@ void vp9_loop_filter_frame_init(struct loopfilter *lf, loop_filter_info_n *lfi,
 }  // extern "C"
 #endif
 
-#endif  // VP9_COMMON_VP9_LOOPFILTER_H_
+#endif  // VPX_VP9_COMMON_VP9_LOOPFILTER_H_
