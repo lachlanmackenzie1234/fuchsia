@@ -863,6 +863,40 @@ assembly_input_bundle(
     ],
 )
 
+# AIB for the Vulkan Loader for Lavapipe
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "vulkan_loader_for_lavapipe",
+    # TODO(https://fxbug.dev/541271630): Restrict lavapipe to eng build types.
+    allowed_in = [
+        "userdebug",
+        "eng",
+    ],
+    base_packages = select({
+        "//build/bazel/platforms:is_fuchsia_riscv64": [],
+        "//conditions:default": [
+            "//bundles/assembly/bazel_inputs/src/graphics/bin/vulkan_loader:vulkan_loader_for_lavapipe",
+        ],
+    }),
+)
+
+# AIB for the Lavapipe ICD Package
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "lavapipe_pkg",
+    # TODO(https://fxbug.dev/541271630): Restrict lavapipe to eng build types.
+    allowed_in = [
+        "userdebug",
+        "eng",
+    ],
+    base_packages = select({
+        "//build/bazel/platforms:is_fuchsia_riscv64": [],
+        "//conditions:default": [
+            "//bundles/assembly/bazel_inputs/src/graphics/lib/lavapipe-vulkan:lavapipe_pkg",
+        ],
+    }),
+)
+
 # Trusted execution environment.
 # buildifier: leave-alone
 assembly_input_bundle(

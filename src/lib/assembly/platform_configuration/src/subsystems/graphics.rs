@@ -4,7 +4,7 @@
 
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
-use assembly_config_schema::platform_settings::graphics_config::GraphicsConfig;
+use assembly_config_schema::platform_settings::graphics_config::{GraphicsConfig, VulkanIcd};
 use assembly_config_schema::platform_settings::ui_config::PlatformUiConfig;
 use assembly_constants::BoardFeature;
 
@@ -39,7 +39,20 @@ impl DefineSubsystemConfiguration<(&GraphicsConfig, &PlatformUiConfig)>
         if *context.feature_set_level == FeatureSetLevel::Standard
             && context.board_config.provides_feature(BoardFeature::VulkanGpu)
         {
-            builder.platform_bundle("vulkan_loader")?;
+            match graphics_config.vulkan_icd {
+                VulkanIcd::Default => {
+                    builder.platform_bundle("vulkan_loader")?;
+                }
+                VulkanIcd::Lavapipe => {
+                    // TODO(b/541271630): Restrict lavapipe to eng build types.
+                    context.ensure_build_type(
+                        &[BuildType::Eng, BuildType::UserDebug],
+                        "vulkan_icd lavapipe",
+                    )?;
+                    builder.platform_bundle("vulkan_loader_for_lavapipe")?;
+                    builder.platform_bundle("lavapipe_pkg")?;
+                }
+            }
         }
 
         if context.board_config.provides_feature(BoardFeature::FakeDisplay) && ui_config.enabled {
@@ -126,7 +139,7 @@ mod tests {
     use super::*;
     use crate::common::ConfigurationBuilderImpl;
     use assembly_config_schema::BoardConfig;
-    use assembly_config_schema::platform_settings::graphics_config::VirtconConfig;
+    use assembly_config_schema::platform_settings::graphics_config::{VirtconConfig, VulkanIcd};
 
     #[test]
     fn test_user_default() {
@@ -156,6 +169,7 @@ mod tests {
         };
         let config = GraphicsConfig {
             virtual_console: VirtconConfig { enable: Some(false), ..Default::default() },
+            ..Default::default()
         };
         let mut builder = ConfigurationBuilderImpl::default();
         GraphicsSubsystemConfig::define_configuration(
@@ -177,6 +191,7 @@ mod tests {
         };
         let config = GraphicsConfig {
             virtual_console: VirtconConfig { enable: Some(true), ..Default::default() },
+            ..Default::default()
         };
         let mut builder = ConfigurationBuilderImpl::default();
         GraphicsSubsystemConfig::define_configuration(
@@ -237,5 +252,67 @@ mod tests {
         .unwrap();
         let config = builder.build();
         assert_eq!(config.bundles, ["display_drivers_base".to_string()].into());
+    }
+
+    #[test]
+    fn test_vulkan_loader_default() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::VulkanGpu.as_ref().to_string()],
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::User,
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig { ..Default::default() };
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig::default()),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert_eq!(
+            config.bundles,
+            ["display_drivers_base".to_string(), "vulkan_loader".to_string()].into()
+        );
+    }
+
+    #[test]
+    fn test_vulkan_loader_lavapipe() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::VulkanGpu.as_ref().to_string()],
+            ..Default::default()
+        };
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::UserDebug,
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = GraphicsConfig {
+            vulkan_icd: VulkanIcd::Lavapipe,
+            virtual_console: VirtconConfig { enable: Some(false), ..Default::default() },
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        GraphicsSubsystemConfig::define_configuration(
+            &context,
+            &(&config, &PlatformUiConfig::default()),
+            &mut builder,
+        )
+        .unwrap();
+        let config = builder.build();
+        assert_eq!(
+            config.bundles,
+            [
+                "display_drivers_base".to_string(),
+                "vulkan_loader_for_lavapipe".to_string(),
+                "lavapipe_pkg".to_string()
+            ]
+            .into()
+        );
     }
 }

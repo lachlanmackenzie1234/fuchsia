@@ -7,3 +7,7 @@ import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 export_fuchsia_package_to_bazel("vulkan_loader") {
   package = "//src/graphics/bin/vulkan_loader"
 }
+
+export_fuchsia_package_to_bazel("vulkan_loader_for_lavapipe") {
+  package = "//src/graphics/bin/vulkan_loader:vulkan_loader_for_lavapipe"
+}

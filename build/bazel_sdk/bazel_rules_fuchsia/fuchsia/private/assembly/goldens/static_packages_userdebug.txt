@@ -51,6 +51,7 @@ forensics
 ?intl-services-small
 ?intl_services
 ?iperf3
+?libvulkan_lavapipe
 log_listener_shell
 ?lowpan-ot-driver
 ?lowpanctl

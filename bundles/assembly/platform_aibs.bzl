@@ -229,6 +229,8 @@ platform_aib_names = bringup_platform_aib_names + [
 
     # Graphics
     "vulkan_loader",
+    "vulkan_loader_for_lavapipe",
+    "lavapipe_pkg",
     "display_drivers_base",
     "fake_display_stack_host",
 

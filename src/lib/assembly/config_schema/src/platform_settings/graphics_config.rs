@@ -12,6 +12,18 @@ pub struct GraphicsConfig {
     /// Configuration for the virtual console
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub virtual_console: VirtconConfig,
+
+    /// Which Vulkan ICD to use.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub vulkan_icd: VulkanIcd,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum VulkanIcd {
+    #[default]
+    Default,
+    Lavapipe,
 }
 
 /// Platform configuration options for the virtual console
