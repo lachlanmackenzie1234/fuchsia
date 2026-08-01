@@ -171,11 +171,11 @@ TEST(ChannelConversion, ChanspecToPrimaryChannel) {
 }
 
 TEST(ChannelConversion, Override80P80) {
-  const uint8_t expected_primary = 36;
+  const fuchsia_wlan_ieee80211::wire::ChannelNumber expected_primary = {
+      .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 36};
   using fuchsia_wlan_ieee80211::wire::ChannelBandwidth;
 
-  const auto out_cbw =
-      override_wlan_channel_bandwidth(expected_primary, ChannelBandwidth::kCbw80P80);
+  const auto out_cbw = enforce_bandwidth_limitations(expected_primary, ChannelBandwidth::kCbw80P80);
   // Override should only change the bandwidth.
   EXPECT_EQ(out_cbw, ChannelBandwidth::kCbw20);
 }
@@ -186,7 +186,10 @@ TEST(ChannelConversion, Override80P80IgnoresOtherBandwidths) {
       ChannelBandwidth::kCbw20, ChannelBandwidth::kCbw40, ChannelBandwidth::kCbw80,
       ChannelBandwidth::kCbw160};
   for (const auto& bandwidth : bandwidths) {
-    const auto out_cbw = override_wlan_channel_bandwidth(36, bandwidth);
+    const auto out_cbw = enforce_bandwidth_limitations(
+        fuchsia_wlan_ieee80211::wire::ChannelNumber{
+            .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 36},
+        bandwidth);
     EXPECT_EQ(out_cbw, bandwidth);
   }
 }
@@ -197,14 +200,20 @@ TEST(ChannelConversion, OverrideWideBandwidthForChannel165) {
                                                    ChannelBandwidth::kCbw80};
 
   for (const auto& bandwidth : bandwidths) {
-    const auto out_cbw = override_wlan_channel_bandwidth(165, bandwidth);
+    const auto out_cbw = enforce_bandwidth_limitations(
+        fuchsia_wlan_ieee80211::wire::ChannelNumber{
+            .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 165},
+        bandwidth);
     EXPECT_EQ(out_cbw, ChannelBandwidth::kCbw20);
   }
 }
 
 TEST(ChannelConversion, OverrideWideBandwidthForChannel173) {
   using fuchsia_wlan_ieee80211::wire::ChannelBandwidth;
-  const auto out_cbw = override_wlan_channel_bandwidth(173, ChannelBandwidth::kCbw40);
+  const auto out_cbw = enforce_bandwidth_limitations(
+      fuchsia_wlan_ieee80211::wire::ChannelNumber{
+          .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 173},
+      ChannelBandwidth::kCbw40);
   EXPECT_EQ(out_cbw, ChannelBandwidth::kCbw20);
 }
 }  // namespace

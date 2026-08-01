@@ -185,8 +185,12 @@ fuchsia_wlan_ieee80211::wire::ChannelBandwidth chanspec_to_channel_bandwidth(
 fuchsia_wlan_ieee80211::wire::ChannelNumber chanspec_to_secondary80(const brcmu_d11inf* d11_inf,
                                                                     uint16_t chanspec);
 
-fuchsia_wlan_ieee80211::wire::ChannelBandwidth override_wlan_channel_bandwidth(
-    uint8_t primary, fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
+fuchsia_wlan_ieee80211::wire::ChannelBandwidth enforce_bandwidth_limitations(
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& primary,
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
+fuchsia_wlan_ieee80211::ChannelBandwidth enforce_bandwidth_limitations(
+    const fuchsia_wlan_ieee80211::ChannelNumber& primary,
+    fuchsia_wlan_ieee80211::ChannelBandwidth cbw);
 
 uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
                              const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,

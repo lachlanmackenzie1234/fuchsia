@@ -343,8 +343,9 @@ void brcmu_d11_attach(struct brcmu_d11inf* d11inf) {
   }
 }
 
-fuchsia_wlan_ieee80211::wire::ChannelBandwidth override_wlan_channel_bandwidth(
-    uint8_t primary, fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw) {
+fuchsia_wlan_ieee80211::wire::ChannelBandwidth enforce_bandwidth_limitations(
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& primary,
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw) {
   using fuchsia_wlan_ieee80211::wire::ChannelBandwidth;
   if (cbw == ChannelBandwidth::kCbw80P80) {
     // Override the channel bandwidth with 20Mhz because `channel2chanspec` doesn't support
@@ -353,9 +354,18 @@ fuchsia_wlan_ieee80211::wire::ChannelBandwidth override_wlan_channel_bandwidth(
     return ChannelBandwidth::kCbw20;
   }
 
-  if (primary >= 165 && cbw != ChannelBandwidth::kCbw20) {
+  // Connecting to channels >= 165 with bandwidths > 20MHz is not supported per fxrev.dev/1446009.
+  if (primary.band == fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz && primary.number >= 165 &&
+      cbw != ChannelBandwidth::kCbw20) {
     return ChannelBandwidth::kCbw20;
   }
 
   return cbw;
+}
+
+fuchsia_wlan_ieee80211::ChannelBandwidth enforce_bandwidth_limitations(
+    const fuchsia_wlan_ieee80211::ChannelNumber& primary,
+    fuchsia_wlan_ieee80211::ChannelBandwidth cbw) {
+  fidl::Arena arena;
+  return enforce_bandwidth_limitations(fidl::ToWire(arena, primary), cbw);
 }

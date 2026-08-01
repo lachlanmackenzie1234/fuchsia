@@ -2189,8 +2189,7 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
 
   // Some scenarios require specific bandwidth overrides.
-  const auto cbw_override =
-      override_wlan_channel_bandwidth(bss.primary().number(), bss.bandwidth());
+  const auto cbw_override = enforce_bandwidth_limitations(bss.primary(), bss.bandwidth());
 
   uint16_t bandwidth;
   switch (cbw_override) {
@@ -2214,8 +2213,7 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
       break;
     case ChannelBandwidth::kCbw80P80: {
       // Special case for 80+80 MHz channel, because channel2chanspec doesn't support it.
-      const auto cbw_override =
-          override_wlan_channel_bandwidth(bss.primary().number(), bss.bandwidth());
+      const auto cbw_override = enforce_bandwidth_limitations(bss.primary(), bss.bandwidth());
       const uint16_t chanspec = channel_to_chanspec(&cfg->d11inf, bss.primary(), cbw_override);
 
       if (chspec_malformed(chanspec)) {
