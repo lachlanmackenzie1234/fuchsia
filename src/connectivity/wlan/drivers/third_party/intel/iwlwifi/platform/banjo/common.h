@@ -53,8 +53,11 @@ typedef uint8_t wlan_tx_result_t;
 
 struct wlan_channel {
   uint8_t primary;
-  channel_bandwidth_t cbw;
-  uint8_t secondary80;
+  union {
+    channel_bandwidth_t bandwidth;
+    channel_bandwidth_t cbw;
+  };
+  uint8_t vht_secondary_80_channel;
 };
 
 // Declarations

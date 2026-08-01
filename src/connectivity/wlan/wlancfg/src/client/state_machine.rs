@@ -35,7 +35,7 @@ use std::borrow::Cow;
 use std::pin::Pin;
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::sequestered::Sequestered;
 
 const MAX_CONNECTION_ATTEMPTS: u8 = 4; // arbitrarily chosen until we have some data
@@ -713,14 +713,14 @@ async fn connected_state(
                                 options.ap_state.tracked.channel.primary, info.new_primary_channel
                             );
 
-                            let cbw = match Cbw::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+                            let cbw = match Bandwidth::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
                                 Ok(cbw) => cbw,
                                 Err(e) => {
                                     // In the event that the CBW is invalid, reuse the previous CBW
                                     // in determining the client's channel to preserve any legacy
                                     // behavior.
                                     error!("Invalid CBW in ChannelSwitchInfo: {}", e);
-                                    options.ap_state.tracked.channel.cbw
+                                    options.ap_state.tracked.channel.bandwidth
                                 }
                             };
                             options.ap_state.tracked.channel = Channel::new(

@@ -39,9 +39,9 @@ std::string ChanStr(const Channel& channel);
 std::string ChanStrLong(const Channel& channel);
 
 struct Channel {
-  fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
-  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
-  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
 };
 
 const char* CbwSuffix(fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);

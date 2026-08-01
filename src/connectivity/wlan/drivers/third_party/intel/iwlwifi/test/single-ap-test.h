@@ -28,7 +28,7 @@ class SingleApTest : public ::testing::Test {
 
  protected:
   static constexpr cssid_t kSsid = {.len = 6 /* strlen("MySSID") */, .data = "MySSID"};
-  static constexpr wlan_channel_t kChannel = {.primary = 11, .cbw = CHANNEL_BANDWIDTH_CBW20};
+  static constexpr wlan_channel_t kChannel = {.primary = 11, .bandwidth = CHANNEL_BANDWIDTH_CBW20};
 
   SimTransport sim_trans_;
 };

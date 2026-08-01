@@ -399,14 +399,14 @@ zx_status_t mac_set_channel(struct iwl_mvm_vif* mvmvif, const wlan_channel_t* ch
   zx_status_t ret;
 
   IWL_INFO(mvmvif, "mac_set_channel(primary:%d, bandwidth:'%s', secondary:%d)\n", channel->primary,
-           channel->cbw == CHANNEL_BANDWIDTH_CBW20        ? "20"
-           : channel->cbw == CHANNEL_BANDWIDTH_CBW40      ? "40"
-           : channel->cbw == CHANNEL_BANDWIDTH_CBW40BELOW ? "40-"
-           : channel->cbw == CHANNEL_BANDWIDTH_CBW80      ? "80"
-           : channel->cbw == CHANNEL_BANDWIDTH_CBW160     ? "160"
-           : channel->cbw == CHANNEL_BANDWIDTH_CBW80P80   ? "80+80"
+           channel->bandwidth == CHANNEL_BANDWIDTH_CBW20        ? "20"
+           : channel->bandwidth == CHANNEL_BANDWIDTH_CBW40      ? "40"
+           : channel->bandwidth == CHANNEL_BANDWIDTH_CBW40BELOW ? "40-"
+           : channel->bandwidth == CHANNEL_BANDWIDTH_CBW80      ? "80"
+           : channel->bandwidth == CHANNEL_BANDWIDTH_CBW160     ? "160"
+           : channel->bandwidth == CHANNEL_BANDWIDTH_CBW80P80   ? "80+80"
                                                           : "unknown",
-           channel->secondary80);
+           channel->vht_secondary_80_channel);
 
   if (mvmvif->phy_ctxt && mvmvif->phy_ctxt->channel && mvmvif->phy_ctxt->channel->hw_value != 0) {
     // The PHY context is set (the RF is on a particular channel). Remove it first. Below code
@@ -434,7 +434,7 @@ zx_status_t mac_set_channel(struct iwl_mvm_vif* mvmvif, const wlan_channel_t* ch
 
   struct cfg80211_chan_def chandef = {
       .chan = mvm_chan,
-      .width = convert_channel_bandwidth_to_nl80211_chan_width(channel->cbw),
+      .width = convert_channel_bandwidth_to_nl80211_chan_width(channel->bandwidth),
   };
   ret = iwl_mvm_change_chanctx(mvmvif->mvm, mvmvif->phy_ctxt->id, &chandef);
   if (ret != ZX_OK) {
@@ -1061,7 +1061,7 @@ void mac_ifc_recv(void* ctx, const wlan_rx_packet_t* rx_packet) {
       break;
   }
 
-  switch (banjo_info.channel.cbw) {
+  switch (banjo_info.channel.bandwidth) {
     case CHANNEL_BANDWIDTH_CBW20:
       fidl_info.bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20;
       break;
@@ -1085,9 +1085,9 @@ void mac_ifc_recv(void* ctx, const wlan_rx_packet_t* rx_packet) {
       return;
   }
 
-  fidl_info.vht_secondary_80_channel.number = banjo_info.channel.secondary80;
-  if (banjo_info.channel.secondary80 != 0) {
-    switch (iwl_mvm_get_channel_band(banjo_info.channel.secondary80)) {
+  fidl_info.vht_secondary_80_channel.number = banjo_info.channel.vht_secondary_80_channel;
+  if (banjo_info.channel.vht_secondary_80_channel != 0) {
+    switch (iwl_mvm_get_channel_band(banjo_info.channel.vht_secondary_80_channel)) {
       case WLAN_BAND_TWO_GHZ:
         fidl_info.vht_secondary_80_channel.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz;
         break;

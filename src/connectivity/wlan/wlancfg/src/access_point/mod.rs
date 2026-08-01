@@ -16,7 +16,7 @@ use futures::{FutureExt, TryFutureExt, select};
 use log::{error, info, warn};
 use std::sync::Arc;
 use wlan_common::RadioConfig;
-use wlan_common::channel::Cbw;
+use wlan_common::channel::Bandwidth;
 
 pub mod state_machine;
 pub mod types;
@@ -318,7 +318,7 @@ fn derive_ap_config(
 
     let radio_config = RadioConfig::new(
         fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
-        Cbw::Cbw20,
+        Bandwidth::Cbw20,
         channel,
         wlan_band,
     );

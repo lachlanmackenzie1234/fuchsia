@@ -276,7 +276,7 @@ static inline enum nl80211_chan_width convert_channel_bandwidth_to_nl80211_chan_
 // This can be converted from the `wlan_channel_t` structure.
 struct cfg80211_chan_def {
   struct ieee80211_channel* chan;  // .hw_value = wlan_channel_t.primary
-  enum nl80211_chan_width width;   // = wlan_channel_t.cbw
+  enum nl80211_chan_width width;   // = wlan_channel_t.bandwidth
 };
 
 struct ieee80211_mcs_info {

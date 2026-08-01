@@ -32,11 +32,11 @@ fuchsia_wlan_ieee80211::wire::WlanBand convert_wlan_band_to_fidl(wlan_band_t ban
 
 bool ieee80211_is_valid_chan(struct wlan_channel_number primary) {
   wlan::common::Channel chan = {
-      .channel = {
+      .primary = {
           .band = convert_wlan_band_to_fidl(primary.band),
           .number = primary.number,
       },
-      .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+      .bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
   };
 
   return wlan::common::IsValidChan(chan);
@@ -44,11 +44,11 @@ bool ieee80211_is_valid_chan(struct wlan_channel_number primary) {
 
 uint16_t ieee80211_get_center_freq(struct wlan_channel_number ch_num) {
   wlan::common::Channel chan = {
-      .channel = {
+      .primary = {
           .band = convert_wlan_band_to_fidl(ch_num.band),
           .number = ch_num.number,
       },
-      .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+      .bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
   };
 
   return wlan::common::GetCenterFreq(chan);

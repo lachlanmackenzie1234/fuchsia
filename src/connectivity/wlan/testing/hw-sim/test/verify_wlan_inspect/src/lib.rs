@@ -13,7 +13,7 @@ use ieee80211::Bssid;
 use std::pin::pin;
 use std::sync::LazyLock;
 use wlan_common::bss::Protection;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_hw_sim::event::{Handler, action};
 use wlan_hw_sim::*;
 
@@ -79,7 +79,7 @@ async fn verify_wlan_inspect() {
     let security_type = fidl_policy::SecurityType::None;
     {
         let phy = helper.proxy();
-        let channel = Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
+        let channel = Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
         let protection = Protection::Open;
         let probes = [ProbeResponse {
             channel,

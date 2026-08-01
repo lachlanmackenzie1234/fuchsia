@@ -19,9 +19,10 @@ const fuchsia_wlan_ieee80211::wire::ChannelNumber kAp0Channel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const fuchsia_wlan_ieee80211::wire::ChannelNumber kAp1Channel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11};
-const simulation::WlanTxInfo kAp0TxInfo = {.channel = kAp0Channel,
-                                           .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-                                           .secondary80 = {.band = kAp0Channel.band, .number = 0}};
+const simulation::WlanTxInfo kAp0TxInfo = {
+    .primary_channel = kAp0Channel,
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kAp0Channel.band, .number = 0}};
 
 const common::MacAddr kAp0Bssid("12:34:56:78:9a:bc");
 const common::MacAddr kAp1Bssid("ff:ee:dd:cc:bb:aa");

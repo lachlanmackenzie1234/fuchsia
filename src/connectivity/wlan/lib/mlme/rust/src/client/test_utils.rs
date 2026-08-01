@@ -110,10 +110,10 @@ impl MockObjects {
         .await
         .expect("Failed to create client MLME.");
         let channel = fake_wlan_channel();
-        let (cbw, secondary80_num) = channel.cbw.to_fidl();
-        let secondary80 =
+        let (bandwidth, secondary80_num) = channel.bandwidth.to_fidl();
+        let vht_secondary_80_channel =
             fidl_ieee80211::ChannelNumber { band: channel.band, number: secondary80_num };
-        mlme.set_main_channel(channel.into(), cbw, secondary80)
+        mlme.set_main_channel(channel.into(), bandwidth, vht_secondary_80_channel)
             .await
             .expect("unable to set main channel");
         mlme
@@ -203,6 +203,6 @@ impl BoundClient<'_, FakeDevice> {
 }
 
 pub fn mock_rx_info<'a>(client: &BoundClient<'a, FakeDevice>) -> fidl_softmac::WlanRxInfo {
-    let channel = client.channel_state.get_main_channel().unwrap();
+    let channel = client.channel_state.get_primary().unwrap();
     MockWlanRxInfo::with_channel(channel).into()
 }

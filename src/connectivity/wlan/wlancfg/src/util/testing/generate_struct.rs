@@ -15,7 +15,7 @@ use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use rand::distr::{Alphanumeric, SampleString};
 use rand::{Rng as _, RngCore};
 use wlan_common::bss::BssDescription;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::random_fidl_bss_description;
 use wlan_common::scan::{Compatible, Incompatible};
 use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor, wep, wpa};
@@ -51,12 +51,12 @@ pub fn generate_random_channel() -> Channel {
 pub fn generate_channel(channel: u8, band: fidl_ieee80211::WlanBand) -> Channel {
     let mut rng = rand::rng();
     let cbw = match rng.random_range(0..5) {
-        0 => Cbw::Cbw20,
-        1 => Cbw::Cbw40,
-        2 => Cbw::Cbw40Below,
-        3 => Cbw::Cbw80,
-        4 => Cbw::Cbw160,
-        5 => Cbw::Cbw80P80 { secondary80: rng.random::<u8>() },
+        0 => Bandwidth::Cbw20,
+        1 => Bandwidth::Cbw40,
+        2 => Bandwidth::Cbw40Below,
+        3 => Bandwidth::Cbw80,
+        4 => Bandwidth::Cbw160,
+        5 => Bandwidth::Cbw80P80 { vht_secondary_80_channel: rng.random::<u8>() },
         _ => panic!(),
     };
     Channel::new(channel, cbw, band)

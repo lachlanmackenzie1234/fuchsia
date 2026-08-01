@@ -14,17 +14,17 @@ namespace wlan {
 namespace common {
 
 bool IsValidChan2Ghz(const Channel& channel) {
-  if (channel.channel.band != fwlan_ieee80211::WlanBand::kTwoGhz) {
+  if (channel.primary.band != fwlan_ieee80211::WlanBand::kTwoGhz) {
     return false;
   }
 
-  uint8_t p = channel.channel.number;
+  uint8_t p = channel.primary.number;
 
   if (p < 1 || p > 14) {
     return false;
   }
 
-  switch (channel.cbw) {
+  switch (channel.bandwidth) {
     case fwlan_ieee80211::ChannelBandwidth::kCbw20:
       return true;
     case fwlan_ieee80211::ChannelBandwidth::kCbw40:
@@ -37,11 +37,11 @@ bool IsValidChan2Ghz(const Channel& channel) {
 }
 
 bool IsValidChan5Ghz(const Channel& channel) {
-  if (channel.channel.band != fwlan_ieee80211::WlanBand::kFiveGhz) {
+  if (channel.primary.band != fwlan_ieee80211::WlanBand::kFiveGhz) {
     return false;
   }
 
-  uint8_t p = channel.channel.number;
+  uint8_t p = channel.primary.number;
 
   if (p < 36 || p > 173) {
     return false;
@@ -59,7 +59,7 @@ bool IsValidChan5Ghz(const Channel& channel) {
     return false;
   }
 
-  switch (channel.cbw) {
+  switch (channel.bandwidth) {
     case fwlan_ieee80211::ChannelBandwidth::kCbw20:
       break;
     case fwlan_ieee80211::ChannelBandwidth::kCbw40:
@@ -84,10 +84,10 @@ bool IsValidChan5Ghz(const Channel& channel) {
       }
       break;
     case fwlan_ieee80211::ChannelBandwidth::kCbw80P80: {
-      if (channel.secondary80.band != channel.channel.band) {
+      if (channel.vht_secondary_80_channel.band != channel.primary.band) {
         return false;
       }
-      uint8_t s = channel.secondary80.number;
+      uint8_t s = channel.vht_secondary_80_channel.number;
       if (!(s == 42 || s == 58 || s == 106 || s == 122 || s == 138 || s == 155)) {
         return false;
       }
@@ -122,7 +122,7 @@ Mhz GetCenterFreq(const Channel& channel) {
 
   Mhz spacing = 5;
   Mhz channel_starting_frequency;
-  if (channel.channel.band == fwlan_ieee80211::WlanBand::kTwoGhz) {
+  if (channel.primary.band == fwlan_ieee80211::WlanBand::kTwoGhz) {
     channel_starting_frequency = kBaseFreq2Ghz;
   } else {
     // 5 GHz
@@ -136,8 +136,8 @@ Mhz GetCenterFreq(const Channel& channel) {
 // Returns the channel index corresponding to the first frequency segment's
 // center frequency
 uint8_t GetCenterChanIdx(const Channel& channel) {
-  uint8_t p = channel.channel.number;
-  switch (channel.cbw) {
+  uint8_t p = channel.primary.number;
+  switch (channel.bandwidth) {
     case fwlan_ieee80211::ChannelBandwidth::kCbw20:
       return p;
     case fwlan_ieee80211::ChannelBandwidth::kCbw40:
@@ -175,7 +175,7 @@ uint8_t GetCenterChanIdx(const Channel& channel) {
         return p;
       }
     default:
-      return channel.channel.number;
+      return channel.primary.number;
   }
 }
 
@@ -220,22 +220,22 @@ const char* CbwStr(fwlan_ieee80211::ChannelBandwidth cbw) {
 
 std::string ChanStr(const Channel& channel) {
   char buf[8 + 1];
-  if (channel.cbw != fwlan_ieee80211::ChannelBandwidth::kCbw80P80) {
-    std::snprintf(buf, sizeof(buf), "%u%s", channel.channel.number, CbwSuffix(channel.cbw));
+  if (channel.bandwidth != fwlan_ieee80211::ChannelBandwidth::kCbw80P80) {
+    std::snprintf(buf, sizeof(buf), "%u%s", channel.primary.number, CbwSuffix(channel.bandwidth));
   } else {
-    std::snprintf(buf, sizeof(buf), "%u+%u%s", channel.channel.number, channel.secondary80.number,
-                  CbwSuffix(channel.cbw));
+    std::snprintf(buf, sizeof(buf), "%u+%u%s", channel.primary.number,
+                  channel.vht_secondary_80_channel.number, CbwSuffix(channel.bandwidth));
   }
   return std::string(buf);
 }
 
 std::string ChanStrLong(const Channel& channel) {
   char buf[16 + 1];
-  if (channel.cbw != fwlan_ieee80211::ChannelBandwidth::kCbw80P80) {
-    std::snprintf(buf, sizeof(buf), "%u %s", channel.channel.number, CbwStr(channel.cbw));
+  if (channel.bandwidth != fwlan_ieee80211::ChannelBandwidth::kCbw80P80) {
+    std::snprintf(buf, sizeof(buf), "%u %s", channel.primary.number, CbwStr(channel.bandwidth));
   } else {
-    std::snprintf(buf, sizeof(buf), "%u+%u %s", channel.channel.number, channel.secondary80.number,
-                  CbwStr(channel.cbw));
+    std::snprintf(buf, sizeof(buf), "%u+%u %s", channel.primary.number,
+                  channel.vht_secondary_80_channel.number, CbwStr(channel.bandwidth));
   }
   return std::string(buf);
 }

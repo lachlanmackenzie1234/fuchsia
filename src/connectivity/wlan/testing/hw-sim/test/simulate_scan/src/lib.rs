@@ -9,7 +9,7 @@ use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use std::pin::pin;
 use std::sync::LazyLock;
 use wlan_common::bss::Protection;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_hw_sim::event::action;
 use wlan_hw_sim::*;
 
@@ -62,42 +62,66 @@ async fn simulate_scan() {
                 &phy,
                 [
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            1,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_FOO,
                         ssid: SSID_FOO.clone(),
                         protection: Protection::Wpa2Personal,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(2, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            2,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_FOO_2,
                         ssid: SSID_FOO.clone(),
                         protection: Protection::Open,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(3, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            3,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_BAR,
                         ssid: SSID_BAR.clone(),
                         protection: Protection::Wpa2Personal,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(4, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            4,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_BAR_2,
                         ssid: SSID_BAR.clone(),
                         protection: Protection::Wpa2Personal,
                         rssi_dbm: -40,
                     },
                     Beacon {
-                        channel: Channel::new(5, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            5,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_BAZ,
                         ssid: SSID_BAZ.clone(),
                         protection: Protection::Open,
                         rssi_dbm: -60,
                     },
                     Beacon {
-                        channel: Channel::new(6, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            6,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_BAZ_2,
                         ssid: SSID_BAZ.clone(),
                         protection: Protection::Wpa2Personal,

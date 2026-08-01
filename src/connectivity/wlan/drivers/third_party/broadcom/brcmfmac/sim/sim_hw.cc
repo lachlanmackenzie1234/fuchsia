@@ -38,21 +38,22 @@ SimHardware::~SimHardware() {
 
 void SimHardware::SetCallbacks(const EventHandlers& handlers) { event_handlers_ = handlers; }
 
-static bool ChannelsMatch(const fuchsia_wlan_ieee80211::wire::ChannelNumber& c1,
-                          const fuchsia_wlan_ieee80211::wire::ChannelNumber& c2,
-                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw1,
-                          fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw2,
-                          const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80_1,
-                          const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80_2) {
+static bool ChannelsMatch(
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& c1,
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& c2,
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw1,
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw2,
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& vht_secondary_80_channel_1,
+    const fuchsia_wlan_ieee80211::wire::ChannelNumber& vht_secondary_80_channel_2) {
   return (c1.number == c2.number) && (c1.band == c2.band) && (cbw1 == cbw2) &&
-         (secondary80_1.number == secondary80_2.number) &&
-         (secondary80_1.band == secondary80_2.band);
+         (vht_secondary_80_channel_1.number == vht_secondary_80_channel_2.number) &&
+         (vht_secondary_80_channel_1.band == vht_secondary_80_channel_2.band);
 }
 
 void SimHardware::Rx(std::shared_ptr<const simulation::SimFrame> frame,
                      std::shared_ptr<const simulation::WlanRxInfo> info) {
-  if (!rx_enabled_ ||
-      !ChannelsMatch(info->channel, channel_, info->cbw, cbw_, info->secondary80, secondary80_))
+  if (!rx_enabled_ || !ChannelsMatch(info->primary, primary_, info->bandwidth, bandwidth_,
+                                     info->vht_secondary_80_channel, vht_secondary_80_channel_))
     return;
   // Simply transfer frame to firmware.
   event_handlers_.rx_handler(frame, info);
@@ -110,9 +111,9 @@ void SimHardware::CancelCallback(uint64_t id) {
 
 void SimHardware::Tx(const simulation::SimFrame& frame) {
   simulation::WlanTxInfo info = {
-      .channel = channel_,
-      .cbw = cbw_,
-      .secondary80 = secondary80_,
+      .primary_channel = primary_,
+      .bandwidth = bandwidth_,
+      .vht_secondary_80_channel = vht_secondary_80_channel_,
   };
   env_->Tx(frame, info, this);
 }

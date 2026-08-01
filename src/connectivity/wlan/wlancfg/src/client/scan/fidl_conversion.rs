@@ -366,7 +366,7 @@ mod tests {
                         timestamp: zx::MonotonicInstant::from_nanos(
                             fidl_aps[0].entries.as_ref().unwrap()[0].timestamp_nanos.unwrap(),
                         ),
-                        channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
                         observation: types::ScanObservation::Passive,
                         compatibility: Compatible::expect_ok([SecurityDescriptor::WPA3_PERSONAL]),
                         bss_description: random_fidl_bss_description!(
@@ -375,7 +375,7 @@ mod tests {
                             ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                             rssi_dbm: 0,
                             snr_db: 1,
-                            channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                            channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
                         )
                         .into(),
                     },
@@ -385,7 +385,7 @@ mod tests {
                         timestamp: zx::MonotonicInstant::from_nanos(
                             fidl_aps[0].entries.as_ref().unwrap()[1].timestamp_nanos.unwrap(),
                         ),
-                        channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(11, types::Bandwidth::Cbw20, TwoGhz),
                         observation: types::ScanObservation::Passive,
                         compatibility: Incompatible::unknown(),
                         bss_description: random_fidl_bss_description!(
@@ -394,7 +394,7 @@ mod tests {
                             ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                             rssi_dbm: 13,
                             snr_db: 3,
-                            channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
+                            channel: types::WlanChan::new(11, types::Bandwidth::Cbw20, TwoGhz),
                         )
                         .into(),
                     },
@@ -410,7 +410,7 @@ mod tests {
                     timestamp: zx::MonotonicInstant::from_nanos(
                         fidl_aps[1].entries.as_ref().unwrap()[0].timestamp_nanos.unwrap(),
                     ),
-                    channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
+                    channel: types::WlanChan::new(8, types::Bandwidth::Cbw20, TwoGhz),
                     observation: types::ScanObservation::Passive,
                     compatibility: Compatible::expect_ok([SecurityDescriptor::WPA2_PERSONAL]),
                     bss_description: random_fidl_bss_description!(
@@ -419,7 +419,7 @@ mod tests {
                         ssid: types::Ssid::try_from("unique ssid").unwrap(),
                         rssi_dbm: 7,
                         snr_db: 2,
-                        channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(8, types::Bandwidth::Cbw20, TwoGhz),
                     )
                     .into(),
                 }],
@@ -447,7 +447,7 @@ mod tests {
                         timestamp: zx::MonotonicInstant::from_nanos(
                             fidl_aps[0].entries.as_ref().unwrap()[0].timestamp_nanos.unwrap(),
                         ),
-                        channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
                         observation: types::ScanObservation::Passive,
                         // Ensure WPA3 is omitted to simulate lack of WPA3 support
                         compatibility: Compatible::expect_ok([SecurityDescriptor::WPA2_PERSONAL]),
@@ -457,7 +457,7 @@ mod tests {
                             ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                             rssi_dbm: 0,
                             snr_db: 1,
-                            channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                            channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
                         )
                         .into(),
                     },
@@ -467,7 +467,7 @@ mod tests {
                         timestamp: zx::MonotonicInstant::from_nanos(
                             fidl_aps[0].entries.as_ref().unwrap()[1].timestamp_nanos.unwrap(),
                         ),
-                        channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(11, types::Bandwidth::Cbw20, TwoGhz),
                         observation: types::ScanObservation::Passive,
                         compatibility: Incompatible::unknown(),
                         bss_description: random_fidl_bss_description!(
@@ -476,7 +476,7 @@ mod tests {
                             ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                             rssi_dbm: 13,
                             snr_db: 3,
-                            channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
+                            channel: types::WlanChan::new(11, types::Bandwidth::Cbw20, TwoGhz),
                         )
                         .into(),
                     },
@@ -492,7 +492,7 @@ mod tests {
                     timestamp: zx::MonotonicInstant::from_nanos(
                         fidl_aps[1].entries.as_ref().unwrap()[0].timestamp_nanos.unwrap(),
                     ),
-                    channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
+                    channel: types::WlanChan::new(8, types::Bandwidth::Cbw20, TwoGhz),
                     observation: types::ScanObservation::Passive,
                     compatibility: Compatible::expect_ok([SecurityDescriptor::WPA2_PERSONAL]),
                     bss_description: random_fidl_bss_description!(
@@ -501,7 +501,7 @@ mod tests {
                         ssid: types::Ssid::try_from("unique ssid").unwrap(),
                         rssi_dbm: 7,
                         snr_db: 2,
-                        channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(8, types::Bandwidth::Cbw20, TwoGhz),
                     )
                     .into(),
                 }],

@@ -26,17 +26,17 @@ namespace wlan::simulation {
 class StationIfc;
 
 typedef struct WlanRxInfo {
-  fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
-  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
-  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
   double signal_strength;
   double noise_level;
 } WlanRxInfo;
 
 typedef struct WlanTxInfo {
-  fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
-  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
-  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber primary_channel;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
 } WlanTxInfo;
 
 // Representative for security protocol, we don't have this field in real situation.

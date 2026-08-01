@@ -18,7 +18,7 @@ use std::future::Future;
 use std::pin::pin;
 use std::sync::LazyLock;
 use wlan_common::bss::Protection;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::ie::rsn::cipher::{CIPHER_CCMP_128, CIPHER_TKIP, Cipher};
 use wlan_common::ie::rsn::rsne;
 use wlan_common::ie::rsn::suite_filter::DEFAULT_GROUP_MGMT_CIPHER;
@@ -47,7 +47,7 @@ pub static ETH_DST_MAC: LazyLock<MacAddr> =
     LazyLock::new(|| [0x65, 0x74, 0x68, 0x64, 0x73, 0x74].into());
 
 pub const WLANCFG_DEFAULT_AP_CHANNEL: Channel =
-    Channel::new(11, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
+    Channel::new(11, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
 
 // TODO(https://fxbug.dev/42060050): This sleep was introduced to preserve the old timing behavior
 // of scanning when hw-sim depending on the SoftMAC driver iterating through all of the
@@ -115,7 +115,7 @@ pub fn rx_info_with_default_ap() -> WlanRxInfo {
 }
 
 fn rx_info_with_valid_rssi(channel: &Channel, rssi_dbm: i8) -> WlanRxInfo {
-    let (cbw, secondary80_num) = channel.cbw.to_fidl();
+    let (cbw, secondary80_num) = channel.bandwidth.to_fidl();
     WlanRxInfo {
         rx_flags: 0,
         valid_fields: if rssi_dbm == 0 {
@@ -560,7 +560,7 @@ where
     F: Future + Unpin,
 {
     let phy = helper.proxy();
-    let channel = Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
+    let channel = Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
     let beacons = [Beacon {
         channel,
         bssid: bssid.clone(),

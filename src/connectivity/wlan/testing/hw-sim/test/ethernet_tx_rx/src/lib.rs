@@ -10,7 +10,7 @@ use std::pin::pin;
 use std::sync::LazyLock;
 use wlan_common::bss::Protection;
 use wlan_common::buffer_reader::BufferReader;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::mac;
 use wlan_hw_sim::event::buffered::{Buffered, DataFrame};
 use wlan_hw_sim::event::{self};
@@ -61,7 +61,11 @@ async fn verify_tx_and_rx(
                             sent_payload.clear();
                             sent_payload.extend_from_slice(llc_frame.body);
                             rx_wlan_data_frame(
-                                &Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                                &Channel::new(
+                                    1,
+                                    Bandwidth::Cbw20,
+                                    fidl_ieee80211::WlanBand::TwoGhz,
+                                ),
                                 &CLIENT_MAC_ADDR,
                                 &(*BSS).into(),
                                 &ETH_DST_MAC,

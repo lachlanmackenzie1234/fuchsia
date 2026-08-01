@@ -1746,7 +1746,7 @@ mod tests {
     use futures::task::Poll;
     use ieee80211::{MacAddrBytes, Ssid};
     use test_case::test_case;
-    use wlan_common::channel::{Cbw, Channel};
+    use wlan_common::channel::{Bandwidth, Channel};
     use wlan_common::test_utils::ExpectWithin;
     use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
     use wlan_common::{fake_fidl_bss_description, ie};
@@ -3133,19 +3133,19 @@ mod tests {
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [1, 2, 3, 4, 5, 6],
-                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, TwoGhz),
                 rssi_dbm: -40,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [2, 3, 4, 5, 6, 7],
-                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, TwoGhz),
                 rssi_dbm: -30,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [3, 4, 5, 6, 7, 8],
-                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, TwoGhz),
                 rssi_dbm: -50,
             ),
         ],
@@ -3158,19 +3158,19 @@ mod tests {
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [1, 2, 3, 4, 5, 6],
-                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, TwoGhz),
                 rssi_dbm: -40,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [2, 3, 4, 5, 6, 7],
-                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, TwoGhz),
                 rssi_dbm: -30,
             ),
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [3, 4, 5, 6, 7, 8],
-                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, TwoGhz),
                 rssi_dbm: -50,
             ),
         ],
@@ -3178,7 +3178,7 @@ mod tests {
             fake_fidl_bss_description!(Open,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [2, 3, 4, 5, 6, 7],
-                channel: Channel::new(1, Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, TwoGhz),
                 rssi_dbm: -30,
             ),
             fidl_sme::ConnectResult {

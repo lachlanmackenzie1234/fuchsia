@@ -334,7 +334,7 @@ impl Associating {
 
         let (ap_ht_op, ap_vht_op) = extract_ht_vht_op(&assoc_resp_frame);
 
-        let main_channel = match sta.channel_state.get_main_channel() {
+        let main_channel = match sta.channel_state.get_primary() {
             Some(main_channel) => main_channel,
             None => {
                 error!("MLME in associating state but no main channel is set");
@@ -358,8 +358,8 @@ impl Associating {
             // indicating the client never enters power save mode.
             listen_interval: Some(0),
             primary: Some(main_channel),
-            bandwidth: sta.channel_state.get_cbw(),
-            vht_secondary_80_channel: sta.channel_state.get_secondary80(),
+            bandwidth: sta.channel_state.get_bandwidth(),
+            vht_secondary_80_channel: sta.channel_state.get_vht_secondary_80_channel(),
             qos: Some(qos),
             wmm_params: None,
             rates: Some(negotiated_cap.rates.iter().map(|r| r.0).collect()),
@@ -1468,7 +1468,7 @@ mod tests {
                 timer: Some(timer),
                 time_stream,
                 scanner: Scanner::new(*IFACE_MAC),
-                channel_state: ChannelState::new_with_main_channel(fake_wlan_channel().into()),
+                channel_state: ChannelState::new_with_primary_channel(fake_wlan_channel().into()),
             }
         }
 
@@ -2010,7 +2010,7 @@ mod tests {
     }
 
     fn mock_rx_info<'a>(client: &BoundClient<'a, FakeDevice>) -> fidl_softmac::WlanRxInfo {
-        let channel = client.channel_state.get_main_channel().unwrap();
+        let channel = client.channel_state.get_primary().unwrap();
         MockWlanRxInfo::with_channel(channel).into()
     }
 

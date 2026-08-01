@@ -58,7 +58,7 @@ constexpr fuchsia_wlan_ieee80211::wire::BssType kDefaultBssType =
 struct TestChannel {
   fuchsia_wlan_ieee80211::wire::WlanBand band;
   uint8_t primary;
-  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
 };
 
 class WlanSoftmacDeviceTest : public SingleApTest,
@@ -502,7 +502,7 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
         .band = channel->band,
         .number = channel->primary,
     };
-    return device_->IsValidChannel(chan_num, channel->cbw);
+    return device_->IsValidChannel(chan_num, channel->bandwidth);
   }
 
   zx_status_t SetChannel(const TestChannel* channel) {
@@ -515,7 +515,7 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
         .number = channel->primary,
     };
     builder.primary(chan_num);
-    builder.bandwidth(channel->cbw);
+    builder.bandwidth(channel->bandwidth);
 
     auto result = client_.buffer(test_arena_)->SetChannel(builder.Build());
     EXPECT_TRUE(result.ok());
@@ -761,12 +761,12 @@ class MacInterfaceTest : public WlanSoftmacDeviceTest, public MockTrans {
   static constexpr TestChannel kChannel = {
       .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 11,
-      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20};
+      .bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20};
 
   static constexpr TestChannel kChannel2 = {
       .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz,
       .primary = 161,
-      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80};
+      .bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80};
 
   static constexpr uint16_t kChannelSize = 4;
 };
@@ -777,7 +777,7 @@ TEST_F(MacInterfaceTest, TestIsValidChannel) {
   TestChannel ch10_20m = {
       .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 10,
-      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20,
+      .bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20,
   };
 
   EXPECT_TRUE(IsValidChannel(&ch10_20m));
@@ -785,7 +785,7 @@ TEST_F(MacInterfaceTest, TestIsValidChannel) {
   TestChannel ch10_40m = {
       .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 10,
-      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40,
+      .bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40,
   };
 
   EXPECT_FALSE(IsValidChannel(&ch10_40m));
@@ -793,7 +793,7 @@ TEST_F(MacInterfaceTest, TestIsValidChannel) {
   TestChannel ch13_40m_below = {
       .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 13,
-      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40Below,
+      .bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40Below,
   };
 
   EXPECT_FALSE(IsValidChannel(&ch13_40m_below));
@@ -801,7 +801,7 @@ TEST_F(MacInterfaceTest, TestIsValidChannel) {
   TestChannel ch5_80m = {
       .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
       .primary = 5,
-      .cbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80,
+      .bandwidth = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80,
   };
 
   EXPECT_FALSE(IsValidChannel(&ch5_80m));

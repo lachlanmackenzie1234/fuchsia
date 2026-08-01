@@ -24,9 +24,9 @@ constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 
 constexpr simulation::WlanTxInfo kDefaultTxInfo = {
-    .channel = kDefaultChannel,
-    .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
+    .primary_channel = kDefaultChannel,
+    .bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kDefaultSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                    'F', 'a', 'k', 'e', ' ', 'A', 'P'};
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
@@ -36,11 +36,11 @@ constexpr auto kDefaultDisassocReason = wlan_ieee80211::ReasonCode::kNoMoreStas;
 void checkChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                   fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
                   const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
-  EXPECT_EQ(channel.number, kDefaultTxInfo.channel.number);
-  EXPECT_EQ(channel.band, kDefaultTxInfo.channel.band);
-  EXPECT_EQ(cbw, kDefaultTxInfo.cbw);
-  EXPECT_EQ(secondary80.number, kDefaultTxInfo.secondary80.number);
-  EXPECT_EQ(secondary80.band, kDefaultTxInfo.secondary80.band);
+  EXPECT_EQ(channel.number, kDefaultTxInfo.primary_channel.number);
+  EXPECT_EQ(channel.band, kDefaultTxInfo.primary_channel.band);
+  EXPECT_EQ(cbw, kDefaultTxInfo.bandwidth);
+  EXPECT_EQ(secondary80.number, kDefaultTxInfo.vht_secondary_80_channel.number);
+  EXPECT_EQ(secondary80.band, kDefaultTxInfo.vht_secondary_80_channel.band);
 }
 
 void checkSsid(const fuchsia_wlan_ieee80211::Ssid& ssid) { EXPECT_EQ(ssid, kDefaultSsid); }
@@ -55,7 +55,7 @@ class SimStation : public wlan::simulation::StationIfc {
   // StationIfc methods
   void Rx(std::shared_ptr<const simulation::SimFrame> frame,
           std::shared_ptr<const simulation::WlanRxInfo> info) override {
-    checkChannel(info->channel, info->cbw, info->secondary80);
+    checkChannel(info->primary, info->bandwidth, info->vht_secondary_80_channel);
     switch (frame->FrameType()) {
       case simulation::SimFrame::FRAME_TYPE_MGMT: {
         auto mgmt_frame = std::static_pointer_cast<const simulation::SimManagementFrame>(frame);

@@ -22,7 +22,7 @@ pub mod recorded_request_stream;
 pub static COMPATIBLE_OPEN_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
     fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Open,
-        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Bandwidth::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
         rates: vec![2, 4, 11],
     )
     .try_into()
@@ -31,7 +31,7 @@ pub static COMPATIBLE_OPEN_BSS: LazyLock<bss::BssDescription> = LazyLock::new(||
 pub static COMPATIBLE_WPA2_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
     fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Wpa2,
-        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Bandwidth::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
         rates: vec![2, 4, 11],
     )
     .try_into()
@@ -40,7 +40,7 @@ pub static COMPATIBLE_WPA2_BSS: LazyLock<bss::BssDescription> = LazyLock::new(||
 pub static COMPATIBLE_WPA3_BSS: LazyLock<bss::BssDescription> = LazyLock::new(|| {
     fake_fidl_bss_description!(
         protection => FakeProtectionCfg::Wpa3,
-        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Cbw::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
+        channel: wlan_common::channel::Channel::new(1, wlan_common::channel::Bandwidth::Cbw20, fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz),
         rates: vec![2, 4, 11],
     )
     .try_into()

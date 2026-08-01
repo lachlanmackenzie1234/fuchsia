@@ -39,9 +39,9 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 constexpr simulation::WlanTxInfo kDefaultTxInfo = {
-    .channel = kDefaultChannel,
-    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
+    .primary_channel = kDefaultChannel,
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 constexpr uint8_t kIes[] = {
     // SSID
@@ -173,7 +173,7 @@ class DataFrameTest : public SimTest {
   struct AssocContext {
     // Information about the BSS we are attempting to associate with. Used to generate the
     // appropriate MLME calls (Join => Auth => Assoc).
-    fuchsia_wlan_ieee80211::wire::ChannelNumber channel = kDefaultChannel;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber primary = kDefaultChannel;
     common::MacAddr bssid = kApBssid;
     fuchsia_wlan_ieee80211::Ssid ssid = kDefaultSsid;
     std::vector<uint8_t> ies = std::vector<uint8_t>(kIes, kIes + sizeof(kIes));
@@ -370,7 +370,7 @@ void DataFrameTest::StartConnect() {
   std::memcpy(bss.bssid.data(), assoc_context_.bssid.byte, ETH_ALEN);
   bss.ies =
       fidl::VectorView<uint8_t>::FromExternal(assoc_context_.ies.data(), assoc_context_.ies.size());
-  bss.primary = assoc_context_.channel;
+  bss.primary = assoc_context_.primary;
   builder.selected_bss(bss);
   builder.auth_type(wlan_fullmac_wire::WlanAuthType::kOpenSystem);
   builder.connect_failure_timeout(1000);  // ~1s (although value is ignored for now)

@@ -29,7 +29,7 @@ use std::fmt::Debug;
 use std::pin::pin;
 use std::sync::Arc;
 use wlan_common::RadioConfig;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 
 const AP_STATUS_INTERVAL_SEC: i64 = 10;
 
@@ -212,14 +212,14 @@ impl ApStateTracker {
 
     fn consume_sme_status_update(
         &self,
-        cbw: Cbw,
+        bandwidth: Bandwidth,
         band: fidl_fuchsia_wlan_ieee80211::WlanBand,
         update: fidl_sme::Ap,
     ) -> Result<(), anyhow::Error> {
         let mut inner = self.inner.lock();
 
         if let Some(ref mut state) = inner.state {
-            let channel = Channel::new(update.channel, cbw, band);
+            let channel = Channel::new(update.channel, bandwidth, band);
             let frequency = match channel.get_center_freq() {
                 Ok(frequency) => Some(frequency as u32),
                 Err(e) => {
@@ -567,7 +567,7 @@ async fn started_state(
         fasync::Interval::new(zx::MonotonicDuration::from_seconds(AP_STATUS_INTERVAL_SEC));
 
     // Channel bandwidth is required for frequency computation when reporting state updates.
-    let cbw = req.radio_config.channel.cbw;
+    let cbw = req.radio_config.channel.bandwidth;
 
     loop {
         select! {
@@ -629,7 +629,7 @@ mod tests {
     fn new_radio_config() -> RadioConfig {
         RadioConfig::new(
             fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
-            Cbw::Cbw20,
+            Bandwidth::Cbw20,
             6,
             fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz,
         )
@@ -2464,7 +2464,7 @@ mod tests {
         };
         state
             .consume_sme_status_update(
-                Cbw::Cbw20,
+                Bandwidth::Cbw20,
                 fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz,
                 ap_info,
             )
@@ -2626,7 +2626,7 @@ mod tests {
             .expect_err("unexpectedly able to set operating state");
         let _ = state
             .consume_sme_status_update(
-                Cbw::Cbw20,
+                Bandwidth::Cbw20,
                 fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz,
                 fidl_sme::Ap {
                     ssid: types::Ssid::try_from("test_ssid").unwrap().to_vec(),

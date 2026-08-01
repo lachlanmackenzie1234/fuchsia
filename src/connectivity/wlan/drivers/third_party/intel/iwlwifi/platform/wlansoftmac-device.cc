@@ -230,27 +230,27 @@ void WlanSoftmacDevice::SetChannel(SetChannelRequestView request, fdf::Arena& ar
 
   wlan_channel_t channel = {
       .primary = request->primary().number,
-      .secondary80 = request->has_vht_secondary_80_channel() ? request->vht_secondary_80_channel().number : static_cast<uint8_t>(0),
+      .vht_secondary_80_channel = request->has_vht_secondary_80_channel() ? request->vht_secondary_80_channel().number : static_cast<uint8_t>(0),
   };
 
   switch (request->bandwidth()) {
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20:
-      channel.cbw = CHANNEL_BANDWIDTH_CBW20;
+      channel.bandwidth = CHANNEL_BANDWIDTH_CBW20;
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40:
-      channel.cbw = CHANNEL_BANDWIDTH_CBW40;
+      channel.bandwidth = CHANNEL_BANDWIDTH_CBW40;
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below:
-      channel.cbw = CHANNEL_BANDWIDTH_CBW40BELOW;
+      channel.bandwidth = CHANNEL_BANDWIDTH_CBW40BELOW;
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80:
-      channel.cbw = CHANNEL_BANDWIDTH_CBW80;
+      channel.bandwidth = CHANNEL_BANDWIDTH_CBW80;
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw160:
-      channel.cbw = CHANNEL_BANDWIDTH_CBW160;
+      channel.bandwidth = CHANNEL_BANDWIDTH_CBW160;
       break;
     case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80P80:
-      channel.cbw = CHANNEL_BANDWIDTH_CBW80P80;
+      channel.bandwidth = CHANNEL_BANDWIDTH_CBW80P80;
       break;
     default:
       IWL_ERR(this, "Bandwidth (%u) is not supported",

@@ -44,7 +44,7 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
 
     common::MacAddr bssid;
     std::vector<uint8_t> ies;
-    fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
   };
 
   struct SoftApContext {

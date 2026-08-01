@@ -12,7 +12,7 @@ use futures::join;
 use ieee80211::{Bssid, Ssid};
 use std::pin::pin;
 use wlan_common::bss::Protection;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::ie::rsn::cipher::CIPHER_CCMP_128;
 use wlan_hw_sim::event::action::{self, AuthenticationControl, AuthenticationTap};
 use wlan_hw_sim::event::{Handler, branch};
@@ -132,7 +132,7 @@ async fn handle_tx_event_hooks() {
                 &phy,
                 &AP_SSID,
                 &bssid,
-                &Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                &Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 &PROTECTION,
                 &mut control,
                 &mut trace,

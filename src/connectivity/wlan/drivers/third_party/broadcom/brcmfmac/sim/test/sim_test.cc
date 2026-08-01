@@ -395,7 +395,7 @@ void SimInterface::StartConnect(const common::MacAddr& bssid,
   assoc_ctx_.ies.push_back(0);            // SSID IE type ID
   assoc_ctx_.ies.push_back(ssid.size());  // SSID IE length
   assoc_ctx_.ies.insert(assoc_ctx_.ies.end(), ssid.data(), ssid.data() + ssid.size());
-  assoc_ctx_.channel = channel;
+  assoc_ctx_.primary = channel;
 
   // Send connect request
   auto builder = wlan_fullmac_wire::WlanFullmacImplConnectRequest::Builder(test_arena_);

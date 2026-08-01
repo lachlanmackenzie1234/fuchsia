@@ -66,19 +66,19 @@ class FakeAp final : public StationIfc {
 
   FakeAp(Environment* environ, const common::MacAddr& bssid,
          const fuchsia_wlan_ieee80211::Ssid& ssid,
-         const fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
-         fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
-         fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80)
+         const fuchsia_wlan_ieee80211::wire::ChannelNumber primary_channel,
+         fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth,
+         fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel)
       : environment_(environ),
-        channel_(channel),
-        cbw_(cbw),
-        secondary80_(secondary80),
+        primary_channel_(primary_channel),
+        bandwidth_(bandwidth),
+        vht_secondary_80_channel_(vht_secondary_80_channel),
         bssid_(bssid),
         ssid_(ssid) {
     environ->AddStation(this);
-    tx_info_.channel = channel;
-    tx_info_.cbw = cbw;
-    tx_info_.secondary80 = secondary80;
+    tx_info_.primary_channel = primary_channel;
+    tx_info_.bandwidth = bandwidth;
+    tx_info_.vht_secondary_80_channel = vht_secondary_80_channel;
     beacon_state_.beacon_frame_.bssid_ = bssid;
     beacon_state_.beacon_frame_.AddSsidIe(ssid);
     // By default, assume AP is part of an infrastructure network
@@ -88,33 +88,36 @@ class FakeAp final : public StationIfc {
 
   FakeAp(Environment* environ, const common::MacAddr& bssid,
          const fuchsia_wlan_ieee80211::Ssid& ssid,
-         const fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
-         fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw, uint8_t secondary80_num)
-      : FakeAp(environ, bssid, ssid, channel, cbw,
-               fuchsia_wlan_ieee80211::wire::ChannelNumber{.band = channel.band,
-                                                           .number = secondary80_num}) {}
+         const fuchsia_wlan_ieee80211::wire::ChannelNumber primary,
+         fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth,
+         uint8_t vht_secondary_80_channel_num)
+      : FakeAp(environ, bssid, ssid, primary, bandwidth,
+               fuchsia_wlan_ieee80211::wire::ChannelNumber{
+                   .band = primary.band, .number = vht_secondary_80_channel_num}) {}
 
   ~FakeAp() { environment_->RemoveStation(this); }
 
-  void SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
-                  const fuchsia_wlan_ieee80211::wire::ChannelBandwidth& cbw,
-                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80);
+  void SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& primary,
+                  const fuchsia_wlan_ieee80211::wire::ChannelBandwidth& bandwidth,
+                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& vht_secondary_80_channel);
 
-  void SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
-                  const fuchsia_wlan_ieee80211::wire::ChannelBandwidth& cbw,
-                  const uint8_t& secondary80_num) {
-    SetChannel(channel, cbw,
-               fuchsia_wlan_ieee80211::wire::ChannelNumber{.band = channel.band,
-                                                           .number = secondary80_num});
+  void SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& primary,
+                  const fuchsia_wlan_ieee80211::wire::ChannelBandwidth& bandwidth,
+                  const uint8_t& vht_secondary_80_channel_num) {
+    SetChannel(primary, bandwidth,
+               fuchsia_wlan_ieee80211::wire::ChannelNumber{.band = primary.band,
+                                                           .number = vht_secondary_80_channel_num});
   }
 
   void SetBssid(const common::MacAddr& bssid);
   void SetSsid(const fuchsia_wlan_ieee80211::Ssid& ssid);
   void SetCsaBeaconInterval(zx::duration interval);
 
-  fuchsia_wlan_ieee80211::wire::ChannelNumber GetChannel() const { return channel_; }
-  fuchsia_wlan_ieee80211::wire::ChannelBandwidth GetChannelBandwidth() const { return cbw_; }
-  fuchsia_wlan_ieee80211::wire::ChannelNumber GetSecondary80() const { return secondary80_; }
+  fuchsia_wlan_ieee80211::wire::ChannelNumber GetChannel() const { return primary_channel_; }
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth GetChannelBandwidth() const { return bandwidth_; }
+  fuchsia_wlan_ieee80211::wire::ChannelNumber GetSecondary80() const {
+    return vht_secondary_80_channel_;
+  }
 
   common::MacAddr GetBssid() const { return bssid_; }
   fuchsia_wlan_ieee80211::Ssid GetSsid() const { return ssid_; }
@@ -191,9 +194,9 @@ class FakeAp final : public StationIfc {
 
   // meta information needed for sending transmissions
   simulation::WlanTxInfo tx_info_;
-  fuchsia_wlan_ieee80211::wire::ChannelNumber channel_;
-  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw_;
-  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber primary_channel_;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel_;
   common::MacAddr bssid_;
   fuchsia_wlan_ieee80211::Ssid ssid_;
   struct Security security_ = {.cipher_suite = IEEE80211_CIPHER_SUITE_NONE};
@@ -205,8 +208,8 @@ class FakeAp final : public StationIfc {
     bool is_switching_channel = false;
     // This is the channel AP about to change to
     fuchsia_wlan_ieee80211::wire::ChannelNumber channel_after_csa;
-    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw_after_csa;
-    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80_after_csa;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth_after_csa;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel_after_csa;
 
     // Unique value that is associated with the next beacon event
     uint64_t beacon_notification_id;

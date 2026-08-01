@@ -276,7 +276,7 @@ pub struct ServingApInfoNode {
 
 impl ServingApInfoNode {
     fn new(node: Node, ap: &ServingApInfo) -> Self {
-        let (cbw, secondary80_num) = ap.channel.cbw.to_fidl();
+        let (cbw, secondary80_num) = ap.channel.bandwidth.to_fidl();
         let secondary80 =
             fidl_ieee80211::ChannelNumber { band: ap.channel.band, number: secondary80_num };
         let mut serving_ap_info_node = Self {
@@ -311,7 +311,7 @@ impl ServingApInfoNode {
     }
 
     fn update(&mut self, ap: &ServingApInfo) {
-        let (cbw, secondary80_num) = ap.channel.cbw.to_fidl();
+        let (cbw, secondary80_num) = ap.channel.bandwidth.to_fidl();
         let secondary80 =
             fidl_ieee80211::ChannelNumber { band: ap.channel.band, number: secondary80_num };
         self.bssid.set(&ap.bssid.to_string());

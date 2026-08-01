@@ -35,7 +35,7 @@ use netlink_packet_generic::message::EmptyDeserializeOptions;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_telemetry::{self, TelemetryEvent, TelemetrySender, ThrottledErrorLogger};
 mod bss_scorer;
 mod default_drop;
@@ -1112,8 +1112,8 @@ async fn handle_client_connect_transactions<C: ClientIface + 'static, P: PowerMa
                 ctx.current_channel.primary = info.new_primary_channel.number;
                 ctx.current_channel.band = info.new_primary_channel.band;
 
-                match Cbw::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
-                    Ok(cbw) => ctx.current_channel.cbw = cbw,
+                match Bandwidth::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+                    Ok(cbw) => ctx.current_channel.bandwidth = cbw,
                     Err(e) => warn!("CBW conversion failed: {}", e),
                 }
                 info!("Connection switching to channel {}", info.new_primary_channel.number);
@@ -1900,7 +1900,7 @@ fn get_supported_frequencies() -> Vec<Vec<Nl80211FrequencyAttr>> {
         .into_iter()
         .map(|channel_idx| {
             // We report the frequency of the beacon, which is always 20MHz on the primary channel.
-            let freq = Channel::new(channel_idx.number, Cbw::Cbw20, channel_idx.band)
+            let freq = Channel::new(channel_idx.number, Bandwidth::Cbw20, channel_idx.band)
                 .get_center_freq()
                 .unwrap();
             vec![Nl80211FrequencyAttr::Frequency(freq.into())]
@@ -2510,7 +2510,7 @@ fn convert_scan_result(
     // Explicitly set cbw20 to find the center frequency of the primary channel.
     let channel = Channel::new(
         result.bss_description.primary.number,
-        Cbw::Cbw20,
+        Bandwidth::Cbw20,
         result.bss_description.primary.band,
     );
     let center_freq = match channel.get_center_freq() {

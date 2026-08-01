@@ -9,7 +9,7 @@ use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use std::pin::pin;
 use std::sync::LazyLock;
 use wlan_common::bss::Protection;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_hw_sim::event::action;
 use wlan_hw_sim::*;
 
@@ -53,21 +53,33 @@ async fn scan_contemporary_privacy() {
                 &phy,
                 [
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            1,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_WPA1,
                         ssid: SSID_WPA1.clone(),
                         protection: Protection::Wpa1,
                         rssi_dbm: -30,
                     },
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            1,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_WEP,
                         ssid: SSID_WEP.clone(),
                         protection: Protection::Wep,
                         rssi_dbm: -40,
                     },
                     Beacon {
-                        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                        channel: Channel::new(
+                            1,
+                            Bandwidth::Cbw20,
+                            fidl_ieee80211::WlanBand::TwoGhz,
+                        ),
                         bssid: *BSS_MIXED,
                         ssid: SSID_MIXED.clone(),
                         protection: Protection::Wpa1Wpa2Personal,

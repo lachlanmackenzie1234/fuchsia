@@ -993,7 +993,7 @@ mod tests {
     use windowed_stats::experimental::clock::Timed;
     use windowed_stats::experimental::inspect::TimeMatrixClient;
     use windowed_stats::experimental::testing::TimeMatrixCall;
-    use wlan_common::channel::{Cbw, Channel};
+    use wlan_common::channel::{Bandwidth, Channel};
     use wlan_common::ie::IeType;
     use wlan_common::test_utils::fake_stas::IesOverrides;
     use wlan_common::{fake_bss_description, random_bss_description};
@@ -1176,7 +1176,7 @@ mod tests {
 
         // Generate BSS Description
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(157, Cbw::Cbw40, fidl_ieee80211::WlanBand::FiveGhz),
+            channel: Channel::new(157, Bandwidth::Cbw40, fidl_ieee80211::WlanBand::FiveGhz),
             bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
         );
 
@@ -1485,7 +1485,7 @@ mod tests {
         );
 
         let mut bss = random_bss_description!(Wpa2);
-        bss.channel = Channel::new(6, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz); // primary channel 6 -> Band2Dot4Ghz
+        bss.channel = Channel::new(6, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz); // primary channel 6 -> Band2Dot4Ghz
         bss.rssi_dbm = -50; // rssi -50 -> From50To35 (event code 11)
         bss.snr_db = 15; // snr 15 -> From11To15 (event code 3)
 
@@ -1627,7 +1627,7 @@ mod tests {
 
         // Generate BSS Description
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(157, Cbw::Cbw40, fidl_ieee80211::WlanBand::FiveGhz),
+            channel: Channel::new(157, Bandwidth::Cbw40, fidl_ieee80211::WlanBand::FiveGhz),
             bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
         );
 

@@ -115,9 +115,10 @@ class CreateSoftAPTest : public SimTest {
   common::MacAddr ind_expect_mac_ = kFakeMac;
 
  protected:
-  simulation::WlanTxInfo tx_info_ = {.channel = {.band = kDefaultBand, .number = kDefaultCh},
-                                     .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
-                                     .secondary80 = {.band = kDefaultBand, .number = 0}};
+  simulation::WlanTxInfo tx_info_ = {
+      .primary_channel = {.band = kDefaultBand, .number = kDefaultCh},
+      .bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+      .vht_secondary_80_channel = {.band = kDefaultBand, .number = 0}};
   bool sec_enabled_ = false;
   SoftApInterface softap_ifc_;
 

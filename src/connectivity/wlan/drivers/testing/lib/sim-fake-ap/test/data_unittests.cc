@@ -24,9 +24,9 @@ fuchsia_wlan_ieee80211::Ssid Ssid(const void* ssid_data, uint8_t len) {
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const simulation::WlanTxInfo kDefaultTxInfo = {
-    .channel = kDefaultChannel,
-    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
+    .primary_channel = kDefaultChannel,
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kApSsid = Ssid("Fuchsia Fake AP", 15);
 const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const common::MacAddr kSrcClientMacAddr({0x11, 0x22, 0x33, 0x44, 0xee, 0xff});
@@ -39,8 +39,8 @@ class DataTest : public ::testing::Test, public simulation::StationIfc {
                                            uint16_t ethType);
 
   DataTest()
-      : ap_(&env_, kApBssid, kApSsid, kDefaultTxInfo.channel, kDefaultTxInfo.cbw,
-            kDefaultTxInfo.secondary80) {
+      : ap_(&env_, kApBssid, kApSsid, kDefaultTxInfo.primary_channel, kDefaultTxInfo.bandwidth,
+            kDefaultTxInfo.vht_secondary_80_channel) {
     env_.AddStation(this);
   }
   void FinishAuth(common::MacAddr addr);

@@ -46,12 +46,12 @@ class SimHardware : public simulation::StationIfc {
   void EnableRx() { rx_enabled_ = true; }
   void DisableRx() { rx_enabled_ = false; }
 
-  void SetChannel(fuchsia_wlan_ieee80211::wire::ChannelNumber channel,
+  void SetChannel(fuchsia_wlan_ieee80211::wire::ChannelNumber primary,
                   fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
                   fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80) {
-    channel_ = channel;
-    cbw_ = cbw;
-    secondary80_ = secondary80;
+    primary_ = primary;
+    bandwidth_ = cbw;
+    vht_secondary_80_channel_ = secondary80;
   }
 
   void GetRevInfo(brcmf_rev_info_le* rev_info);
@@ -69,9 +69,9 @@ class SimHardware : public simulation::StationIfc {
 
  private:
   bool rx_enabled_ = false;
-  fuchsia_wlan_ieee80211::wire::ChannelNumber channel_;
-  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw_;
-  fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber primary_;
+  fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth_;
+  fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel_;
   simulation::Environment* env_;
   EventHandlers event_handlers_;
   std::list<uint64_t> scheduled_ids;

@@ -48,9 +48,9 @@ class ChannelSwitchTest : public SimTest {
 void ChannelSwitchTest::SendFakeCSABeacon(
     const fuchsia_wlan_ieee80211::wire::ChannelNumber& dst_channel) {
   const simulation::WlanTxInfo kDefaultTxInfo = {
-      .channel = kDefaultChannel,
-      .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-      .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
+      .primary_channel = kDefaultChannel,
+      .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+      .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 
   simulation::SimBeaconFrame fake_csa_beacon(kDefaultSsid, kDefaultBssid);
   fake_csa_beacon.AddCsaIe(dst_channel, kDefaultCSACount);

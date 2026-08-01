@@ -1512,7 +1512,7 @@ mod tests {
     use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::RadioConfig;
-    use wlan_common::channel::Cbw;
+    use wlan_common::channel::Bandwidth;
 
     // Responses that FakePhyManager will provide
     pub const TEST_CLIENT_IFACE_ID: u16 = 0;
@@ -1863,7 +1863,7 @@ mod tests {
     fn create_ap_config(ssid: &ap_types::Ssid, password: &str) -> ap_fsm::ApConfig {
         let radio_config = RadioConfig::new(
             fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
-            Cbw::Cbw20,
+            Bandwidth::Cbw20,
             6,
             fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz,
         );

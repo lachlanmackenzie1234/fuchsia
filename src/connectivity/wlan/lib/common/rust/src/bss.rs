@@ -531,9 +531,11 @@ impl BssDescription {
 
 impl From<BssDescription> for fidl_ieee80211::BssDescription {
     fn from(bss: BssDescription) -> fidl_ieee80211::BssDescription {
-        let (bandwidth, secondary80_num) = bss.channel.cbw.to_fidl();
-        let secondary80 =
-            fidl_ieee80211::ChannelNumber { band: bss.channel.band, number: secondary80_num };
+        let (bandwidth, vht_secondary_80_channel_num) = bss.channel.bandwidth.to_fidl();
+        let vht_secondary_80_channel = fidl_ieee80211::ChannelNumber {
+            band: bss.channel.band,
+            number: vht_secondary_80_channel_num,
+        };
         fidl_ieee80211::BssDescription {
             bssid: bss.bssid.to_array(),
             bss_type: bss.bss_type,
@@ -541,7 +543,7 @@ impl From<BssDescription> for fidl_ieee80211::BssDescription {
             capability_info: bss.capability_info,
             primary: bss.channel.into(),
             bandwidth,
-            vht_secondary_80_channel: secondary80,
+            vht_secondary_80_channel: vht_secondary_80_channel,
             rssi_dbm: bss.rssi_dbm,
             snr_db: bss.snr_db,
             ies: bss.ies,
@@ -720,7 +722,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::channel::Cbw;
+    use crate::channel::Bandwidth;
     use crate::fake_bss_description;
     use crate::ie::IeType;
     use crate::ie::fake_ies::{fake_owe_transition, fake_wmm_param};
@@ -735,7 +737,7 @@ mod tests {
 
     #[test_case(fake_bss_description!(
         Wpa1Wpa2,
-        channel: Channel::new(36, Cbw::Cbw80P80{ secondary80: 106 }, fidl_ieee80211::WlanBand::FiveGhz),
+        channel: Channel::new(36, Bandwidth::Cbw80P80{ vht_secondary_80_channel: 106 }, fidl_ieee80211::WlanBand::FiveGhz),
         rssi_dbm: -20,
         short_preamble: true,
         ies_overrides: IesOverrides::new()
@@ -743,7 +745,7 @@ mod tests {
     ))]
     #[test_case(fake_bss_description!(
         Open,
-        channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+        channel: Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
         beacon_period: 110,
         short_preamble: true,
         radio_measurement: true,
@@ -954,7 +956,7 @@ mod tests {
     #[test]
     fn test_latest_standard_g() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+            channel: Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             rates: vec![12],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)
@@ -968,7 +970,7 @@ mod tests {
     #[test]
     fn test_latest_standard_b() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+            channel: Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             rates: vec![2],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)
@@ -982,7 +984,7 @@ mod tests {
     #[test]
     fn test_latest_standard_b_with_basic() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+            channel: Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             rates: vec![ie::SupportedRate(2).with_basic(true).0],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)
@@ -996,7 +998,7 @@ mod tests {
     #[test]
     fn test_latest_standard_a() {
         let bss = fake_bss_description!(Open,
-            channel: Channel::new(36, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz),
+            channel: Channel::new(36, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::FiveGhz),
             rates: vec![48],
             ies_overrides: IesOverrides::new()
                 .remove(IeType::HT_CAPABILITIES)

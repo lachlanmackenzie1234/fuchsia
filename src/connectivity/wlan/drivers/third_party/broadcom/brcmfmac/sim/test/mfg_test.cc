@@ -17,9 +17,9 @@ constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
 const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const common::MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
 const simulation::WlanTxInfo kDefaultTxInfo = {
-    .channel = kDefaultChannel,
-    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
+    .primary_channel = kDefaultChannel,
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 
 class MfgTest : public SimTest {
  public:

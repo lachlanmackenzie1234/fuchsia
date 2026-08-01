@@ -113,9 +113,9 @@ void WlantapMac::SetChannel(SetChannelRequest& request, SetChannelCompleter::Syn
   };
 
   wlan::common::Channel channel = {
-      .channel = wire_channel_num,
-      .cbw = wire_cbw,
-      .secondary80 = wire_secondary80,
+      .primary = wire_channel_num,
+      .bandwidth = wire_cbw,
+      .vht_secondary_80_channel = wire_secondary80,
   };
   if (!wlan::common::IsValidChan(channel)) {
     completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));

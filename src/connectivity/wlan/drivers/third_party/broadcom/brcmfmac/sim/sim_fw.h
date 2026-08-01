@@ -102,9 +102,9 @@ class SimFirmware {
   };
 
   struct ScanResult {
-    fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
-    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
-    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
     common::MacAddr bssid;
     wlan::CapabilityInfo bss_capability;
     int8_t rssi_dbm;
@@ -663,9 +663,9 @@ class SimFirmware {
   void ResetSimFirmware();
 
   struct DerivedChannelInfo {
-    fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
-    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
-    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
   };
   DerivedChannelInfo ExtractChannelInfo(uint16_t chanspec);
 

@@ -37,7 +37,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_metrics_registry as metrics;
 use wlan_telemetry::{ThrottledErrorLogger, TimeoutSource};
 
@@ -1570,7 +1570,7 @@ impl Telemetry {
             }
             TelemetryEvent::OnChannelSwitched { info } => {
                 if let ConnectionState::Connected(state) = &mut self.connection_state {
-                    let cbw = match Cbw::from_fidl(
+                    let cbw = match Bandwidth::from_fidl(
                         info.bandwidth,
                         info.vht_secondary_80_channel.number,
                     ) {
@@ -1580,7 +1580,7 @@ impl Telemetry {
                             // in determining the client's channel to preserve any legacy
                             // behavior.
                             error!("Invalid CBW in ChannelSwitchInfo: {}", e);
-                            state.ap_state.tracked.channel.cbw
+                            state.ap_state.tracked.channel.bandwidth
                         }
                     };
                     state.ap_state.tracked.channel = Channel::new(
@@ -6755,7 +6755,7 @@ mod tests {
         test_helper.advance_by(zx::MonotonicDuration::from_hours(5), test_fut.as_mut());
 
         let primary_channel = 8;
-        let channel = Channel::new(primary_channel, Cbw::Cbw20, TwoGhz);
+        let channel = Channel::new(primary_channel, Bandwidth::Cbw20, TwoGhz);
         let ap_state: client::types::ApState =
             random_bss_description!(Wpa2, channel: channel).into();
         let info = DisconnectInfo {
@@ -7108,7 +7108,7 @@ mod tests {
         let (mut test_helper, mut test_fut) = setup_test();
 
         let primary_channel = 8;
-        let channel = Channel::new(primary_channel, Cbw::Cbw20, TwoGhz);
+        let channel = Channel::new(primary_channel, Bandwidth::Cbw20, TwoGhz);
         let ap_state = random_bss_description!(Wpa2,
             bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
             channel: channel,
@@ -7378,16 +7378,16 @@ mod tests {
         "breakdown_by_security_type"
     )]
     #[test_case(
-        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Cbw::Cbw20, TwoGhz))),
-        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Cbw::Cbw40, FiveGhz))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Bandwidth::Cbw20, TwoGhz))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Bandwidth::Cbw40, FiveGhz))),
         metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
         6,
         157;
         "breakdown_by_primary_channel"
     )]
     #[test_case(
-        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Cbw::Cbw20, TwoGhz))),
-        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Cbw::Cbw40, FiveGhz))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(6, Bandwidth::Cbw20, TwoGhz))),
+        (false, random_bss_description!(Wpa2, channel: Channel::new(157, Bandwidth::Cbw40, FiveGhz))),
         metrics::DAILY_CONNECT_SUCCESS_RATE_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
         metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::Band2Dot4Ghz as u32,
         metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::Band5Ghz as u32;
@@ -7711,7 +7711,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x40
         ];
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(157, Cbw::Cbw40, FiveGhz),
+            channel: Channel::new(157, Bandwidth::Cbw40, FiveGhz),
             ies_overrides: IesOverrides::new()
                 .remove(IeType::WMM_PARAM)
                 .set(IeType::WMM_INFO, wmm_info)
@@ -7899,7 +7899,7 @@ mod tests {
     fn test_log_device_connected_cobalt_metrics_on_channel_switched() {
         let (mut test_helper, mut test_fut) = setup_test();
         let bss_description = random_bss_description!(Wpa2,
-            channel: Channel::new(4, Cbw::Cbw20, TwoGhz),
+            channel: Channel::new(4, Bandwidth::Cbw20, TwoGhz),
         );
         test_helper.send_connected_event(bss_description);
         test_helper.drain_cobalt_events(&mut test_fut);
@@ -9633,21 +9633,21 @@ mod tests {
 
         let selected_candidate_2g = client::types::ScannedCandidate {
             bss: client::types::Bss {
-                channel: Channel::new(1, wlan_common::channel::Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, wlan_common::channel::Bandwidth::Cbw20, TwoGhz),
                 ..generate_random_bss()
             },
             ..generate_random_scanned_candidate()
         };
         let candidate_2g = client::types::ScannedCandidate {
             bss: client::types::Bss {
-                channel: Channel::new(1, wlan_common::channel::Cbw::Cbw20, TwoGhz),
+                channel: Channel::new(1, wlan_common::channel::Bandwidth::Cbw20, TwoGhz),
                 ..generate_random_bss()
             },
             ..generate_random_scanned_candidate()
         };
         let candidate_5g = client::types::ScannedCandidate {
             bss: client::types::Bss {
-                channel: Channel::new(36, wlan_common::channel::Cbw::Cbw40, FiveGhz),
+                channel: Channel::new(36, wlan_common::channel::Bandwidth::Cbw40, FiveGhz),
                 ..generate_random_bss()
             },
             ..generate_random_scanned_candidate()

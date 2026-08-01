@@ -8,7 +8,7 @@
 //! based on the user-overridable join channel and bandwidth.
 //! If successful, the capabilities will be extracted and saved.
 
-use crate::channel::{Cbw, Channel};
+use crate::channel::{Bandwidth, Channel};
 use crate::ie::intersect::*;
 use crate::ie::{
     self, HtCapabilities, SupportedRate, VhtCapabilities, parse_ht_capabilities,
@@ -86,8 +86,11 @@ pub fn derive_join_capabilities(
 
     // Step 2.3 - Override HT Capabilities and VHT Capabilities
     // Here it is assumed that the channel specified by the BSS will never be invalid.
-    let (ht_cap, vht_cap) =
-        override_ht_vht(band_cap.ht_cap.as_ref(), band_cap.vht_cap.as_ref(), bss_channel.cbw)?;
+    let (ht_cap, vht_cap) = override_ht_vht(
+        band_cap.ht_cap.as_ref(),
+        band_cap.vht_cap.as_ref(),
+        bss_channel.bandwidth,
+    )?;
 
     Ok(ClientCapabilities(StaCapabilities { capability_info, rates, ht_cap, vht_cap }))
 }
@@ -97,7 +100,7 @@ pub fn derive_join_capabilities(
 fn override_ht_vht(
     fidl_ht_cap: Option<&Box<fidl_ieee80211::HtCapabilities>>,
     fidl_vht_cap: Option<&Box<fidl_ieee80211::VhtCapabilities>>,
-    cbw: Cbw,
+    bandwidth: Bandwidth,
 ) -> Result<(Option<HtCapabilities>, Option<VhtCapabilities>), Error> {
     if fidl_ht_cap.is_none() && fidl_vht_cap.is_some() {
         return Err(format_err!("VHT Cap without HT Cap is invalid."));
@@ -106,7 +109,7 @@ fn override_ht_vht(
     let ht_cap = match fidl_ht_cap {
         Some(h) => {
             let ht_cap = *parse_ht_capabilities(&h.bytes[..]).context("verifying HT Cap")?;
-            Some(override_ht_capabilities(ht_cap, cbw))
+            Some(override_ht_capabilities(ht_cap, bandwidth))
         }
         None => None,
     };
@@ -114,7 +117,7 @@ fn override_ht_vht(
     let vht_cap = match fidl_vht_cap {
         Some(v) => {
             let vht_cap = *parse_vht_capabilities(&v.bytes[..]).context("verifying VHT Cap")?;
-            Some(override_vht_capabilities(vht_cap, cbw))
+            Some(override_vht_capabilities(vht_cap, bandwidth))
         }
         None => None,
     };
@@ -123,10 +126,10 @@ fn override_ht_vht(
 
 /// Even though hardware may support higher channel bandwidth, if user specifies a narrower
 /// bandwidth, change the channel bandwidth in ht_cap_info to match user's preference.
-fn override_ht_capabilities(mut ht_cap: HtCapabilities, cbw: Cbw) -> HtCapabilities {
+fn override_ht_capabilities(mut ht_cap: HtCapabilities, bandwidth: Bandwidth) -> HtCapabilities {
     let mut ht_cap_info = ht_cap.ht_cap_info.with_tx_stbc(OVERRIDE_HT_CAP_INFO_TX_STBC);
-    match cbw {
-        Cbw::Cbw20 => ht_cap_info.set_chan_width_set(ie::ChanWidthSet::TWENTY_ONLY),
+    match bandwidth {
+        Bandwidth::Cbw20 => ht_cap_info.set_chan_width_set(ie::ChanWidthSet::TWENTY_ONLY),
         _ => (),
     }
     ht_cap.ht_cap_info = ht_cap_info;
@@ -135,15 +138,18 @@ fn override_ht_capabilities(mut ht_cap: HtCapabilities, cbw: Cbw) -> HtCapabilit
 
 /// Even though hardware may support higher channel bandwidth, if user specifies a narrower
 /// bandwidth, change the channel bandwidth in vht_cap_info to match user's preference.
-fn override_vht_capabilities(mut vht_cap: VhtCapabilities, cbw: Cbw) -> VhtCapabilities {
+fn override_vht_capabilities(
+    mut vht_cap: VhtCapabilities,
+    bandwidth: Bandwidth,
+) -> VhtCapabilities {
     let mut vht_cap_info = vht_cap.vht_cap_info;
     if vht_cap_info.supported_cbw_set() != OVERRIDE_VHT_CAP_INFO_SUPPORTED_CBW_SET {
         // Supported channel bandwidth set can only be non-zero if the associating channel is
         // 160 MHz or 80+80 MHz Channel bandwidth. Otherwise it will be set to 0. 0 is a purely
         // numeric value without a name. See IEEE Std 802.11-2016 Table 9-250 for more details.
         // TODO(https://fxbug.dev/42115418): finer control over CBW if necessary.
-        match cbw {
-            Cbw::Cbw160 | Cbw::Cbw80P80 { secondary80: _ } => (),
+        match bandwidth {
+            Bandwidth::Cbw160 | Bandwidth::Cbw80P80 { vht_secondary_80_channel: _ } => (),
             _ => vht_cap_info.set_supported_cbw_set(OVERRIDE_VHT_CAP_INFO_SUPPORTED_CBW_SET),
         }
     }
@@ -258,14 +264,14 @@ mod tests {
             .with_tx_stbc(!OVERRIDE_HT_CAP_INFO_TX_STBC)
             .with_chan_width_set(ie::ChanWidthSet::TWENTY_FORTY);
         ht_cap.ht_cap_info = ht_cap_info;
-        let mut channel = Channel::new(153, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz);
+        let mut channel = Channel::new(153, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::FiveGhz);
 
-        let ht_cap_info = override_ht_capabilities(ht_cap, channel.cbw).ht_cap_info;
+        let ht_cap_info = override_ht_capabilities(ht_cap, channel.bandwidth).ht_cap_info;
         assert_eq!(ht_cap_info.tx_stbc(), OVERRIDE_HT_CAP_INFO_TX_STBC);
         assert_eq!(ht_cap_info.chan_width_set(), ie::ChanWidthSet::TWENTY_ONLY);
 
-        channel.cbw = Cbw::Cbw40;
-        let ht_cap_info = override_ht_capabilities(ht_cap, channel.cbw).ht_cap_info;
+        channel.bandwidth = Bandwidth::Cbw40;
+        let ht_cap_info = override_ht_capabilities(ht_cap, channel.bandwidth).ht_cap_info;
         assert_eq!(ht_cap_info.chan_width_set(), ie::ChanWidthSet::TWENTY_FORTY);
     }
 
@@ -274,29 +280,29 @@ mod tests {
         let mut vht_cap = ie::fake_vht_capabilities();
         let vht_cap_info = vht_cap.vht_cap_info.with_supported_cbw_set(2);
         vht_cap.vht_cap_info = vht_cap_info;
-        let mut channel = Channel::new(153, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz);
+        let mut channel = Channel::new(153, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::FiveGhz);
 
         // CBW20, CBW40, CBW80 will set supported_cbw_set to 0
 
-        let vht_cap_info = override_vht_capabilities(vht_cap, channel.cbw).vht_cap_info;
+        let vht_cap_info = override_vht_capabilities(vht_cap, channel.bandwidth).vht_cap_info;
         assert_eq!(vht_cap_info.supported_cbw_set(), OVERRIDE_VHT_CAP_INFO_SUPPORTED_CBW_SET);
 
-        channel.cbw = Cbw::Cbw40;
-        let vht_cap_info = override_vht_capabilities(vht_cap, channel.cbw).vht_cap_info;
+        channel.bandwidth = Bandwidth::Cbw40;
+        let vht_cap_info = override_vht_capabilities(vht_cap, channel.bandwidth).vht_cap_info;
         assert_eq!(vht_cap_info.supported_cbw_set(), OVERRIDE_VHT_CAP_INFO_SUPPORTED_CBW_SET);
 
-        channel.cbw = Cbw::Cbw80;
-        let vht_cap_info = override_vht_capabilities(vht_cap, channel.cbw).vht_cap_info;
+        channel.bandwidth = Bandwidth::Cbw80;
+        let vht_cap_info = override_vht_capabilities(vht_cap, channel.bandwidth).vht_cap_info;
         assert_eq!(vht_cap_info.supported_cbw_set(), OVERRIDE_VHT_CAP_INFO_SUPPORTED_CBW_SET);
 
         // CBW160 and CBW80P80 will preserve existing supported_cbw_set value
 
-        channel.cbw = Cbw::Cbw160;
-        let vht_cap_info = override_vht_capabilities(vht_cap, channel.cbw).vht_cap_info;
+        channel.bandwidth = Bandwidth::Cbw160;
+        let vht_cap_info = override_vht_capabilities(vht_cap, channel.bandwidth).vht_cap_info;
         assert_eq!(vht_cap_info.supported_cbw_set(), 2);
 
-        channel.cbw = Cbw::Cbw80P80 { secondary80: 42 };
-        let vht_cap_info = override_vht_capabilities(vht_cap, channel.cbw).vht_cap_info;
+        channel.bandwidth = Bandwidth::Cbw80P80 { vht_secondary_80_channel: 42 };
+        let vht_cap_info = override_vht_capabilities(vht_cap, channel.bandwidth).vht_cap_info;
         assert_eq!(vht_cap_info.supported_cbw_set(), 2);
     }
 
@@ -314,7 +320,7 @@ mod tests {
             fidl_ieee80211::WlanBand::FiveGhz,
             get_band_cap_for_channel(
                 &device_info.bands[..],
-                Channel::new(36, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz)
+                Channel::new(36, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::FiveGhz)
             )
             .unwrap()
             .band

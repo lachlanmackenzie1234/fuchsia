@@ -143,9 +143,10 @@ void ArpTest::TxAuthandAssocReq() {
   // Get the mac address of the SoftAP
   const common::MacAddr mac(kTheirMac);
   simulation::WlanTxInfo tx_info = {
-      .channel = SimInterface::kDefaultSoftApChannelNum,
-      .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
-      .secondary80 = {.band = SimInterface::kDefaultSoftApChannelNum.band, .number = 0}};
+      .primary_channel = SimInterface::kDefaultSoftApChannelNum,
+      .bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+      .vht_secondary_80_channel = {.band = SimInterface::kDefaultSoftApChannelNum.band,
+                                   .number = 0}};
   simulation::SimAuthFrame auth_req_frame(mac, kOurMac, 1, simulation::AUTH_TYPE_OPEN,
                                           wlan_ieee80211::StatusCode::kSuccess);
   env_->Tx(auth_req_frame, tx_info, this);
@@ -175,9 +176,10 @@ void ArpTest::Tx(const std::vector<uint8_t>& ethFrame) {
   common::MacAddr src(eth_hdr->h_source);
   simulation::SimQosDataFrame dataFrame(true, false, dst, src, common::kBcastMac, 0, ethFrame);
   simulation::WlanTxInfo tx_info = {
-      .channel = SimInterface::kDefaultSoftApChannelNum,
-      .cbw = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
-      .secondary80 = {.band = SimInterface::kDefaultSoftApChannelNum.band, .number = 0}};
+      .primary_channel = SimInterface::kDefaultSoftApChannelNum,
+      .bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
+      .vht_secondary_80_channel = {.band = SimInterface::kDefaultSoftApChannelNum.band,
+                                   .number = 0}};
   env_->Tx(dataFrame, tx_info, this);
 }
 

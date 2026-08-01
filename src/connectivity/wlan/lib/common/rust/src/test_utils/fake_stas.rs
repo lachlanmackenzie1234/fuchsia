@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::channel::{Cbw, Channel};
+use crate::channel::{Bandwidth, Channel};
 use crate::ie::fake_ies::{fake_owe_transition_ie, fake_wmm_param};
 use crate::ie::{self, IeType, write_rsnxe, write_wmm_param};
 use crate::mac;
@@ -178,7 +178,7 @@ impl BssDescriptionCreator {
             }
         }
 
-        let (bandwidth, secondary80_num) = self.channel.cbw.to_fidl();
+        let (bandwidth, secondary80_num) = self.channel.bandwidth.to_fidl();
         let secondary80 =
             fidl_ieee80211::ChannelNumber { band: self.channel.band, number: secondary80_num };
         Ok(fidl_ieee80211::BssDescription {
@@ -287,7 +287,7 @@ pub fn build_fake_bss_description_creator__(
         bssid: [0x07, 0x01, 0x02, 0x4d, 0x35, 0x08],
         bss_type: fidl_ieee80211::BssType::Infrastructure,
         beacon_period: 100,
-        channel: Channel::new(3, Cbw::Cbw40, fidl_ieee80211::WlanBand::TwoGhz),
+        channel: Channel::new(3, Bandwidth::Cbw40, fidl_ieee80211::WlanBand::TwoGhz),
         rssi_dbm: 0,
         snr_db: 0,
 
@@ -358,7 +358,7 @@ pub fn build_random_bss_description_creator__(
             } else {
                 fidl_ieee80211::WlanBand::FiveGhz
             };
-            Channel::new(primary, Cbw::Cbw20, band)
+            Channel::new(primary, Bandwidth::Cbw20, band)
         },
         rssi_dbm: rng.random::<i8>(),
         snr_db: rng.random::<i8>(),

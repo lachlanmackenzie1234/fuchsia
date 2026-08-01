@@ -26,7 +26,7 @@ use ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid};
 use link_state::LinkState;
 use log::{error, info, warn};
 use wlan_common::bss::BssDescription;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::ie::rsn::cipher;
 use wlan_common::ie::rsn::suite_selector::OUI;
 use wlan_common::ie::{self, IeSummaryIter};
@@ -927,14 +927,14 @@ impl Associated {
         self.connect_txn_sink
             .send(ConnectTransactionEvent::OnChannelSwitched { info: info.clone() });
 
-        let cbw = match Cbw::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
+        let cbw = match Bandwidth::from_fidl(info.bandwidth, info.vht_secondary_80_channel.number) {
             Ok(cbw) => cbw,
             Err(e) => {
                 // In the event that the CBW is invalid, reuse the previous CBW
                 // in determining the client's channel to preserve any legacy
                 // behavior.
                 error!("Invalid CBW in ChannelSwitchInfo: {}", e);
-                self.latest_ap_state.channel.cbw
+                self.latest_ap_state.channel.bandwidth
             }
         };
         self.latest_ap_state.channel =
@@ -2338,7 +2338,7 @@ mod tests {
     use std::task::Poll;
     use std::vec;
     use wlan_common::bss::Protection as BssProtection;
-    use wlan_common::channel::{Cbw, Channel};
+    use wlan_common::channel::{Bandwidth, Channel};
     use wlan_common::ie::fake_ies::{fake_probe_resp_wsc_ie_bytes, get_vendor_ie_bytes_for_wsc_ie};
     use wlan_common::ie::rsn::rsne::Rsne;
     use wlan_common::test_utils::fake_features::{
@@ -5331,7 +5331,7 @@ mod tests {
         *cmd.bss = fake_bss_description!(Open,
             ssid: Ssid::try_from("bar").unwrap(),
             bssid: [8; 6],
-            channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+            channel: Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
         );
         let state = link_up_state(cmd);
 

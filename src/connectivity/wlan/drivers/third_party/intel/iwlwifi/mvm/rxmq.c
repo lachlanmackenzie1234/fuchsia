@@ -1585,16 +1585,16 @@ void iwl_mvm_rx_mpdu_mq(struct iwl_mvm *mvm, struct napi_struct *napi,
 	/* This may be overridden by iwl_mvm_rx_he() to HE_RU */
 	switch (rate_n_flags & RATE_MCS_CHAN_WIDTH_MSK) {
 	case RATE_MCS_CHAN_WIDTH_20:
-		rx_status.rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW20;
+		rx_status.rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW20;
 		break;
 	case RATE_MCS_CHAN_WIDTH_40:
-		rx_status.rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW40;
+		rx_status.rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW40;
 		break;
 	case RATE_MCS_CHAN_WIDTH_80:
-		rx_status.rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW80;
+		rx_status.rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW80;
 		break;
 	case RATE_MCS_CHAN_WIDTH_160:
-		rx_status.rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW160;
+		rx_status.rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW160;
 		break;
 	}
 

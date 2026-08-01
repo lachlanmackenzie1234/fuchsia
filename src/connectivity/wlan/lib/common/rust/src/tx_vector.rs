@@ -67,7 +67,7 @@ pub const MAX_VALID_IDX: u16 = DSSS_CCK_START_IDX + DSSS_CCK_NUM_TX_VECTOR as u1
 pub struct TxVector {
     phy: fidl_ieee80211::WlanPhyType,
     gi: WlanGi,
-    cbw: fidl_ieee80211::ChannelBandwidth,
+    bandwidth: fidl_ieee80211::ChannelBandwidth,
     nss: u8, // Number of spatial streams for VHT and beyond.
     // For HT,  see IEEE 802.11-2016 Table 19-27
     // For VHT, see IEEE 802.11-2016 Table 21-30
@@ -79,7 +79,7 @@ impl TxVector {
     pub fn new(
         phy: fidl_ieee80211::WlanPhyType,
         gi: WlanGi,
-        cbw: fidl_ieee80211::ChannelBandwidth,
+        bandwidth: fidl_ieee80211::ChannelBandwidth,
         mcs_idx: u8,
     ) -> Result<Self, Error> {
         let supported_mcs = match phy {
@@ -90,7 +90,7 @@ impl TxVector {
                     WlanGi::G_800NS | WlanGi::G_400NS => (),
                     other => bail!("Unsupported GI for HT PHY: {:?}", other),
                 }
-                match cbw {
+                match bandwidth {
                     fidl_ieee80211::ChannelBandwidth::Cbw20
                     | fidl_ieee80211::ChannelBandwidth::Cbw40
                     | fidl_ieee80211::ChannelBandwidth::Cbw40Below => (),
@@ -107,7 +107,7 @@ impl TxVector {
                 // TODO(https://fxbug.dev/42094755): Support VHT NSS
                 _ => 1,
             };
-            Ok(Self { phy, gi, cbw, nss, mcs_idx })
+            Ok(Self { phy, gi, bandwidth, nss, mcs_idx })
         } else {
             bail!("Unsupported MCS {:?} for phy type {:?}", mcs_idx, phy);
         }
@@ -150,12 +150,12 @@ impl TxVector {
                     1 => WlanGi::G_400NS,
                     _ => WlanGi::G_800NS,
                 };
-                let cbw = match group_idx % HT_NUM_CBW as u16 {
+                let bandwidth = match group_idx % HT_NUM_CBW as u16 {
                     0 => fidl_ieee80211::ChannelBandwidth::Cbw20,
                     _ => fidl_ieee80211::ChannelBandwidth::Cbw40,
                 };
                 let mcs_idx = ((*idx - HT_START_IDX) % HT_NUM_MCS as u16) as u8;
-                Self::new(phy, gi, cbw, mcs_idx).unwrap()
+                Self::new(phy, gi, bandwidth, mcs_idx).unwrap()
             }
             fidl_ieee80211::WlanPhyType::Erp => Self::new(
                 phy,
@@ -181,7 +181,7 @@ impl TxVector {
                 let group_idx = match self.gi {
                     WlanGi::G_400NS => HT_NUM_CBW as u16,
                     _ => 0,
-                } + match self.cbw {
+                } + match self.bandwidth {
                     fidl_ieee80211::ChannelBandwidth::Cbw40
                     | fidl_ieee80211::ChannelBandwidth::Cbw40Below => 1,
                     _ => 0,
@@ -217,7 +217,7 @@ impl TxVector {
             .bits(),
             tx_vector_idx: self.to_idx().0,
             phy: self.phy,
-            bandwidth: self.cbw,
+            bandwidth: self.bandwidth,
             mcs: self.mcs_idx,
         }
     }

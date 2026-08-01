@@ -681,7 +681,8 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
             // Set the channel to the value specified in "chanspec" iovar
             uint16_t chanspec = iface_tbl_[ifidx].chanspec;
             auto channel_info = ExtractChannelInfo(chanspec);
-            hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
+            hw_.SetChannel(channel_info.primary, channel_info.bandwidth,
+                           channel_info.vht_secondary_80_channel);
 
             // Set the auth_type of softap to OPEN.
             iface_tbl_[ifidx].auth_type = BRCMF_AUTH_MODE_OPEN;
@@ -728,8 +729,8 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
           memcpy(assoc_opts->bssid.byte, join_params->params_le.bssid, ETH_ALEN);
           assoc_opts->ssid.resize(join_params->ssid_le.SSID_len);
           memcpy(assoc_opts->ssid.data(), join_params->ssid_le.SSID, join_params->ssid_le.SSID_len);
-          AssocInit(std::move(assoc_opts), channel_info.channel, channel_info.cbw,
-                    channel_info.secondary80);
+          AssocInit(std::move(assoc_opts), channel_info.primary, channel_info.bandwidth,
+                    channel_info.vht_secondary_80_channel);
           iface_tbl_[ifidx].is_up = 1;
 
           BRCMF_DBG(SIM, "Auth start from C_SET_SSID");
@@ -806,12 +807,12 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
         // Must remember which channel original BSS was on, for future communication with it.
         uint16_t orig_chanspec = iface_tbl_[kClientIfidx].chanspec;
         auto orig_channel_info = ExtractChannelInfo(orig_chanspec);
-        reassoc_opts->orig_bss_channel = orig_channel_info.channel;
-        reassoc_opts->orig_bss_cbw = orig_channel_info.cbw;
-        reassoc_opts->orig_bss_secondary80 = orig_channel_info.secondary80;
+        reassoc_opts->orig_bss_channel = orig_channel_info.primary;
+        reassoc_opts->orig_bss_cbw = orig_channel_info.bandwidth;
+        reassoc_opts->orig_bss_secondary80 = orig_channel_info.vht_secondary_80_channel;
         reassoc_opts->firmware_initiated = false;
-        ReassocInit(std::move(reassoc_opts), target_channel_info.channel, target_channel_info.cbw,
-                    target_channel_info.secondary80);
+        ReassocInit(std::move(reassoc_opts), target_channel_info.primary,
+                    target_channel_info.bandwidth, target_channel_info.vht_secondary_80_channel);
       }
       break;
     }
@@ -1271,7 +1272,7 @@ void SimFirmware::AssocScanDone(brcmf_fweh_event_status_t event_status) {
   if (scan_state_.opts->ssid)
     assoc_opts->ssid = scan_state_.opts->ssid.value();
 
-  AssocInit(std::move(assoc_opts), ap.channel, ap.cbw, ap.secondary80);
+  AssocInit(std::move(assoc_opts), ap.primary, ap.bandwidth, ap.vht_secondary_80_channel);
   // Send an event of the first scan result to driver when assoc scan is done.
   EscanResultSeen(ap);
 
@@ -2050,9 +2051,9 @@ void SimFirmware::RxBtmReqFrame(std::shared_ptr<const simulation::SimBtmReqFrame
   // Must remember which channel original BSS was on, for future communication with it.
   uint16_t orig_chanspec = iface_tbl_[kClientIfidx].chanspec;
   auto orig_channel_info = ExtractChannelInfo(orig_chanspec);
-  reassoc_opts->orig_bss_channel = orig_channel_info.channel;
-  reassoc_opts->orig_bss_cbw = orig_channel_info.cbw;
-  reassoc_opts->orig_bss_secondary80 = orig_channel_info.secondary80;
+  reassoc_opts->orig_bss_channel = orig_channel_info.primary;
+  reassoc_opts->orig_bss_cbw = orig_channel_info.bandwidth;
+  reassoc_opts->orig_bss_secondary80 = orig_channel_info.vht_secondary_80_channel;
 
   // In current brcmfmac implementation, only firmware is capable of roaming in response to a BTM
   // request frame. This may change in the future if we implement BTM in driver or upper layers.
@@ -3089,7 +3090,8 @@ zx_status_t SimFirmware::ScanStart(std::unique_ptr<ScanOpts> opts) {
   // Start scan
   uint16_t chanspec = scan_state_.opts->channels[scan_state_.channel_index++];
   auto channel_info = ExtractChannelInfo(chanspec);
-  hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
+  hw_.SetChannel(channel_info.primary, channel_info.bandwidth,
+                 channel_info.vht_secondary_80_channel);
 
   // Do an active scan using random mac
   // TODO(https://fxbug.dev/42170664): SSIDs in scan request are ignored
@@ -3137,7 +3139,8 @@ void SimFirmware::ScanContinue() {
         // Scan next channel
         uint16_t chanspec = scan_state_.opts->channels[scan_state_.channel_index++];
         auto channel_info = ExtractChannelInfo(chanspec);
-        hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
+        hw_.SetChannel(channel_info.primary, channel_info.bandwidth,
+                       channel_info.vht_secondary_80_channel);
         BRCMF_DBG(SIM, "Continue scan - next chanspec: 0x%x", chanspec);
         if (scan_state_.opts->is_active) {
           scan_state_.active_scan_attempts = 1;
@@ -3165,7 +3168,8 @@ void SimFirmware::ScanComplete(brcmf_fweh_event_status_t status) {
   if (iface_tbl_[kClientIfidx].chanspec) {
     uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
     auto channel_info = ExtractChannelInfo(chanspec);
-    hw_.SetChannel(channel_info.channel, channel_info.cbw, channel_info.secondary80);
+    hw_.SetChannel(channel_info.primary, channel_info.bandwidth,
+                   channel_info.vht_secondary_80_channel);
   }
   scan_state_.opts->on_done_fn(status);
   scan_state_.opts = nullptr;
@@ -3287,15 +3291,15 @@ void SimFirmware::RxMgmtFrame(std::shared_ptr<const simulation::SimManagementFra
   switch (mgmt_frame->MgmtFrameType()) {
     case simulation::SimManagementFrame::FRAME_TYPE_BEACON: {
       auto beacon = std::static_pointer_cast<const simulation::SimBeaconFrame>(mgmt_frame);
-      RxBeacon(info->channel, info->cbw, info->secondary80, beacon, info->signal_strength,
-               info->noise_level);
+      RxBeacon(info->primary, info->bandwidth, info->vht_secondary_80_channel, beacon,
+               info->signal_strength, info->noise_level);
       break;
     }
 
     case simulation::SimManagementFrame::FRAME_TYPE_PROBE_RESP: {
       auto probe_resp = std::static_pointer_cast<const simulation::SimProbeRespFrame>(mgmt_frame);
-      RxProbeResp(info->channel, info->cbw, info->secondary80, probe_resp, info->signal_strength,
-                  info->noise_level);
+      RxProbeResp(info->primary, info->bandwidth, info->vht_secondary_80_channel, probe_resp,
+                  info->signal_strength, info->noise_level);
       break;
     }
 
@@ -3474,9 +3478,9 @@ void SimFirmware::RxBeacon(const fuchsia_wlan_ieee80211::wire::ChannelNumber& ch
   if (scan_state_.state == ScanState::SCANNING && !scan_state_.opts->is_active) {
     int8_t rssi_dbm = RssiDbmFromSignalStrength(signal_strength);
     int8_t snr = sim_utils::SnrDbFromSignalStrength(rssi_dbm, noise_level);
-    ScanResult scan_result = {.channel = channel,
-                              .cbw = cbw,
-                              .secondary80 = secondary80,
+    ScanResult scan_result = {.primary = channel,
+                              .bandwidth = cbw,
+                              .vht_secondary_80_channel = secondary80,
                               .bssid = frame->bssid_,
                               .rssi_dbm = rssi_dbm,
                               .snr = snr,
@@ -3551,9 +3555,9 @@ void SimFirmware::RxProbeResp(const fuchsia_wlan_ieee80211::wire::ChannelNumber&
 
   int8_t rssi_dbm = SimFirmware::RssiDbmFromSignalStrength(signal_strength);
   int8_t snr = sim_utils::SnrDbFromSignalStrength(rssi_dbm, noise_level);
-  ScanResult scan_result = {.channel = channel,
-                            .cbw = cbw,
-                            .secondary80 = secondary80,
+  ScanResult scan_result = {.primary = channel,
+                            .bandwidth = cbw,
+                            .vht_secondary_80_channel = secondary80,
                             .bssid = frame->src_addr_,
                             .rssi_dbm = rssi_dbm,
                             .snr = snr,
@@ -3614,7 +3618,7 @@ void SimFirmware::EscanResultSeen(const ScanResult& result_in) {
   // length of this record (includes IEs)
   bss_info->length = roundup(sizeof(brcmf_bss_info_le) + ie_buf.size(), 4);
   // channel
-  bss_info->chanspec = channel_to_chanspec(&d11_inf_, result_in.channel, result_in.cbw);
+  bss_info->chanspec = channel_to_chanspec(&d11_inf_, result_in.primary, result_in.bandwidth);
   // capability
   bss_info->capability = result_in.bss_capability.val();
 
@@ -3756,9 +3760,9 @@ void SimFirmware::ResetSimFirmware() {
 
 SimFirmware::DerivedChannelInfo SimFirmware::ExtractChannelInfo(uint16_t chanspec) {
   return {
-      .channel = chanspec_to_operating_channel_number(&d11_inf_, chanspec),
-      .cbw = chanspec_to_channel_bandwidth(&d11_inf_, chanspec),
-      .secondary80 = chanspec_to_secondary80(&d11_inf_, chanspec),
+      .primary = chanspec_to_operating_channel_number(&d11_inf_, chanspec),
+      .bandwidth = chanspec_to_channel_bandwidth(&d11_inf_, chanspec),
+      .vht_secondary_80_channel = chanspec_to_secondary80(&d11_inf_, chanspec),
   };
 }
 

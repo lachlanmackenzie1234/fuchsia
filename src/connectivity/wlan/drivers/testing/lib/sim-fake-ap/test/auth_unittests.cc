@@ -19,13 +19,14 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 const simulation::WlanTxInfo kDefaultTxInfo = {
-    .channel = kDefaultChannel,
-    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
+    .primary_channel = kDefaultChannel,
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 constexpr simulation::WlanTxInfo kWrongChannelTxInfo = {
-    .channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10},
-    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 0}};
+    .primary_channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10},
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+                                 .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kApSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                               'F', 'a', 'k', 'e', ' ', 'A', 'P'};
 const common::MacAddr kApBssid({0x11, 0x11, 0x11, 0x11, 0x11, 0x11});
@@ -36,9 +37,9 @@ void validateChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                      fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
                      const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
   EXPECT_EQ(channel.number, kDefaultChannel.number);
-  EXPECT_EQ(cbw, kDefaultTxInfo.cbw);
-  EXPECT_EQ(secondary80.number, kDefaultTxInfo.secondary80.number);
-  EXPECT_EQ(secondary80.band, kDefaultTxInfo.secondary80.band);
+  EXPECT_EQ(cbw, kDefaultTxInfo.bandwidth);
+  EXPECT_EQ(secondary80.number, kDefaultTxInfo.vht_secondary_80_channel.number);
+  EXPECT_EQ(secondary80.band, kDefaultTxInfo.vht_secondary_80_channel.band);
 }
 
 class AuthTest : public ::testing::Test, public simulation::StationIfc {
@@ -53,8 +54,8 @@ class AuthTest : public ::testing::Test, public simulation::StationIfc {
   };
 
   AuthTest()
-      : ap_(&env_, kApBssid, kApSsid, kDefaultTxInfo.channel, kDefaultTxInfo.cbw,
-            kDefaultTxInfo.secondary80) {
+      : ap_(&env_, kApBssid, kApSsid, kDefaultTxInfo.primary_channel, kDefaultTxInfo.bandwidth,
+            kDefaultTxInfo.vht_secondary_80_channel) {
     env_.AddStation(this);
   }
   ~AuthTest() { env_.RemoveStation(this); }
@@ -81,7 +82,7 @@ void AuthTest::ValidateAuthResp(uint16_t expect_seq_num, simulation::SimAuthType
 void AuthTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
                   std::shared_ptr<const simulation::WlanRxInfo> info) {
   ASSERT_EQ(frame->FrameType(), simulation::SimFrame::FRAME_TYPE_MGMT);
-  validateChannel(info->channel, info->cbw, info->secondary80);
+  validateChannel(info->primary, info->bandwidth, info->vht_secondary_80_channel);
 
   auto mgmt_frame = std::static_pointer_cast<const simulation::SimManagementFrame>(frame);
   // Ignore assoc resp

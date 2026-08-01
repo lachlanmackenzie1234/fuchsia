@@ -17,9 +17,9 @@ use zerocopy::SplitByteSlice;
 pub trait ChannelActions {
     fn switch_channel(
         &mut self,
-        new_main_channel: fidl_ieee80211::ChannelNumber,
-        cbw: fidl_ieee80211::ChannelBandwidth,
-        secondary80: fidl_ieee80211::ChannelNumber,
+        primary: fidl_ieee80211::ChannelNumber,
+        bandwidth: fidl_ieee80211::ChannelBandwidth,
+        vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
     ) -> impl Future<Output = Result<(), zx::Status>>;
     fn schedule_channel_switch_timeout(&mut self, time: zx::MonotonicInstant) -> EventHandle;
     fn disable_scanning(&mut self) -> impl Future<Output = Result<(), zx::Status>>;
@@ -36,11 +36,11 @@ pub struct ChannelActionHandle<'a, D> {
 impl<'a, D: DeviceOps> ChannelActions for ChannelActionHandle<'a, D> {
     async fn switch_channel(
         &mut self,
-        new_main_channel: fidl_ieee80211::ChannelNumber,
-        cbw: fidl_ieee80211::ChannelBandwidth,
-        secondary80: fidl_ieee80211::ChannelNumber,
+        primary: fidl_ieee80211::ChannelNumber,
+        bandwidth: fidl_ieee80211::ChannelBandwidth,
+        vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
     ) -> Result<(), zx::Status> {
-        self.ctx.device.set_channel(new_main_channel, cbw, secondary80).await
+        self.ctx.device.set_channel(primary, bandwidth, vht_secondary_80_channel).await
     }
     fn schedule_channel_switch_timeout(&mut self, time: zx::MonotonicInstant) -> EventHandle {
         self.ctx.timer.schedule_at(time, TimedEvent::ChannelSwitch)
@@ -64,9 +64,9 @@ impl<'a, D: DeviceOps> ChannelActions for ChannelActionHandle<'a, D> {
 pub struct ChannelState {
     // The current main channel configured in the driver. If None, the driver may
     // be set to any channel.
-    main_channel: Option<fidl_ieee80211::ChannelNumber>,
-    cbw: Option<fidl_ieee80211::ChannelBandwidth>,
-    secondary80: Option<fidl_ieee80211::ChannelNumber>,
+    primary: Option<fidl_ieee80211::ChannelNumber>,
+    bandwidth: Option<fidl_ieee80211::ChannelBandwidth>,
+    vht_secondary_80_channel: Option<fidl_ieee80211::ChannelNumber>,
     pending_channel_switch: Option<(ChannelSwitch, EventHandle)>,
     beacon_interval: Option<TimeUnit>,
     last_beacon_timestamp: Option<fasync::MonotonicInstant>,
@@ -79,20 +79,20 @@ pub struct BoundChannelState<'a, T> {
 
 impl ChannelState {
     #[cfg(test)]
-    pub fn new_with_main_channel(main_channel: fidl_ieee80211::ChannelNumber) -> Self {
-        Self { main_channel: Some(main_channel), ..Default::default() }
+    pub fn new_with_primary_channel(primary: fidl_ieee80211::ChannelNumber) -> Self {
+        Self { primary: Some(primary), ..Default::default() }
     }
 
-    pub fn get_main_channel(&self) -> Option<fidl_ieee80211::ChannelNumber> {
-        self.main_channel
+    pub fn get_primary(&self) -> Option<fidl_ieee80211::ChannelNumber> {
+        self.primary
     }
 
-    pub fn get_cbw(&self) -> Option<fidl_ieee80211::ChannelBandwidth> {
-        self.cbw
+    pub fn get_bandwidth(&self) -> Option<fidl_ieee80211::ChannelBandwidth> {
+        self.bandwidth
     }
 
-    pub fn get_secondary80(&self) -> Option<fidl_ieee80211::ChannelNumber> {
-        self.secondary80
+    pub fn get_vht_secondary_80_channel(&self) -> Option<fidl_ieee80211::ChannelNumber> {
+        self.vht_secondary_80_channel
     }
 
     pub fn bind<'a, D>(
@@ -129,21 +129,22 @@ impl<'a, T: ChannelActions> BoundChannelState<'a, T> {
     /// Immediately set a new main channel in the device.
     pub async fn set_main_channel(
         &mut self,
-        new_main_channel: fidl_ieee80211::ChannelNumber,
-        cbw: fidl_ieee80211::ChannelBandwidth,
-        secondary80: fidl_ieee80211::ChannelNumber,
+        primary: fidl_ieee80211::ChannelNumber,
+        bandwidth: fidl_ieee80211::ChannelBandwidth,
+        vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
     ) -> Result<(), zx::Status> {
         self.channel_state.pending_channel_switch.take();
-        let result = self.actions.switch_channel(new_main_channel, cbw, secondary80).await;
+        let result =
+            self.actions.switch_channel(primary, bandwidth, vht_secondary_80_channel).await;
         match result {
             Ok(()) => {
-                log::info!("Switched to new main channel {:?}", new_main_channel);
-                self.channel_state.main_channel.replace(new_main_channel);
-                self.channel_state.cbw.replace(cbw);
-                self.channel_state.secondary80.replace(secondary80);
+                log::info!("Switched to new main channel {:?}", primary);
+                self.channel_state.primary.replace(primary);
+                self.channel_state.bandwidth.replace(bandwidth);
+                self.channel_state.vht_secondary_80_channel.replace(vht_secondary_80_channel);
             }
             Err(e) => {
-                log::error!("Failed to switch to new main channel {:?}: {}", new_main_channel, e);
+                log::error!("Failed to switch to new main channel {:?}: {}", primary, e);
             }
         }
         self.actions.enable_scanning();
@@ -155,7 +156,7 @@ impl<'a, T: ChannelActions> BoundChannelState<'a, T> {
     /// normal idle state. The device will remain on whichever channel was
     /// most recently configured.
     pub fn clear_main_channel(&mut self) {
-        self.channel_state.main_channel.take();
+        self.channel_state.primary.take();
         self.channel_state.pending_channel_switch.take();
         self.channel_state.last_beacon_timestamp.take();
         self.channel_state.beacon_interval.take();
@@ -185,7 +186,7 @@ impl<'a, T: ChannelActions> BoundChannelState<'a, T> {
         elements: &[u8],
         action_frame: bool,
     ) -> Result<(), anyhow::Error> {
-        let current_band = self.channel_state.main_channel.map(|c| c.band).ok_or_else(|| {
+        let current_band = self.channel_state.primary.map(|c| c.band).ok_or_else(|| {
             anyhow::anyhow!("Received channel switch announcement before main channel is set")
         })?;
         let mut csa_builder = ChannelSwitchBuilder::<&[u8]>::default();
@@ -236,9 +237,9 @@ impl<'a, T: ChannelActions> BoundChannelState<'a, T> {
         self.actions.disable_scanning().await?;
         if channel_switch.channel_switch_count == 0 {
             self.set_main_channel(
-                channel_switch.new_channel,
-                channel_switch.cbw,
-                channel_switch.secondary80,
+                channel_switch.primary,
+                channel_switch.bandwidth,
+                channel_switch.vht_secondary_80_channel,
             )
             .await
             .map_err(|e| e.into())
@@ -259,9 +260,9 @@ impl<'a, T: ChannelActions> BoundChannelState<'a, T> {
     pub async fn handle_channel_switch_timeout(&mut self) -> Result<(), anyhow::Error> {
         if let Some((channel_switch, _handle)) = self.channel_state.pending_channel_switch.take() {
             self.set_main_channel(
-                channel_switch.new_channel,
-                channel_switch.cbw,
-                channel_switch.secondary80,
+                channel_switch.primary,
+                channel_switch.bandwidth,
+                channel_switch.vht_secondary_80_channel,
             )
             .await?;
         }
@@ -272,9 +273,9 @@ impl<'a, T: ChannelActions> BoundChannelState<'a, T> {
 #[derive(Debug, PartialEq)]
 pub struct ChannelSwitch {
     pub channel_switch_count: u8,
-    pub new_channel: fidl_ieee80211::ChannelNumber,
-    pub cbw: fidl_ieee80211::ChannelBandwidth,
-    pub secondary80: fidl_ieee80211::ChannelNumber,
+    pub primary: fidl_ieee80211::ChannelNumber,
+    pub bandwidth: fidl_ieee80211::ChannelBandwidth,
+    pub vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
     pub pause_transmission: bool,
     pub new_operating_class: Option<u8>,
     // TODO(https://fxbug.dev/42180124): Support transmit power envelope.
@@ -371,16 +372,17 @@ impl<B: SplitByteSlice> ChannelSwitchBuilder<B> {
             .map(|wbcs| (wbcs.new_width, wbcs.new_center_freq_seg0, wbcs.new_center_freq_seg1));
         let sec_chan_offset =
             self.secondary_channel_offset.unwrap_or(ie::SecChanOffset::SECONDARY_NONE);
-        let (cbw, secondary80_num) =
+        let (bandwidth, secondary80_num) =
             wlan_common::channel::derive_wide_channel_bandwidth(vht_cbw_and_segs, sec_chan_offset)
                 .to_fidl();
-        let secondary80 = fidl_ieee80211::ChannelNumber { band, number: secondary80_num };
+        let vht_secondary_80_channel =
+            fidl_ieee80211::ChannelNumber { band, number: secondary80_num };
 
         ChannelSwitchResult::ChannelSwitch(ChannelSwitch {
             channel_switch_count: channel_switch_count,
-            new_channel: fidl_ieee80211::ChannelNumber { band, number: new_channel_number },
-            cbw,
-            secondary80,
+            primary: fidl_ieee80211::ChannelNumber { band, number: new_channel_number },
+            bandwidth,
+            vht_secondary_80_channel,
             pause_transmission,
             new_operating_class,
             new_transmit_power_envelope_specified: self.transmit_power_envelope.is_some(),
@@ -482,12 +484,12 @@ mod tests {
     ) {
         let channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 0,
             },
@@ -519,12 +521,12 @@ mod tests {
         );
         let expected_channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::FiveGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::FiveGhz,
                 number: 0,
             },
@@ -552,12 +554,12 @@ mod tests {
         );
         let expected_channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 0,
             },
@@ -579,12 +581,12 @@ mod tests {
         );
         let expected_channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw40,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw40,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 0,
             },
@@ -607,12 +609,12 @@ mod tests {
         );
         let expected_channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw80,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw80,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 0,
             },
@@ -635,12 +637,12 @@ mod tests {
         );
         let expected_channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw160,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw160,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 0,
             },
@@ -663,12 +665,12 @@ mod tests {
         );
         let expected_channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw80P80,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw80P80,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL + 100,
             },
@@ -697,12 +699,12 @@ mod tests {
         );
         let expected_channel_switch = ChannelSwitch {
             channel_switch_count: COUNT,
-            new_channel: fidl_ieee80211::ChannelNumber {
+            primary: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: NEW_CHANNEL,
             },
-            cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-            secondary80: fidl_ieee80211::ChannelNumber {
+            bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 0,
             },
@@ -746,7 +748,7 @@ mod tests {
             builder.build(fidl_ieee80211::WlanBand::FiveGhz),
             ChannelSwitchResult::ChannelSwitch(cs) => cs
         );
-        assert_eq!(channel_switch.new_channel.band, fidl_ieee80211::WlanBand::FiveGhz);
+        assert_eq!(channel_switch.primary.band, fidl_ieee80211::WlanBand::FiveGhz);
     }
 
     #[derive(Default)]
@@ -772,11 +774,15 @@ mod tests {
     impl ChannelActions for &mut MockChannelActions {
         async fn switch_channel(
             &mut self,
-            new_main_channel: fidl_ieee80211::ChannelNumber,
-            cbw: fidl_ieee80211::ChannelBandwidth,
-            secondary80: fidl_ieee80211::ChannelNumber,
+            primary: fidl_ieee80211::ChannelNumber,
+            bandwidth: fidl_ieee80211::ChannelBandwidth,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
         ) -> Result<(), zx::Status> {
-            self.actions.push(ChannelAction::SwitchChannel(new_main_channel, cbw, secondary80));
+            self.actions.push(ChannelAction::SwitchChannel(
+                primary,
+                bandwidth,
+                vht_secondary_80_channel,
+            ));
             Ok(())
         }
         fn schedule_channel_switch_timeout(&mut self, time: zx::MonotonicInstant) -> EventHandle {
@@ -803,7 +809,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn channel_state_ignores_empty_beacon_frame() {
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });
@@ -822,7 +828,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn channel_state_handles_immediate_csa_in_beacon_frame() {
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });
@@ -839,11 +845,11 @@ mod tests {
 
         assert_eq!(actions.actions.len(), 4);
         assert_matches!(actions.actions[0], ChannelAction::DisableScanning);
-        let (new_channel, cbw, secondary80) = assert_matches!(actions.actions[1], ChannelAction::SwitchChannel(chan, cbw, s80) => (chan, cbw, s80));
-        assert_eq!(new_channel.number, NEW_CHANNEL);
-        assert_eq!(cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+        let (primary, bandwidth, vht_secondary_80_channel) = assert_matches!(actions.actions[1], ChannelAction::SwitchChannel(chan, bw, s80) => (chan, bw, s80));
+        assert_eq!(primary.number, NEW_CHANNEL);
+        assert_eq!(bandwidth, fidl_ieee80211::ChannelBandwidth::Cbw20);
         assert_eq!(
-            secondary80,
+            vht_secondary_80_channel,
             fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
         );
         assert_matches!(actions.actions[2], ChannelAction::EnableScanning);
@@ -854,7 +860,7 @@ mod tests {
     fn channel_state_handles_delayed_csa_in_beacon_frame() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });
@@ -920,11 +926,11 @@ mod tests {
         }
 
         assert_eq!(actions.actions.len(), 3);
-        let (new_channel, cbw, secondary80) = assert_matches!(actions.actions[0], ChannelAction::SwitchChannel(chan, cbw, s80) => (chan, cbw, s80));
-        assert_eq!(new_channel.number, NEW_CHANNEL);
-        assert_eq!(cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+        let (primary, bandwidth, vht_secondary_80_channel) = assert_matches!(actions.actions[0], ChannelAction::SwitchChannel(chan, bw, s80) => (chan, bw, s80));
+        assert_eq!(primary.number, NEW_CHANNEL);
+        assert_eq!(bandwidth, fidl_ieee80211::ChannelBandwidth::Cbw20);
         assert_eq!(
-            secondary80,
+            vht_secondary_80_channel,
             fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
         );
         assert_matches!(actions.actions[1], ChannelAction::EnableScanning);
@@ -934,7 +940,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn channel_state_cannot_pause_tx() {
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });
@@ -952,7 +958,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn channel_state_cannot_parse_malformed_csa() {
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });
@@ -973,7 +979,7 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn channel_state_handles_immediate_csa_in_action_frame() {
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });
@@ -987,11 +993,11 @@ mod tests {
 
         assert_eq!(actions.actions.len(), 4);
         assert_matches!(actions.actions[0], ChannelAction::DisableScanning);
-        let (new_channel, cbw, secondary80) = assert_matches!(actions.actions[1], ChannelAction::SwitchChannel(chan, cbw, s80) => (chan, cbw, s80));
-        assert_eq!(new_channel.number, NEW_CHANNEL);
-        assert_eq!(cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+        let (primary, bandwidth, vht_secondary_80_channel) = assert_matches!(actions.actions[1], ChannelAction::SwitchChannel(chan, bw, s80) => (chan, bw, s80));
+        assert_eq!(primary.number, NEW_CHANNEL);
+        assert_eq!(bandwidth, fidl_ieee80211::ChannelBandwidth::Cbw20);
         assert_eq!(
-            secondary80,
+            vht_secondary_80_channel,
             fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
         );
         assert_matches!(actions.actions[2], ChannelAction::EnableScanning);
@@ -1002,7 +1008,7 @@ mod tests {
     fn channel_state_handles_delayed_csa_in_announcement_frame() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });
@@ -1059,11 +1065,11 @@ mod tests {
             );
         }
         assert_eq!(actions.actions.len(), 3);
-        let (new_channel, cbw, secondary80) = assert_matches!(actions.actions[0], ChannelAction::SwitchChannel(chan, cbw, s80) => (chan, cbw, s80));
-        assert_eq!(new_channel.number, NEW_CHANNEL);
-        assert_eq!(cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+        let (primary, bandwidth, vht_secondary_80_channel) = assert_matches!(actions.actions[0], ChannelAction::SwitchChannel(chan, bw, s80) => (chan, bw, s80));
+        assert_eq!(primary.number, NEW_CHANNEL);
+        assert_eq!(bandwidth, fidl_ieee80211::ChannelBandwidth::Cbw20);
         assert_eq!(
-            secondary80,
+            vht_secondary_80_channel,
             fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
         );
         assert_matches!(actions.actions[1], ChannelAction::EnableScanning);
@@ -1074,7 +1080,7 @@ mod tests {
     fn channel_state_handles_delayed_csa_in_announcement_frame_with_missed_beacon() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let mut channel_state =
-            ChannelState::new_with_main_channel(fidl_ieee80211::ChannelNumber {
+            ChannelState::new_with_primary_channel(fidl_ieee80211::ChannelNumber {
                 band: fidl_ieee80211::WlanBand::TwoGhz,
                 number: 1,
             });

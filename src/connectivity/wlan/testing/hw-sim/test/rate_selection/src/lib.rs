@@ -18,7 +18,7 @@ use std::collections::hash_map::Entry;
 use std::pin::pin;
 use std::sync::LazyLock;
 use wlan_common::bss::Protection;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::mac;
 use wlan_hw_sim::event::buffered::{Buffered, DataFrame};
 use wlan_hw_sim::event::{self, Handler};
@@ -245,7 +245,7 @@ async fn send_eth_beacons<'a>(
         {
             intervals_since_last_beacon = 0;
             Beacon {
-                channel: Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                channel: Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 bssid: *BSS_MINSTL,
                 ssid: AP_SSID.clone(),
                 protection: Protection::Open,

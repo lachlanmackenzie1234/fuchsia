@@ -331,7 +331,7 @@ mod tests {
     use rand::Rng as _;
     use std::convert::{TryFrom, TryInto};
     use std::pin::pin;
-    use wlan_common::channel::{Cbw, Channel};
+    use wlan_common::channel::{Bandwidth, Channel};
     use wlan_common::fake_fidl_bss_description;
     use wlan_common::scan::write_vmo;
 
@@ -1170,7 +1170,7 @@ mod tests {
                 Ssid::try_from("foo").unwrap(),
                 -30,
                 20,
-                Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 Protection::Wpa2Personal,
                 Some(fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
                     mutual_security_protocols: vec![fidl_internal::Protocol::Wpa2Personal],
@@ -1181,7 +1181,7 @@ mod tests {
                 Ssid::try_from("hello").unwrap(),
                 -60,
                 10,
-                Channel::new(2, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                Channel::new(2, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
                 Protection::Wpa2Personal,
                 None,
             ),

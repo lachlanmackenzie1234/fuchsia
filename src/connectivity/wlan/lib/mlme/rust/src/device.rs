@@ -139,9 +139,9 @@ pub trait DeviceOps {
     }
     fn set_channel(
         &mut self,
-        channel: fidl_ieee80211::ChannelNumber,
-        cbw: fidl_ieee80211::ChannelBandwidth,
-        secondary80: fidl_ieee80211::ChannelNumber,
+        primary: fidl_ieee80211::ChannelNumber,
+        bandwidth: fidl_ieee80211::ChannelBandwidth,
+        vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
     ) -> impl Future<Output = Result<(), zx::Status>>;
     fn set_mac_address(
         &mut self,
@@ -434,15 +434,15 @@ impl DeviceOps for Device {
 
     async fn set_channel(
         &mut self,
-        channel: fidl_ieee80211::ChannelNumber,
-        cbw: fidl_ieee80211::ChannelBandwidth,
-        secondary80: fidl_ieee80211::ChannelNumber,
+        primary: fidl_ieee80211::ChannelNumber,
+        bandwidth: fidl_ieee80211::ChannelBandwidth,
+        vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
     ) -> Result<(), zx::Status> {
         self.wlan_softmac_bridge_proxy
             .set_channel(&fidl_softmac::WlanSoftmacBaseSetChannelRequest {
-                primary: Some(channel),
-                bandwidth: Some(cbw),
-                vht_secondary_80_channel: Some(secondary80),
+                primary: Some(primary),
+                bandwidth: Some(bandwidth),
+                vht_secondary_80_channel: Some(vht_secondary_80_channel),
                 ..Default::default()
             })
             .await
@@ -906,9 +906,9 @@ pub mod test_utils {
             Option<fidl::endpoints::ClientEnd<fidl_sme::UsmeBootstrapMarker>>,
         pub usme_bootstrap_server_end:
             Option<fidl::endpoints::ServerEnd<fidl_sme::UsmeBootstrapMarker>>,
-        pub wlan_channel: fidl_ieee80211::ChannelNumber,
-        pub cbw: fidl_ieee80211::ChannelBandwidth,
-        pub secondary80: fidl_ieee80211::ChannelNumber,
+        pub primary_channel: fidl_ieee80211::ChannelNumber,
+        pub bandwidth: fidl_ieee80211::ChannelBandwidth,
+        pub vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
         pub keys: Vec<fidl_softmac::WlanKeyConfiguration>,
         pub next_scan_id: u64,
         pub captured_passive_scan_request:
@@ -954,12 +954,12 @@ pub mod test_utils {
                 mlme_request_stream: Some(mlme_request_stream),
                 usme_bootstrap_client_end: Some(usme_bootstrap_client_end),
                 usme_bootstrap_server_end: Some(usme_bootstrap_server_end),
-                wlan_channel: fidl_ieee80211::ChannelNumber {
+                primary_channel: fidl_ieee80211::ChannelNumber {
                     band: fidl_ieee80211::WlanBand::TwoGhz,
                     number: 0,
                 },
-                cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
-                secondary80: fidl_ieee80211::ChannelNumber {
+                bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                vht_secondary_80_channel: fidl_ieee80211::ChannelNumber {
                     band: fidl_ieee80211::WlanBand::TwoGhz,
                     number: 0,
                 },
@@ -1117,14 +1117,14 @@ pub mod test_utils {
 
         async fn set_channel(
             &mut self,
-            wlan_channel: fidl_ieee80211::ChannelNumber,
-            cbw: fidl_ieee80211::ChannelBandwidth,
-            secondary80: fidl_ieee80211::ChannelNumber,
+            primary: fidl_ieee80211::ChannelNumber,
+            bandwidth: fidl_ieee80211::ChannelBandwidth,
+            vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
         ) -> Result<(), zx::Status> {
             let mut state = self.state.lock();
-            state.wlan_channel = wlan_channel;
-            state.cbw = cbw;
-            state.secondary80 = secondary80;
+            state.primary_channel = primary;
+            state.bandwidth = bandwidth;
+            state.vht_secondary_80_channel = vht_secondary_80_channel;
             Ok(())
         }
 
@@ -1587,19 +1587,22 @@ mod tests {
     #[fuchsia::test(allow_stalls = false)]
     async fn set_channel() {
         let (mut fake_device, fake_device_state) = FakeDevice::new().await;
-        let expected_channel =
+        let expected_primary =
             fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 2 };
-        let expected_cbw = fidl_ieee80211::ChannelBandwidth::Cbw80P80;
-        let expected_secondary80 =
+        let expected_bandwidth = fidl_ieee80211::ChannelBandwidth::Cbw80P80;
+        let expected_vht_secondary_80_channel =
             fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 4 };
         fake_device
-            .set_channel(expected_channel, expected_cbw, expected_secondary80)
+            .set_channel(expected_primary, expected_bandwidth, expected_vht_secondary_80_channel)
             .await
             .expect("set_channel failed?");
         // Check the internal state.
-        assert_eq!(fake_device_state.lock().wlan_channel, expected_channel);
-        assert_eq!(fake_device_state.lock().cbw, expected_cbw);
-        assert_eq!(fake_device_state.lock().secondary80, expected_secondary80);
+        assert_eq!(fake_device_state.lock().primary_channel, expected_primary);
+        assert_eq!(fake_device_state.lock().bandwidth, expected_bandwidth);
+        assert_eq!(
+            fake_device_state.lock().vht_secondary_80_channel,
+            expected_vht_secondary_80_channel
+        );
     }
 
     #[fuchsia::test(allow_stalls = false)]

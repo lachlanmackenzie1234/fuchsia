@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet, hash_map};
 use std::mem;
 use std::sync::{Arc, LazyLock};
 use wlan_common::bss::BssDescription;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::ie::IesMerger;
 
 type ScanTxnId = u64;
@@ -484,10 +484,18 @@ static CANDIDATE_PRIMARY_CHANNELS: LazyLock<&'static [Channel]> = LazyLock::new(
 
     let mut channels_to_scan = Vec::new();
     for channel in channels_two_ghz {
-        channels_to_scan.push(Channel::new(channel, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz));
+        channels_to_scan.push(Channel::new(
+            channel,
+            Bandwidth::Cbw20,
+            fidl_ieee80211::WlanBand::TwoGhz,
+        ));
     }
     for channel in channels_five_ghz {
-        channels_to_scan.push(Channel::new(channel, Cbw::Cbw20, fidl_ieee80211::WlanBand::FiveGhz));
+        channels_to_scan.push(Channel::new(
+            channel,
+            Bandwidth::Cbw20,
+            fidl_ieee80211::WlanBand::FiveGhz,
+        ));
     }
 
     channels_to_scan.leak()
@@ -599,31 +607,31 @@ mod tests {
     ], vec![fake_bss_description!(Open, ssid: Ssid::try_from("baz").unwrap())] ;
                 "when latest BSS Description is new")]
     #[test_case(vec![
-        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Cbw::Cbw20, FiveGhz)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(165, Cbw::Cbw20, FiveGhz)),
-    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Cbw::Cbw20, FiveGhz))] ;
+        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Bandwidth::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(165, Bandwidth::Cbw20, FiveGhz)),
+    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(149, Bandwidth::Cbw20, FiveGhz))] ;
                 "when strong signal is first")]
     #[test_case(vec![
-        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Cbw::Cbw20, FiveGhz)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Cbw::Cbw20, FiveGhz)),
-    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz))];
+        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Bandwidth::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Bandwidth::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Bandwidth::Cbw20, FiveGhz)),
+    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Bandwidth::Cbw20, FiveGhz))];
                 "when strong signal is middle")]
     #[test_case(vec![
-        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Cbw::Cbw20, FiveGhz)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Cbw::Cbw20, FiveGhz)),
-        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz)),
-    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Cbw::Cbw20, FiveGhz))];
+        fake_fidl_bss_description!(Open, rssi_dbm: -84, channel: Channel::new(64, Bandwidth::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -80, channel: Channel::new(36, Bandwidth::Cbw20, FiveGhz)),
+        fake_fidl_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Bandwidth::Cbw20, FiveGhz)),
+    ], vec![fake_bss_description!(Open, rssi_dbm: -36, channel: Channel::new(50, Bandwidth::Cbw20, FiveGhz))];
                 "when strong signal is last")]
     #[test_case(vec![
         fake_fidl_bss_description!(Open, rssi_dbm: -84, ssid: Ssid::try_from("bar").unwrap(),
-                                   channel: Channel::new(149, Cbw::Cbw20, FiveGhz)),
+                                   channel: Channel::new(149, Bandwidth::Cbw20, FiveGhz)),
         fake_fidl_bss_description!(Open, rssi_dbm: -36, ssid: Ssid::try_from("bar").unwrap(),
-                                   channel: Channel::new(165, Cbw::Cbw20, FiveGhz)),
+                                   channel: Channel::new(165, Bandwidth::Cbw20, FiveGhz)),
         fake_fidl_bss_description!(Open, rssi_dbm: -40, ssid: Ssid::try_from("baz").unwrap(),
-                                   channel: Channel::new(165, Cbw::Cbw20, FiveGhz)),
+                                   channel: Channel::new(165, Bandwidth::Cbw20, FiveGhz)),
     ], vec![fake_bss_description!(Open, rssi_dbm: -40, ssid: Ssid::try_from("baz").unwrap(),
-                                  channel: Channel::new(165, Cbw::Cbw20, FiveGhz))];
+                                  channel: Channel::new(165, Bandwidth::Cbw20, FiveGhz))];
                 "overwrite latest chosen channel")]
     fn deduplicate_by_bssid(
         bss_description_list_from_mlme: Vec<fidl_ieee80211::BssDescription>,

@@ -502,7 +502,7 @@ mod tests {
     use rand::Rng;
     use std::pin::pin;
     use test_case::test_case;
-    use wlan_common::channel::Cbw;
+    use wlan_common::channel::Bandwidth;
     use wlan_common::sequestered::Sequestered;
     use wlan_common::{RadioConfig, random_fidl_bss_description};
 
@@ -1239,7 +1239,7 @@ mod tests {
             credential: vec![],
             radio_config: RadioConfig::new(
                 fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
-                Cbw::Cbw20,
+                Bandwidth::Cbw20,
                 6,
                 fidl_fuchsia_wlan_ieee80211::WlanBand::TwoGhz,
             ),

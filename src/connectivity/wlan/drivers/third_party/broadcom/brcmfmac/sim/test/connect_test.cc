@@ -150,9 +150,10 @@ class ConnectTest : public SimTest {
   struct ConnectContext {
     // Information about the BSS we are attempting to associate with. Used to generate the
     // appropriate MLME calls (Join => Auth => Assoc).
-    simulation::WlanTxInfo tx_info = {.channel = kDefaultChannel,
-                                      .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-                                      .secondary80 = {.band = kDefaultChannel.band, .number = 0}};
+    simulation::WlanTxInfo tx_info = {
+        .primary_channel = kDefaultChannel,
+        .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+        .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
     common::MacAddr bssid = kDefaultBssid;
     fuchsia_wlan_ieee80211::Ssid ssid = kDefaultSsid;
     std::vector<uint8_t> ies = std::vector<uint8_t>(kIes, kIes + sizeof(kIes));
@@ -187,9 +188,9 @@ class ConnectTest : public SimTest {
   };
 
   struct AssocRespInfo {
-    fuchsia_wlan_ieee80211::wire::ChannelNumber channel;
-    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw;
-    fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
+    fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
+    fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
     common::MacAddr src;
     common::MacAddr dst;
     wlan_ieee80211::StatusCode status;
@@ -300,9 +301,9 @@ void ConnectTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
 
   if (mgmt_frame->MgmtFrameType() == simulation::SimManagementFrame::FRAME_TYPE_ASSOC_RESP) {
     auto assoc_resp = std::static_pointer_cast<const simulation::SimAssocRespFrame>(mgmt_frame);
-    AssocRespInfo resp_info = {.channel = info->channel,
-                               .cbw = info->cbw,
-                               .secondary80 = info->secondary80,
+    AssocRespInfo resp_info = {.primary = info->primary,
+                               .bandwidth = info->bandwidth,
+                               .vht_secondary_80_channel = info->vht_secondary_80_channel,
                                .src = assoc_resp->src_addr_,
                                .dst = assoc_resp->dst_addr_,
                                .status = assoc_resp->status_};
@@ -441,7 +442,7 @@ void ConnectTest::StartConnect() {
 
   std::memcpy(bss.bssid.data(), context_.bssid.byte, ETH_ALEN);
   bss.ies = fidl::VectorView<uint8_t>(client_ifc_.test_arena_, context_.ies);
-  bss.primary = context_.tx_info.channel;
+  bss.primary = context_.tx_info.primary_channel;
   builder.selected_bss(bss);
   builder.auth_type(wlan_fullmac_wire::WlanAuthType::kOpenSystem);
   builder.connect_failure_timeout(1000);  // ~1s (although value is ignored for now)
@@ -811,9 +812,11 @@ TEST_F(ConnectTest, NoAps) {
   context_.bssid = kBssid;
   context_.expected_results.push_front(wlan_ieee80211::StatusCode::kRejectedSequenceTimeout);
   context_.ssid = {'T', 'e', 's', 't', 'A', 'P'};
-  context_.tx_info.channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
-  context_.tx_info.cbw = wlan_ieee80211::ChannelBandwidth::kCbw20;
-  context_.tx_info.secondary80 = {.band = context_.tx_info.channel.band, .number = 0};
+  context_.tx_info.primary_channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+                                      .number = 9};
+  context_.tx_info.bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20;
+  context_.tx_info.vht_secondary_80_channel = {.band = context_.tx_info.primary_channel.band,
+                                               .number = 0};
 
   env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
 

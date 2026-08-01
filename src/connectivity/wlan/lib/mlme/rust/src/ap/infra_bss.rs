@@ -694,12 +694,12 @@ mod tests {
         {
             let state = fake_device_state.lock();
             assert_eq!(
-                state.wlan_channel,
+                state.primary_channel,
                 fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 1 }
             );
-            assert_eq!(state.cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+            assert_eq!(state.bandwidth, fidl_ieee80211::ChannelBandwidth::Cbw20);
             assert_eq!(
-                state.secondary80,
+                state.vht_secondary_80_channel,
                 fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
             );
         }

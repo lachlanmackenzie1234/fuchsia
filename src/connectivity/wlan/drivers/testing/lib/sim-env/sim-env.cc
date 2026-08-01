@@ -73,9 +73,9 @@ void Environment::Tx(const SimFrame& frame, const WlanTxInfo& tx_info, StationIf
       double signal_strength =
           signal_loss_model_->CalcSignalStrength(&stations_.at(sender), &stations_.at(sta));
       auto rx_info = std::make_shared<WlanRxInfo>();
-      rx_info->channel = tx_info.channel;
-      rx_info->cbw = tx_info.cbw;
-      rx_info->secondary80 = tx_info.secondary80;
+      rx_info->primary = tx_info.primary_channel;
+      rx_info->bandwidth = tx_info.bandwidth;
+      rx_info->vht_secondary_80_channel = tx_info.vht_secondary_80_channel;
       rx_info->signal_strength = signal_strength;
       rx_info->noise_level = kNoiseLevel;
       // Only deliver frame if the station is sensitive enough to pick it up

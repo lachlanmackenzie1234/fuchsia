@@ -27,7 +27,7 @@ pub type ClientState = fidl_policy::WlanClientState;
 pub type DisconnectStatus = fidl_policy::DisconnectStatus;
 pub type Compatibility = fidl_policy::Compatibility;
 pub type WlanChan = wlan_common::channel::Channel;
-pub type Cbw = wlan_common::channel::Cbw;
+pub type Bandwidth = wlan_common::channel::Bandwidth;
 pub use ieee80211::{Bssid, Ssid};
 pub type DisconnectReason = PolicyDisconnectionMigratedMetricDimensionReason;
 pub type ConnectReason = PolicyConnectionAttemptMigratedMetricDimensionReason;

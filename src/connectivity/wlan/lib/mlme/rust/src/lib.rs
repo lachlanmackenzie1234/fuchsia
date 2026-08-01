@@ -441,7 +441,7 @@ pub mod test_utils {
     }
 
     pub(crate) fn fake_wlan_channel() -> channel::Channel {
-        channel::Channel::new(1, channel::Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz)
+        channel::Channel::new(1, channel::Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz)
     }
 
     #[derive(Copy, Clone, Debug)]

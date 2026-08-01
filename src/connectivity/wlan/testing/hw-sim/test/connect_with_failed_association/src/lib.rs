@@ -9,7 +9,7 @@ use fidl_test_wlan_realm::WlanConfig;
 use ieee80211::{Bssid, Ssid};
 use std::pin::pin;
 use wlan_common::bss::Protection;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_hw_sim::event::{Handler, action, branch};
 use wlan_hw_sim::*;
 
@@ -103,7 +103,7 @@ async fn connect_with_failed_association() {
                 &phy,
                 &AP_SSID,
                 &bssid,
-                &Channel::new(1, Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+                &Channel::new(1, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
             ),
             save_network_fut,
         )

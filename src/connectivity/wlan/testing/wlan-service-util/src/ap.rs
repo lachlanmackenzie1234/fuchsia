@@ -63,7 +63,7 @@ pub async fn start(
             phy: fidl_ieee80211::WlanPhyType::Ht,
             primary: wlan_common::channel::Channel::new(
                 channel,
-                wlan_common::channel::Cbw::Cbw20,
+                wlan_common::channel::Bandwidth::Cbw20,
                 band,
             )
             .into(),
@@ -152,7 +152,7 @@ mod tests {
                 phy: fidl_ieee80211::WlanPhyType::Ht,
                 channel: wlan_common::channel::Channel::new(
                     channel,
-                    wlan_common::channel::Cbw::Cbw20,
+                    wlan_common::channel::Bandwidth::Cbw20,
                     band,
                 )
                 .into(),

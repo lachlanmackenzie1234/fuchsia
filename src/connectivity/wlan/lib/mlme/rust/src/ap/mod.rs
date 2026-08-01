@@ -21,7 +21,7 @@ use ieee80211::{Bssid, MacAddr, Ssid};
 use log::{debug, error, info, trace, warn};
 use std::fmt;
 use wlan_common::TimeUnit;
-use wlan_common::channel::{Cbw, Channel};
+use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::mac::{self, CapabilityInfo};
 use wlan_common::timer::Timer;
 use wlan_trace as wtrace;
@@ -232,10 +232,10 @@ impl<D: DeviceOps> Ap<D> {
             return Ok(());
         }
 
-        let cbw = Cbw::from_fidl(req.bandwidth, 0).map_err(|e| {
-            Error::Status(format!("failed to parse cbw: {}", e), zx::Status::INVALID_ARGS)
+        let bandwidth = Bandwidth::from_fidl(req.bandwidth, 0).map_err(|e| {
+            Error::Status(format!("failed to parse bandwidth: {}", e), zx::Status::INVALID_ARGS)
         })?;
-        let channel = Channel::new(req.primary.number, cbw, req.primary.band);
+        let channel = Channel::new(req.primary.number, bandwidth, req.primary.band);
         self.bss.replace(
             InfraBss::new(
                 &mut self.ctx,
@@ -847,12 +847,12 @@ mod tests {
         {
             let state = fake_device_state.lock();
             assert_eq!(
-                state.wlan_channel,
+                state.primary_channel,
                 fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 2 }
             );
-            assert_eq!(state.cbw, fidl_ieee80211::ChannelBandwidth::Cbw20);
+            assert_eq!(state.bandwidth, fidl_ieee80211::ChannelBandwidth::Cbw20);
             assert_eq!(
-                state.secondary80,
+                state.vht_secondary_80_channel,
                 fidl_ieee80211::ChannelNumber { band: fidl_ieee80211::WlanBand::TwoGhz, number: 0 }
             );
         }

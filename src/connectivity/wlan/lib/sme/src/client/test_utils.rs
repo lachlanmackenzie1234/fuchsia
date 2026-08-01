@@ -27,7 +27,11 @@ pub fn fake_serving_ap_info() -> ServingApInfo {
         rssi_dbm: 0,
         snr_db: 0,
         signal_report_time: zx::MonotonicInstant::ZERO,
-        channel: channel::Channel::new(1, channel::Cbw::Cbw20, fidl_ieee80211::WlanBand::TwoGhz),
+        channel: channel::Channel::new(
+            1,
+            channel::Bandwidth::Cbw20,
+            fidl_ieee80211::WlanBand::TwoGhz,
+        ),
         protection: Protection::Wpa2Personal,
         ht_cap: Some(fidl_ieee80211::HtCapabilities { bytes: fake_ht_cap_bytes() }),
         vht_cap: Some(fidl_ieee80211::VhtCapabilities { bytes: fake_vht_cap_bytes() }),

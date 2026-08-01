@@ -23,42 +23,42 @@ pub const INVALID_CHAN_IDX: u8 = 0;
 /// channel index corresponding to the center frequency
 /// of the secondary consecutive frequency segment.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
-pub enum Cbw {
+pub enum Bandwidth {
     Cbw20,
     Cbw40, // Same as Cbw40Above
     Cbw40Below,
     Cbw80,
     Cbw160,
-    Cbw80P80 { secondary80: u8 },
+    Cbw80P80 { vht_secondary_80_channel: u8 },
 }
 
-impl Cbw {
+impl Bandwidth {
     // TODO(https://fxbug.dev/42164482): Implement `From `instead.
     pub fn to_fidl(&self) -> (fidl_ieee80211::ChannelBandwidth, u8) {
         match self {
-            Cbw::Cbw20 => (fidl_ieee80211::ChannelBandwidth::Cbw20, 0),
-            Cbw::Cbw40 => (fidl_ieee80211::ChannelBandwidth::Cbw40, 0),
-            Cbw::Cbw40Below => (fidl_ieee80211::ChannelBandwidth::Cbw40Below, 0),
-            Cbw::Cbw80 => (fidl_ieee80211::ChannelBandwidth::Cbw80, 0),
-            Cbw::Cbw160 => (fidl_ieee80211::ChannelBandwidth::Cbw160, 0),
-            Cbw::Cbw80P80 { secondary80 } => {
-                (fidl_ieee80211::ChannelBandwidth::Cbw80P80, *secondary80)
+            Bandwidth::Cbw20 => (fidl_ieee80211::ChannelBandwidth::Cbw20, 0),
+            Bandwidth::Cbw40 => (fidl_ieee80211::ChannelBandwidth::Cbw40, 0),
+            Bandwidth::Cbw40Below => (fidl_ieee80211::ChannelBandwidth::Cbw40Below, 0),
+            Bandwidth::Cbw80 => (fidl_ieee80211::ChannelBandwidth::Cbw80, 0),
+            Bandwidth::Cbw160 => (fidl_ieee80211::ChannelBandwidth::Cbw160, 0),
+            Bandwidth::Cbw80P80 { vht_secondary_80_channel } => {
+                (fidl_ieee80211::ChannelBandwidth::Cbw80P80, *vht_secondary_80_channel)
             }
         }
     }
 
     pub fn from_fidl(
         fidl_cbw: fidl_ieee80211::ChannelBandwidth,
-        fidl_secondary80: u8,
+        fidl_vht_secondary_80_channel: u8,
     ) -> Result<Self, anyhow::Error> {
         match fidl_cbw {
-            fidl_ieee80211::ChannelBandwidth::Cbw20 => Ok(Cbw::Cbw20),
-            fidl_ieee80211::ChannelBandwidth::Cbw40 => Ok(Cbw::Cbw40),
-            fidl_ieee80211::ChannelBandwidth::Cbw40Below => Ok(Cbw::Cbw40Below),
-            fidl_ieee80211::ChannelBandwidth::Cbw80 => Ok(Cbw::Cbw80),
-            fidl_ieee80211::ChannelBandwidth::Cbw160 => Ok(Cbw::Cbw160),
+            fidl_ieee80211::ChannelBandwidth::Cbw20 => Ok(Bandwidth::Cbw20),
+            fidl_ieee80211::ChannelBandwidth::Cbw40 => Ok(Bandwidth::Cbw40),
+            fidl_ieee80211::ChannelBandwidth::Cbw40Below => Ok(Bandwidth::Cbw40Below),
+            fidl_ieee80211::ChannelBandwidth::Cbw80 => Ok(Bandwidth::Cbw80),
+            fidl_ieee80211::ChannelBandwidth::Cbw160 => Ok(Bandwidth::Cbw160),
             fidl_ieee80211::ChannelBandwidth::Cbw80P80 => {
-                Ok(Cbw::Cbw80P80 { secondary80: fidl_secondary80 })
+                Ok(Bandwidth::Cbw80P80 { vht_secondary_80_channel: fidl_vht_secondary_80_channel })
             }
             fidl_ieee80211::ChannelBandwidthUnknown!() => {
                 Err(format_err!("Unknown channel bandwidth from fidl: {:?}", fidl_cbw))
@@ -74,33 +74,35 @@ impl Cbw {
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Channel {
     pub primary: u8,
-    pub cbw: Cbw,
+    pub bandwidth: Bandwidth,
     pub band: fidl_ieee80211::WlanBand,
 }
 
 // Fuchsia's short CBW notation. Not IEEE standard.
-impl fmt::Display for Cbw {
+impl fmt::Display for Bandwidth {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Cbw::Cbw20 => write!(f, ""),       // Vanilla plain 20 MHz bandwidth
-            Cbw::Cbw40 => write!(f, "+"),      // SCA, often denoted by "+1"
-            Cbw::Cbw40Below => write!(f, "-"), // SCB, often denoted by "-1",
-            Cbw::Cbw80 => write!(f, "V"),      // VHT 80 MHz (V from VHT)
-            Cbw::Cbw160 => write!(f, "W"),     // VHT 160 MHz (as Wide as V + V ;) )
-            Cbw::Cbw80P80 { secondary80 } => write!(f, "+{}P", secondary80), // VHT 80Plus80 (not often obvious, but P is the first alphabet)
+            Bandwidth::Cbw20 => write!(f, ""), // Vanilla plain 20 MHz bandwidth
+            Bandwidth::Cbw40 => write!(f, "+"), // SCA, often denoted by "+1"
+            Bandwidth::Cbw40Below => write!(f, "-"), // SCB, often denoted by "-1",
+            Bandwidth::Cbw80 => write!(f, "V"), // VHT 80 MHz (V from VHT)
+            Bandwidth::Cbw160 => write!(f, "W"), // VHT 160 MHz (as Wide as V + V ;) )
+            Bandwidth::Cbw80P80 { vht_secondary_80_channel } => {
+                write!(f, "+{}P", vht_secondary_80_channel)
+            } // VHT 80Plus80 (not often obvious, but P is the first alphabet)
         }
     }
 }
 
 impl fmt::Display for Channel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{} ({:?})", self.primary, self.cbw, self.band)
+        write!(f, "{}{} ({:?})", self.primary, self.bandwidth, self.band)
     }
 }
 
 impl Channel {
-    pub const fn new(primary: u8, cbw: Cbw, band: fidl_ieee80211::WlanBand) -> Self {
-        Channel { primary, cbw, band }
+    pub const fn new(primary: u8, bandwidth: Bandwidth, band: fidl_ieee80211::WlanBand) -> Self {
+        Channel { primary, bandwidth, band }
     }
 
     fn get_band_start_freq(&self) -> Result<MHz, anyhow::Error> {
@@ -125,11 +127,11 @@ impl Channel {
         }
 
         let p = self.primary;
-        match self.cbw {
-            Cbw::Cbw20 => Ok(p),
-            Cbw::Cbw40 => Ok(p + 2),
-            Cbw::Cbw40Below => Ok(p - 2),
-            Cbw::Cbw80 | Cbw::Cbw80P80 { .. } => match p {
+        match self.bandwidth {
+            Bandwidth::Cbw20 => Ok(p),
+            Bandwidth::Cbw40 => Ok(p + 2),
+            Bandwidth::Cbw40Below => Ok(p - 2),
+            Bandwidth::Cbw80 | Bandwidth::Cbw80P80 { .. } => match p {
                 36..=48 => Ok(42),
                 52..=64 => Ok(58),
                 100..=112 => Ok(106),
@@ -143,7 +145,7 @@ impl Channel {
                     ));
                 }
             },
-            Cbw::Cbw160 => {
+            Bandwidth::Cbw160 => {
                 // See IEEE Std 802.11-2016 Table 9-252 and 9-253.
                 // Note CBW160 has only one frequency segment, regardless of
                 // encodings on CCFS0 and CCFS1 in VHT Operation Information IE.
@@ -181,18 +183,18 @@ impl Channel {
     pub fn from_fidl(
         fidl_channel: fidl_ieee80211::ChannelNumber,
         fidl_cbw: fidl_ieee80211::ChannelBandwidth,
-        fidl_secondary80: fidl_ieee80211::ChannelNumber,
+        fidl_vht_secondary_80_channel: fidl_ieee80211::ChannelNumber,
     ) -> Result<Self, anyhow::Error> {
         if fidl_cbw == fidl_ieee80211::ChannelBandwidth::Cbw80P80 {
-            if fidl_secondary80.band != fidl_channel.band {
+            if fidl_vht_secondary_80_channel.band != fidl_channel.band {
                 return Err(format_err!(
-                    "secondary80 band ({:?}) does not match primary band ({:?})",
-                    fidl_secondary80.band,
+                    "vht_secondary_80_channel band ({:?}) does not match primary band ({:?})",
+                    fidl_vht_secondary_80_channel.band,
                     fidl_channel.band
                 ));
             }
         }
-        let cbw = Cbw::from_fidl(fidl_cbw, fidl_secondary80.number)?;
+        let cbw = Bandwidth::from_fidl(fidl_cbw, fidl_vht_secondary_80_channel.number)?;
         Ok(Channel::new(fidl_channel.number, cbw, fidl_channel.band))
     }
 }
@@ -227,7 +229,7 @@ pub fn derive_channel(
             derive_wide_channel_bandwidth(vht_cbw_and_segs, sec_chan_offset)
         }
         // Default to Cbw20 if HT CBW field is set to 0 or not present.
-        _ => Cbw::Cbw20,
+        _ => Bandwidth::Cbw20,
     };
 
     Channel::new(primary, cbw, rx_primary_channel.band)
@@ -243,22 +245,22 @@ pub fn derive_channel(
 pub fn derive_wide_channel_bandwidth(
     vht_cbw_and_segs: Option<(ie::VhtChannelBandwidth, u8, u8)>,
     sec_chan_offset: ie::SecChanOffset,
-) -> Cbw {
+) -> Bandwidth {
     use ie::VhtChannelBandwidth as Vcb;
     match vht_cbw_and_segs {
-        Some((Vcb::CBW_80_160_80P80, _, 0)) => Cbw::Cbw80,
-        Some((Vcb::CBW_80_160_80P80, seg0, seg1)) if abs_sub(seg0, seg1) == 8 => Cbw::Cbw160,
+        Some((Vcb::CBW_80_160_80P80, _, 0)) => Bandwidth::Cbw80,
+        Some((Vcb::CBW_80_160_80P80, seg0, seg1)) if abs_sub(seg0, seg1) == 8 => Bandwidth::Cbw160,
         Some((Vcb::CBW_80_160_80P80, seg0, seg1)) if abs_sub(seg0, seg1) > 16 => {
             // See IEEE 802.11-2016, Table 9-252, about channel center frequency segment 1
-            Cbw::Cbw80P80 { secondary80: seg1 }
+            Bandwidth::Cbw80P80 { vht_secondary_80_channel: seg1 }
         }
         // Use HT CBW if
         // - VHT op is not present, or
         // - VHT CBW field is set to 0
         _ => match sec_chan_offset {
-            ie::SecChanOffset::SECONDARY_ABOVE => Cbw::Cbw40,
-            ie::SecChanOffset::SECONDARY_BELOW => Cbw::Cbw40Below,
-            ie::SecChanOffset::SECONDARY_NONE | _ => Cbw::Cbw20,
+            ie::SecChanOffset::SECONDARY_ABOVE => Bandwidth::Cbw40,
+            ie::SecChanOffset::SECONDARY_BELOW => Bandwidth::Cbw40Below,
+            ie::SecChanOffset::SECONDARY_NONE | _ => Bandwidth::Cbw20,
         },
     }
 }
@@ -299,11 +301,11 @@ mod tests {
 
     #[test]
     fn fmt_display() {
-        let mut c = Channel::new(100, Cbw::Cbw40, FiveGhz);
+        let mut c = Channel::new(100, Bandwidth::Cbw40, FiveGhz);
         assert_eq!(format!("{}", c), "100+ (FiveGhz)");
-        c.cbw = Cbw::Cbw160;
+        c.bandwidth = Bandwidth::Cbw160;
         assert_eq!(format!("{}", c), "100W (FiveGhz)");
-        c.cbw = Cbw::Cbw80P80 { secondary80: 200 };
+        c.bandwidth = Bandwidth::Cbw80P80 { vht_secondary_80_channel: 200 };
         assert_eq!(format!("{}", c), "100+200P (FiveGhz)");
     }
 
@@ -311,26 +313,29 @@ mod tests {
     fn test_band_start_freq() {
         assert_eq!(
             BASE_FREQ_2GHZ,
-            Channel::new(1, Cbw::Cbw20, TwoGhz).get_band_start_freq().unwrap()
+            Channel::new(1, Bandwidth::Cbw20, TwoGhz).get_band_start_freq().unwrap()
         );
         assert_eq!(
             BASE_FREQ_5GHZ,
-            Channel::new(100, Cbw::Cbw20, FiveGhz).get_band_start_freq().unwrap()
+            Channel::new(100, Bandwidth::Cbw20, FiveGhz).get_band_start_freq().unwrap()
         );
     }
 
     #[test]
     fn test_get_center_chan_idx() {
-        assert!(Channel::new(1, Cbw::Cbw80, TwoGhz).get_center_chan_idx().is_err());
-        assert_eq!(9, Channel::new(11, Cbw::Cbw40Below, TwoGhz).get_center_chan_idx().unwrap());
-        assert_eq!(8, Channel::new(6, Cbw::Cbw40, TwoGhz).get_center_chan_idx().unwrap());
-        assert_eq!(36, Channel::new(36, Cbw::Cbw20, FiveGhz).get_center_chan_idx().unwrap());
-        assert_eq!(38, Channel::new(36, Cbw::Cbw40, FiveGhz).get_center_chan_idx().unwrap());
-        assert_eq!(42, Channel::new(36, Cbw::Cbw80, FiveGhz).get_center_chan_idx().unwrap());
-        assert_eq!(50, Channel::new(36, Cbw::Cbw160, FiveGhz).get_center_chan_idx().unwrap());
+        assert!(Channel::new(1, Bandwidth::Cbw80, TwoGhz).get_center_chan_idx().is_err());
+        assert_eq!(
+            9,
+            Channel::new(11, Bandwidth::Cbw40Below, TwoGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(8, Channel::new(6, Bandwidth::Cbw40, TwoGhz).get_center_chan_idx().unwrap());
+        assert_eq!(36, Channel::new(36, Bandwidth::Cbw20, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(38, Channel::new(36, Bandwidth::Cbw40, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(42, Channel::new(36, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(50, Channel::new(36, Bandwidth::Cbw160, FiveGhz).get_center_chan_idx().unwrap());
         assert_eq!(
             42,
-            Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz)
+            Channel::new(36, Bandwidth::Cbw80P80 { vht_secondary_80_channel: 155 }, FiveGhz)
                 .get_center_chan_idx()
                 .unwrap()
         );
@@ -338,20 +343,41 @@ mod tests {
 
     #[test]
     fn test_get_center_freq() {
-        assert_eq!(2412 as MHz, Channel::new(1, Cbw::Cbw20, TwoGhz).get_center_freq().unwrap());
-        assert_eq!(2437 as MHz, Channel::new(6, Cbw::Cbw20, TwoGhz).get_center_freq().unwrap());
-        assert_eq!(2447 as MHz, Channel::new(6, Cbw::Cbw40, TwoGhz).get_center_freq().unwrap());
+        assert_eq!(
+            2412 as MHz,
+            Channel::new(1, Bandwidth::Cbw20, TwoGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            2437 as MHz,
+            Channel::new(6, Bandwidth::Cbw20, TwoGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            2447 as MHz,
+            Channel::new(6, Bandwidth::Cbw40, TwoGhz).get_center_freq().unwrap()
+        );
         assert_eq!(
             2427 as MHz,
-            Channel::new(6, Cbw::Cbw40Below, TwoGhz).get_center_freq().unwrap()
+            Channel::new(6, Bandwidth::Cbw40Below, TwoGhz).get_center_freq().unwrap()
         );
-        assert_eq!(5180 as MHz, Channel::new(36, Cbw::Cbw20, FiveGhz).get_center_freq().unwrap());
-        assert_eq!(5190 as MHz, Channel::new(36, Cbw::Cbw40, FiveGhz).get_center_freq().unwrap());
-        assert_eq!(5210 as MHz, Channel::new(36, Cbw::Cbw80, FiveGhz).get_center_freq().unwrap());
-        assert_eq!(5250 as MHz, Channel::new(36, Cbw::Cbw160, FiveGhz).get_center_freq().unwrap());
+        assert_eq!(
+            5180 as MHz,
+            Channel::new(36, Bandwidth::Cbw20, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5190 as MHz,
+            Channel::new(36, Bandwidth::Cbw40, FiveGhz).get_center_freq().unwrap()
+        );
         assert_eq!(
             5210 as MHz,
-            Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }, FiveGhz)
+            Channel::new(36, Bandwidth::Cbw80, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5250 as MHz,
+            Channel::new(36, Bandwidth::Cbw160, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5210 as MHz,
+            Channel::new(36, Bandwidth::Cbw80P80 { vht_secondary_80_channel: 155 }, FiveGhz)
                 .get_center_freq()
                 .unwrap()
         );
@@ -392,7 +418,7 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(channel, Channel::new(RX_PRIMARY_CHAN, Cbw::Cbw20, TwoGhz));
+        assert_eq!(channel, Channel::new(RX_PRIMARY_CHAN, Bandwidth::Cbw20, TwoGhz));
     }
 
     #[test]
@@ -403,12 +429,12 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(channel, Channel::new(6, Cbw::Cbw20, TwoGhz));
+        assert_eq!(channel, Channel::new(6, Bandwidth::Cbw20, TwoGhz));
     }
 
     #[test]
     fn test_derive_channel_with_ht_20mhz() {
-        let expected_channel = Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw20, FiveGhz);
+        let expected_channel = Channel::new(HT_PRIMARY_CHAN, Bandwidth::Cbw20, FiveGhz);
 
         let test_params = [
             (ie::StaChanWidth::TWENTY_MHZ, ie::SecChanOffset::SECONDARY_NONE),
@@ -439,7 +465,7 @@ mod tests {
             Some(ht_op),
             None,
         );
-        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw40, FiveGhz));
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Bandwidth::Cbw40, FiveGhz));
     }
 
     #[test]
@@ -452,7 +478,7 @@ mod tests {
             Some(ht_op),
             None,
         );
-        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw40Below, FiveGhz));
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Bandwidth::Cbw40Below, FiveGhz));
     }
 
     #[test]
@@ -466,7 +492,7 @@ mod tests {
             Some(ht_op),
             Some(vht_op),
         );
-        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw80, FiveGhz));
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Bandwidth::Cbw80, FiveGhz));
     }
 
     #[test]
@@ -480,7 +506,7 @@ mod tests {
             Some(ht_op),
             Some(vht_op),
         );
-        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw160, FiveGhz));
+        assert_eq!(channel, Channel::new(HT_PRIMARY_CHAN, Bandwidth::Cbw160, FiveGhz));
     }
 
     #[test]
@@ -496,20 +522,24 @@ mod tests {
         );
         assert_eq!(
             channel,
-            Channel::new(HT_PRIMARY_CHAN, Cbw::Cbw80P80 { secondary80: 1 }, FiveGhz)
+            Channel::new(
+                HT_PRIMARY_CHAN,
+                Bandwidth::Cbw80P80 { vht_secondary_80_channel: 1 },
+                FiveGhz
+            )
         );
     }
 
     #[test]
     fn test_derive_channel_none() {
         let channel = derive_channel(rx_channel(8, TwoGhz), None, None, None);
-        assert_eq!(channel, Channel::new(8, Cbw::Cbw20, TwoGhz));
+        assert_eq!(channel, Channel::new(8, Bandwidth::Cbw20, TwoGhz));
     }
 
     #[test]
     fn test_derive_channel_no_rx_primary() {
         let channel = derive_channel(rx_channel(8, TwoGhz), Some(6), None, None);
-        assert_eq!(channel, Channel::new(6, Cbw::Cbw20, TwoGhz))
+        assert_eq!(channel, Channel::new(6, Bandwidth::Cbw20, TwoGhz))
     }
 
     fn ht_op(

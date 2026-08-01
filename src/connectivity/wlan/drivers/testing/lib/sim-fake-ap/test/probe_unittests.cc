@@ -24,9 +24,9 @@ using ::testing::NotNull;
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kAp1Channel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
 constexpr simulation::WlanTxInfo kAp1TxInfo = {
-    .channel = kAp1Channel,
-    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = kAp1Channel.band, .number = 0}};
+    .primary_channel = kAp1Channel,
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kAp1Channel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kAp1Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '1'};
 const common::MacAddr kAp1Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
@@ -34,9 +34,9 @@ const common::MacAddr kAp1Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kAp2Channel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10};
 constexpr simulation::WlanTxInfo kAp2TxInfo = {
-    .channel = kAp2Channel,
-    .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-    .secondary80 = {.band = kAp2Channel.band, .number = 0}};
+    .primary_channel = kAp2Channel,
+    .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+    .vht_secondary_80_channel = {.band = kAp2Channel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kAp2Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '2'};
 const common::MacAddr kAp2Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xcc});
@@ -80,7 +80,7 @@ void ProbeTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
   }
 
   probe_resp_count_++;
-  channel_resp_list_.push_back(info->channel);
+  channel_resp_list_.push_back(info->primary);
   sig_strength_resp_list.push_back(info->signal_strength);
   auto probe_resp_frame = std::static_pointer_cast<const simulation::SimProbeRespFrame>(mgmt_frame);
   bssid_resp_list_.push_back(probe_resp_frame->src_addr_);
@@ -107,9 +107,10 @@ void compareSsid(const fuchsia_wlan_ieee80211::Ssid& ssid1,
  */
 TEST_F(ProbeTest, DifferentChannel) {
   constexpr simulation::WlanTxInfo kWrongChannelTxInfo = {
-      .channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11},
-      .cbw = wlan_ieee80211::ChannelBandwidth::kCbw20,
-      .secondary80 = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 0}};
+      .primary_channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11},
+      .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
+      .vht_secondary_80_channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
+                                   .number = 0}};
 
   simulation::SimProbeReqFrame probe_req_frame(kClientMacAddr);
   env_.ScheduleNotification(
@@ -163,9 +164,9 @@ TEST_F(ProbeTest, TwoApsBasicUse) {
   ssid_resp_list_.pop_front();
   compareSsid(ssid_resp_list_.front(), kAp2Ssid);
 
-  compareChannel(channel_resp_list_.front(), kAp1TxInfo.channel);
+  compareChannel(channel_resp_list_.front(), kAp1TxInfo.primary_channel);
   channel_resp_list_.pop_front();
-  compareChannel(channel_resp_list_.front(), kAp2TxInfo.channel);
+  compareChannel(channel_resp_list_.front(), kAp2TxInfo.primary_channel);
 
   double close_signal_strength = sig_strength_resp_list.front();
   sig_strength_resp_list.pop_front();

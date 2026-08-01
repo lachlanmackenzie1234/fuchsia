@@ -44,7 +44,7 @@ pub fn construct_bss_description(
     let band = rx_info.primary.band;
     let channel = fidl_ieee80211::ChannelNumber { band, number: wlan_chan.primary };
 
-    let (channel_bandwidth, secondary80_num) = wlan_chan.cbw.to_fidl();
+    let (channel_bandwidth, secondary80_num) = wlan_chan.bandwidth.to_fidl();
     let secondary80 = fidl_ieee80211::ChannelNumber { band, number: secondary80_num };
 
     Ok(fidl_ieee80211::BssDescription {

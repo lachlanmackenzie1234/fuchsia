@@ -647,7 +647,7 @@ mod tests {
                 ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                 rssi_dbm: 0,
                 snr_db: 1,
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
             ),
         };
         let sme_result_2 = fidl_sme::ScanResult {
@@ -661,7 +661,7 @@ mod tests {
                 ssid: types::Ssid::try_from("unique ssid").unwrap(),
                 rssi_dbm: 7,
                 snr_db: 2,
-                channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
+                channel: types::WlanChan::new(8, types::Bandwidth::Cbw20, TwoGhz),
             ),
         };
         let sme_result_3 = fidl_sme::ScanResult {
@@ -676,7 +676,7 @@ mod tests {
                 ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                 rssi_dbm: 13,
                 snr_db: 3,
-                channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
+                channel: types::WlanChan::new(11, types::Bandwidth::Cbw20, TwoGhz),
             ),
         };
 
@@ -692,7 +692,7 @@ mod tests {
                         bssid: types::Bssid::from([0, 0, 0, 0, 0, 0]),
                         signal: types::Signal { rssi_dbm: 0, snr_db: 1 },
                         timestamp: zx::MonotonicInstant::from_nanos(sme_result_1.timestamp_nanos),
-                        channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
                         observation,
                         compatibility: Compatible::expect_ok([SecurityDescriptor::WPA3_PERSONAL]),
                         bss_description: sme_result_1.bss_description.clone().into(),
@@ -701,7 +701,7 @@ mod tests {
                         bssid: types::Bssid::from([7, 8, 9, 10, 11, 12]),
                         signal: types::Signal { rssi_dbm: 13, snr_db: 3 },
                         timestamp: zx::MonotonicInstant::from_nanos(sme_result_3.timestamp_nanos),
-                        channel: types::WlanChan::new(11, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(11, types::Bandwidth::Cbw20, TwoGhz),
                         observation,
                         compatibility: Incompatible::unknown(),
                         bss_description: sme_result_3.bss_description.clone().into(),
@@ -716,7 +716,7 @@ mod tests {
                     bssid: types::Bssid::from([1, 2, 3, 4, 5, 6]),
                     signal: types::Signal { rssi_dbm: 7, snr_db: 2 },
                     timestamp: zx::MonotonicInstant::from_nanos(sme_result_2.timestamp_nanos),
-                    channel: types::WlanChan::new(8, types::Cbw::Cbw20, TwoGhz),
+                    channel: types::WlanChan::new(8, types::Bandwidth::Cbw20, TwoGhz),
                     observation,
                     compatibility: Compatible::expect_ok([SecurityDescriptor::WPA2_PERSONAL]),
                     bss_description: sme_result_2.bss_description.clone().into(),
@@ -1120,7 +1120,7 @@ mod tests {
                 ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                 rssi_dbm: 0,
                 snr_db: 1,
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
             ),
         };
         let second_result = fidl_sme::ScanResult {
@@ -1134,7 +1134,7 @@ mod tests {
                 bssid: [1, 2, 3, 4, 5, 6],
                 rssi_dbm: 101,
                 snr_db: 101,
-                channel: types::WlanChan::new(101, types::Cbw::Cbw40, FiveGhz),
+                channel: types::WlanChan::new(101, types::Bandwidth::Cbw40, FiveGhz),
             ),
         };
 
@@ -1153,7 +1153,7 @@ mod tests {
                     ssid: types::Ssid::try_from("duplicated ssid").unwrap(),
                         rssi_dbm: 13,
                         snr_db: 3,
-                        channel: types::WlanChan::new(14, types::Cbw::Cbw20, TwoGhz),
+                        channel: types::WlanChan::new(14, types::Bandwidth::Cbw20, TwoGhz),
                 ),
             },
         ];
@@ -1170,7 +1170,7 @@ mod tests {
                 bssid: types::Bssid::from([0, 0, 0, 0, 0, 0]),
                 signal: types::Signal { rssi_dbm: 0, snr_db: 1 },
                 timestamp: zx::MonotonicInstant::from_nanos(first_result.timestamp_nanos),
-                channel: types::WlanChan::new(1, types::Cbw::Cbw20, TwoGhz),
+                channel: types::WlanChan::new(1, types::Bandwidth::Cbw20, TwoGhz),
                 observation: types::ScanObservation::Passive,
                 compatibility: Compatible::expect_ok([SecurityDescriptor::WPA3_PERSONAL]),
                 bss_description: first_result.bss_description.clone().into(),
@@ -1179,7 +1179,7 @@ mod tests {
                 bssid: types::Bssid::from([1, 2, 3, 4, 5, 6]),
                 signal: types::Signal { rssi_dbm: 101, snr_db: 101 },
                 timestamp: zx::MonotonicInstant::from_nanos(second_result.timestamp_nanos),
-                channel: types::WlanChan::new(101, types::Cbw::Cbw40, FiveGhz),
+                channel: types::WlanChan::new(101, types::Bandwidth::Cbw40, FiveGhz),
                 observation: types::ScanObservation::Passive,
                 compatibility: Compatible::expect_ok([SecurityDescriptor::WPA3_PERSONAL]),
                 bss_description: second_result.bss_description.clone().into(),

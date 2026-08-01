@@ -473,16 +473,16 @@ void iwl_mvm_rx_rx_mpdu(struct iwl_mvm *mvm, struct napi_struct *napi,
 
 	switch (rate_n_flags & RATE_MCS_CHAN_WIDTH_MSK) {
 	case RATE_MCS_CHAN_WIDTH_20:
-		rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW20;
+		rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW20;
 		break;
 	case RATE_MCS_CHAN_WIDTH_40:
-		rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW40;
+		rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW40;
 		break;
 	case RATE_MCS_CHAN_WIDTH_80:
-		rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW80;
+		rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW80;
 		break;
 	case RATE_MCS_CHAN_WIDTH_160:
-		rx_info.channel.cbw = CHANNEL_BANDWIDTH_CBW160;
+		rx_info.channel.bandwidth = CHANNEL_BANDWIDTH_CBW160;
 		break;
 	}
 
