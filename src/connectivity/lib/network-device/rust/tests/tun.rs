@@ -22,7 +22,7 @@ const DEFAULT_MTU: u32 = 1500;
 const DATA_BYTE: u8 = 42;
 const DATA_LEN: usize = 4;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_rx() {
     let (tun, _tun_port, port) = create_tun_device_and_port().await;
     let client = create_netdev_client(&tun);
@@ -57,7 +57,7 @@ async fn test_rx() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_tx() {
     let (tun, _tun_port, port) = create_tun_device_and_port().await;
     let client = create_netdev_client(&tun);
@@ -122,7 +122,7 @@ async fn echo(session: Session, port: Port, frame_count: u32) {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_echo_tun() {
     const FRAME_TOTAL_COUNT: u32 = 512;
     let (tun, _tun_port, port) = create_tun_device_and_port().await;
@@ -166,7 +166,7 @@ async fn test_echo_tun() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_echo_pair() {
     const FRAME_TOTAL_COUNT: u32 = 512;
     let pair = create_tun_device_pair();
@@ -247,7 +247,7 @@ async fn test_echo_pair() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_status_stream() {
     const TOGGLE_COUNT: usize = 3;
     let (tun, tun_port, port) = create_tun_device_and_port().await;
@@ -274,7 +274,7 @@ async fn test_status_stream() {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_port_stream() {
     let (_tun, mut stream, port) = {
         let (tun, _tun_port, port) = create_tun_device_and_port().await;
@@ -379,7 +379,7 @@ fn tx_wait_idle() {
     }));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn watch_rx_leases() {
     let (tun, _tun_port, port) = create_tun_device_and_port().await;
     let client = create_netdev_client(&tun);

@@ -15,7 +15,6 @@ use fidl_fuchsia_bluetooth_le::{
     ConnectionProxy, ManufacturerData, PeripheralError, PeripheralMarker, PeripheralProxy,
     ServiceData,
 };
-use fuchsia_async::{self as fasync};
 use fuchsia_bluetooth::assigned_numbers::find_service_uuid;
 use fuchsia_bluetooth::types::Uuid;
 use fuchsia_bluetooth::types::le::Peer;
@@ -229,7 +228,7 @@ async fn listen(
     Ok(())
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     // Extract arguments and perform additional transformation of incoming arguments
     let Opt {
@@ -454,7 +453,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_listen() {
         let (proxy, stream) = create_proxy_and_stream::<PeripheralMarker>();
 
@@ -487,7 +486,7 @@ mod tests {
         assert!(received_connection_options.bondable_mode.unwrap());
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_listen_peripheral_server_closes_immediately() {
         let (proxy, server) = create_proxy::<PeripheralMarker>();
 

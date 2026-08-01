@@ -18,7 +18,6 @@ use fidl_fuchsia_net_routes as froutes;
 use fidl_fuchsia_net_stack as fstack;
 use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use fidl_fuchsia_sys2 as fsys;
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_path;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::io::Write;
@@ -236,7 +235,7 @@ impl net_cli::ServiceConnector<fnet_migration::StateMarker> for Connector {
     }
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     logger_init();
     let command: net_cli::Command = argh::from_env();

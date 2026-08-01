@@ -1192,7 +1192,7 @@ mod tests {
     /// Tests full integration between [`Worker`] and [`Watcher`]s through basic
     /// state updates.
     #[fixture(with_worker)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn basic_state_updates(
         mut watcher_sink: WorkerWatcherSink,
         interface_sink: WorkerInterfaceSink,
@@ -1322,7 +1322,7 @@ mod tests {
 
     /// Tests [`Drop`] implementation for [`InterfaceEventProducer`].
     #[fixture(with_worker)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn drop_producer_removes_interface(
         mut watcher_sink: WorkerWatcherSink,
         interface_sink: WorkerInterfaceSink,
@@ -2385,7 +2385,7 @@ mod tests {
     }
 
     #[fixture(with_worker)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn watcher_enqueues_events(
         mut watcher_sink: WorkerWatcherSink,
         interface_sink: WorkerInterfaceSink,
@@ -2448,7 +2448,7 @@ mod tests {
     }
 
     #[fixture(with_worker)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn idle_watcher_gets_closed(
         mut watcher_sink: WorkerWatcherSink,
         interface_sink: WorkerInterfaceSink,
@@ -2500,7 +2500,7 @@ mod tests {
     }
 
     #[fixture(with_worker)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn address_sorting(
         mut watcher_sink: WorkerWatcherSink,
         interface_sink: WorkerInterfaceSink,
@@ -2557,7 +2557,7 @@ mod tests {
     }
 
     #[fixture(with_worker)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn watcher_disallows_double_get(
         mut watcher_sink: WorkerWatcherSink,
         _interface_sink: WorkerInterfaceSink,

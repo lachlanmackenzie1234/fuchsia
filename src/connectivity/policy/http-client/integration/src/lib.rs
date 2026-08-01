@@ -6,6 +6,8 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
+use fidl_fuchsia_net_http as http;
+use fuchsia_async as fasync;
 use fuchsia_component_test::ScopedInstance;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _, select};
@@ -13,7 +15,6 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::pin;
 use test_case::test_case;
-use {fidl_fuchsia_net_http as http, fuchsia_async as fasync};
 
 mod pkg;
 
@@ -215,14 +216,14 @@ async fn check_loader_http(loader: http::LoaderProxy, addr: SocketAddr) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_http(behavior: &str) {
     run(behavior, check_loader_http).await
 }
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_past_deadline(behavior: &str) {
     run(behavior, |loader, addr| async move {
         // Deadline expired 10 minutes ago!
@@ -240,7 +241,7 @@ async fn test_fetch_past_deadline(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_response_too_slow(behavior: &str) {
     run(behavior, |loader, addr| async move {
         // Deadline expires 100ms from now.
@@ -258,7 +259,7 @@ async fn test_fetch_response_too_slow(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_https(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let http::Response { error, body, .. } = loader
@@ -274,7 +275,7 @@ async fn test_fetch_https(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_start_http(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let (tx, rx) = fidl::endpoints::create_endpoints();
@@ -304,7 +305,7 @@ async fn test_start_http(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_redirect(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let response = loader
@@ -321,7 +322,7 @@ async fn test_fetch_redirect(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_start_redirect(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let (tx, rx) = fidl::endpoints::create_endpoints();
@@ -372,7 +373,7 @@ async fn test_start_redirect(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_see_other(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let response = loader
@@ -389,7 +390,7 @@ async fn test_fetch_see_other(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_start_see_other(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let (tx, rx) = fidl::endpoints::create_endpoints();
@@ -441,7 +442,7 @@ async fn test_start_see_other(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_max_redirect(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let http::Response { status_code, redirect, .. } = loader
@@ -465,7 +466,7 @@ async fn test_fetch_max_redirect(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_start_redirect_loop(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let (tx, rx) = fidl::endpoints::create_endpoints();
@@ -525,7 +526,7 @@ async fn test_start_redirect_loop(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_http_big_stream(behavior: &str) {
     run(behavior, |loader, addr| async move {
         let response = loader
@@ -542,7 +543,7 @@ async fn test_fetch_http_big_stream(behavior: &str) {
 
 /// Tests that the `http-client` component can actually stop if we configure it so.
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_http_client_stops(behavior: &str) {
     run_without_connecting(behavior, |addr, http_client| async move {
         let mut event_stream = EventStream::open().await.unwrap();
@@ -581,7 +582,7 @@ async fn test_http_client_stops(behavior: &str) {
 
 /// Tests that the `http-client` component doesn't stop if we configure it so.
 #[test_case("never_idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_http_client_never_stops(behavior: &str) {
     run_without_connecting(behavior, |addr, http_client| async move {
         let mut event_stream = EventStream::open().await.unwrap();
@@ -620,7 +621,7 @@ async fn test_http_client_never_stops(behavior: &str) {
 /// the derived `LoaderClient` connection has state/context associated with it, and we
 /// configure the `http-client.cm` to not stop if those connections are open.
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_http_long_start_call_blocks_stop(behavior: &str) {
     run_without_connecting(behavior, |addr, http_client| async move {
         let mut event_stream = EventStream::open().await.unwrap();
@@ -668,7 +669,7 @@ async fn test_fetch_http_long_start_call_blocks_stop(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_http_many_requests_at_different_intervals(behavior: &str) {
     run(behavior, |loader, addr| async move {
         // The http-client component may be configured to stop when idling for 1ms in the test,
@@ -683,7 +684,7 @@ async fn test_fetch_http_many_requests_at_different_intervals(behavior: &str) {
 
 #[test_case("never_idle")]
 #[test_case("idle_1ms")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_http_many_concurrent_connections_at_different_intervals(behavior: &str) {
     run_without_connecting(behavior, |addr, http_client| async move {
         // The http-client component may be configured to stop when idling for 1ms in the test,

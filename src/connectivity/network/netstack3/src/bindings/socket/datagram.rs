@@ -2363,7 +2363,7 @@ where
         let is_subnet_broadcast = addrs.iter().any(|addr_subnet| {
             addr_subnet.subnet().prefix() < 31 && addr_subnet.subnet().broadcast() == ipv4_dest_ip
         });
-        
+
         // If `ipv4_dest_ip` is unicast, use it as the local addr.
         if !ipv4_dest_ip.is_multicast()
             && !ipv4_dest_ip.is_limited_broadcast()
@@ -3052,7 +3052,7 @@ mod tests {
             mod $test_fn {
                 use super::*;
 
-                #[fasync::run_singlethreaded(test)]
+                #[fuchsia::test(logging = false)]
                 async fn udp_v4() {
                     $test_fn::<fnet::Ipv4SocketAddress, Udp>(
                         fposix_socket::DatagramSocketProtocol::Udp,
@@ -3060,7 +3060,7 @@ mod tests {
                     .await
                 }
 
-                #[fasync::run_singlethreaded(test)]
+                #[fuchsia::test(logging = false)]
                 async fn udp_v6() {
                     $test_fn::<fnet::Ipv6SocketAddress, Udp>(
                         fposix_socket::DatagramSocketProtocol::Udp,
@@ -3069,7 +3069,7 @@ mod tests {
                 }
 
                 $(#[$icmp_attributes])*
-                #[fasync::run_singlethreaded(test)]
+                #[fuchsia::test(logging = false)]
                 async fn icmp_v4() {
                     $test_fn::<fnet::Ipv4SocketAddress, IcmpEcho>(
                         fposix_socket::DatagramSocketProtocol::IcmpEcho,
@@ -3078,7 +3078,7 @@ mod tests {
                 }
 
                 $(#[$icmp_attributes])*
-                #[fasync::run_singlethreaded(test)]
+                #[fuchsia::test(logging = false)]
                 async fn icmp_v6() {
                     $test_fn::<fnet::Ipv6SocketAddress, IcmpEcho>(
                         fposix_socket::DatagramSocketProtocol::IcmpEcho,
@@ -3505,7 +3505,7 @@ mod tests {
             // ICMP Echo sockets don't support SO_ERROR.
         ]
     )]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn so_error(domain: fposix_socket::Domain, proto: fposix_socket::DatagramSocketProtocol) {
         let (local_subnet, connect_addr) = match domain {
             fposix_socket::Domain::Ipv4 => (
@@ -3584,7 +3584,7 @@ mod tests {
             fposix_socket::DatagramSocketProtocol::IcmpEcho,
         ]
     )]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn socket_describe(
         domain: fposix_socket::Domain,
         proto: fposix_socket::DatagramSocketProtocol,
@@ -3622,7 +3622,7 @@ mod tests {
             fposix_socket::DatagramSocketProtocol::IcmpEcho,
         ]
     )]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn socket_get_info(
         domain: fposix_socket::Domain,
         proto: fposix_socket::DatagramSocketProtocol,

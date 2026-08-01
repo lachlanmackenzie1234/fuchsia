@@ -11,7 +11,6 @@ use fidl_fuchsia_net_root as fnet_root;
 use fidl_fuchsia_net_routes as fnet_routes;
 use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
-use fuchsia_async as fasync;
 use fuchsia_component::client;
 use log::info;
 use net_declare::fidl_ip_v6_with_prefix;
@@ -339,7 +338,7 @@ enum Opt {
     WlanNode { connect_addr_0: String, connect_addr_1: String, connect_addr_2: String },
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let opt = Opt::parse();
 

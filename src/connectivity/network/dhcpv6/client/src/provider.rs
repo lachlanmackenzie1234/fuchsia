@@ -56,7 +56,6 @@ mod tests {
     use fidl::endpoints::create_endpoints;
     use fidl_fuchsia_net_dhcpv6::ClientProviderMarker;
     use fidl_fuchsia_net_dhcpv6_ext::ClientConfig;
-    use fuchsia_async as fasync;
     use futures::join;
 
     use anyhow::{Error, anyhow};
@@ -117,12 +116,12 @@ mod tests {
         assert_matches!(test_res, Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_client_provider_serve_client_success() {
         test_client_provider(serve_client).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_client_provider_should_keep_running_on_client_err() {
         test_client_provider(start_err_client).await;
     }

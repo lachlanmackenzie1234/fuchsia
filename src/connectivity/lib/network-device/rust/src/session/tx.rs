@@ -349,7 +349,7 @@ mod tests {
         (inner, tx_receiver, rx_sender, task_handle)
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_dynamic_registration_and_reclamation() {
         let (session_proxy, mut tx_reg_receiver, mut tx_unreg_receiver, _server_task) =
             setup_fake_session_server();
@@ -414,7 +414,7 @@ mod tests {
         assert_eq!(unreg_vmos_2, vec![2]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_batch_registration() {
         let (session_proxy, mut tx_reg_receiver, _tx_unreg_receiver, _server_task) =
             setup_fake_session_server();

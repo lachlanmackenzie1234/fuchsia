@@ -653,7 +653,7 @@ mod tests {
 
     /// Tests the success case of getting a single socket as well as
     /// "netstack returned two sockets but we only return one".
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn get_one_success() {
         set_logger_for_test();
 
@@ -717,7 +717,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn get_bad_socket() {
         set_logger_for_test();
 
@@ -752,7 +752,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn dump_no_sockets_success() {
         set_logger_for_test();
 
@@ -766,7 +766,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn dump_success() {
         set_logger_for_test();
 
@@ -1087,7 +1087,7 @@ mod tests {
 
     // Validates that destruction notifications from the Netstack are delivered
     // to the correct group and only that group.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn destruction_notification_routing() {
         set_logger_for_test();
 
@@ -1379,7 +1379,7 @@ mod tests {
         scope.join().await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_watcher_stream_lifecycle() {
         set_logger_for_test();
 

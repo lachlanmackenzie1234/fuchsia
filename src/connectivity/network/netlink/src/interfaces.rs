@@ -1983,7 +1983,7 @@ mod tests {
         pretty_assertions::assert_eq!(actual, expected);
     }
 
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     fn test_oversized_interface_id_link_address_conversion() {
         let invalid_interface_id = (u32::MAX as u64) + 1;
         let interface =
@@ -2001,7 +2001,7 @@ mod tests {
         );
     }
 
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     fn test_interface_to_address_conversion() {
         let interface_name: String = "test".into();
         let interface_id = 1;
@@ -2033,7 +2033,7 @@ mod tests {
         del_link_message.serialize(&mut buf);
     }
 
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_deliver_updates() {
         let (mut link_sink, link_client, _async_work_drain_task) =
             crate::client::testutil::new_fake_client::<NetlinkRoute>(
@@ -2586,7 +2586,7 @@ mod tests {
         GetLinkArgs::Get(LinkSpecifier::Name(WLAN_NAME.to_string())),
         &[],
         Err(RequestError::UnrecognizedInterface); "name_not_found")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_get_link(
         args: GetLinkArgs,
         expected_new_links: &[u64],
@@ -2782,7 +2782,7 @@ mod tests {
         },
         Err(()),
         Err(RequestError::Unknown); "disable_fails")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_set_link(
         initial_state: InitialState,
         args: SetLinkArgs,
@@ -2885,7 +2885,7 @@ mod tests {
     #[test_case(Some(IpVersion::V4); "v4")]
     #[test_case(Some(IpVersion::V6); "v6")]
     #[test_case(None; "all")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_get_addr(ip_version_filter: Option<IpVersion>) {
         pretty_assertions::assert_eq!(
             test_request(
@@ -2978,7 +2978,7 @@ mod tests {
         test_addr_subnet_v6(),
         Some(InterfaceRemovedReason::User),
         false; "v6_user_terminal_del")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_new_del_addr_interface_removed(
         address: AddrSubnetEither,
         removal_reason: Option<InterfaceRemovedReason>,
@@ -3049,7 +3049,7 @@ mod tests {
         AddressRequestKind::New { add_subnet_route: false }; "v6_new")]
     #[test_case(add_test_addr_subnet_v4(), AddressRequestKind::Del; "v4_del")]
     #[test_case(add_test_addr_subnet_v6(), AddressRequestKind::Del; "v6_del")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_unknown_interface_request(address: AddrSubnetEither, kind: AddressRequestKind) {
         let interface_id = NonZeroU32::new(WLAN_INTERFACE_ID.try_into().unwrap()).unwrap();
         let address_and_interface_id = AddressAndInterfaceArgs { address, interface_id };
@@ -3220,7 +3220,7 @@ mod tests {
     /// any request).
     #[test_case(test_addr_subnet_v4(); "v4")]
     #[test_case(test_addr_subnet_v6(); "v6")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_new_addr_drop_asp_immediately(address: AddrSubnetEither) {
         pretty_assertions::assert_eq!(
             test_new_addr_asp_helper(address, false, |_asp_request_stream| {
@@ -3268,7 +3268,7 @@ mod tests {
         test_addr_subnet_v6(),
         AddressRemovalReason::UserRemoved; "v6_user_removed")]
     #[should_panic(expected = "expected netstack to send initial state before removing")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_new_addr_failed_unexpected_reason(
         address: AddrSubnetEither,
         reason: AddressRemovalReason,
@@ -3293,7 +3293,7 @@ mod tests {
         test_addr_subnet_v6(),
         AddressRemovalReason::AlreadyAssigned,
         RequestError::AlreadyExists; "v6_exists")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_new_addr_failed(
         address: AddrSubnetEither,
         reason: AddressRemovalReason,
@@ -3336,7 +3336,7 @@ mod tests {
     /// Detach request (no assignment state update or terminal event).
     #[test_case(test_addr_subnet_v4(); "v4")]
     #[test_case(test_addr_subnet_v6(); "v6")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_new_addr_drop_asp_after_detach(address: AddrSubnetEither) {
         pretty_assertions::assert_eq!(
             test_new_addr_asp_detach_handled_helper(address, false, |_asp_stream| {
@@ -3353,7 +3353,7 @@ mod tests {
     /// Test RTM_NEWADDR when the ASP yields an assignment state update.
     #[test_case(add_test_addr_subnet_v4(); "v4")]
     #[test_case(add_test_addr_subnet_v6(); "v6")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_new_addr_with_address_added_event(address: AddrSubnetEither) {
         pretty_assertions::assert_eq!(
             test_new_addr_asp_detach_handled_helper(address, true, |asp_request_stream| {
@@ -3397,7 +3397,7 @@ mod tests {
         test_addr_subnet_v6(),
         InterfaceRemovedReason::BadPort; "v6_bad_port")]
     #[should_panic(expected = "unexpected interface removed reason")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_del_addr_interface_closed_unexpected_reason(
         address: AddrSubnetEither,
         removal_reason: InterfaceRemovedReason,
@@ -3486,7 +3486,7 @@ mod tests {
         test_addr_subnet_v6(),
         Err(fnet_interfaces_admin::ControlRemoveAddressError::unknown()),
         Err(RequestError::InvalidRequest); "v6_unrecognized_error")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_del_addr(
         address: AddrSubnetEither,
         response: Result<bool, fnet_interfaces_admin::ControlRemoveAddressError>,
@@ -3500,7 +3500,7 @@ mod tests {
 
     /// Tests that multiple interface update requests result in only one
     /// admin handle being created for that interface.
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_single_get_admin_for_multiple_interface_requests() {
         let first_address = test_addr_subnet_v4();
         let second_address = test_addr_subnet_v6();

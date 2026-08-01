@@ -678,7 +678,7 @@ impl TxFreeList {
             std::mem::replace(&mut self.head, new_head)
         });
         let allocated = free_list.take(num_parts.get().into()).collect::<Chained<_>>();
-        assert_eq!(allocated.len(), num_parts.into());
+        assert_eq!(allocated.len(), usize::from(num_parts));
         self.free -= u16::from(num_parts.get());
         Some(allocated)
     }
@@ -1759,7 +1759,7 @@ mod tests {
     fn alloc_tx_distinct() {
         let pool = Pool::new_test_default();
         let allocated = pool.alloc_tx_all(1);
-        assert_eq!(allocated.len(), DEFAULT_TX_BUFFERS.get().into());
+        assert_eq!(allocated.len(), usize::from(DEFAULT_TX_BUFFERS.get()));
         let distinct = allocated
             .iter()
             .map(|alloc| {
@@ -1777,7 +1777,7 @@ mod tests {
             let allocated = pool.alloc_tx_all(2);
             assert_eq!(
                 allocated.iter().fold(0, |acc, a| { acc + a.descs.len() }),
-                DEFAULT_TX_BUFFERS.get().into()
+                usize::from(DEFAULT_TX_BUFFERS.get())
             );
             assert_eq!(pool.tx_alloc_state_lock().free_lists[0].free, 0);
         }
@@ -1809,7 +1809,7 @@ mod tests {
             // are immediately returned to the pool.
             .collect::<Result<Vec<_>>>()
             .expect("buffer error");
-        assert_eq!(buffers.len(), DEFAULT_TX_BUFFERS.get().into());
+        assert_eq!(buffers.len(), usize::from(DEFAULT_TX_BUFFERS.get()));
 
         // We have all the buffers, which means allocating more should not
         // resolve.
@@ -2282,7 +2282,7 @@ mod tests {
                 DEFAULT_BUFFER_LENGTH.get() - usize::from(DEFAULT_MIN_TX_BUFFER_TAIL)
             }
         });
-        assert_eq!(buffer.alloc.len(), netdev::MAX_DESCRIPTOR_CHAIN.into());
+        assert_eq!(buffer.alloc.len(), usize::from(netdev::MAX_DESCRIPTOR_CHAIN));
         assert_eq!(buffer.io_mut().write_at(write_offset, &[WRITE_BYTE][..]), 1);
         // The accumulator is Some if we haven't found the part where the byte
         // was written, None if we've already found it.

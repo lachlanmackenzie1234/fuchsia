@@ -38,7 +38,7 @@ ffx_plugin("ffx_net_test_realm") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain",
     "//src/connectivity/lib/net-declare",
     "//src/lib/fdomain/local",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
   ]
@@ -52,7 +52,7 @@ ffx_tool("ffx_net_test_realm_tool") {
   deps = [
     ":ffx_net_test_realm",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
   ]
   sources = [ "src/main.rs" ]
 }

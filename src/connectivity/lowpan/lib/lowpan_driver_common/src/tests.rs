@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use super::prelude_internal::*;
-use crate::lowpan_fidl::LegacyJoiningMarker;
 use crate::DummyDevice;
+use crate::lowpan_fidl::LegacyJoiningMarker;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_lowpan_driver::{DriverMarker, Protocols};
-use fuchsia_async as fasync;
+
 use futures::task::{Context, Poll};
 
 #[derive(Default, Debug)]
@@ -25,7 +25,7 @@ impl Future for Yield {
     }
 }
 
-#[fasync::run_until_stalled(test)]
+#[fuchsia::test(allow_stalls = false)]
 #[ignore] // TODO(https://fxbug.dev/325329165): Fix the ordering issue
 async fn test_legacy_joining_mutual_exclusion() {
     let device = DummyDevice::default();

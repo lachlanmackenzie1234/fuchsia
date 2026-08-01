@@ -1151,7 +1151,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_connect_failures_by_bssid_add_and_get() {
         let mut connect_failures = HistoricalListsByBssid::new();
         let curr_time = fasync::MonotonicInstant::now();
@@ -1217,7 +1217,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn failure_list_add_and_get() {
         let mut connect_failures = HistoricalList::new(NUM_CONNECTION_RESULTS_PER_BSS);
 
@@ -1238,7 +1238,7 @@ mod tests {
         assert!(connect_failures.get_recent(later_time).is_empty());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_failure_list_add_when_full() {
         let mut connect_failures = HistoricalList::new(NUM_CONNECTION_RESULTS_PER_BSS);
         let curr_time = fasync::MonotonicInstant::now();
@@ -1258,7 +1258,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_past_connections_by_bssid_add_and_get() {
         let mut past_connections_list = HistoricalListsByBssid::new();
         let curr_time = fasync::MonotonicInstant::now();
@@ -1317,7 +1317,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_past_connections_list_add_when_full() {
         let mut past_connections_list = PastConnectionList::default();
         let curr_time = fasync::MonotonicInstant::now();
@@ -1339,7 +1339,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_past_connections_list_add_and_get() {
         let mut past_connections_list = PastConnectionList::default();
         let curr_time = fasync::MonotonicInstant::now();

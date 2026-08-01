@@ -1392,7 +1392,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_filter() {
         const CONTROLLER_A: &str = "controller a";
         const CONTROLLER_B: &str = "controller b";

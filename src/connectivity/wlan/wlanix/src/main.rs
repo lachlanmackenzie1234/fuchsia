@@ -3127,7 +3127,7 @@ async fn handle_scheduled_scan_events(
     info!("Scheduled scan event stream terminated");
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() {
     trace_provider::trace_provider_create_with_fdio();
     diagnostics_log::initialize(

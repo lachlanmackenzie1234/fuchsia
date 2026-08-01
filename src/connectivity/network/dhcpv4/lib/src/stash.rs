@@ -262,7 +262,7 @@ mod tests {
         Ok((stash, rand_id))
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stash_new_with_prefix() {
         assert_matches::assert_matches!(
             Stash::new_with_prefix("stash_new", "valid"),
@@ -298,7 +298,7 @@ mod tests {
         };
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn store_client_succeeds() {
         let (mut stash, id) =
             new_stash("store_client_succeeds").expect("failed to create new stash");
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(value, client_record);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn store_options_succeeds() {
         let (mut stash, id) = new_stash("store_options_succeeds").expect("failed to create stash");
         let accessor_client = stash.proxy.clone();
@@ -349,7 +349,7 @@ mod tests {
         assert_eq!(value, opts);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn store_parameters_succeeds() {
         let (mut stash, id) =
             new_stash("store_parameters_succeeds").expect("failed to create stash");
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(value, params);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_clients_with_populated_stash_returns_cached_clients() {
         let (stash, id) = new_stash("load_clients_with_populated_stash_returns_cached_clients")
             .expect("failed to create stash");
@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(loaded_cache, cached_clients);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_options_with_stashed_options_returns_options() {
         let (stash, id) = new_stash("load_options_with_stashed_options_returns_options")
             .expect("failed to create stash");
@@ -439,7 +439,7 @@ mod tests {
         assert_eq!(loaded_opts, opts);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_options_with_no_stashed_options_returns_empty_map() {
         let (stash, _id) = new_stash("load_options_with_no_stashed_options_returns_empty_vec")
             .expect("failed to create stash");
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(opts, HashMap::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_parameters_with_stashed_parameters_returns_parameters() {
         let (stash, id) = new_stash("load_parameters_with_stashed_parameters_returns_parameters")
             .expect("faield to create stash");
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(loaded_params, params);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_parameters_with_no_stashed_parameters_returns_err() {
         let (stash, _id) = new_stash("load_parameters_with_no_stashed_parameters_returns_err")
             .expect("failed to create stash");
@@ -494,7 +494,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_clients_with_stash_containing_invalid_entries_returns_empty_cache() {
         let (stash, id) =
             new_stash("load_clients_with_stash_containing_invalid_entries_returns_empty_cache")
@@ -528,7 +528,7 @@ mod tests {
         assert_eq!(loaded_cache, empty_cache);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn delete_client_succeeds() {
         let (mut stash, id) = new_stash("delete_client_succeeds").expect("failed to create stash");
         let accessor = stash.proxy.clone();
@@ -559,7 +559,7 @@ mod tests {
         assert!(value.is_none());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn clear_with_populated_stash_clears_stash() {
         let (stash, id) =
             new_stash("clear_with_populated_stash_clears_stash").expect("failed to create stash");

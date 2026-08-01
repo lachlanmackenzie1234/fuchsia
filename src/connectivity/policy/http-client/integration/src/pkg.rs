@@ -60,7 +60,7 @@ async fn check_download_blob(client: fpkg_http::ClientProxy, addr: SocketAddr) {
 
 /// Tests that idle detection, escrow, and resume of fuchsia.pkg.http.Client connections is
 /// implemented correctly.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_idle_stop_escrow_start() {
     crate::run_without_connecting("idle_1ms", |addr, http_client| async move {
         let mut event_stream = EventStream::open().await.unwrap();
@@ -98,7 +98,7 @@ async fn test_idle_stop_escrow_start() {
 }
 
 // Test that an active blob download prevents the component from stopping.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_download_blob_blocks_idle_stop() {
     crate::run_without_connecting("idle_1ms", |addr, http_client| async move {
         let mut event_stream = EventStream::open().await.unwrap();

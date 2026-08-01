@@ -119,9 +119,8 @@ impl FlowWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_flow_window() {
         let flow_window = FlowWindow::default();
 

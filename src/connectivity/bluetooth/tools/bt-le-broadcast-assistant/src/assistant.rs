@@ -130,9 +130,8 @@ mod tests {
     use bt_common::core::AddressType;
     use bt_gatt::pii::StaticPeerAddr;
     use bt_gatt_fuchsia::{Central, FuchsiaTypes};
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_assistant_state_new() {
         let (central_proxy, _central_mock) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_bluetooth_le::CentralMarker>();

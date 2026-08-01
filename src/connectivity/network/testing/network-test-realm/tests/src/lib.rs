@@ -623,7 +623,7 @@ async fn stop_hermetic_network_realm(name: &str, sub_name: &str, netstack: fntr:
     assert!(!has_hermetic_network_realm(&realm).await);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn stop_hermetic_network_realm_with_no_existing_realm() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm =
@@ -912,7 +912,7 @@ async fn start_stub_with_malformed_component_url(
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn start_stub_with_no_hermetic_network_realm() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm = create_netstack_realm("start_stub_with_no_hermetic_network_realm", &sandbox)
@@ -981,7 +981,7 @@ async fn stop_stub_with_no_running_stub(name: &str, sub_name: &str, netstack: fn
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn stop_stub_with_no_hermetic_network_realm() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm = create_netstack_realm("stop_stub_with_no_hermetic_network_realm", &sandbox)
@@ -1378,7 +1378,7 @@ async fn ping(
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn ping_with_no_hermetic_network_realm() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm = create_netstack_realm("ping_with_no_hermetic_network_realm", &sandbox)
@@ -1855,7 +1855,7 @@ async fn leave_multicast_group(
     expect_multicast_event(&fake_ep, MulticastEvent::Left(multicast_address)).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn join_multicast_group_with_no_hermetic_network_realm() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm =
@@ -2062,7 +2062,7 @@ async fn join_same_multicast_group_multiple_times(
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn leave_multicast_group_with_no_hermetic_network_realm() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm =

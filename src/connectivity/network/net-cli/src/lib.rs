@@ -2307,7 +2307,7 @@ mod tests {
     #[cfg(feature = "fdomain")]
     use fidl_fuchsia_net_routes_ext_fdomain as froutes_ext;
     use flex_fuchsia_net_routes as froutes;
-    use fuchsia_async::{self as fasync, TimeoutExt as _};
+    use fuchsia_async::TimeoutExt as _;
     use net_declare::{fidl_ip, fidl_ip_v4, fidl_mac, fidl_subnet};
     use test_case::test_case;
 
@@ -2426,7 +2426,7 @@ mod tests {
     #[test_case(fnet::IpVersion::V4, false ; "IPv4 disable routing")]
     #[test_case(fnet::IpVersion::V6, true ; "IPv6 enable routing")]
     #[test_case(fnet::IpVersion::V6, false ; "IPv6 disable routing")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn if_ip_forward(ip_version: fnet::IpVersion, enable: bool) {
         let client = flex_local::local_client_empty();
 
@@ -2549,7 +2549,7 @@ mod tests {
     #[test_case(finterfaces_admin::IgmpVersion::V1)]
     #[test_case(finterfaces_admin::IgmpVersion::V2)]
     #[test_case(finterfaces_admin::IgmpVersion::V3)]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn if_igmp(igmp_version: finterfaces_admin::IgmpVersion) {
         let client = flex_local::local_client_empty();
 
@@ -2622,7 +2622,7 @@ mod tests {
 
     #[test_case(finterfaces_admin::MldVersion::V1)]
     #[test_case(finterfaces_admin::MldVersion::V2)]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn if_mld(mld_version: finterfaces_admin::MldVersion) {
         let client = flex_local::local_client_empty();
 
@@ -2759,7 +2759,7 @@ mod tests {
     #[test_case(true, true ; "when interface is up, and not adding subnet route")]
     #[test_case(false, false ; "when interface is down, and adding subnet route")]
     #[test_case(false, true ; "when interface is down, and not adding subnet route")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn if_addr_add(interface_is_up: bool, no_subnet_route: bool) {
         let client = flex_local::local_client_empty();
 
@@ -2863,7 +2863,7 @@ mod tests {
 
     #[test_case(false ; "providing nicids")]
     #[test_case(true ; "providing interface names")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn if_del_addr(use_ifname: bool) {
         let client = flex_local::local_client_empty();
 
@@ -3056,7 +3056,7 @@ mod tests {
         "fd00::1";
         "wait for IPv6 when IPv6 address requested"
     )]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn if_addr_wait(ipv6: bool, events: Vec<finterfaces::Event>, expected_output: &str) {
         let client = flex_local::local_client_empty();
 
@@ -3252,7 +3252,7 @@ port_identity_koid    -
 
     #[test_case(true, wanted_net_if_list_json() ; "in json format")]
     #[test_case(false, wanted_net_if_list_tabular() ; "in tabular format")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn if_list(json: bool, wanted_output: String) {
         let client = flex_local::local_client_empty();
 
@@ -3447,7 +3447,7 @@ port_identity_koid    -
             futures::future::try_join(op, op_succeeds).await.expect("dhcp command should succeed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dhcp_start() {
         let client = flex_local::local_client_empty();
 
@@ -3460,7 +3460,7 @@ port_identity_koid    -
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dhcp_stop() {
         let client = flex_local::local_client_empty();
 
@@ -3625,7 +3625,7 @@ port_identity_koid    -
             futures::future::try_join(op, op_succeeds).await.expect("dhcp command should succeed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn route_add() {
         let client = flex_local::local_client_empty();
 
@@ -3643,7 +3643,7 @@ port_identity_koid    -
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn route_del() {
         let client = flex_local::local_client_empty();
 
@@ -3723,7 +3723,7 @@ port_identity_koid    -
 
     #[test_case(true, wanted_route_list_json() ; "in json format")]
     #[test_case(false, wanted_route_list_tabular() ; "in tabular format")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn route_list(json: bool, wanted_output: String) {
         let client = flex_local::local_client_empty();
 
@@ -3919,7 +3919,7 @@ port_identity_koid    -
 
     #[test_case(false ; "providing nicids")]
     #[test_case(true ; "providing interface names")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn bridge(use_ifname: bool) {
         let client = flex_local::local_client_empty();
 
@@ -4073,12 +4073,12 @@ port_identity_koid    -
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_list_none() {
         test_neigh_none(false /* watch_for_changes */, "".to_string()).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_watch_none() {
         test_neigh_none(true /* watch_for_changes */, "IDLE".to_string()).await
     }
@@ -4116,12 +4116,12 @@ port_identity_koid    -
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_list_one() {
         test_neigh_one(false /* watch_for_changes */, |entry| format!("{}\n", entry)).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_watch_one() {
         test_neigh_one(true /* watch_for_changes */, |entry| {
             format!(
@@ -4185,12 +4185,12 @@ port_identity_koid    -
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_list_many() {
         test_neigh_many(false /* watch_for_changes */, |a, b| format!("{}\n{}\n", a, b)).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_watch_many() {
         test_neigh_many(true /* watch_for_changes */, |a, b| {
             format!(
@@ -4258,7 +4258,7 @@ port_identity_koid    -
     const INTERFACE_ID: u64 = 1;
     const IP_VERSION: fnet::IpVersion = fnet::IpVersion::V4;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_add() {
         let client = flex_local::local_client_empty();
 
@@ -4284,7 +4284,7 @@ port_identity_koid    -
             .expect("neigh add should succeed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_clear() {
         let client = flex_local::local_client_empty();
 
@@ -4309,7 +4309,7 @@ port_identity_koid    -
             .expect("neigh clear should succeed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn neigh_del() {
         let client = flex_local::local_client_empty();
 
@@ -4373,7 +4373,7 @@ port_identity_koid    -
     #[test_case(opts::dhcpd::DhcpdEnum::ClearLeases(opts::dhcpd::ClearLeases {}); "clear leases")]
     #[test_case(opts::dhcpd::DhcpdEnum::Start(opts::dhcpd::Start {}); "start")]
     #[test_case(opts::dhcpd::DhcpdEnum::Stop(opts::dhcpd::Stop {}); "stop")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_dhcpd(cmd: opts::dhcpd::DhcpdEnum) {
         let client = flex_local::local_client_empty();
 
@@ -4494,7 +4494,7 @@ port_identity_koid    -
             .expect("dhcp server command should succeed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dns_lookup() {
         let client = flex_local::local_client_empty();
 

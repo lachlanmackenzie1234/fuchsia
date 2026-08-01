@@ -18,6 +18,7 @@ rustc_test("lowpanctl-integration-test-bin") {
     "//sdk/rust/zx",
     "//src/connectivity/lowpan/service",
     "//src/connectivity/lowpan/tools/lowpanctl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",

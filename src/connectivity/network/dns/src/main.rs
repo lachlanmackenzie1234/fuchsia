@@ -1431,7 +1431,7 @@ mod tests {
         })
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookupip_localhost() {
         let (proxy, fut) = setup_namelookup_service().await;
         let ((), ()) = futures::future::join(fut, async move {
@@ -1487,7 +1487,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookuphostname_localhost() {
         let (proxy, fut) = setup_namelookup_service().await;
         let ((), ()) = futures::future::join(fut, async move {
@@ -1702,7 +1702,7 @@ mod tests {
         net_ext::IpAddress(addr.into()).into()
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_no_records_and_no_error() {
         TestEnvironment::default()
             .run_lookup(|proxy| async move {
@@ -1733,7 +1733,7 @@ mod tests {
             .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookupip_remotehost_overflow() {
         // We're returning two addresses, so we need each one to repeat only half as many times.
         const REPEAT: u16 = fname::MAX_ADDRESSES / 2 + 1;
@@ -1763,7 +1763,7 @@ mod tests {
             .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookupip_remotehost_ipv4() {
         TestEnvironment::default()
             .run_lookup(|proxy| async move {
@@ -1822,7 +1822,7 @@ mod tests {
             .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookupip_remotehost_ipv6() {
         TestEnvironment::default()
             .run_lookup(|proxy| async move {
@@ -1883,7 +1883,7 @@ mod tests {
 
     #[test_case(REMOTE_IPV4_HOST_ALIAS, REMOTE_IPV4_HOST; "ipv4")]
     #[test_case(REMOTE_IPV6_HOST_ALIAS, REMOTE_IPV6_HOST; "ipv6")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookupip_remotehost_canonical_name(hostname: &str, expected: &str) {
         TestEnvironment::default()
             .run_lookup(|proxy| async move {
@@ -1906,7 +1906,7 @@ mod tests {
             .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookupip_ip_literal() {
         TestEnvironment::default()
             .run_lookup(|proxy| async move {
@@ -1957,7 +1957,7 @@ mod tests {
             .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookup_hostname() {
         TestEnvironment::default()
             .run_lookup(|proxy| async move {
@@ -1975,7 +1975,7 @@ mod tests {
 
     // Multiple hostnames returned from trust-dns* APIs, and only the first one will be returned
     // by the FIDL.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookup_hostname_multi() {
         TestEnvironment::default()
             .run_lookup(|proxy| async move {
@@ -1991,7 +1991,7 @@ mod tests {
             .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_set_server_names() {
         let env = TestEnvironment::default();
 
@@ -2052,7 +2052,7 @@ mod tests {
         assert_eq!(env.shared_resolver.read().config.name_servers().to_vec(), Vec::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_set_server_names_error() {
         let env = TestEnvironment::default();
         // Assert that mock config has no servers originally.
@@ -2090,7 +2090,7 @@ mod tests {
         assert_eq!(env.shared_resolver.read().config.name_servers().to_vec(), vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_get_servers() {
         let env = TestEnvironment::default();
         env.run_admin(|proxy| async move {
@@ -2101,7 +2101,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_config_inspect() {
         let env = TestEnvironment::default();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -2133,7 +2133,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_name_server_stats_inspect() {
         let env = TestEnvironment::default();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -2199,7 +2199,7 @@ mod tests {
         )
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_query_stats_updated() {
         let env = TestEnvironment::default();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -2594,7 +2594,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_parallel_query_limit() {
         // Collect requests by setting up a FIDL proxy and stream for the Lookup
         // protocol, because there isn't a good way to directly construct fake
@@ -2954,7 +2954,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_sort_preferred_addresses() {
         const TEST_IPS: [(fnet::IpAddress, Option<fnet::IpAddress>); 5] = [
             (fidl_ip!("127.0.0.1"), Some(fidl_ip!("127.0.0.1"))),
@@ -3029,7 +3029,7 @@ mod tests {
         .expect("error running futures");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_lookupip() {
         // Routes handler will say that only IPV6_HOST is reachable.
         let routes_handler = |req| {

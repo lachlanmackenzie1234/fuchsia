@@ -32,7 +32,7 @@ rustc_test("netemul_runner_test") {
   deps = [
     ":lib",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/sys/test_manager:test_lib",
     "//third_party/rust_crates:test-case",
   ]
@@ -55,7 +55,7 @@ rustc_test("netemul_runner_errors_test") {
   edition = "2024"
   deps = [
     ":lib",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:test-case",
   ]
   source_root = "src/errors.rs"

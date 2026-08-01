@@ -256,7 +256,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn maybe_guard() {
         let ctrl = SuspensionBlockControl::new();
         let mut guard = MaybeSuspensionGuard::new(ctrl.issuer());

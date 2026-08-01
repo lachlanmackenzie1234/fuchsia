@@ -590,7 +590,7 @@ mod tests {
         assert!(hanging.observers.contains_key(&1));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn publisher_set_value() {
         let (sender, mut receiver) = mpsc::channel(128);
         let mut p = Publisher { sender };
@@ -601,7 +601,7 @@ mod tests {
         assert_eq!(value, 2);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn publisher_update_value() {
         let (sender, mut receiver) = mpsc::channel(128);
         let mut p = Publisher { sender };
@@ -640,7 +640,7 @@ mod tests {
         assert_eq!(ex.run_until_stalled(&mut broker_future), Poll::Ready(()));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn pub_sub_updates_and_observes() {
         let broker = HangingGetBroker::new(
             0i32,
@@ -669,7 +669,7 @@ mod tests {
         futures::join!(fut, broker.run());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn pub_sub_multiple_subscribers() {
         let broker = HangingGetBroker::new(
             0i32,

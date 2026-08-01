@@ -227,9 +227,8 @@ impl CoreDumpCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_core_dump_collector_initialization() {
         let collector = CoreDumpCollector::new("test_program".to_string(), "test_sig".to_string())
             .expect("Failed to create collector");
@@ -242,7 +241,7 @@ mod tests {
         assert_eq!(size, MAX_SNOOP_VMO_SIZE);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_core_dump_collector_on_packet() {
         let mut collector = CoreDumpCollector::new("test".to_string(), "sig".to_string()).unwrap();
         let packet = SnoopPacket::new(
@@ -257,7 +256,7 @@ mod tests {
         assert!(collector.offset > initial_offset);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_core_dump_collector_file_report() {
         use fidl_fuchsia_feedback::{CrashReporterMarker, CrashReporterRequest};
         use futures::StreamExt;
@@ -295,7 +294,7 @@ mod tests {
         futures::join!(server, collector.file_report(&proxy));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_crash_state_is_crash_event_with_multibyte_prefix() {
         let state = CrashState {
             parameters: fidl_fuchsia_hardware_bluetooth::VendorCrashParameters {
@@ -340,7 +339,7 @@ mod tests {
         assert!(!state.is_crash_event(&non_vendor_event));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_process_packet() {
         let mut state = CrashState {
             parameters: fidl_fuchsia_hardware_bluetooth::VendorCrashParameters {

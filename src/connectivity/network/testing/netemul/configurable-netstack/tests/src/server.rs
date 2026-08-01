@@ -6,7 +6,7 @@ use configurable_netstack_test::{BUS_NAME, REQUEST, RESPONSE, SERVER_NAME, serve
 use log::info;
 use std::io::{Read as _, Write as _};
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() {
     diagnostics_log::initialize(diagnostics_log::PublishOptions::default()).expect("init logging");
 

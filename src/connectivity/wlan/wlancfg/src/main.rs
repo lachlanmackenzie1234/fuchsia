@@ -21,9 +21,12 @@ use anyhow::{Context as _, Error, format_err};
 use diagnostics_log::PublishOptions;
 use fidl_fuchsia_location_namedplace::RegulatoryRegionWatcherMarker;
 use fidl_fuchsia_wlan_device_service::DeviceMonitorMarker;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fuchsia_async as fasync;
 use fuchsia_async::DurationExt;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
+use fuchsia_trace_provider as ftrace_provider;
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
 use futures::prelude::*;
@@ -33,6 +36,7 @@ use std::convert::Infallible;
 use std::pin::pin;
 use std::rc::Rc;
 use std::sync::Arc;
+use wlan_trace as wtrace;
 use wlancfg_lib::access_point::AccessPoint;
 use wlancfg_lib::client::connection_selection::{
     CONNECTION_SELECTION_REQUEST_BUFFER_SIZE, ConnectionSelectionRequester, ConnectionSelector,
@@ -55,10 +59,6 @@ use wlancfg_lib::telemetry::{
     TelemetrySender, connect_to_metrics_logger_factory, create_metrics_logger, serve_telemetry,
 };
 use wlancfg_lib::util;
-use {
-    fidl_fuchsia_wlan_policy as fidl_policy, fuchsia_async as fasync,
-    fuchsia_trace_provider as ftrace_provider, wlan_trace as wtrace,
-};
 
 const REGULATORY_LISTENER_TIMEOUT_SEC: i64 = 30;
 
@@ -394,7 +394,7 @@ async fn run_all_futures() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let options =
         PublishOptions::default().tags(&["wlan"]).enable_metatag(diagnostics_log::Metatag::Target);

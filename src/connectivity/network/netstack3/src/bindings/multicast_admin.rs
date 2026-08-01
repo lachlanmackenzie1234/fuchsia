@@ -702,7 +702,7 @@ mod tests {
     const UNICAST_V6: Ipv6Addr = net_ip_v6!("2001:0DB8::1");
     const MULTICAST_V6: Ipv6Addr = net_ip_v6!("ff0e::1");
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn worker_teardown() {
         let mut netstack = NetstackSeed::default();
         let ctx = netstack.netstack.ctx;
@@ -718,7 +718,7 @@ mod tests {
 
     #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
     #[ip_test(I)]
-    #[fuchsia_async::run_singlethreaded]
+    #[fuchsia::test(logging = false)]
     async fn worker_teardown_with_client<I: IpExt + FidlMulticastAdminIpExt>() {
         let mut netstack = NetstackSeed::default();
         let ctx = netstack.netstack.ctx;
@@ -743,7 +743,7 @@ mod tests {
 
     #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
     #[ip_test(I)]
-    #[fuchsia_async::run_singlethreaded]
+    #[fuchsia::test(logging = false)]
     async fn duplicate_table_controller<I: IpExt + FidlMulticastAdminIpExt>() {
         let mut netstack = NetstackSeed::default();
         let ctx = netstack.netstack.ctx;
@@ -784,7 +784,7 @@ mod tests {
 
     #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
     #[ip_test(I)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn new_client_enables_forwarding<I: IpExt + FidlMulticastAdminIpExt>() {
         let mut netstack = NetstackSeed::default();
         let mut ctx = netstack.netstack.ctx;
@@ -825,7 +825,7 @@ mod tests {
     #[test_case(DeviceRemovalTestCase::WrongDevice, false; "wrong_device_no_change")]
     #[test_case(DeviceRemovalTestCase::InputDevice, true; "removed_by_input")]
     #[test_case(DeviceRemovalTestCase::OutputDevice, true; "removed_by_output")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn device_removal_purges_route_table<I: IpExt + FidlMulticastAdminIpExt>(
         which_device: DeviceRemovalTestCase,
         expect_removal: bool,
@@ -987,7 +987,7 @@ mod tests {
             }
         ]),
         } => Some(AddRouteError::DuplicateOutput); "duplicate_oif")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn route_from_fidl(route: FidlExtRoute) -> Option<AddRouteError> {
         let ctx = FakeConversionContext::new().await;
         let outcome = MulticastRoute::try_from_fidl_with_ctx(&ctx, route).err();

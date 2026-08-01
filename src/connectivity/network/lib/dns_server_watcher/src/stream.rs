@@ -43,7 +43,6 @@ mod tests {
         DnsServerWatcherWatchServersResponder,
     };
 
-    use fuchsia_async as fasync;
     use futures::lock::Mutex;
     use futures::{FutureExt, StreamExt, TryStreamExt};
 
@@ -97,7 +96,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_dns_server_stream() {
         let watcher = Arc::new(Mutex::new(MockDnsServerWatcher::new()));
         let (proxy, rs) = fidl::endpoints::create_proxy_and_stream::<DnsServerWatcherMarker>();

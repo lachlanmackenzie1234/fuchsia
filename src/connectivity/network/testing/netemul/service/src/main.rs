@@ -2212,9 +2212,7 @@ mod tests {
     }
 
     #[fixture(with_sandbox)]
-    // TODO(https://fxbug.dev/42144060): when we can allowlist particular ERROR logs in a test, we can
-    // use #[fuchsia::test] which initializes syslog.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn create_realm_invalid_options(sandbox: fnetemul::SandboxProxy) {
         // TODO(https://github.com/frondeus/test-case/issues/37): consider using the #[test_case]
         // macro to define these cases statically, if we can access the name of the test case from
@@ -3326,9 +3324,7 @@ mod tests {
     }
 
     #[fixture(with_sandbox)]
-    // TODO(https://fxbug.dev/42144060): when we can allowlist particular ERROR logs in a test, we can
-    // use #[fuchsia::test] which initializes syslog.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn add_remove_device_invalid_path(sandbox: fnetemul::SandboxProxy) {
         let TestRealm { realm } = TestRealm::new(&sandbox, fnetemul::RealmOptions::default());
         const INVALID_FILE_PATH: &str = "class/ethernet/..";

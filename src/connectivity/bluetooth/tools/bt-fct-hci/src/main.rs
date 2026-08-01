@@ -10,7 +10,6 @@ mod types;
 use anyhow::{Context, Error};
 use argh::FromArgs;
 use fidl as _;
-use fuchsia_async as fasync;
 use futures::StreamExt;
 use hci::CommandChannel;
 use hex::FromHex;
@@ -279,7 +278,7 @@ async fn scan_command(
 }
 
 /// Parse program arguments, call the main loop, and log any unrecoverable errors.
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let args: Args = argh::from_env();
 

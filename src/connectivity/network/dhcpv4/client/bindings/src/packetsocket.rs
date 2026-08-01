@@ -317,7 +317,6 @@ mod test {
     use fidl_fuchsia_net_ext as fnet_ext;
     use fidl_fuchsia_netemul_network as fnetemul_network;
     use fidl_fuchsia_posix_socket_packet as fpacket;
-    use fuchsia_async as fasync;
     use futures::{FutureExt as _, join};
     use netstack_testing_common::realms::TestSandboxExt as _;
     use packet::{
@@ -325,7 +324,7 @@ mod test {
         Serializer as _,
     };
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn packet_socket_provider_impl_send_receive() {
         let sandbox: netemul::TestSandbox = netemul::TestSandbox::new().unwrap();
 
@@ -424,7 +423,7 @@ mod test {
         assert_eq!(address, MAC_A);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn packet_socket_provider_impl_get_mac() {
         let sandbox: netemul::TestSandbox = netemul::TestSandbox::new().unwrap();
 

@@ -587,7 +587,7 @@ mod tests {
         new_fake_netlink_message_with_creds,
     };
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_run_client_request_handler() {
         let (mut req_sender, req_receiver) = mpsc::channel(0);
         let (mut client_sink, client, async_work_drain_task) =
@@ -636,7 +636,7 @@ mod tests {
         join_handle.await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_connect_new_clients() {
         let client_table = ClientTable::default();
         let scope = fasync::Scope::new();
@@ -715,7 +715,7 @@ mod tests {
         scope.join().await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_permissions() {
         let client_table = ClientTable::default();
         let scope = fasync::Scope::new();

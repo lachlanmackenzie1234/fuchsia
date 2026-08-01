@@ -967,7 +967,7 @@ mod tests {
     use fuchsia_async as fasync;
 
     #[fixture::teardown(crate::bindings::integration_tests::TestSetup::shutdown)]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_scope_cancellation_resets_state() {
         let t = TestSetupBuilder::new().add_stack(StackSetupBuilder::new()).build().await;
 

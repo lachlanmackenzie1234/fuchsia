@@ -77,7 +77,6 @@ async fn watch_phy_devices_impl(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use futures::poll;
     use futures::task::Poll;
     use std::pin::pin;
@@ -99,13 +98,13 @@ mod tests {
         )
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_watch_service_not_available() {
         let res = watch_phy_devices_impl(None).await;
         assert!(res.is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_watch_service_available() {
         let fake_svc_dir = pseudo_directory! {
             "fuchsia.wlan.phy.Service" => pseudo_directory! {

@@ -653,7 +653,7 @@ mod tests {
         }
     }
 
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn empty_sampler() {
         let inspector = fuchsia_inspect::Inspector::default();
         let mut sampler = StatsSamplerInner::new(FakeCtx::default(), inspector.root());
@@ -667,7 +667,7 @@ mod tests {
 
     #[test_case(true; "with status")]
     #[test_case(false; "without status")]
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn sample_creates_interfaces(with_status: bool) {
         let inspector = fuchsia_inspect::Inspector::default();
         let mut sampler = StatsSamplerInner::new(FakeCtx::default(), inspector.root());
@@ -712,7 +712,7 @@ mod tests {
         });
     }
 
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn skips_disabled_interfaces() {
         let inspector = fuchsia_inspect::Inspector::default();
         let mut sampler = StatsSamplerInner::new(FakeCtx::default(), inspector.root());
@@ -733,7 +733,7 @@ mod tests {
         });
     }
 
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn limits_old_interface_count() {
         let inspector = fuchsia_inspect::Inspector::default();
         let mut sampler = StatsSamplerInner::new(FakeCtx::default(), inspector.root());

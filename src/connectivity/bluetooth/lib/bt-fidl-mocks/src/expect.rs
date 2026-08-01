@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::RequestStream;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use futures::{TryStream, TryStreamExt};
@@ -71,7 +71,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_satisfied() {
         let (proxy, stream) = create_proxy_and_stream::<AccessMarker>();
         let name = "TEST".to_string();
@@ -81,7 +81,7 @@ mod tests {
         assert!(mock_result.is_ok());
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_unsatisfied_due_to_mismatch() {
         let (proxy, stream) = create_proxy_and_stream::<AccessMarker>();
         let expected_name = "TEST".to_string();
@@ -92,7 +92,7 @@ mod tests {
         assert!(mock_result.is_err());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_timeout_without_any_message() {
         let (_proxy, stream) = create_proxy_and_stream::<AccessMarker>();
         let expected_name = "TEST".to_string();
@@ -100,7 +100,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_timeout_after_unexpected_message() {
         let (proxy, stream) = create_proxy_and_stream::<AccessMarker>();
         let expected_name = "TEST".to_string();
@@ -110,7 +110,7 @@ mod tests {
         assert!(mock_result.is_err());
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_error_after_handle_closure() {
         let (proxy, stream) = create_proxy_and_stream::<AccessMarker>();
         let expected_name = "TEST".to_string();
@@ -120,7 +120,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_satisfied_with_expected_message_after_unexpected_message() {
         let (proxy, stream) = create_proxy_and_stream::<AccessMarker>();
         let expected_name = "TEST".to_string();

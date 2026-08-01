@@ -2996,11 +2996,10 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
 mod tests {
     use super::*;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
-    use fuchsia_async as fasync;
     use fuchsia_async::{MonotonicInstant, TimeoutExt};
     use fuchsia_component_test::ScopedInstanceFactory;
 
-    #[fasync::run(4, test)]
+    #[fuchsia::test(threads = 4)]
     async fn test_watch_device_changes() {
         let lookup = connect_to_protocol::<DeviceWatcherMarker>().unwrap();
 

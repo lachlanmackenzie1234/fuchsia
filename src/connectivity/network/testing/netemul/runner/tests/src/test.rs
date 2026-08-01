@@ -88,7 +88,7 @@ fn test_case_sequence(name: &str, status: ftest_manager::CaseStatus) -> Vec<RunE
     ];
     "elf"
 )]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn delegate_to_appropriate_test_runner(
     test_component: &str,
     expected_events: impl IntoIterator<Item = Vec<RunEvent>>,

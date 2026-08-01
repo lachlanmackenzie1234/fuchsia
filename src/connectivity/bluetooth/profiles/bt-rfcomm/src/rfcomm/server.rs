@@ -316,7 +316,7 @@ mod tests {
         (exec, rfcomm)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_allocate_server_channel() {
         let mut rfcomm = RfcommServer::new();
 
@@ -464,7 +464,7 @@ mod tests {
         })
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn clients_inspect_tree() {
         let inspect = inspect::Inspector::default();
         let clients = Clients::new()

@@ -15,7 +15,10 @@ rustc_library("async-helpers") {
     "//third_party/rust_crates:futures",
   ]
 
-  test_deps = [ "//src/lib/fuchsia-async" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+  ]
 
   sources = [
     "src/hanging_get/async_server.rs",

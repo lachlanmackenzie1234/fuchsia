@@ -187,9 +187,8 @@ mod tests {
     mod request_generation {
         use super::super::test_doubles::HttpRequestValidator;
         use super::super::*;
-        use fuchsia_async as fasync;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn request_uses_post_method() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: Some(-30), frequency: Some(2412) })];
             let mut request_method = None;
@@ -200,7 +199,7 @@ mod tests {
             assert_eq!(request_method.expect("request was never issued"), "POST".to_owned());
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn request_url_is_correct() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: Some(-30), frequency: Some(2412) })];
             let mut request_url = None;
@@ -214,7 +213,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn request_body_contains_all_bsses() {
             let bsses = vec![
                 ([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None }),
@@ -240,7 +239,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn request_body_includes_rssi() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: Some(-30), frequency: None })];
             let mut request_body = None;
@@ -263,7 +262,7 @@ mod tests {
             )
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn skips_api_query_when_bsses_is_empty() {
             let http_loader =
                 HttpRequestValidator::new(|_request| panic!("should not issue API query"));
@@ -272,7 +271,7 @@ mod tests {
                 .await;
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_no_bsses_error_when_bsses_is_empty() {
             let http_loader = HttpRequestValidator::new(|_| ());
             assert_eq!(
@@ -311,9 +310,8 @@ mod tests {
     mod response_error_handling {
         use super::super::test_doubles::{HttpByteResponder, HttpFidlResponder};
         use super::super::*;
-        use fuchsia_async as fasync;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_internal_error_on_fidl_error() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpFidlResponder::new(|| Err(FidlError::InvalidHeader));
@@ -323,7 +321,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_response_has_no_body() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpFidlResponder::new(|| {
@@ -344,7 +342,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_body_is_unreadable() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpFidlResponder::new(|| {
@@ -365,7 +363,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_body_is_not_valid_json() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(b"hello world".to_vec());
@@ -375,7 +373,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_body_is_not_a_dictionary() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(b"42".to_vec());
@@ -385,7 +383,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_body_is_missing_location() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(b"{}".to_vec());
@@ -395,7 +393,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_body_is_missing_latitude() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -413,7 +411,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_body_is_missing_longitude() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -431,7 +429,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_latitude_is_too_high() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -449,7 +447,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_latitude_is_too_low() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -467,7 +465,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_longitude_is_too_high() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -485,7 +483,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_lookup_error_when_longitude_is_too_low() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -508,9 +506,8 @@ mod tests {
         use super::super::test_doubles::HttpByteResponder;
         use super::super::*;
         use assert_matches::assert_matches;
-        use fuchsia_async as fasync;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_success_when_all_fields_are_present() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -529,7 +526,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_success_when_all_fields_except_accuracy_are_present() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -552,9 +549,8 @@ mod tests {
         use super::super::test_doubles::HttpByteResponder;
         use super::super::*;
         use assert_matches::assert_matches;
-        use fuchsia_async as fasync;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn provides_precise_latitude() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -577,7 +573,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn provides_precise_longitude() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -600,7 +596,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn provides_precise_accuracy_when_present() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(
@@ -621,7 +617,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn does_not_fabricate_accuracy() {
             let bsses = vec![([0, 0, 0, 0, 0, 0], Bss { rssi: None, frequency: None })];
             let http_loader = HttpByteResponder::new(

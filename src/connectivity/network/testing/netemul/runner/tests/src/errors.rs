@@ -29,7 +29,7 @@ fn test_url(component: &str) -> String {
     "Cannot enumerate tests";
     "the `fuchsia.test/Suite` protocol is not available in the test root component's namespace"
 )]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn invalid_test_configuration(test_component: &str, expected_error: &str) {
     let test_url = test_url(test_component);
     let err = netemul_runner_tests::run_test(&test_url)

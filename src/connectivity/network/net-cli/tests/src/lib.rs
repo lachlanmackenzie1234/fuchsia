@@ -146,7 +146,7 @@ const DEFAULT_IPV6_LINK_LOCAL_SOURCE_SUBNET: fnet::Subnet = fnet::Subnet {
 
 #[test_case(IpVersion::V4)]
 #[test_case(IpVersion::V6)]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn add_del_route(ip_version: IpVersion) {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("network").await.expect("failed to create network");
@@ -298,7 +298,7 @@ async fn add_del_route(ip_version: IpVersion) {
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn rule_list() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("network").await.expect("failed to create network");

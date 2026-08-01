@@ -12,7 +12,7 @@ use packet::ParsablePacket as _;
 use rand::distr::DistString as _;
 use std::io::Write as _;
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn multiple_guests_disallowed() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("test_network").await.expect("failed to create network");
@@ -41,7 +41,7 @@ fn create_file_with_random_data(path: &str) -> Result<(), Error> {
     Ok(())
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn put_then_get_file() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("test_network").await.expect("failed to create network");
@@ -64,7 +64,7 @@ async fn put_then_get_file() {
     assert_eq!(original_contents, final_contents);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn exec_script() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("test_network").await.expect("failed to create network");
@@ -118,7 +118,7 @@ async fn exec_script() {
     assert_eq!(file_contents, STDIN_INPUT.to_string());
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn guest_attached_to_network() {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("test_network").await.expect("failed to create network");

@@ -21,7 +21,7 @@ use log::{error, info, warn};
 
 mod config;
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), anyhow::Error> {
     diagnostics_log::initialize(diagnostics_log::PublishOptions::default())?;
     info!("started");

@@ -12,7 +12,6 @@ mod watcher_service;
 
 use anyhow::Error;
 use fidl_fuchsia_wlan_device_service as fidl_svc;
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, InspectorConfig};
 use futures::channel::mpsc;
@@ -31,7 +30,7 @@ fn serve_phys(
     Box::pin(fut)
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     diagnostics_log::initialize(
         diagnostics_log::PublishOptions::default()

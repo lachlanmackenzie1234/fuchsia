@@ -518,7 +518,7 @@ async fn install_forwarding_filter(
 /// the netstack.
 #[test_case(SetupConfig::ipv4(ForwardingConfig::ClientSideEnabled); "ipv4")]
 #[test_case(SetupConfig::ipv6(ForwardingConfig::ClientSideEnabled); "ipv6")]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn internal_forwarding_ingress(setup_config: SetupConfig) {
     let client_ip = setup_config.client_subnet;
     let server_ip = setup_config.server_subnet;
@@ -610,7 +610,7 @@ async fn internal_forwarding_ingress(setup_config: SetupConfig) {
 /// the netstack.
 #[test_case(SetupConfig::ipv4(ForwardingConfig::ServerSideEnabled); "ipv4")]
 #[test_case(SetupConfig::ipv6(ForwardingConfig::ServerSideEnabled); "ipv6")]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn internal_forwarding_egress(setup_config: SetupConfig) {
     let client_ip = setup_config.client_subnet;
     let server_ip = setup_config.server_subnet;

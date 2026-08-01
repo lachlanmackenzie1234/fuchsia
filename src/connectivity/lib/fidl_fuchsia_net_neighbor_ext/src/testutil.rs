@@ -153,7 +153,7 @@ mod tests {
     #[test_case(vec![0..1]; "single_batch_single_event")]
     #[test_case(vec![0..10]; "single_batch_many_events")]
     #[test_case(vec![0..10, 10..20, 20..30]; "many_batches_many_events")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn fake_view_impl_against_shape(test_shape: Vec<std::ops::Range<u8>>) {
         // Build the event stream based on the `test_shape`. Use a channel so
         // that the stream stays open until `close_channel` is called later.

@@ -835,7 +835,7 @@ mod tests {
         assert!(calls.should_ring());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn call_requests_send_requests_to_server() {
         let (mut calls, _peer_handler, mut call_stream, idx, _num) = setup_ongoing_call();
 
@@ -878,7 +878,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn call_requests_invalid_index_return_error() {
         let (mut calls, _peer_handler, _call_stream, _idx, _num) = setup_ongoing_call();
 

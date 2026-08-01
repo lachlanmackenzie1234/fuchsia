@@ -45,6 +45,7 @@ rustc_library("rust") {
   ]
 
   test_deps = [
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:test-case",
   ]
@@ -62,6 +63,7 @@ rustc_test("tun-test") {
     "//sdk/fidl/fuchsia.net.tun:fuchsia.net.tun_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:assert_matches",

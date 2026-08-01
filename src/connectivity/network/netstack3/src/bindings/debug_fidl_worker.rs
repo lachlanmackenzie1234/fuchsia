@@ -202,7 +202,7 @@ mod tests {
     // in integration tests. This gets us some coverage.
     #[test_case(0; "empty")]
     #[test_case(3; "multiple")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn drop_diagnostics_handler(streams: usize) {
         let handler = DiagnosticsHandler::default();
 

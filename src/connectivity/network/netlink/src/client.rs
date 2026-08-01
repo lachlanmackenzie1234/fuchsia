@@ -500,7 +500,7 @@ mod tests {
 
     // Verify that multicast group membership changes applied to the external
     // client are observed on the internal client.
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_group_memberships() {
         let (sender, _sink) = fake_sender_with_sink();
         let (async_work_sink, mut async_work_receiver) = futures::channel::mpsc::unbounded();
@@ -571,7 +571,7 @@ mod tests {
         external_client.del_membership(MODERN_GROUP_NEEDS_BLOCKING).expect("add should succeed");
     }
 
-    #[fuchsia::test]
+    #[fuchsia::test(logging = false)]
     async fn test_send_message_to_group() {
         let clients = ClientTable::default();
         let scope = fasync::Scope::new();

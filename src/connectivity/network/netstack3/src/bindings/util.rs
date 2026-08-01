@@ -1687,7 +1687,7 @@ mod tests {
         },
         SocketAddressError::Device(DeviceNotFoundError);
         "IPv6 specified invalid zone")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn sock_addr_into_core_err<A: SockAddr>(addr: A, expected: SocketAddressError)
     where
         (Option<ZonedAddr<SpecifiedAddr<A::AddrType>, DeviceId<BindingsCtx>>>, u16):
@@ -1740,7 +1740,7 @@ mod tests {
             ZonedAddr::Zoned(AddrAndZone::new(SpecifiedAddr::new(net_ip_v6!("fe80::1")).unwrap(), ReplaceWithCoreId).unwrap())
         ), 8080);
         "IPv6 specified valid zone")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn sock_addr_conversion_reversible<A: SockAddr + Eq + Clone>(
         addr: A,
         (zoned, port): (Option<ZonedAddr<SpecifiedAddr<A::AddrType>, ReplaceWithCoreId>>, u16),
@@ -1774,7 +1774,7 @@ mod tests {
     // `Unzoned` addresses. This is a regression test for
     // https://fxbug.dev/329694011.
     #[fixture::teardown(FakeConversionContext::shutdown)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn sock_addr_conversion_with_unnecessary_zone_id() {
         let ctx = FakeConversionContext::new().await;
         const GLOBAL_IPV6_ADDR: Ipv6Addr = net_ip_v6!("a:b:c:d::");
@@ -1809,7 +1809,7 @@ mod tests {
     }
 
     #[fixture::teardown(FakeConversionContext::shutdown)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn device_id_from_bindings_id() {
         let ctx = FakeConversionContext::new().await;
         let device_id: DeviceId<_> =

@@ -19,7 +19,7 @@ rustc_test("test") {
     "//src/connectivity/lib/net-types",
     "//src/connectivity/lib/packet-formats",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
     "//src/lib/network/packet",

@@ -1251,7 +1251,7 @@ mod tests {
     #[test_case(TxOrRx::Tx, zx::Rights::READ; "tx read")]
     #[test_case(TxOrRx::Tx, zx::Rights::WRITE; "tx write")]
     #[test_case(TxOrRx::Rx, zx::Rights::WRITE; "rx read")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn task_as_future_poll_error(which_fifo: TxOrRx, right_to_remove: zx::Rights) {
         // This is a regression test for https://fxbug.dev/42072513. The flake
         // that caused that bug occurred because the Zircon channel was closed
@@ -1308,7 +1308,7 @@ mod tests {
     #[test_case(1; "drain first")]
     #[test_case(2; "drain first two")]
     #[test_case(3; "drain all")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn ready_storage_batch_iterator(drain_first_n: usize) {
         let (handle, fifo_server) = zx::Fifo::<u32>::create(256).unwrap();
         let fifo_client = Fifo::from_fifo(handle);

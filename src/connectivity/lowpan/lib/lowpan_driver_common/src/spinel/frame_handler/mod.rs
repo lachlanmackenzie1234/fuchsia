@@ -14,11 +14,11 @@ use crate::prelude_internal::*;
 use anyhow::Error;
 use derivative::Derivative;
 use fuchsia_sync::Mutex;
+use futures::FutureExt;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
 use futures::task::{Context, Poll};
-use futures::FutureExt;
 use slab::Slab;
 use static_assertions::_core::pin::Pin;
 use std::fmt::Debug;
@@ -360,11 +360,11 @@ pub(crate) mod tests {
 
     use assert_matches::assert_matches;
     use fidl_fuchsia_lowpan_spinel::DeviceEvent as SpinelDeviceEvent;
-    use fuchsia_async as fasync;
+
     use futures::future::{join, select};
     use mock::DeviceRequest;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_spinel_frame_handler() {
         const MAX_FRAME_SIZE: u32 = 2000;
         let (device_sink, mut device_stream, mut device_event_sender, mut device_request_receiver) =
@@ -409,9 +409,11 @@ pub(crate) mod tests {
             );
 
             traceln!("ncp_task: Sending SpinelDeviceEvent::OnReadyForSendFrames");
-            assert!(device_event_sender
-                .start_send(Ok(SpinelDeviceEvent::OnReadyForSendFrames { number_of_frames: 2 }))
-                .is_ok());
+            assert!(
+                device_event_sender
+                    .start_send(Ok(SpinelDeviceEvent::OnReadyForSendFrames { number_of_frames: 2 }))
+                    .is_ok()
+            );
 
             traceln!("ncp_task: Waiting for DeviceRequest::SendFrame");
             let request = device_request_receiver.next().await;

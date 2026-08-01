@@ -36,6 +36,7 @@ template("net_cli_lib") {
 
     test_deps = [
       "//src/connectivity/lib/net-declare",
+      "//src/lib/fuchsia",
       "//src/lib/fuchsia-async",
       "//third_party/rust_crates:assert_matches",
       "//third_party/rust_crates:pretty_assertions",
@@ -142,7 +143,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//src/developer/lib/writer:lib",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/sys/lib/component_debug",
     "//third_party/rust_crates:anyhow",

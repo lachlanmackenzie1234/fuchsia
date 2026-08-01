@@ -91,13 +91,13 @@ mod test {
         next_random_socket_test::<DnsUdpSocket, FuchsiaExec>(exec)
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_udp_stream_ipv4() {
         use trust_dns_proto::tests::udp_stream_test;
         udp_stream_test::<DnsUdpSocket>(ip!("127.0.0.1")).await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_udp_stream_ipv6() {
         use trust_dns_proto::tests::udp_stream_test;
         udp_stream_test::<DnsUdpSocket>(ip!("::1")).await

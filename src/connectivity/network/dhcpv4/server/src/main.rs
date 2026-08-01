@@ -647,7 +647,6 @@ where
 mod tests {
     use super::*;
     use dhcpv4::configuration::ServerParameters;
-    use fuchsia_async as fasync;
     use futures::FutureExt;
     use futures::sink::drain;
     use net_declare::{fidl_ip_v4, std_ip_v4};
@@ -799,7 +798,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn get_option_with_subnet_mask_returns_subnet_mask() {
         run_with_server(|proxy| async move {
             assert_eq!(
@@ -813,7 +812,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn get_parameter_with_lease_length_returns_lease_length() {
         run_with_server(|proxy| async move {
             assert_eq!(
@@ -831,7 +830,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn set_option_with_subnet_mask_returns_unit() {
         run_with_server(|proxy| async move {
             assert_eq!(
@@ -845,7 +844,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn set_parameter_with_lease_length_returns_unit() {
         run_with_server(|proxy| async move {
             assert_eq!(
@@ -865,7 +864,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn list_options_returns_empty_vec() {
         run_with_server(|proxy| async move {
             assert_eq!(proxy.list_options().await.expect("list_options failed"), Ok(Vec::new()));
@@ -873,7 +872,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn list_parameters_returns_empty_vec() {
         run_with_server(|proxy| async move {
             assert_eq!(
@@ -884,7 +883,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn reset_options_returns_unit() {
         run_with_server(|proxy| async move {
             assert_eq!(proxy.reset_options().await.expect("reset_options failed"), Ok(()));
@@ -892,7 +891,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn reset_parameters_returns_unit() {
         run_with_server(|proxy| async move {
             assert_eq!(proxy.reset_parameters().await.expect("reset_parameters failed"), Ok(()));
@@ -900,7 +899,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn clear_leases_returns_unit() {
         run_with_server(|proxy| async move {
             assert_eq!(proxy.clear_leases().await.expect("clear_leases failed"), Ok(()));
@@ -908,7 +907,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn start_stop_server() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_net_dhcp::Server_Marker>();
@@ -987,7 +986,7 @@ mod tests {
         };
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn start_server_fails_on_bad_params() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_net_dhcp::Server_Marker>();
@@ -1008,7 +1007,7 @@ mod tests {
         assert!(server.borrow().abort_handle.is_none());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn start_server_fails_on_missing_interface_names() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_net_dhcp::Server_Marker>();
@@ -1034,7 +1033,7 @@ mod tests {
         assert!(server.borrow().abort_handle.is_none());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn disallow_change_parameters_if_enabled() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_net_dhcp::Server_Marker>();

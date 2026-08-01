@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl_fuchsia_bluetooth_map::{MessagingClientMarker, MessagingClientProxy};
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
-use futures::{pin_mut, FutureExt, TryStreamExt};
+use futures::{FutureExt, TryStreamExt, pin_mut};
 use log::{info, warn};
 use simplelog::{Config, LevelFilter, WriteLogger};
 use std::io;
@@ -19,7 +18,7 @@ mod repl;
 use crate::accessor::AccessorClient;
 use crate::repl::start_accessor_loop;
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let () = WriteLogger::init(LevelFilter::Info, Config::default(), io::stderr()).unwrap();
 

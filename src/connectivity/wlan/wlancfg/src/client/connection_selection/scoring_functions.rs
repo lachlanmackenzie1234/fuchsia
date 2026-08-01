@@ -225,7 +225,7 @@ mod test {
         assert_eq!(RSSI_AND_VELOCITY_SCORE_WEIGHT + SNR_SCORE_WEIGHT, 1.0);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_score_bss_prefers_less_short_connections() {
         let bss_worse = types::Bss {
             signal: types::Signal { rssi_dbm: -60, snr_db: 0 },
@@ -257,7 +257,7 @@ mod test {
         assert!(score_bss_scanned_candidate(bss_better) > score_bss_scanned_candidate(bss_worse));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_score_bss_prefers_less_failures() {
         let bss_worse = types::Bss {
             signal: types::Signal { rssi_dbm: -60, snr_db: 0 },
@@ -285,7 +285,7 @@ mod test {
         assert!(score_bss_scanned_candidate(bss_better) > score_bss_scanned_candidate(bss_worse));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_score_bss_prefers_strong_5ghz_with_failures() {
         // Test test that if one network has a few network failures but is 5 Ghz instead of 2.4,
         // the 5 GHz network has a higher score.
@@ -313,7 +313,7 @@ mod test {
         assert!(score_bss_scanned_candidate(bss_better) > score_bss_scanned_candidate(bss_worse));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_score_credentials_rejected_worse() {
         // If two BSS are identical other than one failed to connect with wrong credentials and
         // the other failed with a few connect failurs, the one with wrong credentials has a lower
@@ -348,7 +348,7 @@ mod test {
         assert!(score_bss_scanned_candidate(bss_better) > score_bss_scanned_candidate(bss_worse));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn score_many_penalties_do_not_cause_panic() {
         let bss = types::Bss {
             signal: types::Signal { rssi_dbm: -80, snr_db: 0 },

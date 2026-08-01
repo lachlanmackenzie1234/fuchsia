@@ -15,6 +15,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.bluetooth.map:fuchsia.bluetooth.map_rust",
     "//src/lib/async-utils",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-sync",

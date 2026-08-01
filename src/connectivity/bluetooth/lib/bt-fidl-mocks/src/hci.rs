@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::expect::{expect_call, Status};
+use crate::expect::{Status, expect_call};
 use anyhow::Error;
 use fidl_fuchsia_hardware_bluetooth::{
     HciTransportMarker, HciTransportProxy, HciTransportRequest, HciTransportRequestStream,
@@ -50,7 +50,7 @@ mod tests {
     use crate::timeout_duration;
     use futures::join;
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_expect_send() {
         let (proxy, mut mock) =
             HciTransportMock::new(timeout_duration()).expect("failed to create mock");

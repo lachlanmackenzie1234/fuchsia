@@ -5,6 +5,9 @@
 use anyhow::{Context, Error, format_err};
 use cm_rust::{ExposeDecl, ExposeProtocolDecl, ExposeSource, ExposeTarget, append_box};
 use fidl::endpoints::{self as f_end, DiscoverableProtocolMarker};
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_bredr_test as bredr_test;
+use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_logger::LogSinkMarker;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_bluetooth::types as bt_types;
@@ -16,10 +19,6 @@ use futures::stream::StreamExt;
 use futures::{TryFutureExt, TryStreamExt};
 use log::info;
 use zx::{self as zx, MonotonicDuration};
-use {
-    fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_bredr_test as bredr_test,
-    fidl_fuchsia_component_test as ftest,
-};
 
 /// Timeout for updates over the PeerObserver of a MockPeer.
 ///
@@ -910,7 +909,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_profile_server_added() {
         let test_harness = PiconetHarness::new().await;
         test_harness.update_routes().await.expect("should update routes");
@@ -918,7 +917,7 @@ mod tests {
         let _ = test_harness.builder.build().await.expect("build failed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_piconet_member() {
         let mut test_harness = PiconetHarness::new().await;
         let member_name = "test-piconet-member";
@@ -933,7 +932,7 @@ mod tests {
         let _profile_test_offer = test_harness.builder.build().await.expect("build failed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_piconet_member_with_rfcomm() {
         let mut test_harness = PiconetHarness::new().await;
         let member_name = "test-piconet-member";
@@ -951,7 +950,7 @@ mod tests {
         // will cause component resolving to fail.
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_multiple_piconet_members() {
         let mut test_harness = PiconetHarness::new().await;
         let member1_name = "test-piconet-member".to_string();
@@ -974,7 +973,7 @@ mod tests {
         let _profile_test_offer = test_harness.builder.build().await.expect("build failed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_multiple_piconet_members_with_rfcomm() {
         let mut test_harness = PiconetHarness::new().await;
         let rfcomm_url = "fuchsia-pkg://fuchsia.com/example#meta/bt-rfcomm.cm".to_string();
@@ -1130,7 +1129,7 @@ mod tests {
         // Mock Piconet Server has this expose.
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_profile() {
         let mut test_harness = PiconetHarness::new().await;
         let profile_name = "test-profile-member";
@@ -1222,7 +1221,7 @@ mod tests {
         assert!(root.offers.contains(&log_offer));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_profile_with_rfcomm() {
         let mut test_harness = PiconetHarness::new().await;
 
@@ -1277,7 +1276,7 @@ mod tests {
         assert!(root.offers.contains(&profile_offer2));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_profile_with_additional_capabilities() {
         let mut test_harness = PiconetHarness::new().await;
         let profile_name = "test-profile-member";
@@ -1347,7 +1346,7 @@ mod tests {
         assert!(root.offers.contains(&fake_capability_offer3));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_profiles_with_same_expose_is_ok() {
         let mut test_harness = PiconetHarness::new().await;
         let profile_name1 = "test-profile-1";

@@ -74,7 +74,7 @@ pub(crate) fn set_logger_for_test() {
     // log::set_logger will panic if called multiple times; using a Once makes
     // set_logger_for_test idempotent
     LOGGER_ONCE.call_once(|| {
-        log::set_logger(&Logger).unwrap();
+        let _ = log::set_logger(&Logger);
         log::set_max_level(log::LevelFilter::Trace);
     })
 }
@@ -690,7 +690,7 @@ impl StackSetupBuilder {
 }
 
 #[fixture::teardown(TestSetup::shutdown)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn test_add_device_routes() {
     // create a stack and add a single endpoint to it so we have the interface
     // id:
@@ -798,7 +798,7 @@ async fn test_add_device_routes() {
 }
 
 #[fixture::teardown(TestSetup::shutdown)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn test_list_del_routes() {
     // create a stack and add a single endpoint to it so we have the interface
     // id:
@@ -990,7 +990,7 @@ async fn test_list_del_routes() {
 }
 
 #[fixture::teardown(TestSetup::shutdown)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn test_neighbor_table_inspect() {
     const EP_IDX: usize = 1;
     let mut t = TestSetupBuilder::new()
@@ -1073,7 +1073,7 @@ impl IpExt for Ipv6 {
 #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
 #[fixture::teardown(TestSetup::shutdown)]
 #[ip_test(I)]
-#[fasync::run_singlethreaded]
+#[fuchsia::test(logging = false)]
 async fn add_remove_neighbor_entry<I: IpExt>() {
     const EP_IDX: usize = 1;
     let t = TestSetupBuilder::new()
@@ -1130,7 +1130,7 @@ async fn add_remove_neighbor_entry<I: IpExt>() {
 #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
 #[fixture::teardown(TestSetup::shutdown)]
 #[ip_test(I)]
-#[fasync::run_singlethreaded]
+#[fuchsia::test(logging = false)]
 async fn remove_dynamic_neighbor_entry<I: IpExt>() {
     const EP_IDX: usize = 1;
     let t = TestSetupBuilder::new()
@@ -1177,7 +1177,7 @@ async fn remove_dynamic_neighbor_entry<I: IpExt>() {
 #[netstack3_core::context_ip_bounds(I::OtherIp, BindingsCtx)]
 #[fixture::teardown(TestSetup::shutdown)]
 #[ip_test(I)]
-#[fasync::run_singlethreaded]
+#[fuchsia::test(logging = false)]
 async fn clear_entries<I: IpExt>() {
     const EP_IDX: usize = 1;
     let t = TestSetupBuilder::new()
@@ -1226,7 +1226,7 @@ async fn clear_entries<I: IpExt>() {
     t
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn device_strong_ids_delay_clean_shutdown() {
     set_logger_for_test();
     let mut t = TestSetupBuilder::new().add_empty_stack().build().await;
@@ -1252,7 +1252,7 @@ async fn device_strong_ids_delay_clean_shutdown() {
     [true, false],
     [true, false]
 )]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_netdev(
     detach_device_control: bool,
     detach_interface_control: bool,
@@ -1339,7 +1339,7 @@ async fn shutdown_with_open_resources_netdev(
     assert_eq!(asp.as_channel().on_closed().await, Ok(fidl::Signals::CHANNEL_PEER_CLOSED));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_blackhole() {
     let t = TestSetupBuilder::new().add_empty_stack().build().await;
 
@@ -1402,7 +1402,7 @@ async fn shutdown_with_open_resources_blackhole() {
     assert_eq!(asp.as_channel().on_closed().await, Ok(fidl::Signals::CHANNEL_PEER_CLOSED));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_sockets() {
     let t = TestSetupBuilder::new().add_empty_stack().build().await;
 
@@ -1523,7 +1523,7 @@ async fn shutdown_with_open_resources_sockets() {
 
 #[test_case(true; "detached")]
 #[test_case(false; "not detached")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_routes(detach_route_table: bool) {
     const EP_IDX: usize = 1;
     let t = TestSetupBuilder::new()
@@ -1662,7 +1662,7 @@ async fn shutdown_with_open_resources_routes(detach_route_table: bool) {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_interfaces_watcher() {
     let t = TestSetupBuilder::new().add_empty_stack().build().await;
     let channels = {
@@ -1685,7 +1685,7 @@ async fn shutdown_with_open_resources_interfaces_watcher() {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_ndp_watcher() {
     let t = TestSetupBuilder::new().add_empty_stack().build().await;
     let channels = {
@@ -1714,7 +1714,7 @@ async fn shutdown_with_open_resources_ndp_watcher() {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_filter() {
     let t = TestSetupBuilder::new().add_empty_stack().build().await;
     let channels = {
@@ -1790,7 +1790,7 @@ async fn shutdown_with_open_resources_filter() {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_neighbor() {
     const EP_IDX: usize = 1;
     let t = TestSetupBuilder::new()
@@ -1831,7 +1831,7 @@ async fn shutdown_with_open_resources_neighbor() {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn shutdown_with_open_resources_multicast_admin() {
     const EP_IDX1: usize = 1;
     const EP_IDX2: usize = 2;

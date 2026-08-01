@@ -1428,9 +1428,8 @@ mod tests {
     use crate::DummyDevice;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_endpoints;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_send_mfg_command() {
         let device = DummyDevice::default();
 
@@ -1455,7 +1454,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_energy_scan() {
         let device = DummyDevice::default();
 
@@ -1493,7 +1492,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_network_scan() {
         let device = DummyDevice::default();
 
@@ -1531,7 +1530,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_get_telemetry_info() {
         let device = DummyDevice::default();
 
@@ -1562,7 +1561,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_device_extra_request() {
         let device = DummyDevice::default();
 
@@ -1585,7 +1584,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_dataset_request() {
         let (client_ep, server_ep) = create_endpoints::<DatasetMarker>();
 

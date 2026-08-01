@@ -117,7 +117,7 @@ network_unified_binary("bin-basic") {
 
   deps = [
     ":lib",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
   ]
 
   sources = [ "src/bin/basic.rs" ]
@@ -130,7 +130,7 @@ rustc_binary("bin-advanced") {
 
   deps = [
     ":lib",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
   ]
 
   sources = [ "src/bin/advanced.rs" ]

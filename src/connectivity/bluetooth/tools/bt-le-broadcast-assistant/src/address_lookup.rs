@@ -66,7 +66,7 @@ mod tests {
     use futures::stream::StreamExt;
     use futures::task::Poll;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_local_peer_addr_cache() {
         let cache = LocalPeerAddrCache::new();
         let peer_id = PeerId(123);

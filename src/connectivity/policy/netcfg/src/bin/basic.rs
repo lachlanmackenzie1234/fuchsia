@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 pub async fn main() {
     netcfg::run::<netcfg::BasicMode>().await.expect("netcfg exited with an error")
 }

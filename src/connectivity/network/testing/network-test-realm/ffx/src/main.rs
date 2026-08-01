@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use fho::FfxTool;
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() {
     ffx_net_test_realm::NetTestRealmTool::execute_tool().await
 }

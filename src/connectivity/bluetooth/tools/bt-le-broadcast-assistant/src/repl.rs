@@ -257,7 +257,6 @@ mod tests {
     use bt_common::core::AddressType;
     use bt_gatt::pii::StaticPeerAddr;
     use bt_gatt_fuchsia::{Central, FuchsiaTypes};
-    use fuchsia_async as fasync;
 
     fn setup_test_state() -> AssistantState<FuchsiaTypes, StaticPeerAddr> {
         let (central_proxy, _central_mock) =
@@ -268,21 +267,21 @@ mod tests {
         AssistantState::new(debug, None)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_handle_cmd_exit() {
         let mut state = setup_test_state();
         let res = handle_cmd("exit".to_string(), &mut state).await;
         assert!(res.is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_handle_cmd_help() {
         let mut state = setup_test_state();
         let res = handle_cmd("help".to_string(), &mut state).await;
         assert!(res.is_ok());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_handle_cmd_unknown() {
         let mut state = setup_test_state();
         let res = handle_cmd("foobar".to_string(), &mut state).await;
@@ -290,7 +289,7 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_handle_cmd_assistant_cmd() {
         let mut state = setup_test_state();
         // "scan" is a valid AssistantCmd. We expect it to be handled without error.

@@ -417,7 +417,6 @@ pub(crate) mod testutil {
 mod test {
     use super::testutil::*;
     use super::*;
-    use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use futures::{FutureExt, StreamExt};
     use net_declare::std_socket_addr;
@@ -441,7 +440,7 @@ mod test {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_socket() {
         let (a, b) = FakeSocket::new_pair();
         let to_send = [
@@ -471,7 +470,7 @@ mod test {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     #[should_panic]
     async fn test_socket_panics_on_short_read() {
         let (a, b) = FakeSocket::new_pair();
@@ -484,7 +483,7 @@ mod test {
         let _: Result<_, _> = b.recv_from(&mut buf).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_fake_udp_socket_provider() {
         let (a, b) = FakeSocket::new_pair();
         let (events_sender, mut events_receiver) = mpsc::unbounded();
@@ -525,7 +524,7 @@ mod test {
         assert_eq!(address, ADDR_3);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn test_fake_packet_socket_provider() {
         let (a, b) = FakeSocket::new_pair();
         let (events_sender, mut events_receiver) = mpsc::unbounded();

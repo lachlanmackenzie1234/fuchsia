@@ -448,9 +448,8 @@ mod factory {
 mod tests {
     use super::*;
     use fidl::endpoints::create_endpoints;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_interface_name_check() {
         let service = LowpanService::with_spawner(FuchsiaGlobalExecutor);
 
@@ -467,7 +466,7 @@ mod tests {
         assert_eq!(service.register("l", client_ep), Err(ZxStatus::INVALID_ARGS));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_factory_interface() {
         let service = LowpanService::with_spawner(FuchsiaGlobalExecutor);
 
@@ -475,7 +474,7 @@ mod tests {
         assert_eq!(service.register_factory("lowpan0", client_ep), Ok(()));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_interface_added_notifications() {
         let service = LowpanService::with_spawner(FuchsiaGlobalExecutor);
 
@@ -487,7 +486,7 @@ mod tests {
         waiter.await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_interface_removed_notifications() {
         let service = LowpanService::with_spawner(FuchsiaGlobalExecutor);
 

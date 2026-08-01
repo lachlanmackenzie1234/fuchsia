@@ -560,7 +560,7 @@ async fn run_repl<'a>(
     Ok(())
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let opt: Options = argh::from_env();
 
@@ -755,8 +755,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[fasync::run_singlethreaded]
-    #[test]
+    #[fuchsia::test]
     /// Tests a set_volume command with no input args does not result in error.
     /// Instead, a help message should be returned.
     async fn test_set_volume_no_args() {

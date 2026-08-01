@@ -2,21 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use emergency_lib::bss_cache::{Bss, BssCache, BssId, RealBssCache, UpdateError};
 use emergency_lib::bss_resolver::{BssResolver, RealBssResolver, ResolverError};
 use emergency_metrics_registry::{
-    self as metrics, EmergencyGetCurrentFailureMigratedMetricDimensionCause as GetCurrentFailure,
-    EmergencyGetCurrentResultMigratedMetricDimensionResult as GetCurrentResult,
-    WlanSensorReportMigratedMetricDimensionResult as WlanSensorReportResult,
+    self as metrics,
     EMERGENCY_GET_CURRENT_ACCURACY_MIGRATED_METRIC_ID as GET_CURRENT_ACCURACY_METRIC_ID,
     EMERGENCY_GET_CURRENT_FAILURE_MIGRATED_METRIC_ID as GET_CURRENT_FAILURE_METRIC_ID,
     EMERGENCY_GET_CURRENT_LATENCY_MIGRATED_METRIC_ID as GET_CURRENT_LATENCY_METRIC_ID,
     EMERGENCY_GET_CURRENT_RESULT_MIGRATED_METRIC_ID as GET_CURRENT_RESULT_METRIC_ID,
+    EmergencyGetCurrentFailureMigratedMetricDimensionCause as GetCurrentFailure,
+    EmergencyGetCurrentResultMigratedMetricDimensionResult as GetCurrentResult,
     WLAN_SENSOR_REPORT_MIGRATED_METRIC_ID,
+    WlanSensorReportMigratedMetricDimensionResult as WlanSensorReportResult,
 };
-use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_fuchsia_location::Error as LocationError;
 use fidl_fuchsia_location_position::{
     EmergencyProviderRequest, EmergencyProviderRequestStream, Position,
@@ -270,7 +271,7 @@ mod tests {
         use fidl_fuchsia_wlan_policy::ScanResultIteratorMarker;
         use test_case::test_case;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn propagates_stations_downward() {
             let (cobalt_sender, _cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<WlanBaseStationWatcherMarker>();
@@ -291,7 +292,7 @@ mod tests {
             assert!(bss_cache.lock().await.was_update_called())
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn update_error_does_not_panic() {
             let (cobalt_sender, _cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<WlanBaseStationWatcherMarker>();
@@ -359,9 +360,11 @@ mod tests {
                         })
                         .collect::<Vec<MetricEvent>>()
                         .await,
-                    vec![MetricEvent::builder(WLAN_SENSOR_REPORT_MIGRATED_METRIC_ID)
-                        .with_event_codes(cobalt_event)
-                        .as_occurrence(1)]
+                    vec![
+                        MetricEvent::builder(WLAN_SENSOR_REPORT_MIGRATED_METRIC_ID)
+                            .with_event_codes(cobalt_event)
+                            .as_occurrence(1)
+                    ]
                 );
             };
             let mut test_fut = pin!(test_fut);
@@ -371,7 +374,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn does_not_report_extra_metrics() {
             let (cobalt_sender, cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<WlanBaseStationWatcherMarker>();
@@ -434,7 +437,7 @@ mod tests {
             }
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn propagates_success_to_client() {
             let (cobalt_sender, _cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<EmergencyProviderMarker>();
@@ -452,7 +455,7 @@ mod tests {
             assert_matches!(client_res, Ok(Ok(Position { .. })))
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn propagates_error_to_client() {
             let (cobalt_sender, _cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<EmergencyProviderMarker>();
@@ -470,7 +473,7 @@ mod tests {
             assert_matches!(client_res, Ok(Err(_))) // The `Ok` is the FIDL-level result.
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn reports_success_to_cobalt() {
             let (cobalt_sender, cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<EmergencyProviderMarker>();
@@ -490,13 +493,15 @@ mod tests {
                     .filter(|event| future::ready(event.metric_id == GET_CURRENT_RESULT_METRIC_ID))
                     .collect::<Vec<MetricEvent>>()
                     .await,
-                vec![MetricEvent::builder(GET_CURRENT_RESULT_METRIC_ID)
-                    .with_event_codes(GetCurrentResult::Success)
-                    .as_occurrence(1)]
+                vec![
+                    MetricEvent::builder(GET_CURRENT_RESULT_METRIC_ID)
+                        .with_event_codes(GetCurrentResult::Success)
+                        .as_occurrence(1)
+                ]
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn reports_failure_to_cobalt() {
             let (cobalt_sender, cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<EmergencyProviderMarker>();
@@ -516,13 +521,15 @@ mod tests {
                     .filter(|event| future::ready(event.metric_id == GET_CURRENT_RESULT_METRIC_ID))
                     .collect::<Vec<MetricEvent>>()
                     .await,
-                vec![MetricEvent::builder(GET_CURRENT_RESULT_METRIC_ID)
-                    .with_event_codes(GetCurrentResult::Failure)
-                    .as_occurrence(1)]
+                vec![
+                    MetricEvent::builder(GET_CURRENT_RESULT_METRIC_ID)
+                        .with_event_codes(GetCurrentResult::Failure)
+                        .as_occurrence(1)
+                ]
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn propagates_reported_accuracy_to_cobalt() {
             let (cobalt_sender, cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<EmergencyProviderMarker>();
@@ -550,7 +557,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn reports_worst_accuracy_if_accuracy_is_unknown() {
             let (cobalt_sender, cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<EmergencyProviderMarker>();
@@ -576,7 +583,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn reports_elapsed_time_to_cobalt_on_success() {
             let (cobalt_sender, cobalt_receiver) = make_fake_cobalt_connection();
             let (proxy, stream) = create_proxy_and_stream::<EmergencyProviderMarker>();
@@ -635,9 +642,11 @@ mod tests {
                         })
                         .collect::<Vec<MetricEvent>>()
                         .await,
-                    vec![MetricEvent::builder(GET_CURRENT_FAILURE_METRIC_ID)
-                        .with_event_codes(cobalt_error)
-                        .as_occurrence(1)]
+                    vec![
+                        MetricEvent::builder(GET_CURRENT_FAILURE_METRIC_ID)
+                            .with_event_codes(cobalt_error)
+                            .as_occurrence(1)
+                    ]
                 );
             };
             let mut test_fut = pin!(test_fut);

@@ -22,7 +22,7 @@ use futures::{FutureExt as _, StreamExt as _};
 use std::pin::pin;
 use vfs::directory::helper::DirectlyMutable;
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 pub async fn main() -> std::process::ExitCode {
     // Start by getting the Netstack version we should use.
     let current_boot_version = {

@@ -20,9 +20,9 @@
 //! messages in the channel and be dropped.
 
 use anyhow::Error;
+use futures::SinkExt;
 use futures::channel::{mpsc, oneshot};
 use futures::stream::{FusedStream, Stream};
-use futures::SinkExt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -256,7 +256,7 @@ mod tests {
         assert!(responder.respond(()).is_err());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn cannot_request_after_receiver_closed() {
         let (mut sender, mut receiver) = channel::<(), ()>(0);
         receiver.close();

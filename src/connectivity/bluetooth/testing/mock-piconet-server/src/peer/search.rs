@@ -177,7 +177,7 @@ mod tests {
     use crate::profile::tests::a2dp_service_definition;
 
     /// Tests the basic case of adding a search and removing the search.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_and_remove_search() {
         let mut search_mgr = SearchSet::new();
         let mut expected_searches = HashSet::new();
@@ -197,7 +197,7 @@ mod tests {
     }
 
     /// Tests adding and removing multiple searches.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_searches() {
         let mut search_mgr = SearchSet::new();
         let mut expected_searches = HashSet::new();

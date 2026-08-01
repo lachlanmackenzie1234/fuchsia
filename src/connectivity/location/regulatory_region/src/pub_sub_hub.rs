@@ -178,12 +178,11 @@ impl PubSubHubInner {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use futures_test::task::new_count_waker;
     use std::io::Write;
     use tempfile::TempDir;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn watch_for_change_future_is_pending_when_both_values_are_none() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -195,7 +194,7 @@ mod tests {
         assert_eq!(0, count.get());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn watch_for_change_future_is_pending_when_values_are_same_and_not_none() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -209,9 +208,9 @@ mod tests {
         assert_eq!(0, count.get());
     }
 
-    #[fasync::run_until_stalled(test)]
-    async fn watch_for_change_future_is_immediately_ready_when_argument_differs_from_published_value(
-    ) {
+    #[fuchsia::test(allow_stalls = false)]
+    async fn watch_for_change_future_is_immediately_ready_when_argument_differs_from_published_value()
+     {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
         let hub = PubSubHub::new(path);
@@ -224,7 +223,7 @@ mod tests {
         assert_eq!(0, count.get());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn single_watcher_is_woken_correctly_on_change_from_none_to_some() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -240,7 +239,7 @@ mod tests {
         assert_eq!(Poll::Ready(Some("US".to_string())), Pin::new(&mut future).poll(&mut context));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn single_watcher_is_woken_correctly_on_change_from_some_to_new_some() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -258,7 +257,7 @@ mod tests {
         assert_eq!(Poll::Ready(Some("SU".to_string())), Pin::new(&mut future).poll(&mut context));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn multiple_watchers_are_woken_correctly_on_change_from_some_to_new_some() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -290,7 +289,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn multiple_watchers_are_woken_correctly_after_spurious_update() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -329,7 +328,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn multiple_watchers_can_share_a_waker() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -356,7 +355,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn single_watcher_is_not_woken_again_after_future_is_ready() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -376,7 +375,7 @@ mod tests {
         assert_eq!(1, count.get());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn second_watcher_is_woken_for_second_update() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -399,7 +398,7 @@ mod tests {
         assert_eq!(Poll::Ready(Some("SU".to_string())), Pin::new(&mut future).poll(&mut context));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn multiple_polls_of_single_watcher_do_not_cause_multiple_wakes_when_waker_is_reused() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");
@@ -415,7 +414,7 @@ mod tests {
         assert_eq!(1, count.get());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn multiple_polls_of_single_watcher_do_not_cause_multiple_wakes_when_waker_is_replaced() {
         let temp_dir = TempDir::new_in("/cache/").expect("failed to create temporary directory");
         let path = temp_dir.path().join("regulatory_region.json");

@@ -184,7 +184,6 @@ mod test {
     use std::pin::pin;
 
     use fuchsia_async::net::TcpListener;
-    use fuchsia_async::{self as fasync};
     use futures::future::Fuse;
     use futures::io::BufReader;
     use futures::{AsyncBufReadExt, FutureExt, StreamExt};
@@ -240,7 +239,7 @@ mod test {
     #[test_case("http://reachability.test/path/", 200; "sub path 200")]
     #[test_case("http://reachability.test/", 400; "base path 400")]
     #[test_case("http://reachability.test/path/", 400; "sub path 400")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fetch(url_str: &'static str, code: u16) -> anyhow::Result<()> {
         let url = url::Url::parse(url_str)?;
         let (addr, server_fut) = server(code)?;

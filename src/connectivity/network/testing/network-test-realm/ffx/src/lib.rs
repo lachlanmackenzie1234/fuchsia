@@ -335,7 +335,7 @@ mod test {
         futures::future::try_join(op, op_response).await.expect("net_test_realm command failed");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn add_interface() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -357,7 +357,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn join_multicast_group() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -378,7 +378,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn leave_multicast_group() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -399,7 +399,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn ping() {
         let client = fdomain_local::local_client_empty();
         let expected_payload_length = 100;
@@ -425,7 +425,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn poll_udp() {
         let client = fdomain_local::local_client_empty();
         let expected_port = 1234;
@@ -457,7 +457,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_hermetic_network_realm() {
         let client = fdomain_local::local_client_empty();
         let expected_netstack = fntr::Netstack::V2;
@@ -477,7 +477,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_stub() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -495,7 +495,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stop_hermetic_network_realm() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -512,7 +512,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stop_stub() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -529,7 +529,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dhcpv6_client_start() {
         const DHCPV6_CLIENT_BIND_ADDR: fnet_ext::Ipv6Address =
             fnet_ext::Ipv6Address(std_ip_v6!("fe80::1"));
@@ -583,7 +583,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dhcpv6_client_stop() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -602,7 +602,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dhcp_client_start() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(
@@ -631,7 +631,7 @@ mod test {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dhcp_client_stop() {
         let client = fdomain_local::local_client_empty();
         net_test_realm_command_test(

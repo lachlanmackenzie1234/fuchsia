@@ -443,7 +443,7 @@ mod tests {
     }
 
     #[fixture(with_worker)]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn suspend_resume(deps: FakeDeps, sink: PowerWorkerSink) {
         let mut pe = InternalPowerElement::new();
         let _reg = sink.register_internal_lessor(pe.lessor());
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[fixture(with_worker)]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn drop_registration(_deps: FakeDeps, sink: PowerWorkerSink) {
         let mut pe = InternalPowerElement::new();
         let reg = sink.register_internal_lessor(pe.lessor());
@@ -501,7 +501,7 @@ mod tests {
     // Tests that receiving unexpected signals from PF still allows us to march
     // forward.
     #[fixture(with_worker)]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn unexpected_client_calls(mut deps: FakeDeps, sink: PowerWorkerSink) {
         let guard = sink.suspension_block.try_guard().expect("acquire guard");
         let mut pe = InternalPowerElement::new();

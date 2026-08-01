@@ -93,7 +93,7 @@ fn new_device_and_port_config(
 
 /// An example of configuring and operating a TAP-like interface using
 /// fuchsia.net.tun.
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn tap_like_over_network_tun() {
     // Connect to the ambient fuchsia.net.tun/Control service.
     let tun =
@@ -209,7 +209,7 @@ async fn tap_like_over_network_tun() {
 
 /// An example of configuring and operating a TUN-like interface using
 /// fuchsia.net.tun.
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn tun_like_over_network_tun() {
     // Connect to the ambient fuchsia.net.tun/Control service.
     let tun =

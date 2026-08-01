@@ -40,7 +40,7 @@ mod prelude {
 
     pub use futures::prelude::*;
 
-    pub use anyhow::{format_err, Context as _, Error};
+    pub use anyhow::{Context as _, Error, format_err};
     pub use argh::FromArgs;
     pub use fidl::endpoints::create_endpoints;
     pub use fuchsia_async as fasync;
@@ -62,7 +62,7 @@ use context::*;
 use invocation::*;
 use prelude::*;
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let args: LowpanCtlInvocation = argh::from_env();
     let mut context: LowpanCtlContext = LowpanCtlContext::from_invocation(&args)?;

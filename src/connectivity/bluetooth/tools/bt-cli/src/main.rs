@@ -753,7 +753,7 @@ async fn run_repl(
     Ok(())
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let access_svc = connect_to_protocol::<AccessMarker>()
         .context("failed to connect to bluetooth access interface")?;

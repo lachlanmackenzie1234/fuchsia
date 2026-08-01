@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, bail, format_err};
 use fasync::MonotonicInstant;
 use fidl_fuchsia_lowpan::DeviceWatcherMarker;
 use fuchsia_async as fasync;
@@ -13,7 +13,7 @@ use futures::prelude::*;
 
 const DEFAULT_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(50);
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_lowpanctl() {
     test_lowpanctl_status().await;
     test_lowpanctl_leave().await;

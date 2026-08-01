@@ -19,7 +19,7 @@ fn usage(appname: &str) {
 }
 
 // TODO(armansito): Add ways to pass controller settings.
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let args: Vec<_> = std::env::args().collect();
     match args.as_slice() {

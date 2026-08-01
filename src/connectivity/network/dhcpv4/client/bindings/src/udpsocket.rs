@@ -313,12 +313,11 @@ mod test {
     use fidl_fuchsia_net_ext as fnet_ext;
     use fidl_fuchsia_netemul_network as fnetemul_network;
     use fidl_fuchsia_posix_socket as fposix_socket;
-    use fuchsia_async as fasync;
     use futures::{FutureExt as _, join};
     use net_declare::std_socket_addr;
     use netstack_testing_common::realms::TestSandboxExt as _;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn udp_socket_provider_impl_send_receive() {
         let sandbox: netemul::TestSandbox = netemul::TestSandbox::new().unwrap();
 

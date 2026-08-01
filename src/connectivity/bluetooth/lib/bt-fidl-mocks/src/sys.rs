@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::expect::{expect_call, Status};
+use crate::expect::{Status, expect_call};
 use anyhow::Error;
 use fidl_fuchsia_bluetooth::PeerId;
 use fidl_fuchsia_bluetooth_sys::{
@@ -109,7 +109,7 @@ mod tests {
     use fidl_fuchsia_bluetooth_sys::PairingDelegateMarker;
     use futures::join;
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_expect_disconnect() {
         let (proxy, mut mock) = AccessMock::new(timeout_duration()).expect("failed to create mock");
         let peer_id = PeerId { value: 1 };
@@ -122,7 +122,7 @@ mod tests {
         let _ = expect_result.expect("expectation not satisfied");
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_expect_forget() {
         let (proxy, mut mock) = AccessMock::new(timeout_duration()).expect("failed to create mock");
         let peer_id = PeerId { value: 1 };
@@ -135,7 +135,7 @@ mod tests {
         let _ = expect_result.expect("expectation not satisifed");
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_expect_set_pairing_delegate() {
         let (proxy, mut mock) =
             PairingMock::new(timeout_duration()).expect("failed to create mock");

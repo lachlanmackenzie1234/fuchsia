@@ -411,7 +411,7 @@ where
 }
 
 // The OpenThread platform implementation currently requires a multithreaded executor.
-#[fasync::run(10)]
+#[fuchsia::main(threads = 10, logging = false)]
 async fn main() -> Result<(), Error> {
     use std::path::Path;
 

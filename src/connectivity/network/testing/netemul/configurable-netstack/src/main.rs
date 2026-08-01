@@ -21,7 +21,7 @@ use log::{error, info};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, Ipv4, Ipv6};
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() {
     diagnostics_log::initialize(diagnostics_log::PublishOptions::default()).expect("init logging");
     info!("started");
@@ -409,7 +409,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn missing_name() {
         let result =
             configure_interface(fnetemul::InterfaceOptions { name: None, ..Default::default() })
@@ -418,7 +418,7 @@ mod tests {
         assert_matches!(result, Err(InterfaceConfigError::NameNotProvided));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn missing_device() {
         let result = configure_interface(fnetemul::InterfaceOptions {
             name: Some("ep".to_string()),
@@ -430,7 +430,7 @@ mod tests {
         assert_matches!(result, Err(InterfaceConfigError::DeviceConnectionNotProvided));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn broken_port_instance() {
         let (client_end, server_end) =
             fidl::endpoints::create_endpoints::<fhardware_network::PortMarker>();

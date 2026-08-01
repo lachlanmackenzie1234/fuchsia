@@ -2416,7 +2416,7 @@ mod tests {
     // implicitly removed, rather then explicitly removed one-by-one. Explicit
     // removal would be redundant and is unnecessary.
     #[fixture::teardown(TestSetup::shutdown)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     async fn implicit_address_removal_on_interface_removal() {
         const ENDPOINT: &'static str = "endpoint";
 

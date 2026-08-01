@@ -21,7 +21,7 @@ rustc_binary("bin") {
     "//src/connectivity/network/testing/netemul/sync-manager/rust:lib",
     "//src/lib/diagnostics/log/rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
     "//src/lib/network/fidl_fuchsia_net_routes_ext",

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fasync::MonotonicInstant;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_lowpan::DeviceWatcherMarker;
@@ -18,7 +18,7 @@ use futures::prelude::*;
 
 const DEFAULT_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(50);
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_service_driver_interaction() -> Result<(), Error> {
     const IFACE_NAME: &str = "lowpan0";
 

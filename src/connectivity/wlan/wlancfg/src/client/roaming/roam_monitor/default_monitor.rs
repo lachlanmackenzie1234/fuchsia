@@ -49,7 +49,7 @@ mod test {
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_internal as fidl_internal;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_handle_roam_trigger_data_always_returns_noop() {
         let mut monitor = DefaultRoamMonitor::new();
 
@@ -64,7 +64,7 @@ mod test {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_should_send_roam_request_returns_error() {
         let monitor = DefaultRoamMonitor::new();
 

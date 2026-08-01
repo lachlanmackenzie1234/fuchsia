@@ -1372,7 +1372,6 @@ impl ChangeSink {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use futures::channel::oneshot;
     use ip_test_macro::ip_test;
     use net_declare::{net_subnet_v4, net_subnet_v6};
@@ -1386,7 +1385,7 @@ mod tests {
     #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
     #[fixture::teardown(TestSetup::shutdown)]
     #[ip_test(I)]
-    #[fasync::run_singlethreaded]
+    #[fuchsia::test(logging = false)]
     async fn table_added_in_both_core_and_bindings<I: IpExt>() {
         set_logger_for_test();
         let t = TestSetupBuilder::new()

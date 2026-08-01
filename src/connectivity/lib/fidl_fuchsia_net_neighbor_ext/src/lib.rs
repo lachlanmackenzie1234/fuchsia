@@ -351,7 +351,7 @@ mod tests {
     #[test_case(vec![0..1]; "single_batch_single_event")]
     #[test_case(vec![0..10]; "single_batch_many_events")]
     #[test_case(vec![0..10, 10..20, 20..30]; "many_batches_many_events")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn event_stream_from_view_against_shape(test_shape: Vec<std::ops::Range<u8>>) {
         // Build the event stream based on the `test_shape`. Use a channel
         // so that the stream stays open until `close_channel` is called later.
@@ -404,7 +404,7 @@ mod tests {
 
     // Verify that calling `event_stream_from_view` multiple times with the
     // same `View` proxy, results in independent `EntryIterator` clients.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn event_stream_from_view_multiple_iterators() {
         // Events for 3 iterators. Each receives one batch containing 10 events.
         let test_data = vec![
@@ -464,7 +464,7 @@ mod tests {
     #[test_case(true, false; "trailing_event")]
     #[test_case(false, true; "trailing_batch")]
     #[test_case(true, true; "trailing_event_and_batch")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn event_stream_from_view_conversion_error(trailing_event: bool, trailing_batch: bool) {
         let bad_event = fnet_neighbor::EntryIteratorItem::Added(fnet_neighbor::Entry {
             interface: None, // Required field omitted.
@@ -500,7 +500,7 @@ mod tests {
     // data to be truncated from the resulting event_stream.
     #[test_case(false; "no_trailing_batch")]
     #[test_case(true; "trailing_batch")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn event_stream_from_view_empty_batch_error(trailing_batch: bool) {
         let batches = std::iter::once(Vec::new())
             // Optionally append a known good batch to the sequence of batches.
@@ -518,7 +518,7 @@ mod tests {
         assert_matches!(&events[..], &[Err(EntryIteratorError::EmptyEventBatch)]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn collect_neighbors_until_idle_error_error_in_stream() {
         let event = Err(EntryIteratorError::EmptyEventBatch);
         let event_stream = futures::stream::once(futures::future::ready(event));
@@ -528,7 +528,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn collect_neighbors_until_idle_error_unexpected_event() {
         let event =
             Ok(Event::Added(valid_fidl_entry(NonZeroU64::new(1).unwrap()).try_into().unwrap()));
@@ -539,7 +539,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn collect_neighbors_until_idle_error_stream_ended() {
         let event =
             Ok(Event::Existing(valid_fidl_entry(NonZeroU64::new(1).unwrap()).try_into().unwrap()));
@@ -550,7 +550,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn collect_neighbors_until_idle_success() {
         let entry: Entry = valid_fidl_entry(NonZeroU64::new(1).unwrap()).try_into().unwrap();
         let mut event_stream = futures::stream::iter([

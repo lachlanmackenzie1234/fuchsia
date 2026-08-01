@@ -13,6 +13,7 @@ rustc_binary("mock_a2dp_controller_bin") {
   deps = [
     "//sdk/fidl/fuchsia.bluetooth.internal.a2dp:fuchsia.bluetooth.internal.a2dp_rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",

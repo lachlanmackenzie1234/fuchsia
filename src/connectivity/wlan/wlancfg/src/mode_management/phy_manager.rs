@@ -983,7 +983,7 @@ mod tests {
     use fidl::endpoints;
     use fidl_fuchsia_wlan_device_service as fidl_service;
     use fidl_fuchsia_wlan_sme as fidl_sme;
-    use fuchsia_async::{TestExecutor, run_singlethreaded};
+    use fuchsia_async::TestExecutor;
     use fuchsia_inspect as inspect;
     use futures::channel::mpsc;
     use futures::stream::StreamExt;
@@ -1520,7 +1520,7 @@ mod tests {
         );
     }
 
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn remove_valid_phy() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -1545,7 +1545,7 @@ mod tests {
     /// calling remove_phy on PhyManager for a PHY ID that is not accounted for by the PhyManager.
     /// The PhyManager should realize that it is unaware of this PHY ID and leave its PhyContainers
     /// unchanged.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn remove_nonexistent_phy() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -1867,7 +1867,7 @@ mod tests {
     /// This test mimics a client of the DeviceWatcher watcher receiving an OnIfaceRemoved event
     /// for an iface that has been accounted for by the PhyManager.  The PhyManager should remove
     /// the iface ID from the PHY's list of client ifaces.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_on_iface_removed() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -1901,7 +1901,7 @@ mod tests {
     /// This test mimics a client of the DeviceWatcher watcher receiving an OnIfaceRemoved event
     /// for an iface that has not been accounted for.  The PhyManager should simply ignore the
     /// request and leave its list of client iface IDs unchanged.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn remove_missing_iface() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -1936,7 +1936,7 @@ mod tests {
 
     /// Tests the response of the PhyManager when a client iface is requested, but no PHYs are
     /// present.  The expectation is that the PhyManager returns None.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_client_no_phys() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -1955,7 +1955,7 @@ mod tests {
     /// Tests the response of the PhyManager when a client iface is requested, a client-capable PHY
     /// has been discovered, but client connections have not been started.  The expectation is that
     /// the PhyManager returns None.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_unconfigured_client() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -1983,7 +1983,7 @@ mod tests {
     /// Tests the response of the PhyManager when a client iface is requested and a client iface is
     /// present.  The expectation is that the PhyManager should reply with the iface ID of the
     /// client iface.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_configured_client() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -2017,7 +2017,7 @@ mod tests {
     /// Tests the response of the PhyManager when a client iface is requested and the only PHY
     /// that is present does not support client ifaces and has an AP iface present.  The
     /// expectation is that the PhyManager returns None.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_client_no_compatible_phys() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(
@@ -2903,7 +2903,7 @@ mod tests {
     /// Tests get_phy_ids() when no PHYs are present. The expectation is that the PhyManager will
     /// Tests get_phy_ids() when no PHYs are present. The expectation is that the PhyManager will
     /// return an empty `Vec` in this case.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_phy_ids_no_phys() {
         let test_values = test_setup();
         let phy_manager = PhyManager::new(
@@ -2992,7 +2992,7 @@ mod tests {
     }
 
     /// Tests log_phy_add_failure() to ensure the appropriate inspect count is incremented by 1.
-    #[run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn log_phy_add_failure() {
         let test_values = test_setup();
         let mut phy_manager = PhyManager::new(

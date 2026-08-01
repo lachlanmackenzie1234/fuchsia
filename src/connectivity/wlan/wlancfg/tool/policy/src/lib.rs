@@ -2023,7 +2023,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut suggest_fut), Poll::Ready(Err(_)));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_proxy_command_succeeds() {
         match run_proxy_command(Box::pin(async { Ok(zx_status::Status::OK) })).await {
             Ok(status) => {
@@ -2033,7 +2033,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_proxy_command_already_bound() {
         let result: Result<(), Error> = run_proxy_command(Box::pin(async {
             Err(fidl::Error::ClientChannelClosed {
@@ -2050,7 +2050,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_proxy_command_generic_failure() {
         let result: Result<(), Error> =
             run_proxy_command(Box::pin(async { Err(fidl::Error::Invalid) })).await;

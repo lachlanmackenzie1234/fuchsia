@@ -234,10 +234,9 @@ mod tests {
         use fidl_fuchsia_wlan_policy::Compatibility::Supported;
         use fidl_fuchsia_wlan_policy::NetworkIdentifier;
         use fidl_fuchsia_wlan_policy::SecurityType::Wpa2;
-        use fuchsia_async as fasync;
         use test_doubles::FakeScanResultIterator;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn caches_single_bss_with_just_bss_data() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -261,7 +260,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn caches_single_bss_with_all_data() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -285,7 +284,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn caches_multiple_bsses_from_single_network() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -320,7 +319,7 @@ mod tests {
                 && bss == Bss { rssi: None, frequency: None }));
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn deduplicates_bsses_from_single_network() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -353,7 +352,7 @@ mod tests {
             assert_eq!(bsses.next(), None);
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn caches_multiple_bsses_from_multiple_networks() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -393,7 +392,7 @@ mod tests {
                 && bss == Bss { rssi: None, frequency: None }));
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn deduplicates_bsses_from_multiple_networks() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -431,7 +430,7 @@ mod tests {
             assert_eq!(bsses.next(), None);
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn honors_max_bss_limit() {
             let mut cache = RealBssCache::new();
             let bsses: Vec<_> = (0..MAX_BSSES + 1)
@@ -456,7 +455,7 @@ mod tests {
             assert_eq!(cache.iter().count(), MAX_BSSES);
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn does_not_count_bad_bsses_toward_max_bss_limit() {
             let mut cache = RealBssCache::new();
             let bad_bss = std::iter::once(WlanPolicyBss {
@@ -487,7 +486,7 @@ mod tests {
             assert_eq!(cache.iter().count(), MAX_BSSES);
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn does_not_count_duplicate_bsses_toward_max_bss_limit() {
             let mut cache = RealBssCache::new();
             let duplicate_bsses = vec![
@@ -530,10 +529,9 @@ mod tests {
 
     mod single_call_failure {
         use super::super::*;
-        use fuchsia_async as fasync;
         use test_doubles::{FakeScanResultIterator, StubScanResultIterator};
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_ipc_error_on_fidl_error() {
             assert_eq!(
                 RealBssCache::new()
@@ -543,7 +541,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_service_error_on_general_scan_error() {
             assert_eq!(
                 RealBssCache::new()
@@ -553,7 +551,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_no_bsses_error_on_empty_scan_results() {
             assert_eq!(
                 RealBssCache::new().update(FakeScanResultIterator::new_single_step(vec![])).await,
@@ -561,7 +559,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_no_bsses_error_on_network_without_entries_vector() {
             assert_eq!(
                 RealBssCache::new()
@@ -576,7 +574,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_no_bsses_error_on_network_with_empty_entries_vector() {
             assert_eq!(
                 RealBssCache::new()
@@ -591,7 +589,7 @@ mod tests {
             );
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn returns_no_bss_ids_error_on_bss_without_bssid() {
             assert_eq!(
                 RealBssCache::new()
@@ -618,10 +616,9 @@ mod tests {
         use fidl_fuchsia_wlan_policy::Compatibility::Supported;
         use fidl_fuchsia_wlan_policy::NetworkIdentifier;
         use fidl_fuchsia_wlan_policy::SecurityType::Wpa2;
-        use fuchsia_async as fasync;
         use test_doubles::FakeScanResultIterator;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn is_non_empty_after_new_non_empty_data() {
             let mut cache = RealBssCache::new();
             let _ = cache
@@ -666,7 +663,7 @@ mod tests {
             assert!(cache.iter().next().is_some());
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn is_non_empty_after_new_empty_data() {
             let mut cache = RealBssCache::new();
             let _ = cache
@@ -712,10 +709,9 @@ mod tests {
 
     mod multi_step_iteration {
         use super::super::*;
-        use fuchsia_async as fasync;
         use test_doubles::FakeScanResultIterator;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn reads_all_scan_results() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -750,7 +746,7 @@ mod tests {
             assert_eq!(2, cache.iter().count());
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn finds_later_bsses_even_if_first_iteration_yields_no_bsses() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -779,7 +775,7 @@ mod tests {
             assert_eq!(1, cache.iter().count());
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn finds_later_bss_ids_even_if_first_iteration_yields_no_bss_ids() {
             let mut cache = RealBssCache::new();
             let result = cache
@@ -820,10 +816,9 @@ mod tests {
         use super::super::*;
         use fidl_fuchsia_wlan_policy::NetworkIdentifier;
         use fidl_fuchsia_wlan_policy::SecurityType::Wpa2;
-        use fuchsia_async as fasync;
         use test_doubles::{RawStubScanResultIterator, StubScanResultIterator};
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn stops_sending_ipcs_when_get_next_yields_fidl_error() {
             let mut cache = RealBssCache::new();
             let mut scan_results = vec![Err(fidl::Error::InvalidHeader)].into_iter();
@@ -834,7 +829,7 @@ mod tests {
                 .await;
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn stops_sending_ipcs_when_get_next_yields_scan_error() {
             let mut cache = RealBssCache::new();
             let mut scan_results = vec![Ok(Err(ScanErrorCode::GeneralError))].into_iter();
@@ -845,7 +840,7 @@ mod tests {
                 .await;
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn stops_sending_ipcs_when_get_next_yields_empty_vec() {
             let mut cache = RealBssCache::new();
             let mut scan_results = vec![Ok(Ok(vec![]))].into_iter();
@@ -856,7 +851,7 @@ mod tests {
                 .await;
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn drives_pending_ipc_to_completion() {
             let mut cache = RealBssCache::new();
             let mut poll_results = vec![Poll::Pending, Poll::Ready(Ok(Ok(vec![])))].into_iter();
@@ -873,7 +868,7 @@ mod tests {
                 .await;
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn honors_max_ipc_limit() {
             let mut cache = RealBssCache::new();
             let mut scan_results = (0..MAX_IPCS)
@@ -1004,9 +999,8 @@ mod test_doubles {
     mod tests {
         mod fake_scan_result_iterator {
             use super::super::*;
-            use fuchsia_async as fasync;
 
-            #[fasync::run_until_stalled(test)]
+            #[fuchsia::test(allow_stalls = false)]
             async fn single_step_yields_all_scan_results_at_once() {
                 let iter = FakeScanResultIterator::new_single_step(vec![
                     ScanResult {
@@ -1025,13 +1019,13 @@ mod test_doubles {
                 assert_eq!(2, iter.get_next().await.unwrap().unwrap().len());
             }
 
-            #[fasync::run_until_stalled(test)]
+            #[fuchsia::test(allow_stalls = false)]
             async fn initially_empty_iterator_yields_empty_vec() {
                 let iter = FakeScanResultIterator::new_single_step(Vec::new());
                 assert_eq!(Vec::<ScanResult>::new(), iter.get_next().await.unwrap().unwrap());
             }
 
-            #[fasync::run_until_stalled(test)]
+            #[fuchsia::test(allow_stalls = false)]
             async fn emptied_iterator_yields_empty_vec() {
                 let iter = FakeScanResultIterator::new_single_step(vec![ScanResult {
                     id: None,
@@ -1043,7 +1037,7 @@ mod test_doubles {
                 assert_eq!(Vec::<ScanResult>::new(), iter.get_next().await.unwrap().unwrap());
             }
 
-            #[fasync::run_until_stalled(test)]
+            #[fuchsia::test(allow_stalls = false)]
             async fn multi_step_yields_scan_results_iteratively() {
                 let iter = FakeScanResultIterator::new_multi_step(vec![
                     vec![ScanResult {

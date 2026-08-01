@@ -674,8 +674,8 @@ mod tests {
         let (descriptors, tx, rx) =
             Descriptors::new(tx_vmos, RX_BUFFERS, BUFFER_STRIDE, &vmo).expect("create descriptors");
         vmo.write(&[netdev::FrameType::Ethernet.into_primitive()][..], 0).expect("vmo write");
-        assert_eq!(tx.len(), TX_BUFFERS.get().into());
-        assert_eq!(rx.len(), RX_BUFFERS.get().into());
+        assert_eq!(tx.len(), usize::from(TX_BUFFERS.get()));
+        assert_eq!(rx.len(), usize::from(RX_BUFFERS.get()));
         assert_eq!(
             descriptors.borrow(&tx[0]).frame_type().expect("failed to get frame type"),
             netdev::FrameType::Ethernet
@@ -716,7 +716,7 @@ mod tests {
         }
 
         for raw in netdev::MAX_DESCRIPTOR_CHAIN + 1..u8::MAX {
-            assert_matches!(ChainLength::try_from(raw).expect_err("the conversion should fail with length > MAX_DESCRIPTOR_CHAIN"), Error::LargeChain(len) if len == raw.into());
+            assert_matches!(ChainLength::try_from(raw).expect_err("the conversion should fail with length > MAX_DESCRIPTOR_CHAIN"), Error::LargeChain(len) if len == usize::from(raw));
         }
     }
 }

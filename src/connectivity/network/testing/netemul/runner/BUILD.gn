@@ -25,7 +25,7 @@ rustc_binary("bin") {
     "//src/connectivity/network/testing/netemul/rust:lib",
     "//src/lib/diagnostics/log/rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/sys/lib/component-events",
@@ -36,7 +36,6 @@ rustc_binary("bin") {
   ]
   test_deps = [
     "//src/connectivity/lib/net-declare",
-    "//src/lib/fuchsia",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_rust/testing",
     "//third_party/rust_crates:assert_matches",

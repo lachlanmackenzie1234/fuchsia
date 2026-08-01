@@ -87,7 +87,7 @@ pub(crate) mod testutils {
 
         // log::set_logger will panic if called multiple times.
         if LOGGER_ONCE.swap(false, std::sync::atomic::Ordering::AcqRel) {
-            log::set_logger(&Logger).unwrap();
+            let _ = log::set_logger(&Logger);
             log::set_max_level(log::LevelFilter::Trace);
         }
     }
