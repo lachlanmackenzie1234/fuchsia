@@ -54,6 +54,7 @@ impl VmObjectPaged {
         alignment_log2: u8,
     ) -> Result<RefPtr<VmObjectPaged>, Status> {
         let mut status = 0;
+        // SAFETY: status is a valid local mutable reference.
         let raw = unsafe {
             bindings::cpp_vm_object_paged_create_contiguous(
                 pmm_alloc_flags,

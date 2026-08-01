@@ -52,4 +52,15 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64
   return vmo->DecommitRange(offset, len);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_commit_range_pinned(VmObject* vmo, uint64_t offset,
+                                                                uint64_t len, bool write) {
+  return vmo->CommitRangePinned(offset, len, write);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vm_object_unpin(VmObject* vmo, uint64_t offset, uint64_t len) {
+  vmo->Unpin(offset, len);
+}
+
 }  // extern "C"

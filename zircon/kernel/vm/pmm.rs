@@ -6,5 +6,6 @@
 
 use pmm_bindings as bindings;
 
-/// Allocation flag representing any page allocation requirement.
+// Flags for PMM allocation routines.
 pub const ALLOC_FLAG_ANY: u32 = bindings::PMM_ALLOC_FLAG_ANY;
+pub const ALLOC_FLAG_CAN_WAIT: u32 = bindings::PMM_ALLOC_FLAG_CAN_WAIT;

@@ -31,6 +31,9 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_write(VmObject* vmo, const void* ptr
                                                   size_t len);
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_set_name(VmObject* vmo, const char* name, size_t len);
+zx_status_t cpp_vm_object_commit_range_pinned(VmObject* vmo, uint64_t offset, uint64_t len,
+                                              bool write);
+void cpp_vm_object_unpin(VmObject* vmo, uint64_t offset, uint64_t len);
 
 __END_CDECLS
 

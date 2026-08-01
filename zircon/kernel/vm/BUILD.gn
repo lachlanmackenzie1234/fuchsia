@@ -246,9 +246,9 @@ kernel_bindgen_crate("pmm-bindings") {
   cpp = true
 
   notice_year = 2026
-  var_allowlist = [ "PMM_ALLOC_FLAG_ANY" ]
+  var_allowlist = [ "PMM_ALLOC_FLAG_.*" ]
 
-  edition = 2024
+  edition = "2024"
   raw_lines = [ "#![no_std]" ]
   expect_lints = []
 }
@@ -264,12 +264,14 @@ kernel_bindgen_crate("vm-object-bindings") {
   notice_year = 2026
   function_allowlist = [
     "cpp_vm_object_decommit_range",
+    "cpp_vm_object_commit_range_pinned",
     "cpp_vm_object_free",
     "cpp_vm_object_get_ref_counted",
     "cpp_vm_object_is_resizable",
     "cpp_vm_object_resize",
     "cpp_vm_object_set_name",
     "cpp_vm_object_size",
+    "cpp_vm_object_unpin",
     "cpp_vm_object_write",
   ]
   type_allowlist = [ "VmObject" ]

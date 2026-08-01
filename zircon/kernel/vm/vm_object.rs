@@ -96,6 +96,23 @@ impl VmObject {
         let status = unsafe { bindings::cpp_vm_object_decommit_range(self.as_raw(), offset, len) };
         Status::ok(status)
     }
+
+    /// Commits and pins the specified range of pages in the VMO.
+    pub fn commit_range_pinned(&self, offset: u64, len: u64, write: bool) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status = unsafe {
+            bindings::cpp_vm_object_commit_range_pinned(self.as_raw(), offset, len, write)
+        };
+        Status::ok(status)
+    }
+
+    /// Unpins the specified range of pages in the VMO.
+    pub fn unpin(&self, offset: u64, len: u64) {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe {
+            bindings::cpp_vm_object_unpin(self.as_raw(), offset, len);
+        }
+    }
 }
 
 impl HasRefCount for VmObject {
