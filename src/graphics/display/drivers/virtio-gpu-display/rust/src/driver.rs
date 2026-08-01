@@ -7,6 +7,7 @@ use crate::virtio::{VirtioFeatureBits, VirtioPciDevice, VirtioPciDeviceBuilder};
 
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
+use std::sync::{Arc, Mutex};
 
 /// Interfaces with the Fuchsia Driver Framework.
 struct VirtioGpuDisplayDriver {
@@ -15,7 +16,7 @@ struct VirtioGpuDisplayDriver {
     node: Node,
 
     #[expect(unused)]
-    pci_device: VirtioPciDevice,
+    pci_device: Arc<Mutex<VirtioPciDevice>>,
 }
 
 driver_register!(VirtioGpuDisplayDriver);
@@ -36,7 +37,7 @@ impl Driver for VirtioGpuDisplayDriver {
 
         let node = context.take_node()?;
 
-        Ok(Self { node, pci_device })
+        Ok(Self { node, pci_device: Arc::new(Mutex::new(pci_device)) })
     }
 
     async fn stop(&self) {

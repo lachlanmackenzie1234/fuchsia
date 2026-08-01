@@ -240,7 +240,7 @@ impl ImportedImages {
         let buffer_collection =
             self.buffer_collections.get_mut(&buffer_collection_id).ok_or(zx::Status::NOT_FOUND)?;
 
-        let sysmem_info = SysmemBufferInfo::build(buffer_collection, buffer_index).await?;
+        let sysmem_info = SysmemBufferInfo::new(buffer_collection, buffer_index).await?;
 
         let image_id = self.next_image_id;
         self.next_image_id.value += 1;

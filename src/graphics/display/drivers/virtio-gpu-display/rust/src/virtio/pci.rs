@@ -11,3 +11,5 @@ pub mod capabilities;
 pub mod capability_type;
 pub mod common_configuration;
 pub mod device;
+pub mod pci_notifications;
+pub mod pci_queue;

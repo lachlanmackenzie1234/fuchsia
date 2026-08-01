@@ -7,6 +7,7 @@
 use super::bar_map::{PciDeviceBarMap, PciDeviceBarMapBuilder};
 use super::capability_type::PciCapabilityType;
 use super::common_configuration::VirtioPciCommonConfiguration;
+use super::pci_notifications::VirtioPciNotifications;
 use fidl_next_fuchsia_hardware_pci as fidl_pci;
 use log::{info, warn};
 use mmio::region::MmioRegion;
@@ -232,7 +233,7 @@ impl PciCapabilityData {
 
         let notification_stride;
         if virtio_capability_type == PciCapabilityType::NOTIFICATIONS {
-            // Special case covered by virtio 4.1.4.4 "Notification structure
+            // Special case covered by virtio14 4.1.4.4 "Notification structure
             // layout".
 
             if capability_length < size_of::<VirtioPciNotifyCapability>() as u8 {
@@ -318,8 +319,8 @@ impl PciCapabilityData {
 pub struct VirtioPciCapabilities {
     pub common_configuration: VirtioPciCommonConfiguration<MmioRegion<VmoMemory>>,
 
-    // TODO(https://fxbug.dev/504722357): Integrate notifications.
-    // pub notifications: VirtioPciNotifications,
+    pub notifications: VirtioPciNotifications,
+
     /// Configuration data specific to the virtio device type.
     ///
     /// [`None`] if the device does not have a device configuration capability.
@@ -382,10 +383,10 @@ impl VirtioPciCapabilities {
         // `unwrap()` will not panic because [`PciCapabilitiesData`] of type
         // [`PciCapabilityType::notifications`] is guaranteed to have the
         // field set to [`Some`].
-        let _notification_stride = notifications.notification_stride.unwrap();
+        let notification_stride = notifications.notification_stride.unwrap();
 
         let common_configuration = common_configuration.map_memory_region(&bar_map)?;
-        let _notifications = notifications.map_memory_region(&bar_map)?;
+        let notifications = notifications.map_memory_region(&bar_map)?;
         let device_configuration = match device_configuration {
             Some(pci_capability) => Some(pci_capability.map_memory_region(&bar_map)?),
             None => None,
@@ -393,9 +394,7 @@ impl VirtioPciCapabilities {
 
         Ok(VirtioPciCapabilities {
             common_configuration: VirtioPciCommonConfiguration::new(common_configuration),
-
-            // TODO(https://fxbug.dev/504722357): Integrate notifications.
-            // notifications: VirtioPciNotifications::new(notifications, notification_stride),
+            notifications: VirtioPciNotifications::new(notifications, notification_stride),
             device_configuration,
         })
     }

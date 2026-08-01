@@ -6,6 +6,4 @@
 
 pub mod device_status;
 pub mod feature_bits;
-
-// TODO(https://fxbug.dev/504722357): Add virtqueues.
-// pub mod queue;
+pub mod queue;

@@ -115,7 +115,7 @@ register! {
     /// Selects the virtqueue configured by the virtqueue-specific registers.
     ///
     /// The following registers are impacted by this value:
-    /// [`ConfiguredQueueSize`], [`ConfiguredQueueMsixVector`],
+    /// [`ConfiguredQueueCapacity`], [`ConfiguredQueueMsixVector`],
     /// [`ConfiguredQueueEnabled`], [`ConfiguredQueueNotificationOffset`],
     /// [`ConfiguredQueueDescriptorTableAddress`],
     /// [`ConfiguredQueueDriverAreaAddress`],
@@ -135,7 +135,7 @@ register! {
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
     ///
     /// virtio14 name: queue_size
-    pub struct ConfiguredQueueSize(u16);
+    pub struct ConfiguredQueueCapacity(u16);
 
     #[register(offset = 26, mode = RW)]
     /// The MSI-X vector issued for a virtqueue notification.
@@ -270,7 +270,7 @@ register_block! {
         pub device_status: DeviceStatusReg,
         pub device_configation_version: DeviceConfigurationVersion,
         pub configured_queue_index: ConfiguredQueueIndex,
-        pub configured_queue_size: ConfiguredQueueSize,
+        pub configured_queue_capacity: ConfiguredQueueCapacity,
         pub configured_queue_msix_vector: ConfiguredQueueMsixVector,
         pub configured_queue_enabled: ConfiguredQueueEnabled,
         pub configured_queue_notification_offset: ConfiguredQueueNotificationOffset,
@@ -365,7 +365,7 @@ mod tests {
         );
 
         assert_eq!(
-            <ConfiguredQueueSize as Register>::OFFSET,
+            <ConfiguredQueueCapacity as Register>::OFFSET,
             offset_of!(VirtioPciCommonConfigurationAbi, queue_size)
         );
 

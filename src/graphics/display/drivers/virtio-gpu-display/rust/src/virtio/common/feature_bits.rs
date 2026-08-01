@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#[cfg(doc)]
+use super::device_status::DeviceStatus;
+
+#[cfg(doc)]
+use super::queue_abi::VirtioMemoryRangeFlags;
+
 use bitfield::bitfield;
 
 bitfield! {
@@ -48,7 +54,7 @@ bitfield! {
 
     /// Indirect descriptors are supported.
     ///
-    /// [`VirtioBufferRegionFlags::is_indirect`] may be set to true iff
+    /// [`VirtioMemoryRangeFlags::is_indirect`] may be set to true iff
     /// this feature is negotiated.
     ///
     /// Indirect descriptors are described in virtio14 2.7.5.3 "Indirect

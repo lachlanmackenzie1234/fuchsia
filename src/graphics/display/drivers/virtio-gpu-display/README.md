@@ -58,7 +58,10 @@ regress key development workflows.
 The code contains references to the following documents.
 
 * [OASIS Virtual I/O Device (VIRTIO)][virtio-spec] specification - version
-  1.4, Committee Specification 01, dated 8 April 2026
+  1.4, Committee Specification 01, dated 8 April 2026, referenced as `virtio14`
+
+* [PCI Local Bus Specification][pci-local-spec] - Revision 3.0, dated February
+  3 2004, referenced as `pci3`.
 
 [change-validation-guide]: ./docs/change-validation.md
 [manual-testing-process]: ./docs/manual-testing.md

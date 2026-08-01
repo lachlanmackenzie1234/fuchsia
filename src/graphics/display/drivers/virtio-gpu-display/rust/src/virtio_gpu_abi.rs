@@ -126,7 +126,7 @@ pub struct DeviceConfiguration {
     ///
     /// The value must be a power of two.
     ///
-    /// TODO(costan): Check the field's encoding. virtio 5.7.4.1 "Device
+    /// TODO(costan): Check the field's encoding. virtio14 5.7.4.1 "Device
     /// configuration fields" states that the field's minimum value is 1, and
     /// the the maximum value is 4294967296. The stated maximum is 1 more than
     /// the maximum value that fits in an u32. Either the specification is
@@ -745,7 +745,7 @@ pub struct EmptyResponse {
 
 /// Identifies a capability set (rendering protocol).
 ///
-/// virtio 5.7.6.8 "Device Operation: controlq" >
+/// virtio14 5.7.6.8 "Device Operation: controlq" >
 /// VIRTIO_GPU_CMD_GET_CAPSET_INFO command description
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]

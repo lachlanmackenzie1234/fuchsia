@@ -7,15 +7,17 @@
 #![allow(dead_code)]
 
 use fidl_next_fuchsia_hardware_pci as fidl_pci;
-use log::warn;
+use log::{info, warn};
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
+use std::num::NonZero;
 use zx::{Bti, Status};
 
 use super::capabilities::VirtioPciCapabilities;
 use super::common_configuration::{VirtioPciCommonConfiguration, *};
-use crate::virtio::common::device_status::DeviceStatus;
-use crate::virtio::common::feature_bits::VirtioFeatureBits;
+use super::pci_notifications::VirtioPciNotifications;
+use super::pci_queue::VirtioPciQueue;
+use crate::virtio::{DeviceStatus, VirtioBufferRef, VirtioFeatureBits, VirtioMemoryRange};
 
 /// Manages a fully initialized virtio device using the PCI transport.
 ///
@@ -37,11 +39,11 @@ pub struct VirtioPciDevice {
 
     #[expect(dead_code)]
     configuration: VirtioPciCommonConfiguration<MmioRegion<VmoMemory>>,
-    // TODO(https://fxbug.dev/504722357): Add notifications.
-    // notifications: VirtioPciNotifications,
 
-    // TODO(https://fxbug.dev/504722357): Add virtqueues.
-    // queues: Box<[VirtioPciQueue]>,
+    notifications: VirtioPciNotifications,
+
+    /// The configured virtqueues for the device.
+    queues: Box<[VirtioPciQueue]>,
 }
 
 impl VirtioPciDevice {
@@ -55,6 +57,41 @@ impl VirtioPciDevice {
     pub fn feature_bits(&self) -> VirtioFeatureBits {
         self.feature_bits
     }
+
+    /// Submits a buffer to the queue, and waits for the buffer to be returned.
+    pub async fn submit_and_wait_for_buffer(
+        &mut self,
+        queue_index: u16,
+        buffer: &[VirtioMemoryRange],
+    ) -> Result<u32, Status> {
+        if queue_index as usize >= self.queues.len() {
+            return Err(Status::INVALID_ARGS);
+        }
+        let queue = &mut self.queues[queue_index as usize];
+
+        let buffer_ref = VirtioBufferRef::new(&buffer);
+
+        // SAFETY: The method keeps the ranges alive until it returns. The
+        // method only returns after the buffers are returned.
+        let submitted_buffer_id = unsafe { queue.submit_buffer(buffer_ref)? };
+
+        self.notifications.trigger(queue.notification_data());
+
+        let written_bytes = loop {
+            if let Some(returned_buffer_info) = queue.take_returned_buffer() {
+                assert!(
+                    returned_buffer_info.submitted_buffer_id == submitted_buffer_id,
+                    "Multiple concurrent buffer submissions not yet supported",
+                );
+                break returned_buffer_info.written_bytes;
+            }
+
+            // TODO(https://fxbug.dev/504722357): Integrate with MSI-X receiver.
+            // let _ = self.interrupt_receiver.next().await;
+        };
+
+        Ok(written_bytes)
+    }
 }
 
 /// Builder pattern instantiation for [`VirtioPciDevice`].
@@ -67,9 +104,8 @@ pub struct VirtioPciDeviceBuilder {
     bti: Bti,
 
     configuration: VirtioPciCommonConfiguration<MmioRegion<VmoMemory>>,
+    notifications: VirtioPciNotifications,
 
-    // TODO(https://fxbug.dev/504722357): Add notifications.
-    // notifications: VirtioPciNotifications,
     /// Emptied by [`take_device_configuration()`].
     device_configuration: Option<MmioRegion<VmoMemory>>,
 
@@ -78,7 +114,9 @@ pub struct VirtioPciDeviceBuilder {
 
     /// Populated by [`write_accepted_features()`].
     accepted_features: Option<VirtioFeatureBits>,
-    // TODO(https://fxbug.dev/504722357): Add virtqueues.
+
+    /// Populated by [`initialize_virtqueues()`].
+    queues: Vec<VirtioPciQueue>,
 }
 
 impl VirtioPciDeviceBuilder {
@@ -100,13 +138,12 @@ impl VirtioPciDeviceBuilder {
             bti,
 
             configuration: capabilities.common_configuration,
-
-            // TODO(https://fxbug.dev/504722357): Add notifications.
-            // notifications: capabilities.notifications,
+            notifications: capabilities.notifications,
             device_configuration: capabilities.device_configuration,
 
             offered_features: None,
             accepted_features: None,
+            queues: Vec::new(),
         };
 
         builder.reset_virtio();
@@ -159,9 +196,7 @@ impl VirtioPciDeviceBuilder {
         accepted_features.set_uses_virtio1_standard(true);
 
         self.write_accepted_features(accepted_features)?;
-
-        // TODO(https://fxbug.dev/504722357): Add virtqueues.
-        // self.initialize_virtqueues().await?;
+        self.initialize_virtqueues()?;
 
         Ok(())
     }
@@ -204,11 +239,9 @@ impl VirtioPciDeviceBuilder {
             feature_bits: self.accepted_features.expect("accept_features() not called"),
 
             configuration: self.configuration,
-            // TODO(https://fxbug.dev/504722357): Add notifications.
-            // notifications: self.notifications,
+            notifications: self.notifications,
 
-            // TODO(https://fxbug.dev/504722357): Add virtqueues.
-            // queues: self.queues.into_boxed_slice(),
+            queues: self.queues.into_boxed_slice(),
         })
     }
 
@@ -365,6 +398,67 @@ impl VirtioPciDeviceBuilder {
         }
 
         self.accepted_features = Some(feature_bits);
+        Ok(())
+    }
+
+    /// Discovers and configures all the device's virtqueues.
+    ///
+    /// The device must have completed PCI transport initialization.
+    ///
+    /// On failure, sets [`DeviceStatus::driver_terminated`] to true, signaling
+    /// that the driver will abandon this device.
+    fn initialize_virtqueues(&mut self) -> Result<(), Status> {
+        debug_assert!(self.queues.is_empty(), "The device's virtqueues are already set up");
+
+        let queue_count = self.configuration.queue_count().read().value();
+
+        for queue_index in 0..queue_count {
+            // virtio14 4.1.4.3 "Common configuration structure layout"
+            self.configuration
+                .configured_queue_index_mut()
+                .write(ConfiguredQueueIndex(queue_index));
+
+            let queue_capacity_raw = self.configuration.configured_queue_capacity().read().value();
+            let Some(queue_capacity) = NonZero::<u16>::new(queue_capacity_raw) else {
+                warn!("virtqueue {} is disabled (capacity set to 0)", queue_index);
+                self.set_driver_terminated();
+                return Err(Status::IO_DATA_LOSS);
+            };
+
+            let notification_offset =
+                self.configuration.configured_queue_notification_offset().read();
+
+            // The ID needs to be read from the configuration area if
+            // [`VirtioFeatureBits::uses_custom_virtqueue_ids`] was negotiated.
+            let queue_id = queue_index;
+
+            let notification_data =
+                self.notifications.data_for_queue(queue_id, notification_offset);
+
+            let (pci_queue, queue_memory_layout) =
+                VirtioPciQueue::new(&self.bti, queue_capacity, notification_data)?;
+
+            // virtio14 4.1.4.3 "Common configuration structure layout"
+            self.configuration.configured_queue_descriptor_table_address_mut().write(
+                ConfiguredQueueDescriptorTableAddress(
+                    queue_memory_layout.descriptor_table_physical_address,
+                ),
+            );
+            self.configuration.configured_queue_driver_area_address_mut().write(
+                ConfiguredQueueDriverAreaAddress(
+                    queue_memory_layout.submitted_ring_physical_address,
+                ),
+            );
+            self.configuration.configured_queue_device_area_address_mut().write(
+                ConfiguredQueueDeviceAreaAddress(
+                    queue_memory_layout.returned_ring_physical_address,
+                ),
+            );
+
+            self.configuration.configured_queue_enabled_mut().write(ConfiguredQueueEnabled(1));
+            self.queues.push(pci_queue);
+        }
+
         Ok(())
     }
 
