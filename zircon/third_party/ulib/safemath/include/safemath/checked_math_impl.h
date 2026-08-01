@@ -581,9 +581,7 @@ class CheckedNumericState<T, NUMERIC_FLOATING> {
  public:
   template <typename Src = double>
   constexpr explicit CheckedNumericState(Src value = 0.0, bool is_valid = true)
-      : value_(WellDefinedConversionOrNaN(
-            value,
-            is_valid && IsValueInRangeForNumericType<T>(value))) {}
+      : value_(WellDefinedConversionOrNaN(value, is_valid)) {}
 
   template <typename Src>
   constexpr CheckedNumericState(const CheckedNumericState<Src>& rhs)
@@ -592,11 +590,11 @@ class CheckedNumericState<T, NUMERIC_FLOATING> {
   constexpr bool is_valid() const {
     // Written this way because std::isfinite is not constexpr on the Windows
     // toolchain yet.
-    // TODO(C++23): Use `isfinite()` unconditionally.
+    // TODO(C++23): Use `std::isfinite()` unconditionally.
     return std::is_constant_evaluated()
                ? value_ <= std::numeric_limits<T>::max() &&
                      value_ >= std::numeric_limits<T>::lowest()
-               : isfinite(value_);
+               : std::isfinite(value_);
   }
 
   constexpr T value() const { return value_; }
@@ -605,9 +603,10 @@ class CheckedNumericState<T, NUMERIC_FLOATING> {
   // Ensures that a type conversion does not trigger undefined behavior.
   template <typename Src>
   static constexpr T WellDefinedConversionOrNaN(Src value, bool is_valid) {
-    return (kStaticDstRangeRelationToSrcRange<T, UnderlyingType<Src>> ==
-                NumericRangeRepresentation::kContained ||
-            is_valid)
+    return is_valid &&
+                   (kStaticDstRangeRelationToSrcRange<T, UnderlyingType<Src>> ==
+                        NumericRangeRepresentation::kContained ||
+                    IsValueInRangeForNumericType<T>(value))
                ? static_cast<T>(value)
                : std::numeric_limits<T>::quiet_NaN();
   }

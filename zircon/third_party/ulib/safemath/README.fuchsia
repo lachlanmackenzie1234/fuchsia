@@ -1,6 +1,6 @@
 Name: chromium base numerics safemath
 URL: https://github.com/chromium/chromium.git
-Revision: 2f53aa1394710e151c997d2d6cd0fa1aac1fa72c
+Revision: 772428a9d1afd7dcddf11d0573443ca618360350
 License File: LICENSE
 
 Description: a dependency-free, header-only library of templates providing well-defined

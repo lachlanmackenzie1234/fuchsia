@@ -86,8 +86,7 @@ constexpr bool IsValueInRangeForNumericType(Src value) {
   return internal::IsValueInRangeFastOp<Dst, SrcType>::is_supported
              ? internal::IsValueInRangeFastOp<Dst, SrcType>::Do(
                    underlying_value)
-             : internal::DstRangeRelationToSrcRange<Dst>(
-                   underlying_value)
+             : internal::DstRangeRelationToSrcRange<Dst>(underlying_value)
                    .IsValid();
 }
 
@@ -312,7 +311,7 @@ constexpr StrictNumeric<UnderlyingType<T>> MakeStrictNum(const T value) {
 
 #define SAFEMATH_NUMERIC_COMPARISON_OPERATORS(CLASS, NAME, OP)                \
   template <typename L, typename R>                                           \
-    requires(internal::Is##CLASS##Op<L, R>)                          \
+    requires(internal::Is##CLASS##Op<L, R>)                                   \
   constexpr bool operator OP(L lhs, R rhs) {                                  \
     return SafeCompare<NAME, UnderlyingType<L>, UnderlyingType<R>>(lhs, rhs); \
   }

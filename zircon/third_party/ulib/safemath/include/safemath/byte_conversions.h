@@ -14,13 +14,6 @@
 
 #include <safemath/basic_ops_impl.h>
 
-#if !defined(__cpp_lib_byteswap)
-#include <lib/stdcompat/bit.h>
-namespace std {
-using ::cpp23::byteswap;
-}
-#endif
-
 // Chromium only builds and runs on Little Endian machines.
 static_assert(std::endian::native == std::endian::little);
 
@@ -692,8 +685,7 @@ inline constexpr std::array<uint8_t, 8u> I64ToBigEndian(int64_t val) {
 // IPC) as a byte buffer. Use the little-endian encoding for storing and reading
 // from storage.
 inline constexpr std::array<uint8_t, 4u> FloatToBigEndian(float val) {
-  return internal::ToLittleEndian(
-      std::byteswap(std::bit_cast<uint32_t>(val)));
+  return internal::ToLittleEndian(std::byteswap(std::bit_cast<uint32_t>(val)));
 }
 // Returns a byte array holding the value of a double encoded as the big-endian
 // encoding of the number.
@@ -704,8 +696,7 @@ inline constexpr std::array<uint8_t, 4u> FloatToBigEndian(float val) {
 // IPC) as a byte buffer. Use the little-endian encoding for storing and reading
 // from storage.
 inline constexpr std::array<uint8_t, 8u> DoubleToBigEndian(double val) {
-  return internal::ToLittleEndian(
-      std::byteswap(std::bit_cast<uint64_t>(val)));
+  return internal::ToLittleEndian(std::byteswap(std::bit_cast<uint64_t>(val)));
 }
 
 }  // namespace safemath

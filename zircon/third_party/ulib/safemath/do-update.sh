@@ -22,7 +22,7 @@ echo "Updating to Chromium revision $REV"
 cp $1/* .
 
 # Update revision.
-sed -i -e "s/Git Commit:.*/Git Commit: $REV/" README.fuchsia
+sed -i -e "s/Revision:.*/Revision: $REV/" README.fuchsia
 
 # Remove Chromium-specific file.
 rm -f DEPS
