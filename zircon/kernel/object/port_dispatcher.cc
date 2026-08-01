@@ -499,7 +499,8 @@ zx::result<SignalObserver*> PortDispatcher::MakeObserver(uint32_t options, const
   return zx::ok(observer_result.value().release());
 }
 
-bool PortDispatcher::CancelQueuedPacketsLocked(const void* const handle, uint64_t key) {
+bool PortDispatcher::CancelQueuedPacketsLocked(const void* const handle, uint64_t key,
+                                               PortPacket::List* free_list) {
   bool packet_removed = false;
 
   // This loop can take a while if there are many items.
@@ -525,12 +526,30 @@ bool PortDispatcher::CancelQueuedPacketsLocked(const void* const handle, uint64_
   for (auto it = packets_.begin(); it != packets_.end();) {
     if ((handle == nullptr || it->handle == handle) && (it->key() == key)) {
       auto to_remove = it++;
-      if (IsDefaultAllocatedEphemeral(*to_remove)) {
-        --num_ephemeral_packets_;
-      }
+      PortPacket* packet = packets_.erase(to_remove);
+
       // Destroyed as we go around the loop.
-      object_cache::UniquePtr<const PortObserver> observer =
-          ktl::move(packets_.erase(to_remove)->observer);
+      object_cache::UniquePtr<const PortObserver> observer = ktl::move(packet->observer);
+
+      if (packet->is_ephemeral()) {
+        // Ephemeral packets do not have an observer to clean them up. It is up
+        // to us to Free them; otherwise they are unlinked from packets_ and
+        // leak for the life of the port.
+        // We cannot Free them here because we are holding get_lock: external
+        // allocators like PagerProxy take their own locks and re-enter this
+        // port during Free. Instead we stage the packets in a list and hand it
+        // back to the caller, which frees them once the lock is released.
+        DEBUG_ASSERT(observer == nullptr);
+        if (IsDefaultAllocatedEphemeral(*packet)) {
+          --num_ephemeral_packets_;
+        }
+
+        // CancelQueued checks both InContainer and !is_canceled
+        // by calling packet->Cancel() we can safely add it to free_list.
+        packet->Cancel();
+        free_list->push_front(packet);
+      }
+
       packet_removed = true;
     } else {
       ++it;
@@ -543,9 +562,18 @@ bool PortDispatcher::CancelQueuedPacketsLocked(const void* const handle, uint64_
 bool PortDispatcher::CancelQueued(const void* handle, uint64_t key) {
   canary_.Assert();
 
-  Guard<CriticalMutex> guard{get_lock()};
+  PortPacket::List free_list;
+  bool packet_removed = false;
+  {
+    Guard<CriticalMutex> guard{get_lock()};
+    packet_removed = CancelQueuedPacketsLocked(handle, key, &free_list);
+  }
 
-  return CancelQueuedPacketsLocked(handle, key);
+  // Note: free_list is provably always empty in practice because ephemeral packets are queued
+  // with handle == nullptr, whereas sys_port_cancel always passes a non-null handle.
+  DEBUG_ASSERT(free_list.is_empty());
+
+  return packet_removed;
 }
 
 bool PortDispatcher::CancelQueued(PortPacket* port_packet) {
@@ -553,7 +581,10 @@ bool PortDispatcher::CancelQueued(PortPacket* port_packet) {
 
   Guard<CriticalMutex> guard{get_lock()};
 
-  if (port_packet->InContainer()) {
+  // Check is_canceled() in addition to InContainer(): CancelKey/CancelQueuedPacketsLocked may move
+  // ephemeral packets onto a stack-local free_list before unlocking and freeing them, during which
+  // InContainer() is true even though the packet has been unlinked from packets_.
+  if (port_packet->InContainer() && !port_packet->is_canceled()) {
     if (IsDefaultAllocatedEphemeral(*port_packet)) {
       --num_ephemeral_packets_;
     }
@@ -568,46 +599,58 @@ zx_status_t PortDispatcher::CancelKey(uint64_t key) {
   canary_.Assert();
 
   PortObserver::List canceled_observers;
+  PortPacket::List free_list;
+  bool observer_canceled = false;
+  bool packet_removed = false;
+  {
+    Guard<CriticalMutex> guard{get_lock()};
 
-  Guard<CriticalMutex> guard{get_lock()};
+    for (auto it = observers_.begin(); it != observers_.end();) {
+      if (static_cast<SignalObserver*>(&*it)->MatchesKey(this, key)) {
+        it->Cancel();
+        // At this point, since we're still holding our lock we know that all of the observers in
+        // canceled_observers point to live dispatchers. We can't hold the port dispatcher lock
+        // while calling in to dispatchers in order to remove this observer due to lock ordering.
+        // So, we're about to drop our lock temporarily for each observer.
+        //
+        // Another thread could be trying to destroy a dispatcher instance and close out all of its
+        // registered observers. It will call OnCancel() on each observer in its list which will
+        // acquire the port dispatcher's lock, but will not find any observers that we've moved to
+        // our local canceled_observers list.
+        //
+        // To ensure that all of the dispatchers referenced by the canceled observers are still
+        // alive, we must acquire references while still holding the port dispatcher lock. This
+        // ensures that when we go through the loop below and release and re-acquire the port
+        // dispatcher lock we will always find a live dispatcher.
+        it->AddDispatcherRefLocked();
+        canceled_observers.push_front(observers_.erase(it++));
+      } else {
+        ++it;
+      }
+    }
+    observer_canceled = !canceled_observers.is_empty();
+    packet_removed = CancelQueuedPacketsLocked(nullptr, key, &free_list);
 
-  for (auto it = observers_.begin(); it != observers_.end();) {
-    if (static_cast<SignalObserver*>(&*it)->MatchesKey(this, key)) {
-      it->Cancel();
-      // At this point, since we're still holding our lock we know that all of the observers in
-      // canceled_observers point to live dispatchers. We can't hold the port dispatcher lock while
-      // calling in to dispatchers in order to remove this observer due to lock ordering. So, we're
-      // about to drop our lock temporarily for each observer.
-      //
-      // Another thread could be trying to destroy a dispatcher instance and close out all of its
-      // registered observers. It will call OnCancel() on each observer in its list which will
-      // acquire the port dispatcher's lock, but will not find any observers that we've moved to our
-      // local canceled_observers list.
-      //
-      // To ensure that all of the dispatchers referenced by the canceled observers are still alive,
-      // we must acquire references while still holding the port dispatcher lock. This ensures that
-      // when we go through the loop below and release and re-acquire the port dispatcher lock we
-      // will always find a live dispatcher.
-      it->AddDispatcherRefLocked();
-      canceled_observers.push_front(observers_.erase(it++));
-    } else {
-      ++it;
+    while (!canceled_observers.is_empty()) {
+      PortObserver* canceled_observer = canceled_observers.pop_front();
+      // We've already incremented the reference count to each dispatcher in the loop above, so here
+      // we can import into a RefPtr instead of creating a new reference.
+      fbl::RefPtr<Dispatcher> dispatcher =
+          fbl::ImportFromRawPtr(canceled_observer->UnlinkDispatcherLocked());
+      guard.CallUnlocked([&dispatcher, canceled_observer]() {
+        dispatcher->RemoveObserver(canceled_observer);
+        dispatcher.reset();
+      });
+      object_cache::UniquePtr<PortObserver> destroyer(canceled_observer);
     }
   }
-  const bool observer_canceled = !canceled_observers.is_empty();
-  const bool packet_removed = CancelQueuedPacketsLocked(nullptr, key);
 
-  while (!canceled_observers.is_empty()) {
-    PortObserver* canceled_observer = canceled_observers.pop_front();
-    // We've already incremented the reference count to each dispatcher in the loop above, so here
-    // we can import into a RefPtr instead of creating a new reference.
-    fbl::RefPtr<Dispatcher> dispatcher =
-        fbl::ImportFromRawPtr(canceled_observer->UnlinkDispatcherLocked());
-    guard.CallUnlocked([&dispatcher, canceled_observer]() {
-      dispatcher->RemoveObserver(canceled_observer);
-      dispatcher.reset();
-    });
-    object_cache::UniquePtr<PortObserver> destroyer(canceled_observer);
+  // Free ephemeral packets with the lock dropped. PortPacket::Free() dispatches to the
+  // allocator, and PagerProxy::Free() takes the proxy's mtx_, which ClearAsyncRequest
+  // acquires *before* the port lock (pager_proxy.cc:123, :146). Freeing under get_lock()
+  // would be an ABBA deadlock.
+  while (!free_list.is_empty()) {
+    free_list.pop_front()->Free();
   }
 
   return (observer_canceled || packet_removed) ? ZX_OK : ZX_ERR_NOT_FOUND;

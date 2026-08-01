@@ -135,6 +135,7 @@ struct PortAllocator {
 constexpr zx_packet_type_t kPortPacketTypeCanceled = 0xffffffff;
 
 struct PortPacket final : public fbl::DoublyLinkedListable<PortPacket*> {
+  using List = fbl::DoublyLinkedList<PortPacket*>;
   zx_port_packet_t packet;
   const void* const handle;
   object_cache::UniquePtr<const PortObserver> observer;
@@ -307,8 +308,11 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
   explicit PortDispatcher(uint32_t options);
 
   // Cancel all queued port packets matching |handle| (if not nullptr) and |key|.
+  // Any canceled ephemeral packets are moved to |free_list|; the caller must drain and Free()
+  // these with get_lock() released.
   // Returns true if any packets were canceled.
-  bool CancelQueuedPacketsLocked(const void* handle, uint64_t key) TA_REQ(get_lock());
+  bool CancelQueuedPacketsLocked(const void* handle, uint64_t key, PortPacket::List* free_list)
+      TA_REQ(get_lock());
 
   zx_status_t QueuePacketLocked(PortPacket* port_packet, zx_signals_t observed) TA_REQ(get_lock());
 
@@ -324,7 +328,7 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
 
   // Next three members handle the object and manual notifications.
   size_t num_ephemeral_packets_ TA_GUARDED(get_lock());
-  fbl::DoublyLinkedList<PortPacket*> packets_ TA_GUARDED(get_lock());
+  PortPacket::List packets_ TA_GUARDED(get_lock());
   // Next two members handle the interrupt notifications.
   DECLARE_SPINLOCK(PortDispatcher) spinlock_;
   fbl::DoublyLinkedList<PortInterruptPacket*> interrupt_packets_ TA_GUARDED(spinlock_);

@@ -51,6 +51,38 @@ VMO_VMAR_TEST(Pager, SinglePageTest) {
   ASSERT_TRUE(t.Wait());
 }
 
+// Test that calling zx_port_cancel_key on a pager's port with a VMO's key does not
+// wedge the pager completion protocol (i.e. packet_busy_ is properly reset by Free()).
+VMO_VMAR_TEST(Pager, CancelKeyDoesNotWedgeThePager) {
+  UserPager pager;
+  ASSERT_TRUE(pager.Init());
+
+  Vmo* vmo;
+  ASSERT_TRUE(pager.CreateVmo(2, &vmo));
+
+  // 1. Provoke a page request on page 0 so a pager packet is bound to the port queue.
+  TestThread t1([vmo, check_vmar]() -> bool { return check_buffer(vmo, 0, 1, check_vmar); });
+  ASSERT_TRUE(t1.Start());
+  ASSERT_TRUE(t1.WaitForBlocked());
+
+  // 2. Call zx_port_cancel_key on the pager's port with that VMO's key while the packet is queued.
+  // This unlinks the bound PagerProxy packet and calls Free(), returning ZX_OK.
+  ASSERT_OK(pager.port().cancel_key(0, vmo->key()));
+
+  // 3. Service page 0 directly so that thread t1 completes cleanly.
+  ASSERT_TRUE(pager.SupplyPages(vmo, 0, 1));
+  ASSERT_TRUE(t1.Wait());
+
+  // 4. Assert the pager can still service a subsequent request - i.e., provoke a fault
+  // on page 1 and verify that the reader finishes within a bounded wait without hanging.
+  TestThread t2([vmo, check_vmar]() -> bool { return check_buffer(vmo, 1, 1, check_vmar); });
+  ASSERT_TRUE(t2.Start());
+
+  ASSERT_TRUE(pager.WaitForPageRead(vmo, 1, 1, ZX_TIME_INFINITE));
+  ASSERT_TRUE(pager.SupplyPages(vmo, 1, 1));
+  ASSERT_TRUE(t2.Wait());
+}
+
 // Test that a fault can be fulfilled with an uncommitted page.
 VMO_VMAR_TEST(Pager, UncommittedSinglePageTest) {
   UserPager pager;

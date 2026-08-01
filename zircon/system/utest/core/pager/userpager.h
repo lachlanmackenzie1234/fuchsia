@@ -177,6 +177,8 @@ class UserPager {
   void ClosePagerHandle() { pager_.reset(); }
   // Closes the pager's port handle.
   void ClosePortHandle() { port_.reset(); }
+  // Returns a reference to the pager's port handle.
+  const zx::port& port() const { return port_; }
 
   // Creates a new paged vmo.
   bool CreateVmo(uint64_t num_pages, Vmo** vmo_out);

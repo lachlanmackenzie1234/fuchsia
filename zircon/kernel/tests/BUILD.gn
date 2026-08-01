@@ -106,6 +106,7 @@ if (toolchain_environment == "kernel") {
       "mutex_spin_time_tests.cc",
       "owned_wait_queue_topology.cc",
       "pi_tests.cc",
+      "port_tests.cc",
       "pow2_tests.cc",
       "preempt_disable_tests.cc",
       "range_check_tests.cc",
