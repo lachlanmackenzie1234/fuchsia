@@ -68,11 +68,21 @@ if (is_host) {
 group("tests") {
   testonly = true
   deps = [
-    ":build_artifacts_py($host_toolchain)",
-    ":context_py($host_toolchain)",
     ":fint_lib_tests($host_toolchain)",
     ":main_tests($host_toolchain)",
+  ]
+}
+
+# Built by `proto/update.sh` to update generated proto files.
+group("protos") {
+  deps = [
+    ":build_artifacts($host_toolchain)",
+    ":build_artifacts_py($host_toolchain)",
+    ":context($host_toolchain)",
+    ":context_py($host_toolchain)",
+    ":set_artifacts($host_toolchain)",
     ":set_artifacts_py($host_toolchain)",
+    ":static($host_toolchain)",
     ":static_py($host_toolchain)",
   ]
 }
