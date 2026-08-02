@@ -13,6 +13,7 @@ rustc_binary("virtio_vsock_test_util") {
       "//sdk/fidl/fuchsia.vsock:fuchsia.vsock_rust",
       "//sdk/rust/zx",
       "//src/lib/fidl/rust/fidl",
+      "//src/lib/fuchsia",
       "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-component",
       "//third_party/rust_crates:anyhow",

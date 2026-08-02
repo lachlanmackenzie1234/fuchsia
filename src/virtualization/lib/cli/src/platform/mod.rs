@@ -148,7 +148,7 @@ pub trait PlatformServices {
 mod test {
     use super::*;
 
-    #[fasync::run_singlethreaded(test)]
+    #[::fuchsia::test]
     async fn guest_console_copies_async_stream() {
         // Wire up a mock guest console, mocking out the virtio-console on a guest.
         let (guest_console_socket, guest_console_tx) = fidl::Socket::create_stream();

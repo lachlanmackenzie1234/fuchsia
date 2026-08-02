@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use crate::platform::{GuestConsole, PlatformServices, Stdio};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_virtualization::{GuestMarker, GuestProxy, GuestStatus};
+use fuchsia_async as fasync;
+use guest_cli_args as arguments;
 use std::fmt;
-use {fuchsia_async as fasync, guest_cli_args as arguments};
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum AttachResult {
@@ -52,11 +53,7 @@ pub async fn handle_attach<P: PlatformServices>(
 }
 
 pub async fn attach(guest: GuestProxy, serial_only: bool) -> Result<(), Error> {
-    if serial_only {
-        attach_serial(guest).await
-    } else {
-        attach_console_and_serial(guest).await
-    }
+    if serial_only { attach_serial(guest).await } else { attach_console_and_serial(guest).await }
 }
 
 // Attach to a running guest, using the guest's virtio-console and serial output for stdout, and
@@ -98,13 +95,13 @@ async fn attach_serial(guest: GuestProxy) -> Result<(), Error> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::endpoints::create_proxy_and_stream;
     use fidl::Socket;
+    use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_virtualization::GuestError;
-    use futures::future::join;
     use futures::StreamExt;
+    use futures::future::join;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn launch_invalid_console_returns_error() {
         let (guest_proxy, mut guest_stream) = create_proxy_and_stream::<GuestMarker>();
         let (serial_launch_sock, _serial_server_sock) = Socket::create_stream();

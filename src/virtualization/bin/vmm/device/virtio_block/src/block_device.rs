@@ -384,7 +384,6 @@ mod tests {
     use super::*;
     use crate::backend_test::BackendController;
     use crate::memory_backend::MemoryBackend;
-    use fuchsia_async as fasync;
     use virtio_device::fake_queue::{ChainBuilder, IdentityDriverMem, TestQueue};
 
     #[fuchsia::test]
@@ -498,7 +497,7 @@ mod tests {
         assert_eq!(expected.to_wire(), status);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_simple() -> Result<(), anyhow::Error> {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
@@ -548,7 +547,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_unaligned_sector() -> Result<(), anyhow::Error> {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
@@ -597,7 +596,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_extra_readable_descriptors() -> Result<(), anyhow::Error> {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
@@ -645,7 +644,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_write_simple() -> Result<(), anyhow::Error> {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
@@ -695,7 +694,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_write_unaligned_sector() -> Result<(), anyhow::Error> {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
@@ -737,7 +736,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_unsupported_operation() -> Result<(), anyhow::Error> {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
@@ -786,7 +785,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_id() -> Result<(), anyhow::Error> {
         let mem = IdentityDriverMem::new();
         let mut state = TestQueue::new(32, &mem);
@@ -835,7 +834,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_id_short_buffer() -> Result<(), anyhow::Error> {
         let (backend, _) = MemoryBackend::new();
         let device =

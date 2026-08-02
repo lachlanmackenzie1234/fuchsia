@@ -66,9 +66,8 @@ impl Notification {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test() {
         let n = Notification::new();
         assert!(!n.get());

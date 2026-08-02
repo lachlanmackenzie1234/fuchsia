@@ -101,7 +101,6 @@ mod tests {
     use super::*;
     use crate::backend_test::check_range;
     use crate::wire;
-    use fuchsia_async as fasync;
     use virtio_device::fake_queue::IdentityDriverMem;
 
     // We don't use the test cases in `crate::backend_test` directly because we don't currently
@@ -116,7 +115,7 @@ mod tests {
         QcowBackend::from_file(test_image).expect("Failed to create backend")
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_per_sector_ranges() {
         let mem = IdentityDriverMem::new();
         let ranges = vec![
@@ -136,7 +135,7 @@ mod tests {
         check_range(&ranges[2], 0x00);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_multiple_sectors_per_range() {
         // Create a request to read all 3 sectors into a single descriptor.
         let mem = IdentityDriverMem::new();
@@ -155,7 +154,7 @@ mod tests {
         check_range(&sector2, 0x00);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_subsector_range() {
         // Create a request to read only one sector using 4 different descriptors.
         let mem = IdentityDriverMem::new();

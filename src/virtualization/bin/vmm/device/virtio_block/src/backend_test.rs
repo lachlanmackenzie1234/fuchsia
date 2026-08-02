@@ -436,7 +436,7 @@ macro_rules! instantiate_backend_test_suite {
         crate::backend_test::instantiate_backend_test_suite!($test_type, $($names),+);
     };
     ($test_type:ty, $name:ident) => {
-        #[fuchsia_async::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn $name() -> Result<(), Error> {
             crate::backend_test::$name::<$test_type>().await
         }

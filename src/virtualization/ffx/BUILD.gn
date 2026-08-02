@@ -27,7 +27,7 @@ ffx_tool("ffx_guest_tool") {
   output_name = "ffx-guest"
   deps = [
     ":ffx_guest_suite",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
   ]
   sources = [ "src/main.rs" ]
 }

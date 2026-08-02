@@ -125,11 +125,7 @@ impl<T> GuestBellTrap<T> {
     pub fn queue_for_addr(&self, addr: zx::GPAddr) -> Option<u16> {
         let queue =
             ((addr.0.checked_sub(self.base.0)?) / QUEUE_NOTIFY_MULTIPLIER).try_into().ok()?;
-        if queue >= self.num_queues {
-            None
-        } else {
-            Some(queue)
-        }
+        if queue >= self.num_queues { None } else { Some(queue) }
     }
 }
 
@@ -252,7 +248,7 @@ mod tests {
         assert_eq!(bell.queue_for_addr(zx::GPAddr(128)), None);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn packet_stream() {
         let (tx, rx) = mpsc::unbounded();
 

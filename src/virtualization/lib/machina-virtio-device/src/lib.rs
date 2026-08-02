@@ -16,7 +16,7 @@ mod mem;
 mod notify;
 
 pub use bell::{BellError, GuestBellTrap};
-pub use mem::{guest_mem_from_vmo, translate_queue, GuestMem};
+pub use mem::{GuestMem, guest_mem_from_vmo, translate_queue};
 pub use notify::NotifyEvent;
 
 use fidl_fuchsia_virtualization_hardware::{
@@ -26,7 +26,7 @@ use fuchsia_sync::Mutex;
 
 use futures::task::AtomicWaker;
 use futures::{Stream, TryFutureExt, TryStreamExt};
-use std::collections::{hash_map, HashMap};
+use std::collections::{HashMap, hash_map};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
@@ -526,7 +526,6 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl_fuchsia_virtualization_hardware::VirtioDeviceMarker;
-    use fuchsia_async::{self as fasync};
     use virtio_device::util::NotificationCounter;
 
     // Make a QueueConfig for a given queue size offset in guest memory. Also returns the offset at
@@ -598,7 +597,7 @@ mod tests {
         assert_matches!(builder.build(0, &mem).err(), Some(DeviceError::BadQueueConfig(1)));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn builder_from_stream() -> Result<(), anyhow::Error> {
         let (queue1, queue1_end) = make_queue_config(0, 4, 64);
         let (queue2, queue2_end) = make_queue_config(1, 8, queue1_end);

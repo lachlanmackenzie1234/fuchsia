@@ -145,7 +145,6 @@ impl Drop for Lock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
 
     fn new_result_vec() -> Rc<RefCell<Vec<u32>>> {
@@ -157,7 +156,7 @@ mod tests {
         order.borrow_mut().push(id);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn in_order() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -174,7 +173,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![0, 1, 2]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn in_order_backwards_join() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -192,7 +191,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![0, 1, 2]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn t0_dropped() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -209,7 +208,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![1, 2]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn t0_t1_dropped() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -224,7 +223,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![2]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn t0_t2_dropped() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -239,7 +238,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![1]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn t1_dropped() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -256,7 +255,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![0, 2]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn t1_t2_dropped() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -273,7 +272,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![0, 3]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn t2_dropped() {
         let mut s = Sequencer::new();
         let t0 = s.next();
@@ -290,7 +289,7 @@ mod tests {
         assert_eq!(*order.borrow(), vec![0, 1]);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn t1_t2_dropped_while_t0_locked() {
         let mut s = Sequencer::new();
         let t0 = s.next();

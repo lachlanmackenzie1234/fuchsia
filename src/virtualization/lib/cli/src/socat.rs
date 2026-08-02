@@ -221,11 +221,10 @@ pub async fn handle_socat<P: PlatformServices>(
 mod test {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
-    use fuchsia_async as fasync;
     use futures::StreamExt;
     use futures::future::join;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn socat_listen_invalid_host_returns_err() {
         let (proxy, mut stream) = create_proxy_and_stream::<HostVsockEndpointMarker>();
         let server = async move {
@@ -247,7 +246,7 @@ mod test {
         assert_eq!(client_res.unwrap_err().to_string(), "Already a listener on port 0");
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn socat_listen_mismatched_ports_returns_err() {
         let (proxy, mut stream) = create_proxy_and_stream::<HostVsockEndpointMarker>();
         let server = async move {

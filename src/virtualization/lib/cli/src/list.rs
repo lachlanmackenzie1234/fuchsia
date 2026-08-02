@@ -298,7 +298,7 @@ mod test {
         proxy
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn negative_uptime() {
         // Note that a negative duration should never happen as we're measuring duration
         // monotonically from a single process.
@@ -309,7 +309,7 @@ mod test {
         assert_eq!(actual, expected);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn very_large_uptime() {
         let hours = std::time::Duration::from_secs(123 * 60 * 60);
         let minutes = std::time::Duration::from_secs(45 * 60);
@@ -322,7 +322,7 @@ mod test {
         assert_eq!(actual, expected);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn summarize_existing_managers() {
         let managers = vec![
             ("zircon".to_string(), serve_mock_manager(None)),
@@ -353,7 +353,7 @@ mod test {
         assert_eq!(actual, expected);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn get_detailed_info_stopped_clean() {
         let manager = serve_mock_manager(Some(GuestInfo {
             guest_status: Some(GuestStatus::Stopped),
@@ -376,7 +376,7 @@ mod test {
         assert_eq!(actual, expected);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn get_detailed_info_stopped_guest_failure() {
         let manager = serve_mock_manager(Some(GuestInfo {
             guest_status: Some(GuestStatus::Stopped),
@@ -400,7 +400,7 @@ mod test {
         assert_eq!(actual, expected);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn get_detailed_info_running_guest() {
         let manager = serve_mock_manager(Some(GuestInfo {
             guest_status: Some(GuestStatus::Running),

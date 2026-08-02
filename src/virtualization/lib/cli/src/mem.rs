@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::platform::PlatformServices;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_virtualization::{
     GuestMarker, GuestStatus, MemControllerMarker, MemControllerProxy,
 };
+use guest_cli_args as arguments;
 use std::fmt;
-use {guest_cli_args as arguments, zx_status};
+use zx_status;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct RequestSizeResult {
@@ -118,7 +119,7 @@ mod test {
     use fuchsia_async as fasync;
     use futures::StreamExt;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn mem_valid_request_plugged_returns_ok() {
         let (proxy, mut stream) = create_proxy_and_stream::<MemControllerMarker>();
         let size = 12345;
@@ -137,7 +138,7 @@ mod test {
         assert_eq!(format!("{}", res), expected_string);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn mem_valid_stats_returns_ok() {
         let (proxy, mut stream) = create_proxy_and_stream::<MemControllerMarker>();
         let (block_size, region_size, usable_region_size, plugged_size, requested_size) =

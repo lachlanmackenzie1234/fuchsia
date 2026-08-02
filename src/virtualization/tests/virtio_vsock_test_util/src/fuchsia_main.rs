@@ -57,7 +57,7 @@ fn make_con() -> Result<(fasync::Socket, ConnectionProxy, ConnectionTransport), 
     Ok((data_stream, client_end, con))
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let vsock =
         connect_to_protocol::<ConnectorMarker>().context("failed to connect to vsock service")?;

@@ -57,7 +57,6 @@ rustc_binary("virtio_block_bin") {
   ]
 
   test_deps = [
-    "//src/lib/fuchsia-async",
     "//src/storage/lib/ramdevice_client/rust",
     "//third_party/rust_crates:tempfile",
   ]

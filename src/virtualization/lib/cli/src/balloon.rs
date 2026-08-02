@@ -239,7 +239,7 @@ mod test {
     use futures::StreamExt;
     use zx_status;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn balloon_valid_page_num_returns_ok() {
         let (proxy, mut stream) = create_proxy_and_stream::<BalloonControllerMarker>();
         let expected_string = "Resizing memory balloon to 0 pages!";
@@ -256,7 +256,7 @@ mod test {
         assert_eq!(result.to_string(), expected_string);
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn balloon_stats_server_shut_down_returns_err() {
         let (proxy, mut stream) = create_proxy_and_stream::<BalloonControllerMarker>();
         let _task = fasync::Task::spawn(async move {
@@ -277,7 +277,7 @@ mod test {
         );
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn balloon_stats_empty_input_returns_err() {
         let (proxy, mut stream) = create_proxy_and_stream::<BalloonControllerMarker>();
 
@@ -310,7 +310,7 @@ mod test {
         );
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn balloon_stats_valid_input_returns_valid_string() {
         let test_stats = [
             MemStat { tag: VIRTIO_BALLOON_S_SWAP_IN, val: 2 },
