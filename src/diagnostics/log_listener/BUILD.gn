@@ -27,7 +27,7 @@ rustc_binary("bin") {
     "//src/developer/lib/writer:lib",
     "//src/diagnostics/lib/log-command",
     "//src/lib/fdomain/client:flex_fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:anyhow",

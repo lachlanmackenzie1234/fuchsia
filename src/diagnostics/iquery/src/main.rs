@@ -4,10 +4,10 @@
 
 use anyhow::Error;
 use fidl_fuchsia_diagnostics_system::SerialLogControlMarker;
+use fidl_fuchsia_sys2 as fsys2;
 use fuchsia_component::client;
 use iquery::command_line::CommandLine;
 use iquery::commands::{ArchiveAccessorProvider, Command};
-use {fidl_fuchsia_sys2 as fsys2, fuchsia_async as fasync};
 
 #[cfg(test)]
 #[macro_use]
@@ -20,7 +20,7 @@ async fn maybe_pause_serial() -> Result<zx::EventPair, Error> {
     Ok(freezer.freeze_serial_forwarding().await?)
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let command_line: CommandLine = argh::from_env();
     let token = if command_line.serial_tag.as_ref().is_some() {

@@ -153,7 +153,7 @@ mod tests {
         assert!(!log_bridge.existing_logs().unwrap().is_empty());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn logger_keep_listening_after_exhausting_initial_contents_test() {
         let debug_log = TestDebugLog::default();
         debug_log.enqueue_read_entry(&TestDebugEntry::new("test log".as_bytes()));
@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(log_message.msg().unwrap(), "�");
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn severity_parsed_from_log() {
         let debug_log = TestDebugLog::default();
         debug_log.enqueue_read_entry(&TestDebugEntry::new("ERROR: first log".as_bytes()));

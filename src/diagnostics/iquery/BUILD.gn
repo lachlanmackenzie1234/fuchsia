@@ -130,7 +130,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.diagnostics.system:fuchsia.diagnostics.system_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//sdk/rust/zx",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",

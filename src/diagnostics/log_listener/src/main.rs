@@ -37,7 +37,7 @@ impl Symbolize for Symbolizer {
     }
 }
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let (sender, receiver) = zx::Socket::create_stream();
     let proxy = connect_to_protocol::<ArchiveAccessorMarker>().unwrap();
