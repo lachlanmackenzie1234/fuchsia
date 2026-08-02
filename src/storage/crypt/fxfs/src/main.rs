@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::TryFutureExt;
 use futures::stream::StreamExt;
 use fxfs_crypt::log::*;
 use fxfs_crypt::{CryptService, Services};
 
-#[fasync::run(10)]
+#[fuchsia::main(threads = 10, logging = false)]
 async fn main() -> Result<(), Error> {
     diagnostics_log::initialize(diagnostics_log::PublishOptions::default())?;
 

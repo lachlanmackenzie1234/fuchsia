@@ -3,12 +3,11 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fuchsia_async as fasync;
 use fuchsia_component::server::MissingStartupHandle;
 use fuchsia_runtime::HandleType;
 use gpt_component::service::GptService;
 
-#[fasync::run(6)]
+#[fuchsia::main(threads = 6, logging = false)]
 async fn main() -> Result<(), Error> {
     diagnostics_log::initialize(diagnostics_log::PublishOptions::default())?;
     let _inspect_server_task = inspect_runtime::publish(

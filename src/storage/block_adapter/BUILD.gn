@@ -32,7 +32,7 @@ rustc_binary("block_adapter") {
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:anyhow",
   ]

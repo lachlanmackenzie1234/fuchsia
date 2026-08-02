@@ -548,7 +548,7 @@ mod tests {
     use assert_matches::assert_matches;
     use delivery_blob::CompressionMode;
     use delivery_blob::compression::{ChunkedArchiveOptions, CompressionAlgorithm};
-    use fuchsia_async as fasync;
+
     use fuchsia_async::epoch::Epoch;
     use fxfs_make_blob_image::FxBlobBuilder;
     use storage_device::DeviceHolder;
@@ -557,7 +557,7 @@ mod tests {
     const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
     const CHUNK_SIZE: usize = 32 * 1024;
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_empty_blob() {
         let fixture = new_blob_fixture().await;
 
@@ -568,7 +568,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_large_blob() {
         let fixture = new_blob_fixture().await;
 
@@ -580,7 +580,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_get_multiple_mapping_extents() {
         let fixture = new_blob_fixture().await;
 
@@ -637,7 +637,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_large_compressed_blob() {
         let fixture = new_blob_fixture().await;
 
@@ -649,7 +649,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_non_page_aligned_blob() {
         let fixture = new_blob_fixture().await;
 
@@ -670,7 +670,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_blob_invalid_contents() {
         let fixture = new_blob_fixture().await;
 
@@ -705,7 +705,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_lz4_blob() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let blob_data = vec![0xAA; 68 * 1024];
@@ -724,7 +724,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_blob_vmos_are_immutable() {
         let fixture = new_blob_fixture().await;
 
@@ -1055,7 +1055,7 @@ mod tests {
             .expect_err("decompression should fail");
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_refault_metric() {
         let fixture = new_blob_fixture().await;
         {

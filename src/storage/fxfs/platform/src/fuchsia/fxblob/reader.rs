@@ -31,7 +31,6 @@ mod tests {
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_io::{self as fio};
-    use fuchsia_async as fasync;
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
 
     /// Read a blob using BlobReader API and return its contents as a boxed slice.
@@ -54,7 +53,7 @@ mod tests {
         Ok(buf)
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_blob_reader_uncompressed() {
         const NEVER_COMPRESS: CompressionMode = CompressionMode::Never;
         let fixture = new_blob_fixture().await;
@@ -82,7 +81,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_blob_reader_compressed() {
         const ALWAYS_COMPRESS: CompressionMode = CompressionMode::Always;
         let fixture = new_blob_fixture().await;

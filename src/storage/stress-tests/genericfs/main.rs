@@ -11,7 +11,6 @@ use argh::FromArgs;
 use diagnostics_log::Severity;
 use environment::FsEnvironment;
 use fs_management::{F2fs, Fxfs, Minfs};
-use fuchsia_async as fasync;
 use stress_test::run_test;
 
 #[derive(Clone, Debug, FromArgs)]
@@ -61,7 +60,7 @@ pub struct Args {
     nocapture: bool,
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn test() {
     let args: Args = argh::from_env();
 

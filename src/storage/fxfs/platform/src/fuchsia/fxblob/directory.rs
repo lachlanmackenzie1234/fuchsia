@@ -500,7 +500,7 @@ mod tests {
     use blob_writer::BlobWriter;
     use delivery_blob::{CompressionMode, Type1Blob};
     use fidl_fuchsia_fxfs::BlobReaderMarker;
-    use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
+    use fuchsia_async::{DurationExt as _, TimeoutExt as _};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::directory::{
         DirEntry, DirentKind, WatchEvent, WatchMessage, Watcher, readdir_inclusive,
@@ -509,7 +509,7 @@ mod tests {
     use futures::StreamExt as _;
     use std::path::PathBuf;
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_unlink() {
         let fixture = new_blob_fixture().await;
 
@@ -529,7 +529,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_readdir() {
         let fixture = new_blob_fixture().await;
 
@@ -577,7 +577,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_watchers() {
         let fixture = new_blob_fixture().await;
 
@@ -654,7 +654,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_rename_fails() {
         let fixture = new_blob_fixture().await;
 
@@ -673,7 +673,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_link_fails() {
         let fixture = new_blob_fixture().await;
 
@@ -692,7 +692,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_verify_cached_hash_node() {
         let fixture = new_blob_fixture().await;
 
@@ -740,7 +740,7 @@ mod tests {
         fixture.close().await;
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_blob_needs_overwrite_verifies_existence() {
         let fixture = new_blob_fixture().await;
         let data = vec![42u8; 32];

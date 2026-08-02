@@ -41,7 +41,7 @@ rustc_binary("fxfs_crypt") {
   deps = [
     ":lib",
     "//src/lib/diagnostics/log/rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

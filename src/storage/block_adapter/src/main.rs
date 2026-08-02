@@ -4,10 +4,10 @@
 
 use anyhow::{Error, anyhow};
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_storage_block as fstorage_block;
 use fuchsia_runtime::HandleType;
-use {fidl_fuchsia_storage_block as fstorage_block, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let mut args = std::env::args();
     let name = args.next().ok_or_else(|| anyhow!("no arguments provided"))?;

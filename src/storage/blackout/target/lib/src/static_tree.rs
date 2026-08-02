@@ -163,7 +163,6 @@ impl Distribution<Entry> for EntryDistribution {
 mod tests {
     use super::{DirectoryEntry, Entry, EntryDistribution, FileEntry};
     use fs_management::Minfs;
-    use fuchsia_async as fasync;
     use ramdevice_client::RamdiskClient;
     use rand::{Rng as _, RngCore};
 
@@ -262,7 +261,7 @@ mod tests {
         assert_eq!(tree1, tree2);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_tree() {
         let root = "/test-root";
         let initial = 0xFFFF0000;

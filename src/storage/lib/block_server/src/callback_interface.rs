@@ -589,7 +589,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_basic_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -650,7 +650,7 @@ mod tests {
 
         std::mem::drop(proxy);
     }
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_write_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -710,7 +710,7 @@ mod tests {
         assert_eq!(resp[0].status, zx::sys::ZX_OK);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_flush_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -763,7 +763,7 @@ mod tests {
         assert_eq!(resp[0].status, zx::sys::ZX_OK);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_trim_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -816,7 +816,7 @@ mod tests {
         assert_eq!(resp[0].status, zx::sys::ZX_OK);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_close_vmo() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -873,7 +873,7 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_error() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -923,7 +923,7 @@ mod tests {
         assert_eq!(resp[0].status, zx::sys::ZX_ERR_IO);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_teardown_with_active_requests() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -980,7 +980,7 @@ mod tests {
         server_task.await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_teardown_with_active_grouped_requests() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
@@ -1056,7 +1056,7 @@ mod tests {
         server_task.await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_session_close_is_synchronous() {
         use futures::FutureExt as _;
 

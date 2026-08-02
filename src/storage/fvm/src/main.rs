@@ -4357,7 +4357,7 @@ mod tests {
         client.detach_vmo(vmo_id).await.unwrap();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_invalid_allocation_table_size() {
         use zerocopy::IntoBytes as _;
         let header = HeaderRaw {

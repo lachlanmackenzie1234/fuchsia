@@ -596,7 +596,6 @@ mod tests {
     use super::{BlobsJsonOutput, BlobsJsonOutputEntry, extract_blobs, make_blob_image};
     use assert_matches::assert_matches;
     use delivery_blob::compression::CompressionAlgorithm;
-    use fuchsia_async as fasync;
     use fxfs::filesystem::FxFilesystem;
     use fxfs::object_store::StoreOptions;
     use fxfs::object_store::directory::Directory;
@@ -610,7 +609,7 @@ mod tests {
     use storage_device::file_backed_device::FileBackedDevice;
     use tempfile::TempDir;
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_extract_blobs_zstd() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path();
@@ -656,7 +655,7 @@ mod tests {
         );
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_extract_blobs_lz4() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path();
@@ -702,7 +701,7 @@ mod tests {
         );
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_make_blob_image() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path();
@@ -844,7 +843,7 @@ mod tests {
         }
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_make_uncompressed_blob_image() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path();
@@ -886,7 +885,7 @@ mod tests {
         )
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_make_blob_image_with_target_size() {
         const TARGET_SIZE: u64 = 200 * 1024 * 1024;
         let tmp = TempDir::new().unwrap();
@@ -920,7 +919,7 @@ mod tests {
         assert!(sparse_image_size < TARGET_SIZE, "Sparse image size: {sparse_image_size}");
     }
 
-    #[fasync::run(10, test)]
+    #[fuchsia::test(threads = 10)]
     async fn test_extract_blobs_path_traversal() {
         use super::{
             BLOB_VOLUME_NAME, BLOCK_SIZE, BlobFormat, BlobMetadata, DirectWriter,

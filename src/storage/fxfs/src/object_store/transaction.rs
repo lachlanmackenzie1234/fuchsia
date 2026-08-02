@@ -2049,7 +2049,7 @@ mod tests {
         manager.commit_prepare_keys(&keys).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_woken_upgrade_blocks_reads() {
         let manager = LockManager::new();
         let keys = lock_keys![LockKey::object(1, 1)];

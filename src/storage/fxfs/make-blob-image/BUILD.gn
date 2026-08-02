@@ -22,6 +22,7 @@ rustc_library("make-blob-image") {
     "//third_party/rust_crates:tempfile",
   ]
   test_deps = [
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:tempfile",
   ]

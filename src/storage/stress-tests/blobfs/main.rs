@@ -11,7 +11,6 @@ mod read_actor;
 use crate::environment::BlobfsEnvironment;
 use argh::FromArgs;
 use diagnostics_log::Severity;
-use fuchsia_async as fasync;
 use stress_test::run_test;
 
 #[derive(Clone, Debug, FromArgs)]
@@ -60,7 +59,7 @@ pub struct Args {
 // The path to the blobfs filesystem in the test's namespace
 pub const BLOBFS_MOUNT_PATH: &str = "/blobfs";
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn test() {
     // Get arguments from command line
     let args: Args = argh::from_env();
