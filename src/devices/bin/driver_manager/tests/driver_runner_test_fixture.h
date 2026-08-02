@@ -15,6 +15,7 @@
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/test_base.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
+#include <fidl/fuchsia.power.system/cpp/test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fit/defer.h>
@@ -35,6 +36,10 @@ namespace fdh = fuchsia_driver_host;
 namespace fio = fuchsia_io;
 namespace fprocess = fuchsia_process;
 namespace fdecl = fuchsia_component_decl;
+
+zx::result<fidl::ClientEnd<fuchsia_ldsvc::Loader>> LoaderFactory();
+zx::result<fidl::ClientEnd<fuchsia_driver_loader::DriverHostLauncher>> DynamicLinkerFactory(
+    driver_loader::Loader* loader);
 
 const std::string root_driver_url = "fuchsia-boot:///#meta/root-driver.cm";
 const std::string root_driver_binary = "driver/root-driver.so";
@@ -166,6 +171,42 @@ class TestLessor final : public fidl::testing::TestBase<fuchsia_power_broker::Le
   fidl::ServerBindingGroup<fuchsia_power_broker::Lessor> bindings_;
 };
 
+class TestCpuElementManager final
+    : public fidl::testing::TestBase<fuchsia_power_system::CpuElementManager> {
+ public:
+  explicit TestCpuElementManager(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
+    zx::event::create(0, &cpu_token_);
+  }
+
+  void Bind(fidl::ServerEnd<fuchsia_power_system::CpuElementManager> request) {
+    bindings_.AddBinding(dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
+  }
+
+  void GetCpuDependencyToken(GetCpuDependencyTokenCompleter::Sync& completer) override {
+    zx::event clone;
+    ZX_ASSERT(cpu_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK);
+    fuchsia_power_system::Cpu cpu;
+    cpu.assertive_dependency_token(std::move(clone));
+    completer.Reply(std::move(cpu));
+  }
+
+  void AddExecutionStateDependency(AddExecutionStateDependencyRequest& request,
+                                   AddExecutionStateDependencyCompleter::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_system::CpuElementManager> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {}
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  zx::event cpu_token_;
+  fidl::ServerBindingGroup<fuchsia_power_system::CpuElementManager> bindings_;
+};
+
 class TestTopology final : public fidl::testing::TestBase<fuchsia_power_broker::Topology> {
  public:
   explicit TestTopology(async_dispatcher_t* dispatcher)
@@ -185,6 +226,13 @@ class TestTopology final : public fidl::testing::TestBase<fuchsia_power_broker::
     completer.Reply(zx::ok());
   }
 
+  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override {
+    lease_requests_.push_back(std::move(request));
+    completer.Reply(fit::ok());
+  }
+
+  std::vector<LeaseRequest>& lease_requests() { return lease_requests_; }
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
@@ -195,6 +243,7 @@ class TestTopology final : public fidl::testing::TestBase<fuchsia_power_broker::
   fidl::ServerBindingGroup<fuchsia_power_broker::Topology> bindings_;
   TestElementControl element_control_;
   TestLessor lessor_;
+  std::vector<LeaseRequest> lease_requests_;
 };
 
 class TestController final : public fidl::testing::TestBase<fuchsia_component::Controller> {
@@ -628,7 +677,7 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
 
   FakeDriverIndex& driver_index() { return driver_index_.value(); }
 
- private:
+ protected:
   TestRealm realm_;
   TestIntrospector introspector_;
   TestCapStore cap_store_;

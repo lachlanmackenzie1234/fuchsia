@@ -16,6 +16,7 @@
 #include <lib/zx/vmo.h>
 
 #include <list>
+#include <vector>
 
 #include "src/devices/bin/driver_manager/shutdown/node_remover.h"
 
@@ -58,6 +59,16 @@ class ShutdownManager : public fidl::WireServer<fuchsia_process_lifecycle::Lifec
     kBootStopping = 3u,
     // The entire system is stopped.
     kStopped = 4u,
+  };
+
+  // State of reboot leases required for system shutdown.
+  enum class LeaseState {
+    // Reboot leases have not been requested yet.
+    kNotLeased,
+    // Reboot leases have been requested but are not yet acquired.
+    kRequested,
+    // Reboot leases have been successfully acquired.
+    kAcquired,
   };
 
   ShutdownManager(NodeRemover* node_remover, async_dispatcher_t* dispatcher);
@@ -115,6 +126,7 @@ class ShutdownManager : public fidl::WireServer<fuchsia_process_lifecycle::Lifec
   //  kBootStopping    |  Add callback to list to be called when all drivers are removed
   //  All other states |  Immediately call callback
   void SignalBootShutdown(fit::callback<void(zx_status_t)> cb);
+  void AcquireShutdownLeases(fit::callback<void()> callback);
 
   // fuchsia.process.lifecycle/Lifecycle interface
   // The process must clean up its state in preparation for termination, and
@@ -149,6 +161,8 @@ class ShutdownManager : public fidl::WireServer<fuchsia_process_lifecycle::Lifec
   State shutdown_state_ = State::kRunning;
   // After package shutdown completes, wait for separate boot shutdown signal
   bool received_boot_shutdown_signal_ = false;
+  LeaseState lease_state_ = LeaseState::kNotLeased;
+  std::vector<fit::callback<void()>> shutdown_lease_acquired_callbacks_;
 
   async_dispatcher_t* dispatcher_;
   zx::resource mexec_resource_, power_resource_;

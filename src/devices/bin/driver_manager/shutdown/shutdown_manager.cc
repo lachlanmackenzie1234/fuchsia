@@ -168,24 +168,53 @@ void ShutdownManager::OnBootShutdownComplete() {
   boot_shutdown_complete_callbacks_.clear();
 }
 
+void ShutdownManager::AcquireShutdownLeases(fit::callback<void()> callback) {
+  if (lease_state_ == LeaseState::kAcquired) {
+    callback();
+    return;
+  }
+
+  shutdown_lease_acquired_callbacks_.emplace_back(std::move(callback));
+
+  if (lease_state_ == LeaseState::kRequested) {
+    return;
+  }
+
+  lease_state_ = LeaseState::kRequested;
+  node_remover_->LeaseAllDriversForShutdown([this]() {
+    lease_state_ = LeaseState::kAcquired;
+    auto callbacks = std::move(shutdown_lease_acquired_callbacks_);
+    for (auto& cb : callbacks) {
+      cb();
+    }
+  });
+}
+
 void ShutdownManager::SignalPackageShutdown(fit::callback<void(zx_status_t)> cb) {
   // Switch our logs to go to debuglog to ensure they are flushed and available in the crashlog.
   driver_logger::GetLogger().SwitchToStdout();
 
   // Expected case: we get the call during kPackageStopping, or right before.
   // Store the completer for when we finish.
-  if (shutdown_state_ == State::kRunning || shutdown_state_ == State::kPackageStopping) {
-    package_shutdown_complete_callbacks_.emplace_back(std::move(cb));
-    if (shutdown_state_ == State::kRunning) {
-      shutdown_state_ = State::kPackageStopping;
-      node_remover_->ShutdownPkgDrivers(
-          fit::bind_member(this, &ShutdownManager::OnPackageShutdownComplete));
-    }
-  } else {
-    // Otherwise, we already finished package shutdown or we have already jumped
-    // to doing a full shutdown. Notify the callback.
+  // Otherwise, we already finished package shutdown or we have already jumped
+  // to doing a full shutdown. Notify the callback immediately.
+  if (shutdown_state_ != State::kRunning && shutdown_state_ != State::kPackageStopping) {
     cb(ZX_OK);
+    return;
   }
+
+  package_shutdown_complete_callbacks_.emplace_back(std::move(cb));
+
+  // If the state is already stopping for package drivers, then we don't need to do anything.
+  if (shutdown_state_ == State::kPackageStopping) {
+    return;
+  }
+
+  shutdown_state_ = State::kPackageStopping;
+  AcquireShutdownLeases([this]() {
+    node_remover_->ShutdownPkgDrivers(
+        fit::bind_member(this, &ShutdownManager::OnPackageShutdownComplete));
+  });
 }
 
 void ShutdownManager::Stop(StopCompleter::Sync& completer) {

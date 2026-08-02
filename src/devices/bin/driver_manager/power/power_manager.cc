@@ -4,6 +4,8 @@
 
 #include "src/devices/bin/driver_manager/power/power_manager.h"
 
+#include <unordered_set>
+
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/power/all_drivers_element.h"
 #include "src/devices/lib/log/log.h"
@@ -582,6 +584,75 @@ void PowerManager::CreatePowerElement(
           }
         }
         cb(zx::ok(true));
+      });
+}
+
+void PowerManager::LeaseAllDrivers(const std::shared_ptr<Node>& root_node,
+                                   fit::callback<void()> callback) {
+  if (!root_node || !SuspendEnabled()) {
+    callback();
+    return;
+  }
+
+  std::shared_ptr<fit::deferred_callback> deferred =
+      std::make_shared<fit::deferred_callback>(std::move(callback));
+
+  std::unordered_set<std::string> visited;
+  // Lambda helper for in-place recursive traversal
+  auto process_node = [this, &visited, &deferred](auto& self,
+                                                  const std::shared_ptr<Node>& node) -> void {
+    std::string topo_path = node->MakeTopologicalPath();
+    if (visited.contains(topo_path)) {
+      return;
+    }
+    visited.insert(topo_path);
+
+    if (node->is_bound()) {
+      AcquireRebootLease(node, std::move(topo_path), deferred);
+    }
+    for (const auto& child : node->children()) {
+      self(self, child);
+    }
+  };
+  process_node(process_node, root_node);
+}
+
+void PowerManager::AcquireRebootLease(const std::shared_ptr<Node>& node, std::string topo_path,
+                                      std::shared_ptr<fit::deferred_callback> deferred) {
+  zx::eventpair lease_token, lease_token_peer;
+  if (zx_status_t status = zx::eventpair::create(0, &lease_token, &lease_token_peer);
+      status != ZX_OK) {
+    fdf_log::error("Failed to create lease token for node '{}': {}", topo_path,
+                   zx_status_get_string(status));
+    return;
+  }
+
+  fuchsia_power_broker::LeaseSchema schema;
+  schema.lease_token(std::move(lease_token_peer));
+  schema.lease_name(node->name());
+
+  zx::event power_token = node->DuplicatePowerToken();
+  if (!power_token.is_valid()) {
+    fdf_log::error("Power token is invalid for node '{}'", topo_path);
+    return;
+  }
+  std::vector<fuchsia_power_broker::LeaseDependency> deps;
+  deps.push_back(fuchsia_power_broker::LeaseDependency{{
+      .requires_token = std::move(power_token),
+      .requires_level = 1,
+  }});
+  schema.dependencies(std::move(deps));
+
+  power_topology_->Lease(std::move(schema))
+      .Then([this, topo_path = std::move(topo_path), lease_token = std::move(lease_token),
+             deferred = std::move(deferred)](
+                fidl::Result<fuchsia_power_broker::Topology::Lease>& result) mutable {
+        if (!result.is_ok()) {
+          fdf_log::error("Failed to acquire reboot lease for node '{}': {}", topo_path,
+                         result.error_value());
+          return;
+        }
+        reboot_leases_.push_back(std::move(lease_token));
       });
 }
 

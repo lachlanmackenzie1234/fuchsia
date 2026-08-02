@@ -54,6 +54,45 @@ class DriverRunnerTest : public DriverRunnerTestBase, public ::testing::WithPara
 
   void SetupDriverRunner() { SetupDriverRunner(CreateDriverIndex()); }
 
+  void SetupDriverRunnerWithPower(
+      fidl::ClientEnd<fuchsia_power_broker::Topology> topology,
+      std::optional<fidl::ClientEnd<fuchsia_power_system::CpuElementManager>> cpu_element_mgr =
+          std::nullopt) {
+    auto fake_driver_index = CreateDriverIndex();
+    driver_index_.emplace(std::move(fake_driver_index));
+    if (use_dynamic_linker_) {
+      auto driver_host_runner =
+          std::make_unique<driver_manager::DriverHostRunner>(dispatcher(), ConnectToRealm());
+      auto load_driver_handler =
+          [](zx::unowned_channel bootstrap_sender,
+             driver_loader::Loader::DynamicLinkingPassiveAbi dl_passive_abi) mutable {};
+      dynamic_linker_ = driver_loader::Loader::Create(dispatcher(), std::move(load_driver_handler));
+      driver_runner_.emplace(
+          ConnectToRealm(), ConnectToIntrospector(), ConnectToCapabilityStore(),
+          driver_index_->Connect(), inspector_, &LoaderFactory, dispatcher(), false,
+          driver_manager::OfferInjector{{
+              .power_inject_offer = false,
+              .power_suspend_enabled = true,
+          }},
+          std::move(topology),
+          driver_manager::DriverRunner::DynamicLinkerArgs{
+              [loader = dynamic_linker_.get()]() { return DynamicLinkerFactory(loader); },
+              std::move(driver_host_runner)},
+          std::move(cpu_element_mgr));
+    } else {
+      driver_runner_.emplace(ConnectToRealm(), ConnectToIntrospector(), ConnectToCapabilityStore(),
+                             driver_index_->Connect(), inspector_, &LoaderFactory, dispatcher(),
+                             false,
+                             driver_manager::OfferInjector{{
+                                 .power_inject_offer = false,
+                                 .power_suspend_enabled = true,
+                             }},
+                             std::move(topology), std::nullopt, std::move(cpu_element_mgr));
+    }
+    SetupDevfs();
+    driver_runner().power_manager()->FetchCpuToken();
+  }
+
   zx::result<StartDriverResult> StartRootDriver() {
     if (use_dynamic_linker_) {
       return DriverRunnerTestBase::StartRootDriverDynamicLinking();
@@ -2866,6 +2905,66 @@ TEST_P(DriverRunnerTest, NodeManagerAddNodeInvalidOffer) {
       });
   EXPECT_TRUE(RunLoopUntilIdle());
   ASSERT_TRUE(add_node_called);
+}
+
+TEST_P(DriverRunnerTest, LeaseAllDriversForShutdown) {
+  auto cleanup = fit::defer([this]() { realm().ClearCreateChildHandlers(); });
+
+  // Create endpoints for Topology.
+  auto topology_endpoints = fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
+
+  // Initialize the TestTopology server on the dispatcher.
+  TestTopology test_topology(dispatcher());
+  test_topology.Bind(std::move(topology_endpoints.server));
+
+  // Create endpoints for CpuElementManager.
+  auto cpu_endpoints = fidl::Endpoints<fuchsia_power_system::CpuElementManager>::Create();
+
+  // Initialize the TestCpuElementManager server on the dispatcher.
+  TestCpuElementManager test_cpu_element_manager(dispatcher());
+  test_cpu_element_manager.Bind(std::move(cpu_endpoints.server));
+
+  // Initialize DriverRunner with power enabled and the topology client endpoint.
+  SetupDriverRunnerWithPower(std::move(topology_endpoints.client), std::move(cpu_endpoints.client));
+
+  // Start the root driver.
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  // Add a child node.
+  PrepareRealmForSecondDriverComponentStart();
+  std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
+  EXPECT_TRUE(RunLoopUntilIdle());
+
+  // Start the second driver so the child node is bound.
+  bool did_bind = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind = true;
+          return;
+        }
+        ZX_ASSERT_MSG(false, "WaitForDriver failed");
+      });
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  EXPECT_TRUE(did_bind);
+
+  // Call LeaseStatecontrolShutdown.
+  bool lease_completed = false;
+  driver_runner().LeaseAllDriversForShutdown([&lease_completed]() { lease_completed = true; });
+
+  // Run the loop until all async work is done.
+  EXPECT_TRUE(RunLoopUntilIdle());
+
+  // Verify that the callback was called.
+  EXPECT_TRUE(lease_completed);
+
+  // Verify that 2 lease requests were made (one for root, one for second).
+  EXPECT_EQ(2u, test_topology.lease_requests().size());
+
+  // Clean up.
+  ServeStopListener(std::move(controller));
+  StopDriverComponent(std::move(root_driver->controller));
 }
 
 // The tests are parameterized on whether to use the dynamic linker or not.

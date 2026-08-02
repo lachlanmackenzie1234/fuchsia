@@ -6,9 +6,27 @@
 
 #include <gtest/gtest.h>
 
+#include "src/devices/bin/driver_manager/power/power_manager.h"
 #include "src/devices/bin/driver_manager/tests/driver_manager_test_base.h"
 
 namespace driver_manager {
+
+class FakeTopology : public fidl::Server<fuchsia_power_broker::Topology> {
+ public:
+  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override {
+    lease_requests_.push_back(std::move(request));
+    completer.Reply(fit::ok());
+  }
+
+  void AddElement(AddElementRequest& request, AddElementCompleter::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  std::vector<LeaseRequest> lease_requests_;
+};
 
 class AllDriversElementTest : public DriverManagerTestBase {
  public:
@@ -259,6 +277,51 @@ TEST_F(AllDriversElementTest, TestRemoveAncestorsUnboundTraversed) {
 
   EXPECT_FALSE(GetLeafDriverInstances(element).contains(grandparent->MakeTopologicalPath()));
   EXPECT_FALSE(GetLeases(element).contains(grandparent->MakeTopologicalPath()));
+}
+
+TEST_F(AllDriversElementTest, TestLeaseAllDrivers) {
+  auto [topology_client, topology_server] =
+      fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
+
+  FakeTopology fake_topology;
+  fidl::ServerBindingGroup<fuchsia_power_broker::Topology> bindings;
+  bindings.AddBinding(dispatcher(), std::move(topology_server), &fake_topology,
+                      fidl::kIgnoreBindingClosure);
+
+  PowerManager power_manager(dispatcher(), std::move(topology_client), std::nullopt, false);
+
+  // Setup a topology: parent_node (unbound) -> child_a (bound), child_b (unbound) -> grandchild
+  // (bound)
+  auto parent = CreateNode("parent_node");
+  auto child_a = CreateNode("child_a", parent);
+  child_a->set_bound_for_testing(true);
+
+  auto child_b = CreateNode("child_b", parent);
+  child_b->set_bound_for_testing(false);
+
+  auto grandchild = CreateNode("grandchild", child_b);
+  grandchild->set_bound_for_testing(true);
+
+  // Call LeaseAllDrivers
+  power_manager.LeaseAllDrivers(parent, [] {});
+
+  RunLoopUntilIdle();
+
+  // It should have acquired leases for child_a and grandchild (both are bound nodes in the
+  // topology)
+  ASSERT_EQ(fake_topology.lease_requests_.size(), 2u);
+
+  // Collect lease names to verify
+  std::unordered_set<std::string> leased_names;
+  for (const auto& req : fake_topology.lease_requests_) {
+    ASSERT_TRUE(req.lease_name().has_value());
+    leased_names.insert(*req.lease_name());
+  }
+
+  EXPECT_TRUE(leased_names.contains("child_a"));
+  EXPECT_TRUE(leased_names.contains("grandchild"));
+  EXPECT_FALSE(leased_names.contains("parent_node"));
+  EXPECT_FALSE(leased_names.contains("child_b"));
 }
 
 }  // namespace

@@ -12,6 +12,9 @@
 #include <lib/async/dispatcher.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fidl/cpp/client.h>
+#include <lib/fit/defer.h>
+#include <lib/fit/function.h>
+#include <lib/zx/eventpair.h>
 
 #include <memory>
 #include <variant>
@@ -79,6 +82,7 @@ class PowerManager : public fidl::WireServer<fuchsia_power_broker::ElementRunner
   void OnBootupComplete(std::shared_ptr<Node> root_node);
   void OnNodeBound(std::shared_ptr<const Node> node);
   void CreateAllDriversPowerElement(std::shared_ptr<Node> root_node);
+  void LeaseAllDrivers(const std::shared_ptr<Node>& root_node, fit::callback<void()> callback);
   void CreatePowerElement(
       std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client,
       std::string_view name, fuchsia_power_broker::DependencyToken element_token,
@@ -108,6 +112,9 @@ class PowerManager : public fidl::WireServer<fuchsia_power_broker::ElementRunner
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
  private:
+  void AcquireRebootLease(const std::shared_ptr<Node>& node, std::string topo_path,
+                          std::shared_ptr<fit::deferred_callback> deferred);
+
   async_dispatcher_t* const dispatcher_;
   fidl::Client<fuchsia_power_broker::Topology> power_topology_;
 
@@ -125,6 +132,7 @@ class PowerManager : public fidl::WireServer<fuchsia_power_broker::ElementRunner
 
   std::optional<fuchsia_power_broker::DependencyToken> all_drivers_token_;
   std::shared_ptr<AllDriversElement> all_drivers_;
+  std::vector<zx::eventpair> reboot_leases_;
 };
 
 }  // namespace driver_manager

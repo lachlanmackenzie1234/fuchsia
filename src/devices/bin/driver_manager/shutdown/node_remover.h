@@ -13,6 +13,7 @@ class NodeRemover {
   virtual void ShutdownAllDrivers(fit::callback<void()> callback) = 0;
   virtual void ShutdownPkgDrivers(fit::callback<void()> callback) = 0;
   virtual void SetOnRemovalTimeoutCallback(fit::callback<void()> callback) = 0;
+  virtual void LeaseAllDriversForShutdown(fit::callback<void()> callback) = 0;
 };
 
 }  // namespace driver_manager

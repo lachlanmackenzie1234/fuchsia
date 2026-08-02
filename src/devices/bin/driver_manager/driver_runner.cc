@@ -1456,4 +1456,12 @@ void DriverRunner::handle_unknown_method(
   fdf_log::warn("NodeManager received unknown method. Ordinal: {}", metadata.method_ordinal);
 }
 
+void DriverRunner::LeaseAllDriversForShutdown(fit::callback<void()> callback) {
+  if (power_manager_) {
+    power_manager_->LeaseAllDrivers(root_node_, std::move(callback));
+  } else {
+    callback();
+  }
+}
+
 }  // namespace driver_manager
