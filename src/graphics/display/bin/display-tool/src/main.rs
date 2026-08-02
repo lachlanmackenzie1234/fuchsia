@@ -5,7 +5,6 @@
 use anyhow::Error;
 use argh::FromArgs;
 use display_utils::{Coordinator, DisplayId, PixelFormat, TEST_UTILITY_CLIENT_PRIORITY};
-use fuchsia_async as fasync;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::select;
 use rgb::Rgb888;
@@ -127,7 +126,7 @@ enum SubCommands {
     FrameRateTest(FrameRateTestArgs),
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
 
