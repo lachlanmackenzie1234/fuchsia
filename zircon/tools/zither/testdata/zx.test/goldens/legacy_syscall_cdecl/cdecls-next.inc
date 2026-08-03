@@ -9,4 +9,4 @@
 #error "<zircon/syscalls-next.h> is the public API header"
 #endif
 
-_ZX_SYSCALL_DECL(syscall_next, void, /* no attributes */, 0, (), (void))
+_ZX_SYSCALL_DECL(syscall_next, void, _ZX_SYSCALL_EXTERN_C, 0, (), (void))

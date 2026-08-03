@@ -70,9 +70,8 @@ func SyscallCDecl(syscall zither.Syscall, ptrView PointerView, macroName func(zi
 
 func cDeclAttributes(syscall zither.Syscall) string {
 	var attrs []string
-	if syscall.Rust {
-		attrs = append(attrs, "_ZX_SYSCALL_EXTERN_C")
-	}
+	// Declare all declarations as extern "C" to reduce churn as we convert implementations to Rust.
+	attrs = append(attrs, "_ZX_SYSCALL_EXTERN_C")
 	if syscall.Const {
 		attrs = append(attrs, "__CONST")
 	}

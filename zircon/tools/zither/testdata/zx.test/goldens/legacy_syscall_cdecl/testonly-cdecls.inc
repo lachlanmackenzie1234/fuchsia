@@ -9,8 +9,8 @@
 #error "<zircon/testonly-syscalls.h> is the public API header"
 #endif
 
-_ZX_SYSCALL_DECL(syscall_test0, void, /* no attributes */, 0, (), (void))
+_ZX_SYSCALL_DECL(syscall_test0, void, _ZX_SYSCALL_EXTERN_C, 0, (), (void))
 
-_ZX_SYSCALL_DECL(syscall_test1, void, /* no attributes */, 0, (), (void))
+_ZX_SYSCALL_DECL(syscall_test1, void, _ZX_SYSCALL_EXTERN_C, 0, (), (void))
 
-_ZX_SYSCALL_DECL(syscall_test2, void, /* no attributes */, 0, (), (void))
+_ZX_SYSCALL_DECL(syscall_test2, void, _ZX_SYSCALL_EXTERN_C, 0, (), (void))

@@ -9,24 +9,24 @@
 #error "<zircon/syscalls-next.h> is the public API header"
 #endif
 
-_ZX_SYSCALL_DECL(iob_allocate_id, zx_status_t, /* no attributes */, 6,
+_ZX_SYSCALL_DECL(iob_allocate_id, zx_status_t, _ZX_SYSCALL_EXTERN_C, 6,
                  (handle, options, region_index, blob, blob_size, id),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle,
                   zx_iob_allocate_id_options_t options, uint32_t region_index, const void* blob,
                   size_t blob_size, uint32_t* id))
 
-_ZX_SYSCALL_DECL(iob_create_shared_region, zx_status_t, /* no attributes */, 3,
+_ZX_SYSCALL_DECL(iob_create_shared_region, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
                  (options, size, out),
                  (uint64_t options, uint64_t size,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out))
 
-_ZX_SYSCALL_DECL(pager_query_dirty_ranges, zx_status_t, /* no attributes */, 8,
+_ZX_SYSCALL_DECL(pager_query_dirty_ranges, zx_status_t, _ZX_SYSCALL_EXTERN_C, 8,
                  (pager, pager_vmo, offset, length, buffer, buffer_size, actual, avail),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t pager,
                   _ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t pager_vmo, uint64_t offset,
                   uint64_t length, void* buffer, size_t buffer_size, size_t* actual, size_t* avail))
 
-_ZX_SYSCALL_DECL(process_create_shared, zx_status_t, /* no attributes */, 6,
+_ZX_SYSCALL_DECL(process_create_shared, zx_status_t, _ZX_SYSCALL_EXTERN_C, 6,
                  (shared_proc, options, name, name_size, proc_handle, restricted_vmar_handle),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t shared_proc, uint32_t options,
                   const char* name, size_t name_size,
@@ -65,7 +65,7 @@ _ZX_SYSCALL_DECL(sampler_start, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (iobuffer)
 _ZX_SYSCALL_DECL(sampler_stop, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (iobuffer),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t iobuffer))
 
-_ZX_SYSCALL_DECL(syscall_next_1, zx_status_t, /* no attributes */, 1, (arg), (int32_t arg))
+_ZX_SYSCALL_DECL(syscall_next_1, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (arg), (int32_t arg))
 
 _ZX_SYSCALL_DECL(system_suspend_enter, zx_status_t, _ZX_SYSCALL_EXTERN_C, 7,
                  (resource, resume_deadline, options, header, entries, num_entries, actual_entries),

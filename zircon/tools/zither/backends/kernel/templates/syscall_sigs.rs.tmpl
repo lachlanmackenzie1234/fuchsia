@@ -20,7 +20,6 @@ use zx_status::{ErrorStatus, Status};
 use zx_types::*;
 
 {{ range . }}
-{{ if .Rust }}
 {{ $lastParamIndex := LastParameterIndex . }}
 #[allow(non_camel_case_types)]
 pub type {{ LowerCaseWithUnderscores . }} = extern "C" fn(
@@ -28,7 +27,6 @@ pub type {{ LowerCaseWithUnderscores . }} = extern "C" fn(
     {{ RustKernelParameterType $param }}{{ if ne $i $lastParamIndex }},{{ end }}
 {{- end }}
 ) -> {{ RustKernelReturnType . }};
-{{ end }}
 {{ end }}
 
 {{ end }}
