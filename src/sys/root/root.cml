@@ -28,6 +28,8 @@
                 "fuchsia.diagnostics.ExceptionHandlerAvailable",
                 "fuchsia.diagnostics.LogsMaxCachedOriginalBytes",
                 "fuchsia.diagnostics.MaximumConcurrentSnapshotsPerReader",
+                "fuchsia.display.FallbackHorizontalSizeMm",
+                "fuchsia.display.FallbackVerticalSizeMm",
                 "fuchsia.driver.BaseDrivers",
                 "fuchsia.driver.BindEager",
                 "fuchsia.driver.BootDrivers",

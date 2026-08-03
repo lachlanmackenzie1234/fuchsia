@@ -67,9 +67,6 @@ namespace fhdt = fuchsia_hardware_display_types;
 
 namespace {
 
-constexpr uint32_t kFallbackHorizontalSizeMm = 160;
-constexpr uint32_t kFallbackVerticalSizeMm = 90;
-
 // True iff `inner` is entirely contained within `outer`.
 //
 // `outer` must be positioned at the coordinate system's origin. Both `inner` and `outer` must be
@@ -1385,8 +1382,8 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
 
     fidl_display_info.using_fallback_size = false;
     if (fidl_display_info.horizontal_size_mm == 0 || fidl_display_info.vertical_size_mm == 0) {
-      fidl_display_info.horizontal_size_mm = kFallbackHorizontalSizeMm;
-      fidl_display_info.vertical_size_mm = kFallbackVerticalSizeMm;
+      fidl_display_info.horizontal_size_mm = controller_.fallback_horizontal_size_mm();
+      fidl_display_info.vertical_size_mm = controller_.fallback_vertical_size_mm();
       fidl_display_info.using_fallback_size = true;
     }
 

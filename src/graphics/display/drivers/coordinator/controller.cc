@@ -558,12 +558,13 @@ void Controller::OpenCoordinator(OpenCoordinatorRequestView request,
 // static
 zx::result<std::unique_ptr<Controller>> Controller::Create(
     std::unique_ptr<EngineDriverClient> engine_driver_client,
-    fdf::UnownedSynchronizedDispatcher driver_dispatcher, inspect::Inspector inspector) {
+    fdf::UnownedSynchronizedDispatcher driver_dispatcher, inspect::Inspector inspector,
+    uint32_t fallback_horizontal_size_mm, uint32_t fallback_vertical_size_mm) {
   fbl::AllocChecker alloc_checker;
 
-  auto controller =
-      fbl::make_unique_checked<Controller>(&alloc_checker, std::move(engine_driver_client),
-                                           std::move(driver_dispatcher), std::move(inspector));
+  auto controller = fbl::make_unique_checked<Controller>(
+      &alloc_checker, std::move(engine_driver_client), std::move(driver_dispatcher),
+      std::move(inspector), fallback_horizontal_size_mm, fallback_vertical_size_mm);
   if (!alloc_checker.check()) {
     fdf::error("Failed to allocate memory for Controller");
     return zx::error(ZX_ERR_NO_MEMORY);
@@ -627,14 +628,17 @@ void Controller::PrepareStop() {
 
 Controller::Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
                        fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-                       inspect::Inspector inspector)
+                       inspect::Inspector inspector, uint32_t fallback_horizontal_size_mm,
+                       uint32_t fallback_vertical_size_mm)
     : inspector_(std::move(inspector)),
       root_(inspector_.GetRoot().CreateChild("display")),
       driver_dispatcher_(std::move(driver_dispatcher)),
       engine_listener_fidl_adapter_(this, driver_dispatcher_->borrow()),
       vsync_monitor_(root_.CreateChild("vsync_monitor"), driver_dispatcher_->async_dispatcher()),
       clients_(root_.CreateChild("clients")),
-      engine_driver_client_(std::move(engine_driver_client)) {
+      engine_driver_client_(std::move(engine_driver_client)),
+      fallback_horizontal_size_mm_(fallback_horizontal_size_mm),
+      fallback_vertical_size_mm_(fallback_vertical_size_mm) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(engine_driver_client_ != nullptr);
 

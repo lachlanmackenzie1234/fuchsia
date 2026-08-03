@@ -74,7 +74,8 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // `driver_dispatcher` must be shut down when `Stop()` is called.
   static zx::result<std::unique_ptr<Controller>> Create(
       std::unique_ptr<EngineDriverClient> engine_driver_client,
-      fdf::UnownedSynchronizedDispatcher driver_dispatcher, inspect::Inspector inspector);
+      fdf::UnownedSynchronizedDispatcher driver_dispatcher, inspect::Inspector inspector,
+      uint32_t fallback_horizontal_size_mm, uint32_t fallback_vertical_size_mm);
 
   // Creates a new coordinator Controller instance. It creates a new Inspector
   // which will be solely owned by the Controller instance.
@@ -82,7 +83,11 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // `engine_driver_client` must not be null.
   explicit Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
                       fdf::UnownedSynchronizedDispatcher driver_dispatcher,
-                      inspect::Inspector inspector);
+                      inspect::Inspector inspector, uint32_t fallback_horizontal_size_mm,
+                      uint32_t fallback_vertical_size_mm);
+
+  uint32_t fallback_horizontal_size_mm() const { return fallback_horizontal_size_mm_; }
+  uint32_t fallback_vertical_size_mm() const { return fallback_vertical_size_mm_; }
 
   Controller(const Controller&) = delete;
   Controller& operator=(const Controller&) = delete;
@@ -236,6 +241,9 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   inspect::UintProperty last_valid_apply_config_config_stamp_property_;
 
   display::DriverConfigStamp last_issued_driver_config_stamp_ = display::kInvalidDriverConfigStamp;
+
+  const uint32_t fallback_horizontal_size_mm_ = 0;
+  const uint32_t fallback_vertical_size_mm_ = 0;
 };
 
 template <typename Callback>

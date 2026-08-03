@@ -14,6 +14,7 @@
 #include <fbl/alloc_checker.h>
 
 #include "src/graphics/display/drivers/coordinator/controller.h"
+#include "src/graphics/display/drivers/coordinator/structured_config.h"
 
 namespace display_coordinator {
 
@@ -24,6 +25,8 @@ CoordinatorDriver::CoordinatorDriver()
 CoordinatorDriver::~CoordinatorDriver() = default;
 
 zx::result<> CoordinatorDriver::Start(fdf::DriverContext context) {
+  auto config = context.take_config<structured_config::Config>();
+
   inspect::Inspector inspector;
   inspect::ComponentInspector component_inspector = context.CreateInspector(this, inspector);
 
@@ -36,7 +39,8 @@ zx::result<> CoordinatorDriver::Start(fdf::DriverContext context) {
 
   zx::result<std::unique_ptr<Controller>> create_controller_result =
       Controller::Create(std::move(create_engine_driver_client_result).value(),
-                         driver_dispatcher()->borrow(), std::move(inspector));
+                         driver_dispatcher()->borrow(), std::move(inspector),
+                         config.fallback_horizontal_size_mm(), config.fallback_vertical_size_mm());
   if (create_controller_result.is_error()) {
     fdf::error("Failed to create Controller: {}", create_controller_result);
     return create_controller_result.take_error();

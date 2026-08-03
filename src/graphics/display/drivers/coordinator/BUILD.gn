@@ -14,6 +14,15 @@ driver_bind_rules("coordinator_bind") {
   deps = [ "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_bindlib" ]
 }
 
+fuchsia_component_manifest("coordinator-manifest") {
+  component_name = "display-coordinator"
+  manifest = "meta/coordinator.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("structured-config") {
+  cm_label = ":coordinator-manifest"
+}
+
 fuchsia_cc_driver("coordinator-driver") {
   output_name = "display-coordinator"
   configs += [ "//build/config/fuchsia:enable_zircon_asserts" ]
@@ -21,7 +30,10 @@ fuchsia_cc_driver("coordinator-driver") {
     "coordinator-driver.cc",
     "coordinator-driver.h",
   ]
-  deps = [ ":shared" ]
+  deps = [
+    ":shared",
+    ":structured-config",
+  ]
 }
 
 fuchsia_driver_component("coordinator") {
@@ -29,10 +41,9 @@ fuchsia_driver_component("coordinator") {
     ":*",
     "//src/graphics/display:drivers",
   ]
-  component_name = "display-coordinator"
+  cm_label = ":coordinator-manifest"
   deps = [ ":coordinator-driver" ]
   info = "meta/coordinator-info.json"
-  manifest = "meta/coordinator.cml"
 }
 
 fuchsia_driver_package("package") {

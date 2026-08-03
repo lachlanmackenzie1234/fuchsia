@@ -38,7 +38,8 @@ class InspectTest : public ::testing::Test {
         fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
 
     controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow(),
-                        inspect::Inspector{});
+                        inspect::Inspector{}, /*fallback_horizontal_size_mm=*/0,
+                        /*fallback_vertical_size_mm=*/0);
   }
 
   void TearDown() override {

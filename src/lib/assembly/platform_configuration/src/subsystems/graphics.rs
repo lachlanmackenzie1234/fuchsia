@@ -121,6 +121,27 @@ impl DefineSubsystemConfiguration<(&GraphicsConfig, &PlatformUiConfig)>
 
         builder.set_config_capability("fuchsia.virtcon.ScrollbackRows", Config::new_void())?;
 
+        // TODO(https://fxbug.dev/540969321): Fallback default sizes match historical 160mm x 90mm.
+        let fallback_horizontal_size_mm = context
+            .board_config
+            .platform
+            .graphics
+            .display
+            .fallback_horizontal_size_mm
+            .unwrap_or(160);
+        builder.set_config_capability(
+            "fuchsia.display.FallbackHorizontalSizeMm",
+            Config::new(ConfigValueType::Uint32, fallback_horizontal_size_mm.into()),
+        )?;
+
+        // TODO(https://fxbug.dev/540969321): Fallback default sizes match historical 160mm x 90mm.
+        let fallback_vertical_size_mm =
+            context.board_config.platform.graphics.display.fallback_vertical_size_mm.unwrap_or(90);
+        builder.set_config_capability(
+            "fuchsia.display.FallbackVerticalSizeMm",
+            Config::new(ConfigValueType::Uint32, fallback_vertical_size_mm.into()),
+        )?;
+
         match context.feature_set_level {
             FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable => {
                 builder.platform_bundle("display_drivers_boot")?;

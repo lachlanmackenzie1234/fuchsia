@@ -447,6 +447,14 @@ pub struct DisplayConfig {
     /// Whether the display has rounded corners.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub rounded_corners: bool,
+
+    /// Fallback horizontal display size in millimeters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_horizontal_size_mm: Option<u32>,
+
+    /// Fallback vertical display size in millimeters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_vertical_size_mm: Option<u32>,
 }
 
 #[cfg(test)]

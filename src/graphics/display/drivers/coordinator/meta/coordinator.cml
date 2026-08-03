@@ -22,5 +22,15 @@
             service: [ "fuchsia.hardware.display.engine.Service" ],
             availability: "optional",
         },
+        {
+            config: "fuchsia.display.FallbackHorizontalSizeMm",
+            key: "fallback_horizontal_size_mm",
+            type: "uint32",
+        },
+        {
+            config: "fuchsia.display.FallbackVerticalSizeMm",
+            key: "fallback_vertical_size_mm",
+            type: "uint32",
+        },
     ],
 }

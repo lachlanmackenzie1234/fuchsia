@@ -105,6 +105,8 @@
         },
         {
             config: [
+                "fuchsia.display.FallbackHorizontalSizeMm",
+                "fuchsia.display.FallbackVerticalSizeMm",
                 "fuchsia.driver.devicetree.EnabledNodes",
                 "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.UseHardwareIommu",

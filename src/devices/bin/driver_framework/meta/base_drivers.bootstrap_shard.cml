@@ -20,6 +20,8 @@
     offer: [
         {
             config: [
+                "fuchsia.display.FallbackHorizontalSizeMm",
+                "fuchsia.display.FallbackVerticalSizeMm",
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.starnix.fastrpc.ExpectReady",

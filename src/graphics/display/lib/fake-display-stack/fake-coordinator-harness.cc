@@ -32,9 +32,10 @@ FakeCoordinatorHarness::FakeCoordinatorHarness(
         auto engine_driver_client =
             std::make_unique<display_coordinator::EngineDriverClientFidl>(std::move(engine_client));
         zx::result<std::unique_ptr<display_coordinator::Controller>> create_result =
-            display_coordinator::Controller::Create(std::move(engine_driver_client),
-                                                    coordinator_driver_dispatcher_->borrow(),
-                                                    inspect::Inspector{});
+            display_coordinator::Controller::Create(
+                std::move(engine_driver_client), coordinator_driver_dispatcher_->borrow(),
+                inspect::Inspector{}, /*fallback_horizontal_size_mm=*/160,
+                /*fallback_vertical_size_mm=*/90);
         ZX_ASSERT_MSG(create_result.is_ok(),
                       "Failed to create display coordinator Controller device: %s",
                       create_result.status_string());
