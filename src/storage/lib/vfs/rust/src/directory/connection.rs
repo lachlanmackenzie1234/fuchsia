@@ -316,7 +316,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         query: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, Status> {
         if !self.options.rights.intersects(fio::Operations::GET_ATTRIBUTES) {
-            return Err(Status::BAD_HANDLE);
+            return Err(Status::ACCESS_DENIED);
         }
         self.directory.get_attributes(query).await
     }

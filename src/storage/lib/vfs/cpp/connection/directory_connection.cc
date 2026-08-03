@@ -187,7 +187,7 @@ void DirectoryConnection::SetAttr(SetAttrRequestView request, SetAttrCompleter::
 void DirectoryConnection::GetAttributes(fio::wire::NodeGetAttributesRequest* request,
                                         GetAttributesCompleter::Sync& completer) {
   if (!(rights() & fuchsia_io::Rights::kGetAttributes)) {
-    completer.ReplyError(ZX_ERR_BAD_HANDLE);
+    completer.ReplyError(ZX_ERR_ACCESS_DENIED);
     return;
   }
   internal::NodeAttributeBuilder builder(vnode());

@@ -590,7 +590,7 @@ zx_status_t Remote<Protocol>::AttrGet(zxio_node_attributes_t* inout_attr) {
   }
   const auto& response = result.value();
   if (response.is_error()) {
-    return response.error_value();
+    return MapToPosixStatus(response.error_value());
   }
   const fio::wire::NodeAttributes2* attributes = response.value();
   return zxio_attr_from_wire(*attributes, inout_attr);

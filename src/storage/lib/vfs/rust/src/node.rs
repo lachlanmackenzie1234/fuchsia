@@ -267,7 +267,7 @@ impl<N: Node> Connection<N> {
             fio::NodeRequest::GetAttributes { query, responder } => {
                 async move {
                     if !self.options.rights.intersects(fio::Operations::GET_ATTRIBUTES) {
-                        responder.send(Err(Status::BAD_HANDLE.into_raw()))
+                        responder.send(Err(Status::ACCESS_DENIED.into_raw()))
                     } else {
                         let attrs = self.node.get_attributes(query).await;
                         responder.send(

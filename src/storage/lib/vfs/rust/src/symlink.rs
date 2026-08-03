@@ -247,7 +247,7 @@ impl<T: Symlink> Connection<T> {
         // Note: Symlink connections are required to have GET_ATTRIBUTES rights upon creation
         // (enforced in `to_symlink_options`). We check it here anyway for consistency and safety.
         if !self.options.rights.intersects(fio::Operations::GET_ATTRIBUTES) {
-            return Err(Status::BAD_HANDLE);
+            return Err(Status::ACCESS_DENIED);
         }
         self.symlink.get_attributes(query).await
     }

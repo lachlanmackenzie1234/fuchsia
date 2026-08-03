@@ -590,7 +590,7 @@ async fn get_attributes_file_with_insufficient_rights() {
                 .await
                 .expect("FIDL call failed")
                 .map_err(zx::Status::from_raw),
-            Err(zx::Status::BAD_HANDLE)
+            Err(zx::Status::ACCESS_DENIED)
         );
     }
 
@@ -607,7 +607,7 @@ async fn get_attributes_file_with_insufficient_rights() {
                 .await
                 .expect("FIDL call failed")
                 .map_err(zx::Status::from_raw),
-            Err(zx::Status::BAD_HANDLE)
+            Err(zx::Status::ACCESS_DENIED)
         );
     }
 }
@@ -629,7 +629,7 @@ async fn get_attributes_directory_with_insufficient_rights() {
                 .await
                 .expect("FIDL call failed")
                 .map_err(zx::Status::from_raw),
-            Err(zx::Status::BAD_HANDLE)
+            Err(zx::Status::ACCESS_DENIED)
         );
     }
 
@@ -646,7 +646,7 @@ async fn get_attributes_directory_with_insufficient_rights() {
                 .await
                 .expect("FIDL call failed")
                 .map_err(zx::Status::from_raw),
-            Err(zx::Status::BAD_HANDLE)
+            Err(zx::Status::ACCESS_DENIED)
         );
     }
 }
