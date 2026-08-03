@@ -910,6 +910,7 @@ pub const ZX_TASK_RETCODE_OOM_KILL: i64 = -1025;
 pub const ZX_TASK_RETCODE_POLICY_KILL: i64 = -1026;
 pub const ZX_TASK_RETCODE_VDSO_KILL: i64 = -1027;
 pub const ZX_TASK_RETCODE_EXCEPTION_KILL: i64 = -1028;
+pub const ZX_TASK_RETCODE_CRITICAL_PROCESS_KILL: i64 = -1029;
 
 // Resource flags.
 pub const ZX_RSRC_FLAG_EXCLUSIVE: zx_rsrc_flags_t = 0x00010000;
