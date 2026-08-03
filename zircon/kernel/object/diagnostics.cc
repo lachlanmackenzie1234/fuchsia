@@ -566,13 +566,15 @@ void DumpHandlesForKoid(zx_koid_t id) {
 
 void ktrace_report_live_processes() {
   // PID 0 refers to the kernel.
-  KTRACE_KERNEL_OBJECT_ALWAYS(/* koid */ 0, ZX_OBJ_TYPE_PROCESS, "kernel");
+  KTRACE_KERNEL_OBJECT_ALWAYS(/* koid */ 0, ZX_OBJ_TYPE_PROCESS, "kernel",
+                              ("job", ktrace::Koid(0)));
 
   auto walker = MakeProcessWalker([](ProcessDispatcher* process) {
     char name[ZX_MAX_NAME_LEN];
     [[maybe_unused]] zx_status_t status = process->get_name(name);
     DEBUG_ASSERT(status == ZX_OK);
-    KTRACE_KERNEL_OBJECT_ALWAYS(process->get_koid(), ZX_OBJ_TYPE_PROCESS, name);
+    KTRACE_KERNEL_OBJECT_ALWAYS(process->get_koid(), ZX_OBJ_TYPE_PROCESS, name,
+                                ("job", ktrace::Koid(process->job()->get_koid())));
   });
   GetRootJobDispatcher()->EnumerateChildrenRecursive(&walker);
 }

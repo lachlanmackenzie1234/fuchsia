@@ -60,6 +60,7 @@
 #include <ktl/atomic.h>
 #include <lk/main.h>
 #include <lockdep/lockdep.h>
+#include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/sampler_dispatcher.h>
 #include <object/thread_dispatcher.h>
@@ -517,8 +518,9 @@ void Thread::Resume() {
     // Emit the thread metadata the first time the thread is resumed so that trace
     // events written by this thread have the correct name and process association.
     if (state() == THREAD_INITIAL) {
+      const zx_koid_t job_koid = user_thread() ? user_thread()->process()->job()->get_koid() : 0u;
       KTRACE_KERNEL_OBJECT("kernel:meta", tid(), ZX_OBJ_TYPE_THREAD, name(),
-                           ("process", ktrace::Koid(pid())));
+                           ("process", ktrace::Koid(pid())), ("job", ktrace::Koid(job_koid)));
     }
 
     // Clear the suspend signal in case there is a pending suspend
@@ -2053,7 +2055,7 @@ void Thread::SecondaryCpuInitEarly() {
   // Emitting the thread metadata usually happens during Thread::Resume(), however, cpu_init threads
   // are never resumed. Emit the metadata here so that the thread name is associated with its tid.
   KTRACE_KERNEL_OBJECT("kernel:meta", this->tid(), ZX_OBJ_TYPE_THREAD, this->name(),
-                       ("process", ktrace::Koid(this->pid())));
+                       ("process", ktrace::Koid(this->pid())), ("job", ktrace::Koid(0)));
 }
 
 /**
@@ -2354,8 +2356,10 @@ void ktrace_report_live_threads() {
   Guard<SpinLock, IrqSave> guard{&Thread::get_list_lock()};
   for (Thread& t : thread_list.Get()) {
     t.canary().Assert();
+    const zx_koid_t job_koid = t.user_thread() ? t.user_thread()->process()->job()->get_koid() : 0u;
     KTRACE_KERNEL_OBJECT_ALWAYS(t.tid(), ZX_OBJ_TYPE_THREAD, t.name(),
-                                ("process", ktrace::Koid(t.pid())));
+                                ("process", ktrace::Koid(t.pid())),
+                                ("job", ktrace::Koid(job_koid)));
   }
 }
 

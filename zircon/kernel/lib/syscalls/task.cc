@@ -334,7 +334,8 @@ zx_status_t sys_process_create(zx_handle_t job_handle, user_in_ptr<const char> _
     return result;
 
   KTRACE_KERNEL_OBJECT("kernel:meta", new_process_handle.dispatcher()->get_koid(),
-                       ZX_OBJ_TYPE_PROCESS, buf);
+                       ZX_OBJ_TYPE_PROCESS, buf,
+                       ("job", ktrace::Koid(new_process_handle.dispatcher()->job()->get_koid())));
 
   result = up->MakeAndAddHandle(ktl::move(new_process_handle), proc_rights, proc_handle);
   if (result == ZX_OK)
@@ -394,7 +395,8 @@ zx_status_t sys_process_create_shared(zx_handle_t shared_proc_handle, uint32_t o
   }
 
   KTRACE_KERNEL_OBJECT("kernel:meta", new_process_handle.dispatcher()->get_koid(),
-                       ZX_OBJ_TYPE_PROCESS, buf);
+                       ZX_OBJ_TYPE_PROCESS, buf,
+                       ("job", ktrace::Koid(new_process_handle.dispatcher()->job()->get_koid())));
 
   result = up->MakeAndAddHandle(ktl::move(new_process_handle), proc_rights, proc_handle);
 

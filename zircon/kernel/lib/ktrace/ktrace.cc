@@ -134,7 +134,8 @@ void KTrace::ReportMetadata() {
       snprintf(name, sizeof(name), "cpu-%u", i);
       fxt::WriteKernelObjectRecord(ktrace, fxt::Koid(ktrace->cpu_context_map_.GetCpuKoid(i)),
                                    ZX_OBJ_TYPE_THREAD, fxt::StringRef{name},
-                                   fxt::Argument{"process"_intern, kNoProcess});
+                                   fxt::Argument{"process"_intern, kNoProcess},
+                                   fxt::Argument{"job"_intern, kNoProcess});
     }
   };
   const cpu_mask_t target_mask = cpu_num_to_mask(BOOT_CPU_ID);
