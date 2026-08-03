@@ -170,7 +170,6 @@ closed protocol Profile {
     ///
     /// [`zx_object_set_profile()`]: object_set_profile.md
     /// [`zx_futex_wait()`]: futex_wait.md
-    @rust
     strict Create(resource struct {
         profile_rsrc Handle:RESOURCE;
         options uint32;

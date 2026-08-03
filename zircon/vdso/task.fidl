@@ -96,7 +96,6 @@ closed protocol Task {
     /// [`zx_process_start()`]: process_start.md
     /// [`zx_task_kill()`]: task_kill.md
     /// [`zx_thread_start()`]: thread_start.md
-    @rust
     strict Suspend(resource struct {
         handle Handle;
     }) -> (resource struct {
@@ -165,7 +164,6 @@ closed protocol Task {
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_task_kill()`]: task_kill.md
     /// [`zx_task_suspend()`]: task_suspend.md
-    @rust
     strict SuspendToken(resource struct {
         handle Handle;
     }) -> (resource struct {

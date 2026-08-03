@@ -93,7 +93,6 @@ closed protocol Restricted {
     // can use ZX_ERR_INTERNAL_INTR_RETRY and the vDSO retry logic.  See
     // https://fxbug.dev/42076957 for details.
     @blocking
-    @rust
     strict Enter(struct {
         options uint32;
         vector_table_ptr uintptr64;
@@ -189,7 +188,6 @@ closed protocol Restricted {
     /// [`zx_vmo_read()`]: vmo_read.md
     /// [`zx_vmo_write()`]: vmo_write.md
     @next
-    @rust
     strict BindState(resource struct {
         options uint32;
     }) -> (resource struct {
@@ -236,7 +234,6 @@ closed protocol Restricted {
     /// [`zx_restricted_enter()`]: restricted_enter.md
     /// [`zx_restricted_bind_state()`]: restricted_bind_state.md
     @next
-    @rust
     strict UnbindState(resource struct {
         options uint32;
     }) -> () error Status;
@@ -286,7 +283,6 @@ closed protocol Restricted {
     /// `ZX_ERR_ACCESS_DENIED` *thread* does not have ZX_RIGHT_MANAGE_THREAD.
     /// `ZX_ERR_BAD_STATE` *thread* is dead.
     @next
-    @rust
     strict Kick(resource struct {
         thread Handle:THREAD;
         options uint32;

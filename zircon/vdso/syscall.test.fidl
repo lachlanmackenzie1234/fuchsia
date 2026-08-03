@@ -418,18 +418,15 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRust_0() -> () error Status;
 
     @testonly
-    @rust
     @test_category1
     strict TestRust_1(struct {
         a int32;
     }) -> () error Status;
 
     @testonly
-    @rust
     @test_category1
     strict TestRust_2(struct {
         a int32;
@@ -437,7 +434,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     @test_category2
     strict TestRust_3(struct {
         a int32;
@@ -446,7 +442,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRust_4(struct {
         a int32;
         b int32;
@@ -455,7 +450,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRust_5(struct {
         a int32;
         b int32;
@@ -465,7 +459,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRust_6(struct {
         a int32;
         b int32;
@@ -476,7 +469,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRust_7(struct {
         a int32;
         b int32;
@@ -488,7 +480,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRust_8(struct {
         a int32;
         b int32;
@@ -501,7 +492,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRustWrapper(struct {
         a int32;
         b int32;
@@ -509,7 +499,6 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRustInptr(struct {
         ptr experimental_pointer<int32>;
     }) -> (struct {
@@ -517,7 +506,6 @@ closed protocol Syscall {
     }) error Status;
 
     @testonly
-    @rust
     strict TestRustOutptr(struct {
         value int32;
         @out
@@ -525,14 +513,12 @@ closed protocol Syscall {
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRustInoutptr(struct {
         @inout
         ptr experimental_pointer<int32>;
     }) -> () error Status;
 
     @testonly
-    @rust
     strict TestRustHandle(resource struct {
         handle Handle;
     }) -> (struct {

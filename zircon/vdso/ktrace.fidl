@@ -49,7 +49,6 @@ closed protocol Ktrace {
     /// ## See also
     ///
     /// TODO(https://fxbug.dev/42108078)
-    @rust
     strict Read(resource struct {
         handle Handle:RESOURCE;
         @out
@@ -101,7 +100,6 @@ closed protocol Ktrace {
     /// ## See also
     ///
     /// TODO(https://fxbug.dev/42108078)
-    @rust
     strict Control(resource struct {
         handle Handle:RESOURCE;
         action uint32;
