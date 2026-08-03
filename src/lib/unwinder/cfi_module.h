@@ -10,13 +10,14 @@
 #include <cstdint>
 #include <map>
 
-#include "src/lib/unwinder/cfi_parser.h"
 #include "src/lib/unwinder/error.h"
 #include "src/lib/unwinder/loaded_elf_module.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
+
+class CfiParser;
 
 enum UnwindTableSectionType {
   // The .eh_frame section. This section conforms to the specification found at

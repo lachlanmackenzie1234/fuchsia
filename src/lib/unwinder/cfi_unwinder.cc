@@ -102,6 +102,10 @@ fit::result<Error, Registers> TryConvertRegistersTo32Bit(uint64_t pc, const Regi
 
 }  // namespace
 
+CfiUnwinder::CfiUnwinder(const ElfModuleCache& elf_module_cache) : UnwinderBase(elf_module_cache) {}
+
+CfiUnwinder::~CfiUnwinder() = default;
+
 Error CfiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
   if (auto result = Step(stack, current.regs, next.regs, current.pc_is_return_address);
       result.is_error()) {

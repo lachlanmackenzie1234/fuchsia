@@ -5,13 +5,13 @@
 #ifndef SRC_LIB_UNWINDER_CFI_UNWINDER_H_
 #define SRC_LIB_UNWINDER_CFI_UNWINDER_H_
 
+#include <lib/fit/function.h>
+
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
 
-#include "sdk/lib/fit/include/lib/fit/function.h"
-#include "src/lib/unwinder/cfi_module.h"
 #include "src/lib/unwinder/elf_module_cache.h"
 #include "src/lib/unwinder/memory.h"
 #include "src/lib/unwinder/registers.h"
@@ -19,9 +19,13 @@
 
 namespace unwinder {
 
+class CfiModule;
+
 class CfiUnwinder : public UnwinderBase {
  public:
-  explicit CfiUnwinder(const ElfModuleCache& elf_module_cache) : UnwinderBase(elf_module_cache) {}
+  explicit CfiUnwinder(const ElfModuleCache& elf_module_cache);
+
+  ~CfiUnwinder();
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
 
