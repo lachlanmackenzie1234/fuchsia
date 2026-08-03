@@ -6,10 +6,9 @@
 
 use anyhow::Error;
 use fidl_fuchsia_hwinfo::DeviceMarker;
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn request_device_info() -> Result<(), Error> {
     let device_info_provider =
         connect_to_protocol::<DeviceMarker>().expect("Failed to connect to device info service");

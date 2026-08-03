@@ -6,10 +6,9 @@
 
 use anyhow::Error;
 use fidl_fuchsia_hwinfo::{Architecture, BoardMarker, DeviceMarker, ProductMarker};
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn request_device_info() -> Result<(), Error> {
     let device_info_provider =
         connect_to_protocol::<DeviceMarker>().expect("Failed to connect to device info service");
@@ -19,7 +18,7 @@ async fn request_device_info() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn request_board_info() -> Result<(), Error> {
     let board_info_provider =
         connect_to_protocol::<BoardMarker>().expect("Failed to connect to device info service");
@@ -37,7 +36,7 @@ async fn request_board_info() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn request_product_info() -> Result<(), Error> {
     let product_info_provider =
         connect_to_protocol::<ProductMarker>().expect("Failed to connect to device info service");

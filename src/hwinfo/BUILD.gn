@@ -119,7 +119,7 @@ rustc_test("hwinfo_positive_test") {
 
   deps = [
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
   ]
@@ -133,7 +133,7 @@ rustc_test("hwinfo_negative_test") {
 
   deps = [
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
   ]
@@ -147,7 +147,7 @@ rustc_test("hwinfo_retail_test") {
 
   deps = [
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
   ]
