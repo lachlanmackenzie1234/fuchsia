@@ -192,9 +192,9 @@ class State::Txn final {
       __TA_NO_THREAD_SAFETY_ANALYSIS {
     auto [first_extent_index, written, status] = state_->InnerCreateExtentChain(value, length);
     if (status == ZX_OK && first_extent_index != 0) {
-      undos_.push_back([this, first_extent_index]() __TA_NO_THREAD_SAFETY_ANALYSIS {
-        state_->InnerFreeExtentChain(first_extent_index);
-      });
+      undos_.push_back(
+          [this, first_extent_index = first_extent_index]()
+              __TA_NO_THREAD_SAFETY_ANALYSIS { state_->InnerFreeExtentChain(first_extent_index); });
     }
     return {first_extent_index, written, status};
   }
