@@ -191,7 +191,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn connect_to_application() {
         let app_uuid = uuid_to_fuchsia_tee_uuid(
             &Uuid::parse_str("8aaaf200-2450-11e4-abe2-0002a5d5c51b").unwrap(),
@@ -242,7 +242,7 @@ mod tests {
         assert!(is_closed_with_status(result.unwrap().unwrap_err(), Status::OK));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn connect_to_device_info() {
         let dev_connector = spawn_device_connector(|request| async move {
             match request {
@@ -282,7 +282,7 @@ mod tests {
         assert!(is_closed_with_status(result.unwrap().unwrap_err(), Status::OK));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn tee_device_closed() {
         let (dev_connector_proxy, dev_connector_server) =
             fidl::endpoints::create_proxy::<DeviceConnectorMarker>();
