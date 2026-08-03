@@ -42,6 +42,7 @@ use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU64, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
+use storage_ptr_slice::PtrByteSlice;
 use zerocopy::FromBytes;
 
 mod allocated_ranges;
@@ -144,8 +145,11 @@ impl FsverityStateInner {
         }
     }
 
-    fn from_bytes(data: &[u8], block_size: usize) -> Result<(Self, FsVerityHasher), Error> {
-        let descriptor = FsVerityDescriptor::from_bytes(&data, block_size)
+    fn from_ptr_slice(
+        data: PtrByteSlice<'_>,
+        block_size: usize,
+    ) -> Result<(Self, FsVerityHasher), Error> {
+        let descriptor = FsVerityDescriptor::new(data, block_size)
             .map_err(|e| anyhow!(FxfsError::IntegrityError).context(e))?;
 
         let root_digest = match descriptor.digest_algorithm() {
@@ -159,7 +163,7 @@ impl FsverityStateInner {
         let leaves =
             descriptor.leaf_digests().map_err(|e| anyhow!(FxfsError::IntegrityError).context(e))?;
 
-        Ok((Self::new(root_digest, descriptor.salt().to_vec(), leaves.into()), hasher))
+        Ok((Self::new(root_digest, descriptor.salt().to_vec(), leaves.into_boxed_slice()), hasher))
     }
 }
 
@@ -280,10 +284,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             .await?,
                     FxfsError::Inconsistent
                 );
-                FsverityStateInner::from_bytes(
-                    buffer.as_slice()[0..expected_length].into(),
-                    self.block_size() as usize,
-                )?
+                let data = buffer.as_ptr_slice().subslice(0..expected_length);
+                FsverityStateInner::from_ptr_slice(data, self.block_size() as usize)?
             }
         };
         // Validate the merkle tree data against the root before applying it.
@@ -642,7 +644,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             );
         };
         let descriptor_decoded =
-            FsVerityDescriptor::from_bytes(&merkle_tree, self.block_size() as usize)?;
+            FsVerityDescriptor::new(&merkle_tree[..], self.block_size() as usize)?;
         let descriptor = FsverityStateInner {
             root_digest,
             salt,
@@ -3007,17 +3009,12 @@ mod tests {
         // processed during `enable_verity`), but it does help catch bugs, such as the attribute
         // graveyard entry not being removed upon processing.
         fs.graveyard().flush().await;
-        assert!(
-            FsVerityDescriptor::from_bytes(
-                &handle
-                    .read_attr(AttributeId::FSVERITY_MERKLE)
-                    .await
-                    .expect("read_attr failed")
-                    .expect("No attr found"),
-                handle.block_size() as usize
-            )
-            .is_ok()
-        );
+        let merkle_data = handle
+            .read_attr(AttributeId::FSVERITY_MERKLE)
+            .await
+            .expect("read_attr failed")
+            .expect("No attr found");
+        assert!(FsVerityDescriptor::new(&merkle_data[..], handle.block_size() as usize).is_ok());
         fsck(fs.clone()).await.expect("fsck failed");
         fs.close().await.expect("Close failed");
     }

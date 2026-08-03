@@ -779,10 +779,10 @@ pub async fn verify(
                                 f2fs.read_data(&inode, descriptor_block).await.unwrap().unwrap();
                             let f2fs_descriptor = FsVerityDescriptor::from_bytes(&descriptor_data)
                                 .expect("Validating descriptor");
-                            assert_eq!(fxfs_root.as_slice(), f2fs_descriptor.root);
+                            assert_eq!(fxfs_root.as_slice(), f2fs_descriptor.root());
                             assert_eq!(
                                 fxfs_descriptor.salt.unwrap_or_default().as_slice(),
-                                f2fs_descriptor.salt
+                                f2fs_descriptor.salt()
                             );
                         }
                     }

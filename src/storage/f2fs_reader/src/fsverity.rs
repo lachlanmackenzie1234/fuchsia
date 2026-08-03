@@ -10,28 +10,34 @@ use fsverity_merkle::FsVerityDescriptor as DecodedDescriptor;
 pub struct FsVerityDescriptor<'a> {
     pub file_size: u64,
     pub algorithm: fio::HashAlgorithm,
-    pub root: &'a [u8],
-    pub salt: &'a [u8],
+    descriptor: DecodedDescriptor<'a>,
 }
 
 impl<'a> FsVerityDescriptor<'a> {
     /// Parses out the descriptor from bytes.
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, Error> {
-        let descriptor = DecodedDescriptor::from_bytes(data, BLOCK_SIZE)?;
+        let descriptor = DecodedDescriptor::new(data, BLOCK_SIZE)?;
 
         Ok(Self {
             file_size: descriptor.file_size() as u64,
             algorithm: descriptor.digest_algorithm(),
-            root: descriptor.root_digest(),
-            salt: descriptor.salt(),
+            descriptor,
         })
+    }
+
+    pub fn root(&self) -> &[u8] {
+        self.descriptor.root_digest()
+    }
+
+    pub fn salt(&self) -> &[u8] {
+        self.descriptor.salt()
     }
 
     /// Create a fuchsia.io VerificationOptions to match this descriptor.
     pub fn fio_verification_options(&self) -> fio::VerificationOptions {
         fio::VerificationOptions {
             hash_algorithm: Some(self.algorithm),
-            salt: Some(self.salt.to_vec()),
+            salt: Some(self.descriptor.salt().to_vec()),
             ..Default::default()
         }
     }
