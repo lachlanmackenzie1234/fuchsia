@@ -33,6 +33,9 @@ rustc_test("netstack3_core_threading_test") {
     "//third_party/rust_crates:test-case",
   ]
 
+  # TODO(https://fxbug.dev/540947935) Investigate and resolve root cause for the need to suppress
+  deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
+
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 
   # The loom crate documentation recommends compiling with optimizations since

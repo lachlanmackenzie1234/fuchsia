@@ -189,6 +189,7 @@ sanitizer_default_options("lsan_default_options") {
 sanitizer_extra_options("suppress-lsan.DO-NOT-USE-THIS") {
   visibility = [
     "//src/cobalt/bin/system-metrics/*",
+    "//src/connectivity/network/netstack3/core/tests/*",
     "//src/fonts/*",
     "//src/graphics/lib/compute/forma/*",
     "//src/graphics/lib/compute/surpass/*",
