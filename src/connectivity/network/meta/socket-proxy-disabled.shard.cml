@@ -11,6 +11,7 @@
                 "#dhcpd",
                 "#dhcpv6-client",
                 "#dns-resolver",
+                "#google-http-client",
                 "#http-client",
                 "#reachability",
             ],

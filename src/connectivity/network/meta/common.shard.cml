@@ -25,6 +25,10 @@
             url: "fuchsia-pkg://fuchsia.com/http-client#meta/http-client.cm",
         },
         {
+            name: "google-http-client",
+            url: "fuchsia-pkg://fuchsia.com/google-http-client#meta/google-http-client.cm",
+        },
+        {
             name: "reachability",
             url: "fuchsia-pkg://fuchsia.com/reachability#meta/reachability.cm",
             startup: "eager",
@@ -91,6 +95,7 @@
             from: "#dns-resolver",
             to: [
                 "#dhcpd",
+                "#google-http-client",
                 "#http-client",
                 "#reachability",
             ],
@@ -180,9 +185,17 @@
             to: [ "#http-client" ],
         },
         {
+            directory: "google-root-ssl-certificates",
+            from: "parent",
+            to: [ "#google-http-client" ],
+        },
+        {
             config: "fuchsia.http-client.StopOnIdleTimeoutMillis",
             from: "parent",
-            to: "#http-client",
+            to: [
+                "#google-http-client",
+                "#http-client",
+            ],
             availability: "same_as_target",
         },
         {
@@ -265,6 +278,16 @@
                 "fuchsia.pkg.http.Client",
             ],
             from: "#http-client",
+        },
+        {
+            protocol: "fuchsia.net.http.Loader",
+            from: "#google-http-client",
+            as: "fuchsia.net.http.GoogleLoader",
+        },
+        {
+            protocol: "fuchsia.pkg.http.Client",
+            from: "#google-http-client",
+            as: "fuchsia.pkg.http.GoogleClient",
         },
         {
             protocol: [ "fuchsia.net.reachability.Monitor" ],

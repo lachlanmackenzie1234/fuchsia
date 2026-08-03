@@ -470,6 +470,11 @@
             ],
         },
         {
+            directory: "google-root-ssl-certificates",
+            from: "parent",
+            to: [ "#network" ],
+        },
+        {
             directory: "config-data",
             from: "parent",
             as: "system-update-committer-config-data",
