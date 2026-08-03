@@ -250,7 +250,7 @@ mod tests {
 
     // Tests that the camera agent is able to handle an empty device list first, and then
     // a second update with the device in it that comes in before the timeout.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_camera_agent_delayed_devices() {
         let (service_registry, fake_services) =
             create_services(CameraDevice::Without, DelayCamera::Yes).await;

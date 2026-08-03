@@ -714,7 +714,7 @@ mod tests {
         assert!(camera_state.has_state(DeviceState::ERROR));
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_controller_creation_with_default_config() {
         let config_logger = InspectConfigLogger::new(component::inspector().root());
         let mut default_setting = DefaultSetting::new(

@@ -78,7 +78,6 @@ rustc_test("internal_tests_bin") {
   deps = [
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/settings/service/integration_tests/display_tests:common",
     "//src/settings/service/integration_tests/utils",
     "//third_party/rust_crates:paste",

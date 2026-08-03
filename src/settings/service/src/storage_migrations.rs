@@ -33,11 +33,10 @@ mod tests {
     use fidl::endpoints::create_proxy;
     use fidl_fuchsia_io::DirectoryMarker;
     use fidl_fuchsia_stash::StoreMarker;
-    use fuchsia_async as fasync;
 
     // Run migration registration with all settings and policies turned on so we can ensure there's
     // no issues with registering any of the migrations.
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn ensure_unique_ids() {
         let mut settings = HashSet::new();
         let _ = settings.insert(SettingType::Accessibility);

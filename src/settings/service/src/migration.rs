@@ -16,13 +16,13 @@
 //! migration_manager.run_migrations().await?;
 //! ```
 
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
 use fidl_fuchsia_io::{DirectoryProxy, FileProxy, UnlinkOptions};
-use fuchsia_fs::directory::{readdir, DirEntry, DirentKind};
+use fuchsia_fs::Flags;
+use fuchsia_fs::directory::{DirEntry, DirentKind, readdir};
 use fuchsia_fs::file::WriteError;
 use fuchsia_fs::node::{OpenError, RenameError};
-use fuchsia_fs::Flags;
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -294,7 +294,7 @@ impl MigrationManager {
                 _ => {
                     return Err(anyhow!("{e:?}")
                         .context("failed to sync directory for migration id")
-                        .into())
+                        .into());
                 }
             }
         }
@@ -348,7 +348,7 @@ impl MigrationManager {
                 MigrationError::Unrecoverable(e) => {
                     return Err(MigrationError::Unrecoverable(
                         e.context("Failed to run initial migration"),
-                    ))
+                    ));
                 }
             }
         }
@@ -420,12 +420,12 @@ pub(crate) struct LastMigration {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_io as fio;
     use fidl_fuchsia_io::DirectoryMarker;
-    use futures::future::LocalBoxFuture;
     use futures::FutureExt;
+    use futures::future::LocalBoxFuture;
     use std::rc::Rc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[async_trait(?Send)]
     impl<T> Migration for (u64, T)
@@ -466,7 +466,7 @@ mod tests {
     }
 
     // Needs to be async to create the proxy and stream.
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn can_build_migration_manager_without_migrations() {
         let (proxy, _) = fidl::endpoints::create_proxy_and_stream::<DirectoryMarker>();
         let mut builder = MigrationManagerBuilder::new();
