@@ -7,14 +7,12 @@
 from __future__ import annotations
 
 import enum
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, Self
 
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-import fidl_fuchsia_wlan_sme as f_wlan_sme
 from honeydew.typing.custom_types import MacAddress as _MacAddress
 
 MacAddress = _MacAddress
@@ -365,72 +363,6 @@ class BssDescriptionParser:
                     )
 
         return None
-
-
-# TODO(http://b/346424966): Only necessary because Python does not have static
-# typing for FIDL. Once these static types are available and the SL4F affordance
-# is removed, replace with the statically generated FIDL equivalent.
-class ClientStatusResponse(Protocol):
-    """WLAN client interface status."""
-
-    def status(self) -> str:
-        """Description of the client's status."""
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_sme.ClientStatusResponse,
-    ) -> "ClientStatusResponse":
-        """Parse from a fuchsia.wlan.sme/ClientStatusResponse."""
-        if fidl.connected:
-            ap: f_wlan_sme.ServingApInfo = fidl.connected
-            return ClientStatusConnected(
-                bssid=list(ap.bssid),
-                ssid=list(ap.ssid),
-                rssi_dbm=ap.rssi_dbm,
-                snr_db=ap.snr_db,
-                channel=WlanChannel.from_fidl(ap.primary),
-                protection=f_wlan_sme.Protection(ap.protection),
-            )
-
-        if fidl.connecting:
-            return ClientStatusConnecting(ssid=fidl.connecting)
-
-        if fidl.idle:
-            return ClientStatusIdle()
-
-        raise TypeError(f"Unknown ClientStatusResponse FIDL value: {fidl}")
-
-
-@dataclass(frozen=True)
-class ClientStatusConnected(ClientStatusResponse):
-    """ServingApInfo, returned as a part of ClientStatusResponse.
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/sl4f/src/wlan/types.rs
-    """
-
-    bssid: list[int]
-    ssid: list[int]
-    rssi_dbm: int
-    snr_db: int
-    channel: WlanChannel
-    protection: f_wlan_sme.Protection
-
-    def status(self) -> str:
-        return "Connected"
-
-
-@dataclass(frozen=True)
-class ClientStatusConnecting(ClientStatusResponse):
-    ssid: Sequence[int]
-
-    def status(self) -> str:
-        return "Connecting"
-
-
-@dataclass(frozen=True)
-class ClientStatusIdle(ClientStatusResponse):
-    def status(self) -> str:
-        return "Idle"
 
 
 class CountryCode(enum.StrEnum):

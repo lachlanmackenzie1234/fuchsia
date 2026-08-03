@@ -24,11 +24,8 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStatusConnected,
     CountryCode,
     InformationElementType,
-    WlanBand,
-    WlanChannel,
 )
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -118,14 +115,6 @@ _TEST_SERVING_AP_INFO = f_wlan_sme.ServingApInfo(
     vht_secondary_80_channel=f_wlan_ieee80211.ChannelNumber(
         band=f_wlan_ieee80211.WlanBand.TWO_GHZ, number=0
     ),
-)
-_TEST_CLIENT_STATUS_CONNECTED = ClientStatusConnected(
-    bssid=[1, 2, 3, 4, 5, 6],
-    ssid=_TEST_SSID_BYTES,
-    rssi_dbm=4,
-    snr_db=5,
-    channel=WlanChannel(number=1, band=WlanBand.TWO_GHZ),
-    protection=f_wlan_sme.Protection.WPA2_PERSONAL,
 )
 
 _T = TypeVar("_T")
