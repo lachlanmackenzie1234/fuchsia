@@ -372,7 +372,7 @@ mod tests {
     const FAKE_REGION_2_BUILD_ID: &[u8] = &[0x55; 32];
     const FAKE_REGION_2_VADDR: u64 = 0x7000;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -389,7 +389,7 @@ mod tests {
         assert!(received_snapshot.executable_regions.is_empty());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_one_batch() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -530,7 +530,7 @@ mod tests {
         assert!(received_snapshot.executable_regions.is_empty(), "all entries have been removed");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_two_batches() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -686,7 +686,7 @@ mod tests {
         Ok(_) ; "timestamp_is_optional")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_allocation_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::Allocation),
     ) -> Result<Snapshot, Error> {
@@ -741,7 +741,7 @@ mod tests {
         Err(Error::MissingField { container: "ThreadInfo", field: "name" }) ; "name")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_thread_info_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::ThreadInfo),
     ) -> Result<Snapshot, Error> {
@@ -780,7 +780,7 @@ mod tests {
         Err(Error::MissingField { container: "StackTrace", field: "program_addresses" }) ; "program_addresses")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_stack_trace_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::StackTrace),
     ) -> Result<Snapshot, Error> {
@@ -824,7 +824,7 @@ mod tests {
         Err(Error::MissingField { container: "ExecutableRegion", field: "vaddr" }) ; "vaddr")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_executable_region_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::ExecutableRegion),
     ) -> Result<Snapshot, Error> {
@@ -865,7 +865,7 @@ mod tests {
         Err(Error::MissingField { container: "BlockContents", field: "contents" }) ; "contents")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_block_contents_required_fields(
         set_one_field_to_none: fn(&mut fheapdump_client::BlockContents),
     ) -> Result<Snapshot, Error> {
@@ -917,7 +917,7 @@ mod tests {
         receive_worker.await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_conflicting_allocations() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -967,7 +967,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_conflicting_executable_regions() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1014,7 +1014,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_block_contents_wrong_size() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1062,7 +1062,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty_stack_trace() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1104,10 +1104,10 @@ mod tests {
             .iter()
             .find(|a| a.address == Some(FAKE_ALLOCATION_1_ADDRESS))
             .unwrap();
-        assert_eq!(allocation1.stack_trace.program_addresses, []);
+        assert_eq!(allocation1.stack_trace.program_addresses, [0u64; 0]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_chunked_stack_trace() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1162,7 +1162,7 @@ mod tests {
         assert_eq!(allocation1.stack_trace.program_addresses, [1111, 2222, 3333]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty_block_contents() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1209,10 +1209,10 @@ mod tests {
             .iter()
             .find(|alloc| alloc.address == Some(FAKE_ALLOCATION_1_ADDRESS))
             .unwrap();
-        assert_eq!(allocation1.contents.as_ref().expect("contents must be set"), &vec![]);
+        assert_eq!(allocation1.contents.as_ref().expect("contents must be set"), &[] as &[u8]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_chunked_block_contents() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1276,7 +1276,7 @@ mod tests {
         assert_eq!(allocation1.contents, Some(FAKE_ALLOCATION_1_CONTENTS.to_vec()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_missing_end_of_stream() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1314,7 +1314,7 @@ mod tests {
         assert_matches!(receive_worker.await, Err(Error::UnexpectedEndOfStream));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multi_contents() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -1374,7 +1374,7 @@ mod tests {
         assert_eq!(received_snapshots[1].process_koid, 2222);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multi_missing_end_of_stream() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =

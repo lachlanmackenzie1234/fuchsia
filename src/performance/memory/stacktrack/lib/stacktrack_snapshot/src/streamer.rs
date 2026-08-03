@@ -118,7 +118,7 @@ mod tests {
     #[test_case(0)]
     #[test_case(1)]
     #[test_case(100000)]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_streamer(num_threads: usize) {
         let fake_threads = generate_fake_threads(num_threads);
 

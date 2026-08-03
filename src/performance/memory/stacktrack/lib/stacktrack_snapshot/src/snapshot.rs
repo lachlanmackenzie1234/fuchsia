@@ -160,7 +160,7 @@ mod tests {
     use fuchsia_async as fasync;
     use test_case::test_case;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_receive_snapshot() {
         let client = create_client();
         let (receiver_proxy, receiver_stream) =
@@ -219,7 +219,7 @@ mod tests {
         Err(Error::MissingField { container: "StackTrace", field: "frames" }) ; "frames")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_stack_trace_required_fields(
         set_one_field_to_none: fn(&mut fstacktrack_client::StackTrace),
     ) -> Result<Snapshot, Error> {
@@ -260,7 +260,7 @@ mod tests {
         Err(Error::MissingField { container: "ExecutableRegion", field: "build_id" }) ; "build_id")]
     #[test_case(|_| () /* if we do not set any field to None, the result should be Ok */ => matches
         Ok(_) ; "success")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_executable_region_required_fields(
         set_one_field_to_none: fn(&mut fstacktrack_client::ExecutableRegion),
     ) -> Result<Snapshot, Error> {

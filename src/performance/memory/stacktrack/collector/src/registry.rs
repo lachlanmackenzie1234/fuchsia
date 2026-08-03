@@ -396,7 +396,7 @@ mod tests {
         Some(CollectorError::ProcessSelectorNoMatch) ; "no matching koid")]
     #[test_case(None,
         Some(CollectorError::ProcessSelectorAmbiguous) ; "missing process selector")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_stack_traces(
         process_selector: Option<fstacktrack_client::ProcessSelector>,
         expect_error: Option<CollectorError>,

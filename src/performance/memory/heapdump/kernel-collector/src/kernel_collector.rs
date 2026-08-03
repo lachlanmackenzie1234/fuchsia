@@ -610,7 +610,7 @@ mod tests {
         });
         (collector_worker, proxy)
     }
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_kernel_collector_fail_list_stored_snapshots() {
         let (collector_worker, client) = create_test_collector_task_and_client();
         client.list_stored_snapshots(Default::default()).unwrap();
@@ -618,7 +618,7 @@ mod tests {
         assert!(format!("{result:?}").contains("Not supported by kernel collector."));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_kernel_collector_fail_download_snapshot() {
         let (collector_worker, client) = create_test_collector_task_and_client();
         client.download_stored_snapshot(Default::default()).unwrap();
@@ -626,7 +626,7 @@ mod tests {
         assert!(format!("{result:?}").contains("Not supported by kernel collector."));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_kernel_collector() {
         let (collector_worker, client) = create_test_collector_task_and_client();
         let (receiver_client, receiver_stream) = fidl::endpoints::create_request_stream();

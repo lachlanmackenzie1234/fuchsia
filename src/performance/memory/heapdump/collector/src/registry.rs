@@ -14,8 +14,9 @@ use log::{info, warn};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
 
+use fidl_fuchsia_memory_heapdump_process as fheapdump_process;
+use fuchsia_async as fasync;
 use zx::Koid;
-use {fidl_fuchsia_memory_heapdump_process as fheapdump_process, fuchsia_async as fasync};
 
 use crate::process::Process;
 use crate::process_v1::ProcessV1;
@@ -636,7 +637,7 @@ mod tests {
         Some(CollectorError::ProcessSelectorNoMatch) ; "no matching koid")]
     #[test_case(None, None,
         Some(CollectorError::ProcessSelectorAmbiguous) ; "missing process selector")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_take_live_snapshot(
         process_selector: Option<fheapdump_client::ProcessSelector>,
         with_contents: Option<bool>,
@@ -689,7 +690,7 @@ mod tests {
     #[test_case(1 ; "one-entry response")]
     #[test_case(ZX_CHANNEL_MAX_MSG_BYTES /* this number of _entries_ will cause pagination */ ;
         "paginated response")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list_stored_snapshots_without_filters(num_entries: u32) {
         // Create a Registry and a client connected to it.
         let (registry, proxy) = create_registry_and_proxy([]);
@@ -736,7 +737,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list_stored_snapshots_with_filters() {
         // Create a Registry and a client connected to it.
         let (registry, proxy) = create_registry_and_proxy([]);
@@ -790,7 +791,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_download_stored_snapshot() {
         // Create a Registry and a client connected to it.
         let (registry, proxy) = create_registry_and_proxy([]);

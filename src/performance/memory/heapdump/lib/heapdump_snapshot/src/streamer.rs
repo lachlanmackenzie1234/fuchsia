@@ -123,7 +123,7 @@ mod tests {
     #[test_case(hashmap! {} ; "empty")]
     #[test_case(hashmap! { 1234 => 5678 } ; "only one")]
     #[test_case(generate_one_million_allocations_hashmap() ; "one million")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_streamer(allocations: HashMap<u64, u64>) {
         let client = create_client();
         let (mut receiver_proxy, receiver_stream) =
