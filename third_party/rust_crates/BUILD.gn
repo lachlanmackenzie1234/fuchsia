@@ -958,11 +958,11 @@ if (current_os == "fuchsia") {
 }
 
 group("indexmap") {
-  public_deps = [ ":indexmap-v2_13_0" ]
+  public_deps = [ ":indexmap-v2_14_0" ]
 }
 
-group("indexmap-2.13.0") {
-  public_deps = [ ":indexmap-v2_13_0" ]
+group("indexmap-2.14.0") {
+  public_deps = [ ":indexmap-v2_14_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -10641,38 +10641,6 @@ rustc_library("hashbrown-v0_15_5") {
   applicable_licenses = [ ":hashbrown-v0_15_5.license" ]
 }
 
-license("hashbrown-v0_16_1.license") {
-  public_package_name = "hashbrown"
-  license_files = [
-    "//third_party/rust_crates/vendor/hashbrown-0.16.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hashbrown-0.16.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("hashbrown-v0_16_1") {
-  crate_name = "hashbrown"
-  source_root = "//third_party/rust_crates/vendor/hashbrown-0.16.1/src/lib.rs"
-  output_name = "hashbrown-cd7a074e7a5f21d9"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=cd7a074e7a5f21d9",
-    "-Cextra-filename=-cd7a074e7a5f21d9",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":hashbrown-v0_16_1.license" ]
-}
-
 license("hashbrown-v0_17_1.license") {
   public_package_name = "hashbrown"
   license_files = [
@@ -11582,26 +11550,26 @@ rustc_library("indexmap-v1_9_2") {
   applicable_licenses = [ ":indexmap-v1_9_2.license" ]
 }
 
-license("indexmap-v2_13_0.license") {
+license("indexmap-v2_14_0.license") {
   public_package_name = "indexmap"
   license_files = [
-    "//third_party/rust_crates/vendor/indexmap-2.13.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/indexmap-2.13.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/indexmap-2.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/indexmap-2.14.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("indexmap-v2_13_0") {
+rustc_library("indexmap-v2_14_0") {
   crate_name = "indexmap"
-  source_root = "//third_party/rust_crates/vendor/indexmap-2.13.0/src/lib.rs"
-  output_name = "indexmap-9f0ce8ef9df3c109"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/indexmap-2.14.0/src/lib.rs"
+  output_name = "indexmap-450216e3a9af9083"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":equivalent-v1_0_2" ]
-  deps += [ ":hashbrown-v0_16_1" ]
+  deps += [ ":hashbrown-v0_17_1" ]
   deps += [ ":serde_core-v1_0_228" ]
   if (true) {
     deps += [ ":serde-v1_0_228" ]
@@ -11611,8 +11579,8 @@ rustc_library("indexmap-v2_13_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9f0ce8ef9df3c109",
-    "-Cextra-filename=-9f0ce8ef9df3c109",
+    "-Cmetadata=450216e3a9af9083",
+    "-Cextra-filename=-450216e3a9af9083",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -11620,7 +11588,7 @@ rustc_library("indexmap-v2_13_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":indexmap-v2_13_0.license" ]
+  applicable_licenses = [ ":indexmap-v2_14_0.license" ]
 }
 
 license("indoc-v2_0_7.license") {
@@ -15184,7 +15152,7 @@ rustc_library("petgraph-v0_8_3") {
   deps = []
   deps += [ ":fixedbitset-v0_5_7" ]
   deps += [ ":hashbrown-v0_15_5" ]
-  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":indexmap-v2_14_0" ]
 
   rustenv = []
 
@@ -17963,7 +17931,7 @@ rustc_library("rkyv-v0_8_16") {
   deps += [ ":bytecheck-v0_8_2" ]
   deps += [ ":bytes-v1_11_1" ]
   deps += [ ":hashbrown-v0_17_1" ]
-  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":munge-v0_4_4" ]
   deps += [ ":ptr_meta-v0_3_1" ]
   deps += [ ":rancor-v0_1_1" ]
@@ -17989,7 +17957,7 @@ rustc_library("rkyv-v0_8_16") {
 
   aliased_deps = {
     bytes_1 = ":bytes-v1_11_1.actual"
-    indexmap_2 = ":indexmap-v2_13_0.actual"
+    indexmap_2 = ":indexmap-v2_14_0.actual"
     tinyvec_1 = ":tinyvec-v1_11_0.actual"
     uuid_1 = ":uuid-v1_23_3.actual"
   }
@@ -19949,7 +19917,7 @@ rustc_library("serde_json-v1_0_149") {
 
   deps = []
   deps += [ ":memchr-v2_8_0" ]
-  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":serde_core-v1_0_228" ]
   deps += [ ":zmij-v1_0_21" ]
@@ -20103,7 +20071,7 @@ rustc_library("serde_yaml-v0_9_34+deprecated") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":ryu-v1_0_22" ]
   deps += [ ":serde-v1_0_228" ]
@@ -22383,7 +22351,7 @@ rustc_library("toml-v1_1_2+spec-1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":serde_core-v1_0_228" ]
   deps += [ ":serde_spanned-v1_1_1" ]
   deps += [ ":toml_datetime-v1_1_1+spec-1_1_0" ]
@@ -22500,7 +22468,7 @@ rustc_library("toml_edit-v0_24_0+spec-1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":toml_datetime-v0_7_5+spec-1_1_0" ]
   deps += [ ":toml_parser-v1_1_2+spec-1_1_0" ]
   deps += [ ":toml_writer-v1_1_1+spec-1_1_0" ]
@@ -25231,7 +25199,7 @@ rustc_library("zip-v8_6_0") {
   deps += [ ":memchr-v2_8_0" ]
   deps += [ ":crc32fast-v1_5_0" ]
   deps += [ ":flate2-v1_1_9" ]
-  deps += [ ":indexmap-v2_13_0" ]
+  deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":typed-path-v0_12_3" ]
 
   rustenv = [ "CARGO_PKG_VERSION=8.6.0" ]
