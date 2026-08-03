@@ -68,3 +68,17 @@ fuchsia_unittest_package("userboot-program-tests") {
   deps = [ ":program_test" ]
   test_type = "system"
 }
+
+rustc_library("bootfs") {
+  edition = "2024"
+  source_root = "src/bootfs.rs"
+  sources = [ source_root ]
+  deps = [
+    "//sdk/rust/zx",
+    "//src/firmware/lib/zbi-rs",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:zerocopy",
+    "//third_party/rust_crates:zstd-safe",
+    "//third_party/zstd",
+  ]
+}
