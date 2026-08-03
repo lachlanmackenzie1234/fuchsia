@@ -4,11 +4,12 @@
 
 #include "src/developer/forensics/feedback/annotations/board_info_provider.h"
 
+#include <fidl/fuchsia.hwinfo/cpp/natural_types.h>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
-#include "src/developer/forensics/feedback/annotations/types.h"
 
 namespace forensics::feedback {
 namespace {
@@ -16,30 +17,42 @@ namespace {
 using ::testing::Pair;
 using ::testing::UnorderedElementsAreArray;
 
-TEST(BoardInfoToAnnotationsTest, Convert) {
+TEST(BoardInfoToAnnotationsTest, ConvertSuccess) {
   BoardInfoToAnnotations convert;
 
-  fuchsia::hwinfo::BoardInfo info;
-  EXPECT_THAT(convert(info), UnorderedElementsAreArray({
-                                 Pair(kHardwareBoardNameKey, Error::kMissingValue),
-                                 Pair(kHardwareBoardRevisionKey, Error::kMissingValue),
-                             }));
+  fuchsia_hwinfo::BoardInfo info;
+  fuchsia_hwinfo::BoardGetInfoResponse response{{.info = info}};
+  EXPECT_THAT(convert(response), UnorderedElementsAreArray({
+                                     Pair(kHardwareBoardNameKey, Error::kMissingValue),
+                                     Pair(kHardwareBoardRevisionKey, Error::kMissingValue),
+                                 }));
 
-  info.set_name("board_name");
-  EXPECT_THAT(convert(info),
+  info.name("board_name");
+  response = fuchsia_hwinfo::BoardGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response),
               UnorderedElementsAreArray({
                   Pair(kHardwareBoardNameKey, ErrorOrString("board_name")),
                   Pair(kHardwareBoardRevisionKey, ErrorOrString(Error::kMissingValue)),
               }));
 
-  info.set_revision("revision");
-  EXPECT_THAT(convert(info), UnorderedElementsAreArray({
-                                 Pair(kHardwareBoardNameKey, ErrorOrString("board_name")),
-                                 Pair(kHardwareBoardRevisionKey, ErrorOrString("revision")),
-                             }));
+  info.revision("revision");
+  response = fuchsia_hwinfo::BoardGetInfoResponse{{.info = info}};
+  EXPECT_THAT(convert(response), UnorderedElementsAreArray({
+                                     Pair(kHardwareBoardNameKey, ErrorOrString("board_name")),
+                                     Pair(kHardwareBoardRevisionKey, ErrorOrString("revision")),
+                                 }));
 }
 
-TEST(BoardInforProvider, Keys) {
+TEST(BoardInfoToAnnotationsTest, ConvertError) {
+  BoardInfoToAnnotations convert;
+  EXPECT_THAT(convert(Error::kConnectionError),
+              UnorderedElementsAreArray({
+                  Pair(kHardwareBoardNameKey, Error::kConnectionError),
+                  Pair(kHardwareBoardRevisionKey, Error::kConnectionError),
+              }));
+}
+
+TEST(BoardInfoProvider, Keys) {
   // Safe to pass nullptrs b/c objects are never used.
   BoardInfoProvider provider(nullptr, nullptr, nullptr);
 

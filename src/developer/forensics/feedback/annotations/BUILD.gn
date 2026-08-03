@@ -73,8 +73,8 @@ source_set("board_info_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider_hlcpp",
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
+    ":fidl_provider",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_cpp",
     "//src/developer/forensics/feedback/annotations",
   ]
 }
@@ -140,6 +140,22 @@ source_set("fidl_provider_hlcpp") {
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/feedback/annotations",
+    "//src/lib/backoff",
+    "//src/lib/fxl",
+  ]
+}
+
+source_set("fidl_provider") {
+  sources = [ "fidl_provider.h" ]
+
+  public_deps = [
+    "//sdk/lib/async",
+    "//sdk/lib/fidl/cpp",
+    "//sdk/lib/fit",
+    "//sdk/lib/sys/cpp",
+    "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/feedback/annotations",
+    "//src/developer/forensics/utils:errors",
     "//src/lib/backoff",
     "//src/lib/fxl",
   ]

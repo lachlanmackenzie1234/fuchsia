@@ -120,7 +120,7 @@ cc_test_executable("board_info_provider_unittest_exe") {
   sources = [ "board_info_provider_unittest.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_cpp",
     "//src/developer/forensics/feedback/annotations:board_info_provider",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//third_party/googletest:gmock",
@@ -220,6 +220,24 @@ cc_test_executable("fidl_provider_hlcpp_unittest_exe") {
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//src/developer/forensics/testing:unit_test_fixture",
     "//src/developer/forensics/testing/stubs:channel_control",
+    "//src/developer/forensics/testing/stubs:device_id_provider",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
+  ]
+}
+
+cc_test_executable("fidl_provider_unittest_exe") {
+  testonly = true
+
+  sources = [ "fidl_provider_unittest.cc" ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
+    "//sdk/lib/vfs/cpp",
+    "//src/developer/forensics/feedback/annotations:fidl_provider",
+    "//src/developer/forensics/testing:backoff",
+    "//src/developer/forensics/testing:gtest_with_syslog_main",
+    "//src/developer/forensics/testing:unit_test_fixture",
     "//src/developer/forensics/testing/stubs:device_id_provider",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
@@ -647,6 +665,10 @@ fuchsia_unittest_component("fidl_provider_hlcpp_unittest") {
   deps = [ ":fidl_provider_hlcpp_unittest_exe" ]
 }
 
+fuchsia_unittest_component("fidl_provider_unittest") {
+  deps = [ ":fidl_provider_unittest_exe" ]
+}
+
 fuchsia_unittest_component("file_backed_provider_unittest") {
   deps = [
     ":file_backed_provider_unittest_exe",
@@ -769,6 +791,7 @@ fuchsia_test_package("feedback-tests") {
     ":device_id_provider_unittest",
     ":encode_unittest",
     ":fidl_provider_hlcpp_unittest",
+    ":fidl_provider_unittest",
     ":file_backed_provider_unittest",
     ":last_reboot_unittest",
     ":kernel_log_integration_test",

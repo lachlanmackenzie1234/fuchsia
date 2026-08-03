@@ -4,26 +4,34 @@
 
 #include "src/developer/forensics/feedback/annotations/board_info_provider.h"
 
-#include "fuchsia/hwinfo/cpp/fidl.h"
+#include <fidl/fuchsia.hwinfo/cpp/natural_types.h>
+
 #include "src/developer/forensics/feedback/annotations/constants.h"
 
 namespace forensics::feedback {
 
-Annotations BoardInfoToAnnotations::operator()(const fuchsia::hwinfo::BoardInfo& info) {
-  Annotations annotations{
-      {kHardwareBoardNameKey, ErrorOrString(Error::kMissingValue)},
-      {kHardwareBoardRevisionKey, ErrorOrString(Error::kMissingValue)},
-  };
+Annotations BoardInfoToAnnotations::operator()(
+    const fuchsia_hwinfo::BoardGetInfoResponse& response) {
+  const fuchsia_hwinfo::BoardInfo& info = response.info();
 
-  if (info.has_name()) {
-    annotations.insert_or_assign(kHardwareBoardNameKey, ErrorOrString(info.name()));
+  Annotations annotations = operator()(Error::kMissingValue);
+
+  if (info.name().has_value()) {
+    annotations.insert_or_assign(kHardwareBoardNameKey, ErrorOrString(*info.name()));
   }
 
-  if (info.has_revision()) {
-    annotations.insert_or_assign(kHardwareBoardRevisionKey, ErrorOrString(info.revision()));
+  if (info.revision().has_value()) {
+    annotations.insert_or_assign(kHardwareBoardRevisionKey, ErrorOrString(*info.revision()));
   }
 
   return annotations;
+}
+
+Annotations BoardInfoToAnnotations::operator()(const Error error) {
+  return Annotations{
+      {kHardwareBoardNameKey, ErrorOrString(error)},
+      {kHardwareBoardRevisionKey, ErrorOrString(error)},
+  };
 }
 
 std::set<std::string> BoardInfoProvider::GetAnnotationKeys() {

@@ -5,24 +5,29 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_BOARD_INFO_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_BOARD_INFO_PROVIDER_H_
 
-#include <fuchsia/hwinfo/cpp/fidl.h>
+#include <fidl/fuchsia.hwinfo/cpp/fidl.h>
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
+#include "src/developer/forensics/feedback/annotations/fidl_provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
 
 namespace forensics::feedback {
+namespace internal {
+
+inline auto GetBoardInfo(fidl::Client<fuchsia_hwinfo::Board>& client) { return client->GetInfo(); }
+
+}  // namespace internal
 
 struct BoardInfoToAnnotations {
-  Annotations operator()(const fuchsia::hwinfo::BoardInfo& info);
+  Annotations operator()(const fuchsia_hwinfo::BoardGetInfoResponse& response);
+  Annotations operator()(Error error);
 };
 
 // Responsible for collecting annotations for fuchsia.hwinfo/Board.
 class BoardInfoProvider
-    : public StaticSingleHlcppFidlMethodAnnotationProvider<
-          fuchsia::hwinfo::Board, &fuchsia::hwinfo::Board::GetInfo, BoardInfoToAnnotations> {
+    : public StaticSingleFidlMethodAnnotationProvider<
+          fuchsia_hwinfo::Board, &internal::GetBoardInfo, BoardInfoToAnnotations> {
  public:
-  using StaticSingleHlcppFidlMethodAnnotationProvider::
-      StaticSingleHlcppFidlMethodAnnotationProvider;
+  using StaticSingleFidlMethodAnnotationProvider::StaticSingleFidlMethodAnnotationProvider;
 
   virtual ~BoardInfoProvider() = default;
 
