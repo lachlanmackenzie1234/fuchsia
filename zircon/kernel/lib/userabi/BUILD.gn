@@ -203,6 +203,7 @@ if (is_kernel) {
 
 group("tests") {
   testonly = true
+  deps = [ "userboot:tests" ]
 }
 
 group("kernel-tests") {
