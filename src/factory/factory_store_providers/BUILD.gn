@@ -34,7 +34,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  test_deps = [ "//src/lib/fuchsia-async" ]
+  test_deps = []
 
   sources = [
     "src/config.rs",
@@ -65,7 +65,7 @@ rustc_test("factory_store_providers_test") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/devices/bus/drivers/platform",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/storage/testing:storage_drivers",

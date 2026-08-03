@@ -6,10 +6,9 @@
 
 use anyhow::Error;
 use fidl_fuchsia_boot::FactoryItemsMarker;
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_factory_items() -> Result<(), Error> {
     let factory_items = connect_to_protocol::<FactoryItemsMarker>().unwrap();
 
@@ -43,7 +42,7 @@ async fn test_get_factory_items() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_factory_items_missing() -> Result<(), Error> {
     let factory_items = connect_to_protocol::<FactoryItemsMarker>().unwrap();
 

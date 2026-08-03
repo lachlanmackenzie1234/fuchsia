@@ -8,13 +8,12 @@ mod fake_factory_items_server;
 use anyhow::Error;
 use config::Config;
 use fake_factory_items_server::{FakeFactoryItemsServer, spawn_fake_factory_items_server};
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::RwLock;
 use futures::prelude::*;
 use std::sync::Arc;
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let config = Config::load().unwrap();
     let config_map = Arc::new(RwLock::new(config.into()));

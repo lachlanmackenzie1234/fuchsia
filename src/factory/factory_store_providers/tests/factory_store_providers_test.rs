@@ -9,10 +9,10 @@ use fidl_fuchsia_factory::{
     MiscFactoryStoreProviderMarker, PlayReadyFactoryStoreProviderMarker,
     WeaveFactoryStoreProviderMarker, WidevineFactoryStoreProviderMarker,
 };
+use fidl_fuchsia_io as fio;
 use fuchsia_fs::file::{AsyncFile, AsyncGetSizeExt};
 use std::fs;
 use std::path::Path;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 static DATA_FILE_PATH: &'static str = "/pkg/data";
 
@@ -43,7 +43,7 @@ fn test_set_up_properly() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_cast_credentials_store() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(CastCredentialsFactoryStoreProviderMarker);
 
@@ -67,7 +67,7 @@ async fn read_factory_files_from_cast_credentials_store() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_cast_credentials_store_missing_fails() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(CastCredentialsFactoryStoreProviderMarker);
     read_file_from_proxy(&dir_proxy, "misc.bin").await.unwrap_err();
@@ -77,7 +77,7 @@ async fn read_factory_files_from_cast_credentials_store_missing_fails() -> Resul
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_misc_store() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(MiscFactoryStoreProviderMarker);
 
@@ -90,7 +90,7 @@ async fn read_factory_files_from_misc_store() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_misc_store_passed_file_appears() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(MiscFactoryStoreProviderMarker);
 
@@ -103,14 +103,14 @@ async fn read_factory_files_from_misc_store_passed_file_appears() -> Result<(), 
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_misc_store_ignored_file_missing() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(MiscFactoryStoreProviderMarker);
     read_file_from_proxy(&dir_proxy, "ignored").await.unwrap_err();
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_misc_store_missing_fails() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(MiscFactoryStoreProviderMarker);
     read_file_from_proxy(&dir_proxy, "cast.blk").await.unwrap_err();
@@ -121,7 +121,7 @@ async fn read_factory_files_from_misc_store_missing_fails() -> Result<(), Error>
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_playready_store() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(PlayReadyFactoryStoreProviderMarker);
 
@@ -134,7 +134,7 @@ async fn read_factory_files_from_playready_store() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_playready_store_missing_fails() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(PlayReadyFactoryStoreProviderMarker);
     read_file_from_proxy(&dir_proxy, "cast.blk").await.unwrap_err();
@@ -145,7 +145,7 @@ async fn read_factory_files_from_playready_store_missing_fails() -> Result<(), E
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_widevine_store() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(WidevineFactoryStoreProviderMarker);
 
@@ -158,7 +158,7 @@ async fn read_factory_files_from_widevine_store() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_widevine_store_missing_files_error() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(WidevineFactoryStoreProviderMarker);
     read_file_from_proxy(&dir_proxy, "cast.blk").await.unwrap_err();
@@ -169,7 +169,7 @@ async fn read_factory_files_from_widevine_store_missing_files_error() -> Result<
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_weave_store() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(WeaveFactoryStoreProviderMarker);
     let path = format!("{}/{}", DATA_FILE_PATH, "weave_file");
@@ -180,14 +180,14 @@ async fn read_factory_files_from_weave_store() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_weave_store_missing_files_fail() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(WeaveFactoryStoreProviderMarker);
     read_file_from_proxy(&dir_proxy, "weave_bad").await.unwrap_err();
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_alpha_store() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(AlphaFactoryStoreProviderMarker);
     let path = format!("{}/{}", DATA_FILE_PATH, "alpha_file");
@@ -198,14 +198,14 @@ async fn read_factory_files_from_alpha_store() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_alpha_store_missing_files_fail() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(AlphaFactoryStoreProviderMarker);
     read_file_from_proxy(&dir_proxy, "alpha_bad").await.unwrap_err();
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn read_factory_files_from_alpha_store_reports_correct_size() -> Result<(), Error> {
     let dir_proxy = connect_to_factory_store_provider!(AlphaFactoryStoreProviderMarker);
     let path = format!("{}/{}", DATA_FILE_PATH, "alpha_file");
@@ -233,7 +233,7 @@ async fn read_factory_files_from_alpha_store_reports_correct_size() -> Result<()
 ///    environment.
 /// 2. Configurations between the protocols are separate and distinct. In practice, it's unlikely
 ///    the same file will appear in multiple protocols.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn multi_validated_file_is_processed_properly() -> Result<(), Error> {
     let widevine_dir_proxy = connect_to_factory_store_provider!(WidevineFactoryStoreProviderMarker);
     read_file_from_proxy(&widevine_dir_proxy, "multi_validated_file").await.unwrap_err();

@@ -16,7 +16,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.factory:fuchsia.factory_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:anyhow",
@@ -27,6 +27,7 @@ rustc_binary("bin") {
 
   test_deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
     "//src/storage/lib/vfs/rust:vfs",
   ]

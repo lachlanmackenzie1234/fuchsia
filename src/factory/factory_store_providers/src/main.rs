@@ -377,10 +377,9 @@ async fn main() -> Result<(), Error> {
 mod tests {
     use super::*;
     use fidl::endpoints::Proxy as _;
-    use fuchsia_async as fasync;
     use vfs::pseudo_directory;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_open_factory_verity() {
         // Bind a vfs to /factory.
         let dir = pseudo_directory! {

@@ -15,7 +15,6 @@ use fidl_fuchsia_factory::{
     WidevineFactoryStoreProviderMarker, WidevineFactoryStoreProviderProxy,
 };
 use fidl_fuchsia_io as fio;
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_fs::directory::DirentKind;
 use futures::stream::TryStreamExt;
@@ -121,7 +120,7 @@ async fn process_factory_items_cmd(
     Ok(out)
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let opt = Opt::parse();
 
@@ -530,7 +529,7 @@ mod tests {
         builder.build().await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn list_files() -> Result<(), Error> {
         let realm = build_realm().await?;
         for (marker, bin_name, txt_name) in vec![
@@ -554,7 +553,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dump_text_files() -> Result<(), Error> {
         let realm = build_realm().await?;
         for (marker, name, contents) in vec![
@@ -589,7 +588,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dump_binary_files() -> Result<(), Error> {
         let realm = build_realm().await?;
         for (marker, name, contents) in vec![
@@ -625,7 +624,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn dump_factory_item() -> Result<(), Error> {
         let realm = build_realm().await?;
         let out = get_factory_items_output(&realm, FactoryItemsCmd::Dump { extra: 0 }).await?;
