@@ -28,6 +28,7 @@ rustc_test("starnix_shutdown_test_runner") {
     "//sdk/rust/zx",
     "//src/lib/diagnostics/reader/rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",

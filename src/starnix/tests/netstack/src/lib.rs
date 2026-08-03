@@ -143,7 +143,7 @@ impl WakeupSocket for Udp {
 
 #[test_case(PhantomData::<Tcp>; "tcp")]
 #[test_case(PhantomData::<Udp>; "udp")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn wake_from_suspend_for_socket<S: WakeupSocket>(_socket_type: PhantomData<S>) {
     let mut events = EventStream::open().await.unwrap();
 

@@ -20,6 +20,7 @@ rustc_test("bin") {
     "//sdk/fidl/fuchsia.starnix.runner:fuchsia.starnix.runner_rust",
     "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
     "//src/lib/network/fidl_fuchsia_posix_socket_ext",

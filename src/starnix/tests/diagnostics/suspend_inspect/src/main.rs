@@ -6,13 +6,13 @@ use anyhow::{Context, Result};
 use component_events::events::{EventStream, Started, Stopped};
 use component_events::matcher::EventMatcher;
 use diagnostics_reader::ArchiveReader;
+use fidl_fuchsia_test_suspend as fftsu;
+use fuchsia_component as fxc;
+use fuchsia_component_test as fxct;
+use fuchsia_driver_test as _;
 use log::info;
-use {
-    fidl_fuchsia_test_suspend as fftsu, fuchsia_async as fasync, fuchsia_component as fxc,
-    fuchsia_component_test as fxct, fuchsia_driver_test as _,
-};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_suspend() -> Result<()> {
     let mut events = EventStream::open().await.unwrap();
     let collection = "suspend_inspect";

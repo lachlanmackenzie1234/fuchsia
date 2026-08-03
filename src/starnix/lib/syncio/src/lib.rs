@@ -2083,7 +2083,6 @@ mod test {
     use anyhow::Error;
     use fidl::endpoints::Proxy as _;
     use fidl_fuchsia_io as fio;
-    use fuchsia_async as fasync;
     use fuchsia_fs::directory;
 
     fn open_pkg() -> fio::DirectorySynchronousProxy {
@@ -2098,7 +2097,7 @@ mod test {
         )
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_directory_open() -> Result<(), Error> {
         let pkg = open_pkg();
         let description = directory_open(
@@ -2114,7 +2113,7 @@ mod test {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_directory_open_vmo() -> Result<(), Error> {
         let pkg = open_pkg();
         let vmo = directory_open_vmo(
@@ -2131,7 +2130,7 @@ mod test {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_directory_read_file() -> Result<(), Error> {
         let pkg = open_pkg();
         let data =
@@ -2141,7 +2140,7 @@ mod test {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_directory_open_directory_async() -> Result<(), Error> {
         let pkg = open_pkg();
         let bin =
@@ -2160,7 +2159,7 @@ mod test {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_directory_open_zxio_async() -> Result<(), Error> {
         let pkg_proxy =
             directory::open_in_namespace("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE)

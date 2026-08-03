@@ -57,7 +57,7 @@ async fn test_register_wake_watcher() {
     let _ = suspend_fut.await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_wake_lock() {
     let realm_instance = build_realm().await;
     let manager: fstarnix::ManagerProxy =

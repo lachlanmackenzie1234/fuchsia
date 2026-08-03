@@ -88,7 +88,7 @@ async fn build_realm() -> (RealmInstance, mpsc::Receiver<bool>) {
     (builder.build().await.unwrap(), receiver)
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_consent_sync() -> Result<()> {
     let (realm_instance, mut consent_receiver) = build_realm().await;
     let lifecycle_controller: fsys2::LifecycleControllerProxy =

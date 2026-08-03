@@ -41,7 +41,7 @@ rustc_test("bootreason_test") {
   deps = [
     ":bootreason",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-fs",

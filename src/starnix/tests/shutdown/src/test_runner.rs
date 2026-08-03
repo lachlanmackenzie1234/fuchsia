@@ -31,7 +31,7 @@ async fn build_realm() -> RealmInstance {
     builder.build().await.unwrap()
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_shutdown_with_zombie() {
     let realm_instance = build_realm().await;
     let lifecycle_controller: fsys2::LifecycleControllerProxy =

@@ -8,7 +8,7 @@ use fidl_fuchsia_feedback::{
     LastReboot, LastRebootInfoProviderMarker, LastRebootInfoProviderRequest,
     LastRebootInfoProviderRequestStream, RebootReason,
 };
-use fuchsia_async as fasync;
+
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, LocalComponentHandles, RealmBuilder, RealmBuilderParams,
@@ -60,7 +60,7 @@ async fn read_starnix_file(filename: &str, realm: &RealmInstance) -> String {
     String::from_utf8(contents).unwrap()
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_no_errors_reboot_normal() {
     let reboot = LastReboot {
         graceful: Some(true),
@@ -76,7 +76,7 @@ async fn test_no_errors_reboot_normal() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_kernel_panic() {
     let reboot = LastReboot {
         graceful: Some(false),
@@ -93,7 +93,7 @@ async fn test_kernel_panic() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_pstore_present() {
     let reboot = LastReboot {
         graceful: Some(true),
@@ -125,7 +125,7 @@ async fn test_pstore_present() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_pstore_present_but_no_ramoops_created() {
     let reboot = LastReboot {
         graceful: Some(true),
@@ -197,7 +197,7 @@ impl StubLastRebootInfo {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_update_android_bootreason_uvlo() {
     let reason = bootreason::update_android_bootreason(None, Some("reboot,uvlo,extra".to_string()))
         .await
@@ -205,7 +205,7 @@ async fn test_update_android_bootreason_uvlo() {
     assert_eq!(reason, "reboot,uvlo,extra");
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_update_android_bootreason_longkey_s2() {
     let reason =
         bootreason::update_android_bootreason(None, Some("reboot,longkey,s2,moreinfo".to_string()))

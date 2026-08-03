@@ -6,6 +6,8 @@ use anyhow::anyhow;
 use fidl_fuchsia_hardware_power_statecontrol::{
     self as fpower, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
+use fidl_fuchsia_sys2 as fsys2;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
@@ -15,7 +17,6 @@ use futures::channel::oneshot;
 use futures::prelude::*;
 use mock_reboot::MockRebootService;
 use std::sync::Arc;
-use {fidl_fuchsia_sys2 as fsys2, fuchsia_async as fasync};
 
 async fn build_realm() -> (RealmInstance, oneshot::Receiver<ShutdownOptions>) {
     let builder =
@@ -81,7 +82,7 @@ async fn build_realm() -> (RealmInstance, oneshot::Receiver<ShutdownOptions>) {
     (builder.build().await.unwrap(), shutdown_reason_receiver)
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_reboot_ota_update() {
     let (realm_instance, shutdown_options_receiver) = build_realm().await;
     let lifecycle_controller: fsys2::LifecycleControllerProxy =
@@ -104,7 +105,7 @@ async fn test_reboot_ota_update() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_reboot_no_args() {
     let (realm_instance, shutdown_options_receiver) = build_realm().await;
     let lifecycle_controller: fsys2::LifecycleControllerProxy =
