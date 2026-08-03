@@ -132,6 +132,7 @@ void BaseCapturer::BeginShutdown() {
     return;
   }
   shutting_down_ = true;
+  UpdateState(State::Shutdown);
   if (auto pq = packet_queue(); pq) {
     pq->Shutdown();
   }
