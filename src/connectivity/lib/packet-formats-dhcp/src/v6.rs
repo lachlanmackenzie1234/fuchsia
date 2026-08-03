@@ -8,8 +8,8 @@ use mdns::protocol::{Domain, ParseError as MdnsParseError};
 use net_types::ip::{IpAddress as _, Ipv6Addr, PrefixTooLongError, Subnet};
 use num_derive::FromPrimitive;
 use packet::records::{
-    ParsedRecord, RecordBuilder, RecordParseResult, RecordSequenceBuilder, Records, RecordsImpl,
-    RecordsImplLayout,
+    ParsedRecord, RecordBuilder, RecordParseResult, RecordSequenceBuilder, Records, RecordsContext,
+    RecordsImpl, RecordsImplLayout,
 };
 use packet::{BufferView, BufferViewMut, InnerPacketBuilder, ParsablePacket, ParseMetadata};
 use std::convert::Infallible as Never;
@@ -42,6 +42,8 @@ pub enum ParseError {
     DomainParseError(MdnsParseError),
     #[error("failed to parse UTF8 string: {:?}", _0)]
     Utf8Error(#[from] str::Utf8Error),
+    #[error("DHCPv6 option recursion limit exceeded")]
+    OptionRecursionLimitExceeded,
 }
 
 impl From<Never> for ParseError {
@@ -49,6 +51,23 @@ impl From<Never> for ParseError {
         match err {}
     }
 }
+
+/// The maximum allowed recursion depth for DHCPv6 options.
+///
+/// The maximum layer of nesting in practice is:
+/// - Relay Message Option (depth 1)
+/// - IANA/TA/PD options inside the encapsulated message (depth 2)
+/// - IA Addr or IA Prefix options inside IANA/TA/PD (depth 3)
+/// - Status Code options inside IA Addr/Prefix (depth 4)
+const MAX_RECURSION_DEPTH: usize = 4;
+
+/// Context used to track recursion depth during DHCPv6 option parsing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OptionParseContext {
+    depth: usize,
+}
+
+impl RecordsContext for OptionParseContext {}
 
 /// A DHCPv6 message type as defined in [RFC 8415, Section 7.3].
 ///
@@ -350,13 +369,13 @@ impl TimeValue {
 
 impl<'a, B: SplitByteSlice> IanaData<B> {
     /// Constructs a new `IanaData` from a `ByteSlice`.
-    fn new(buf: B) -> Result<Self, ParseError> {
+    fn new(buf: B, context: OptionParseContext) -> Result<Self, ParseError> {
         let buf_len = buf.len();
         let (header, options) =
             Ref::from_prefix(buf).map_err(Into::into).map_err(|_: zerocopy::SizeError<_, _>| {
                 ParseError::InvalidOpLen(OptionCode::Iana, buf_len)
             })?;
-        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, ())?;
+        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, context)?;
         Ok(IanaData { header, options })
     }
 
@@ -411,13 +430,13 @@ pub struct IaAddrData<B: SplitByteSlice> {
 
 impl<'a, B: SplitByteSlice> IaAddrData<B> {
     /// Constructs a new `IaAddrData` from a `ByteSlice`.
-    pub fn new(buf: B) -> Result<Self, ParseError> {
+    fn new(buf: B, context: OptionParseContext) -> Result<Self, ParseError> {
         let buf_len = buf.len();
         let (header, options) =
             Ref::from_prefix(buf).map_err(Into::into).map_err(|_: zerocopy::SizeError<_, _>| {
                 ParseError::InvalidOpLen(OptionCode::IaAddr, buf_len)
             })?;
-        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, ())?;
+        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, context)?;
         Ok(IaAddrData { header, options })
     }
 
@@ -485,13 +504,13 @@ pub struct IaPdData<B: SplitByteSlice> {
 
 impl<'a, B: SplitByteSlice> IaPdData<B> {
     /// Constructs a new `IaPdData` from a `ByteSlice`.
-    fn new(buf: B) -> Result<Self, ParseError> {
+    fn new(buf: B, context: OptionParseContext) -> Result<Self, ParseError> {
         let buf_len = buf.len();
         let (header, options) =
             Ref::from_prefix(buf).map_err(Into::into).map_err(|_: zerocopy::SizeError<_, _>| {
                 ParseError::InvalidOpLen(OptionCode::IaPd, buf_len)
             })?;
-        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, ())?;
+        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, context)?;
         Ok(IaPdData { header, options })
     }
 
@@ -549,13 +568,13 @@ pub struct IaPrefixData<B: SplitByteSlice> {
 
 impl<'a, B: SplitByteSlice> IaPrefixData<B> {
     /// Constructs a new `IaPrefixData` from a `ByteSlice`.
-    pub fn new(buf: B) -> Result<Self, ParseError> {
+    fn new(buf: B, context: OptionParseContext) -> Result<Self, ParseError> {
         let buf_len = buf.len();
         let (header, options) =
             Ref::from_prefix(buf).map_err(Into::into).map_err(|_: zerocopy::SizeError<_, _>| {
                 ParseError::InvalidOpLen(OptionCode::IaPrefix, buf_len)
             })?;
-        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, ())?;
+        let options = Records::<B, ParsedDhcpOptionImpl>::parse_with_context(options, context)?;
         Ok(IaPrefixData { header, options })
     }
 
@@ -690,7 +709,7 @@ type Duid = [u8];
 enum ParsedDhcpOptionImpl {}
 
 impl RecordsImplLayout for ParsedDhcpOptionImpl {
-    type Context = ();
+    type Context = OptionParseContext;
 
     type Error = ParseError;
 }
@@ -705,8 +724,13 @@ impl RecordsImpl for ParsedDhcpOptionImpl {
     /// [RFC 8415, Section 21.1]: https://tools.ietf.org/html/rfc8415#section-21.1
     fn parse_with_context<'a, BV: BufferView<&'a [u8]>>(
         data: &mut BV,
-        _context: &mut Self::Context,
+        context: &mut Self::Context,
     ) -> RecordParseResult<Self::Record<'a>, Self::Error> {
+        let context = OptionParseContext { depth: context.depth + 1 };
+        if context.depth > MAX_RECURSION_DEPTH {
+            return Err(ParseError::OptionRecursionLimitExceeded);
+        }
+
         if data.len() == 0 {
             return Ok(ParsedRecord::Done);
         }
@@ -732,8 +756,8 @@ impl RecordsImpl for ParsedDhcpOptionImpl {
         let opt = match opt_code {
             OptionCode::ClientId => Ok(ParsedDhcpOption::ClientId(opt_val)),
             OptionCode::ServerId => Ok(ParsedDhcpOption::ServerId(opt_val)),
-            OptionCode::Iana => IanaData::new(opt_val).map(ParsedDhcpOption::Iana),
-            OptionCode::IaAddr => IaAddrData::new(opt_val).map(ParsedDhcpOption::IaAddr),
+            OptionCode::Iana => IanaData::new(opt_val, context).map(ParsedDhcpOption::Iana),
+            OptionCode::IaAddr => IaAddrData::new(opt_val, context).map(ParsedDhcpOption::IaAddr),
             OptionCode::Oro => {
                 let options = opt_val
                     // TODO(https://github.com/rust-lang/rust/issues/74985): use slice::as_chunks.
@@ -765,8 +789,10 @@ impl RecordsImpl for ParsedDhcpOptionImpl {
                 let message = str::from_utf8(opt_val)?;
                 Ok(ParsedDhcpOption::StatusCode(*code, message))
             }
-            OptionCode::IaPd => IaPdData::new(opt_val).map(ParsedDhcpOption::IaPd),
-            OptionCode::IaPrefix => IaPrefixData::new(opt_val).map(ParsedDhcpOption::IaPrefix),
+            OptionCode::IaPd => IaPdData::new(opt_val, context).map(ParsedDhcpOption::IaPd),
+            OptionCode::IaPrefix => {
+                IaPrefixData::new(opt_val, context).map(ParsedDhcpOption::IaPrefix)
+            }
             OptionCode::InformationRefreshTime => match opt_val {
                 &[b0, b1, b2, b3] => {
                     Ok(ParsedDhcpOption::InformationRefreshTime(u32::from_be_bytes([
@@ -1265,7 +1291,10 @@ impl<'a, B: 'a + SplitByteSlice + IntoByteSlice<'a>> ParsablePacket<B, ()> for M
         let transaction_id = Ref::into_ref(
             buf.take_obj_front::<TransactionId>().ok_or(ParseError::BufferExhausted)?,
         );
-        let options = Records::<_, ParsedDhcpOptionImpl>::parse(buf.take_rest_front())?;
+        let options = Records::<_, ParsedDhcpOptionImpl>::parse_with_context(
+            buf.take_rest_front(),
+            OptionParseContext { depth: 0 },
+        )?;
         Ok(Message { msg_type, transaction_id, options })
     }
 }
@@ -1510,13 +1539,17 @@ mod tests {
         let options = [
             ParsedDhcpOption::ClientId(&[4, 5, 6]),
             ParsedDhcpOption::ServerId(&[8]),
-            ParsedDhcpOption::Iana(IanaData::new(&iana_buf[..]).expect("construction failed")),
+            ParsedDhcpOption::Iana(
+                IanaData::new(&iana_buf[..], OptionParseContext { depth: 1 })
+                    .expect("construction failed"),
+            ),
             ParsedDhcpOption::Oro(vec![OptionCode::ClientId, OptionCode::ServerId]),
             ParsedDhcpOption::Preference(42),
             ParsedDhcpOption::ElapsedTime(3600),
             ParsedDhcpOption::StatusCode(U16::new(0), "Success."),
             ParsedDhcpOption::IaPd(
-                IaPdData::new(&iapd_buf[..]).expect("IA_PD construction failed"),
+                IaPdData::new(&iapd_buf[..], OptionParseContext { depth: 1 })
+                    .expect("IA_PD construction failed"),
             ),
             ParsedDhcpOption::InformationRefreshTime(86400),
             ParsedDhcpOption::SolMaxRt(U32::new(86400)),
@@ -1584,8 +1617,11 @@ mod tests {
         option.serialize_into(&mut buf);
         assert_eq!(buf, [0, 8, 0, 2, 0, 42]);
 
-        let options = Records::<_, ParsedDhcpOptionImpl>::parse_with_context(&buf[..], ())
-            .expect("parse should succeed");
+        let options = Records::<_, ParsedDhcpOptionImpl>::parse_with_context(
+            &buf[..],
+            OptionParseContext { depth: 0 },
+        )
+        .expect("parse should succeed");
         let options: Vec<ParsedDhcpOption<'_>> = options.iter().collect();
         assert_eq!(options[..], [ParsedDhcpOption::ElapsedTime(42)]);
     }
@@ -1658,13 +1694,19 @@ mod tests {
         option.serialize_into(&mut buf);
         assert_eq!(buf, [0, 3, 0, 12, 0, 0, 13, 128, 0, 0, 4, 0, 0, 0, 212, 49]);
 
-        let options = Records::<_, ParsedDhcpOptionImpl>::parse_with_context(&buf[..], ())
-            .expect("parse should succeed");
+        let options = Records::<_, ParsedDhcpOptionImpl>::parse_with_context(
+            &buf[..],
+            OptionParseContext { depth: 0 },
+        )
+        .expect("parse should succeed");
         let options: Vec<ParsedDhcpOption<'_>> = options.iter().collect();
         let iana_buf = [0, 0, 13, 128, 0, 0, 4, 0, 0, 0, 212, 49];
         assert_eq!(
             options[..],
-            [ParsedDhcpOption::Iana(IanaData::new(&iana_buf[..]).expect("construction failed"))]
+            [ParsedDhcpOption::Iana(
+                IanaData::new(&iana_buf[..], OptionParseContext { depth: 1 })
+                    .expect("construction failed")
+            )]
         );
     }
 
@@ -1704,8 +1746,11 @@ mod tests {
             ]
         );
 
-        let options = Records::<_, ParsedDhcpOptionImpl>::parse_with_context(&buf[..], ())
-            .expect("parse should succeed");
+        let options = Records::<_, ParsedDhcpOptionImpl>::parse_with_context(
+            &buf[..],
+            OptionParseContext { depth: 0 },
+        )
+        .expect("parse should succeed");
         let options: Vec<ParsedDhcpOption<'_>> = options.iter().collect();
         let iaaddr_buf = [
             10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1713,7 +1758,8 @@ mod tests {
         assert_eq!(
             options[..],
             [ParsedDhcpOption::IaAddr(
-                IaAddrData::new(&iaaddr_buf[..]).expect("construction failed")
+                IaAddrData::new(&iaaddr_buf[..], OptionParseContext { depth: 1 })
+                    .expect("construction failed")
             )]
         );
     }
@@ -1893,6 +1939,25 @@ mod tests {
         assert_eq!(
             NonZeroOrMaxU32::new(t).expect("should succeed for non-zero or u32::MAX values").get(),
             t
+        );
+    }
+
+    #[test]
+    fn test_option_recursion_limit() {
+        let lvl5 = [DhcpOption::StatusCode(0, "Success.")];
+        let lvl4 = [DhcpOption::Iana(IanaSerializer::new(IAID::new(5), 0, 0, &lvl5))];
+        let lvl3 = [DhcpOption::Iana(IanaSerializer::new(IAID::new(4), 0, 0, &lvl4))];
+        let lvl2 = [DhcpOption::Iana(IanaSerializer::new(IAID::new(3), 0, 0, &lvl3))];
+        let lvl1 = [DhcpOption::Iana(IanaSerializer::new(IAID::new(2), 0, 0, &lvl2))];
+
+        let builder = MessageBuilder::new(MessageType::Solicit, [1, 2, 3], &lvl1);
+        let mut buf = vec![0; builder.bytes_len()];
+        let () = builder.serialize(&mut buf);
+
+        let mut buf = &buf[..];
+        assert_matches!(
+            Message::parse(&mut buf, ()),
+            Err(ParseError::OptionRecursionLimitExceeded)
         );
     }
 }
