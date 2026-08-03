@@ -10,6 +10,7 @@ mod vmo_rs {
     use crate::vm::pmm::ALLOC_FLAG_ANY;
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_object_paged::VmObjectPaged;
+    use crate::vm_unittests::test_helper::make_committed_pager_vmo;
     use page::SIZE as PAGE_SIZE_USIZE;
     use unittest::{assert_ok, unwrap_ok};
 
@@ -35,6 +36,11 @@ mod vmo_rs {
                 /*alignment_log2*/ 0
             ));
             assert_ok!(contiguous_vmo.decommit_range(0, PAGE_SIZE));
+
+            // we will replace the only page in vmo with a loaned page
+            let (_vmo, [_before_page]) = unwrap_ok!(make_committed_pager_vmo(
+                /*trap_dirty*/ false, /*resizable*/ false
+            ));
         }
     }
 }

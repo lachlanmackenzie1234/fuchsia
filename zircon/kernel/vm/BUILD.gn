@@ -411,12 +411,44 @@ kernel_rust_mod("vm-rs") {
   ]
 }
 
+kernel_bindgen_crate("test-helper-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "unittests/test_helper_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "test_helper_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [ "cpp_make_committed_pager_vmo" ]
+  type_blocklist = [
+    "zx_status_t",
+    "VmObjectPaged",
+  ]
+
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+
+  raw_lines = [
+    "#![no_std]",
+    "use vm_object_paged_bindings::VmObjectPaged;",
+    "use zx_types::zx_status_t;",
+  ]
+  deps = [
+    ":vm-object-paged-bindings",
+    "//sdk/rust/zx-types",
+  ]
+}
+
 kernel_rust_mod("vm-rs-unittests") {
   output_name = "vm_unittests"
   testonly = true
   visibility = [ ":*" ]
   source_root = "unittests/mod.rs"
-  sources = [ "unittests/vmo_unittest.rs" ]
+  sources = [
+    "unittests/test_helper.rs",
+    "unittests/vmo_unittest.rs",
+  ]
+  deps = [ ":test-helper-bindings" ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
@@ -438,6 +470,7 @@ source_set("tests") {
     "unittests/pmm_unittest.cc",
     "unittests/slab_unittest.cc",
     "unittests/test_helper.cc",
+    "unittests/test_helper_ffi.cc",
     "unittests/vmo_unittest.cc",
     "unittests/vmpl_unittest.cc",
   ]
