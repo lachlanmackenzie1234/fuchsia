@@ -10,7 +10,6 @@ mod tests {
         self as fintl, CivilTime, CivilToAbsoluteTimeOptions, DayOfWeek, Month,
         RepeatedTimeConversion, SkippedTimeConversion, TimeZoneId, TimeZoneInfo, TimeZonesProxy,
     };
-    use fuchsia_async as fasync;
     use fuchsia_component_test::{
         Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route,
     };
@@ -41,7 +40,7 @@ mod tests {
         Ok((realm, svc))
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_civil_to_absolute_time() -> Result<()> {
         let (realm, svc) = connect_to_service().await?;
 
@@ -79,7 +78,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_absolute_to_civil_time() -> Result<()> {
         let (realm, svc) = connect_to_service().await?;
 
@@ -109,7 +108,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_time_zone_info() -> Result<()> {
         let (realm, svc) = connect_to_service().await?;
 

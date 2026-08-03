@@ -19,7 +19,7 @@ rustc_test("time-zone-info-service-test") {
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust",
     "//sdk/rust/zx",
     "//src/lib/fable:fable-lib",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",
   ]
