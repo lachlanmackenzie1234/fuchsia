@@ -9,6 +9,9 @@ use pin_init::PinInit;
 /// Implementors of `RawLock` supply the platform-specific lock storage, in-place pinning
 /// initialization logic, and raw synchronization entry points for lock validation systems.
 pub trait RawLock {
+    /// Flags specifying validation rules for the lock class.
+    const LOCK_FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_NONE;
+
     /// Opaque stack entry storage type used by the lock validation loop detector (e.g. LockDep).
     type LockEntry: Default;
 

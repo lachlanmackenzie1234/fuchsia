@@ -4,6 +4,35 @@
 
 #![no_std]
 
+/// Flags to specify which rules to apply to a lock class during validation.
+pub type LockFlags = u16;
+
+/// Apply only common rules that apply to all locks.
+pub const LOCK_FLAGS_NONE: LockFlags = 0;
+/// Apply the irq-safety rules in addition to the common rules for all locks.
+pub const LOCK_FLAGS_IRQ_SAFE: LockFlags = 1 << 0;
+/// Apply the nestable rules in addition to the common rules for all locks.
+pub const LOCK_FLAGS_NESTABLE: LockFlags = 1 << 1;
+/// Apply the multi-acquire rules in additioon to the common rules for all
+/// locks.
+pub const LOCK_FLAGS_MULTI_ACQUIRE: LockFlags = 1 << 2;
+/// Apply the leaf lock rules in addition to the common rules for all locks.
+/// NOTE: Use this flag with caution. See https://fxbug.dev/459856993.
+pub const LOCK_FLAGS_LEAF: LockFlags = 1 << 3;
+/// Do not report validation errors. This flag prevents recursive validation
+/// of locks that are acquired by reporting routines.
+pub const LOCK_FLAGS_REPORTING_DISABLED: LockFlags = 1 << 4;
+/// There is only one member of this locks class.
+pub const LOCK_FLAGS_SINGLETON_LOCK: LockFlags = 1 << 5;
+/// Abort the program with an error if a lock is improperly acquired more
+/// than once in the same context.
+pub const LOCK_FLAGS_RE_ACQUIRE_FATAL: LockFlags = 1 << 6;
+/// Do not add this acquisition to the active list. This may be required for
+/// locks that are used to protect context switching logic.
+pub const LOCK_FLAGS_ACTIVE_LIST_DISABLED: LockFlags = 1 << 7;
+/// Do not track this lock.
+pub const LOCK_FLAGS_TRACKING_DISABLED: LockFlags = 1 << 8;
+
 // Keep dependency alive even when lockdep is disabled to satisfy unused dependency lints.
 use zr as _;
 

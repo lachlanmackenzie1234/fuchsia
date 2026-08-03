@@ -54,6 +54,8 @@ unsafe impl Send for RawSpinlock {}
 zr::unsafe_pinned_drop_ffi!(RawSpinlock, cpp_spinlock_destroy);
 
 impl crate::RawLock for RawSpinlock {
+    const LOCK_FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_IRQ_SAFE;
+
     type LockEntry = LockEntryStorage;
     type GuardState = InterruptSavedState;
 

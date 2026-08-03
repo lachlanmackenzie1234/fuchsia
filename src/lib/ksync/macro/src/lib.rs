@@ -347,6 +347,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let class_ident = &mutex.class_ident;
         let mutex_type = &mutex.mutex_type;
 
+        let flags_expr = quote! { <#mutex_type as ::ksync::RawLock>::LOCK_FLAGS };
+
         let mu_camel = to_camel_case(&mu_ident.to_string());
         let guard_ident = format_ident!("{}{}Guard", struct_ident, mu_camel);
         let fields_ident = format_ident!("{}{}Fields", struct_ident, mu_camel);
@@ -476,7 +478,10 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             #[unsafe(link_section = "rust_lock_classes")]
             #[used]
-            static #reg_ident: ::ksync::LockClassRegistration = ::ksync::LockClassRegistration::new(#string_reg_ident);
+            static #reg_ident: ::ksync::LockClassRegistration = ::ksync::LockClassRegistration::with_flags(
+                #string_reg_ident,
+                #flags_expr,
+            );
 
             impl ::ksync::LockClass for #class_ident {
                 const ID: *mut ::core::ffi::c_void = #reg_ident.get();

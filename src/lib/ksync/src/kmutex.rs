@@ -132,7 +132,7 @@ impl<'a, Class: LockClass, M: RawLock> PinnedDrop for KMutexGuard<'a, Class, M> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KCell, RawMutex, guarded};
+    use crate::{KCell, guarded};
     use lockdep::LockClass;
     use pin_init::{pin_init, stack_pin_init};
 
@@ -272,25 +272,6 @@ mod tests {
         }));
         lock!(let guard = s.lock_mu());
         assert_eq!(*guard.data(), 0);
-    }
-
-    #[guarded]
-    struct MyGenericLockGuardedStruct<L: RawLock> {
-        #[mutex]
-        mu: KMutex<L>,
-        #[guarded_by(mu)]
-        data: u32,
-    }
-
-    #[test]
-    fn test_macro_generic_lock_guarded() {
-        stack_pin_init!(let s = pin_init!(MyGenericLockGuardedStruct::<RawMutex> {
-            mu <- KMutex::init(),
-            data: 100.into(),
-        }));
-
-        lock!(let guard = s.lock_mu());
-        assert_eq!(*guard.data(), 100);
     }
 
     #[guarded]
