@@ -13,6 +13,7 @@
 
 #include "src/developer/forensics/feedback_data/log_source.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/encoder.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/log_stats.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/developer/forensics/utils/storage_size.h"
 
@@ -38,11 +39,12 @@ namespace system_log_recorder {
 class LogMessageStore : public LogSink {
  public:
   struct ConsumeResult {
-    ConsumeResult(std::string log, bool end_of_block)
-        : log(std::move(log)), end_of_block(end_of_block) {}
+    ConsumeResult(std::string log, bool end_of_block, LogStats stats)
+        : log(std::move(log)), end_of_block(end_of_block), stats(stats) {}
 
     std::string log;
     bool end_of_block;
+    LogStats stats;
   };
 
   LogMessageStore(StorageSize max_block_capacity, StorageSize max_buffer_capacity,
@@ -64,9 +66,9 @@ class LogMessageStore : public LogSink {
   // messages.
   void AppendToEnd(const std::string& str);
 
-  // Consumes the contents of the store and returns a ConsumeResult containing the log string and a
-  // signal that notifies the end of the block (after the returned string). Calling Consume will
-  // empty the store.
+  // Consumes the contents of the store and returns a ConsumeResult containing the log string, the
+  // incremental block statistics, and a signal that notifies the end of the block (after the
+  // returned string). Calling Consume will empty the store.
   ConsumeResult Consume();
 
   void TurnOnRateLimiting() { buffer_rate_limit_ = true; }
@@ -103,6 +105,8 @@ class LogMessageStore : public LogSink {
 
   ContainerStats buffer_stats_;
   ContainerStats block_stats_;
+
+  LogStats incremental_stats_;
 
   bool buffer_rate_limit_ = false;
   size_t num_messages_dropped_ = 0;

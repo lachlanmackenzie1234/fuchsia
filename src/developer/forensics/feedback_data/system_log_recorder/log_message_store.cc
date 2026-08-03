@@ -40,6 +40,9 @@ LogMessageStore::LogMessageStore(StorageSize max_block_capacity, StorageSize max
                                  std::unique_ptr<Encoder> encoder)
     : buffer_stats_(max_buffer_capacity),
       block_stats_(max_block_capacity),
+      incremental_stats_(/*message_count=*/0, /*deduplicated_message_count=*/0,
+                         /*first_timestamp=*/std::nullopt,
+                         /*last_timestamp=*/std::nullopt),
       redactor_(std::move(redactor)),
       encoder_(std::move(encoder)) {
   FX_CHECK(max_block_capacity >= max_buffer_capacity);
@@ -69,7 +72,14 @@ bool LogMessageStore::Add(LogSink::MessageOr message) {
     for (std::string& tag : message.value().tags) {
       redactor_->Redact(tag);
     }
+
+    if (!incremental_stats_.first_timestamp.has_value()) {
+      incremental_stats_.first_timestamp = message.value().time;
+    }
+    incremental_stats_.last_timestamp = message.value().time;
   }
+
+  incremental_stats_.message_count++;
 
   const std::string& log_msg = message.is_ok() ? message.value().msg : message.error();
   const int32_t& log_severity = (message.is_ok()) ? message.value().severity : kDefaultLogSeverity;
@@ -82,6 +92,8 @@ bool LogMessageStore::Add(LogSink::MessageOr message) {
     last_pushed_message_count_++;
     return true;
   }
+
+  incremental_stats_.deduplicated_message_count++;
 
   // 2. Push the repeated message if any.
   if (last_pushed_message_count_ > 1) {
@@ -149,11 +161,13 @@ LogMessageStore::ConsumeResult LogMessageStore::Consume() {
   }
 
   // We assume all messages end with a newline character.
-  std::string str = fxl::JoinStrings(buffer_);
+  ConsumeResult result(fxl::JoinStrings(buffer_), /*end_of_block=*/false, incremental_stats_);
 
   buffer_.clear();
   buffer_stats_.Reset();
   num_messages_dropped_ = 0;
+  incremental_stats_ = LogStats(/*message_count=*/0, /*deduplicated_message_count=*/0,
+                                /*first_timestamp=*/std::nullopt, /*last_timestamp=*/std::nullopt);
 
   // Reset the encoder at the end of a block.
   if (block_stats_.IsFull()) {
@@ -162,10 +176,12 @@ LogMessageStore::ConsumeResult LogMessageStore::Consume() {
     // We reset the last message pushed and its count so that we don't have a block starting with a
     // repeated message without the actual message.
     ResetLastPushedMessage();
-    return LogMessageStore::ConsumeResult(std::move(str), /*end_of_block=*/true);
+    result.end_of_block = true;
+  } else {
+    result.end_of_block = false;
   }
 
-  return LogMessageStore::ConsumeResult(std::move(str), /*end_of_block=*/false);
+  return result;
 }
 
 void LogMessageStore::AppendToEnd(const std::string& str) { to_append_ = str; }

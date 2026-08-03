@@ -9,9 +9,9 @@
 #include <lib/trace/event.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <string>
 
+#include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
 #include "src/lib/files/directory.h"
 #include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
@@ -21,8 +21,12 @@ namespace feedback_data {
 namespace system_log_recorder {
 
 SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
-                                 LogMessageStore* store)
-    : logs_dir_(logs_dir), max_num_files_(max_num_files), store_(store) {
+                                 LogMessageStore* store, const std::string& metadata_path)
+    : logs_dir_(logs_dir),
+      max_num_files_(max_num_files),
+      metadata_({}, kFirstFileNumber),
+      metadata_path_(metadata_path),
+      store_(store) {
   FX_CHECK(max_num_files_ > 0);
   if (!files::CreateDirectory(logs_dir)) {
     FX_LOGS(WARNING) << "Failed to create logs directory, will re-try on the next block, no logs "
@@ -35,22 +39,27 @@ SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_fil
 
   // Get the numbers the previous writer assigned to the files – there should only be previous
   // files in case of a component restart.
+  std::vector<size_t> existing_files;
   for (const std::string& fname : current_log_files) {
     size_t file_num = 0;
     if (fxl::StringToNumberWithError(fname, &file_num)) {
-      file_queue_.push_back(file_num);
+      existing_files.push_back(file_num);
     }
   }
 
-  // Sort the files such that the oldest files will be deleted first.
-  std::sort(file_queue_.begin(), file_queue_.end());
+  metadata_ = DiskBackedLogsMetadata::FromFile(metadata_path_, kFirstFileNumber)
+                  .value_or(DiskBackedLogsMetadata({}, kFirstFileNumber));
+  metadata_.ReconcileWithExistingFiles(existing_files);
 
+  // If at capacity, starting a new file will erase the oldest file so we'll need to immediately
+  // rewrite the new metadata after a component restart.
   StartNewFile();
+  metadata_.ToFile(metadata_path_);
 }
 
 void SystemLogWriter::StartNewFile() {
   if (!files::IsDirectory(logs_dir_)) {
-    file_queue_.clear();
+    metadata_.Clear();
 
     if (files::CreateDirectory(logs_dir_)) {
       FX_LOGS(INFO)
@@ -61,14 +70,15 @@ void SystemLogWriter::StartNewFile() {
     }
   }
 
-  const size_t next_file_num = (file_queue_.empty()) ? 0u : file_queue_.back() + 1;
-  if (file_queue_.size() >= max_num_files_) {
+  const size_t next_file_num = metadata_.NextFileNumber();
+  if (metadata_.NumFiles() >= max_num_files_) {
     TRACE_DURATION("feedback:io", "SystemLogWriter::RemoveFile");
-    remove(Path(file_queue_.front()).c_str());
-    file_queue_.pop_front();
+    const size_t oldest_file_num = metadata_.OldestFileNumber();
+    remove(Path(oldest_file_num).c_str());
+    metadata_.RemoveStats(oldest_file_num);
   }
 
-  file_queue_.push_back(next_file_num);
+  metadata_.NewStats(next_file_num);
 
   TRACE_DURATION("feedback:io", "SystemLogWriter::OpenFile");
   current_file_descriptor_.reset(
@@ -81,6 +91,8 @@ void SystemLogWriter::Write() {
 
   // The file descriptor could be negative if the file failed to open.
   if (current_file_descriptor_.is_valid()) {
+    metadata_.MergeInto(metadata_.LatestFileNumber(), result.stats);
+
     // Overcommit, i.e. write everything we consumed before starting a new file for the next
     // block as we cannot have a block spanning multiple files.
     write(current_file_descriptor_.get(), result.log.c_str(), result.log.size());
@@ -89,6 +101,8 @@ void SystemLogWriter::Write() {
   if (result.end_of_block) {
     StartNewFile();
   }
+
+  metadata_.ToFile(metadata_path_);
 }
 
 void SystemLogWriter::Fsync() { fsync(current_file_descriptor_.get()); }

@@ -5,11 +5,12 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_WRITER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_WRITER_H_
 
-#include <deque>
 #include <string>
 
 #include <fbl/unique_fd.h>
 
+#include "src/developer/forensics/feedback/constants.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/log_message_store.h"
 
 namespace forensics {
@@ -19,7 +20,10 @@ namespace system_log_recorder {
 // Consumes the full content of a store on request, writing it to a rotating set of files.
 class SystemLogWriter {
  public:
-  SystemLogWriter(const std::string& logs_dir, size_t max_num_files, LogMessageStore* store);
+  static constexpr size_t kFirstFileNumber = 0u;
+
+  SystemLogWriter(const std::string& logs_dir, size_t max_num_files, LogMessageStore* store,
+                  const std::string& metadata_path = feedback::kCurrentDiskBackedLogsMetadataPath);
 
   void Write();
 
@@ -35,7 +39,9 @@ class SystemLogWriter {
 
   const std::string logs_dir_;
   const size_t max_num_files_;
-  std::deque<size_t> file_queue_;
+
+  DiskBackedLogsMetadata metadata_;
+  const std::string metadata_path_;
 
   fbl::unique_fd current_file_descriptor_;
   LogMessageStore* store_;

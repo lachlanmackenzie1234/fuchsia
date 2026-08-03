@@ -58,6 +58,7 @@ source_set("main") {
     "reboot_log",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/feedback_data/system_log_recorder:src",
     "//src/developer/forensics/utils/component",
     "//src/lib/files",
     "//src/lib/uuid",

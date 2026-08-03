@@ -666,6 +666,37 @@ DONE
   EXPECT_FALSE(result.end_of_block);
 }
 
+TEST(LogMessageStoreTest, ConsumeReturnsExpectedResults) {
+  LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 10, MakeIdentityRedactor(),
+                        MakeIdentityEncoder());
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
+
+  const ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.stats.message_count, 2u);
+  EXPECT_EQ(result.stats.deduplicated_message_count, 2u);
+  EXPECT_FALSE(result.end_of_block);
+}
+
+TEST(LogMessageStoreTest, BlockStatsResetOnConsume) {
+  LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 10, MakeIdentityRedactor(),
+                        MakeIdentityEncoder());
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
+
+  ConsumeResult result = store.Consume();
+  EXPECT_EQ(result.stats.message_count, 2u);
+  EXPECT_EQ(result.stats.deduplicated_message_count, 2u);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
+
+  result = store.Consume();
+  EXPECT_EQ(result.stats.message_count, 1u);
+  EXPECT_EQ(result.stats.deduplicated_message_count, 1u);
+}
+
 }  // namespace
 }  // namespace system_log_recorder
 }  // namespace feedback_data

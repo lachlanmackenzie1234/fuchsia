@@ -14,6 +14,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/identity_decoder.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/identity_encoder.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/production_encoding.h"
@@ -444,6 +445,203 @@ TEST(WriterTest, IgnoreNonNumericFiles) {
   writer.Write();
 
   EXPECT_TRUE(files::IsFile(files::JoinPath(kWriteDirectory, "2")));
+}
+
+TEST(WriterTest, SavesMetadata) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
+                        MakeIdentityEncoder());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, &store, metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  writer.Write();
+
+  std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_FALSE(metadata->IsAtCapacity());
+  EXPECT_EQ(metadata->MessageCount(), 1u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 1u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+}
+
+TEST(WriterTest, SavesMetadataMultipleFiles) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
+                        MakeIdentityEncoder());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, &store, metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
+  writer.Write();
+
+  std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_FALSE(metadata->IsAtCapacity());
+  EXPECT_EQ(metadata->MessageCount(), 2u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 2u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(200)).get());
+}
+
+TEST(WriterTest, SavesMetadataMultipleWritesInSingleBlock) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  // Block size can hold 10 log messages; buffer size holds 1 log message.
+  LogMessageStore store(kMaxLogLineSize * 10, kMaxLogLineSize, MakeIdentityRedactor(),
+                        MakeIdentityEncoder());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, &store, metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  writer.Write();
+
+  std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 1u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 1u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
+  writer.Write();
+
+  metadata = DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 2u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 2u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(200)).get());
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2", zx::msec(300))));
+  writer.Write();
+
+  metadata = DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 3u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 3u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(300)).get());
+}
+
+TEST(WriterTest, RestoresMetadataOnRestart) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  {
+    LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
+                          MakeIdentityEncoder());
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, &store, metadata_path);
+
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
+    writer.Write();
+  }
+
+  std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 2u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 2u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(200)).get());
+
+  {
+    LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
+                          MakeIdentityEncoder());
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, &store, metadata_path);
+
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2", zx::msec(300))));
+    writer.Write();
+  }
+
+  metadata = DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 3u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 3u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(300)).get());
+}
+
+TEST(WriterTest, RollsOutRestoredMetadataOnRotation) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  {
+    LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
+                          MakeIdentityEncoder());
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, &store, metadata_path);
+
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+    writer.Write();
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
+    writer.Write();
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2", zx::msec(300))));
+    writer.Write();
+  }
+
+  std::optional<DiskBackedLogsMetadata> metadata =
+      DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+  ASSERT_TRUE(metadata.has_value());
+  EXPECT_EQ(metadata->MessageCount(), 3u);
+  EXPECT_EQ(metadata->DeduplicatedMessageCount(), 3u);
+  ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+  EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(100)).get());
+  ASSERT_TRUE(metadata->LastTimestamp().has_value());
+  EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(300)).get());
+
+  {
+    // 4 files (0, 1, 2, 3) are present on disk, with file 3 being empty. The constructor calls
+    // StartNewFile, causing file 0 to be deleted. Writing a new message (line 3) finishes block 4
+    // and triggers StartNewFile, causing file 1 to be deleted. Metadata saved after StartNewFile
+    // reflects remaining files on disk (files 2, 3, 4) = only 2 msgs because file 3 is empty.
+    LogMessageStore store(kMaxLogLineSize, kMaxLogLineSize, MakeIdentityRedactor(),
+                          MakeIdentityEncoder());
+    SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/4u, &store, metadata_path);
+
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3", zx::msec(400))));
+    writer.Write();
+
+    metadata = DiskBackedLogsMetadata::FromFile(metadata_path, SystemLogWriter::kFirstFileNumber);
+    ASSERT_TRUE(metadata.has_value());
+    EXPECT_EQ(metadata->MessageCount(), 2u);
+    EXPECT_EQ(metadata->DeduplicatedMessageCount(), 2u);
+    ASSERT_TRUE(metadata->FirstTimestamp().has_value());
+    EXPECT_EQ(metadata->FirstTimestamp()->get(), (zx::sec(15604) + zx::msec(300)).get());
+    ASSERT_TRUE(metadata->LastTimestamp().has_value());
+    EXPECT_EQ(metadata->LastTimestamp()->get(), (zx::sec(15604) + zx::msec(400)).get());
+  }
 }
 
 }  // namespace

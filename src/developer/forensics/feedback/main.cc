@@ -22,10 +22,13 @@
 #include "src/developer/forensics/feedback/namespace_init.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/feedback/redactor_factory.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/writer.h"
 #include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/component/component.h"
 #include "src/developer/forensics/utils/storage_size.h"
 #include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
 #include "src/lib/uuid/uuid.h"
 
 namespace forensics::feedback {
@@ -70,6 +73,8 @@ int main() {
              /*to=*/kLegacyPreviousGracefulRebootReasonFile);
     MoveFile(/*from=*/kCurrentGracefulShutdownInfoFile, /*to=*/kPreviousGracefulShutdownInfoFile);
     MoveFile(/*from=*/kCurrentSystemTimePath, /*to=*/kPreviousSystemTimePath);
+    MoveFile(/*from=*/kCurrentDiskBackedLogsMetadataPath,
+             /*to=*/kPreviousDiskBackedLogsMetadataPath);
     CreatePreviousLogsFile(cobalt.get(), kPersistedLogsTotalSize);
     MoveAndRecordBootId(uuid::Generate());
     if (std::string build_version; files::ReadFileToString(kBuildVersionPath, &build_version)) {
@@ -101,6 +106,16 @@ int main() {
       feedback_config->supports_user_initiated_poweroffs, component.IsFirstInstance(),
       redactor.get());
 
+  if (component.IsFirstInstance()) {
+    const std::optional<feedback_data::system_log_recorder::DiskBackedLogsMetadata> metadata =
+        feedback_data::system_log_recorder::DiskBackedLogsMetadata::FromFile(
+            kPreviousDiskBackedLogsMetadataPath,
+            feedback_data::system_log_recorder::SystemLogWriter::kFirstFileNumber);
+    if (metadata.has_value()) {
+      metadata->LogToCobalt(*cobalt, reboot_log.GetFinalShutdownInfo().Uptime());
+    }
+    files::DeletePath(kPreviousDiskBackedLogsMetadataPath, /*recursive=*/false);
+  }
 
   std::optional<std::string> local_device_id_path = kDeviceIdPath;
   if (feedback_config->remote_device_id_provider) {
