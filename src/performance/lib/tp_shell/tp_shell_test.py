@@ -18,15 +18,18 @@ class TpShellTest(unittest.TestCase):
         )
         with importlib.resources.as_file(source) as trace_path:
             with PerfettoTraceProcessor(str(trace_path)) as tp:
-                # 1. Run query
+                # Run a query.
                 results = tp.run_query("SELECT count(*) as cnt FROM slice")
                 self.assertEqual(len(results), 1)
                 self.assertGreater(results[0]["cnt"], 0)
 
-                # 2. Check that process is alive inside the context
+                tables = tp.get_tables()
+                self.assertIn("slice", tables)
+
+                # Check that process is alive inside the context.
                 self.assertTrue(tp._finalizer.alive)
 
-            # 3. Check that process is cleaned up after exiting context
+            # Check that process is cleaned up after exiting context.
             self.assertFalse(tp._finalizer.alive)
             with self.assertRaises(RuntimeError):
                 tp.run_query("SELECT count(*) as cnt FROM slice")

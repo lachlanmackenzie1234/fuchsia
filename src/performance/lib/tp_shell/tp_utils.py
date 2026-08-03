@@ -44,8 +44,8 @@ class HttpUriResolver(TraceUriResolver):
         else:
             url = self.uri
         context = ssl._create_unverified_context()
-        # Add a default timeout of 2 minutes (120 seconds) as a backstop to
-        # avoid permanently blocking when loading the trace file.
+        # Add a default timeout as a backstop to avoid permanently blocking when loading
+        # the trace file.
         response = urllib.request.urlopen(url, context=context, timeout=120)
         return [
             TraceUriResolver.Result(
@@ -186,11 +186,17 @@ class PerfettoTraceProcessor:
         _LOGGER.info(
             f"Initializing Perfetto TraceProcessor for trace: {self.trace_path}"
         )
-        self._tp = PerfettoTP(trace=self.trace_path, config=config)
-        # Register a finalizer to ensure the subprocess is cleaned up even if close() isn't called.
+        try:
+            self._tp = PerfettoTP(trace=self.trace_path, config=config)
+        except Exception:
+            if self._tp_shell_context is not None:
+                try:
+                    self._tp_shell_context.__exit__(None, None, None)
+                except Exception:
+                    pass
+            raise
 
-        # This cleanup is handled either in the except block on failure or by the weakref
-        # finalizer via _cleanup.
+        # Register a finalizer to ensure the subprocess is cleaned up even if close() isn't called.
         self._finalizer = weakref.finalize(
             self, self._cleanup, self._tp, self._tp_shell_context
         )
@@ -219,9 +225,9 @@ class PerfettoTraceProcessor:
             raise RuntimeError("Trace processor is closed.")
 
         if self.debug:
-            print("--- DEBUG SQL QUERY ---")
-            print(query.strip())
-            print("-----------------------")
+            _LOGGER.debug(
+                f"--- DEBUG SQL QUERY ---\n{query.strip()}\n-----------------------"
+            )
 
         try:
             result_iterator = self._tp.query(query)
@@ -230,6 +236,13 @@ class PerfettoTraceProcessor:
         except Exception as e:
             _LOGGER.error(f"Error running query: {e}")
             raise
+
+    def get_tables(self) -> set[str]:
+        """Returns the set of table and view names available in the trace database."""
+        rows = self.run_query(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        )
+        return {row["name"] for row in rows}
 
     def __enter__(self) -> "PerfettoTraceProcessor":
         return self
