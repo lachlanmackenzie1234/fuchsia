@@ -235,7 +235,7 @@ Note that the shell behavior can be confusing:
 As a tip, you can use `guest attach debian` to return into the shell if you
 accidentally CTRL+C out of the Linux guest and into Fuchsia.
 
-### Modifying Debian Images {#modifying-debian-images}
+### Locally modifying Debian images {#locally-modifying-debian-images}
 
 In some cases, you may wish to alter the default Debian images (e.g., to add
 binaries or debug programs). Since there is no simple way to push artifacts
@@ -267,6 +267,13 @@ over, you must modify the images directly.
 After unmounting, the image will contain your changes. You can then shell into
 the environment (as detailed above) and execute binaries as needed.
 
+### Updating Debian images {#updating-debian-images}
+
+At present, there is no automated roller for the Debian images. You'll need to
+file a bug and assign it to someone who has permissions to upload new artifacts.
+Someone with permissions can then modify the images and upload new artifacts,
+per the [Debian guest README][debian-guest-readme].
+
 <!-- Reference links -->
 
 [enable-vm-acceleration]: /docs/get-started/set_up_femu.md#enable-vm-acceleration
@@ -274,3 +281,4 @@ the environment (as detailed above) and execute binaries as needed.
 [syscalls-cml]: /src/starnix/tests/syscalls/cpp/meta/syscalls_cpp_test.cml
 [syscalls-rs]: /src/sys/test_runners/starnix/src/syscalls.rs
 [virtualization-get-started]: /docs/development/virtualization/get_started.md
+[debian-guest-readme]: /src/virtualization/packages/debian_guest/debos/README.md
