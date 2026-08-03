@@ -273,8 +273,12 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_size",
     "cpp_vm_object_unpin",
     "cpp_vm_object_write",
+    "cpp_vm_object_hint_range",
   ]
-  type_allowlist = [ "VmObject" ]
+  type_allowlist = [
+    "EvictionHint",
+    "VmObject",
+  ]
   type_blocklist = [
     "zx_status_t",
     "VmObject_AttributionCounts",
@@ -288,10 +292,10 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_MappingTree",
     "VmObject_OnWriteBytesTransferredCallback",
     "VmObject_RangeChangeOp",
-    "VmObject_EvictionHint",
   ]
   additional_bindgen_flags = [
     "--opaque-type=VmObject",
+    "--rustified-enum=VmObject_EvictionHint",
     "--no-recursive-allowlist",
     "--blocklist-function=VmObject_.*",
   ]
@@ -300,7 +304,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "#![no_std]",
     "use zx_types::zx_status_t;",
   ]
-  expect_lints = []
+  expect_lints = [ "non_camel_case_types" ]
 }
 
 kernel_bindgen_crate("vm-object-paged-bindings") {
@@ -317,6 +321,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "cpp_vm_object_paged_create",
     "cpp_vm_object_paged_create_contiguous",
     "cpp_vm_object_paged_debug_get_cow_pages",
+    "cpp_vm_object_paged_debug_get_page",
   ]
   type_allowlist = [ "VmObjectPaged" ]
   type_blocklist = [

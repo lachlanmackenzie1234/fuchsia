@@ -9,22 +9,22 @@ mod vmo_rs {
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pmm::ALLOC_FLAG_ANY;
     use crate::vm::scanner::AutoVmScannerDisable;
+    use crate::vm::vm_object::EvictionHint;
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm_unittests::test_helper::make_committed_pager_vmo;
     use page::SIZE as PAGE_SIZE_USIZE;
-    use unittest::{assert_ok, unwrap_ok};
+    use unittest::{assert_false, assert_ok, unwrap_ok};
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
 
     /// Tests HintRange(AlwaysNeed) evicts loaned pages.
     #[test]
-    fn incomplete_vmo_always_need_evicts_loaned_test() {
+    fn vmo_always_need_evicts_loaned_test() {
         let _scanner_disable = AutoVmScannerDisable::new();
 
-        // TODO(https://fxbug.dev/531878732): This test is intentionally incomplete. This test will
-        // become progessively more complete as bindings for all of the constructs that the test
-        // uses are added.
-
+        // Depending on which loaned page we get, it may not still be loaned at
+        // the time HintRange() is called, so try a few times and make sure we
+        // see non-loaned after HintRange() for all the tries.
         let try_count = 30;
         for _try_ordinal in 0..try_count {
             let _enable_loaning = ScopedLoaningEnabled::new(true);
@@ -44,6 +44,18 @@ mod vmo_rs {
             let offset = 0;
             let cow_pages = vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages");
             assert_ok!(cow_pages.replace_page_with_loaned(before_page, offset));
+            // The call to ReplacePageWithLoaned may loan vmo's page to a VMO that's
+            // not contiguous_vmo. So, it might get called back, and the rest of the
+            // test must tolerate the vmo's page becoming unloaned at any time.
+
+            // Hint that the page is always needed.
+            assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+
+            // If the page was still loaned, it will be replaced with a non-loaned page now.
+            let page =
+                vmo.debug_get_page(0).expect("vmo should have a page at offset 0 after hint_range");
+
+            assert_false!(unsafe { page.is_loaned() });
         }
     }
 }

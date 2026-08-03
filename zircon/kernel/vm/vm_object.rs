@@ -11,6 +11,8 @@ use kalloc::AllocError;
 use vm_object_bindings as bindings;
 use zx_status::Status;
 
+pub use bindings::VmObject_EvictionHint as EvictionHint;
+
 /// The base vm object that holds a range of bytes of data
 ///
 /// Can be created without mapping and used as a container of data, or mappable
@@ -112,6 +114,13 @@ impl VmObject {
         unsafe {
             bindings::cpp_vm_object_unpin(self.as_raw(), offset, len);
         }
+    }
+
+    /// Provide an eviction hint for a range of pages.
+    pub fn hint_range(&self, offset: u64, len: u64, hint: EvictionHint) -> Result<(), Status> {
+        let status =
+            unsafe { bindings::cpp_vm_object_hint_range(self.as_raw(), offset, len, hint) };
+        Status::ok(status)
     }
 }
 

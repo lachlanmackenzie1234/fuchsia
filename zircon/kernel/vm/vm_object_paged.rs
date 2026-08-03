@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::page::VmPagePtr;
 use super::vm_cow_pages::VmCowPages;
 use super::vm_object::VmObject;
 use core::marker::PhantomPinned;
@@ -72,6 +73,12 @@ impl VmObjectPaged {
     pub fn debug_get_cow_pages(&self) -> Option<RefPtr<VmCowPages>> {
         let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_cow_pages(self.as_raw()) };
         unsafe { VmCowPages::from_raw(raw) }
+    }
+
+    /// Debug helper to fetch backing page pointer.
+    pub fn debug_get_page(&self, offset: u64) -> Option<VmPagePtr> {
+        let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_page(self.as_raw(), offset) };
+        unsafe { VmPagePtr::from_raw(raw) }
     }
 }
 

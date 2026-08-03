@@ -19,6 +19,8 @@ __BEGIN_CDECLS
 void* cpp_vm_object_get_ref_counted(const VmObject* vmo);
 void cpp_vm_object_free(VmObject* vmo);
 zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64_t offset, uint64_t len);
+zx_status_t cpp_vm_object_hint_range(VmObject* vmo, uint64_t offset, uint64_t len,
+                                     VmObject::EvictionHint hint);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint64_t cpp_vm_object_size(const VmObject* vmo);

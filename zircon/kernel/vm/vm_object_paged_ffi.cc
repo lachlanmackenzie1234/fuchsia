@@ -39,4 +39,11 @@ VmCowPages* cpp_vm_object_paged_debug_get_cow_pages(VmObjectPaged* vmo) {
   return fbl::ExportToRawPtr(&cow);
 }
 
+void* cpp_vm_object_paged_debug_get_page(VmObjectPaged* vmo, uint64_t offset) {
+  if (!vmo) {
+    return nullptr;
+  }
+  return vmo->DebugGetPage(offset);
+}
+
 }  // extern "C"

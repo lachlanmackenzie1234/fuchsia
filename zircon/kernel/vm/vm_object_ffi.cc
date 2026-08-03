@@ -63,4 +63,12 @@ FFI_ALWAYS_INLINE void cpp_vm_object_unpin(VmObject* vmo, uint64_t offset, uint6
   vmo->Unpin(offset, len);
 }
 
+zx_status_t cpp_vm_object_hint_range(VmObject* vmo, uint64_t offset, uint64_t len,
+                                     VmObject::EvictionHint hint) {
+  if (!vmo) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return vmo->HintRange(offset, len, hint);
+}
+
 }  // extern "C"
