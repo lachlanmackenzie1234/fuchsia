@@ -7,6 +7,7 @@ package targets
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -313,7 +314,7 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 					break
 				}
 			} else if os.Getenv("FUCHSIA_DEVICE_TYPE") == "Iris" {
-				if err = t.irisFlash(bootCtx, pbPath); err == nil {
+				if err = t.irisFlash(bootCtx, pbPath, authorizedKeys); err == nil {
 					// If successful, early exit.
 					break
 				}
@@ -522,7 +523,7 @@ func GetFastbootFlashImages(pbPath string) (map[string]string, error) {
 	}, nil
 }
 
-func (t *Device) irisFlash(ctx context.Context, pbPath string) error {
+func (t *Device) irisFlash(ctx context.Context, pbPath string, authorizedKeys []byte) error {
 	fastbootPath, err := t.findFastboot()
 	if err != nil {
 		return err
@@ -574,9 +575,39 @@ func (t *Device) irisFlash(ctx context.Context, pbPath string) error {
 		return err
 	}
 
+	if len(authorizedKeys) > 0 {
+		stageCmds := irisAuthorizedKeysCmds(authorizedKeys)
+		if err := t.bulkRunFastboot(ctx, fastbootPath, stageCmds); err != nil {
+			return fmt.Errorf("failed to stage authorized keys: %w", err)
+		}
+	}
+
 	if err := t.bulkRunFastboot(ctx, fastbootPath, [][]string{{"reboot"}}); err != nil {
 		logger.Errorf(ctx, "reboot failed: %s", err)
 	}
 	logger.Debugf(ctx, "done flashing")
 	return nil
+}
+
+func irisAuthorizedKeysCmds(authorizedKeys []byte) [][]string {
+	if len(authorizedKeys) == 0 {
+		return nil
+	}
+	encodedKeys := base64.StdEncoding.EncodeToString(authorizedKeys)
+	const prefix = "oem cmdline add iris.ssh_creds="
+	const maxCmdLen = 64
+	maxChunkSize := maxCmdLen - len(prefix)
+
+	stageCmds := [][]string{
+		{"oem", "cmdline", "set"},
+	}
+	for i := 0; i < len(encodedKeys); i += maxChunkSize {
+		end := i + maxChunkSize
+		if end > len(encodedKeys) {
+			end = len(encodedKeys)
+		}
+		chunk := encodedKeys[i:end]
+		stageCmds = append(stageCmds, []string{"oem", "cmdline", "add", fmt.Sprintf("iris.ssh_creds=%s", chunk)})
+	}
+	return stageCmds
 }
