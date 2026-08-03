@@ -1,9 +1,7 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
 """Unit tests for the result_formatter module."""
-
 import unittest
 from typing import Any
 
@@ -74,6 +72,38 @@ class ResultFormatterTest(unittest.TestCase):
             with self.subTest(format=fmt_name):
                 formatter = FORMATTERS[fmt_name]
                 output = formatter.format_results(data)
+                self.assertEqual(output.strip(), expected.strip())
+
+    def test_format_results_batch(self) -> None:
+        """Tests format_results with batch data."""
+        batch_data: list[dict[str, Any]] = [
+            {
+                "name": "Query 1",
+                "results": [{"col1": "val1"}],
+            },
+            {
+                "name": "Query 2",
+                "error": "Some error occurred",
+            },
+        ]
+        test_cases: list[tuple[str, str]] = [
+            (
+                "json",
+                '[\n  {\n    "name": "Query 1",\n    "results": [\n      {\n        "col1": "val1"\n      }\n    ]\n  },\n  {\n    "name": "Query 2",\n    "error": "Some error occurred"\n  }\n]',
+            ),
+            (
+                "markdown",
+                "### Query 1\n| col1 |\n| --- |\n| val1 |\n\n### Query 2\nError: Some error occurred",
+            ),
+            (
+                "text",
+                "Query: Query 1\ncol1\nval1\n\nQuery: Query 2\nError: Some error occurred",
+            ),
+        ]
+        for fmt_name, expected in test_cases:
+            with self.subTest(format=fmt_name):
+                formatter = FORMATTERS[fmt_name]
+                output = formatter.format_results(batch_data)
                 self.assertEqual(output.strip(), expected.strip())
 
     def test_format_error(self) -> None:

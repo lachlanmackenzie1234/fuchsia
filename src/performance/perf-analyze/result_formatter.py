@@ -33,10 +33,34 @@ class JsonFormatter(Formatter):
         return json.dumps({"error": error_msg}, indent=2)
 
 
+def _is_batch(data: list[dict[str, Any]]) -> bool:
+    """Checks if the data represents batch query/analysis results."""
+    return bool(
+        data
+        and all(
+            isinstance(x, dict)
+            and "name" in x
+            and ("results" in x or "error" in x)
+            for x in data
+        )
+    )
+
+
 class MarkdownFormatter(Formatter):
     """Formats results and errors as Markdown."""
 
     def format_results(self, data: list[dict[str, Any]]) -> str:
+        if _is_batch(data):
+            output = []
+            for item in data:
+                output.append(f"### {item['name']}")
+                if "error" in item:
+                    output.append(f"Error: {item['error']}")
+                else:
+                    results = item.get("results", [])
+                    output.append(_table_to_markdown(results))
+                output.append("")
+            return "\n".join(output).strip()
         return _table_to_markdown(data)
 
     def format_error(self, error_msg: str) -> str:
@@ -47,6 +71,17 @@ class TextFormatter(Formatter):
     """Formats results and errors as plain text (TSV)."""
 
     def format_results(self, data: list[dict[str, Any]]) -> str:
+        if _is_batch(data):
+            output = []
+            for item in data:
+                output.append(f"Query: {item['name']}")
+                if "error" in item:
+                    output.append(f"Error: {item['error']}")
+                else:
+                    results = item.get("results", [])
+                    output.append(_table_to_text(results))
+                output.append("")
+            return "\n".join(output).strip()
         return _table_to_text(data)
 
     def format_error(self, error_msg: str) -> str:
