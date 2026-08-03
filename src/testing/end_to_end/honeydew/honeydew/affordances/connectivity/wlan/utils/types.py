@@ -279,29 +279,6 @@ class WlanBand(enum.StrEnum):
 
 
 @dataclass(frozen=True)
-class WlanChannel:
-    """Wlan channel information."""
-
-    number: int
-    band: WlanBand
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_ieee80211.ChannelNumber) -> "WlanChannel":
-        """Parse from a fuchsia.wlan.ieee80211/ChannelNumber."""
-        return WlanChannel(
-            number=fidl.number,
-            band=WlanBand.from_fidl(f_wlan_ieee80211.WlanBand(fidl.band)),
-        )
-
-    def to_fidl(self) -> f_wlan_ieee80211.ChannelNumber:
-        """Convert to a fuchsia.wlan.ieee80211/ChannelNumber."""
-        return f_wlan_ieee80211.ChannelNumber(
-            number=self.number,
-            band=self.band.to_fidl(),
-        )
-
-
-@dataclass(frozen=True)
 class WlanInterfaces:
     """WLAN interfaces separated by device type and keyed by MAC address."""
 
