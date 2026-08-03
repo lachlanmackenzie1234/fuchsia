@@ -6,28 +6,32 @@
 //! connecting to the bt-gap component and vendor drivers and initializing and running the
 //! Bluetooth Host.
 
+mod vendor;
+
 use core::pin::pin;
-use fidl::endpoints::Proxy;
 use fidl_fuchsia_bluetooth as bt;
 use fidl_fuchsia_bluetooth_host as fidl_host;
 use fidl_fuchsia_bluetooth_sys as sys;
-use fidl_fuchsia_hardware_bluetooth as hardware;
 use fuchsia_async as _;
 use futures_util::future::FutureExt as _;
 use futures_util::select_biased;
 use futures_util::stream::StreamExt as _;
 use tracing::{info, warn};
 
+use crate::vendor::Vendor;
+
 #[fuchsia::main]
 async fn main() {
     let config = bt_host_config::Config::take_from_startup_handle();
     info!("Starting Rust bt-host (device_path={})", config.device_path);
 
-    let (dev_proxy, server_end) = fidl::endpoints::create_proxy::<hardware::VendorMarker>();
-    if let Err(e) = fdio::service_connect(&config.device_path, server_end.into_channel()) {
-        warn!("Failed to connect to Vendor protocol at {}: {e:?}", config.device_path);
-        return;
-    }
+    let vendor = match Vendor::connect(&config.device_path).await {
+        Ok(vendor) => vendor,
+        Err(e) => {
+            warn!("Failed to connect to Vendor protocol at {}: {e:?}", config.device_path);
+            return;
+        }
+    };
 
     // Connect to fuchsia.bluetooth.host.Receiver
     let receiver =
@@ -62,8 +66,8 @@ async fn main() {
         ..Default::default()
     };
 
-    let dev_closed = async move {
-        let _ = dev_proxy.on_closed().await;
+    let dev_closed = async {
+        vendor.on_closed().await;
     }
     .fuse();
     let mut dev_closed = pin!(dev_closed);
