@@ -13,7 +13,7 @@
     <project name="third_party/pylibs/annotated_types"
         path="third_party/pylibs/annotated_types/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/annotated-types/annotated-types"
-        revision="0735cd3d4c272b88405b6b04009716b691115210"
+        revision="9eb96680138269811a39d838d720abc3dce33954"
         gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- astroid-4.0.4 -->
     <project name="third_party/pylibs/astroid"

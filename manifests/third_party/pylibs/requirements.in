@@ -16,7 +16,7 @@ platformdirs==4.1.0 # github.com/platformdirs/platformdirs
 pyflakes # github.com/PyCQA/pyflakes
 tomlkit # github.com/sdispater/tomlkit
 typing_extensions # github.com/python/typing_extensions
-annotated_types # github.com/annotated-types/annotated-types
+annotated_types==0.8.0 # github.com/annotated-types/annotated-types
 typing_inspection # github.com/pydantic/typing-inspection
 # pydantic_core is vendored in as a prebuilt wheel due to its binary module extension. See
 # //tools/build/scripts/extract_pydantic_core_wheel.sh for how this is extracted and integrated to

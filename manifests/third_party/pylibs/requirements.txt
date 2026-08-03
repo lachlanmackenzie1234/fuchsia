@@ -6,7 +6,7 @@
 #
 --index-url https://us-python.pkg.dev/artifact-foundry-prod/ah-3p-staging-python/simple/
 
-annotated-types==0.7.0
+annotated-types==0.8.0
     # via
     #   -r requirements.in
     #   pydantic
