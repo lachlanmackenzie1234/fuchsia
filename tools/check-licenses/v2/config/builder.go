@@ -211,13 +211,14 @@ func (b *Builder) addRuleException(targetMap map[string]map[string]RuleMetadata,
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
 		for _, allowedPath := range entry.Paths {
+			cleanPath := normalizeProjectPath(allowedPath)
 			meta := RuleMetadata{
 				Bug:         entry.Bug,
 				Description: entry.Description,
 				ConfigPath:  path,
 			}
-			targetMap[key][allowedPath] = meta
-			validateMap[key][allowedPath] = meta
+			targetMap[key][cleanPath] = meta
+			validateMap[key][cleanPath] = meta
 		}
 	}
 	return nil
@@ -307,4 +308,14 @@ func (b *Builder) LoadManifests() error {
 	}
 
 	return nil
+}
+
+func normalizeProjectPath(p string) string {
+	cleanPath := strings.TrimPrefix(p, "//")
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
+	cleanPath = filepath.Clean(cleanPath)
+	if cleanPath == "." {
+		cleanPath = ""
+	}
+	return cleanPath
 }
