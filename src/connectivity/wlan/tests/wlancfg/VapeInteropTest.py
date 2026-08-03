@@ -733,6 +733,7 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ),
                 ssid=self.ssid,
                 security=SecurityWpa2(),
+                password=self.password,
             )
             self.openwrt_ap.configure_wifi(config)
         else:
