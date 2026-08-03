@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(to_status(anyhow!("expected test error")), Status::INTERNAL);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_installation_paths() {
         let deps = Dependencies::test();
         let fake_devices = (deps.get_block_devices)().await.unwrap();
@@ -343,7 +343,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_installation_paths_request_source() {
         let deps = Dependencies::test();
         let fake_devices = (deps.get_block_devices)().await.unwrap();
@@ -363,7 +363,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_installation_paths_request_target() {
         let deps = Dependencies::test();
         let fake_devices = (deps.get_block_devices)().await.unwrap();
@@ -383,7 +383,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_installation_paths_request_both() {
         let deps = Dependencies::test_3_disks();
         let fake_devices = (deps.get_block_devices)().await.unwrap();
@@ -409,7 +409,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_installation_paths_ambiguous_target() {
         let deps = Dependencies::test_3_disks();
         let fake_devices = (deps.get_block_devices)().await.unwrap();
@@ -421,7 +421,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_install_from_usb() {
         let deps = Dependencies::test();
 
