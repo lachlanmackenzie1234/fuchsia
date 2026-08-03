@@ -464,10 +464,7 @@
         {
             directory: "root-ssl-certificates",
             from: "parent",
-            to: [
-                "#network",
-                "#timekeeper",
-            ],
+            to: [ "#network" ],
         },
         {
             directory: "google-root-ssl-certificates",
@@ -478,7 +475,10 @@
             directory: "google-root-ssl-certificates",
             from: "parent",
             as: "root-ssl-certificates",
-            to: [ "#cobalt" ],
+            to: [
+                "#cobalt",
+                "#timekeeper",
+            ],
         },
         {
             directory: "config-data",
