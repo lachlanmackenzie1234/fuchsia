@@ -6,7 +6,7 @@ use super::util::*;
 use crate::FONTS_SMALL_CM;
 
 // Add new tests here so we don't overload component manager with requests (58150)
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_typefaces_by_family() {
     let factory = ProviderFactory::new();
     test_get_typefaces_by_family_basic(&factory).await.unwrap();

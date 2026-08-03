@@ -9,6 +9,8 @@ use super::typeface::{Typeface, TypefaceCollectionBuilder, TypefaceError, Typefa
 use super::{FontService, debug};
 use anyhow::{Error, format_err};
 use font_info::FontInfoLoaderImpl;
+use fuchsia_inspect as finspect;
+use fuchsia_trace as trace;
 use lru_cache::LruCache;
 use manifest::{FontManifestWrapper, FontsManifest, v2};
 use std::cell::RefCell;
@@ -18,7 +20,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
 use unicase::UniCase;
-use {fuchsia_inspect as finspect, fuchsia_trace as trace};
 
 const LOG_CACHE_SIZE_ELEMENTS: usize = 10;
 
@@ -471,7 +472,7 @@ mod tests {
     use maplit::{btreemap, btreeset};
     use pretty_assertions::assert_eq;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_overlapping_manifests() -> Result<(), Error> {
         let inspector = finspect::Inspector::default();
         let mut builder = FontServiceBuilder::with_default_asset_loader(5000, inspector.root());
@@ -636,7 +637,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty_manifest() -> Result<(), Error> {
         let inspector = finspect::Inspector::default();
         let manifest = FontManifestWrapper::Version2(v2::FontsManifest::empty());

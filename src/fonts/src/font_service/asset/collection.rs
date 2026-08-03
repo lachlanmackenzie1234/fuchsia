@@ -6,6 +6,8 @@ use super::cache::Cache;
 use super::{Asset, AssetId, AssetLoader};
 use anyhow::Error;
 use fidl_fuchsia_fonts::CacheMissPolicy;
+use fidl_fuchsia_io as io;
+use fidl_fuchsia_mem as mem;
 use fuchsia_inspect::{self as finspect, Property};
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::join;
@@ -15,7 +17,6 @@ use std::collections::BTreeMap;
 use std::hash::Hash;
 use std::path::PathBuf;
 use thiserror::Error;
-use {fidl_fuchsia_io as io, fidl_fuchsia_mem as mem};
 
 /// A complete asset location, including the file name. (`AssetLocation` only includes the
 /// directory or package.)
@@ -428,7 +429,6 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async as fasync;
     use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
     use std::path::Path;
 
@@ -436,7 +436,7 @@ mod tests {
         mem::Buffer { vmo: zx::Vmo::create(vmo_size).unwrap(), size: buffer_size }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() -> Result<(), Error> {
         struct FakeAssetLoader {}
 

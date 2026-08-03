@@ -8,7 +8,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 
 // Add new tests here so we don't overload component manager with requests (58150)
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_font_family_info() {
     let factory = ProviderFactory::new();
     test_get_font_family_info_basic(&factory).await.unwrap();
