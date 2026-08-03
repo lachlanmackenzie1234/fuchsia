@@ -4,8 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::vm_address_region_dispatcher_ffi::cpp_vmar_dispatcher_set_memory_priority;
+use super::handle::KernelHandle;
+use super::vm_address_region_dispatcher_ffi::{
+    cpp_vmar_dispatcher_allocate, cpp_vmar_dispatcher_map, cpp_vmar_dispatcher_set_memory_priority,
+};
+use crate::vm::vm_object::VmObject;
 use zx_status::Status;
+use zx_types::zx_rights_t;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,9 +28,55 @@ impl VmAddressRegionDispatcher {
     /// Sets memory priority for this VMAR dispatcher.
     pub fn set_memory_priority(&self, priority: MemoryPriority) -> Result<(), Status> {
         // SAFETY: `self` is a valid `VmAddressRegionDispatcher` reference.
-        let status = unsafe {
-            cpp_vmar_dispatcher_set_memory_priority(self as *const _ as *mut _, priority as u32)
-        };
+        let status = unsafe { cpp_vmar_dispatcher_set_memory_priority(self, priority as u32) };
         Status::ok(status)
+    }
+
+    /// Allocates a sub-VMAR within this VMAR.
+    pub fn allocate(
+        &self,
+        offset: usize,
+        size: usize,
+        flags: u32,
+    ) -> Result<(KernelHandle<VmAddressRegionDispatcher>, zx_rights_t), Status> {
+        let mut handle_out =
+            core::mem::MaybeUninit::<KernelHandle<VmAddressRegionDispatcher>>::uninit();
+        let mut rights_out = 0;
+        // SAFETY: `self` is a valid `VmAddressRegionDispatcher` reference.
+        // `handle_out` and `rights_out` point to valid writable stack memory.
+        let status = unsafe {
+            cpp_vmar_dispatcher_allocate(
+                self,
+                offset,
+                size,
+                flags,
+                handle_out.as_mut_ptr(),
+                &mut rights_out,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: `cpp_vmar_dispatcher_allocate` initialized `handle_out` on success.
+        let handle = unsafe { handle_out.assume_init() };
+        Ok((handle, rights_out))
+    }
+
+    /// Maps a VMO into this VMAR.
+    pub fn map(
+        &self,
+        vmar_offset: usize,
+        vmo: &VmObject,
+        vmo_offset: u64,
+        len: usize,
+        flags: u32,
+    ) -> Result<usize, Status> {
+        let mut out_base = 0;
+        // SAFETY: `self` is a valid `VmAddressRegionDispatcher` reference.
+        // `vmo` is a valid `VmObject` reference.
+        // `out_base` points to valid writable stack memory.
+        let status = unsafe {
+            cpp_vmar_dispatcher_map(self, vmar_offset, vmo, vmo_offset, len, flags, &mut out_base)
+        };
+        Status::ok(status)?;
+        Ok(out_base)
     }
 }

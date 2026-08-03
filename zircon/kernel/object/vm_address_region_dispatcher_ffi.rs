@@ -4,8 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::handle::KernelHandle;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
-use zx_types::zx_status_t;
+use crate::vm::vm_object::VmObject;
+use zx_types::{zx_rights_t, zx_status_t, zx_vaddr_t};
 
 unsafe extern "C" {
     /// Calls into C++ implementation to set the memory priority of a VMAR.
@@ -15,7 +17,39 @@ unsafe extern "C" {
     /// `vmar` must point to a valid `VmAddressRegionDispatcher`.
     /// `priority` is the memory priority to set.
     pub fn cpp_vmar_dispatcher_set_memory_priority(
-        vmar: *mut VmAddressRegionDispatcher,
+        vmar: &VmAddressRegionDispatcher,
         priority: u32,
+    ) -> zx_status_t;
+
+    /// Calls into C++ implementation to allocate a sub-VMAR.
+    ///
+    /// # Safety
+    ///
+    /// `vmar` must point to a valid `VmAddressRegionDispatcher`.
+    /// `handle_out` and `rights_out` must point to valid writable stack memory.
+    pub fn cpp_vmar_dispatcher_allocate(
+        vmar: &VmAddressRegionDispatcher,
+        offset: usize,
+        size: usize,
+        flags: u32,
+        handle_out: *mut KernelHandle<VmAddressRegionDispatcher>,
+        rights_out: *mut zx_rights_t,
+    ) -> zx_status_t;
+
+    /// Calls into C++ implementation to map a VMO into a VMAR.
+    ///
+    /// # Safety
+    ///
+    /// `vmar` must point to a valid `VmAddressRegionDispatcher`.
+    /// `vmo` must point to a valid `VmObject`.
+    /// `out_base` must point to a valid writable `zx_vaddr_t`.
+    pub fn cpp_vmar_dispatcher_map(
+        vmar: &VmAddressRegionDispatcher,
+        vmar_offset: usize,
+        vmo: &VmObject,
+        vmo_offset: u64,
+        len: usize,
+        flags: u32,
+        out_base: *mut zx_vaddr_t,
     ) -> zx_status_t;
 }
