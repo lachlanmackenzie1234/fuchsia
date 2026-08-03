@@ -348,7 +348,7 @@ mod tests {
     /// > NOTE: The `device_descriptor` used in this test case and elsewhere
     /// *must* be of type `KeyboardDeviceDescriptor` as this is required by the
     /// pattern matching in `ImeHandler`.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn pressed_key() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -390,7 +390,7 @@ mod tests {
     }
 
     /// Tests that a released key event is dispatched.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn released_key() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -431,7 +431,7 @@ mod tests {
     }
 
     /// Tests that both pressed and released keys are dispatched appropriately.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn pressed_and_released_key() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -529,7 +529,7 @@ mod tests {
     // This test depends on the incoming event having correct modifier and lock
     // state.  Typically you'd do this by installing a ModifierHandler upstream
     // of this pipeline stage.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn repeated_modifier_key() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -619,7 +619,7 @@ mod tests {
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn nonprintable_key_meanings_set_correctly() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -706,7 +706,7 @@ mod tests {
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn tab() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -752,7 +752,7 @@ mod tests {
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn shift_shift_a() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -835,7 +835,7 @@ mod tests {
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn ctrl_tab() {
         let (proxy, request_stream) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -899,7 +899,7 @@ mod tests {
         assert_ime_receives_events(expected_events, request_stream).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn ime_handler_initialized_with_inspect_node() {
         let (proxy, _) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -925,7 +925,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn ime_handler_inspect_counts_events() {
         let (proxy, _) = connect_to_key_event_injector();
         let inspector = fuchsia_inspect::Inspector::default();

@@ -5,14 +5,14 @@
 #![cfg(test)]
 
 use anyhow::{Context as _, Result};
+use fidl_fuchsia_input as input;
+use fidl_fuchsia_ui_input as ui_input;
+use fidl_fuchsia_ui_input3 as ui_input3;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::TryStreamExt;
 use keymaps::usages::Usages;
 use test_helpers::{bind_editor, get_state_update, simulate_keypress};
-use {
-    fidl_fuchsia_input as input, fidl_fuchsia_ui_input as ui_input,
-    fidl_fuchsia_ui_input3 as ui_input3, fuchsia_async as fasync,
-};
 
 /// Connects to a service that provides key injection.
 fn connect_to_key_event_service() -> Result<ui_input3::KeyEventInjectorProxy> {
@@ -34,7 +34,7 @@ async fn wait_for_editor_binding() {
     fasync::Timer::new(fasync::MonotonicInstant::after(DELAY)).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_input_updates_ime_state() -> Result<()> {
     let ime_service = connect_to_ime_service()?;
     let key_event_service = connect_to_key_event_service()?;
@@ -94,7 +94,7 @@ async fn test_input_updates_ime_state() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_input_triggers_action() -> Result<()> {
     let ime_service = connect_to_ime_service()?;
     let key_event_service = connect_to_key_event_service()?;

@@ -186,9 +186,8 @@ impl SensorControl for Sensor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_open_sensor_error() {
         let sensor = Sensor { proxy: None };
         if let Some(ambient_light_input_rpt) = sensor.read().await.unwrap() {

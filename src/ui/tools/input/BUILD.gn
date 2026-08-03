@@ -9,7 +9,7 @@ rustc_binary("input") {
   version = "0.1.0"
   edition = "2024"
   deps = [
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/ui/input-synthesis",
     "//third_party/rust_crates:clap",
   ]

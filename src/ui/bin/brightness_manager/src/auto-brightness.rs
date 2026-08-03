@@ -121,7 +121,6 @@ mod tests {
     use anyhow::Error;
     use async_trait::async_trait;
     use fidl_fuchsia_hardware_light::{Capability, Info, LightError};
-    use fuchsia_async::{self as fasync};
     use futures::lock::Mutex;
     use lib::backlight::BacklightControl;
     use lib::sensor::{AmbientLightInputRpt, SensorControl};
@@ -219,7 +218,7 @@ mod tests {
         .expect("a MonotonicDuration")
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn auto_brightness_large_sleep_test() {
         let mut devices = setup(0.0 * LIGHT_FACTOR, 0.0);
 
@@ -227,7 +226,7 @@ mod tests {
         assert_eq!(sleep_time.into_millis(), 500);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn auto_brightness_small_sleep_test() {
         let mut devices = setup(0.5 * LIGHT_FACTOR, 0.0);
 
@@ -244,22 +243,22 @@ mod tests {
         assert!((step_size - expected_step_size).abs() < 0.000001);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn auto_brightness_step_size1_test() {
         auto_brightness_step_size_test(0.6, 0.05).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn auto_brightness_step_size2_test() {
         auto_brightness_step_size_test(0.4, 0.01).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn auto_brightness_step_size3_test() {
         auto_brightness_step_size_test(0.2, 0.005).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn auto_brightness_step_size4_test() {
         auto_brightness_step_size_test(0.01, 0.001).await;
     }

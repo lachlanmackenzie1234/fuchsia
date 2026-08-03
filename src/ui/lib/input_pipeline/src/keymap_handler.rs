@@ -159,7 +159,6 @@ mod tests {
     use crate::{consumer_controls_binding, testing_utilities};
     use fidl_fuchsia_input as finput;
     use fidl_fuchsia_ui_input3 as finput3;
-    use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
     use std::convert::TryFrom as _;
     use zx;
@@ -216,7 +215,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_keymap_application() {
         // Not using test_case crate because it does not compose very well with
         // async test execution.
@@ -329,7 +328,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn keymap_handler_inspect_counts_events() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");

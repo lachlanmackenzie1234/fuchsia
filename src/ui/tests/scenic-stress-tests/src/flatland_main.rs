@@ -13,7 +13,6 @@ mod pointer_state;
 use argh::FromArgs;
 use diagnostics_log::Severity;
 use flatland_environment::FlatlandEnvironment;
-use fuchsia_async as fasync;
 use stress_test::run_test;
 
 #[derive(Clone, Debug, FromArgs)]
@@ -37,7 +36,7 @@ pub struct Args {
     nocapture: bool,
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test(logging = false)]
 async fn test() {
     // Get arguments from command line
     let args: Args = argh::from_env();

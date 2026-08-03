@@ -376,12 +376,11 @@ fn send_consumer_controls_event(
 mod tests {
     use super::*;
     use crate::testing_utilities;
-    use fuchsia_async as fasync;
     use futures::StreamExt;
 
     // Tests that an InputReport containing one consumer control button generates an InputEvent
     // containing the same consumer control button.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn volume_up_only() {
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
         let pressed_buttons = vec![ConsumerControlButton::VolumeUp];
@@ -408,7 +407,7 @@ mod tests {
 
     // Tests that an InputReport containing two consumer control buttons generates an InputEvent
     // containing both consumer control buttons.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn volume_up_and_down() {
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
         let pressed_buttons =
@@ -436,7 +435,7 @@ mod tests {
 
     // Tests that three InputReports containing one consumer control button generates three
     // InputEvents containing the same consumer control button.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn sequence_of_buttons() {
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
         let first_report = testing_utilities::create_consumer_control_input_report(

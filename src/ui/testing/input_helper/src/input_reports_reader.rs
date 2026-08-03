@@ -86,7 +86,7 @@ mod tests {
         use futures::pin_mut;
         use futures::task::Poll;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn serves_single_report() -> Result<(), Error> {
             let (proxy, request_stream) =
                 endpoints::create_proxy_and_stream::<InputReportsReaderMarker>();
@@ -109,7 +109,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn serves_max_report_count_reports() -> Result<(), Error> {
             let max_reports = usize::try_from(MAX_DEVICE_REPORT_COUNT)
                 .context("internal error converting MAX_DEVICE_REPORT_COUNT to usize")?;
@@ -192,7 +192,7 @@ mod tests {
         use super::*;
         use assert_matches::assert_matches;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn resolves_to_ok_when_all_reports_are_written() -> Result<(), Error> {
             let (proxy, request_stream) =
                 endpoints::create_proxy_and_stream::<InputReportsReaderMarker>();
@@ -208,7 +208,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn resolves_to_err_when_request_stream_is_terminated_before_reports_are_written()
         -> Result<(), Error> {
             let (proxy, request_stream) =
@@ -224,7 +224,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn resolves_to_err_if_request_stream_yields_error() -> Result<(), Error> {
             let (client_end, request_stream) =
                 endpoints::create_request_stream::<InputReportsReaderMarker>();
@@ -244,7 +244,7 @@ mod tests {
         }
 
         /* TODO(https://fxbug.dev/42075735): Re-enable this test
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn resolves_to_err_if_send_fails() -> Result<(), Error> {
             let (proxy, request_stream) =
                 endpoints::create_proxy_and_stream::<InputReportsReaderMarker>();
@@ -261,7 +261,7 @@ mod tests {
         }
         */
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn immediately_resolves_to_ok_when_reports_is_initially_empty() -> Result<(), Error> {
             let (_proxy, request_stream) =
                 endpoints::create_proxy_and_stream::<InputReportsReaderMarker>();
@@ -307,7 +307,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn preserves_query_order() -> Result<(), Error> {
             let max_reports = usize::try_from(MAX_DEVICE_REPORT_COUNT)
                 .context("internal error converting MAX_DEVICE_REPORT_COUNT to usize")?;
@@ -342,7 +342,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn preserves_report_order() -> Result<(), Error> {
         let (proxy, request_stream) =
             endpoints::create_proxy_and_stream::<InputReportsReaderMarker>();

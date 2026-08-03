@@ -62,7 +62,7 @@ mod test {
     use fidl_fuchsia_hardware_light::{Capability, LightRequest};
     use futures::{StreamExt, future};
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_num_lights() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<LightMarker>();
         let mut led = Led { proxy };
@@ -82,7 +82,7 @@ mod test {
         future::join(fut, stream_fut).await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_info_test() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<LightMarker>();
         let led = Led { proxy };
@@ -107,7 +107,7 @@ mod test {
         future::join(fut, stream_fut).await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn set_brightness() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<LightMarker>();
         let mut led = Led { proxy };

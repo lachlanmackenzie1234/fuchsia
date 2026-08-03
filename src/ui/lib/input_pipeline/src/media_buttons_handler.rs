@@ -394,7 +394,7 @@ mod tests {
 
     /// Tests that a media button listener can be registered and is sent the latest event upon
     /// registration.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn register_media_buttons_listener() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
@@ -452,7 +452,7 @@ mod tests {
     }
 
     /// Tests that all supported buttons are sent.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn listener_receives_all_buttons() {
         let event_time = zx::MonotonicInstant::get();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -507,7 +507,7 @@ mod tests {
     }
 
     /// Tests that multiple listeners are supported.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn multiple_listeners_receive_event() {
         let event_time = zx::MonotonicInstant::get();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -660,7 +660,7 @@ mod tests {
     }
 
     /// Tests that handle_input_event returns even if reader gets stuck while sending event to listener
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stuck_reader_wont_block_input_pipeline() {
         let event_time = zx::MonotonicInstant::get();
         let inspector = fuchsia_inspect::Inspector::default();
@@ -869,7 +869,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn media_buttons_handler_initialized_with_inspect_node() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
@@ -892,7 +892,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn media_buttons_handler_inspect_counts_events() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
@@ -965,7 +965,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn clone_event_with_lease_duplicates_lease() {
         let (event_pair, _) = fidl::EventPair::create();
         let event_with_lease = fidl_ui_input::MediaButtonsEvent {
@@ -1002,7 +1002,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn clone_event_without_lease_has_no_lease() {
         // Test cloning an event that does not have a wake lease.
         let event_without_lease = fidl_ui_input::MediaButtonsEvent {
@@ -1028,7 +1028,7 @@ mod tests {
         assert!(cloned_event.wake_lease.is_none());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn clone_event_sets_trace_flow_id() {
         let event = fidl_ui_input::MediaButtonsEvent { volume: Some(1), ..Default::default() };
 

@@ -5,16 +5,16 @@
 #![cfg(test)]
 
 use anyhow::{Context as _, Error};
-use fuchsia_async::{self as fasync};
+use fidl_fuchsia_input as input;
+use fidl_fuchsia_ui_input as ui_input;
 use fuchsia_component::client::connect_to_protocol;
-use {fidl_fuchsia_input as input, fidl_fuchsia_ui_input as ui_input};
 
 use test_helpers::{
     bind_editor, default_state, get_action, get_state_update, measure_utf16, setup_ime,
     simulate_ime_keypress, simulate_ime_keypress_with_held_keys,
 };
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_backward_empty_string() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -38,7 +38,7 @@ async fn test_delete_backward_empty_string() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_forward_empty_string() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -62,7 +62,7 @@ async fn test_delete_forward_empty_string() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_backward_beginning_string() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -80,7 +80,7 @@ async fn test_delete_backward_beginning_string() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_forward_beginning_string() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -98,7 +98,7 @@ async fn test_delete_forward_beginning_string() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_backward_first_char_selected() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -116,7 +116,7 @@ async fn test_delete_backward_first_char_selected() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_forward_last_char_selected() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -134,7 +134,7 @@ async fn test_delete_forward_last_char_selected() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_backward_end_string() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -152,7 +152,7 @@ async fn test_delete_backward_end_string() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_forward_end_string() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -170,7 +170,7 @@ async fn test_delete_forward_end_string() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_backward_combining_diacritic() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -192,7 +192,7 @@ async fn test_delete_backward_combining_diacritic() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_forward_combining_diacritic() -> Result<(), Error> {
     // U+0301: combining acute accent. 2 bytes.
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
@@ -211,7 +211,7 @@ async fn test_delete_forward_combining_diacritic() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_backward_emoji() -> Result<(), Error> {
     // Emoji with a color modifier.
     let text = "abcdefghi👦🏻";
@@ -232,7 +232,7 @@ async fn test_delete_backward_emoji() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_forward_emoji() -> Result<(), Error> {
     // Emoji with a color modifier.
     let text = "abcdefghi👦🏻";
@@ -253,7 +253,7 @@ async fn test_delete_forward_emoji() -> Result<(), Error> {
 }
 
 /// Flags are more complicated because they consist of two REGIONAL INDICATOR SYMBOL LETTERs.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_backward_flag() -> Result<(), Error> {
     // French flag
     let text = "abcdefghi🇫🇷";
@@ -274,7 +274,7 @@ async fn test_delete_backward_flag() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_forward_flag() -> Result<(), Error> {
     // French flag
     let text = "abcdefghi🇫🇷";
@@ -294,7 +294,7 @@ async fn test_delete_forward_flag() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -312,7 +312,7 @@ async fn test_delete_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_selection_inverted() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -330,7 +330,7 @@ async fn test_delete_selection_inverted() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_no_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -348,7 +348,7 @@ async fn test_delete_no_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_with_zero_width_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -366,7 +366,7 @@ async fn test_delete_with_zero_width_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_with_zero_width_selection_at_end() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -384,7 +384,7 @@ async fn test_delete_with_zero_width_selection_at_end() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_delete_selection_out_of_bounds() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -402,7 +402,7 @@ async fn test_delete_selection_out_of_bounds() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_left_on_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -443,7 +443,7 @@ async fn test_cursor_left_on_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_left_on_inverted_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -460,7 +460,7 @@ async fn test_cursor_left_on_inverted_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_right_on_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -500,7 +500,7 @@ async fn test_cursor_right_on_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_word_left_no_words() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -522,7 +522,7 @@ async fn test_cursor_word_left_no_words() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_word_left() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -553,7 +553,7 @@ async fn test_cursor_word_left() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_word_right_no_words() -> Result<(), Error> {
     let text = "¿ - _ - ?";
     let text_len = measure_utf16(text) as i64;
@@ -577,7 +577,7 @@ async fn test_cursor_word_right_no_words() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_word_right() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -619,7 +619,7 @@ async fn test_cursor_word_right() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_word_off_limits() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -670,7 +670,7 @@ async fn test_cursor_word_off_limits() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_cursor_word() -> Result<(), Error> {
     let start_idx = measure_utf16("a.c   2.") as i64;
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
@@ -740,7 +740,7 @@ async fn test_cursor_word() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_type_empty_string() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -765,7 +765,7 @@ async fn test_type_empty_string() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_type_at_beginning() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -790,7 +790,7 @@ async fn test_type_at_beginning() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_type_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -808,7 +808,7 @@ async fn test_type_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_type_inverted_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -826,7 +826,7 @@ async fn test_type_inverted_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_type_invalid_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -844,7 +844,7 @@ async fn test_type_invalid_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_set_state() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -872,7 +872,7 @@ async fn test_set_state() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_action() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -887,7 +887,7 @@ async fn test_action() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_unicode_selection() -> Result<(), Error> {
     let ime_service = connect_to_protocol::<ui_input::ImeServiceMarker>()
         .context("Failed to connect to ImeService")?;
@@ -918,7 +918,7 @@ async fn test_unicode_selection() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_unicode_backspace() -> Result<(), Error> {
     let base: i64 = measure_utf16("m😸") as i64;
 

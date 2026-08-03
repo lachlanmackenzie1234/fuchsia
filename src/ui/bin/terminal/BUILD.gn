@@ -35,6 +35,8 @@ rustc_library("lib") {
     "//third_party/rust_crates:vt100",
   ]
 
+  test_deps = [ "//src/lib/fuchsia" ]
+
   sources = [
     "src/app.rs",
     "src/key_util.rs",

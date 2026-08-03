@@ -9,7 +9,7 @@ larger Rust program. For example, the input pipeline is integrated with [Scene M
 
 The code that deals with the input pipeline must run on a `LocalExecutor`. For
 existing code, this is already true. [SceneManager](/src/ui/bin/scene_manager/README.md)
-uses `fuchsia_async::run_singlethreaded`, so it uses a `LocalExecutor`.
+uses `fuchsia::main`, so it uses a `LocalExecutor`.
 
 ## Alternatives
 

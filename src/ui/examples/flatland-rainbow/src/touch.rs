@@ -173,7 +173,6 @@ mod tests {
     use fidl_fuchsia_ui_pointer::{
         self as fptr, EventPhase, TouchEvent, TouchInteractionId, TouchInteractionStatus,
     };
-    use fuchsia_async as fasync;
     use futures::channel::mpsc::unbounded;
     use futures::{StreamExt, TryStreamExt};
 
@@ -281,7 +280,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_spawn_touch_source_watcher() -> Result<(), anyhow::Error> {
         let (touch_proxy, touch_stream) = create_proxy_and_stream::<fptr::TouchSourceMarker>();
 

@@ -688,7 +688,6 @@ mod tests {
     use diagnostics_assertions::AnyProperty;
     use fidl_fuchsia_input_report as fidl_input_report;
     use fidl_next_fuchsia_input_report::InputReport;
-    use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
     use std::convert::TryFrom as _;
     use test_case::test_case;
@@ -705,7 +704,7 @@ mod tests {
         assert_eq!(event_time, zx::MonotonicInstant::INFINITE_PAST);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn input_device_status_initialized_with_correct_properties() {
         let inspector = fuchsia_inspect::Inspector::default();
         let input_pipeline_node = inspector.root().create_child("input_pipeline");
@@ -765,7 +764,7 @@ mod tests {
 
     // Tests that is_device_type() returns true for InputDeviceType::ConsumerControls when a
     // consumer controls device exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn consumer_controls_input_device_exists() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
@@ -808,7 +807,7 @@ mod tests {
     }
 
     // Tests that is_device_type() returns true for InputDeviceType::Mouse when a mouse exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn mouse_input_device_exists() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
@@ -855,7 +854,7 @@ mod tests {
 
     // Tests that is_device_type() returns true for InputDeviceType::Mouse when a mouse doesn't
     // exist.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn mouse_input_device_doesnt_exist() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
@@ -890,7 +889,7 @@ mod tests {
 
     // Tests that is_device_type() returns true for InputDeviceType::Touch when a touchscreen
     // exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn touch_input_device_exists() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
@@ -934,7 +933,7 @@ mod tests {
 
     // Tests that is_device_type() returns true for InputDeviceType::Touch when a touchscreen
     // exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn touch_input_device_doesnt_exist() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
@@ -969,7 +968,7 @@ mod tests {
 
     // Tests that is_device_type() returns true for InputDeviceType::Keyboard when a keyboard
     // exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn keyboard_input_device_exists() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
@@ -1011,7 +1010,7 @@ mod tests {
 
     // Tests that is_device_type() returns true for InputDeviceType::Keyboard when a keyboard
     // exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn keyboard_input_device_doesnt_exist() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {
@@ -1045,7 +1044,7 @@ mod tests {
     }
 
     // Tests that is_device_type() returns true for every input device type that exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn no_input_device_match() {
         let (input_device_proxy, _task) =
             spawn_input_stream_handler(move |input_device_request| async move {

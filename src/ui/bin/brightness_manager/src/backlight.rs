@@ -440,7 +440,6 @@ mod tests {
     use fidl_fuchsia_hardware_backlight::{
         DeviceMarker as BacklightMarker, DeviceRequestStream as BacklightRequestStream,
     };
-    use fuchsia_async::{self as fasync};
     use futures::join;
     use futures::prelude::future;
     use futures_util::stream::StreamExt;
@@ -488,7 +487,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_returns_zero_if_backlight_off() {
         // Setup
         let (mock, backlight_stream) = mock_backlight();
@@ -505,7 +504,7 @@ mod tests {
         assert_eq!(brightness.unwrap(), 0.0);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_returns_non_zero_if_backlight_on() {
         // Setup
         let (mock, backlight_stream) = mock_backlight();
@@ -522,7 +521,7 @@ mod tests {
         assert_eq!(brightness.unwrap(), 0.04);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_zero_brightness_turns_backlight_off() {
         // Setup
         let (mock, backlight_stream) = mock_backlight();
@@ -536,7 +535,7 @@ mod tests {
         assert_eq!(backlight_command.backlight_on, false);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_negative_brightness_turns_backlight_off() {
         // Setup
         let (mock, backlight_stream) = mock_backlight();
@@ -550,7 +549,7 @@ mod tests {
         assert_eq!(backlight_command.backlight_on, false);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_turns_backlight_on() {
         // Setup
         let (mock, backlight_stream) = mock_backlight();
@@ -565,7 +564,7 @@ mod tests {
         assert_eq!(backlight_command.brightness, 0.55);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_max_absolute_brightness() {
         // Setup
         let (mock, backlight_stream) = mock_backlight();

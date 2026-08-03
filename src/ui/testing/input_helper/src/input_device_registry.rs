@@ -12,8 +12,8 @@ use fidl_fuchsia_input_injection::InputDeviceRegistryProxy;
 use fidl_fuchsia_input_report::{
     Axis, ConsumerControlButton, ConsumerControlDescriptor, ConsumerControlInputDescriptor,
     ContactInputDescriptor, DeviceDescriptor, InputDeviceMarker, KeyboardDescriptor,
-    KeyboardInputDescriptor, MouseDescriptor, MouseInputDescriptor, Range, TouchDescriptor,
-    TouchInputDescriptor, TouchType, Unit, UnitType, TOUCH_MAX_CONTACTS,
+    KeyboardInputDescriptor, MouseDescriptor, MouseInputDescriptor, Range, TOUCH_MAX_CONTACTS,
+    TouchDescriptor, TouchInputDescriptor, TouchType, Unit, UnitType,
 };
 use fidl_fuchsia_ui_test_input::MouseButton;
 
@@ -214,7 +214,6 @@ mod tests {
         InputDeviceRegistryRequest,
     };
     use fidl_fuchsia_input_report::InputReportsReaderMarker;
-    use fuchsia_async as fasync;
     use futures::StreamExt;
     use test_case::test_case;
 
@@ -265,7 +264,7 @@ mod tests {
                     ..
                 });
                 "mouse_device")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn add_device_registers_correct_device_type(
         device_type: TestDeviceType,
     ) -> Result<DeviceDescriptor, Error> {

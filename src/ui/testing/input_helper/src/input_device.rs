@@ -230,7 +230,7 @@ mod tests {
     mod responds_to_get_feature_report_request {
         use super::*;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn single_request_before_call_to_get_feature_report() -> Result<(), Error> {
             let (proxy, request_stream) = endpoints::create_proxy_and_stream::<InputDeviceMarker>();
 
@@ -267,7 +267,7 @@ mod tests {
         use assert_matches::assert_matches;
         use futures::task::Poll;
 
-        #[fasync::run_until_stalled(test)]
+        #[fuchsia::test(allow_stalls = false)]
         async fn single_request_before_call_to_get_input_reports_reader() -> Result<(), Error> {
             let (proxy, request_stream) = endpoints::create_proxy_and_stream::<InputDeviceMarker>();
 

@@ -45,13 +45,11 @@ where
 mod tests {
     use super::*;
 
-    use fuchsia_async as fasync;
-
     fn mock_sender_channel() -> SenderChannel<f64> {
         SenderChannel::new()
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_sender_channel() {
         let (channel_sender1, _channel_receiver1) = futures::channel::mpsc::unbounded::<f64>();
         let (channel_sender2, _channel_receiver2) = futures::channel::mpsc::unbounded::<f64>();

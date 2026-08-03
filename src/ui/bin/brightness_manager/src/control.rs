@@ -11,7 +11,7 @@ use fidl_fuchsia_ui_brightness::{
     ControlRequest as BrightnessControlRequest, ControlWatchAutoBrightnessAdjustmentResponder,
     ControlWatchAutoBrightnessResponder, ControlWatchCurrentBrightnessResponder,
 };
-use fuchsia_async::{self as fasync, DurationExt};
+use fuchsia_async::{self as fasync, DurationExt as _};
 use futures::channel::mpsc::UnboundedSender;
 use futures::future::{AbortHandle, Abortable};
 use futures::lock::Mutex;
@@ -873,7 +873,7 @@ mod tests {
         (value1 - value2).abs() < 0.01
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_curve() {
         let BrightnessTable { points } = &*BRIGHTNESS_TABLE.lock().await;
         let brightness_table = BrightnessTable { points: points.to_vec() };
@@ -892,7 +892,7 @@ mod tests {
         assert_eq!(cmp_float(300., brightness_curve_lux_to_nits(340.0, &spline).await), true);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_table_valid() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         let brightness_table = {
@@ -942,7 +942,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_table_not_valid_negative_value() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         let brightness_table = {
@@ -954,7 +954,7 @@ mod tests {
         control.check_brightness_table_and_set_new_curve(&brightness_table).await.unwrap_err();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_table_not_valid_lux_not_increasing() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         let brightness_table = {
@@ -968,7 +968,7 @@ mod tests {
         control.check_brightness_table_and_set_new_curve(&brightness_table).await.unwrap_err();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_table_valid_but_empty() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         let brightness_table = {
@@ -1056,7 +1056,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_scale_new_adjustment() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         let mut new_adjust = control.scale_new_adjustment(-1.0).await;
@@ -1165,7 +1165,7 @@ mod tests {
         assert_float_f32(0.0001, block_on(channel_receiver.next()).unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_sensor_and_get_brightness_bright() {
         let BrightnessTable { points } = &*BRIGHTNESS_TABLE.lock().await;
         let brightness_table = BrightnessTable { points: points.to_vec() };
@@ -1175,7 +1175,7 @@ mod tests {
         assert_eq!(cmp_float(1.2, value), true);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_sensor_and_get_brightness_low_light() {
         let BrightnessTable { points } = &*BRIGHTNESS_TABLE.lock().await;
         let brightness_table = BrightnessTable { points: points.to_vec() };
@@ -1185,7 +1185,7 @@ mod tests {
         assert_eq!(cmp_float(0.0, value), true);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_brightness_is_abortable_with_auto_brightness_on() {
         let control = generate_control_struct(400.0, 0.5).await;
         let set_brightness_abort_handle = Arc::new(Mutex::new(None::<AbortHandle>));
@@ -1209,7 +1209,7 @@ mod tests {
         assert_ne!(cmp_float(0.04, backlight.get_brightness().await.unwrap() as f32), true);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_brightness_impl() {
         let control = generate_control_struct(400.0, 0.5).await;
         let (_sensor, backlight) = set_mocks(0.0, 0.0);
@@ -1218,7 +1218,7 @@ mod tests {
         assert_eq!(cmp_float(0.3, backlight.get_brightness().await.unwrap() as f32), true);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_brightness_manager_fail_gracefully() {
         let control = generate_control_struct(400.0, 0.5).await;
         let (_sensor, backlight) = set_mocks_not_valid(0.0, 0.0);
@@ -1232,7 +1232,7 @@ mod tests {
         assert_eq!(cmp_float(*last_set_brightness, 0.04), true);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_brightness_table() -> Result<(), Error> {
         let mut control = generate_control_struct(400.0, 0.5).await;
         let brightness_table = BrightnessTable {
@@ -1256,21 +1256,21 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_brightness_table_file_empty_file() {
         fs::File::create("/data/empty_file").unwrap();
         let result = read_brightness_table_file("/data/empty_file");
         assert_eq!(true, result.is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_brightness_table_file_missing_file() {
         assert_eq!(false, Path::new("/data/nonexistent_file").exists());
         let result = read_brightness_table_file("/data/nonexistent_file");
         assert_eq!(true, result.is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_brightness_table_file_invalid_data() {
         let file = fs::File::create("/data/invalid_brightness_file").unwrap();
         serde_json::to_writer(io::BufWriter::new(file), &1.0).unwrap();
@@ -1278,7 +1278,7 @@ mod tests {
         assert_eq!(true, result.is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_manual_brightness_smooth_with_duration_got_set() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         control.set_manual_brightness_smooth(0.6, MonotonicDuration::from_nanos(4000000000)).await;
@@ -1286,7 +1286,7 @@ mod tests {
         assert_eq!(4000, duration.into_millis());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_manual_brightness_set_duration() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         control.set_manual_brightness(0.6).await;
@@ -1340,7 +1340,7 @@ mod tests {
         assert_eq!(TARGET_BRIGHTNESS, brightness_value);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_max_absolute_brightness() {
         let mut control = generate_control_struct(400.0, 0.5).await;
         let max_brightness = control.get_max_absolute_brightness().await;

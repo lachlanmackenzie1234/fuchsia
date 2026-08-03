@@ -51,6 +51,7 @@ _scene_manager = {
   ]
 
   test_deps = [
+    "//src/lib/fuchsia",
     "//src/lib/ui/fuchsia-scenic",
     "//src/ui/lib/scene_management:scene_management_mocks",
     "//third_party/rust_crates:assert_matches",
@@ -144,6 +145,11 @@ fuchsia_package("scene_manager_dso") {
 fuchsia_unittest_package("scene_manager_tests") {
   deps = [ ":bin_test" ]
   test_type = "system"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 fuchsia_structured_config_rust_lib("scene_manager_structured_config") {

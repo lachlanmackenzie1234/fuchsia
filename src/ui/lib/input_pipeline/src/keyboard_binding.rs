@@ -642,12 +642,11 @@ impl KeyboardBinding {
 mod tests {
     use super::*;
     use crate::testing_utilities;
-    use fuchsia_async as fasync;
     use futures::StreamExt;
 
     /// Tests that a key that is present in the new report, but was not present in the previous report
     /// is propagated as pressed.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn pressed_key() {
         let descriptor = input_device::InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
             keys: vec![fidl_fuchsia_input::Key::A],
@@ -677,7 +676,7 @@ mod tests {
 
     /// Tests that a key that is not present in the new report, but was present in the previous report
     /// is propagated as released.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn released_key() {
         let descriptor = input_device::InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
             keys: vec![fidl_fuchsia_input::Key::A],
@@ -720,7 +719,7 @@ mod tests {
 
     /// Tests that a key that is present in multiple consecutive input reports is not propagated
     /// as a pressed event more than once.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn multiple_pressed_event_filtering() {
         let descriptor = input_device::InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
             keys: vec![fidl_fuchsia_input::Key::A],
@@ -756,7 +755,7 @@ mod tests {
     }
 
     /// Tests that both pressed and released keys are sent at once.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn pressed_and_released_keys() {
         let descriptor = input_device::InputDeviceDescriptor::Keyboard(KeyboardDeviceDescriptor {
             keys: vec![fidl_fuchsia_input::Key::A, fidl_fuchsia_input::Key::B],

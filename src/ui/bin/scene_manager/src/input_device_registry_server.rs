@@ -42,9 +42,8 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_input_injection::InputDeviceRegistryMarker;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_handle_request_forwards_stream_and_returns_ok() {
         let (server, mut receiver) = make_server_and_receiver();
         let (_proxy, stream) = create_proxy_and_stream::<InputDeviceRegistryMarker>();
@@ -58,7 +57,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_handle_request_returns_error_on_disconnected_receiver() {
         let (server, receiver) = make_server_and_receiver();
         let (_proxy, stream) = create_proxy_and_stream::<InputDeviceRegistryMarker>();

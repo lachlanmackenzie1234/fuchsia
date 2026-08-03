@@ -382,7 +382,6 @@ mod tests {
     use crate::utils::Position;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_input_report::InputDeviceMarker;
-    use fuchsia_async as fasync;
     use sorted_vec_map::SortedVecMap;
     use test_case::test_case;
 
@@ -390,7 +389,7 @@ mod tests {
         zx::MonotonicInstant::ZERO + zx::MonotonicDuration::from_nanos(42)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn circular_buffer_no_overflow() {
         let mut circular_buffer = CircularBuffer::new(MAX_RECENT_EVENT_LOG_SIZE);
         assert_eq!(circular_buffer._size, MAX_RECENT_EVENT_LOG_SIZE);
@@ -429,7 +428,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn recent_events_log_records_inspect() {
         let inspector = fuchsia_inspect::Inspector::default();
 
@@ -615,7 +614,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn verify_inspect_no_recent_events_log() {
         let inspector = inspect::Inspector::default();
         let root = inspector.root();
@@ -877,7 +876,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn verify_inspect_with_recent_events_log() {
         let inspector = inspect::Inspector::default();
         let root = inspector.root();

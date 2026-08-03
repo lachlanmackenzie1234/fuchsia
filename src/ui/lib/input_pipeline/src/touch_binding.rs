@@ -947,12 +947,11 @@ mod tests {
     use crate::utils::Position;
     use assert_matches::assert_matches;
     use diagnostics_assertions::AnyProperty;
-    use fuchsia_async as fasync;
     use futures::StreamExt;
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn process_empty_reports() {
         let report_time = zx::MonotonicInstant::get().into_nanos();
         let report =
@@ -1016,7 +1015,7 @@ mod tests {
     }
 
     // Tests that a input report with a new contact generates an event with an add and a down.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn add_and_down() {
         const TOUCH_ID: u32 = 2;
 
@@ -1066,7 +1065,7 @@ mod tests {
     }
 
     // Tests that up and remove events are sent when a touch is released.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn up_and_remove() {
         const TOUCH_ID: u32 = 2;
 
@@ -1135,7 +1134,7 @@ mod tests {
     }
 
     // Tests that a move generates the correct event.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn add_down_move() {
         const TOUCH_ID: u32 = 2;
         let first = Position { x: 10.0, y: 30.0 };
@@ -1213,7 +1212,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn sent_event_has_trace_id() {
         let report_time = zx::MonotonicInstant::get().into_nanos();
         let contact = fidl_fuchsia_input_report::ContactInputReport {
@@ -1456,7 +1455,7 @@ mod tests {
     // button.
     #[test_case(true; "merge touch events enabled")]
     #[test_case(false; "merge touch events disabled")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn send_pressed_button_no_contact(enable_merge_touch_events: bool) {
         let descriptor =
             input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
@@ -1494,7 +1493,7 @@ mod tests {
     // contact and button.
     #[test_case(true; "merge touch events enabled")]
     #[test_case(false; "merge touch events disabled")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn send_pressed_button_with_contact(enable_merge_touch_events: bool) {
         const TOUCH_ID: u32 = 2;
 
@@ -1552,7 +1551,7 @@ mod tests {
     // with contact and buttons.
     #[test_case(true; "merge touch events enabled")]
     #[test_case(false; "merge touch events disabled")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn send_multiple_pressed_buttons_with_contact(enable_merge_touch_events: bool) {
         const TOUCH_ID: u32 = 2;
 
@@ -1615,7 +1614,7 @@ mod tests {
     // Tests that no buttons and no contacts generates no events.
     #[test_case(true; "merge touch events enabled")]
     #[test_case(false; "merge touch events disabled")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn send_no_buttons_no_contacts(enable_merge_touch_events: bool) {
         let descriptor =
             input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
@@ -1643,7 +1642,7 @@ mod tests {
     // Tests a buttons event after a contact event does not remove contacts.
     #[test_case(true; "merge touch events enabled")]
     #[test_case(false; "merge touch events disabled")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn send_button_does_not_remove_contacts(enable_merge_touch_events: bool) {
         const TOUCH_ID: u32 = 2;
 
@@ -1715,7 +1714,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn process_reports_batches_events() {
         const TOUCH_ID: u32 = 2;
 
@@ -1770,7 +1769,7 @@ mod tests {
         assert!(event_receiver.try_next().is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn process_reports_merges_touch_events_when_enabled() {
         const TOUCH_ID: u32 = 2;
         let descriptor =
@@ -1857,7 +1856,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn process_reports_does_not_merge_touch_events_when_disabled() {
         const TOUCH_ID: u32 = 2;
         let descriptor =

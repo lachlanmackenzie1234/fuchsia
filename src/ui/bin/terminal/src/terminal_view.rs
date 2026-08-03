@@ -707,7 +707,7 @@ mod tests {
         let _ = TerminalViewAssistant::new_for_test();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_pointer_event_response_updates_view_for_view_dirty() -> Result<(), Error> {
         let mut view = TerminalViewAssistant::new_for_test();
         let mut handler = TestPointerEventResponder::new();
@@ -716,7 +716,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_pointer_event_response_does_not_update_view_for_scroll_lines()
     -> Result<(), Error> {
         let mut view = TerminalViewAssistant::new_for_test();
@@ -727,7 +727,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_pointer_event_response_scroll_lines_updates_grid() -> Result<(), Error> {
         let mut view = TerminalViewAssistant::new_for_test();
 
@@ -790,7 +790,7 @@ mod tests {
         assert!((size_info.height - 100.0).abs() <= 1.0, "size_info {size_info:?}");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn resize_message_queued_with_logical_size_when_resize_needed() -> Result<(), Error> {
         let pty = ServerPty::new()?;
         let mut pty_context = PtyContext::from_pty(&pty)?;
@@ -814,7 +814,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_keyboard_event_writes_characters() -> Result<(), Error> {
         let pty = ServerPty::new()?;
         let mut pty_context = PtyContext::from_pty(&pty)?;
@@ -833,7 +833,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_control_keyboard_event() -> Result<(), Error> {
         let pty = ServerPty::new()?;
         let mut pty_context = PtyContext::from_pty(&pty)?;
@@ -856,7 +856,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn pty_is_spawned_on_first_request() -> Result<(), Error> {
         let mut view = TerminalViewAssistant::new_for_test();
         view.spawn_pty_loop()?;
@@ -865,7 +865,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn pty_message_reads_triggers_call_to_redraw() -> Result<(), Error> {
         let (mut view, mut receiver) = make_test_view_with_spawned_pty_loop().await?;
 
@@ -879,7 +879,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn resize_message_triggers_call_to_redraw() -> Result<(), Error> {
         let (mut view, mut receiver) = make_test_view_with_spawned_pty_loop().await?;
 
@@ -896,7 +896,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore] // TODO(https://fxbug.dev/42129876) re-enable this test when de-flaked
     async fn bytes_written_are_processed_by_term() -> Result<(), Error> {
         let (mut view, mut receiver) = make_test_view_with_spawned_pty_loop().await?;

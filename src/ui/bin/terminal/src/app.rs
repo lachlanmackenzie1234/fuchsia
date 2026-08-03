@@ -49,9 +49,8 @@ impl AppAssistant for TerminalAssistant {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn creates_terminal_view() -> Result<(), Error> {
         let mut app = TerminalAssistant::new_for_test();
         app.create_view_assistant(Default::default())?;

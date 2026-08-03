@@ -591,7 +591,7 @@ mod tests {
     use scene_management_mocks::MockSceneManager;
 
     /// Tests that handle_graphical_presenter_request_stream, when receiving a GFX present_view request, errors.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_graphical_presenter_request_stream_present_view_gfx_errors() -> Result<(), Error>
     {
         let (proxy, stream) = create_proxy_and_stream::<GraphicalPresenterMarker>();
@@ -625,7 +625,7 @@ mod tests {
     }
 
     /// Tests that handle_graphical_presenter_request_stream, when receiving a Flatland present_view request, passes the viewport_creation_token and None to set_root_view().
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_graphical_presenter_request_stream_presents_view_flatland() -> Result<(), Error>
     {
         let (proxy, stream) = create_proxy_and_stream::<GraphicalPresenterMarker>();
@@ -662,7 +662,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create_color_transform_manager_attach_a11y_view_false() -> Result<(), Error> {
         let scene_manager: Rc<dyn SceneManagerTrait> = Rc::new(MockSceneManager::new());
         let result =

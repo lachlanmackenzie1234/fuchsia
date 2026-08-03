@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use clap::{Parser, Subcommand};
-use fuchsia_async as fasync;
 use std::env;
 use std::time::Duration;
 
@@ -158,7 +157,7 @@ fn parse_bool(src: &str) -> Result<bool, String> {
     }
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     // TODO: Remove this workaround once topaz tests have been updated.
     let (mut args, options): (Vec<_>, Vec<_>) =

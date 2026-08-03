@@ -953,7 +953,7 @@ mod tests {
     }
 
     /// Tests that an input pipeline handles events from multiple devices.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn multiple_devices_single_handler() {
         // Create two fake device bindings.
         let (device_event_sender, device_event_receiver) = futures::channel::mpsc::unbounded();
@@ -1009,7 +1009,7 @@ mod tests {
     }
 
     /// Tests that an input pipeline handles events through multiple input handlers.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn single_device_multiple_handlers() {
         // Create two fake device bindings.
         let (device_event_sender, device_event_receiver) = futures::channel::mpsc::unbounded();
@@ -1071,7 +1071,7 @@ mod tests {
 
     /// Tests that a single mouse device binding is created for the one input device in the
     /// input report service directory.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn watch_devices_one_match_exists() {
         // Create a pseudo directory representing a service instance for an input device.
         let mut count: i8 = 0;
@@ -1185,7 +1185,7 @@ mod tests {
 
     /// Tests that no device bindings are created because the input pipeline looks for keyboard devices
     /// but only a mouse exists.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn watch_devices_no_matches_exist() {
         // Create a pseudo directory representing a service instance for an input device.
         let mut count: i8 = 0;
@@ -1279,7 +1279,7 @@ mod tests {
 
     /// Tests that a single keyboard device binding is created for the input device registered
     /// through InputDeviceRegistry.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_input_device_registry_request_stream() {
         let (input_device_registry_proxy, input_device_registry_request_stream) =
             create_proxy_and_stream::<fidl_fuchsia_input_injection::InputDeviceRegistryMarker>();
@@ -1331,7 +1331,7 @@ mod tests {
     }
 
     // Tests that correct properties are added to inspect node when InputPipeline is created.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn check_inspect_node_has_correct_properties() {
         let device_types = vec![
             input_device::InputDeviceType::Touch,
@@ -1409,7 +1409,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_only_sends_events_to_interested_handlers() {
         // Mouse Handler (Specific Interest: Mouse)
         let (mouse_sender, mut mouse_receiver) = futures::channel::mpsc::channel(1);
@@ -1481,7 +1481,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_mixed_event_types_dispatched_correctly() {
         // Mouse Handler (Specific Interest: Mouse)
         let (mouse_sender, mut mouse_receiver) = futures::channel::mpsc::channel(10);

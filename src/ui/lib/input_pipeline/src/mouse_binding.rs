@@ -640,7 +640,6 @@ fn buttons_from_mouse_report_wire(
 mod tests {
     use super::*;
     use crate::testing_utilities;
-    use fuchsia_async as fasync;
     use futures::StreamExt;
     use sorted_vec_map::SortedVecSet;
 
@@ -674,7 +673,7 @@ mod tests {
     }
 
     /// Tests that a report containing no buttons but with movement generates a move event.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn movement_without_button() {
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
         let first_report = testing_utilities::create_mouse_input_report_relative(
@@ -708,7 +707,7 @@ mod tests {
     }
 
     /// Tests that a report containing a new mouse button generates a down event.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_without_movement() {
         let mouse_button: MouseButton = 3;
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
@@ -744,7 +743,7 @@ mod tests {
 
     /// Tests that a report containing a new mouse button with movement generates a down event and a
     /// move event.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_with_movement() {
         let mouse_button: MouseButton = 3;
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
@@ -792,7 +791,7 @@ mod tests {
     }
 
     /// Tests that a press and release of a mouse button without movement generates a down and up event.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_up() {
         let button = 1;
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
@@ -847,7 +846,7 @@ mod tests {
     }
 
     /// Tests that a press and release of a mouse button with movement generates down, move, and up events.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_up_with_movement() {
         let button = 1;
 
@@ -916,7 +915,7 @@ mod tests {
     /// Tests that a press, move, and release of a button generates down, move, and up events.
     /// This specifically tests the separate input report containing the movement, instead of sending
     /// the movement as part of the down or up events.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_move_up() {
         let button = 1;
 
@@ -990,7 +989,7 @@ mod tests {
     }
 
     /// Tests that a report with absolute movement to {0, 0} generates a move event.
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn absolute_movement_to_origin() {
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
         let descriptor = mouse_device_descriptor(DEVICE_ID);
@@ -1024,7 +1023,7 @@ mod tests {
 
     /// Tests that a report that contains both a relative movement and absolute position
     /// generates a move event to the absolute position.
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn report_with_both_movement_and_position() {
         let relative_movement = Position { x: 5.0, y: 5.0 };
         let absolute_position = Position { x: 10.0, y: 10.0 };
@@ -1074,7 +1073,7 @@ mod tests {
 
     /// Tests that two separate button presses generate two separate down events with differing
     /// sets of `affected_buttons` and `pressed_buttons`.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_down() {
         const PRIMARY_BUTTON: u8 = 1;
         const SECONDARY_BUTTON: u8 = 2;
@@ -1139,7 +1138,7 @@ mod tests {
     /// | Press button 2   | Down       | [2]                | [1, 2]            |
     /// | Release button 1 | Up         | [1]                | [2]               |
     /// | Release button 2 | Up         | [2]                | []                |
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_down_up_up() {
         const PRIMARY_BUTTON: u8 = 1;
         const SECONDARY_BUTTON: u8 = 2;
@@ -1232,7 +1231,7 @@ mod tests {
     }
 
     /// Test simple scroll in vertical and horizontal.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn scroll() {
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
         let first_report = testing_utilities::create_mouse_input_report_relative(
@@ -1287,7 +1286,7 @@ mod tests {
     }
 
     /// Test button down -> scroll -> button up -> continue scroll.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_scroll_up_scroll() {
         const PRIMARY_BUTTON: u8 = 1;
 
@@ -1380,7 +1379,7 @@ mod tests {
     }
 
     /// Test button down with scroll -> button up with scroll -> scroll.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn down_scroll_bundle_up_scroll_bundle() {
         const PRIMARY_BUTTON: u8 = 1;
 

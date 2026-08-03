@@ -731,9 +731,8 @@ pub async fn handle_input_device_registry_request_streams(
 
 #[cfg(test)]
 mod tests {
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_placeholder() {
         // TODO(https://fxbug.dev/42153238): Add tests that verify the construction of the input pipeline.
     }

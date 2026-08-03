@@ -4,6 +4,7 @@
 
 use anyhow::{Context as _, Error};
 use brightness_manager_config::Config;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceObjLocal;
 use fuchsia_inspect::component::inspector;
 use futures::lock::Mutex;
@@ -16,7 +17,6 @@ use control::{
     WatcherCurrentResponder,
 };
 use fidl_fuchsia_ui_brightness::ControlRequestStream;
-use fuchsia_async::{self as fasync};
 use fuchsia_component::server::ServiceFs;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::future::{AbortHandle, Abortable};
@@ -208,7 +208,7 @@ mod tests {
         SenderChannel::new()
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_send_value_in_channel_without_remove_any_sender() {
         let (channel_sender1, mut channel_receiver1) = futures::channel::mpsc::unbounded::<f64>();
         let (channel_sender2, mut channel_receiver2) = futures::channel::mpsc::unbounded::<f64>();
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(Some(12.0), channel_receiver2.next().await);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_send_value_in_channel_with_remove_a_sender() {
         let (channel_sender1, mut channel_receiver1) = futures::channel::mpsc::unbounded::<f64>();
         let (channel_sender2, mut channel_receiver2) = futures::channel::mpsc::unbounded::<f64>();

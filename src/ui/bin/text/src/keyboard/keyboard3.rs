@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context as _, Error, format_err};
-use fuchsia_async::{self as fasync, TimeoutExt};
+use fidl_fuchsia_input as input;
+use fidl_fuchsia_ui_input3 as ui_input3;
+use fidl_fuchsia_ui_views as ui_views;
+use fuchsia_async::{self as fasync, TimeoutExt as _};
+use fuchsia_scenic as scenic;
 use futures::lock::Mutex;
 use futures::{TryStreamExt, future};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_input as input, fidl_fuchsia_ui_input3 as ui_input3,
-    fidl_fuchsia_ui_views as ui_views, fuchsia_scenic as scenic,
-};
 
 const DEFAULT_LISTENER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 
@@ -414,7 +414,6 @@ mod tests {
     use futures::{StreamExt, TryFutureExt};
     use maplit::hashset;
     use std::task::Poll;
-    use {fidl_fuchsia_input as input, fuchsia_async as fasync};
 
     type Client = (ui_views::ViewRef, ui_input3::KeyboardListenerRequestStream);
 
@@ -544,7 +543,7 @@ mod tests {
         .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_single_client() -> Result<(), Error> {
         let mut helper = Helper::new();
 
@@ -564,7 +563,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_key_only_passed_through() -> Result<(), Error> {
         let mut helper = Helper::new();
 
@@ -589,7 +588,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_key_meaning_only_passed_through() -> Result<(), Error> {
         let mut helper = Helper::new();
 
@@ -614,7 +613,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_key_and_key_meaning_passed_through() -> Result<(), Error> {
         let mut helper = Helper::new();
 
@@ -639,7 +638,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_not_focused() -> Result<(), Error> {
         let mut helper = Helper::new();
         helper.create_fake_client().await?;
@@ -651,7 +650,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_switching_focus() -> Result<(), Error> {
         let fake_now = zx::MonotonicInstant::ZERO;
         let mut helper = Helper::new();
@@ -756,7 +755,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_keys_pressed() -> Result<(), Error> {
         let mut helper = Helper::new();
 
@@ -815,7 +814,7 @@ mod tests {
     /// 2. Pressed: Key5, key meaning '%'.
     /// 3. Released: Key5, key meaning '%'.
     /// 4. Released: LeftShift
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_keys_pressed_with_matching_key_meanings() -> Result<(), Error> {
         let mut helper = Helper::new();
 
@@ -876,7 +875,7 @@ mod tests {
     /// 2. Pressed: Key5, key meaning '%'.
     /// 3. Released: LeftShift
     /// 4. Released: Key5, key meaning '5'.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_keys_pressed_with_unmatched_key_meanings() -> Result<(), Error> {
         let mut helper = Helper::new();
 
@@ -940,7 +939,7 @@ mod tests {
     /// 2. Pressed: key meaning '%'.
     /// 3. Released: key meaning '%'.
     /// 4. Released: LeftShift
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_keys_pressed_without_key_codes() -> Result<(), Error> {
         let mut helper = Helper::new();
 

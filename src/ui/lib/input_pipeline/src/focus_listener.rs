@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::{Incoming, metrics};
-use fuchsia_async::{self as fasync, TimeoutExt};
 use zx;
 
 const DEFAULT_TEXT_MANAGER_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(15);
@@ -11,6 +10,7 @@ use anyhow::{Context, Error};
 use fidl_fuchsia_ui_focus as focus;
 use fidl_fuchsia_ui_keyboard_focus as kbd_focus;
 use focus_chain_provider::FocusChainProviderPublisher;
+use fuchsia_async::{self as fasync, TimeoutExt as _};
 use futures::StreamExt;
 use metrics_registry::*;
 
@@ -193,7 +193,7 @@ mod tests {
     }
 
     /// Tests focused view routing from FocusChainListener to text_manager service.
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn dispatch_focus() -> Result<(), Error> {
         let (focus_proxy, focus_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<kbd_focus::ControllerMarker>();

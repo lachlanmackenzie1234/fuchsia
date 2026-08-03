@@ -257,7 +257,6 @@ mod tests {
     use crate::testing_utilities;
     use fidl_fuchsia_input::Key;
     use fidl_fuchsia_ui_input3::{KeyEventType, LockState};
-    use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
 
     fn get_unhandled_input_event(event: KeyboardEvent) -> UnhandledInputEvent {
@@ -269,7 +268,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_decoration() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
@@ -288,7 +287,7 @@ mod tests {
         assert_eq!(vec![expected], result);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_key_meaning_decoration() {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
@@ -337,7 +336,7 @@ mod tests {
     // LockState ------CCCCCCCCCCCCCCCCCCCCCCCCCCC---
     //
     // C == CapsLock
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_modifier_press_lock_release() {
         let input_events = vec![
             get_unhandled_input_event(KeyboardEvent::new(Key::CapsLock, KeyEventType::Pressed)),
@@ -394,7 +393,7 @@ mod tests {
     // LockState ------CCCCCCCCCCCCCCCCCCCCCCCCCCC
     //
     // C == CapsLock
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn repeated_modifier_key() {
         let input_events = vec![
             get_unhandled_input_event(KeyboardEvent::new(Key::CapsLock, KeyEventType::Pressed)),
@@ -480,7 +479,7 @@ mod tests {
         });
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn modifier_handler_inspect_counts_events() {
         let inspector = fuchsia_inspect::Inspector::default();
         let fake_handlers_node = inspector.root().create_child("input_handlers_node");
