@@ -116,9 +116,10 @@ mod tests {
     use anyhow::Context;
     use argh::FromArgs;
     use flex_client::fidl::ServerEnd;
+    use flex_fuchsia_driver_framework as fdf;
+    use fuchsia_async as fasync;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
-    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     /// Invokes `show` with `cmd` and runs a mock driver development server that
     /// invokes `on_driver_development_request` whenever it receives a request.
@@ -196,7 +197,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_show() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();
@@ -283,7 +284,7 @@ Issue parsing the bind rules bytecode
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_show_no_match() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();
@@ -311,7 +312,7 @@ Issue parsing the bind rules bytecode
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_show_ambiguous() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();

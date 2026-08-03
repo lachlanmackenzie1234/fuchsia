@@ -73,7 +73,7 @@ fuchsia_rust_driver("child_driver_bin") {
     "//sdk/lib/driver/platform-device/rust:pdev",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde",

@@ -8,7 +8,6 @@ use anyhow::{Context, Result};
 use fidl_fuchsia_driver_development as fdd;
 use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_driver_test as fdt;
-use fuchsia_async::{self as fasync};
 use fuchsia_component_test::{RealmBuilder, RealmInstance};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use zx_status;
@@ -145,7 +144,7 @@ fn assert_contains_driver_url(driver_infos: &Vec<fdf::DriverInfo>, expected_driv
 
 // GetDriverInfo tests
 // DFv1
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_no_filter_dfv1() -> Result<()> {
     let (_instance, driver_dev) = set_up_test_driver_realm().await?;
     let driver_infos = get_driver_info(&driver_dev, &[]).await?;
@@ -157,7 +156,7 @@ async fn test_get_driver_info_no_filter_dfv1() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_with_filter_dfv1() -> Result<()> {
     const DRIVER_FILTER: [&str; 1] = [SAMPLE_DRIVER_URL];
 
@@ -169,7 +168,7 @@ async fn test_get_driver_info_with_filter_dfv1() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_with_mixed_filter_dfv1() -> Result<()> {
     const DRIVER_FILTER: [&str; 2] = ["fuchsia-boot:///dtr#driver/sample_driver.so", "foo"];
 
@@ -181,7 +180,7 @@ async fn test_get_driver_info_with_mixed_filter_dfv1() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_with_incomplete_filter_dfv1() -> Result<()> {
     const DRIVER_FILTER: [&str; 1] = ["fuchsia-boot:///dtr#driver/sample_driver"];
 
@@ -193,7 +192,7 @@ async fn test_get_driver_info_with_incomplete_filter_dfv1() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_not_found_filter_dfv1() -> Result<()> {
     const DRIVER_FILTER: [&str; 1] = ["foo"];
 
@@ -205,7 +204,7 @@ async fn test_get_driver_info_not_found_filter_dfv1() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_no_filter() -> Result<()> {
     let (_instance, driver_dev) = set_up_test_driver_realm().await?;
     let driver_infos = get_driver_info(&driver_dev, &[]).await?;
@@ -217,7 +216,7 @@ async fn test_get_driver_info_no_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_with_filter() -> Result<()> {
     const DRIVER_FILTER: [&str; 1] = [SAMPLE_DRIVER_URL];
 
@@ -229,7 +228,7 @@ async fn test_get_driver_info_with_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_with_duplicate_filter() -> Result<()> {
     const DRIVER_FILTER: [&str; 2] = [SAMPLE_DRIVER_URL, SAMPLE_DRIVER_URL];
 
@@ -242,7 +241,7 @@ async fn test_get_driver_info_with_duplicate_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_with_mixed_filter() -> Result<()> {
     const DRIVER_FILTER: [&str; 2] = [SAMPLE_DRIVER_URL, "foo"];
 
@@ -255,7 +254,7 @@ async fn test_get_driver_info_with_mixed_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_with_incomplete_filter() -> Result<()> {
     const DRIVER_FILTER: [&str; 1] = ["fuchsia-boot:///dtr#meta/sample_driver"];
 
@@ -267,7 +266,7 @@ async fn test_get_driver_info_with_incomplete_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_driver_info_not_found_filter() -> Result<()> {
     const DRIVER_FILTER: [&str; 1] = ["foo"];
 
@@ -279,7 +278,7 @@ async fn test_get_driver_info_not_found_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_device_info_fuzzy_filter() -> Result<()> {
     const DEVICE_FILTER: [&str; 1] = ["sample"];
 
@@ -300,7 +299,7 @@ async fn test_get_device_info_fuzzy_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_device_info_no_filter() -> Result<()> {
     let (_instance, driver_dev) = set_up_test_driver_realm().await?;
     let device_infos = get_device_info(&driver_dev, &[], /* exact_match= */ true).await?;
@@ -347,7 +346,7 @@ async fn test_get_device_info_no_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_device_info_with_filter() -> Result<()> {
     const DEVICE_FILTER: [&str; 1] = ["dev.sys.test"];
 
@@ -373,7 +372,7 @@ async fn test_get_device_info_with_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_device_info_with_duplicate_filter() -> Result<()> {
     const DEVICE_FILTER: [&str; 2] = ["dev.sys.test", "dev.sys.test"];
 
@@ -399,7 +398,7 @@ async fn test_get_device_info_with_duplicate_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_device_info_with_incomplete_filter() -> Result<()> {
     const DEVICE_FILTER: [&str; 1] = ["dev.sys.te"];
 
@@ -411,7 +410,7 @@ async fn test_get_device_info_with_incomplete_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_device_info_not_found_filter() -> Result<()> {
     const DEVICE_FILTER: [&str; 1] = ["foo"];
 
@@ -423,7 +422,7 @@ async fn test_get_device_info_not_found_filter() -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_add_test_node() -> Result<()> {
     let (instance, driver_dev) = set_up_test_driver_realm().await?;
 

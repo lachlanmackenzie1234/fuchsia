@@ -231,7 +231,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list_sorting_and_states() {
         let cmd = ListCompositeCommand::from_args(&["list"], &[]).unwrap();
 
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(output, "apple\nzebra\n");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list_verbose_incomplete() {
         let cmd = ListCompositeCommand::from_args(&["list"], &["-v"]).unwrap();
 

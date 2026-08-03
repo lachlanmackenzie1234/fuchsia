@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_component_test::new::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
-use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_sample_driver() {
     // Start the driver test realm.
     let builder = RealmBuilder::new().await.unwrap();

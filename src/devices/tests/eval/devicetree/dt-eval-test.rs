@@ -5,7 +5,6 @@
 use anyhow::{Context, Result};
 use fidl_fidl_examples_echo as fecho;
 use fidl_fuchsia_driver_test as fdt;
-use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
@@ -73,7 +72,7 @@ async fn setup_realm() -> Result<fuchsia_component_test::RealmInstance> {
 }
 
 // Verifies that the driver binds to the devicetree node specified in the DTB.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_devicetree_driver_binds() -> Result<()> {
     let instance = setup_realm().await.context("Failed to setup the test realm")?;
 

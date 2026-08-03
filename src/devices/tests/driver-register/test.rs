@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
-use fuchsia_async::{self as fasync};
+use anyhow::{Context, Result, anyhow};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_registrar as fdr;
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_component_test::{RealmBuilder, RealmInstance};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
-use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_registrar as fdr, fidl_fuchsia_driver_test as fdt,
-};
 
 // Note: The component manifest name is the same for FAKE_DRIVER_URL and EPHEMERAL_FAKE_DRIVER_URL
 // One is in bootfs, the other is through a package url.
@@ -28,8 +27,8 @@ const FAKE_DRIVER_URL: &str = "fuchsia-boot:///dtr#meta/driver-test-realm-fake-d
 const EPHEMERAL_FAKE_DRIVER_URL: &str =
     "fuchsia-pkg://fuchsia.com/driver-test-realm-fake-driver#meta/driver-test-realm-fake-driver.cm";
 
-async fn set_up_test_driver_realm(
-) -> Result<(RealmInstance, fdd::ManagerProxy, fdr::DriverRegistrarProxy)> {
+async fn set_up_test_driver_realm()
+-> Result<(RealmInstance, fdd::ManagerProxy, fdr::DriverRegistrarProxy)> {
     const ROOT_DRIVER_URL: &str = PARENT_DRIVER_URL;
 
     let builder = RealmBuilder::new().await?;
@@ -80,14 +79,16 @@ async fn get_driver_info(
 }
 
 fn assert_contains_driver_url(driver_infos: &Vec<fdf::DriverInfo>, expected_driver_url: &str) {
-    assert!(driver_infos
-        .iter()
-        .find(|driver_info| driver_info.url.as_ref().expect("Missing device URL")
-            == expected_driver_url)
-        .is_some());
+    assert!(
+        driver_infos
+            .iter()
+            .find(|driver_info| driver_info.url.as_ref().expect("Missing device URL")
+                == expected_driver_url)
+            .is_some()
+    );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_register_driver() -> Result<()> {
     let (_instance, driver_dev, driver_registrar) = set_up_test_driver_realm().await?;
     let driver_infos = get_driver_info(&driver_dev, &[]).await?;

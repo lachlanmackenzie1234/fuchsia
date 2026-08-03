@@ -4,9 +4,10 @@
 
 use anyhow::{Context, Result};
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_rebind_test as frt;
 use fuchsia_component_test::{RealmBuilder, RealmInstance};
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
-use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_rebind_test as frt, fuchsia_async as fasync};
 
 async fn start_driver_test_realm() -> Result<RealmInstance> {
     const ROOT_DRIVER_URL: &str = "fuchsia-boot:///dtr#meta/test-parent-sys.cm";
@@ -29,7 +30,7 @@ const CHILD_DEV_PATH: &str = "sys/test/rebind-parent/added-child/rebind-child";
 
 // Tests that a node will succesfully bind to a driver after the node has
 // already been bound to that driver, then shutdown, then re-added.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_rebind() -> Result<()> {
     let instance = start_driver_test_realm().await?;
     let dev = instance.driver_test_realm_connect_to_dev()?;

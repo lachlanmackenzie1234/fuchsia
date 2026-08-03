@@ -4,14 +4,14 @@
 
 use anyhow::{Context, Result};
 use fidl::endpoints::ServiceMarker;
-use fuchsia_async::{self as fasync, DurationExt, Timer};
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_crashdriver_test as fcdt;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_test as fdt;
+use fuchsia_async::{DurationExt, Timer};
 use fuchsia_component::client;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
-use {
-    fidl_fuchsia_component_test as ftest, fidl_fuchsia_crashdriver_test as fcdt,
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_test as fdt,
-};
 
 fn send_get_device_info_request(
     service: &fdd::ManagerProxy,
@@ -56,7 +56,7 @@ async fn wait_for_instance(realm: &fuchsia_component_test::RealmInstance) -> Res
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_restart_on_crash() -> Result<()> {
     let args =
         fdt::RealmArgs { root_driver: Some("#meta/crasher.cm".to_string()), ..Default::default() };

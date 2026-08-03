@@ -75,7 +75,7 @@ async fn get_device_info(
     Ok(device_infos)
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_reload_cross_colocated_target() -> Result<()> {
     let (sender, mut receiver) = mpsc::channel(1);
 

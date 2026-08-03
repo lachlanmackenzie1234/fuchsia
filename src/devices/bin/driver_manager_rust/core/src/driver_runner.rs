@@ -961,7 +961,7 @@ mod tests {
 
     use fidl_fuchsia_driver_index as fdi;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_log_stack_trace() {
         let (realm, _) = fidl::endpoints::create_proxy::<fcomponent::RealmMarker>();
         let (introspector, _) = fidl::endpoints::create_proxy::<fcomponent::IntrospectorMarker>();
@@ -1021,7 +1021,7 @@ mod tests {
         assert_eq!(result, Err(zx::Status::NOT_FOUND));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_host_koid() {
         let (realm, _) = fidl::endpoints::create_proxy::<fcomponent::RealmMarker>();
         let (introspector, _) = fidl::endpoints::create_proxy::<fcomponent::IntrospectorMarker>();

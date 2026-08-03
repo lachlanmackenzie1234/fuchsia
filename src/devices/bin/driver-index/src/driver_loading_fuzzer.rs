@@ -114,7 +114,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_driver_load() {
         let mut test_boot_repo = vec![];
         for i in 0..10 {

@@ -5,7 +5,6 @@
 use anyhow::{Context, Result};
 use fidl_fuchsia_driver_test as fdt;
 use fidl_fuchsia_examples as fecho;
-use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
@@ -39,7 +38,7 @@ async fn run_test(root_driver_url: &str) -> Result<()> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_driver() {
     run_test("#meta/eval_driver_serve_fidl.cm").await.unwrap();
 }

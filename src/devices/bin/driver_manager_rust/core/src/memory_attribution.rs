@@ -139,7 +139,7 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use futures::FutureExt;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_driver() {
         let attributor = Rc::new(MemoryAttributor::new());
         let (proxy, stream) = create_proxy_and_stream::<fma::ProviderMarker>();
@@ -195,7 +195,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_remove_driver() {
         let attributor = Rc::new(MemoryAttributor::new());
         let (proxy, stream) = create_proxy_and_stream::<fma::ProviderMarker>();
@@ -238,7 +238,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_immediate() {
         let attributor = Rc::new(MemoryAttributor::new());
         let (proxy, stream) = create_proxy_and_stream::<fma::ProviderMarker>();
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(result.attributions.unwrap().len(), 2);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_gets_fail() {
         let attributor = Rc::new(MemoryAttributor::new());
         let (proxy, stream) = create_proxy_and_stream::<fma::ProviderMarker>();

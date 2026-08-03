@@ -3,16 +3,17 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, Result, anyhow};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_registrar as fdr;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_reloaddriver_test as ft;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::{HashMap, HashSet};
-use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_registrar as fdr,
-    fidl_fuchsia_driver_test as fdt, fidl_fuchsia_reloaddriver_test as ft, fuchsia_async as fasync,
-};
 
 const WAITER_NAME: &'static str = "waiter";
 
@@ -74,7 +75,7 @@ async fn get_device_info(
     Ok(device_infos)
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_replace_target() -> Result<()> {
     let (sender, mut receiver) = mpsc::channel(1);
 

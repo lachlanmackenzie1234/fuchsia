@@ -7,10 +7,10 @@ use component_events::events::{self, Event, EventStream, EventStreamError};
 use component_events::matcher::EventMatcher;
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::ArchiveReader;
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use futures::StreamExt;
-use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 // This will only return once all `events` are seen in `event_stream`.
 // The events do not have to happen in order.
@@ -27,7 +27,7 @@ async fn check_events(
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn driver_runner_test() -> Result<(), anyhow::Error> {
     // Set up our expected events.
     let mut started_stream = EventStream::open().await?;

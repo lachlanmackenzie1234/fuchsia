@@ -8,8 +8,8 @@ use bind::interpreter::decode_bind_rules::DecodedCompositeBindRules;
 use bind::interpreter::match_bind::{DeviceProperties, PropertyKey};
 use fidl_fuchsia_driver_framework as fdf;
 use std::sync::LazyLock;
-use zx::sys::zx_status_t;
 use zx::Status;
+use zx::sys::zx_status_t;
 
 static BIND_PROTOCOL_KEY: LazyLock<PropertyKey> =
     LazyLock::new(|| PropertyKey::StringKey(String::from("fuchsia.BIND_PROTOCOL")));
@@ -80,9 +80,8 @@ pub fn get_composite_rules_from_composite_driver<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_duplicate_properties() {
         let node_properties = vec![
             fdf::NodeProperty2 {
@@ -103,7 +102,7 @@ mod tests {
         assert_eq!(expected_properties, result);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_collision() {
         let node_properties = vec![
             fdf::NodeProperty2 {
@@ -121,7 +120,7 @@ mod tests {
 
     // TODO(https://fxbug.dev/42175777): Remove this case once the issue with multiple BIND_PROTOCOL properties
     // is resolved.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_bind_protocol() {
         let node_properties = vec![
             fdf::NodeProperty2 {
@@ -141,7 +140,7 @@ mod tests {
 
     // TODO(https://fxbug.dev/42175777): Remove this case once the issue with multiple BIND_PROTOCOL properties
     // is resolved.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_bind_protocol_w_deprecated_str_key() {
         let node_properties = vec![
             fdf::NodeProperty2 {
@@ -162,7 +161,7 @@ mod tests {
         assert_eq!(Ok(expected_properties), node_to_device_property(&node_properties));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_autobind() {
         let node_properties = vec![fdf::NodeProperty2 {
             key: "fuchsia.BIND_PROTOCOL".to_string(),
@@ -175,7 +174,7 @@ mod tests {
         assert_eq!(Ok(expected_properties), node_to_device_property_no_autobind(&node_properties));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_autobind_override() {
         let node_properties = vec![fdf::NodeProperty2 {
             key: "fuchsia.BIND_AUTOBIND".to_string(),

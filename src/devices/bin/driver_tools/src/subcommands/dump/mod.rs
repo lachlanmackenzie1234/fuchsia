@@ -219,7 +219,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_simple() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();
@@ -285,7 +285,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_duplicates_are_filtered() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();
@@ -326,7 +326,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_with_node_filter() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();

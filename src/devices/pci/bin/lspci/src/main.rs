@@ -16,7 +16,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use zx::Status;
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let args: Args = argh::from_env();
     let proxies = find_buses().await?;

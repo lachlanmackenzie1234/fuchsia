@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result, anyhow};
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_runtime_test as ft;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::new::{ChildOptions, LocalComponentHandles, RealmBuilder};
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
-use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_runtime_test as ft, fuchsia_async as fasync};
 
 const WAITER_NAME: &'static str = "waiter";
 
@@ -31,7 +33,7 @@ async fn waiter_component(
     Ok(fs.collect::<()>().await)
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_driver_runtime() -> Result<()> {
     let (sender, mut receiver) = mpsc::channel(1);
 

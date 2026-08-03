@@ -5,9 +5,9 @@
 use anyhow::{Error, Result, format_err};
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::{ArchiveReader, DiagnosticsHierarchy};
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
-use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 async fn get_inspect_hierarchy(moniker: String) -> Result<DiagnosticsHierarchy, Error> {
     ArchiveReader::inspect()
@@ -20,7 +20,7 @@ async fn get_inspect_hierarchy(moniker: String) -> Result<DiagnosticsHierarchy, 
         .ok_or_else(|| format_err!("expected one inspect hierarchy"))
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_driver_inspect() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;

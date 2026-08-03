@@ -241,7 +241,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_exponential_backoff_and_stack_trace() {
         let bind_manager = BindManagerHandle::new(Box::new(MockBindManagerBridge));
         let tracker = BootupTracker::new(bind_manager);
@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(tracker.inner.borrow().current_timeout, BOOTUP_TIMEOUT_DURATION);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_deduplicate_driver_hosts() {
         let bind_manager = BindManagerHandle::new(Box::new(MockBindManagerBridge));
         let tracker = BootupTracker::new(bind_manager);

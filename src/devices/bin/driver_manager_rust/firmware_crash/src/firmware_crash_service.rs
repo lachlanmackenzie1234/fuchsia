@@ -195,7 +195,7 @@ mod tests {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_report_and_watch() {
         let service = Rc::new(FirmwareCrashService::default());
         let (reporter, reporter_stream) = create_proxy_and_stream::<ffc::ReporterMarker>();
@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(received2.count.unwrap(), 2);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_wait_for_crash() {
         let service = Rc::new(FirmwareCrashService::default());
         let (reporter, reporter_stream) = create_proxy_and_stream::<ffc::ReporterMarker>();

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_component_test::{RealmBuilder, RealmInstance};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
-use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 async fn start_driver_test_realm() -> Result<RealmInstance> {
     let builder = RealmBuilder::new().await.context("Failed to create realm builder")?;
@@ -24,7 +24,7 @@ async fn start_driver_test_realm() -> Result<RealmInstance> {
 
 // Tests that the legacy and spec composites are successfully assembled, bound, and
 // added to the topology.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_composites() -> Result<()> {
     let instance = start_driver_test_realm().await?;
     let dev = instance.driver_test_realm_connect_to_dev()?;

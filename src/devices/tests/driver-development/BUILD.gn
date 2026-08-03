@@ -28,7 +28,7 @@ rustc_test("driver_development_test") {
     "//sdk/rust/zx-status",
     "//src/devices/bind/fuchsia.test:fuchsia.test_rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",
   ]

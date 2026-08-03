@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_services_test as ft;
 use fuchsia_component::client;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
-use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_services_test as ft, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_services() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;

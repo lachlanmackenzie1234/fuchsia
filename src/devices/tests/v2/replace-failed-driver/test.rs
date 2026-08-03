@@ -3,12 +3,11 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_registrar as fdr;
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
-use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_registrar as fdr,
-    fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync,
-};
 fn send_get_device_info_request(
     service: &fdd::ManagerProxy,
     device_filter: &[String],
@@ -43,7 +42,7 @@ async fn get_device_info(
     Ok(device_infos)
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_replace_failed_driver() -> Result<()> {
     let node_filter = ["dev.sys.test".to_string()];
     let failing_url = "fuchsia-boot:///dtr#meta/fail-to-start.cm";

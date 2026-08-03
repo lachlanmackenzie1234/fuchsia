@@ -127,11 +127,12 @@ mod tests {
     use super::*;
     use argh::FromArgs;
     use flex_client::fidl::ServerEnd;
+    use flex_fuchsia_driver_framework as fdf;
+    use fuchsia_async as fasync;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
     #[cfg(feature = "fdomain")]
     use std::sync::Arc;
-    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     /// Invokes `list_composite_node_specs` with `cmd` and runs a mock driver development server that
     /// invokes `on_driver_development_request` whenever it receives a request.
@@ -189,7 +190,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verbose() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();

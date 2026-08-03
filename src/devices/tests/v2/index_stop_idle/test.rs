@@ -5,14 +5,13 @@
 use anyhow::Result;
 use component_events::events::{EventStream, Started, Stopped};
 use component_events::matcher::EventMatcher;
-use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use fidl_fuchsia_driver_development as fdd;
 use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_driver_test as fdt;
-use fuchsia_async as fasync;
+use fuchsia_component_test::RealmBuilder;
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_index_stop_on_idle() -> Result<()> {
     let mut event_stream = EventStream::open().await?;
 

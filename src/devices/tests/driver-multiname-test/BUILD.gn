@@ -25,7 +25,7 @@ rustc_test("driver_multiname_test") {
     "//sdk/lib/device-watcher/rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//sdk/rust/zx",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
   ]
 }

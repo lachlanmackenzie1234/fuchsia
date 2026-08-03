@@ -226,7 +226,7 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_health_report() -> Result<(), anyhow::Error> {
         let (controller_proxy, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
         let shared_state = Arc::new(UsbPolicySharedState::new());
@@ -252,7 +252,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_provider_server_state() -> Result<(), anyhow::Error> {
         let (controller_proxy, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
         let shared_state = Arc::new(UsbPolicySharedState::new());
@@ -279,7 +279,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_health_report_not_ready() -> Result<(), anyhow::Error> {
         let shared_state = Arc::new(UsbPolicySharedState::new());
         let (health_proxy, stream) = create_proxy_and_stream::<usb_policy::HealthMarker>();
@@ -296,7 +296,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_provider_server_wait() -> Result<(), anyhow::Error> {
         let shared_state = Arc::new(UsbPolicySharedState::new());
         let (provider_proxy, stream) =

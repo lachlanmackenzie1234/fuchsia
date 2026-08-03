@@ -48,6 +48,7 @@ rustc_test("bin") {
     "//src/devices/tests/v2/reload-driver:reloadtest_tools",
     "//src/devices/tests/v2/reload-driver/fidl:fuchsia.reloaddriver.test_rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",

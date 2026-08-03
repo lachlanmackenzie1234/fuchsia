@@ -8,11 +8,12 @@ mod descriptors;
 use crate::args::{Args, UsbDevice};
 use crate::descriptors::*;
 use anyhow::{Context, Result, format_err};
+use fidl_fuchsia_io as fio;
 use fuchsia_async::TimeoutExt;
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
 use futures::future::{BoxFuture, FutureExt};
-use {fidl_fuchsia_io as fio, zx_status as zx};
+use zx_status as zx;
 
 // This isn't actually unused, but rustc can't seem to tell otherwise.
 #[allow(unused_imports)]
@@ -420,7 +421,6 @@ async fn get_string_descriptor(
 mod test {
 
     use super::*;
-    use fuchsia_async as fasync;
     use futures::prelude::*;
 
     async fn run_usb_server(
@@ -520,7 +520,7 @@ mod test {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn smoke_test() {
         let (device, stream) = fidl::endpoints::create_proxy_and_stream::<
             fidl_fuchsia_hardware_usb_device::DeviceMarker,

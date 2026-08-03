@@ -60,6 +60,7 @@ rustc_library("driver_manager_core") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
   ]
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 fuchsia_unittest_package("driver-manager-core-unittests") {

@@ -7,8 +7,9 @@ pub mod args;
 use anyhow::{Context, Result};
 use args::ListCompositesCommand;
 use flex_client::ProxyHasDomain;
+use flex_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_framework as fdf;
 use std::io::Write;
-use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_framework as fdf};
 
 pub async fn list_composites(
     cmd: ListCompositesCommand,
@@ -118,7 +119,6 @@ fn write_parent_nodes_info(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
     use std::io::Error;
 
     pub struct TestWriteBuffer {
@@ -136,7 +136,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_composite_verbose() {
         let test_composite = fdf::CompositeInfo {
             spec: Some(fdf::CompositeNodeSpec {
@@ -181,7 +181,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_composite_verbose_empty_fields() {
         let test_composite = fdf::CompositeInfo {
             spec: Some(fdf::CompositeNodeSpec {

@@ -4,11 +4,10 @@
 
 use anyhow::Result;
 use fidl_fuchsia_driver_test as fdt;
-use fuchsia_async as fasync;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_devicetree_config() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;

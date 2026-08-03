@@ -100,7 +100,7 @@ rustc_test("rebind_test") {
     "//sdk/lib/syslog/cpp",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",
   ]

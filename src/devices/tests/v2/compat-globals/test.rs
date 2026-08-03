@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
+use fidl_fuchsia_driver_test as fdt;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
-use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 // This test checks for a very specific bug in the compat driver, where
 // adding devices would fail if it was in the same driver in the same driver host,
 // even if those two drivers had different instances.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_adding_children() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
@@ -61,7 +61,7 @@ async fn test_adding_children() -> Result<()> {
 
 // This test checks that a driver shares globals with the same driver in
 // the same driver host.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_sharing_globals() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;

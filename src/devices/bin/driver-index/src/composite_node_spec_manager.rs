@@ -355,8 +355,6 @@ mod tests {
     use bind::interpreter::match_bind::PropertyKey;
 
     use bind::parser::bind_library::ValueType;
-    use fuchsia_async as fasync;
-
     const TEST_DEVICE_NAME: &str = "test_device";
     const TEST_PRIMARY_NAME: &str = "primary_node";
     const TEST_ADDITIONAL_A_NAME: &str = "node_a";
@@ -461,7 +459,7 @@ mod tests {
         create_driver(TEST_DEVICE_NAME.to_string(), primary_parent, additionals, optionals)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_match_node() {
         let nodes = Some(vec![create_test_parent_spec_1(), create_test_parent_spec_2()]);
 
@@ -543,7 +541,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_match_bool_edgecase() {
         let bind_rules = vec![
             make_accept("testkey", fdf::NodePropertyValue::IntValue(200)),
@@ -579,7 +577,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_spec_match() {
         let bind_rules_2_rearranged = vec![
             make_accept(
@@ -661,7 +659,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_spec_nodes_match() {
         let bind_rules_1 = vec![
             make_accept("testkey", fdf::NodePropertyValue::IntValue(200)),
@@ -769,7 +767,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_mismatch() {
         let bind_rules_2 = vec![
             make_accept("killdeer", fdf::NodePropertyValue::StringValue("plover".to_string())),
@@ -807,7 +805,7 @@ mod tests {
         assert_eq!(None, composite_node_spec_manager.match_parent_specs(&device_properties));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_match_list() {
         let bind_rules_1 = vec![
             make_reject_list(
@@ -892,7 +890,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_mismatch_list() {
         let bind_rules_1 = vec![
             make_reject_list(
@@ -955,7 +953,7 @@ mod tests {
         assert_eq!(None, composite_node_spec_manager.match_parent_specs(&device_properties_2));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_multiple_value_types() {
         let bind_rules = vec![make_reject_list(
             "testkey10",
@@ -977,7 +975,7 @@ mod tests {
         assert!(composite_node_spec_manager.spec_list.is_empty());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_property_duplicate_key() {
         let bind_rules = vec![
             make_reject_list(
@@ -1002,7 +1000,7 @@ mod tests {
         assert!(composite_node_spec_manager.spec_list.is_empty());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_missing_bind_rules() {
         let bind_rules = vec![
             make_reject_list(
@@ -1033,7 +1031,7 @@ mod tests {
         assert!(composite_node_spec_manager.spec_list.is_empty());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_missing_composite_node_spec_fields() {
         let bind_rules = vec![
             make_reject_list(
@@ -1079,7 +1077,7 @@ mod tests {
         assert!(composite_node_spec_manager.spec_list.is_empty());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_composite_match() {
         let primary_bind_rules =
             vec![make_accept("testkey", fdf::NodePropertyValue::IntValue(200))];
@@ -1225,7 +1223,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_composite_with_rearranged_primary_node() {
         let primary_bind_rules =
             vec![make_accept("testkey", fdf::NodePropertyValue::IntValue(200))];
@@ -1372,7 +1370,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_composite_with_optional_match_without_optional() {
         let primary_bind_rules =
             vec![make_accept("testkey", fdf::NodePropertyValue::IntValue(200))];
@@ -1505,7 +1503,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_composite_with_optional_match_with_optional() {
         let primary_bind_rules =
             vec![make_accept("testkey", fdf::NodePropertyValue::IntValue(200))];
@@ -1672,7 +1670,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_composite_mismatch() {
         let primary_bind_rules =
             vec![make_accept("testkey", fdf::NodePropertyValue::IntValue(200))];
@@ -1760,7 +1758,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_valid_name() {
         let mut composite_node_spec_manager = CompositeNodeSpecManager::new();
 
@@ -1786,7 +1784,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_invalid_name() {
         let mut composite_node_spec_manager = CompositeNodeSpecManager::new();
         let node = make_parent_spec(
@@ -1808,7 +1806,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rebind() {
         let primary_bind_rules =
             vec![make_accept("testkey", fdf::NodePropertyValue::IntValue(200))];
@@ -1875,7 +1873,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rebind_no_match() {
         let primary_bind_rules =
             vec![make_accept("testkey", fdf::NodePropertyValue::IntValue(200))];
