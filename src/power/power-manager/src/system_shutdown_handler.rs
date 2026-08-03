@@ -7,11 +7,12 @@ use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use fidl_fuchsia_hardware_power_statecontrol as fpowercontrol;
 use fuchsia_inspect::{self as inspect, Property};
 use log::*;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::rc::Rc;
-use {fidl_fuchsia_hardware_power_statecontrol as fpowercontrol, serde_json as json};
 /// Node: SystemShutdownHandler
 ///
 /// Summary: Provides a mechanism for the Power Manager to shut down the system due to either
@@ -259,7 +260,7 @@ pub mod tests {
     }
 
     /// Tests for the presence and correctness of inspect data
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let inspector = inspect::Inspector::default();
         let node = SystemShutdownHandlerBuilder::new()
@@ -285,7 +286,7 @@ pub mod tests {
 
     /// Tests that the handle_shutdown function correctly sets the reboot reasons and calls
     /// Admin shutdown API.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_shutdown() {
         // At the end of the test, verify the Admin server's received shutdown request with correct
         // reason.
@@ -317,7 +318,7 @@ pub mod tests {
         assert_eq!(shutdown_reasons.take(), vec![fpowercontrol::ShutdownReason::HighTemperature]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_high_temperature_poweroff() {
         // At the end of the test, verify the Admin server's received shutdown request
         let shutdown_count = Rc::new(Cell::new(0));
@@ -350,7 +351,7 @@ pub mod tests {
     }
 
     /// Tests that if high temperature reboot request fails, the forced shutdown method is called.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_force_shutdown() {
         let force_shutdown = Rc::new(Cell::new(false));
         let force_shutdown_clone = force_shutdown.clone();

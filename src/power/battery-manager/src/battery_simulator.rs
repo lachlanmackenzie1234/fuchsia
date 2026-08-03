@@ -216,7 +216,7 @@ mod tests {
         Arc::new(BatteryManager::new(RecorderConfig::default()))
     }
 
-    #[fuchsia_async::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_observer_relationship() {
         let (watcher_client_end, mut stream) =
             create_request_stream::<fpower::BatteryInfoWatcherMarker>();

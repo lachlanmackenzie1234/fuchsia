@@ -11,9 +11,12 @@ use crate::types::{NormPerfs, OperatingPoint, ThermalLoad, Watts};
 use anyhow::{Error, anyhow, bail, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
+use fidl_fuchsia_power_cpu as fcpu;
+use fidl_fuchsia_thermal as fthermal;
 use fuchsia_inspect::{self as inspect, ArrayProperty as _, Property as _};
 use futures::lock::{Mutex, MutexGuard};
 use serde_derive::Deserialize;
+use serde_json as json;
 use state_recorder::{EnumStateRecorder, RecorderOptions};
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -22,7 +25,6 @@ use std::fmt::Debug;
 use std::rc::Rc;
 use strum_macros::{Display, EnumIter, EnumString, FromRepr};
 use zx::sys;
-use {fidl_fuchsia_power_cpu as fcpu, fidl_fuchsia_thermal as fthermal, serde_json as json};
 
 /// Node: CpuManagerMain
 ///
@@ -1283,7 +1285,6 @@ mod tests {
     use crate::{msg_eq, msg_ok_return};
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async as fasync;
     use test_util::assert_lt;
 
     // Common test configurations for big and little clusters.
@@ -1431,7 +1432,7 @@ mod tests {
     }
 
     // Verify that a node is successfully constructed from JSON configuration.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let handlers = Handlers::new();
 
@@ -1487,7 +1488,7 @@ mod tests {
     }
 
     // Verifies that thermal states are properly validated.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_thermal_state_validation() {
         // Since CpuManagerMainBuilder::build() exits early, we need a custom constructor for Handlers
         // that omits expectations for messages that are never sent.
@@ -1642,7 +1643,7 @@ mod tests {
 
     // Tests that CpuManagerMainBuilder requires that clusters are configured to exactly span the space
     // of all logical CPU numbers.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_validate_all_cpus_spanned() {
         let mut mock_maker = MockNodeMaker::new();
 
@@ -1678,7 +1679,7 @@ mod tests {
     }
 
     // Verify that CpuManagerMain responds as expected to UpdateThermalLoad messages.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_thermal_load() {
         let handlers = Handlers::new();
 
@@ -1768,7 +1769,7 @@ mod tests {
     }
 
     // Verify that CPU saturation is handled as expected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cpu_saturation() {
         let handlers = Handlers::new();
 
@@ -1835,7 +1836,7 @@ mod tests {
     }
 
     // Verify that Inspect data is populated as expected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let handlers = Handlers::new();
 
@@ -1918,7 +1919,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_boost() {
         let handlers = Handlers::new();
 
@@ -2140,7 +2141,7 @@ mod tests {
         node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(0))).await.unwrap();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_boost_multiple_sources() {
         let handlers = Handlers::new_with_highest_opp([1, 1]);
 
@@ -2198,7 +2199,7 @@ mod tests {
         result.unwrap();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_boost_idempotency_same_id() {
         let handlers = Handlers::new_with_highest_opp([1, 1]);
 

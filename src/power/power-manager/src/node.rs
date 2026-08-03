@@ -4,7 +4,7 @@
 
 use crate::error::PowerManagerError;
 use crate::message::{Message, MessageReturn};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use futures::future::join_all;
 use std::rc::Rc;
@@ -97,7 +97,6 @@ mod tests {
     use crate::test::mock_node::{MessageMatcher, MockNodeMaker};
     use crate::{msg_eq, msg_ok_return};
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
 
     #[allow(dead_code)] // TODO(https://fxbug.dev/330168785)
     struct TestNode;
@@ -109,7 +108,7 @@ mod tests {
 
     /// Tests that `send_message_to_many` sends a message to all provided nodes and the results are
     /// returned correctly.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_send_message_to_many() {
         let mut mock_maker = MockNodeMaker::new();
         let sending_node = mock_maker.make("sending_node", vec![]);

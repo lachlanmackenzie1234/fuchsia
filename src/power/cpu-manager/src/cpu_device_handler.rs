@@ -613,7 +613,7 @@ mod tests {
     }
 
     /// Tests that an unsupported message is handled gracefully and an Unsupported error is returned
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_unsupported_msg() {
         let opps = vec![OperatingPoint { frequency: Hertz(1e9), voltage: Volts(1.0) }];
         let node = setup_simple_test_node(opps).await;
@@ -625,7 +625,7 @@ mod tests {
 
     /// Tests that the Get/SetOperatingPoint messages cause the node to call the appropriate
     /// device controller FIDL APIs.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_operating_point() {
         let opps = vec![OperatingPoint { frequency: Hertz(1e9), voltage: Volts(1.0) }];
         let node = setup_simple_test_node(opps).await;
@@ -670,7 +670,7 @@ mod tests {
     }
 
     /// Tests that a GetCpuOperatingPoints message is handled properly.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cpu_operating_points() {
         let opps = vec![
             OperatingPoint { frequency: Hertz(1.4e9), voltage: Volts(0.9) },
@@ -689,7 +689,7 @@ mod tests {
     }
 
     /// Tests that opp validation works as expected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_opp_validation() {
         // Primary sort by frequency is violated.
         let opps = vec![
@@ -720,7 +720,7 @@ mod tests {
     }
 
     /// Tests that Inspect data is populated as expected
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let opps = vec![
             OperatingPoint { frequency: Hertz(1.3e9), voltage: Volts(0.8) },

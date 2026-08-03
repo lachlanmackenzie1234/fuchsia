@@ -206,6 +206,11 @@ node_config("vim3_devicetree") {
 
 fuchsia_unittest_package("power-manager-tests") {
   manifest = "meta/power_manager_bin_test.cml"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
   deps = [
     ":astro",
     ":base",

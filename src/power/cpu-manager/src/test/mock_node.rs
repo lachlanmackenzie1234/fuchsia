@@ -199,10 +199,9 @@ pub fn create_dummy_node() -> Rc<dyn Node> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
 
     /// Tests that receiving an unexpected Message variant results in a panic.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[should_panic]
     async fn test_incorrect_rcv_message_panic() {
         let mut mock_maker = MockNodeMaker::new();
@@ -217,7 +216,7 @@ mod tests {
     }
 
     /// Tests that sending an expected Message results in the specified response.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_message_response() {
         let mut mock_maker = MockNodeMaker::new();
         let mock_node = mock_maker.make(
@@ -236,7 +235,7 @@ mod tests {
 
     /// Tests that expecting an equal Message match but sending a non-equal Message results in a
     /// panic.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[should_panic]
     async fn test_message_arg_eq_mismatch_panic() {
         let mut mock_maker = MockNodeMaker::new();
@@ -299,7 +298,7 @@ mod tests {
 
     /// Tests that a DummyNode responds to an arbitrary Message with
     /// Err(CpuManagerError::Unsupported).
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_dummy_node() {
         let node = create_dummy_node();
         assert_matches!(

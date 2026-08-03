@@ -693,7 +693,7 @@ mod tests {
     use std::fs;
     use tempfile::{TempDir, tempdir};
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_crash_report_content() {
         let crash_report_signature = "TestCrashReportSignature";
 

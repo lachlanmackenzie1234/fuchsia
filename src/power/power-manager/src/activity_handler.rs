@@ -5,18 +5,20 @@
 use crate::log_if_err;
 use crate::message::Message;
 use crate::node::Node;
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_ui_activity as factivity;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::{self as inspect, Property};
+use futures::StreamExt as _;
 use futures::future::{FutureExt as _, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
-use futures::StreamExt as _;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_ui_activity as factivity, fuchsia_async as fasync, serde_json as json};
 
 /// Node: ActivityHandler
 ///
@@ -241,7 +243,7 @@ impl InspectData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
     use diagnostics_assertions::assert_data_tree;
 
@@ -296,7 +298,7 @@ mod tests {
     }
 
     /// Tests for the presence and correctness of dynamically-added inspect data
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let inspector = inspect::Inspector::default();
         let (provider_proxy, mut fake_activity) = FakeActivityProvider::new();
@@ -340,7 +342,7 @@ mod tests {
 
     /// Tests that the ActivityHandler relays NotifyUserActiveChanged messages to the ProfileHandler
     /// node when it observes changes to the activity state.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_activity_monitor() {
         let mut mock_maker = MockNodeMaker::new();
 

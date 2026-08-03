@@ -200,7 +200,6 @@ impl InspectData {
 mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async as fasync;
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
     #[fuchsia::test]
@@ -246,7 +245,7 @@ mod tests {
     }
 
     // Tests that errors are logged to Inspect as expected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let resource = zx::NullableHandle::invalid().into();
         let inspector = inspect::Inspector::default();

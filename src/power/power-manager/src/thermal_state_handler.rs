@@ -12,19 +12,21 @@ use crate::types::ThermalLoad;
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use async_utils::hanging_get::server as hanging_get;
+use fidl_fuchsia_thermal as fthermal;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use futures::TryStreamExt;
 use futures::prelude::*;
 use log::*;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::FromIterator as _;
 use std::path::Path;
 use std::rc::Rc;
 use thermal_config::{ClientConfig, ThermalConfig};
-use {fidl_fuchsia_thermal as fthermal, fuchsia_async as fasync, serde_json as json};
 
 /// Node: ThermalStateHandler
 ///
@@ -862,7 +864,7 @@ mod tests {
     }
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let json_data = json::json!({
             "type": "ThermalStateHandler",
@@ -886,7 +888,7 @@ mod tests {
     }
 
     /// Tests that new_from_json correctly handles the no dependencies case.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json_no_dependencies() {
         let json_data = json::json!({
             "type": "ThermalStateHandler",
@@ -1210,7 +1212,7 @@ mod tests {
     }
 
     /// Tests that an invalid thermal load update is met with an InvalidArgument error
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_invalid_thermal_load() {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
@@ -1428,7 +1430,7 @@ mod tests {
 
     /// Tests that when the temperature sensors go in and out of throttling, the correct platform
     /// metric messages are sent to the PlatformMetrics node.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_platform_metrics() {
         // Create mock platform metrics node
         let mut mock_maker = MockNodeMaker::new();

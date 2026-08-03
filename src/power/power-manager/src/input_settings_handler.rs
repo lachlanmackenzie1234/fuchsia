@@ -5,18 +5,19 @@
 use crate::log_if_err;
 use crate::message::Message;
 use crate::node::Node;
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result, format_err};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
+use fidl_fuchsia_settings as fsettings;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::{self as inspect, Property};
+use futures::StreamExt as _;
 use futures::future::{FutureExt as _, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
-use futures::StreamExt as _;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_settings as fsettings, serde_json as json};
 
 /// Node: InputSettingsHandler
 ///
@@ -229,10 +230,9 @@ impl InspectData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async as fasync;
 
     // A fake Settings service implementation for testing
     struct FakeSettingsSvc {
@@ -309,7 +309,7 @@ mod tests {
     }
 
     /// Tests for the presence and correctness of dynamically-added inspect data
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let inspector = inspect::Inspector::default();
         let (proxy, mut fake_settings) = FakeSettingsSvc::new();
@@ -350,7 +350,7 @@ mod tests {
 
     /// Tests that the InputSettingsHandler relays NotifyMicEnabledChanged messages to the
     /// ProfileHandler node when it observes changes to input settings.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_settings_monitor() {
         let mut mock_maker = MockNodeMaker::new();
 

@@ -630,7 +630,7 @@ pub mod tests {
 
     /// Tests that the `get_time_delta` function correctly calculates time delta while updating the
     /// `max_time_delta` state variable.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_time_delta() {
         let thermal_config = ThermalConfig {
             temperature_node: create_dummy_node(),
@@ -650,7 +650,7 @@ pub mod tests {
     }
 
     /// Tests that the `get_temperature_error` function correctly calculates integral error.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_temperature_error() {
         let mut policy_params = default_policy_params();
         policy_params.controller_params.target_temperature = Celsius(80.0);
@@ -674,7 +674,7 @@ pub mod tests {
     }
 
     /// Tests for the presence and correctness of dynamically-added inspect data
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let mut mock_maker = MockNodeMaker::new();
 
@@ -921,7 +921,7 @@ pub mod tests {
 
     /// Tests that the ThermalPolicy node populates the correct temperature sensor name in its
     /// UpdateThermalLoad messages.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_thermal_load_sensor_name() {
         let mut mock_maker = MockNodeMaker::new();
 
@@ -960,7 +960,7 @@ pub mod tests {
 
     /// Tests that each of the configured `thermal_load_notify_nodes` nodes receive an
     /// UpdateThermalLoad message as expected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_thermal_load_notify_nodes() {
         let mut mock_maker = MockNodeMaker::new();
 
@@ -1014,7 +1014,7 @@ pub mod tests {
 
     /// Tests that each of the configured `cpu_thermal_load_notify_node` node receive an
     /// UpdateCpuThermalLoad message as expected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cpu_thermal_load_notify_node() {
         let mut mock_maker = MockNodeMaker::new();
 

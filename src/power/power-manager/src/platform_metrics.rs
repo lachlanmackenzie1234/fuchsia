@@ -14,7 +14,6 @@ use async_trait::async_trait;
 use fidl_contrib::ProtocolConnector;
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
-
 use fuchsia_async as fasync;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_inspect::{self as inspect, HistogramProperty, LinearHistogramParams, Property};
@@ -865,7 +864,7 @@ mod inspect_throttle_history_tests {
 
     /// Tests that calling `set_active` twice without first calling `set_inactive` causes a panic in
     /// the debug configuration.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[should_panic(expected = "Must end previous throttling before setting active again")]
     #[cfg(debug_assertions)]
     async fn test_debug_panic_double_set_active() {
@@ -888,7 +887,7 @@ mod tests {
     use fidl_fuchsia_metrics::MetricEventPayload;
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let json_data = json::json!({
             "type": "PlatformMetrics",

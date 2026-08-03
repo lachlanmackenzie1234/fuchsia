@@ -12,18 +12,18 @@ use crate::{log_if_err, ok_or_default_err};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
+use fidl_fuchsia_hardware_temperature as ftemperature;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use log::*;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_temperature as ftemperature, fuchsia_async as fasync, serde_json as json,
-    zx,
-};
+use zx;
 
 /// Node: TemperatureHandler
 ///
@@ -432,7 +432,7 @@ pub mod tests {
 
     /// Tests that the node can handle the 'ReadTemperature' message as expected. The test
     /// checks for the expected temperature value which is returned by the fake temperature driver.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_read_temperature() {
         // Readings for the fake temperature driver.
         let temperature_readings = vec![1.2, 3.4, 5.6, 7.8, 9.0];
@@ -513,7 +513,7 @@ pub mod tests {
     }
 
     /// Tests that an unsupported message is handled gracefully and an error is returned.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_unsupported_msg() {
         let node = TemperatureHandlerBuilder::new()
             .driver_proxy(fake_temperature_driver(|| Celsius(0.0)))
@@ -526,7 +526,7 @@ pub mod tests {
     }
 
     /// Tests for the presence and correctness of dynamically-added inspect data
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let inspector = inspect::Inspector::default();
 
@@ -561,7 +561,7 @@ pub mod tests {
     }
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let json_data = json::json!({
             "type": "TemperatureHandler",
@@ -575,7 +575,7 @@ pub mod tests {
     }
 
     /// Tests that the node correctly reports its name.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_sensor_name() {
         let node = TemperatureHandlerBuilder::new()
             .driver_proxy(fake_temperature_driver(|| Celsius(0.0)))
@@ -593,7 +593,7 @@ pub mod tests {
 
     /// Tests that messages sent to the node are asynchronously blocked until the node's `init()`
     /// has completed.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_require_init() {
         // Create the node without `init()`
         let node = TemperatureHandlerBuilder::new()
@@ -611,7 +611,7 @@ pub mod tests {
 
     /// Tests that the debug temperature override command correctly overrides temperature and can be
     /// cleared as expected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_debug_temperature_override() {
         let node = TemperatureHandlerBuilder::new()
             .driver_proxy(fake_temperature_driver(|| Celsius(10.0)))
@@ -762,7 +762,6 @@ mod temperature_filter_tests {
     use super::*;
     use crate::test::mock_node::{MessageMatcher, MockNodeMaker};
     use crate::{msg_eq, msg_ok_return};
-    use fuchsia_async as fasync;
 
     /// Tests the low_pass_filter function for correctness.
     #[fuchsia::test]
@@ -789,7 +788,7 @@ mod temperature_filter_tests {
 
     /// Tests that the TemperatureFilter `get_temperature` function queries the TemperatureHandler
     /// node and returns the expected raw and filtered temperature values.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_temperature() {
         let mut mock_maker = MockNodeMaker::new();
         let temperature_node = mock_maker.make(

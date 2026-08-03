@@ -294,9 +294,9 @@ mod tests {
     use fidl::Peered;
     use fidl_fuchsia_power::CollaborativeRebootInitiatorMarker;
     use fidl_fuchsia_power_internal::CollaborativeRebootSchedulerMarker;
+    use futures::FutureExt;
     use futures::future::Either;
     use futures::stream::FuturesUnordered;
-    use futures::FutureExt;
     use test_case::test_case;
 
     #[derive(Default)]
@@ -322,7 +322,7 @@ mod tests {
     #[test_case(vec![Reason::NetstackMigration] => true; "netstack_migration")]
     #[test_case(vec![Reason::SystemUpdate, Reason::NetstackMigration] => true; "different_reasons")]
     #[test_case(vec![Reason::SystemUpdate, Reason::SystemUpdate] => true; "same_reasons")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn collaborative_reboot(mut reasons: Vec<Reason>) -> bool {
         // Note: this test doesn't exercise cancellations.
         let inspector =
@@ -559,7 +559,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn inspect() {
         let inspector =
             fuchsia_inspect::Inspector::new(fuchsia_inspect::InspectorConfig::default());

@@ -4,15 +4,16 @@
 
 use crate::node::Node;
 use anyhow::{Context, Error, format_err};
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
 use futures::future::{LocalBoxFuture, join_all};
 use futures::stream::{FuturesUnordered, StreamExt};
 use log::*;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fuchsia_async as fasync, serde_json as json};
 
 // nodes
 use crate::{
@@ -257,14 +258,13 @@ fn log_config(config: &power_manager_config_lib::Config) {
 mod tests {
     use super::*;
     use anyhow::format_err;
-    use fuchsia_async as fasync;
     use std::collections::HashSet;
 
     /// Tests that well-formed configuration JSON does not cause an unexpected panic in the
     /// `create_nodes` function. With this test JSON, we expect a panic with the message stated
     /// below indicating a node with the given type doesn't exist. By this point the JSON parsing
     /// will have already been validated.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[should_panic(expected = "Unknown node type: test_type")]
     async fn test_create_nodes() {
         let json_data = json::json!([
@@ -375,7 +375,7 @@ mod tests {
     }
 
     /// Tests that if any node's init() fails, then the `init_nodes()` function returns an error.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_init_failure() {
         use async_trait::async_trait;
 

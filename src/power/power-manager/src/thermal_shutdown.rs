@@ -12,14 +12,15 @@ use crate::temperature_handler::TemperatureFilter;
 use crate::types::{Celsius, Seconds};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::future::{FutureExt, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
 use log::*;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fuchsia_async as fasync, serde_json as json};
 
 /// Node: ThermalShutdown
 ///
@@ -203,7 +204,7 @@ mod tests {
     use crate::{msg_eq, msg_ok_return};
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let json_data = json::json!({
             "type": "ThermalShutdown",
@@ -229,7 +230,7 @@ mod tests {
 
     /// Tests that when the node reads a temperature that exceeds the configured threshold value, it
     /// triggers a system shutdown.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_triggered_shutdown() {
         let mut mock_maker = MockNodeMaker::new();
         let temperature_node = mock_maker.make(

@@ -10,14 +10,15 @@ use crate::node::Node;
 use crate::types::{Milliseconds, Nanoseconds};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use fidl_fuchsia_kernel as fstats;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_kernel as fstats, serde_json as json};
 
 /// Node: CpuStatsHandler
 ///
@@ -401,7 +402,7 @@ pub mod tests {
     /// This test creates a CpuStatsHandler node and sends it the 'GetNumCpus' message. The
     /// test verifies that the message returns successfully and the expected number of CPUs
     /// are reported (in the test configuration, it should report `TEST_NUM_CORES`).
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_num_cpus() {
         let node = setup_simple_test_node().await;
         let num_cpus = node.handle_message(&Message::GetNumCpus).await.unwrap();
@@ -519,7 +520,7 @@ pub mod tests {
     }
 
     /// Tests that an unsupported message is handled gracefully and an Unsupported error is returned
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_unsupported_msg() {
         let node = setup_simple_test_node().await;
         match node.handle_message(&Message::GetCpuOperatingPoints).await {
@@ -529,7 +530,7 @@ pub mod tests {
     }
 
     /// Tests for the presence and correctness of dynamically-added inspect data
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let inspector = inspect::Inspector::default();
         let node = CpuStatsHandlerBuilder::new()
@@ -558,7 +559,7 @@ pub mod tests {
     }
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let json_data = json::json!({
             "type": "CpuStatsHandler",

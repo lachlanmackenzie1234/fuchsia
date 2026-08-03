@@ -23,7 +23,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use {fuchsia_async as fasync, serde_json as json};
+use fuchsia_async as fasync;
+use serde_json as json;
 
 /// Node: ThermalLoadDriver
 ///
@@ -601,7 +602,7 @@ mod tests {
 
     /// Tests that well-formed node_config JSON can be used to create a new ThermalLoadDriverBuilder
     /// instance.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let json_data = json::json!({
             "type": "ThermalLoadDriver",

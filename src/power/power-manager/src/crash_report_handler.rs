@@ -8,11 +8,12 @@ use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use fidl_fuchsia_feedback as fidl_feedback;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
 use std::cell::RefCell;
 use std::rc::Rc;
-use {fidl_fuchsia_feedback as fidl_feedback, fuchsia_async as fasync};
 
 /// Node: CrashReportHandler
 ///
@@ -169,7 +170,7 @@ mod tests {
 
     /// Tests that the node responds to the FileCrashReport message and that the expected crash
     /// report is received by the CrashReporter service.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_crash_report_content() {
         // The crash report signature to use and verify against
         let crash_report_signature = "TestCrashReportSignature";
@@ -297,7 +298,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut stream.next()).is_pending());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_crash_report_channel_closure() {
         let (proxy, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_feedback::CrashReporterMarker>();

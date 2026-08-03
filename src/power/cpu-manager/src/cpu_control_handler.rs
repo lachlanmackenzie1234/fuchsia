@@ -778,7 +778,7 @@ pub mod tests {
     }
 
     /// Tests that an unsupported message is handled gracefully and an Unsupported error is returned
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_unsupported_msg() {
         let mut mock_maker = MockNodeMaker::new();
         let devhost_node = mock_maker.make(
@@ -886,7 +886,7 @@ pub mod tests {
 
     /// Tests that the UpdateThermalLoad message causes the node to correctly consider CPU load
     /// and parameters to choose the appropriate opps.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_thermal_load() {
         let mut mock_maker = MockNodeMaker::new();
 
@@ -996,7 +996,7 @@ pub mod tests {
 
     /// Tests that when a minimum CPU clock speed is specified, a opp with a lower CPU frequency
     /// is never selected.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_min_cpu_clock_speed() {
         let mut mock_maker = MockNodeMaker::new();
 
@@ -1084,7 +1084,7 @@ pub mod tests {
     }
 
     /// Tests for the presence and correctness of dynamically-added inspect data
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_data() {
         let mut mock_maker = MockNodeMaker::new();
         let devhost_node = mock_maker.make(
@@ -1129,7 +1129,7 @@ pub mod tests {
     }
 
     /// Tests that well-formed configuration JSON does not panic the `new_from_json` function.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_from_json() {
         let json_data = json::json!({
             "type": "CpuControlHandler",

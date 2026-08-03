@@ -9,14 +9,15 @@ use anyhow::Result;
 use async_trait::async_trait;
 use async_utils::hanging_get::server as hanging_get;
 use fidl_fuchsia_power_profile::{self as fprofile, Profile};
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect::{self as inspect, Property};
 use futures::prelude::*;
 use log::*;
+use serde_json as json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fuchsia_async as fasync, serde_json as json};
 
 /// Node: SystemProfileHandler
 ///
@@ -403,7 +404,7 @@ mod tests {
 
     /// Tests that SystemProfileHandler receives messages to update input states and correctly
     /// updates its Profile value.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_profile_updates() {
         let node = SystemProfileHandlerBuilder::new().build().unwrap();
 
@@ -491,7 +492,7 @@ mod tests {
     }
 
     /// Tests that the debug command "set_profile" can be used to change the system power profile.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_debug_set_profile() {
         let node = SystemProfileHandlerBuilder::new().build().unwrap();
 

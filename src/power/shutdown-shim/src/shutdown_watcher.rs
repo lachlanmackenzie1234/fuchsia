@@ -603,7 +603,7 @@ mod tests {
 
     /// Tests that a client can successfully register a reboot watcher, and the registered watcher
     /// receives the expected reboot notification.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_reboot_watcher() {
         let registrar = ShutdownWatcher::new();
 
@@ -647,7 +647,7 @@ mod tests {
 
     /// Tests that a client can successfully register a shutdown watcher, and the registered watcher
     /// receives the expected shutdown notification.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_shutdown_watcher() {
         let registrar = ShutdownWatcher::new();
 
@@ -692,7 +692,7 @@ mod tests {
 
     /// Tests that a client can successfully register a terminal state watcher, and the registered
     /// watcher receives the expected notification.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_terminal_state_watcher() {
         let registrar = ShutdownWatcher::new();
 
@@ -729,7 +729,7 @@ mod tests {
     }
 
     /// Tests that a reboot watcher is delivered the correct reboot reason
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_reboot_watcher_reason() {
         let registrar = ShutdownWatcher::new();
         let (watcher_proxy, mut watcher_stream) =
@@ -758,7 +758,7 @@ mod tests {
 
     /// Tests that a shutdown watcher is delivered the correct shutdown reason. This test does not
     /// register via the ShutdownWatcherRegister protocol.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_shutdown_watcher_reason() {
         let registrar = ShutdownWatcher::new();
         let (watcher_proxy, mut watcher_stream) =
@@ -787,7 +787,7 @@ mod tests {
 
     /// Tests that if there are multiple registered reboot watchers, each one will receive the
     /// expected reboot notification.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_reboot_watchers() {
         let registrar = ShutdownWatcher::new();
 
@@ -847,7 +847,7 @@ mod tests {
 
     /// Tests that if there are multiple registered shutdown watchers, each one will receive the
     /// expected shutdown notification.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_shutdown_watchers() {
         let registrar = ShutdownWatcher::new();
 
@@ -909,7 +909,7 @@ mod tests {
 
     /// Tests that the deprecated reboot watchers only receive notifications for
     /// ShutdownAction::Reboot.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn reboot_watchers_only_notified_of_reboots() {
         let registrar = ShutdownWatcher::new();
         let (watcher_proxy, mut watcher_stream) =
@@ -960,7 +960,7 @@ mod tests {
     /// Tests that shutdown, terminal state, and reboot watchers are notified of reboots.
     /// Shutdown watchers are notified of other shutdown actions.
     /// Terminal state watchers are notified of all reboot or shutdown actions.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn shutdown_terminal_state_and_reboot_watchers_notified() {
         let registrar = ShutdownWatcher::new();
 
@@ -1009,7 +1009,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn shutdown_watchers_notified_for_poweroff() {
         let registrar = ShutdownWatcher::new();
 
@@ -1034,7 +1034,7 @@ mod tests {
         assert_eq!(&reasons[..], [ShutdownReason::HighTemperature]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn shutdown_watchers_notified_for_reboot_to_bootloader() {
         let registrar = ShutdownWatcher::new();
 
@@ -1059,7 +1059,7 @@ mod tests {
         assert_eq!(&reasons[..], [ShutdownReason::HighTemperature]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn shutdown_watchers_notified_for_reboot_to_recovery() {
         let registrar = ShutdownWatcher::new();
 
@@ -1245,7 +1245,7 @@ mod tests {
 
     /// Tests that an unsuccessful RebootWatcher registration results in the
     /// RebootMethodsWatcherRegister channel being closed.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_watcher_register_fail() {
         let registrar = ShutdownWatcher::new();
 
@@ -1270,7 +1270,7 @@ mod tests {
 
     /// Tests that an unsuccessful ShutdownWatcher registration results in the
     /// ShutdownWatcherRegister channel being closed.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_shutdown_watcher_register_fail() {
         let registrar = ShutdownWatcher::new();
 
@@ -1294,7 +1294,7 @@ mod tests {
 
     /// Tests that if there are multiple currently registered terminal state watchers, each one will
     /// receive the expected notification.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_terminal_state_watchers() {
         let registrar = ShutdownWatcher::new();
 

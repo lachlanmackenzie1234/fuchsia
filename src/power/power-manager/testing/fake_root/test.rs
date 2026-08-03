@@ -6,7 +6,7 @@ use anyhow::Result;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_devfs_exporter() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
