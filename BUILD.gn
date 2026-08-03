@@ -29,11 +29,6 @@ import("//build/config/enable_delayed_bazel_actions.gni")
 
 # Standard GN args.
 declare_args() {
-  # These remain only to allow for a soft-transition with developer's
-  # local args.gn files.
-  base_package_labels = false
-  cache_package_labels = false
-
   # If you add package labels to this variable, the packages will be included
   # in the 'universe' package set, which represents all software that is
   # produced that is to be published to a package repository or to the SDK by
@@ -147,67 +142,9 @@ declare_args() {
   product_bundle_labels = []
 }
 
-declare_args() {
-  # DEPRECATED, left to trigger warnings
-  authorized_ssh_keys_label = false
-}
-
-if (authorized_ssh_keys_label != false) {
-  print("WARNING!")
-  print()
-  print(
-      "The 'authorized_ssh_keys_label' GN arg has been removed, use developer overrides for assembly instead.")
-  print(
-      "See: https://fuchsia.dev/fuchsia-src/development/build/assembly_developer_overrides")
-  print()
-  print("and use:")
-  print()
-  print("platform = {")
-  print("  development_support = {")
-  print("    authorized_ssh_keys_path = <path>")
-  print("  }")
-  print("}")
-  print()
-}
-
 assert(
     current_toolchain == default_toolchain,
     "The root build file (//BUILD.gn) can only be processed in the `default_toolchain`.")
-
-# Detect if base_package_labels or cache_package_labels have been set to _some_
-# value via 'args.gn'
-if (base_package_labels != false || cache_package_labels != false) {
-  # Error out if they have any contents.
-  error_out_build =
-      (base_package_labels != false && base_package_labels != []) ||
-      (cache_package_labels != false && cache_package_labels != [])
-  print()
-  if (error_out_build) {
-    print(
-        "ERROR:  The 'base_package_labels' and 'cache_package_labels' GN build arguments")
-    print("          are being removed and can no longer be used.")
-  } else {
-    print(
-        "WARNING:  The 'base_package_labels' and 'cache_package_labels' GN build arguments")
-    print(
-        "          are being removed and need to be removed from your build configuration.")
-  }
-  print()
-  print(
-      "  Re-run 'fx set' or remove them from your 'args.gn' file using 'fx args'.")
-  print()
-  print(
-      "  To add tests, use '--with-test' or the 'developer_test_labels' GN arg.")
-  print()
-  print(
-      "  To add base and cache packages, switch to using developer overrides for assembly:")
-  print(
-      "  https://fuchsia.dev/fuchsia-src/development/build/assembly_developer_overrides#add-package")
-  print()
-  if (error_out_build) {
-    assert(false)
-  }
-}
 
 ###
 ### fx integration.
