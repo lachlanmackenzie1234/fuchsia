@@ -196,8 +196,9 @@
             to: [ "#network" ],
         },
         {
-            protocol: "fuchsia.net.http.Loader",
+            protocol: "fuchsia.net.http.GoogleLoader",
             from: "#network",
+            as: "fuchsia.net.http.Loader",
             to: "#cobalt",
         },
         {
@@ -464,7 +465,6 @@
             directory: "root-ssl-certificates",
             from: "parent",
             to: [
-                "#cobalt",
                 "#network",
                 "#timekeeper",
             ],
@@ -473,6 +473,12 @@
             directory: "google-root-ssl-certificates",
             from: "parent",
             to: [ "#network" ],
+        },
+        {
+            directory: "google-root-ssl-certificates",
+            from: "parent",
+            as: "root-ssl-certificates",
+            to: [ "#cobalt" ],
         },
         {
             directory: "config-data",
