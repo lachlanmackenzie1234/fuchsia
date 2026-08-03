@@ -21,7 +21,6 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.recovery.ui:fuchsia.recovery.ui_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/syslog/rust:syslog",
     "//third_party/rust_crates:anyhow",

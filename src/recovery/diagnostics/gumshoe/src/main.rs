@@ -107,12 +107,7 @@ async fn stakeout(
     let boxed_device_info =
         Box::new(DeviceInfoImpl::new(board_info, device_info, product_info, storage_info));
 
-    let partition_reader = PartitionReader::new(
-        fuchsia_component::client::connect_to_protocol_at_path::<
-            fidl_fuchsia_storage_block::BlockMarker,
-        >,
-    )
-    .await?;
+    let partition_reader = PartitionReader::new(partition_provider).await?;
     let partition_reader = Box::new(partition_reader);
 
     // Construct a responder for generating HTTP responses from HTTP requests.
@@ -145,7 +140,6 @@ mod tests {
 
     use crate::webserver::MockWebServer;
     use anyhow::{Error, anyhow};
-    use fuchsia_async as fasync;
     use mockall::Sequence;
     use mockall::predicate::eq;
 
@@ -154,7 +148,7 @@ mod tests {
     const REGISTRATION_ERROR: &str = "Registration Error!";
 
     /// Verifies stakeout() runs webserver.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stakeout_starts_webserver() -> Result<(), Error> {
         let mut web_server = MockWebServer::new();
 
@@ -165,7 +159,7 @@ mod tests {
     }
 
     /// Verifies WebServer.run() errors are percolated up from stakeout().
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stakeout_percolates_webserver_error() {
         let mut web_server = MockWebServer::new();
 
@@ -183,7 +177,7 @@ mod tests {
     }
 
     /// Verifies stakeout() registers all files from resource("templates").
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stakeout_registers_templates() -> Result<(), Error> {
         let mut web_server = MockWebServer::new();
         let mut template_engine = MockTemplateEngine::new();
@@ -212,7 +206,7 @@ mod tests {
     }
 
     /// Verifies stakeout percolates template registration errors.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stakeout_percolates_template_registration_error() {
         // Template initialization error prevents Web Server run() call.
         let web_server = MockWebServer::new();

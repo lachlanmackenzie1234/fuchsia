@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, bail, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::{create_proxy, create_request_stream};
 use fidl_fuchsia_wlan_policy::{self as wlan_policy, NetworkConfig, SecurityType};
@@ -37,8 +37,8 @@ pub fn create_network_info(
     }
 }
 
-fn get_client_controller(
-) -> Result<(wlan_policy::ClientControllerProxy, wlan_policy::ClientStateUpdatesRequestStream), Error>
+fn get_client_controller()
+-> Result<(wlan_policy::ClientControllerProxy, wlan_policy::ClientStateUpdatesRequestStream), Error>
 {
     let policy_provider = connect_to_protocol::<wlan_policy::ClientProviderMarker>()?;
     let (client_controller, server_end) = create_proxy::<wlan_policy::ClientControllerMarker>();
@@ -213,7 +213,7 @@ mod tests {
         Ok(gcc)
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn connect() {
         fn network_id() -> wlan_policy::NetworkIdentifier {
             wlan_policy::NetworkIdentifier {

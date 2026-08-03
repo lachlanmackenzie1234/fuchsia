@@ -2,16 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
+use fidl_fuchsia_feedback as fidl_feedback;
 use fidl_fuchsia_feedback::{
     Annotation, CrashReporterMarker, CrashReporterProxy, FileReportResults,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
 use std::cell::RefCell;
 use std::rc::Rc;
-use {fidl_fuchsia_feedback as fidl_feedback, fuchsia_async as fasync};
 
 #[macro_export]
 macro_rules! send_report {
@@ -209,7 +210,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_crash_report_content() {
         let received_error = RecoveryError::FdrResetError();
 
@@ -250,7 +251,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_crash_report_string_limits() {
         let signature = gen_string('A', SIGNATURE_MAX_LENGTH + 10);
         let context = gen_string('Z', ANNOTATION_MAX_LENGTH + 10);

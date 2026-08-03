@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[ignore] //TODO(https://fxbug.dev/42053153) Move to integration test
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_run_devhost_ota() -> Result<(), Error> {
         let package = PackageBuilder::new("test-package")
             .add_resource_at("data/file1", "Hello, world!".as_bytes())

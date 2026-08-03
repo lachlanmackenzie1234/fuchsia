@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_hwinfo as hwinfo;
 use fidl_fuchsia_intl::RegulatoryDomain;
 use fidl_fuchsia_location_namedplace::{
@@ -64,14 +64,13 @@ fn validate_region_code(region_code: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_hwinfo as hwinfo;
+    use fidl_fuchsia_location_namedplace as regulatory;
+    use fuchsia_async as fasync;
     use fuchsia_async::TimeoutExt;
     use futures::channel::mpsc;
     use futures::{StreamExt, TryStreamExt};
     use zx::MonotonicDuration;
-    use {
-        fidl_fuchsia_hwinfo as hwinfo, fidl_fuchsia_location_namedplace as regulatory,
-        fuchsia_async as fasync,
-    };
 
     fn create_mock_hwinfo_server(
         mock_info: hwinfo::ProductInfo,
@@ -95,9 +94,8 @@ mod tests {
         Ok(proxy)
     }
 
-    fn create_mock_regulatory_configurator_server(
-    ) -> Result<(regulatory::RegulatoryRegionConfiguratorProxy, mpsc::Receiver<String>), Error>
-    {
+    fn create_mock_regulatory_configurator_server()
+    -> Result<(regulatory::RegulatoryRegionConfiguratorProxy, mpsc::Receiver<String>), Error> {
         let (mut sender, receiver) = mpsc::channel(1);
         let (proxy, mut request_stream) = fidl::endpoints::create_proxy_and_stream::<
             regulatory::RegulatoryRegionConfiguratorMarker,
@@ -197,7 +195,7 @@ mod tests {
         assert!(receiver.try_next().is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_valid_region_codes() {
         let valid_codes = vec!["AA", "ZZ"];
 
@@ -206,7 +204,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_invalid_region_codes() {
         let invalid_codes = vec!["", "a", "test"];
 

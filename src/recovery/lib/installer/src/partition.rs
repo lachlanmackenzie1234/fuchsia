@@ -381,7 +381,7 @@ mod tests {
         Ok(proxy)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_bad_guid() -> Result<(), Error> {
         let proxy = mock_partition("zircon_a", 512, 1000, [0xaa; 16])?;
         let part = Partition::new("zircon_a".to_string(), proxy, BootloaderType::Efi).await?;
@@ -389,7 +389,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_zircona() -> Result<(), Error> {
         let proxy = mock_partition("zircon_a", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("zircon_a".to_string(), proxy, BootloaderType::Efi).await?;
@@ -405,7 +405,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_zirconb() -> Result<(), Error> {
         let proxy = mock_partition("zircon_b", 20, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("zircon_b".to_string(), proxy, BootloaderType::Efi).await?;
@@ -421,7 +421,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_zirconr() -> Result<(), Error> {
         let proxy = mock_partition("zircon_r", 40, 200, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("zircon_r".to_string(), proxy, BootloaderType::Efi).await?;
@@ -457,24 +457,24 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_vbmetaa() -> Result<(), Error> {
         new_partition_vbmetax_test_helper("vbmeta_a", Configuration::A).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_vbmetab() -> Result<(), Error> {
         // 'A' and 'B' are treated the same, as the installer will install
         // the same image to both A and B.
         new_partition_vbmetax_test_helper("vbmeta_b", Configuration::A).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_vbmetar() -> Result<(), Error> {
         new_partition_vbmetax_test_helper("vbmeta_r", Configuration::Recovery).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_efi() -> Result<(), Error> {
         let proxy = mock_partition("efi", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("efi".to_string(), proxy, BootloaderType::Efi).await?;
@@ -487,7 +487,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_fvm() -> Result<(), Error> {
         let proxy = mock_partition("storage-sparse", 2048, 4097, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("storage-sparse".to_string(), proxy, BootloaderType::Efi).await?;
@@ -500,7 +500,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_zircona_unsigned_coreboot() -> Result<(), Error> {
         let proxy = mock_partition("zircon_a", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("zircon_a".to_string(), proxy, BootloaderType::Coreboot).await?;
@@ -508,7 +508,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_zircona_signed_coreboot() -> Result<(), Error> {
         let proxy = mock_partition("zircon_a.signed", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part =
@@ -525,7 +525,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_unknown() -> Result<(), Error> {
         let proxy = mock_partition("unknown-label", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("unknown-label".to_string(), proxy, BootloaderType::Efi).await?;
@@ -533,7 +533,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_zedboot_efi() -> Result<(), Error> {
         let proxy = mock_partition("zedboot-efi", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("zedboot-efi".to_string(), proxy, BootloaderType::Efi).await?;
@@ -541,7 +541,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_invalid_partitions_coreboot() -> Result<(), Error> {
         let proxy = mock_partition("zircon_.signed", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part =
@@ -556,7 +556,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_invalid_partitions_efi() -> Result<(), Error> {
         let proxy = mock_partition("zircon_", 512, 1000, WORKSTATION_INSTALLER_GPT)?;
         let part = Partition::new("zircon_".to_string(), proxy, BootloaderType::Efi).await?;
@@ -573,7 +573,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_usb_bad_guid() -> Result<(), Error> {
         let proxy = mock_partition("zircon_a", 512, 1000, [0xaa; 16])?;
         let part = Partition::new("/dev/usb-bus".to_string(), proxy, BootloaderType::Efi).await?;
@@ -581,7 +581,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_usb_zircona() -> Result<(), Error> {
         let proxy = mock_partition("zircon_a", 512, 1000, WORKSTATION_PARTITION_GPTS[2])?;
         let part = Partition::new("/dev/usb-bus".to_string(), proxy, BootloaderType::Efi).await?;
@@ -597,7 +597,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_usb_zirconb() -> Result<(), Error> {
         let proxy = mock_partition("zircon_b", 20, 1000, WORKSTATION_PARTITION_GPTS[3])?;
         let part = Partition::new("/dev/usb-bus".to_string(), proxy, BootloaderType::Efi).await?;
@@ -613,7 +613,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_usb_zirconr() -> Result<(), Error> {
         let proxy = mock_partition("zircon_r", 40, 200, WORKSTATION_PARTITION_GPTS[4])?;
         let part = Partition::new("/dev/usb-bus".to_string(), proxy, BootloaderType::Efi).await?;
@@ -629,7 +629,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_new_partition_usb_efi() -> Result<(), Error> {
         let proxy = mock_partition("efi-system", 512, 1000, WORKSTATION_PARTITION_GPTS[0])?;
         let part = Partition::new("/dev/usb-bus".to_string(), proxy, BootloaderType::Efi).await?;

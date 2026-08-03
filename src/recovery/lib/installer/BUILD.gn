@@ -26,6 +26,7 @@ rustc_library("installer") {
     "//third_party/rust_crates:regex-lite",
   ]
   test_deps = [
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
   ]

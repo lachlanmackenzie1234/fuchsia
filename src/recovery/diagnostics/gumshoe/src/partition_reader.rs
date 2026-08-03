@@ -62,7 +62,7 @@ impl PartitionReader {
         &self,
         name: String,
         sender: Sender,
-    ) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+    ) -> Result<impl Future<Output = Result<(), Error>> + 'static, Error> {
         let (block_count, block_size) = self.size(&name)?;
 
         let Some(block_proxy_provider) = self.block_proxy_provider else {
