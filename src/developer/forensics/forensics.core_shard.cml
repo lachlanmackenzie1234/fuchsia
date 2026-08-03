@@ -78,10 +78,13 @@
             to: "#exceptions",
         },
         {
-            protocol: [
-                "fuchsia.net.http.Loader",
-                "fuchsia.net.interfaces.State",
-            ],
+            protocol: "fuchsia.net.http.GoogleLoader",
+            from: "#network",
+            as: "fuchsia.net.http.Loader",
+            to: "#feedback",
+        },
+        {
+            protocol: "fuchsia.net.interfaces.State",
             from: "#network",
             to: "#feedback",
         },
