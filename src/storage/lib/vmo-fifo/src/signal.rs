@@ -40,6 +40,22 @@ impl EventSignal {
         Ok(())
     }
 
+    pub(crate) async fn wait_async(
+        &mut self,
+        vmo: &zx::Vmo,
+        shutdown_sig: zx::Signals,
+    ) -> Result<(), zx::Status> {
+        let mask = self.set_next | shutdown_sig;
+
+        let observed = fuchsia_async::OnSignals::new(vmo, mask).await?;
+        if observed.contains(shutdown_sig) {
+            return Err(zx::Status::CANCELED);
+        }
+
+        std::mem::swap(&mut self.set_next, &mut self.clear_next);
+        Ok(())
+    }
+
     pub(crate) fn signal(&mut self, vmo: &zx::Vmo) -> Result<(), zx::Status> {
         // Asserts the active signal bit and clears the alternate bit.
         vmo.signal(self.clear_next, self.set_next)?;
@@ -51,6 +67,7 @@ impl EventSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_async::{DurationExt, Timer};
 
     #[fuchsia::test]
     fn test_event_signal() {
@@ -65,5 +82,27 @@ mod tests {
         // Second cycle
         event_sender.signal(&vmo).expect("signal failed");
         event_receiver.wait(&vmo, SIG_SHUTDOWN).expect("wait failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_event_signal_async_concurrency() {
+        let vmo = zx::Vmo::create(4096).expect("VMO creation failed");
+        let mut event_sender = EventSignal::new(SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1);
+        let mut event_receiver = EventSignal::new(SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1);
+
+        // This task will wait for the signal before it is sent.
+        let wait_task = async {
+            event_receiver.wait_async(&vmo, SIG_SHUTDOWN).await.expect("wait failed");
+        };
+
+        // This task will delay briefly, then send the signal.
+        let signal_task = async {
+            Timer::new(zx::MonotonicDuration::from_millis(1).after_now()).await;
+            event_sender.signal(&vmo).expect("signal failed");
+        };
+
+        // Run the tasks concurrently. If the wait_task blocks the executor thread synchronously,
+        // this join will deadlock.
+        futures::join!(wait_task, signal_task);
     }
 }

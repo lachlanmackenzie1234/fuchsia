@@ -144,6 +144,14 @@ impl RingAllocator {
             self.freed_bytes = 0;
         }
     }
+
+    // Returns false if the requested size is permanently impossible to fit inside the payload
+    // region, regardless of how much space the queue eventually frees up.
+    pub(crate) fn is_within_capacity(&self, size: usize) -> bool {
+        let align = self.alignment;
+        let aligned_size = (size as u64 + align - 1) & !(align - 1);
+        aligned_size <= self.payload_capacity
+    }
 }
 
 #[cfg(test)]

@@ -11,12 +11,16 @@ rustc_library("vmo-fifo") {
 
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
     "//src/storage/lib/ptr_slice",
     "//third_party/rust_crates:zerocopy",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:futures",
+  ]
 
   sources = [
     "src/lib.rs",
