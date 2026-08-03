@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use argh::FromArgs;
-use component_debug::dirs::{connect_to_instance_protocol, OpenDirType};
+use component_debug::dirs::{OpenDirType, connect_to_instance_protocol};
+use fidl_fuchsia_element as felement;
+use fidl_fuchsia_session as fsession;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_component::client::connect_to_protocol_at_path;
-use {
-    fidl_fuchsia_element as felement, fidl_fuchsia_session as fsession, fidl_fuchsia_sys2 as fsys,
-    fuchsia_async as fasync,
-};
 
 #[derive(FromArgs, Debug, PartialEq)]
 /// Various operations to control sessions.
@@ -65,7 +64,7 @@ async fn connect_to_exposed_protocol<P: fidl::endpoints::DiscoverableProtocolMar
     Ok(proxy)
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let Args { command } = argh::from_env();
     let realm_query =
@@ -192,7 +191,7 @@ mod tests {
     };
 
     /// Tests that the session_control tool successfully handles a call to LaunchSession with the provided URL.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_launch_session() {
         let (launcher, mut launcher_server) = create_proxy_and_stream::<fsession::LauncherMarker>();
         let session_url = "test_session";
@@ -211,7 +210,7 @@ mod tests {
 
     /// Tests that the session_control tool returns an error on a call to LaunchSession when there
     /// is no LaunchConfiguration provided.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_launch_session_error() {
         let (launcher, mut launcher_server) = create_proxy_and_stream::<fsession::LauncherMarker>();
         let session_url = "test_session";
@@ -228,7 +227,7 @@ mod tests {
     }
 
     /// Tests that restart_session makes the appropriate calls to fuchsia.session.Launcher.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_restart_session() {
         let (restarter, mut restarter_server) =
             create_proxy_and_stream::<fsession::RestarterMarker>();
@@ -245,7 +244,7 @@ mod tests {
     }
 
     /// Tests that restart_session returns an error when an error is returned from fuchsia.session.Restarter.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_restart_session_error() {
         let (restarter, mut restarter_server) =
             create_proxy_and_stream::<fsession::RestarterMarker>();
@@ -262,7 +261,7 @@ mod tests {
     }
 
     /// Tests that an element is added to the session
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_element() {
         let (manager, mut manager_server) = create_proxy_and_stream::<felement::ManagerMarker>();
         let element_url = "test_element";
@@ -282,7 +281,7 @@ mod tests {
     }
 
     /// Tests that an element is added to the session
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_element_error() {
         let (manager, mut manager_server) = create_proxy_and_stream::<felement::ManagerMarker>();
         let element_url = "test_element";
@@ -301,7 +300,7 @@ mod tests {
 
     // TODO(https://fxbug.dev/42124509): re-enable these tests.
     // /// Verifies that session control is routed the expected capabilities.
-    // #[fasync::run_singlethreaded(test)]
+    // #[fuchsia::test]
     // async fn test_capability_routing() {
     //     let event_source = EventSource::new().unwrap();
     //     event_source.start_component_tree().await.unwrap();
@@ -335,7 +334,7 @@ mod tests {
     // }
 
     // /// Verifies that the session is correctly resolved and launched without errors.
-    // #[fasync::run_singlethreaded(test)]
+    // #[fuchsia::test]
     // async fn test_session_lifecycle() {
     //     let event_source = EventSource::new().unwrap();
     //     event_source.start_component_tree().await.unwrap();
