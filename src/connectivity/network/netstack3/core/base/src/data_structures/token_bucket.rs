@@ -378,12 +378,16 @@ pub(crate) mod benchmarks {
     bench!(bench_try_take_double_rate, |b| bench_try_take(b, 64, 64 * 2));
 
     #[cfg(benchmark)]
-    pub fn add_benches(b: criterion::Benchmark) -> criterion::Benchmark {
-        let mut b = b.with_function("TokenBucket/TryTake/Slow", bench_try_take_slow);
-        b = b.with_function("TokenBucket/TryTake/HalfRate", bench_try_take_half_rate);
-        b = b.with_function("TokenBucket/TryTake/EqualRate", bench_try_take_equal_rate);
-        b = b
-            .with_function("TokenBucket/TryTake/AlmostEqualRate", bench_try_take_almost_equal_rate);
-        b.with_function("TokenBucket/TryTake/DoubleRate", bench_try_take_double_rate)
+    pub fn add_benches(
+        group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    ) {
+        let _ = group.bench_function("TokenBucket/TryTake/Slow", bench_try_take_slow);
+        let _ = group.bench_function("TokenBucket/TryTake/HalfRate", bench_try_take_half_rate);
+        let _ = group.bench_function("TokenBucket/TryTake/EqualRate", bench_try_take_equal_rate);
+        let _ = group.bench_function(
+            "TokenBucket/TryTake/AlmostEqualRate",
+            bench_try_take_almost_equal_rate,
+        );
+        let _ = group.bench_function("TokenBucket/TryTake/DoubleRate", bench_try_take_double_rate);
     }
 }

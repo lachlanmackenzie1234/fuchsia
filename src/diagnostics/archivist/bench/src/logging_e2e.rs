@@ -56,7 +56,7 @@ async fn create_realm() -> RealmBuilder {
     builder
 }
 
-fn bench_write_read_log(b: &mut criterion::Bencher, format: Format) {
+fn bench_write_read_log(b: &mut criterion::Bencher<'_>, format: Format) {
     let mut executor = fasync::LocalExecutor::default();
     let instance = executor.run_singlethreaded(async move {
         let builder = create_realm().await;
@@ -100,12 +100,13 @@ fn main() {
         .sample_size(10);
 
     // These benchmarks measure the time it takes to emit a log and get it from the ArchieAccessor.
-    let bench = criterion::Benchmark::new("LoggingE2E/WriteReadLog/Json", move |b| {
+    let mut group = c.benchmark_group("fuchsia.archivist");
+    let _ = group.bench_function("LoggingE2E/WriteReadLog/Json", move |b| {
         bench_write_read_log(b, Format::Json);
-    })
-    .with_function("LoggingE2E/WriteReadLog/Fxt", move |b| {
+    });
+    let _ = group.bench_function("LoggingE2E/WriteReadLog/Fxt", move |b| {
         bench_write_read_log(b, Format::LegacyFxt);
     });
 
-    c.bench("fuchsia.archivist", bench);
+    group.finish();
 }

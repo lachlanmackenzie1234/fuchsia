@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 #[inline(always)]
 fn black_box<T>(placeholder: T) -> T {
-    criterion::black_box(placeholder)
+    std::hint::black_box(placeholder)
 }
 
 fn work_func(

@@ -9,7 +9,7 @@ use fuchsia_inspect::Inspector;
 use fuchsia_inspect::hierarchy::DiagnosticsHierarchyGetter;
 use state_recorder::{NumericStateRecorder, RecorderOptions, StateRecorderManager, units};
 
-fn bench_populate_lazy(b: &mut criterion::Bencher, num_entries: u32) {
+fn bench_populate_lazy(b: &mut criterion::Bencher<'_>, num_entries: u32) {
     let inspector = Inspector::default();
     let manager = StateRecorderManager::new(&inspector);
     let options = RecorderOptions {
@@ -35,7 +35,7 @@ fn bench_populate_lazy(b: &mut criterion::Bencher, num_entries: u32) {
     });
 }
 
-fn bench_read_lazy(b: &mut criterion::Bencher, num_entries: u32) {
+fn bench_read_lazy(b: &mut criterion::Bencher<'_>, num_entries: u32) {
     let mut executor = fuchsia_async::LocalExecutor::default();
     let inspector = Inspector::default();
     let manager = StateRecorderManager::new(&inspector);
@@ -73,21 +73,16 @@ fn main() -> Result<()> {
         .measurement_time(std::time::Duration::from_millis(100))
         .sample_size(20);
 
+    let mut group = c.benchmark_group("fuchsia.power.state_recorder");
     for entries in [100, 200, 400, 800, 1600] {
-        let _: &mut Criterion = c.bench(
-            "fuchsia.power.state_recorder",
-            criterion::Benchmark::new(format!("PopulateLazy/{entries}"), move |b| {
-                bench_populate_lazy(b, entries)
-            }),
-        );
+        let _ = group.bench_function(format!("PopulateLazy/{entries}"), move |b| {
+            bench_populate_lazy(b, entries)
+        });
 
-        let _: &mut Criterion = c.bench(
-            "fuchsia.power.state_recorder",
-            criterion::Benchmark::new(format!("ReadLazy/{entries}"), move |b| {
-                bench_read_lazy(b, entries)
-            }),
-        );
+        let _ = group
+            .bench_function(format!("ReadLazy/{entries}"), move |b| bench_read_lazy(b, entries));
     }
+    group.finish();
 
     Ok(())
 }

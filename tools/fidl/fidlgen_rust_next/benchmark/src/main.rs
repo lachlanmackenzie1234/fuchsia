@@ -10,8 +10,10 @@ mod minecraft;
 
 use core::mem::MaybeUninit;
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use fidl_next::{DecoderExt as _, EncoderExt as _, Wire};
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
+use fidl_next::EncoderExt as _;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng as _};
 
@@ -87,6 +89,7 @@ where
         &input,
     )
     .unwrap();
+    let mut handle_infos = fidl::convert_handle_dispositions_to_infos(decode_handle_buf).unwrap();
 
     c.bench_function(&format!("rust/{name}/encode/{input_size}x"), move |b| {
         let mut buf = Vec::new();
@@ -116,7 +119,7 @@ where
                         wire_format_version: fidl::encoding::WireFormatVersion::V2,
                     },
                     black_box(&decode_buf),
-                    &mut decode_handle_buf,
+                    &mut handle_infos,
                     &mut out,
                 )).unwrap();
             });
@@ -124,47 +127,47 @@ where
     );
 }
 
-fn bench_rust_next<T>(c: &mut Criterion, name: &str, input: T, input_size: usize)
-where
-    T: 'static
-        + fidl_next::EncodeRef<Vec<fidl_next::Chunk>>
-        + for<'de> fidl_next::FromWire<<T::Encoded as Wire>::Decoded<'de>>,
-    T::Encoded: for<'a> fidl_next::Decode<&'a mut [fidl_next::Chunk]>,
-{
-    let mut decode_chunks = Vec::new();
-    decode_chunks.encode_next(&input).unwrap();
+macro_rules! bench_rust_next {
+    ($c:expr, $name:expr, $input:expr, $input_size:expr, $T:ty, $W:ty) => {{
+        use fidl_next::AsDecoderExt as _;
 
-    c.bench_function(&format!("rust_next/{name}/encode/{input_size}x"), move |b| {
-        let mut chunks = Vec::new();
-        b.iter(|| {
-            chunks.clear();
-            black_box(chunks.encode_next(black_box(&input))).unwrap();
+        let input = $input;
+        let mut decode_chunks = Vec::new();
+        decode_chunks.encode_next::<$W, _>(&input).unwrap();
+
+        $c.bench_function(&format!("rust_next/{}/encode/{}x", $name, $input_size), move |b| {
+            let mut chunks = Vec::new();
+            b.iter(|| {
+                chunks.clear();
+                black_box(chunks.encode_next::<$W, _>(black_box(&input))).unwrap();
+            });
         });
-    });
 
-    let decode_wire_chunks = decode_chunks.clone();
-    c.bench_function(&format!("rust_next/{name}/decode_wire/{input_size}x"), move |b| {
-        b.iter_batched_ref(
-            || decode_wire_chunks.clone(),
-            |decode_chunks| {
-                let chunks = black_box(decode_chunks).as_mut_slice();
-                black_box(chunks.decode::<T::Encoded>()).unwrap();
-            },
-            criterion::BatchSize::SmallInput,
-        );
-    });
+        let decode_wire_chunks = decode_chunks.clone();
+        $c.bench_function(&format!("rust_next/{}/decode_wire/{}x", $name, $input_size), move |b| {
+            b.iter_batched(
+                || decode_wire_chunks.clone(),
+                |decode_chunks| {
+                    black_box(decode_chunks.into_decoded::<$W>()).unwrap();
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
 
-    c.bench_function(&format!("rust_next/{name}/decode_natural/{input_size}x"), move |b| {
-        b.iter_batched_ref(
-            || decode_chunks.clone(),
-            |decode_chunks| {
-                let chunks = black_box(decode_chunks).as_mut_slice();
-                let value = chunks.decode::<T::Encoded>().unwrap();
-                black_box(value.take::<T>());
+        $c.bench_function(
+            &format!("rust_next/{}/decode_natural/{}x", $name, $input_size),
+            move |b| {
+                b.iter_batched(
+                    || decode_chunks.clone(),
+                    |decode_chunks| {
+                        let decoded = decode_chunks.into_decoded::<$W>().unwrap();
+                        black_box(decoded.take_as::<$T>());
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
             },
-            criterion::BatchSize::SmallInput,
         );
-    });
+    }};
 }
 
 fn bench_log(c: &mut Criterion) {
@@ -181,13 +184,29 @@ fn bench_log(c: &mut Criterion) {
             fidl_test_benchmark::Players { players: Vec::new() }
         });
 
-        bench_rust_next(c, "log", log::generate_input_rust_next(input_size), input_size);
-        bench_rust_next(c, "mesh", mesh::generate_input_rust_next(input_size), input_size);
-        bench_rust_next(
+        bench_rust_next!(
+            c,
+            "log",
+            log::generate_input_rust_next(input_size),
+            input_size,
+            fidl_next_test_benchmark::Logs,
+            fidl_next_test_benchmark::wire::Logs<'_>
+        );
+        bench_rust_next!(
+            c,
+            "mesh",
+            mesh::generate_input_rust_next(input_size),
+            input_size,
+            fidl_next_test_benchmark::Mesh,
+            fidl_next_test_benchmark::wire::Mesh<'_>
+        );
+        bench_rust_next!(
             c,
             "minecraft",
             minecraft::generate_input_rust_next(input_size),
             input_size,
+            fidl_next_test_benchmark::Players,
+            fidl_next_test_benchmark::wire::Players<'_>
         );
     }
 }

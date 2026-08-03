@@ -28,7 +28,7 @@ fn create_logger() -> Publisher {
         .unwrap()
 }
 
-fn write_log_benchmark<F>(bencher: &mut criterion::Bencher, mut logging_fn: F)
+fn write_log_benchmark<F>(bencher: &mut criterion::Bencher<'_>, mut logging_fn: F)
 where
     F: FnMut(),
 {
@@ -49,10 +49,10 @@ where
 // but with the arguments formatted, etc. It'll measure the time it takes for the log to go
 // through the tracing mechanisms, our encoder and finally writing to the socket.
 fn set_up_log_write_benchmarks(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name: &str,
-    benchmark: Option<criterion::Benchmark>,
-) -> criterion::Benchmark {
-    let all_args_bench = move |b: &mut criterion::Bencher| {
+) {
+    let all_args_bench = move |b: &mut criterion::Bencher<'_>| {
         write_log_benchmark(b, || {
             log::info!(
                 tag = "logbench",
@@ -65,59 +65,53 @@ fn set_up_log_write_benchmarks(
             );
         });
     };
-    let bench = if let Some(benchmark) = benchmark {
-        benchmark.with_function(format!("Publisher/{name}/AllArguments"), all_args_bench)
-    } else {
-        criterion::Benchmark::new(format!("Publisher/{name}/AllArguments"), all_args_bench)
-    };
-    bench
-        .with_function(format!("Publisher/{name}/NoArguments"), move |b| {
-            write_log_benchmark(b, || {
-                log::info!("this is a log emitted from the benchmark");
-            });
-        })
-        .with_function(format!("Publisher/{name}/MessageWithSomeArguments"), move |b| {
-            write_log_benchmark(b, || {
-                log::info!(
-                    boolean = true,
-                    int = -123456,
-                    string = "foobarbaz";
-                    "this is a log emitted from the benchmark",
-                );
-            });
-        })
-        .with_function(format!("Publisher/{name}/MessageAsString"), move |b| {
-            write_log_benchmark(b, || {
-                log::info!(
-                    "this is a log emitted from the benchmark boolean={} int={} string={}",
-                    true,
-                    -123456,
-                    "foobarbaz",
-                );
-            });
-        })
+    let _ = group.bench_function(format!("Publisher/{name}/AllArguments"), all_args_bench);
+    let _ = group.bench_function(format!("Publisher/{name}/NoArguments"), move |b| {
+        write_log_benchmark(b, || {
+            log::info!("this is a log emitted from the benchmark");
+        });
+    });
+    let _ = group.bench_function(format!("Publisher/{name}/MessageWithSomeArguments"), move |b| {
+        write_log_benchmark(b, || {
+            log::info!(
+                boolean = true,
+                int = -123456,
+                string = "foobarbaz";
+                "this is a log emitted from the benchmark",
+            );
+        });
+    });
+    let _ = group.bench_function(format!("Publisher/{name}/MessageAsString"), move |b| {
+        write_log_benchmark(b, || {
+            log::info!(
+                "this is a log emitted from the benchmark boolean={} int={} string={}",
+                true,
+                -123456,
+                "foobarbaz",
+            );
+        });
+    });
 }
 
 fn set_up_old_log_write_benchmarks(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name: &str,
-    bench: criterion::Benchmark,
-) -> criterion::Benchmark {
-    bench
-        .with_function(format!("Publisher/{name}/NoArguments"), move |b| {
-            write_log_benchmark(b, || {
-                log::info!("this is a log emitted from the benchmark");
-            });
-        })
-        .with_function(format!("Publisher/{name}/MessageAsString"), move |b| {
-            write_log_benchmark(b, || {
-                log::info!(
-                    "this is a log emitted from the benchmark boolean={} int={} string={}",
-                    true,
-                    -123456,
-                    "foobarbaz",
-                );
-            });
-        })
+) {
+    let _ = group.bench_function(format!("Publisher/{name}/NoArguments"), move |b| {
+        write_log_benchmark(b, || {
+            log::info!("this is a log emitted from the benchmark");
+        });
+    });
+    let _ = group.bench_function(format!("Publisher/{name}/MessageAsString"), move |b| {
+        write_log_benchmark(b, || {
+            log::info!(
+                "this is a log emitted from the benchmark boolean={} int={} string={}",
+                true,
+                -123456,
+                "foobarbaz",
+            );
+        });
+    });
 }
 
 fn main() {
@@ -137,8 +131,8 @@ fn main() {
 
     // TODO(https://fxbug.dev/344980783): keep the old benchmarks to see continuity, but then
     // rename "Tracing" to "Log" and remove the old tracing benchmarks.
-    let mut bench = set_up_log_write_benchmarks("Tracing", None);
-    bench = set_up_old_log_write_benchmarks("Log", bench);
-
-    c.bench("fuchsia.diagnostics_log_rust.core", bench);
+    let mut group = c.benchmark_group("fuchsia.diagnostics_log_rust.core");
+    set_up_log_write_benchmarks(&mut group, "Tracing");
+    set_up_old_log_write_benchmarks(&mut group, "Log");
+    group.finish();
 }

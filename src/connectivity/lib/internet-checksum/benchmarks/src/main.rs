@@ -16,34 +16,36 @@ fn main() {
         .sample_size(100);
     let name = "fuchsia.netstack.internet-checksum";
 
-    let bench = criterion::Benchmark::new("checksum/20", bench_checksum::<20>)
-        .with_function("checksum/31", bench_checksum::<31>)
-        .with_function("checksum/32", bench_checksum::<32>)
-        .with_function("checksum/64", bench_checksum::<64>)
-        .with_function("checksum/128", bench_checksum::<128>)
-        .with_function("checksum/256", bench_checksum::<256>)
-        .with_function("checksum/1023", bench_checksum::<1023>)
-        .with_function("checksum/1024", bench_checksum::<1024>)
-        .with_function("update/2", bench_update::<2>)
-        .with_function("update/4", bench_update::<4>)
-        .with_function("update/8", bench_update::<8>);
+    macro_rules! bench_sizes {
+        ($group:expr, $prefix:ident, $func:ident, $( $size:literal ),*) => {
+            $(
+                let _ = $group.bench_function(
+                    concat!(stringify!($prefix), "/", stringify!($size)),
+                    $func::<$size>,
+                );
+            )*
+        };
+    }
 
-    let _: &mut Criterion = c.bench(name, bench);
+    let mut group = c.benchmark_group(name);
+    bench_sizes!(group, checksum, bench_checksum, 20, 31, 32, 64, 128, 256, 1023, 1024);
+    bench_sizes!(group, update, bench_update, 2, 4, 8);
+    group.finish();
 }
 
-fn bench_checksum<const N: usize>(bencher: &mut criterion::Bencher) {
+fn bench_checksum<const N: usize>(bencher: &mut criterion::Bencher<'_>) {
     bencher.iter(|| {
-        let buf = criterion::black_box([0xFF; N]);
+        let buf = std::hint::black_box([0xFF; N]);
         let mut c = Checksum::new();
         c.add_bytes(&buf);
-        let _ = criterion::black_box(c.checksum());
+        let _ = std::hint::black_box(c.checksum());
     });
 }
 
-fn bench_update<const N: usize>(bencher: &mut criterion::Bencher) {
+fn bench_update<const N: usize>(bencher: &mut criterion::Bencher<'_>) {
     bencher.iter(|| {
-        let old = criterion::black_box([0xDE; N]);
-        let new = criterion::black_box([0xAD; N]);
-        let _ = criterion::black_box(update([0xBE, 0xEF], &old[..], &new[..]));
+        let old = std::hint::black_box([0xDE; N]);
+        let new = std::hint::black_box([0xAD; N]);
+        let _ = std::hint::black_box(update([0xBE, 0xEF], &old[..], &new[..]));
     });
 }

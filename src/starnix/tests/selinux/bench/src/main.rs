@@ -4,7 +4,7 @@
 
 #![recursion_limit = "1024"]
 
-use criterion::{Benchmark, Criterion};
+use criterion::Criterion;
 use fuchsia_criterion::FuchsiaCriterion;
 use security::PermissionFlags;
 use selinux::policy::{AccessVector, KernelAccessDecision};
@@ -31,81 +31,87 @@ where
 }
 
 fn create_file_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name: &'static str,
     current_task: &'static CurrentTask,
     hook_closure: impl Fn(&CurrentTask, &starnix_core::vfs::FileObject) + Send + Sync + 'static,
-) -> Benchmark {
+) {
     let file = Arc::new(PanickingFile::new_file(current_task));
 
-    Benchmark::new(name, move |bench| {
+    let _ = group.bench_function(name, move |bench| {
         let file = file.clone();
         bench.iter(|| {
             hook_closure(current_task, &file);
         })
-    })
+    });
 }
 
-fn load_policy_bench() -> Benchmark {
-    Benchmark::new("load_policy", move |b| {
+fn load_policy_bench(group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>) {
+    let _ = group.bench_function("load_policy", move |b| {
         b.iter(|| {
             let server = selinux::SecurityServer::new_default();
-            let _ = criterion::black_box(server.load_policy(POLICY_BYTES.to_vec()));
+            let _ = std::hint::black_box(server.load_policy(POLICY_BYTES.to_vec()));
         })
-    })
+    });
 }
 
 fn security_context_to_sid_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name_suffix: &'static str,
     context_bytes: &'static [u8],
-) -> Benchmark {
+) {
     let server = selinux::SecurityServer::new_default();
     let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
 
     let server_clone = server.clone();
-    Benchmark::new(format!("security_context_to_sid_{}", name_suffix), move |b| {
+    let _ = group.bench_function(format!("security_context_to_sid_{}", name_suffix), move |b| {
         b.iter(|| {
-            let _ = criterion::black_box(
+            let _ = std::hint::black_box(
                 server_clone.security_context_to_sid(context_bytes.into()).unwrap(),
             );
         })
-    })
+    });
 }
 
 fn sid_to_security_context_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name_suffix: &'static str,
     context_bytes: &'static [u8],
-) -> Benchmark {
+) {
     let server = selinux::SecurityServer::new_default();
     let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
     let sid = server.security_context_to_sid(context_bytes.into()).unwrap();
 
     let server_clone = server.clone();
-    Benchmark::new(format!("sid_to_security_context_{}", name_suffix), move |b| {
+    let _ = group.bench_function(format!("sid_to_security_context_{}", name_suffix), move |b| {
         b.iter(|| {
-            let _ = criterion::black_box(server_clone.sid_to_security_context(sid).unwrap());
+            let _ = std::hint::black_box(server_clone.sid_to_security_context(sid).unwrap());
         })
-    })
+    });
 }
 
 fn compute_access_decision_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     name_suffix: &'static str,
     context_bytes: &'static [u8],
-) -> Benchmark {
+) {
     let server = selinux::SecurityServer::new_default();
     let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
     let sid = server.security_context_to_sid(context_bytes.into()).unwrap();
     let class_id = server.class_id_by_name("process").unwrap();
 
     let server_clone = server.clone();
-    Benchmark::new(format!("compute_access_decision_{}", name_suffix), move |b| {
+    let _ = group.bench_function(format!("compute_access_decision_{}", name_suffix), move |b| {
         b.iter(|| {
             let _ =
-                criterion::black_box(server_clone.compute_access_decision_raw(sid, sid, class_id));
+                std::hint::black_box(server_clone.compute_access_decision_raw(sid, sid, class_id));
         })
-    })
+    });
 }
 
-fn concurrent_access_cache_get_bench() -> Benchmark {
+fn concurrent_access_cache_get_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
     let cache = ConcurrentAccessCache::new(selinux::DEFAULT_SHARED_SIZE.access_cache_capacity);
     let value = KernelAccessDecision {
         allow: AccessVector::ALL,
@@ -126,26 +132,32 @@ fn concurrent_access_cache_get_bench() -> Benchmark {
         let _ = cache.get_or_try_insert::<()>(key, || Ok(value));
     }
 
-    Benchmark::new("concurrent_access_cache_get", move |b| {
+    let _ = group.bench_function("concurrent_access_cache_get", move |b| {
         b.iter(|| {
             for key in &keys {
-                let _ = criterion::black_box(cache.get_or_try_insert::<()>(key, || Ok(value)));
+                let _ = std::hint::black_box(cache.get_or_try_insert::<()>(key, || Ok(value)));
             }
         })
-    })
+    });
 }
 
-fn file_permission_bench(current_task: &'static CurrentTask) -> Benchmark {
-    create_file_bench("file_permission", current_task, |task, file| {
-        let _ = criterion::black_box(
+fn file_permission_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    current_task: &'static CurrentTask,
+) {
+    create_file_bench(group, "file_permission", current_task, |task, file| {
+        let _ = std::hint::black_box(
             security::file_permission(task, file, PermissionFlags::READ).unwrap(),
         );
-    })
+    });
 }
 
-fn fs_node_permission_bench(current_task: &'static CurrentTask) -> Benchmark {
-    create_file_bench("fs_node_permission", current_task, |task, file| {
-        let _ = criterion::black_box(
+fn fs_node_permission_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    current_task: &'static CurrentTask,
+) {
+    create_file_bench(group, "fs_node_permission", current_task, |task, file| {
+        let _ = std::hint::black_box(
             security::fs_node_permission(
                 task,
                 file.node(),
@@ -154,27 +166,33 @@ fn fs_node_permission_bench(current_task: &'static CurrentTask) -> Benchmark {
             )
             .unwrap(),
         );
-    })
+    });
 }
 
-fn check_file_ioctl_access_bench(current_task: &'static CurrentTask) -> Benchmark {
-    create_file_bench("check_file_ioctl_access", current_task, |task, file| {
-        let _ = criterion::black_box(
+fn check_file_ioctl_access_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    current_task: &'static CurrentTask,
+) {
+    create_file_bench(group, "check_file_ioctl_access", current_task, |task, file| {
+        let _ = std::hint::black_box(
             security::check_file_ioctl_access(task, file, starnix_uapi::TCGETS).unwrap(),
         );
-    })
+    });
 }
 
-fn binder_transaction_bench(current_task: &'static CurrentTask) -> Benchmark {
-    Benchmark::new("binder_transaction", move |b| {
+fn binder_transaction_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    current_task: &'static CurrentTask,
+) {
+    let _ = group.bench_function("binder_transaction", move |b| {
         let connection_state = Arc::new(security::binder_connection_alloc(current_task));
         b.iter(|| {
-            let _ = criterion::black_box(
+            let _ = std::hint::black_box(
                 security::binder_transaction(current_task, current_task, &connection_state)
                     .unwrap(),
             );
         })
-    })
+    });
 }
 
 fn main() {
@@ -208,26 +226,19 @@ fn main() {
             .measurement_time(Duration::from_secs(1))
             .sample_size(50);
 
-        c.bench("fuchsia.sestarnix", load_policy_bench());
-        c.bench("fuchsia.sestarnix", security_context_to_sid_bench("simple", b"u:r:kernel:s0"));
-        c.bench(
-            "fuchsia.sestarnix",
-            security_context_to_sid_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
-        );
-        c.bench("fuchsia.sestarnix", sid_to_security_context_bench("simple", b"u:r:kernel:s0"));
-        c.bench(
-            "fuchsia.sestarnix",
-            sid_to_security_context_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
-        );
-        c.bench("fuchsia.sestarnix", compute_access_decision_bench("simple", b"u:r:kernel:s0"));
-        c.bench(
-            "fuchsia.sestarnix",
-            compute_access_decision_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
-        );
-        c.bench("fuchsia.sestarnix", concurrent_access_cache_get_bench());
-        c.bench("fuchsia.sestarnix", file_permission_bench(current_task));
-        c.bench("fuchsia.sestarnix", fs_node_permission_bench(current_task));
-        c.bench("fuchsia.sestarnix", check_file_ioctl_access_bench(current_task));
-        c.bench("fuchsia.sestarnix", binder_transaction_bench(current_task));
+        let mut group = c.benchmark_group("fuchsia.sestarnix");
+        load_policy_bench(&mut group);
+        security_context_to_sid_bench(&mut group, "simple", b"u:r:kernel:s0");
+        security_context_to_sid_bench(&mut group, "c0_c255", b"u:r:kernel:s0:c0.c255");
+        sid_to_security_context_bench(&mut group, "simple", b"u:r:kernel:s0");
+        sid_to_security_context_bench(&mut group, "c0_c255", b"u:r:kernel:s0:c0.c255");
+        compute_access_decision_bench(&mut group, "simple", b"u:r:kernel:s0");
+        compute_access_decision_bench(&mut group, "c0_c255", b"u:r:kernel:s0:c0.c255");
+        concurrent_access_cache_get_bench(&mut group);
+        file_permission_bench(&mut group, current_task);
+        fs_node_permission_bench(&mut group, current_task);
+        check_file_ioctl_access_bench(&mut group, current_task);
+        binder_transaction_bench(&mut group, current_task);
+        group.finish();
     }));
 }

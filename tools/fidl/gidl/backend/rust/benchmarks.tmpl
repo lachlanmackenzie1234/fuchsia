@@ -13,7 +13,8 @@ use {
     },
     fidl_test_benchmarkfidl{{ .CrateSuffix }} as test_benchmarkfidl{{ .CrateSuffix }},
     fuchsia_async as fasync,
-    fuchsia_criterion::criterion::{BatchSize, Bencher, black_box},
+    fuchsia_criterion::criterion::{BatchSize, Bencher},
+    std::hint::black_box,
     futures::{future, stream::StreamExt},
     gidl_util::{HandleDef, HandleSubtype, copy_handle, create_handles, select_handle_infos},
     std::mem::ManuallyDrop,
@@ -22,7 +23,7 @@ use {
 
 // BENCHMARKS is aggregated by a generated benchmark_suite.rs file, which is ultimately
 // used in benchmarks in src/tests/benchmarks/fidl/rust/src/main.rs.
-pub const BENCHMARKS: [(&'static str, fn(&mut Bencher)); {{ .NumBenchmarks }}] = [
+pub const BENCHMARKS: [(&'static str, fn(&mut Bencher<'_>)); {{ .NumBenchmarks }}] = [
 {{- range .Benchmarks }}
     ("Builder/{{ .ChromeperfPath }}", benchmark_{{ .Name }}_builder),
     ("Encode/{{ .ChromeperfPath }}", benchmark_{{ .Name }}_encode),
@@ -39,7 +40,7 @@ pub const BENCHMARKS: [(&'static str, fn(&mut Bencher)); {{ .NumBenchmarks }}] =
 const _V2_CONTEXT: Context = Context { wire_format_version: WireFormatVersion::V2 };
 
 {{ range .Benchmarks }}
-fn benchmark_{{ .Name }}_builder(b: &mut Bencher) {
+fn benchmark_{{ .Name }}_builder(b: &mut Bencher<'_>) {
     {{- if .HandleDefs }}
     b.iter_batched_ref(
         || {
@@ -60,7 +61,7 @@ fn benchmark_{{ .Name }}_builder(b: &mut Bencher) {
     {{- end }}
 }
 
-fn benchmark_{{ .Name }}_encode(b: &mut Bencher) {
+fn benchmark_{{ .Name }}_encode(b: &mut Bencher<'_>) {
     b.iter_batched_ref(
         || {
             {{- if .HandleDefs }}
@@ -87,7 +88,7 @@ fn benchmark_{{ .Name }}_encode(b: &mut Bencher) {
     );
 }
 
-fn benchmark_{{ .Name }}_decode(b: &mut Bencher) {
+fn benchmark_{{ .Name }}_decode(b: &mut Bencher<'_>) {
     b.iter_batched_ref(
         || {
             {{- if .HandleDefs }}
@@ -123,7 +124,7 @@ async fn {{ .Name }}_send_event_receiver_thread(receiver_fidl_chan_end: zx::Chan
     };
 }
 
-fn benchmark_{{ .Name }}_send_event(b: &mut Bencher) {
+fn benchmark_{{ .Name }}_send_event(b: &mut Bencher<'_>) {
     let thread;
     {
         let (sender_fifo, receiver_fifo) = std::sync::mpsc::sync_channel(1);
@@ -177,7 +178,7 @@ async fn {{ .Name }}_echo_call_server_thread(server_end: zx::Channel) {
     }).await;
 }
 
-fn benchmark_{{ .Name }}_echo_call(b: &mut Bencher) {
+fn benchmark_{{ .Name }}_echo_call(b: &mut Bencher<'_>) {
     let thread;
     {
         let (client_end, server_end) = zx::Channel::create();

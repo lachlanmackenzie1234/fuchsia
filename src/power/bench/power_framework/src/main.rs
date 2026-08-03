@@ -19,7 +19,7 @@ use fuchsia_criterion::criterion::Criterion;
 use std::sync::Arc;
 
 fn bench_acquire_wake_lease(
-    b: &mut criterion::Bencher,
+    b: &mut criterion::Bencher<'_>,
     sag: Arc<fsystem::ActivityGovernorSynchronousProxy>,
 ) {
     b.iter(|| {
@@ -28,36 +28,13 @@ fn bench_acquire_wake_lease(
 }
 
 fn bench_toggle_lease(
-    b: &mut criterion::Bencher,
+    b: &mut criterion::Bencher<'_>,
     topology_control: Arc<fpt::TopologyControlSynchronousProxy>,
     status_channel: Arc<fbroker::StatusSynchronousProxy>,
 ) {
     b.iter(|| {
         daemon_work::execute(&topology_control, &status_channel);
     });
-}
-
-fn get_sag_benches(name: &'static str) -> criterion::Benchmark {
-    let sag_arc = sag_work::obtain_sag_proxy();
-    criterion::Benchmark::new(name, move |b| bench_acquire_wake_lease(b, sag_arc.clone()))
-}
-
-fn get_daemon_benches() -> criterion::Benchmark {
-    let (topology_control, status_channel) = daemon_work::prepare_work();
-    criterion::Benchmark::new("ToggleLease", move |b| {
-        bench_toggle_lease(b, topology_control.clone(), status_channel.clone())
-    })
-}
-
-fn get_large_topology_lease_benches(name: &'static str) -> criterion::Benchmark {
-    let num_elements = 20;
-    let topology_control = daemon_work::prepare_large_topology(num_elements);
-    criterion::Benchmark::new(name, move |b| {
-        let randomize = true;
-        b.iter(|| {
-            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
-        });
-    })
 }
 
 fn main() -> Result<()> {
@@ -68,17 +45,23 @@ fn main() -> Result<()> {
         .measurement_time(std::time::Duration::from_millis(100))
         .sample_size(100);
 
-    let _: &mut Criterion =
-        c.bench("fuchsia.power.framework", get_sag_benches("TakeDropWakeLease"));
+    let mut group = c.benchmark_group("fuchsia.power.framework");
+
+    let sag_arc = sag_work::obtain_sag_proxy();
+    let sag_arc_clone = sag_arc.clone();
+    let _ = group.bench_function("TakeDropWakeLease", move |b| {
+        bench_acquire_wake_lease(b, sag_arc_clone.clone());
+    });
 
     // Hold a background wake lease to keep SAG's execution state lease active. This bypasses the
     // expensive Power Broker state transition and watch loop for subsequent benchmarks.
-    let sag_arc = sag_work::obtain_sag_proxy();
     let background_wake_lease =
         sag_arc.acquire_wake_lease("benchmark", zx::MonotonicInstant::INFINITE).unwrap().unwrap();
 
-    let _: &mut Criterion =
-        c.bench("fuchsia.power.framework", get_sag_benches("TakeMonitoredWakeLease"));
+    let sag_arc_clone = sag_arc.clone();
+    let _ = group.bench_function("TakeMonitoredWakeLease", move |b| {
+        bench_acquire_wake_lease(b, sag_arc_clone.clone());
+    });
 
     // Hold a background unmonitored lease to bypass both the Power Broker transition overhead
     // and SAG's long wake lease monitoring timer, enabling clean fast-path measurements.
@@ -88,11 +71,26 @@ fn main() -> Result<()> {
         .unwrap()
         .unwrap();
 
-    let _: &mut Criterion = c.bench("fuchsia.power.framework", get_sag_benches("TakeWakeLease"));
+    let sag_arc_clone = sag_arc.clone();
+    let _ = group.bench_function("TakeWakeLease", move |b| {
+        bench_acquire_wake_lease(b, sag_arc_clone.clone());
+    });
 
-    let _: &mut Criterion = c.bench("fuchsia.power.framework", get_daemon_benches());
-    let _: &mut Criterion =
-        c.bench("fuchsia.power.framework", get_large_topology_lease_benches("LargeTopologyLease"));
+    let (topology_control, status_channel) = daemon_work::prepare_work();
+    let _ = group.bench_function("ToggleLease", move |b| {
+        bench_toggle_lease(b, topology_control.clone(), status_channel.clone());
+    });
+
+    let num_elements = 20;
+    let topology_control = daemon_work::prepare_large_topology(num_elements);
+    let _ = group.bench_function("LargeTopologyLease", move |b| {
+        let randomize = true;
+        b.iter(|| {
+            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
+        });
+    });
+
+    group.finish();
 
     Ok(())
 }

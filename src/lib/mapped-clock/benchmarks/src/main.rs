@@ -21,12 +21,12 @@ fn main() {
         .sample_size(100);
     let name = "fuchsia.lib.mapped-clock";
 
-    let bench = criterion::Benchmark::new("baseline_read", bench_baseline_read)
-        .with_function("mapped_read", bench_mapped_read)
-        .with_function("baseline_get_details", bench_baseline_get_details)
-        .with_function("mapped_get_details", bench_mapped_get_details);
-
-    let _: &mut Criterion = c.bench(name, bench);
+    let mut group = c.benchmark_group(name);
+    let _ = group.bench_function("baseline_read", bench_baseline_read);
+    let _ = group.bench_function("mapped_read", bench_mapped_read);
+    let _ = group.bench_function("baseline_get_details", bench_baseline_get_details);
+    let _ = group.bench_function("mapped_get_details", bench_mapped_get_details);
+    group.finish();
 }
 
 fn new_clock() -> zx::Clock<zx::MonotonicTimeline, zx::SyntheticTimeline> {
@@ -45,34 +45,34 @@ fn new_mapped_clock() -> MappedClock<zx::MonotonicTimeline, zx::SyntheticTimelin
 }
 
 // Baseline benchmark for reading a clock from a Zircon clock object.
-fn bench_baseline_read(bencher: &mut criterion::Bencher) {
+fn bench_baseline_read(bencher: &mut criterion::Bencher<'_>) {
     let clock = new_clock();
     bencher.iter(|| {
-        let _now = criterion::black_box(clock.read()).expect("read is a success");
+        let _now = std::hint::black_box(clock.read()).expect("read is a success");
     });
 }
 
 // Benchmark for reading a mapped clock.
-fn bench_mapped_read(bencher: &mut criterion::Bencher) {
+fn bench_mapped_read(bencher: &mut criterion::Bencher<'_>) {
     let mapped_clock = new_mapped_clock();
     bencher.iter(|| {
-        let _now = criterion::black_box(mapped_clock.read()).expect("read is a success");
+        let _now = std::hint::black_box(mapped_clock.read()).expect("read is a success");
     });
 }
 
 // Baseline benchmark for getting clock details from a Zircon clock object.
-fn bench_baseline_get_details(bencher: &mut criterion::Bencher) {
+fn bench_baseline_get_details(bencher: &mut criterion::Bencher<'_>) {
     let clock = new_clock();
     bencher.iter(|| {
-        let _out = criterion::black_box(clock.get_details()).expect("get_details is a success");
+        let _out = std::hint::black_box(clock.get_details()).expect("get_details is a success");
     });
 }
 
 // Benchmark for getting clock details from a mapped clock.
-fn bench_mapped_get_details(bencher: &mut criterion::Bencher) {
+fn bench_mapped_get_details(bencher: &mut criterion::Bencher<'_>) {
     let mapped_clock = new_mapped_clock();
     bencher.iter(|| {
         let _out =
-            criterion::black_box(mapped_clock.get_details()).expect("get_details is a success");
+            std::hint::black_box(mapped_clock.get_details()).expect("get_details is a success");
     });
 }

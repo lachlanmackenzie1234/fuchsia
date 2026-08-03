@@ -17,22 +17,24 @@ use std::ops::{Add, Mul};
 
 const NAME: &str = "name";
 
+type BenchGroup<'a> = criterion::BenchmarkGroup<'a, criterion::measurement::WallTime>;
+
 /// Benchmarks for operations that can be done on an Inspect Node.
-fn node_benchmarks(mut bench: criterion::Benchmark) -> criterion::Benchmark {
-    bench = bench.with_function("Node/create_child", move |b| {
+fn node_benchmarks(group: &mut BenchGroup<'_>) {
+    let _ = group.bench_function("Node/create_child", move |b| {
         let inspector = Inspector::default();
         let root = inspector.root();
-        b.iter_with_large_drop(|| root.create_child(NAME));
+        b.iter_batched(|| root.create_child(NAME), drop, criterion::BatchSize::LargeInput);
     });
-    bench = bench.with_function("Node/drop", move |b| {
+    let _ = group.bench_function("Node/drop", move |b| {
         let inspector = Inspector::default();
         let root = inspector.root();
-        b.iter_with_large_setup(
+        b.iter_batched(
             || root.create_child(NAME),
-            |child| drop(criterion::black_box(child)),
+            |child| drop(std::hint::black_box(child)),
+            criterion::BatchSize::LargeInput,
         );
     });
-    bench
 }
 
 /// Generates benchmarks for operations that can be done on Inspect numeric properties.
@@ -40,42 +42,48 @@ macro_rules! bench_numeric_property_fn {
     ($name:ident, $type:ty, $Property:expr) => {
         paste::paste! {
             fn [<$name _property_benchmarks>](
-                mut bench: criterion::Benchmark
-            ) -> criterion::Benchmark {
-                bench = bench.with_function(
+                group: &mut BenchGroup<'_>
+            ) {
+                let _ = group.bench_function(
                     concat!("Node/create_", stringify!($name), "_property"),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_drop(|| root.[<create_ $name>](NAME, 0 as $type));
+                        b.iter_batched(
+                            || root.[<create_ $name>](NAME, 0 as $type),
+                            drop,
+                            criterion::BatchSize::LargeInput,
+                        );
                     }
                 );
-                bench = bench.with_function(concat!($Property, "/set"), move |b| {
+                let _ = group.bench_function(concat!($Property, "/set"), move |b| {
                     let inspector = Inspector::default();
                     let root = inspector.root();
                     let property = root.[<create_ $name>](NAME, 0 as $type);
                     b.iter(|| property.set(1 as $type));
                 });
-                bench = bench.with_function(concat!($Property, "/add"), move |b| {
+                let _ = group.bench_function(concat!($Property, "/add"), move |b| {
                     let inspector = Inspector::default();
                     let root = inspector.root();
                     let property = root.[<create_ $name>](NAME, 0 as $type);
                     b.iter(|| property.add(1 as $type));
                 });
-                bench = bench.with_function(concat!($Property, "/subtract"), move |b| {
+                let _ = group.bench_function(concat!($Property, "/subtract"), move |b| {
                     let inspector = Inspector::default();
                     let root = inspector.root();
                     let property = root.[<create_ $name>](NAME, $type::MAX);
                     b.iter(|| property.subtract(1 as $type));
                 });
-                bench = bench.with_function(concat!($Property, "/drop"), move |b| {
+                let _ = group.bench_function(concat!($Property, "/drop"), move |b| {
                     let inspector = Inspector::default();
                     let root = inspector.root();
-                    b.iter_with_large_setup(
+                    b.iter_batched(
                         || root.[<create_ $name>](NAME, 0 as $type),
-                        |p| drop(criterion::black_box(p)));
+                        |p| drop(std::hint::black_box(p)),
+                        criterion::BatchSize::LargeInput,
+                    );
                 });
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     concat!("Node/record_", stringify!($name), "_property"),
                     move |b| {
                         let inspector = Inspector::default();
@@ -90,7 +98,6 @@ macro_rules! bench_numeric_property_fn {
                             criterion::BatchSize::SmallInput);
                     }
                 );
-                bench
             }
         }
     };
@@ -111,80 +118,89 @@ macro_rules! bench_property_fn {
     ($name:ident, $Property:expr) => {
         paste::paste! {
             fn [<$name _property_benchmarks>](
-                mut bench: criterion::Benchmark,
+                group: &mut BenchGroup<'_>,
                 size: usize,
-            ) -> criterion::Benchmark {
+            ) {
                 let initial_value = [<get_ $name _value>](0);
                 let value = [<get_ $name _value>](size);
 
                 let initial_val = initial_value.clone();
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("Node/create_{}/{size}", stringify!($name)),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_drop(|| root.[<create_ $name>](NAME, &initial_val));
-                    }
-                );
-
-                let value_for_bench = value.clone();
-                let initial_val = initial_value.clone();
-                bench = bench.with_function(
-                    format!("{}/set/{size}", $Property),
-                    move |b| {
-                        let inspector = Inspector::default();
-                        let root = inspector.root();
-                        b.iter_with_large_setup(
-                            || {
-                                root.[<create_ $name>](NAME, &initial_val)
-                            },
-                            |property| property.set(&value_for_bench),
+                        b.iter_batched(
+                            || root.[<create_ $name>](NAME, &initial_val),
+                            drop,
+                            criterion::BatchSize::LargeInput,
                         );
                     }
                 );
 
                 let value_for_bench = value.clone();
                 let initial_val = initial_value.clone();
-                bench = bench.with_function(
+                let _ = group.bench_function(
+                    format!("{}/set/{size}", $Property),
+                    move |b| {
+                        let inspector = Inspector::default();
+                        let root = inspector.root();
+                        b.iter_batched(
+                            || {
+                                root.[<create_ $name>](NAME, &initial_val)
+                            },
+                            |property| property.set(&value_for_bench),
+                            criterion::BatchSize::LargeInput,
+                        );
+                    }
+                );
+
+                let value_for_bench = value.clone();
+                let initial_val = initial_value.clone();
+                let _ = group.bench_function(
                     format!("{}/set_again/{size}", $Property),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_setup(
+                        b.iter_batched(
                             || {
                                 let property = root.[<create_ $name>](NAME, &initial_val);
                                 property.set(&value_for_bench);
                                 property
                             },
                             |property| property.set(&value_for_bench),
+                            criterion::BatchSize::LargeInput,
                         );
                     }
                 );
 
                 let initial_val = initial_value.clone();
-                bench = bench.with_function(format!("{}/drop/{size}", $Property), move |b| {
+                let _ = group.bench_function(format!("{}/drop/{size}", $Property), move |b| {
                     let inspector = Inspector::default();
                     let root = inspector.root();
-                    b.iter_with_large_setup(
+                    b.iter_batched(
                         || root.[<create_ $name>](NAME, &initial_val),
-                        |p| drop(criterion::black_box(p)));
+                        |p| drop(std::hint::black_box(p)),
+                        criterion::BatchSize::LargeInput,
+                    );
                 });
                 let initial_val = initial_value.clone();
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("Node/record_{}/{size}", stringify!($name)),
                     move |b| {
                         let inspector = Inspector::default();
                         let iter = std::cell::Cell::new(0);
-                        b.iter_with_large_setup(
+                        b.iter_batched(
                             || {
                                 let count = iter.get() + 1;
                                 iter.set(count);
                                 inspector.root().create_child(format!("child_{count}"))
                             },
-                            |child| child.[<record_ $name>](NAME, &initial_val));
+                            |child| child.[<record_ $name>](NAME, &initial_val),
+                            criterion::BatchSize::LargeInput,
+                        );
                     }
                 );
-                bench
             }
         }
     };
@@ -195,58 +211,74 @@ macro_rules! bench_numeric_array_property_fn {
     ($name:ident, $type:ty, $Array:expr) => {
         paste::paste! {
             fn [<$name _array_property_benchmarks>](
-                mut bench: criterion::Benchmark,
+                group: &mut BenchGroup<'_>,
                 array_size: usize
-            ) -> criterion::Benchmark {
+            ) {
                     let mut data = Vec::with_capacity(array_size);
                     for i in 0..array_size {
                         data.push(i as $type);
                     }
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("Node/create_{}_array/{array_size}", stringify!($name)),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_drop(|| root.[<create_ $name _array>](NAME, array_size));
+                        b.iter_batched(
+                            || root.[<create_ $name _array>](NAME, array_size),
+                            drop,
+                            criterion::BatchSize::LargeInput,
+                        );
                     });
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("Node/create_{}_array_and_fill/{array_size}", stringify!($name)),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_drop(|| {
-                            let array = root.[<create_ $name _array>](NAME, array_size);
-                            for (i, value) in data.iter().enumerate() {
-                                array.set(i, *value);
-                            }
-                            array
-                        });
+                        b.iter_batched(
+                            || {
+                                let array = root.[<create_ $name _array>](NAME, array_size);
+                                for (i, value) in data.iter().enumerate() {
+                                    array.set(i, *value);
+                                }
+                                array
+                            },
+                            drop,
+                            criterion::BatchSize::LargeInput,
+                        );
                     });
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("{}/set/{array_size}", $Array),
                     move |b| {
                         let mut rng = rand::rng();
                         let inspector = Inspector::default();
                         let root = inspector.root();
                         let array = root.[<create_ $name _array>](NAME, array_size);
-                        b.iter_with_large_setup(|| rng.random_range(0..array_size), |index| {
-                            array.set(index, 1 as $type);
-                        });
+                        b.iter_batched(
+                            || rng.random_range(0..array_size),
+                            |index| {
+                                array.set(index, 1 as $type);
+                            },
+                            criterion::BatchSize::LargeInput,
+                        );
                     }
                 );
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("{}/add/{array_size}", $Array),
                     move |b| {
                         let mut rng = rand::rng();
                         let inspector = Inspector::default();
                         let root = inspector.root();
                         let array = root.[<create_ $name _array>](NAME, array_size);
-                        b.iter_with_large_setup(|| rng.random_range(0..array_size), |index| {
-                            array.add(index, 1 as $type);
-                        });
+                        b.iter_batched(
+                            || rng.random_range(0..array_size),
+                            |index| {
+                                array.add(index, 1 as $type);
+                            },
+                            criterion::BatchSize::LargeInput,
+                        );
                     }
                 );
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("{}/subtract/{array_size}", $Array),
                     move |b| {
                         let mut rng = rand::rng();
@@ -256,50 +288,57 @@ macro_rules! bench_numeric_array_property_fn {
                         for i in 0..array_size {
                             array.set(i, $type::MAX);
                         }
-                        b.iter_with_large_setup(|| rng.random_range(0..array_size), |index| {
-                            array.subtract(index, 1 as $type);
-                        });
+                        b.iter_batched(
+                            || rng.random_range(0..array_size),
+                            |index| {
+                                array.subtract(index, 1 as $type);
+                            },
+                            criterion::BatchSize::LargeInput,
+                        );
                     }
                 );
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("{}/drop/{array_size}", $Array),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_setup(
+                        b.iter_batched(
                             || root.[<create_ $name _array>](NAME, array_size),
-                            |p| drop(criterion::black_box(p)));
+                            |p| drop(std::hint::black_box(p)),
+                            criterion::BatchSize::LargeInput,
+                        );
                     }
                 );
-                bench
            }
         }
     };
 }
 
 /// Generates benchmarks for operations that can be done on Inspect string array properties.
-fn string_array_property_benchmarks(
-    mut bench: criterion::Benchmark,
-    array_size: usize,
-) -> criterion::Benchmark {
-    bench = bench.with_function(format!("Node/create_string_array/{array_size}"), move |b| {
+fn string_array_property_benchmarks(group: &mut BenchGroup<'_>, array_size: usize) {
+    let _ = group.bench_function(format!("Node/create_string_array/{array_size}"), move |b| {
         let inspector = Inspector::default();
         let root = inspector.root();
-        b.iter_with_large_drop(|| root.create_string_array(NAME, array_size));
+        b.iter_batched(
+            || root.create_string_array(NAME, array_size),
+            drop,
+            criterion::BatchSize::LargeInput,
+        );
     });
-    bench = bench.with_function(format!("StringArrayProperty/set/{array_size}"), move |b| {
+    let _ = group.bench_function(format!("StringArrayProperty/set/{array_size}"), move |b| {
         let mut rng = rand::rng();
         let inspector = Inspector::default();
         let root = inspector.root();
         let array = root.create_string_array(NAME, array_size);
-        b.iter_with_large_setup(
+        b.iter_batched(
             || rng.random_range(0..array_size),
             |index| {
                 array.set(index, "one");
             },
+            criterion::BatchSize::LargeInput,
         );
     });
-    bench = bench.with_function(format!("StringArrayProperty/clear/{array_size}"), move |b| {
+    let _ = group.bench_function(format!("StringArrayProperty/clear/{array_size}"), move |b| {
         let inspector = Inspector::default();
         let root = inspector.root();
         let array = root.create_string_array(NAME, array_size);
@@ -307,15 +346,15 @@ fn string_array_property_benchmarks(
             array.clear();
         });
     });
-    bench = bench.with_function(format!("StringArrayProperty/drop/{array_size}"), move |b| {
+    let _ = group.bench_function(format!("StringArrayProperty/drop/{array_size}"), move |b| {
         let inspector = Inspector::default();
         let root = inspector.root();
-        b.iter_with_large_setup(
+        b.iter_batched(
             || root.create_string_array(NAME, array_size),
-            |p| drop(criterion::black_box(p)),
+            |p| drop(std::hint::black_box(p)),
+            criterion::BatchSize::LargeInput,
         );
     });
-    bench
 }
 
 /// Returns linear histogram parameters and a value that for use in linear histogram benchmarks.
@@ -354,13 +393,13 @@ macro_rules! bench_histogram_property_fn {
     ($name:ident, $type:ty, $Histogram:expr, $histogram_type:ident) => {
         paste::paste! {
             fn [<$name _ $histogram_type _histogram_property_benchmarks>](
-                mut bench: criterion::Benchmark,
+                group: &mut BenchGroup<'_>,
                 size: usize,
-            ) -> criterion::Benchmark {
+            ) {
                 let (parameters, value) = [<get_ $histogram_type _bench_data>](size);
 
                 let params = parameters.clone();
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!(
                         "Node/create_{}_{}_histogram/{size}",
                         stringify!($name), stringify!($histogram_type)
@@ -368,85 +407,96 @@ macro_rules! bench_histogram_property_fn {
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_drop(|| {
-                            root.[<create_ $name _ $histogram_type _histogram>](NAME, params.clone())
-                        });
+                        b.iter_batched(
+                            || {
+                                root.[<create_ $name _ $histogram_type _histogram>](NAME, params.clone())
+                            },
+                            drop,
+                            criterion::BatchSize::LargeInput,
+                        );
                     }
                 );
 
                 let params = parameters.clone();
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("{}/insert/{size}", $Histogram),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_setup(
+                        b.iter_batched(
                             || {
                                 root.[<create_ $name _ $histogram_type _histogram>](
                                     NAME, params.clone())
                             },
                             |property| property.insert(value),
+                            criterion::BatchSize::LargeInput,
                         );
                     }
                 );
 
                 let params = parameters.clone();
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("{}/insert_overflow/{size}", $Histogram),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_setup(
+                        b.iter_batched(
                             || {
                                 root.[<create_ $name _ $histogram_type _histogram>](
                                     NAME, params.clone())
                             },
                             |property| property.insert(10_000_000 as $type),
+                            criterion::BatchSize::LargeInput,
                         );
                     }
                 );
 
                 let params = parameters.clone();
-                bench = bench.with_function(
+                let _ = group.bench_function(
                     format!("{}/insert_underflow/{size}", $Histogram),
                     move |b| {
                         let inspector = Inspector::default();
                         let root = inspector.root();
-                        b.iter_with_large_setup(
+                        b.iter_batched(
                             || {
                                 root.[<create_ $name _ $histogram_type _histogram>](
                                     NAME, params.clone())
                             },
                             |property| property.insert(0 as $type),
+                            criterion::BatchSize::LargeInput,
                         );
                     }
                 );
 
                 let params = parameters.clone();
-                bench = bench.with_function(format!("{}/drop/{size}", $Histogram), move |b| {
+                let _ = group.bench_function(format!("{}/drop/{size}", $Histogram), move |b| {
                     let inspector = Inspector::default();
                     let root = inspector.root();
-                    b.iter_with_large_setup(
+                    b.iter_batched(
                         || root.[<create_ $name _ $histogram_type _histogram>](
                             NAME, params.clone()),
-                        |p| drop(criterion::black_box(p)))
+                        |p| drop(std::hint::black_box(p)),
+                        criterion::BatchSize::LargeInput,
+                    );
                 });
-
-                bench
             }
         }
     };
 }
 
 /// Benchmark the Inspect VMO heap extend mechanism.
-fn bench_heap_extend(mut bench: criterion::Benchmark) -> criterion::Benchmark {
-    bench = bench.with_function("Heap/create_1mb_vmo", |b| {
-        b.iter_with_large_drop(|| {
-            let (container, _) = Container::read_and_write(1 << 21).unwrap();
-            Heap::empty(container).unwrap()
-        });
+fn bench_heap_extend(group: &mut BenchGroup<'_>) {
+    let _ = group.bench_function("Heap/create_1mb_vmo", |b| {
+        b.iter_batched(
+            || {
+                let (container, _) = Container::read_and_write(1 << 21).unwrap();
+                Heap::empty(container).unwrap()
+            },
+            drop,
+            criterion::BatchSize::LargeInput,
+        );
     });
-    bench = bench.with_function("Heap/allocate_512k", |b| {
+    let _ = group.bench_function("Heap/allocate_512k", |b| {
         b.iter_batched_ref(
             || {
                 let (container, _) = Container::read_and_write(1 << 21).unwrap();
@@ -460,7 +510,7 @@ fn bench_heap_extend(mut bench: criterion::Benchmark) -> criterion::Benchmark {
             criterion::BatchSize::SmallInput,
         );
     });
-    bench = bench.with_function("Heap/extend", |b| {
+    let _ = group.bench_function("Heap/extend", |b| {
         b.iter_batched_ref(
             || {
                 let (container, _) = Container::read_and_write(1 << 21).unwrap();
@@ -474,7 +524,7 @@ fn bench_heap_extend(mut bench: criterion::Benchmark) -> criterion::Benchmark {
             criterion::BatchSize::LargeInput,
         );
     });
-    bench = bench.with_function("Heap/free", |b| {
+    let _ = group.bench_function("Heap/free", |b| {
         b.iter_batched(
             || {
                 let (container, _) = Container::read_and_write(1 << 21).unwrap();
@@ -493,22 +543,21 @@ fn bench_heap_extend(mut bench: criterion::Benchmark) -> criterion::Benchmark {
             criterion::BatchSize::LargeInput,
         );
     });
-    bench = bench.with_function("Heap/drop", |b| {
-        b.iter_with_large_setup(
+    let _ = group.bench_function("Heap/drop", |b| {
+        b.iter_batched(
             || {
                 let (container, _) = Container::read_and_write(1 << 21).unwrap();
                 Heap::empty(container).unwrap()
             },
-            |heap| drop(criterion::black_box(heap)),
+            |heap| drop(std::hint::black_box(heap)),
+            criterion::BatchSize::LargeInput,
         );
     });
-
-    bench
 }
 
 /// Benchmark the write-speed of a local inspector after it has been copy-on-write
 /// served over FIDL
-fn bench_write_after_tree_cow_read(mut bench: criterion::Benchmark) -> criterion::Benchmark {
+fn bench_write_after_tree_cow_read(group: &mut BenchGroup<'_>) {
     let mut executor = fasync::LocalExecutor::default();
     let inspector = Inspector::default();
 
@@ -523,7 +572,7 @@ fn bench_write_after_tree_cow_read(mut bench: criterion::Benchmark) -> criterion
     // Force TLB shootdown for following writes on the local inspector
     executor.run_singlethreaded(proxy.vmo()).expect("fetch vmo");
 
-    bench = bench.with_function("Node/IntProperty::CoW::Add", move |b| {
+    let _ = group.bench_function("Node/IntProperty::CoW::Add", move |b| {
         b.iter(|| {
             for p in &properties {
                 p.add(1);
@@ -533,31 +582,32 @@ fn bench_write_after_tree_cow_read(mut bench: criterion::Benchmark) -> criterion
 
     drop(proxy);
     executor.run_singlethreaded(task).unwrap();
-    bench
 }
 
-fn bench_drop_string_reference(bench: criterion::Benchmark, size: usize) -> criterion::Benchmark {
-    bench.with_function(format!("StringRefs/drop_with_string_ref_cache/{size}"), move |b| {
-        let inspector = Inspector::default();
-        let root = inspector.root();
-        b.iter_with_large_setup(
-            || {
-                let mut current = root.create_child("start");
-                for i in 0..size {
-                    let next = current.create_child(format!("{i}"));
-                    let weak = next.clone_weak();
-                    root.record(next);
-                    current = weak;
-                }
-                let p = current.create_string(NAME, NAME);
-                root.record(current);
-                p
-            },
-            |p| {
-                drop(criterion::black_box(p));
-            },
-        );
-    })
+fn bench_drop_string_reference(group: &mut BenchGroup<'_>, size: usize) {
+    let _ =
+        group.bench_function(format!("StringRefs/drop_with_string_ref_cache/{size}"), move |b| {
+            let inspector = Inspector::default();
+            let root = inspector.root();
+            b.iter_batched(
+                || {
+                    let mut current = root.create_child("start");
+                    for i in 0..size {
+                        let next = current.create_child(format!("{i}"));
+                        let weak = next.clone_weak();
+                        root.record(next);
+                        current = weak;
+                    }
+                    let p = current.create_string(NAME, NAME);
+                    root.record(current);
+                    p
+                },
+                |p| {
+                    drop(std::hint::black_box(p));
+                },
+                criterion::BatchSize::LargeInput,
+            );
+        });
 }
 
 bench_numeric_property_fn!(int, i64, "IntProperty");
@@ -580,40 +630,45 @@ fn main() {
         fuchsia_inspect_bench_utils::CriterionConfig::default(),
     );
 
-    let mut bench = criterion::Benchmark::new("Inspector/new", |b| {
-        b.iter_with_large_drop(Inspector::default);
+    let mut group = c.benchmark_group("fuchsia.rust_inspect.benchmarks");
+
+    let _ = group.bench_function("Inspector/new", |b| {
+        b.iter_batched(Inspector::default, drop, criterion::BatchSize::LargeInput);
     });
-    bench = bench.with_function("Inspector/root", |b| {
-        b.iter_with_large_setup(Inspector::default, |inspector| {
-            inspector.root();
-        });
+    let _ = group.bench_function("Inspector/root", |b| {
+        b.iter_batched(
+            Inspector::default,
+            |inspector| {
+                inspector.root();
+            },
+            criterion::BatchSize::LargeInput,
+        );
     });
-    bench = node_benchmarks(bench);
-    bench = int_property_benchmarks(bench);
-    bench = uint_property_benchmarks(bench);
-    bench = double_property_benchmarks(bench);
+    node_benchmarks(&mut group);
+    int_property_benchmarks(&mut group);
+    uint_property_benchmarks(&mut group);
+    double_property_benchmarks(&mut group);
     for prop_size in &[4, 8, 100, 2000, 2048, 10000] {
-        bench = string_property_benchmarks(bench, *prop_size);
-        bench = bytes_property_benchmarks(bench, *prop_size);
-        bench = bench_drop_string_reference(bench, *prop_size);
+        string_property_benchmarks(&mut group, *prop_size);
+        bytes_property_benchmarks(&mut group, *prop_size);
+        bench_drop_string_reference(&mut group, *prop_size);
     }
     for array_size in &[32, 128, 240] {
-        bench = int_array_property_benchmarks(bench, *array_size);
-        bench = uint_array_property_benchmarks(bench, *array_size);
-        bench = double_array_property_benchmarks(bench, *array_size);
-        bench = string_array_property_benchmarks(bench, *array_size);
+        int_array_property_benchmarks(&mut group, *array_size);
+        uint_array_property_benchmarks(&mut group, *array_size);
+        double_array_property_benchmarks(&mut group, *array_size);
+        string_array_property_benchmarks(&mut group, *array_size);
 
-        bench = int_linear_histogram_property_benchmarks(bench, *array_size);
-        bench = uint_linear_histogram_property_benchmarks(bench, *array_size);
-        bench = double_linear_histogram_property_benchmarks(bench, *array_size);
+        int_linear_histogram_property_benchmarks(&mut group, *array_size);
+        uint_linear_histogram_property_benchmarks(&mut group, *array_size);
+        double_linear_histogram_property_benchmarks(&mut group, *array_size);
 
-        bench = int_exponential_histogram_property_benchmarks(bench, *array_size);
-        bench = uint_exponential_histogram_property_benchmarks(bench, *array_size);
-        bench = double_exponential_histogram_property_benchmarks(bench, *array_size);
+        int_exponential_histogram_property_benchmarks(&mut group, *array_size);
+        uint_exponential_histogram_property_benchmarks(&mut group, *array_size);
+        double_exponential_histogram_property_benchmarks(&mut group, *array_size);
     }
 
-    bench = bench_heap_extend(bench);
-    bench = bench_write_after_tree_cow_read(bench);
-
-    c.bench("fuchsia.rust_inspect.benchmarks", bench);
+    bench_heap_extend(&mut group);
+    bench_write_after_tree_cow_read(&mut group);
+    group.finish();
 }

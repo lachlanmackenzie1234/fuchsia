@@ -43,17 +43,21 @@ fn parse_selectors(selectors: &[String]) -> HierarchyMatcher {
         .expect("Unable to construct hierarchy matcher from selectors.")
 }
 
-fn snapshot_and_select_bench(b: &mut criterion::Bencher, size: usize) {
+fn snapshot_and_select_bench(b: &mut criterion::Bencher<'_>, size: usize) {
     let hierarchy_generator =
         fuchsia_inspect_bench_utils::filled_hierarchy_generator(HIERARCHY_GENERATOR_SEED, size);
     let hierarchy_matcher = parse_selectors(&SELECTOR_TILL_LEVEL_30);
 
-    b.iter_with_large_drop(|| {
-        let hierarchy = fasync::TestExecutor::new()
-            .run_singlethreaded(hierarchy_generator.get_diagnostics_hierarchy())
-            .into_owned();
-        filter_hierarchy(hierarchy, &hierarchy_matcher)
-    });
+    b.iter_batched(
+        || {
+            let hierarchy = fasync::TestExecutor::new()
+                .run_singlethreaded(hierarchy_generator.get_diagnostics_hierarchy())
+                .into_owned();
+            filter_hierarchy(hierarchy, &hierarchy_matcher)
+        },
+        drop,
+        criterion::BatchSize::LargeInput,
+    );
 }
 
 fn main() {
@@ -61,7 +65,9 @@ fn main() {
         fuchsia_inspect_bench_utils::CriterionConfig::default(),
     );
 
-    let mut bench = criterion::Benchmark::new("SnapshotAndSelect/10", move |b| {
+    let mut group = c.benchmark_group("fuchsia.rust_inspect.selectors");
+
+    let _ = group.bench_function("SnapshotAndSelect/10", move |b| {
         snapshot_and_select_bench(b, 10usize);
     });
     for exponent in 2..=5 {
@@ -69,12 +75,12 @@ fn main() {
         // inspect hierarchy in a vmo and then applies the given selectors
         // to the snapshot to filter it down.
         let size = 10i32.pow(exponent);
-        bench = bench.with_function(format!("SnapshotAndSelect/{size}"), move |b| {
+        let _ = group.bench_function(format!("SnapshotAndSelect/{size}"), move |b| {
             snapshot_and_select_bench(b, size as usize);
         });
     }
 
-    c.bench("fuchsia.rust_inspect.selectors", bench);
+    group.finish();
 }
 
 #[cfg(test)]

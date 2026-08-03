@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use clap::Parser;
-use criterion::{Benchmark, Criterion};
+use criterion::Criterion;
 use ebpf::{EbpfBufferPtr, EbpfProgramContext, FieldMapping, ProgramArgument};
 use ebpf_api::{
     __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef,
@@ -183,7 +183,8 @@ fn main() {
         let prog = ebpf::link_program::<TestEbpfContext>(&verified, maps)
             .unwrap_or_else(|e| exit_on_error(format!("Failed to link program {}: {}", name, e)));
 
-        let bench = Benchmark::new(name, move |b| {
+        let mut group = c.benchmark_group("fuchsia.ebpf");
+        let _ = group.bench_function(name, move |b| {
             let skb = SkBuff {
                 sk_buff: __sk_buff {
                     len: TEST_PACKET.len() as u32,
@@ -207,7 +208,6 @@ fn main() {
                 let _r = prog.run_with_1_argument(&mut ctx, &skb);
             })
         });
-
-        c.bench("fuchsia.ebpf", bench);
+        group.finish();
     }
 }

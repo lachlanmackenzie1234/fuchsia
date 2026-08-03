@@ -47,7 +47,7 @@ fn get_component_identity() -> Arc<ComponentIdentity> {
     Arc::new(ComponentIdentity::new(moniker::Moniker::try_from(["a"]).unwrap().into(), ""))
 }
 
-fn bench_fill(b: &mut criterion::Bencher, size: usize) {
+fn bench_fill(b: &mut criterion::Bencher<'_>, size: usize) {
     // SharedBuffer needs an executor even though we don't use it in the benchmark.
     let _executor = SendExecutorBuilder::new().build();
     let buffer = Arc::new(SharedBuffer::new(
@@ -73,7 +73,7 @@ struct IterateArgs {
     writes_per_second: usize,
 }
 
-fn bench_iterate_concurrent(b: &mut criterion::Bencher, args: IterateArgs) {
+fn bench_iterate_concurrent(b: &mut criterion::Bencher<'_>, args: IterateArgs) {
     let mut executor = SendExecutorBuilder::new().build();
     let done = Arc::new(AtomicBool::new(false));
     // Messages take up a a little less than 200 bytes in the buffer.
@@ -143,18 +143,20 @@ fn main() {
         .measurement_time(Duration::from_secs(2))
         .sample_size(20);
 
+    let mut group = c.benchmark_group("fuchsia.archivist");
+
     // The following benchmarks measure the performance of SharedBuffer, the fundamental data
     // structured used to store components' logs.
 
     // Benchmark the time needed to fill the buffer with just 100 entries.  This won't cause
     // wrapping.
-    let mut bench = criterion::Benchmark::new("Logging/SharedBuffer/Fill/100", move |b| {
+    let _ = group.bench_function("Logging/SharedBuffer/Fill/100", move |b| {
         bench_fill(b, 100);
     });
 
     // Benchmark the time needed to add 16K entries.
     // This measures the performance of rotating log buffers.
-    bench = bench.with_function("Logging/SharedBuffer/Fill/16K", move |b| {
+    let _ = group.bench_function("Logging/SharedBuffer/Fill/16K", move |b| {
         bench_fill(b, 16 * 1024);
     });
 
@@ -165,7 +167,7 @@ fn main() {
 
     // This benchmark has no concurrent writers, so it measures the baseline to read all 16K logs
     // out of the buffer.
-    bench = bench.with_function(
+    let _ = group.bench_function(
         "Logging/SharedBuffer/Iterate/size=16K/writers=0/per_second=1",
         move |b| {
             bench_iterate_concurrent(
@@ -177,7 +179,7 @@ fn main() {
 
     // This benchmark has one concurrent writer pushing 50 logs per second.
     // It measures the overhead of concurrent write locking on the reader.
-    bench = bench.with_function(
+    let _ = group.bench_function(
         "Logging/SharedBuffer/Iterate/size=16K/writers=1/per_second=50",
         move |b| {
             bench_iterate_concurrent(
@@ -188,7 +190,7 @@ fn main() {
     );
 
     // Same as above, but with 500 logs per second being written.
-    bench = bench.with_function(
+    let _ = group.bench_function(
         "Logging/SharedBuffer/Iterate/size=16K/writers=1/per_second=500",
         move |b| {
             bench_iterate_concurrent(
@@ -199,7 +201,7 @@ fn main() {
     );
 
     // Same as above, but with 3 threads each writing 500 logs per second.
-    bench = bench.with_function(
+    let _ = group.bench_function(
         "Logging/SharedBuffer/Iterate/size=16K/writers=3/per_second=500",
         move |b| {
             bench_iterate_concurrent(
@@ -209,5 +211,5 @@ fn main() {
         },
     );
 
-    c.bench("fuchsia.archivist", bench);
+    group.finish();
 }

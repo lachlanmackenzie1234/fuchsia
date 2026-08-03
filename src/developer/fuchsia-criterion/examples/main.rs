@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_criterion::{criterion, FuchsiaCriterion};
+use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use std::time::Duration;
 
 fn fibonacci(n: u64) -> u64 {
@@ -22,5 +22,5 @@ fn main() {
         .measurement_time(Duration::from_millis(100))
         .sample_size(100);
 
-    c.bench_function("fib 10", |b| b.iter(|| fibonacci(criterion::black_box(10))));
+    c.bench_function("fib 10", |b| b.iter(|| fibonacci(std::hint::black_box(10))));
 }

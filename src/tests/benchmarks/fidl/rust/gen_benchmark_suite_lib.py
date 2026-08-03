@@ -39,7 +39,7 @@ def main():
         for package in packages:
             fo.write("use %s;\n" % package)
         fo.write(
-            "\npub const ALL_BENCHMARKS: [&'static[(&'static str, fn(&mut Bencher))]; %d] = [\n"
+            "\npub const ALL_BENCHMARKS: [&'static[(&'static str, fn(&mut Bencher<'_>))]; %d] = [\n"
             % len(packages)
         )
         for package in packages:

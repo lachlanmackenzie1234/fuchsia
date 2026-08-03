@@ -655,14 +655,14 @@ alias(
 )
 
 alias(
-    name = "criterion-0.2.11",
-    actual = "//third_party/rust_crates/vendor/criterion-0.2.11:criterion",
+    name = "criterion-0.8.2",
+    actual = "//third_party/rust_crates/vendor/criterion-0.8.2:criterion",
     tags = ["manual"],
 )
 
 alias(
     name = "criterion",
-    actual = "//third_party/rust_crates/vendor/criterion-0.2.11:criterion",
+    actual = "//third_party/rust_crates/vendor/criterion-0.8.2:criterion",
     tags = ["manual"],
 )
 

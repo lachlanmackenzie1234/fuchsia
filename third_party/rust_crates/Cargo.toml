@@ -91,7 +91,7 @@ cmac = "0.8"
 cpio = "0.4.1"
 crc = "3.4.0"
 crc32fast = "1.5.0"
-criterion = { version = "0.2", default-features = false }
+criterion = { version = "0.8.2", default-features = false, features = ["csv_output", "cargo_bench_support"] }
 crossbeam = "0.8.4"
 crossbeam-utils = "0.8.21"
 csv = "1.4.0"
@@ -429,6 +429,7 @@ windows-sys-0_61_2 = { package = "windows-sys", path = "empty/windows-sys-0.61.2
 
 ### Forks: vendored crates whose code doesn't match the upstream version
 # keep-sorted start
+anes = { path = "forks/anes-0.1.6" }
 bitfield-macros = { path = "forks/bitfield-macros" }
 bt-bap = { path = "forks/bluetooth/bt-bap" }
 bt-bass = { path = "forks/bluetooth/bt-bass" }
@@ -534,6 +535,9 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.ahash."0.8.12".platform."cfg(any(target_arch = \"x86_64\", target_arch = \"aarch64\", target_arch = \"mips64\", target_arch = \"powerpc64\", target_arch = \"riscv64gc\", target_arch = \"s390x\"))"]
 rustflags = [ "--cfg=feature=\\\"folded_multiply\\\"" ]
 
+[gn.package.alloca."0.4.0"]
+deps = [ "//third_party/rust_crates/compat/alloca-0.4.0:alloca-c" ]
+
 [gn.package.anyhow."1.0.102"]
 rustflags = [
   "--cfg=std_backtrace",
@@ -594,14 +598,18 @@ rustflags = [
   "--cfg=try_reserve_2",
 ]
 
-[gn.package.cast."0.2.7"]
-rustflags = []
-
 [gn.package.crc-catalog."2.4.0"]
 license_files = ["LICENSES/Apache-2.0.txt"]
 
 [gn.package.crc32fast."1.5.0"]
 rustflags = ["--cfg=stable_arm_crc32_intrinsics"]
+
+[gn.package.criterion."0.8.2"]
+env_vars = [
+  "CARGO_PKG_VERSION_MAJOR=0",
+  "CARGO_PKG_VERSION_MINOR=8",
+  "CARGO_PKG_VERSION_PATCH=2",
+]
 
 [gn.package.crossbeam-utils."0.8.21"]
 rustflags = []
@@ -616,9 +624,6 @@ groups = [
 
 [gn.package.euclid."0.22.14"]
 license_files = ["LICENSE-APACHE"]
-
-[gn.package.fuchsia-cprng."0.1.1"]
-existing_gn_target = "//src/lib/fuchsia-cprng"
 
 [gn.package.sapphire-async."0.1.0"]
 uses_fuchsia_license = true
@@ -941,19 +946,8 @@ rustflags = ["--cfg=span_locations", "--cfg=wrap_proc_macro"]
 [gn.package.rand_chacha."0.3.1"]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.rand_core."0.3.1"]
-license_files = ["LICENSE-APACHE"]
-
-[gn.package.rand_core."0.4.2"]
-license_files = ["LICENSE-APACHE"]
 
 [gn.package.rand_core."0.6.4"]
-license_files = ["LICENSE-APACHE"]
-
-[gn.package.rand_os."0.1.3"]
-license_files = ["LICENSE-APACHE"]
-
-[gn.package.rand_xoshiro."0.1.0"]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.rayon-core."1.12.1"]

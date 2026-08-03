@@ -18,18 +18,18 @@ fn main() {
         .sample_size(100);
     let name = "fuchsia.starnix.kernel.core";
 
-    let bench = criterion::Benchmark::new("unstarted_clock_now", bench_unstarted_clock_now)
-        .with_function("started_clock_now", bench_started_clock_now)
-        .with_function(
-            "unstarted_clock_estimate_boot_deadline",
-            bench_unstarted_clock_estimate_boot_deadline,
-        )
-        .with_function(
-            "started_clock_estimate_boot_deadline",
-            bench_started_clock_estimate_boot_deadline,
-        );
-
-    let _: &mut Criterion = c.bench(name, bench);
+    let mut group = c.benchmark_group(name);
+    let _ = group.bench_function("unstarted_clock_now", bench_unstarted_clock_now);
+    let _ = group.bench_function("started_clock_now", bench_started_clock_now);
+    let _ = group.bench_function(
+        "unstarted_clock_estimate_boot_deadline",
+        bench_unstarted_clock_estimate_boot_deadline,
+    );
+    let _ = group.bench_function(
+        "started_clock_estimate_boot_deadline",
+        bench_started_clock_estimate_boot_deadline,
+    );
+    group.finish();
 }
 
 fn new_clock(more_opts: zx::ClockOpts) -> time::utc::UtcClock {
@@ -41,30 +41,30 @@ fn new_clock(more_opts: zx::ClockOpts) -> time::utc::UtcClock {
     time::utc::UtcClock::new(utc_clock)
 }
 
-fn bench_unstarted_clock_now(bencher: &mut criterion::Bencher) {
+fn bench_unstarted_clock_now(bencher: &mut criterion::Bencher<'_>) {
     let clock = new_clock(zx::ClockOpts::empty());
     bencher.iter(|| {
-        let _now = criterion::black_box(clock.now());
+        let _now = std::hint::black_box(clock.now());
     });
 }
 
-fn bench_unstarted_clock_estimate_boot_deadline(bencher: &mut criterion::Bencher) {
+fn bench_unstarted_clock_estimate_boot_deadline(bencher: &mut criterion::Bencher<'_>) {
     let clock = new_clock(zx::ClockOpts::empty());
     bencher.iter(|| {
-        let _boot_time = criterion::black_box(clock.estimate_boot_time(frt::UtcInstant::ZERO));
+        let _boot_time = std::hint::black_box(clock.estimate_boot_time(frt::UtcInstant::ZERO));
     });
 }
 
-fn bench_started_clock_now(bencher: &mut criterion::Bencher) {
+fn bench_started_clock_now(bencher: &mut criterion::Bencher<'_>) {
     let clock = new_clock(zx::ClockOpts::AUTO_START);
     bencher.iter(|| {
-        let _now = criterion::black_box(clock.now());
+        let _now = std::hint::black_box(clock.now());
     });
 }
 
-fn bench_started_clock_estimate_boot_deadline(bencher: &mut criterion::Bencher) {
+fn bench_started_clock_estimate_boot_deadline(bencher: &mut criterion::Bencher<'_>) {
     let clock = new_clock(zx::ClockOpts::AUTO_START);
     bencher.iter(|| {
-        let _boot_time = criterion::black_box(clock.estimate_boot_time(frt::UtcInstant::ZERO));
+        let _boot_time = std::hint::black_box(clock.estimate_boot_time(frt::UtcInstant::ZERO));
     });
 }

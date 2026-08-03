@@ -222,7 +222,9 @@ pub mod testutil {
 #[cfg(benchmark)]
 pub mod benchmarks {
     /// Adds benchmarks defined in the base crate to the provided benchmarker.
-    pub fn add_benches(b: criterion::Benchmark) -> criterion::Benchmark {
-        crate::data_structures::token_bucket::benchmarks::add_benches(b)
+    pub fn add_benches(
+        group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    ) {
+        crate::data_structures::token_bucket::benchmarks::add_benches(group)
     }
 }

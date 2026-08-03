@@ -33,7 +33,7 @@ fn put_data_in_hierarchy(h: &mut DiagnosticsHierarchy, data_range: std::ops::Ran
     }
 }
 
-fn get_or_add_node_reading_bench(b: &mut criterion::Bencher) {
+fn get_or_add_node_reading_bench(b: &mut criterion::Bencher<'_>) {
     let mut h = create_diagnostics_hierarchy();
     let data_range = 1..100;
     put_data_in_hierarchy(&mut h, data_range.clone());
@@ -49,7 +49,7 @@ fn get_or_add_node_reading_bench(b: &mut criterion::Bencher) {
     });
 }
 
-fn from_inspector_bench(b: &mut criterion::Bencher) {
+fn from_inspector_bench(b: &mut criterion::Bencher<'_>) {
     let mut executor = fuchsia_async::LocalExecutor::default();
     let data_range = 1..100;
     let inspector = Inspector::default();
@@ -64,7 +64,7 @@ fn from_inspector_bench(b: &mut criterion::Bencher) {
     });
 }
 
-fn get_or_add_node_writing_bench(b: &mut criterion::Bencher) {
+fn get_or_add_node_writing_bench(b: &mut criterion::Bencher<'_>) {
     let data_range = 1..100;
     b.iter_with_large_drop(|| {
         let mut h = create_diagnostics_hierarchy();
@@ -73,7 +73,7 @@ fn get_or_add_node_writing_bench(b: &mut criterion::Bencher) {
     });
 }
 
-fn serialize_pretty_bench(b: &mut criterion::Bencher) {
+fn serialize_pretty_bench(b: &mut criterion::Bencher<'_>) {
     let mut h = create_diagnostics_hierarchy();
     let data_range = 1..100;
     put_data_in_hierarchy(&mut h, data_range);
@@ -81,7 +81,7 @@ fn serialize_pretty_bench(b: &mut criterion::Bencher) {
     b.iter(|| serde_json::to_string_pretty(&h).unwrap());
 }
 
-fn serialize_ugly_bench(b: &mut criterion::Bencher) {
+fn serialize_ugly_bench(b: &mut criterion::Bencher<'_>) {
     let mut h = create_diagnostics_hierarchy();
     let data_range = 1..100;
     put_data_in_hierarchy(&mut h, data_range);
@@ -89,7 +89,7 @@ fn serialize_ugly_bench(b: &mut criterion::Bencher) {
     b.iter(|| serde_json::to_string(&h).unwrap());
 }
 
-fn deserialize_pretty_bench(b: &mut criterion::Bencher) {
+fn deserialize_pretty_bench(b: &mut criterion::Bencher<'_>) {
     let mut h = create_diagnostics_hierarchy();
     let data_range = 1..100;
     put_data_in_hierarchy(&mut h, data_range);
@@ -101,7 +101,7 @@ fn deserialize_pretty_bench(b: &mut criterion::Bencher) {
     });
 }
 
-fn deserialize_ugly_bench(b: &mut criterion::Bencher) {
+fn deserialize_ugly_bench(b: &mut criterion::Bencher<'_>) {
     let mut h = create_diagnostics_hierarchy();
     let data_range = 1..100;
     put_data_in_hierarchy(&mut h, data_range);
@@ -113,7 +113,7 @@ fn deserialize_ugly_bench(b: &mut criterion::Bencher) {
     });
 }
 
-fn hierarchy_iteration_bench(b: &mut criterion::Bencher) {
+fn hierarchy_iteration_bench(b: &mut criterion::Bencher<'_>) {
     let mut h = create_diagnostics_hierarchy();
     let data_range = 1..100;
     put_data_in_hierarchy(&mut h, data_range);
@@ -140,31 +140,31 @@ fn main() {
         fuchsia_inspect_bench_utils::CriterionConfig::default(),
     );
 
-    let mut bench =
-        criterion::Benchmark::new("DiagnosticsHierarchy/get_or_add_node/reading", move |b| {
-            get_or_add_node_reading_bench(b);
-        });
-    bench = bench.with_function("DiagnosticsHierarchy/from_inspector", move |b| {
+    let mut group = c.benchmark_group("fuchsia.diagnostics_hierarchy.benchmarks");
+    let _ = group.bench_function("DiagnosticsHierarchy/get_or_add_node/reading", move |b| {
+        get_or_add_node_reading_bench(b);
+    });
+    let _ = group.bench_function("DiagnosticsHierarchy/from_inspector", move |b| {
         from_inspector_bench(b);
     });
-    bench = bench.with_function("DiagnosticsHierarchy/get_or_add_node/writing", move |b| {
+    let _ = group.bench_function("DiagnosticsHierarchy/get_or_add_node/writing", move |b| {
         get_or_add_node_writing_bench(b);
     });
-    bench = bench.with_function("DiagnosticsHierarchy/serialize/pretty", move |b| {
+    let _ = group.bench_function("DiagnosticsHierarchy/serialize/pretty", move |b| {
         serialize_pretty_bench(b);
     });
-    bench = bench.with_function("DiagnosticsHierarchy/serialize/ugly", move |b| {
+    let _ = group.bench_function("DiagnosticsHierarchy/serialize/ugly", move |b| {
         serialize_ugly_bench(b);
     });
-    bench = bench.with_function("DiagnosticsHierarchy/deserialize/pretty", move |b| {
+    let _ = group.bench_function("DiagnosticsHierarchy/deserialize/pretty", move |b| {
         deserialize_pretty_bench(b);
     });
-    bench = bench.with_function("DiagnosticsHierarchy/deserialize/ugly", move |b| {
+    let _ = group.bench_function("DiagnosticsHierarchy/deserialize/ugly", move |b| {
         deserialize_ugly_bench(b);
     });
-    bench = bench.with_function("DiagnosticsHierarchy/iteration", move |b| {
+    let _ = group.bench_function("DiagnosticsHierarchy/iteration", move |b| {
         hierarchy_iteration_bench(b);
     });
 
-    c.bench("fuchsia.diagnostics_hierarchy.benchmarks", bench);
+    group.finish();
 }

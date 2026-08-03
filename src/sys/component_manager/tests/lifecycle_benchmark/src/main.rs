@@ -40,9 +40,11 @@ fn main() {
         .connect_to_protocol_at_exposed_dir()
         .expect("could not connect to Realm service");
 
+    let mut group = c.benchmark_group("fuchsia.component.lifecycle");
+
     let e = executor.clone();
     let p = realm_proxy.clone();
-    let bench = criterion::Benchmark::new("ElfComponent/start", move |b| {
+    let _ = group.bench_function("ElfComponent/start", move |b| {
         b.iter_with_setup(
             || {
                 ElfComponentLaunchTest::new(
@@ -57,7 +59,7 @@ fn main() {
     });
     let e = executor.clone();
     let p = realm_proxy.clone();
-    let bench = bench.with_function("ElfComponent/start_and_resolve", move |b| {
+    let _ = group.bench_function("ElfComponent/start_and_resolve", move |b| {
         b.iter_with_setup(
             || {
                 ElfComponentLaunchTest::new(
@@ -72,7 +74,7 @@ fn main() {
     });
     let e = executor.clone();
     let p = realm_proxy.clone();
-    let bench = bench.with_function("ElfComponent/start_with_log", move |b| {
+    let _ = group.bench_function("ElfComponent/start_with_log", move |b| {
         b.iter_with_setup(
             || ElfComponentLaunchTest::new(e.clone(), &p, "#meta/with_log.cm", SetupMode::Resolved),
             |test| test.run(),
@@ -80,7 +82,7 @@ fn main() {
     });
     let e = executor.clone();
     let p = realm_proxy.clone();
-    let bench = bench.with_function("ElfComponent/start_with_log_and_stdout", move |b| {
+    let _ = group.bench_function("ElfComponent/start_with_log_and_stdout", move |b| {
         b.iter_with_setup(
             || {
                 ElfComponentLaunchTest::new(
@@ -94,7 +96,7 @@ fn main() {
         );
     });
 
-    c.bench("fuchsia.component.lifecycle", bench);
+    group.finish();
 }
 
 struct ElfComponentLaunchTest {

@@ -16,24 +16,29 @@ trait Bencher {
 }
 
 trait BenchmarkGroup {
-    type Bencher: Bencher;
-    fn register(&mut self, name: impl Into<String>, f: impl FnMut(&mut Self::Bencher) + 'static);
+    type Bencher<'a>: Bencher;
+    fn register(
+        &mut self,
+        name: impl Into<String>,
+        f: impl for<'a> FnMut(&mut Self::Bencher<'a>) + 'static,
+    );
 }
 
-impl Bencher for criterion::Bencher {
+impl Bencher for criterion::Bencher<'_> {
     fn iter<O, F: FnMut() -> O>(&mut self, f: F) {
         self.iter(f);
     }
 }
 
-impl BenchmarkGroup for Option<criterion::Benchmark> {
-    type Bencher = criterion::Bencher;
+impl BenchmarkGroup for criterion::BenchmarkGroup<'_, criterion::measurement::WallTime> {
+    type Bencher<'a> = criterion::Bencher<'a>;
 
-    fn register(&mut self, name: impl Into<String>, f: impl FnMut(&mut Self::Bencher) + 'static) {
-        *self = Some(match self.take() {
-            Some(b) => b.with_function(name, f),
-            None => criterion::Benchmark::new(name, f),
-        })
+    fn register(
+        &mut self,
+        name: impl Into<String>,
+        f: impl for<'a> FnMut(&mut Self::Bencher<'a>) + 'static,
+    ) {
+        let _ = self.bench_function(name, f);
     }
 }
 
@@ -51,9 +56,9 @@ fn main() {
         .sample_size(100);
     let name = "fuchsia.netstack.packet-formats";
 
-    let mut bench: Option<criterion::Benchmark> = None;
-    gather_benchmarks(&mut bench);
-    let _: &mut Criterion = c.bench(name, bench.expect("no benchmarks registered"));
+    let mut group = c.benchmark_group(name);
+    gather_benchmarks(&mut group);
+    group.finish();
 }
 
 pub(crate) struct BufSliceAlloc<'a>(&'a mut [u8]);
@@ -85,12 +90,12 @@ mod tests {
     }
 
     impl BenchmarkGroup for TestBencher {
-        type Bencher = Self;
+        type Bencher<'a> = Self;
 
         fn register(
             &mut self,
             name: impl Into<String>,
-            mut f: impl FnMut(&mut Self::Bencher) + 'static,
+            mut f: impl for<'a> FnMut(&mut Self::Bencher<'a>) + 'static,
         ) {
             // Add something to stdout so we can tell benchmarks apart, given we
             // can't dynamically generate test cases.

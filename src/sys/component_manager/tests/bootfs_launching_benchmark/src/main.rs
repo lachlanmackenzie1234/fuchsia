@@ -43,13 +43,14 @@ fn main() {
         .measurement_time(Duration::from_millis(20000))
         .sample_size(20);
 
+    let mut group = c.benchmark_group("fuchsia.bootfs.launching");
     // Run benchmark.
     for test_case in TEST_CASES {
-        let bench = criterion::Benchmark::new(format!("ElfComponent/{test_case:0>2}"), move |b| {
+        let _ = group.bench_function(format!("ElfComponent/{test_case:0>2}"), move |b| {
             b.iter_with_setup(|| ElfComponentLaunchTest::new(test_case), |test| test.run());
         });
-        c.bench("fuchsia.bootfs.launching", bench);
     }
+    group.finish();
 }
 
 struct ElfComponentLaunchTest {

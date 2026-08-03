@@ -66,18 +66,20 @@ fn add_lazies(inspector: Inspector, num_nodes: usize) {
 /// This benchmark measures the performance of snapshotting an Inspect VMO of different sizes. This
 /// VMO is being written concurrently at the given frequency. This is fundamental when reading
 /// Inspect data in the archivist.
-fn snapshot_bench(b: &mut criterion::Bencher, size: usize, frequency: usize) {
+fn snapshot_bench(b: &mut criterion::Bencher<'_>, size: usize, frequency: usize) {
     let inspector = Inspector::new(InspectorConfig::default().size(size));
     let vmo = inspector.duplicate_vmo().expect("failed to duplicate vmo");
     let done_fn = start_inspector_update_thread(inspector, frequency);
 
-    b.iter_with_large_drop(move || {
-        loop {
+    b.iter_batched(
+        move || loop {
             if let Ok(snapshot) = Snapshot::try_once_from_vmo(&vmo) {
                 break snapshot;
             }
-        }
-    });
+        },
+        drop,
+        criterion::BatchSize::LargeInput,
+    );
 
     done_fn();
 }
@@ -85,7 +87,7 @@ fn snapshot_bench(b: &mut criterion::Bencher, size: usize, frequency: usize) {
 /// This benchmark measures the performance of reading an Inspect VMO backed by a Tree server of
 /// different sizes and containing lazy nodes. This VMO is being written concurrently at the given
 /// frequency. This is fundamental when reading inspect data in the archivist.
-fn snapshot_tree_bench(b: &mut criterion::Bencher, size: usize, frequency: usize) {
+fn snapshot_tree_bench(b: &mut criterion::Bencher<'_>, size: usize, frequency: usize) {
     let mut executor = fuchsia_async::LocalExecutor::default();
 
     let inspector = Inspector::new(InspectorConfig::default().size(size));
@@ -96,14 +98,16 @@ fn snapshot_tree_bench(b: &mut criterion::Bencher, size: usize, frequency: usize
     let done_fn = start_inspector_update_thread(inspector.clone(), frequency);
     add_lazies(inspector, 4);
 
-    b.iter_with_large_drop(|| {
-        loop {
+    b.iter_batched(
+        || loop {
             if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy))
             {
                 break snapshot;
             }
-        }
-    });
+        },
+        drop,
+        criterion::BatchSize::LargeInput,
+    );
 
     done_fn();
     drop(proxy);
@@ -113,21 +117,23 @@ fn snapshot_tree_bench(b: &mut criterion::Bencher, size: usize, frequency: usize
 /// This benchmark measures the performance of reading an Inspect VMO backed by a Tree server of
 /// different sizes and containing lazy nodes.
 /// This is fundamental when reading inspect data in the archivist.
-fn uncontended_snapshot_tree_bench(b: &mut criterion::Bencher, size: usize) {
+fn uncontended_snapshot_tree_bench(b: &mut criterion::Bencher<'_>, size: usize) {
     let mut executor = fuchsia_async::LocalExecutor::default();
 
     let inspector = Inspector::new(InspectorConfig::default().size(size));
     let (proxy, tree_server_fut) = fuchsia_inspect_bench_utils::spawn_server(inspector).unwrap();
     let task = fasync::Task::local(tree_server_fut);
 
-    b.iter_with_large_drop(|| {
-        loop {
+    b.iter_batched(
+        || loop {
             if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy))
             {
                 break snapshot;
             }
-        }
-    });
+        },
+        drop,
+        criterion::BatchSize::LargeInput,
+    );
 
     drop(proxy);
     executor.run_singlethreaded(task).unwrap();
@@ -135,7 +141,7 @@ fn uncontended_snapshot_tree_bench(b: &mut criterion::Bencher, size: usize) {
 
 /// This benchmark measures the performance of snapshotting an Inspect VMO backed by a tree server
 /// when the vmo is partially filled to the given bytes.
-fn reader_snapshot_tree_vmo_bench(b: &mut criterion::Bencher, size: usize, filled_size: i64) {
+fn reader_snapshot_tree_vmo_bench(b: &mut criterion::Bencher<'_>, size: usize, filled_size: i64) {
     let mut executor = fuchsia_async::LocalExecutor::default();
 
     let inspector = Inspector::new(InspectorConfig::default().size(size));
@@ -155,28 +161,34 @@ fn reader_snapshot_tree_vmo_bench(b: &mut criterion::Bencher, size: usize, fille
         }
     }
 
-    b.iter_with_large_drop(|| {
-        loop {
+    b.iter_batched(
+        || loop {
             if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy))
             {
                 break snapshot;
             }
-        }
-    });
+        },
+        drop,
+        criterion::BatchSize::LargeInput,
+    );
 
     drop(proxy);
     executor.run_singlethreaded(task).unwrap();
 }
 
-fn snapshot_and_parse_bench(b: &mut criterion::Bencher, size: usize) {
+fn snapshot_and_parse_bench(b: &mut criterion::Bencher<'_>, size: usize) {
     let hierarchy_generator =
         fuchsia_inspect_bench_utils::filled_hierarchy_generator(HIERARCHY_GENERATOR_SEED, size);
 
-    b.iter_with_large_drop(|| {
-        let _hierarchy = fasync::TestExecutor::new()
-            .run_singlethreaded(hierarchy_generator.get_diagnostics_hierarchy())
-            .into_owned();
-    });
+    b.iter_batched(
+        || {
+            fasync::TestExecutor::new()
+                .run_singlethreaded(hierarchy_generator.get_diagnostics_hierarchy())
+                .into_owned()
+        },
+        drop,
+        criterion::BatchSize::LargeInput,
+    );
 }
 
 fn main() {
@@ -184,168 +196,170 @@ fn main() {
         fuchsia_inspect_bench_utils::CriterionConfig::default(),
     );
 
+    let mut group = c.benchmark_group("fuchsia.rust_inspect.reader_benchmarks");
+
     // TODO(https://fxbug.dev/42119817): Implement benchmarks where the real size doesn't match the
     // inspector size.
     // TODO(https://fxbug.dev/42119817): Enforce threads starting before benches run.
 
     // SNAPSHOT BENCHMARKS
-    let mut bench = criterion::Benchmark::new("Snapshot/4K/1hz", move |b| {
+    let _ = group.bench_function("Snapshot/4K/1hz", move |b| {
         snapshot_bench(b, 4096, 1);
     });
-    bench = bench.with_function("Snapshot/4K/10hz", move |b| {
+    let _ = group.bench_function("Snapshot/4K/10hz", move |b| {
         snapshot_bench(b, 4096, 10);
     });
-    bench = bench.with_function("Snapshot/4K/100hz", move |b| {
+    let _ = group.bench_function("Snapshot/4K/100hz", move |b| {
         snapshot_bench(b, 4096, 100);
     });
-    bench = bench.with_function("Snapshot/4K/1khz", move |b| {
+    let _ = group.bench_function("Snapshot/4K/1khz", move |b| {
         snapshot_bench(b, 4096, 1000);
     });
-    bench = bench.with_function("Snapshot/4K/10khz", move |b| {
+    let _ = group.bench_function("Snapshot/4K/10khz", move |b| {
         snapshot_bench(b, 4096, 10_000);
     });
-    bench = bench.with_function("Snapshot/4K/100khz", move |b| {
+    let _ = group.bench_function("Snapshot/4K/100khz", move |b| {
         snapshot_bench(b, 4096, 100_000);
     });
-    bench = bench.with_function("Snapshot/4K/1mhz", move |b| {
+    let _ = group.bench_function("Snapshot/4K/1mhz", move |b| {
         snapshot_bench(b, 4096, 1_000_000);
     });
 
-    bench = bench.with_function("Snapshot/256K/1hz", move |b| {
+    let _ = group.bench_function("Snapshot/256K/1hz", move |b| {
         snapshot_bench(b, 4096 * 64, 1);
     });
-    bench = bench.with_function("Snapshot/256K/10hz", move |b| {
+    let _ = group.bench_function("Snapshot/256K/10hz", move |b| {
         snapshot_bench(b, 4096 * 64, 10);
     });
-    bench = bench.with_function("Snapshot/256K/100hz", move |b| {
+    let _ = group.bench_function("Snapshot/256K/100hz", move |b| {
         snapshot_bench(b, 4096 * 64, 100);
     });
-    bench = bench.with_function("Snapshot/256K/1khz", move |b| {
+    let _ = group.bench_function("Snapshot/256K/1khz", move |b| {
         snapshot_bench(b, 4096 * 64, 1000);
     });
 
-    bench = bench.with_function("Snapshot/1M/1hz", move |b| {
+    let _ = group.bench_function("Snapshot/1M/1hz", move |b| {
         snapshot_bench(b, 4096 * 256, 1);
     });
-    bench = bench.with_function("Snapshot/1M/10hz", move |b| {
+    let _ = group.bench_function("Snapshot/1M/10hz", move |b| {
         snapshot_bench(b, 4096 * 256, 10);
     });
-    bench = bench.with_function("Snapshot/1M/100hz", move |b| {
+    let _ = group.bench_function("Snapshot/1M/100hz", move |b| {
         snapshot_bench(b, 4096 * 256, 100);
     });
-    bench = bench.with_function("Snapshot/1M/1khz", move |b| {
+    let _ = group.bench_function("Snapshot/1M/1khz", move |b| {
         snapshot_bench(b, 4096 * 256, 1000);
     });
 
     // SNAPSHOT TREE BENCHMARKS
 
-    bench = bench.with_function("SnapshotTree/4K/1hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/4K/1hz", move |b| {
         snapshot_tree_bench(b, 4096, 1);
     });
-    bench = bench.with_function("SnapshotTree/4K/10hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/4K/10hz", move |b| {
         snapshot_tree_bench(b, 4096, 10);
     });
-    bench = bench.with_function("SnapshotTree/4K/100hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/4K/100hz", move |b| {
         snapshot_tree_bench(b, 4096, 100);
     });
-    bench = bench.with_function("SnapshotTree/4K/1khz", move |b| {
+    let _ = group.bench_function("SnapshotTree/4K/1khz", move |b| {
         snapshot_tree_bench(b, 4096, 1000);
     });
-    bench = bench.with_function("SnapshotTree/4K/10khz", move |b| {
+    let _ = group.bench_function("SnapshotTree/4K/10khz", move |b| {
         snapshot_tree_bench(b, 4096, 10_000);
     });
-    bench = bench.with_function("SnapshotTree/4K/100khz", move |b| {
+    let _ = group.bench_function("SnapshotTree/4K/100khz", move |b| {
         snapshot_tree_bench(b, 4096, 100_000);
     });
-    bench = bench.with_function("SnapshotTree/4K/1mhz", move |b| {
+    let _ = group.bench_function("SnapshotTree/4K/1mhz", move |b| {
         snapshot_tree_bench(b, 4096, 1_000_000);
     });
 
-    bench = bench.with_function("SnapshotTree/16K/1hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/16K/1hz", move |b| {
         snapshot_tree_bench(b, 4096 * 4, 1);
     });
-    bench = bench.with_function("SnapshotTree/16K/10hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/16K/10hz", move |b| {
         snapshot_tree_bench(b, 4096 * 4, 10);
     });
-    bench = bench.with_function("SnapshotTree/16K/100hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/16K/100hz", move |b| {
         snapshot_tree_bench(b, 4096 * 4, 100);
     });
-    bench = bench.with_function("SnapshotTree/16K/1khz", move |b| {
+    let _ = group.bench_function("SnapshotTree/16K/1khz", move |b| {
         snapshot_tree_bench(b, 4096 * 4, 1000);
     });
 
-    bench = bench.with_function("SnapshotTree/256K/1hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/256K/1hz", move |b| {
         snapshot_tree_bench(b, 4096 * 64, 1);
     });
-    bench = bench.with_function("SnapshotTree/256K/10hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/256K/10hz", move |b| {
         snapshot_tree_bench(b, 4096 * 64, 10);
     });
-    bench = bench.with_function("SnapshotTree/256K/100hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/256K/100hz", move |b| {
         snapshot_tree_bench(b, 4096 * 64, 100);
     });
-    bench = bench.with_function("SnapshotTree/256K/1khz", move |b| {
+    let _ = group.bench_function("SnapshotTree/256K/1khz", move |b| {
         snapshot_tree_bench(b, 4096 * 64, 1000);
     });
 
-    bench = bench.with_function("SnapshotTree/1M/1hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/1M/1hz", move |b| {
         snapshot_tree_bench(b, 4096 * 256, 1);
     });
-    bench = bench.with_function("SnapshotTree/1M/10hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/1M/10hz", move |b| {
         snapshot_tree_bench(b, 4096 * 256, 10);
     });
-    bench = bench.with_function("SnapshotTree/1M/100hz", move |b| {
+    let _ = group.bench_function("SnapshotTree/1M/100hz", move |b| {
         snapshot_tree_bench(b, 4096 * 256, 100);
     });
-    bench = bench.with_function("SnapshotTree/1M/1khz", move |b| {
+    let _ = group.bench_function("SnapshotTree/1M/1khz", move |b| {
         snapshot_tree_bench(b, 4096 * 256, 1000);
     });
 
     // UNCONTENDED SNAPSHOT BENCHMARKS
 
-    bench = bench.with_function("UncontendedSnapshotTree/4K", move |b| {
+    let _ = group.bench_function("UncontendedSnapshotTree/4K", move |b| {
         uncontended_snapshot_tree_bench(b, 4096);
     });
-    bench = bench.with_function("UncontendedSnapshotTree/16K", move |b| {
+    let _ = group.bench_function("UncontendedSnapshotTree/16K", move |b| {
         uncontended_snapshot_tree_bench(b, 4096 * 4);
     });
-    bench = bench.with_function("UncontendedSnapshotTree/256K", move |b| {
+    let _ = group.bench_function("UncontendedSnapshotTree/256K", move |b| {
         uncontended_snapshot_tree_bench(b, 4096 * 64);
     });
-    bench = bench.with_function("UncontendedSnapshotTree/1M", move |b| {
+    let _ = group.bench_function("UncontendedSnapshotTree/1M", move |b| {
         uncontended_snapshot_tree_bench(b, 4096 * 256);
     });
 
     // PARTIALLY FILLED BENCHMARKS
 
-    bench = bench.with_function("SnapshotTree/VMO0PercentFull/1M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO0PercentFull/1M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256, 0);
     });
-    bench = bench.with_function("SnapshotTree/VMO25PercentFull/1M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO25PercentFull/1M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256, 4096 * 64);
     });
-    bench = bench.with_function("SnapshotTree/VMO50PercentFull/1M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO50PercentFull/1M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256, 4096 * 128);
     });
-    bench = bench.with_function("SnapshotTree/VMO75PercentFull/1M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO75PercentFull/1M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256, 4096 * 192);
     });
-    bench = bench.with_function("SnapshotTree/VMO100PercentFull/1M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO100PercentFull/1M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256, 4096 * 256);
     });
 
-    bench = bench.with_function("SnapshotTree/VMO0PercentFull/32M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO0PercentFull/32M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256 * 32, 0);
     });
-    bench = bench.with_function("SnapshotTree/VMO25PercentFull/32M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO25PercentFull/32M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256 * 32, 4096 * 64 * 32);
     });
-    bench = bench.with_function("SnapshotTree/VMO50PercentFull/32M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO50PercentFull/32M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256 * 32, 4096 * 128 * 32);
     });
-    bench = bench.with_function("SnapshotTree/VMO75PercentFull/32M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO75PercentFull/32M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256 * 32, 4096 * 192 * 32);
     });
-    bench = bench.with_function("SnapshotTree/VMO100PercentFull/32M", move |b| {
+    let _ = group.bench_function("SnapshotTree/VMO100PercentFull/32M", move |b| {
         reader_snapshot_tree_vmo_bench(b, 4096 * 256 * 32, 4096 * 256 * 32);
     });
 
@@ -354,10 +368,10 @@ fn main() {
         // inspect hierarchy in a vmo and then applies the given selectors
         // to the snapshot to filter it down.
         let size = 10i32.pow(exponent);
-        bench = bench.with_function(format!("SnapshotAndParse/{size}"), move |b| {
+        let _ = group.bench_function(format!("SnapshotAndParse/{size}"), move |b| {
             snapshot_and_parse_bench(b, size as usize);
         });
     }
 
-    c.bench("fuchsia.rust_inspect.reader_benchmarks", bench);
+    group.finish();
 }

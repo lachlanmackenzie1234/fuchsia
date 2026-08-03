@@ -13,70 +13,68 @@ pub mod __reexport {
 }
 
 macro_rules! bench_trace_record_fn {
-    ($bench:ident, $name:ident $(, $arg:expr)? $(, args: $key:expr => $val:expr)?) => {
+    ($group:ident, $name:ident $(, $arg:expr)? $(, args: $key:expr => $val:expr)?) => {
         let name = $crate::__reexport::cstringify!($name);
-        $bench = $bench
-            .with_function(
-                concat!(stringify!($name), "/0Args"),
-                move |b| {
-                    b.iter(|| {trace::$name!(c"benchmark", name $(, $arg)? $(, $key => $val)?);});
-                }
-            )
-            .with_function(
-                concat!(stringify!($name), "/15Args"),
-                move |b| {
-                    b.iter(|| {trace::$name!(c"benchmark", name $(, $arg)?,
-                            "a"=>1,
-                            "b"=>2,
-                            "c"=>3,
-                            "d"=>4,
-                            "e"=>5,
-                            "f"=>6,
-                            "g"=>7,
-                            "h"=>8,
-                            "i"=>9,
-                            "j"=>10,
-                            "k"=>11,
-                            "l"=>12,
-                            "m"=>13,
-                            "n"=>14,
-                            "o"=>15);});
-                }
-            );
+        let _ = $group.bench_function(
+            concat!(stringify!($name), "/0Args"),
+            move |b| {
+                b.iter(|| {trace::$name!(c"benchmark", name $(, $arg)? $(, $key => $val)?);});
+            }
+        );
+        let _ = $group.bench_function(
+            concat!(stringify!($name), "/15Args"),
+            move |b| {
+                b.iter(|| {trace::$name!(c"benchmark", name $(, $arg)?,
+                        "a"=>1,
+                        "b"=>2,
+                        "c"=>3,
+                        "d"=>4,
+                        "e"=>5,
+                        "f"=>6,
+                        "g"=>7,
+                        "h"=>8,
+                        "i"=>9,
+                        "j"=>10,
+                        "k"=>11,
+                        "l"=>12,
+                        "m"=>13,
+                        "n"=>14,
+                        "o"=>15);});
+            }
+        );
     };
 }
 
 macro_rules! bench_async_trace_record_fn {
-    ($bench:ident, $name:ident) => {
+    ($group:ident, $name:ident) => {
         let name = $crate::__reexport::cstringify!($name);
-        $bench = $bench
-            .with_function(
-                concat!(stringify!($name), "/0Args"),
-                move |b| {
-                    b.iter(|| trace::$name!(fuchsia_trace::Id::new(), c"benchmark", name));
-                }
-            )
-            .with_function(
-                concat!(stringify!($name), "/15Args"),
-                move |b| {
-                    b.iter(|| trace::$name!(fuchsia_trace::Id::new(), c"benchmark", name,
-                            "a"=>1,
-                            "b"=>2,
-                            "c"=>3,
-                            "d"=>4,
-                            "e"=>5,
-                            "f"=>6,
-                            "g"=>7,
-                            "h"=>8,
-                            "i"=>9,
-                            "j"=>10,
-                            "k"=>11,
-                            "l"=>12,
-                            "m"=>13,
-                            "n"=>14,
-                            "o"=>15));
-                }
-            );
+        let _ = $group.bench_function(
+            concat!(stringify!($name), "/0Args"),
+            move |b| {
+                b.iter(|| trace::$name!(fuchsia_trace::Id::new(), c"benchmark", name));
+            }
+        );
+        let _ = $group.bench_function(
+            concat!(stringify!($name), "/15Args"),
+            move |b| {
+                b.iter(|| trace::$name!(fuchsia_trace::Id::new(), c"benchmark", name,
+                        "a"=>1,
+                        "b"=>2,
+                        "c"=>3,
+                        "d"=>4,
+                        "e"=>5,
+                        "f"=>6,
+                        "g"=>7,
+                        "h"=>8,
+                        "i"=>9,
+                        "j"=>10,
+                        "k"=>11,
+                        "l"=>12,
+                        "m"=>13,
+                        "n"=>14,
+                        "o"=>15));
+            }
+        );
     };
 }
 
@@ -92,22 +90,24 @@ fn main() {
         .measurement_time(Duration::from_millis(100))
         .sample_size(10);
 
-    let mut bench = criterion::Benchmark::new("TraceEventRust/Empty", |b| {
+    let mut group = c.benchmark_group("fuchsia.trace_records.rust");
+
+    let _ = group.bench_function("TraceEventRust/Empty", |b| {
         b.iter(|| 1);
     });
 
-    bench_trace_record_fn!(bench, instant, Scope::Process);
-    bench_trace_record_fn!(bench, counter, 0, args: "a" => 0);
-    bench_trace_record_fn!(bench, duration);
-    bench_trace_record_fn!(bench, duration_begin);
-    bench_trace_record_fn!(bench, duration_end);
-    bench_trace_record_fn!(bench, flow_begin, 1.into());
-    bench_trace_record_fn!(bench, flow_step, 1.into());
-    bench_trace_record_fn!(bench, flow_end, 1.into());
-    bench_trace_record_fn!(bench, blob, &[1, 2, 3, 4, 5, 6]);
+    bench_trace_record_fn!(group, instant, Scope::Process);
+    bench_trace_record_fn!(group, counter, 0, args: "a" => 0);
+    bench_trace_record_fn!(group, duration);
+    bench_trace_record_fn!(group, duration_begin);
+    bench_trace_record_fn!(group, duration_end);
+    bench_trace_record_fn!(group, flow_begin, 1.into());
+    bench_trace_record_fn!(group, flow_step, 1.into());
+    bench_trace_record_fn!(group, flow_end, 1.into());
+    bench_trace_record_fn!(group, blob, &[1, 2, 3, 4, 5, 6]);
 
-    bench_async_trace_record_fn!(bench, async_enter);
-    bench_async_trace_record_fn!(bench, async_instant);
+    bench_async_trace_record_fn!(group, async_enter);
+    bench_async_trace_record_fn!(group, async_instant);
 
-    c.bench("fuchsia.trace_records.rust", bench);
+    group.finish();
 }

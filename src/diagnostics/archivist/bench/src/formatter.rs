@@ -18,7 +18,7 @@ use archivist_lib::formatter::{JsonPacketSerializer, SerializedVmo};
 use std::convert::TryInto;
 use std::time::Duration;
 
-fn bench_serialization(b: &mut criterion::Bencher, n: usize, m: usize, format: Format) {
+fn bench_serialization(b: &mut criterion::Bencher<'_>, n: usize, m: usize, format: Format) {
     let mut children = vec![];
     for i in 0..n {
         let mut properties = vec![];
@@ -36,11 +36,11 @@ fn bench_serialization(b: &mut criterion::Bencher, n: usize, m: usize, format: F
     .with_name(InspectHandleName::filename("fuchsia.inspect.Tree"))
     .build();
     b.iter(|| {
-        let _ = criterion::black_box(SerializedVmo::serialize(&data, DataType::Inspect, format));
+        let _ = std::hint::black_box(SerializedVmo::serialize(&data, DataType::Inspect, format));
     });
 }
 
-fn bench_json_packet_serializer(b: &mut criterion::Bencher, total_logs: u64) {
+fn bench_json_packet_serializer(b: &mut criterion::Bencher<'_>, total_logs: u64) {
     let logs = (0u64..total_logs)
         .map(|i| {
             LogsDataBuilder::new(BuilderArgs {
@@ -72,7 +72,7 @@ fn bench_json_packet_serializer(b: &mut criterion::Bencher, total_logs: u64) {
                 stream::iter(logs_for_fut),
             );
             while let Some(res) = stream.next().await {
-                let _ = criterion::black_box(res);
+                let _ = std::hint::black_box(res);
             }
         });
     });
@@ -89,13 +89,14 @@ fn main() {
     // The following benchmarks measure the performance of SerializedVmo and JsonPacketSerializer.
     // This is fundamental when serializing responses in the archivist.
 
-    let mut bench = criterion::Benchmark::new("Formatter/JsonPacketSerializer/5", move |b| {
+    let mut group = c.benchmark_group("fuchsia.archivist");
+    let _ = group.bench_function("Formatter/JsonPacketSerializer/5", move |b| {
         bench_json_packet_serializer(b, 5);
     });
-    bench = bench.with_function("Formatter/JsonPacketSerializer/5k", move |b| {
+    let _ = group.bench_function("Formatter/JsonPacketSerializer/5k", move |b| {
         bench_json_packet_serializer(b, 5000);
     });
-    bench = bench.with_function("Formatter/JsonPacketSerializer/16k", move |b| {
+    let _ = group.bench_function("Formatter/JsonPacketSerializer/16k", move |b| {
         bench_json_packet_serializer(b, 16000);
     });
 
@@ -107,11 +108,11 @@ fn main() {
                 .iter()
         {
             let label = format!("Formatter/{format_name}/Fill/{size_name}");
-            bench = bench.with_function(&label, move |b| {
+            let _ = group.bench_function(&label, move |b| {
                 bench_serialization(b, *n, *m, *format);
             });
         }
     }
 
-    c.bench("fuchsia.archivist", bench);
+    group.finish();
 }

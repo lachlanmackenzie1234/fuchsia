@@ -18,14 +18,15 @@ use fuchsia_criterion::FuchsiaCriterion;
 use fuchsia_criterion::criterion::Criterion;
 
 fn main() {
-    let benches = forwarding::get_benchmark();
-    let benches = netstack3_base::benchmarks::add_benches(benches);
-
     let mut c = FuchsiaCriterion::default();
     let internal_c: &mut Criterion = &mut c;
     *internal_c = std::mem::take(internal_c)
         .warm_up_time(std::time::Duration::from_millis(1))
         .measurement_time(std::time::Duration::from_millis(100))
         .sample_size(100);
-    let _: &mut Criterion = c.bench("fuchsia.netstack3.core", benches);
+
+    let mut group = c.benchmark_group("fuchsia.netstack3.core");
+    forwarding::add_benches(&mut group);
+    netstack3_base::benchmarks::add_benches(&mut group);
+    group.finish();
 }

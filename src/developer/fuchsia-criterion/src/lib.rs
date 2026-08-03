@@ -139,15 +139,35 @@ impl FuchsiaCriterion {
             for record in reader.records() {
                 let record = record.expect("CSV record is not UTF-8");
 
-                if record.len() != 5 {
-                    panic!("wrong number of records in Criterion-generated CSV");
-                }
-
-                let label = record[1].to_string();
-                let test_suite = record[0].to_string();
-                let sample = match (record[3].parse::<f64>(), record[4].parse::<f64>()) {
-                    (Ok(time), Ok(iter_count)) => time / iter_count,
-                    _ => panic!("non floating point values in Criterion-generated CSV"),
+                let (label, test_suite, sample) = match record.len() {
+                    5 => {
+                        let label = record[1].to_string();
+                        let test_suite = record[0].to_string();
+                        let sample = match (record[3].parse::<f64>(), record[4].parse::<f64>()) {
+                            (Ok(time), Ok(iter_count)) => time / iter_count,
+                            _ => panic!("non floating point values in Criterion-generated CSV"),
+                        };
+                        (label, test_suite, sample)
+                    }
+                    // Newly introduced format with the update to criterion 0.8
+                    // in https://fxrev.dev/1730349
+                    8 => {
+                        let group = record[0].to_string();
+                        let function = &record[1];
+                        let value = &record[2];
+                        let label = match (!function.is_empty(), !value.is_empty()) {
+                            (true, true) => format!("{function}/{value}"),
+                            (true, false) => function.to_string(),
+                            (false, true) => value.to_string(),
+                            (false, false) => "".to_string(),
+                        };
+                        let sample = match (record[5].parse::<f64>(), record[7].parse::<f64>()) {
+                            (Ok(time), Ok(iter_count)) => time / iter_count,
+                            _ => panic!("non floating point values in Criterion-generated CSV"),
+                        };
+                        (label, group, sample)
+                    }
+                    _ => panic!("wrong number of records in Criterion-generated CSV"),
                 };
 
                 results
@@ -248,6 +268,43 @@ mod tests {
             fib,parallel,,4000000,300000\n\
             fib,parallel,,6000000,400000\n\
         ",
+        )?;
+
+        let json = output_directory.join("fuchsia.json");
+        FuchsiaCriterion::convert_csvs(&output_directory, &json);
+
+        assert_eq!(
+            fs::read_to_string(json)?,
+            r#"[
+    {
+        "label": "parallel",
+        "test_suite": "fib",
+        "unit": "nanoseconds",
+        "values": [10.0, 10.0, 13.333333333333334, 15.0]
+    }
+]
+"#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn criterion_0_8_results_conversion() -> io::Result<()> {
+        let temp = TempDir::new()?;
+        let output_directory = temp.path().join("some/where/deep");
+
+        fs::create_dir_all(output_directory.clone())?;
+
+        let mut csv = File::create(output_directory.join("raw.csv"))?;
+        csv.write_all(
+            b"\
+group,function,value,throughput_num,throughput_type,sample_measured_value,unit,iteration_count\n\
+fib,parallel,,,,1000000.0,ns,100000\n\
+fib,parallel,,,,2000000.0,ns,200000\n\
+fib,parallel,,,,4000000.0,ns,300000\n\
+fib,parallel,,,,6000000.0,ns,400000\n\
+",
         )?;
 
         let json = output_directory.join("fuchsia.json");

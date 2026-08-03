@@ -42,27 +42,9 @@ fn main() {
         .measurement_time(Duration::from_millis(10))
         .sample_size(100);
 
-    #[cfg(target_arch = "x86_64")]
-    let bench_strategy = |bench: criterion::Benchmark, strategy| {
-        if *PREFERRED_STRATEGY <= strategy {
-            bench.with_function(&format!("SaveAndRestore/{:?}", strategy), move |b| {
-                use extended_pstate::ExtendedPstatePointer;
+    let mut group = c.benchmark_group("fuchsia.extended_pstate");
 
-                let mut state = ExtendedPstateState::with_strategy(strategy);
-                let mut pstate_ptr = ExtendedPstatePointer { extended_pstate: &raw mut state };
-                let ptr_ptr = &raw mut pstate_ptr as usize;
-                #[allow(clippy::undocumented_unsafe_blocks)]
-                b.iter(|| unsafe {
-                    save_extended_pstate(ptr_ptr);
-                    restore_extended_pstate(ptr_ptr);
-                });
-            })
-        } else {
-            bench
-        }
-    };
-
-    let mut bench = criterion::Benchmark::new("Reset", |b| {
+    let _ = group.bench_function("Reset", |b| {
         let mut state = ExtendedPstateState::default();
         b.iter(|| {
             state.reset();
@@ -70,14 +52,33 @@ fn main() {
     });
 
     #[cfg(target_arch = "x86_64")]
+    let bench_strategy =
+        |group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>, strategy| {
+            if *PREFERRED_STRATEGY <= strategy {
+                let _ = group.bench_function(format!("SaveAndRestore/{:?}", strategy), move |b| {
+                    use extended_pstate::ExtendedPstatePointer;
+
+                    let mut state = ExtendedPstateState::with_strategy(strategy);
+                    let mut pstate_ptr = ExtendedPstatePointer { extended_pstate: &raw mut state };
+                    let ptr_ptr = &raw mut pstate_ptr as usize;
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    b.iter(|| unsafe {
+                        save_extended_pstate(ptr_ptr);
+                        restore_extended_pstate(ptr_ptr);
+                    });
+                });
+            }
+        };
+
+    #[cfg(target_arch = "x86_64")]
     {
-        bench = bench_strategy(bench, Strategy::XSaveOpt);
-        bench = bench_strategy(bench, Strategy::XSave);
-        bench = bench_strategy(bench, Strategy::FXSave);
+        bench_strategy(&mut group, Strategy::XSaveOpt);
+        bench_strategy(&mut group, Strategy::XSave);
+        bench_strategy(&mut group, Strategy::FXSave);
     }
     #[cfg(target_arch = "aarch64")]
     {
-        bench = bench.with_function("SaveAndRestore/Aarch64", |b| {
+        let _ = group.bench_function("SaveAndRestore/Aarch64", |b| {
             use extended_pstate::ExtendedPstatePointer;
             let mut state = ExtendedPstateState::default();
             let mut pstate_ptr = ExtendedPstatePointer { extended_pstate: &raw mut state };
@@ -88,7 +89,7 @@ fn main() {
                 restore_extended_pstate(ptr_ptr);
             });
         });
-        bench = bench.with_function("SaveAndRestore/Aarch32", |b| {
+        let _ = group.bench_function("SaveAndRestore/Aarch32", |b| {
             use extended_pstate::{ExtendedAarch32PstateState, ExtendedPstatePointer};
             let mut state = ExtendedAarch32PstateState::default();
             let mut pstate_ptr = ExtendedPstatePointer { extended_aarch32_pstate: &raw mut state };
@@ -101,5 +102,5 @@ fn main() {
         });
     }
 
-    c.bench("fuchsia.extended_pstate", bench);
+    group.finish();
 }

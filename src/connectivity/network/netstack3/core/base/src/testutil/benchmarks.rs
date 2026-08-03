@@ -21,7 +21,7 @@
 macro_rules! bench {
     ($name:ident, $fn:expr) => {
         #[cfg(benchmark)]
-        pub(crate) fn $name(b: &mut $crate::testutil::RealBencher) {
+        pub(crate) fn $name(b: &mut $crate::testutil::RealBencher<'_>) {
             $fn(b);
         }
 
@@ -51,14 +51,14 @@ pub trait Bencher {
 /// An alias for the bencher used in real benchmarks.
 pub use criterion::Bencher as RealBencher;
 
-impl Bencher for RealBencher {
+impl Bencher for RealBencher<'_> {
     fn iter<T, F: FnMut() -> T>(&mut self, inner: F) {
         criterion::Bencher::iter(self, inner)
     }
 
     #[inline(always)]
     fn black_box<T>(placeholder: T) -> T {
-        criterion::black_box(placeholder)
+        core::hint::black_box(placeholder)
     }
 }
 
