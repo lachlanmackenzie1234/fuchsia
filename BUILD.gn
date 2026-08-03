@@ -68,10 +68,6 @@ declare_args() {
   # Fully hermetic tests (both by packaging and at runtime)
   hermetic_test_package_labels = []
 
-  # Non-hermetic tests (at runtime).  Non-test packages found in this group will
-  # be flagged as an error by the build.
-  test_package_labels = []
-
   # Host-driven, "end-to-end" tests that run on a Fuchsia image (either real
   # hardware or emulated).
   e2e_test_labels = []
@@ -142,6 +138,23 @@ declare_args() {
   product_bundle_labels = []
 }
 
+###
+### DEPRECATED GN build args and warnings/errors
+###
+
+declare_args() {
+  # DEPRECATED, left to trigger warnings
+  test_package_labels = []
+}
+
+assert(
+    test_package_labels == [],
+    "'test_package_labels' is not supported, use 'developer_test_labels' instead.")
+
+### END DEPRECATED GN build args and warnings/errors
+
+# Validate that this file is only ever processed in the default toolchain, and
+# then we can start the actual work of the file.
 assert(
     current_toolchain == default_toolchain,
     "The root build file (//BUILD.gn) can only be processed in the `default_toolchain`.")
@@ -1305,7 +1318,6 @@ generated_file("tests_from_metadata") {
 
     # Pull in tests from the non-device type-specific test groups.
     "//:host_tests",
-    "//:test_packages",
 
     # Pull in tests from the developer
     "//:developer_specified_tests",
@@ -1351,7 +1363,6 @@ build_api_module("test_components") {
 
     # Pull in tests from the various type-specific on-device test groups
     "//:hermetic_test_packages",
-    "//:test_packages",
 
     # Pull in tests from the developer
     "//:developer_specified_tests",
@@ -2400,10 +2411,6 @@ group("build_only") {
   deps = build_only_labels
 }
 
-###
-# GN-Argument configured groups for product definitions.
-#
-
 ##
 # "Developer-Added" package groups
 #
@@ -2455,17 +2462,6 @@ validated_test_types_group("hermetic_test_packages") {
   deps = hermetic_test_package_labels
 }
 
-# Non-hermetic tests (at runtime).  Non-test packages found in this group will
-# be flagged as an error by the build.
-group("test_packages") {
-  testonly = true
-  visibility = [ ":*" ]
-  public_deps = test_package_labels
-  assert(
-      test_package_labels == [],
-      "test_package_labels cannot be used before adding validation of test type.")
-}
-
 # These are all tests that are to be published in the 'discoverable' package
 # set.
 group("discoverable_tests") {
@@ -2474,10 +2470,7 @@ group("discoverable_tests") {
     ":*",
     "//build/images/*",
   ]
-  public_deps = [
-    "//:hermetic_test_packages",
-    "//:test_packages",
-  ]
+  public_deps = [ "//:hermetic_test_packages" ]
 }
 
 # Host-driven, "end-to-end" tests that run on a Fuchsia image (either real
