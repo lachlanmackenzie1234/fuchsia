@@ -148,6 +148,29 @@ pub(crate) fn prepare_large_topology(
     Arc::new(topology_control)
 }
 
+pub(crate) fn prepare_large_topology_with_background_leases(
+    num_elements: usize,
+    num_background_leases: usize,
+) -> Arc<fpt::TopologyControlSynchronousProxy> {
+    let topology_control = prepare_large_topology(num_elements);
+
+    // Acquire persistent background leases across lower/intermediate elements.
+    for i in 0..num_background_leases.min(num_elements.saturating_sub(1)) {
+        let name = format!("element_{}", i);
+        let _ = topology_control
+            .acquire_lease(
+                &name,
+                1,
+                fbroker::LeaseStatus::Satisfied,
+                zx::MonotonicInstant::INFINITE,
+            )
+            .expect("Fidl call should work")
+            .expect("acquire background lease should succeed");
+    }
+
+    topology_control
+}
+
 pub(crate) fn execute_acquire_and_drop_lease(
     topology_control: &fpt::TopologyControlSynchronousProxy,
     num_elements: usize,

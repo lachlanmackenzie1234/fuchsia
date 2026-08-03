@@ -178,3 +178,40 @@ async fn test_large_topology_lease_benchmark() -> Result<()> {
     maybe_wait_for_memory_profiling(&args).await;
     Ok(())
 }
+
+#[fuchsia::test]
+async fn test_large_topology_with_background_leases_benchmark() -> Result<()> {
+    let num_elements = 20;
+    let num_background_leases = 15;
+    let args: Options = argh::from_env::<Options>();
+
+    println!(
+        "Building large topology with {} elements and {} background leases...",
+        num_elements, num_background_leases
+    );
+    let topology_control = daemon_work::prepare_large_topology_with_background_leases(
+        num_elements,
+        num_background_leases,
+    );
+    println!("Topology and background leases created.");
+
+    let start = Instant::now();
+    let randomize = false;
+    let iterations = iterate_until_timeout(&args, |_| {
+        daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
+    })
+    .await;
+    assert!(iterations > 0, "Test failed to complete at least 1 iteration");
+    let duration = start.elapsed();
+    println!("Total execution time over {} iterations: {:?}", iterations, duration);
+    println!(
+        "Average time for each execution (1 lease acquire/drop with {} background leases) is {:?}",
+        num_background_leases,
+        duration / iterations
+    );
+
+    print_power_broker_inspect_stats(iterations).await;
+
+    maybe_wait_for_memory_profiling(&args).await;
+    Ok(())
+}

@@ -90,6 +90,18 @@ fn main() -> Result<()> {
         });
     });
 
+    let num_background_leases = 15;
+    let topology_control = daemon_work::prepare_large_topology_with_background_leases(
+        num_elements,
+        num_background_leases,
+    );
+    let _ = group.bench_function("LargeTopologyWithBackgroundLeases", move |b| {
+        let randomize = false;
+        b.iter(|| {
+            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
+        });
+    });
+
     group.finish();
 
     Ok(())
