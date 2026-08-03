@@ -39,3 +39,14 @@ repositories.
 * `fuchsia/constraints` &mdash; Definitions for constraints and platforms used
 in the rules.
 * `fuchsia/flags` &mdash; All of the build flags that are part of the SDK.
+
+## Commit history
+
+Starting with commit `45a7d7162946fe037a4d389e4fe534949df8dd34`
+(https://fxrev.dev/793913), the commit history for this directory is in
+`fuchsia.git` and can be viewed with local `git` commands as well as code
+search.
+
+For commit history prior to commit `45a7d7162946fe037a4d389e4fe534949df8dd34`,
+start at
+https://fuchsia.googlesource.com/sdk-integration/+/831365d37359d6bde4a5e426f0c158abbe8b4560.
