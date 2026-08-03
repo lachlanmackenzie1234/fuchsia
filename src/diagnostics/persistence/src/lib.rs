@@ -388,8 +388,6 @@ async fn handle_update_done(
 }
 
 async fn publish_inspect_data() {
-    // TODO(https://fxbug.dev/444525059): Set health properly.
-    component::health().set_ok();
     if let Err(e) = inspect_server::record_persist_node(PERSIST_NODE_NAME).await {
         error!("Failed to serve persisted Inspect data from previous boot: {e}");
     }
@@ -458,6 +456,7 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
             }
         }));
 
+    component::health().set_ok();
     outgoing_dir_task.await;
     info!("Stopping due to idle activity");
     scope.join().await;
