@@ -12,6 +12,14 @@
 
 extern "C" {
 
+zx_status_t cpp_vm_cow_pages_replace_page_with_loaned(VmCowPages* cow, void* before_page,
+                                                      uint64_t offset) {
+  if (!cow) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return cow->ReplacePageWithLoaned(reinterpret_cast<vm_page_t*>(before_page), offset);
+}
+
 void* cpp_vm_cow_pages_get_ref_counted(const VmCowPages* cow) {
   if (!cow) {
     return nullptr;

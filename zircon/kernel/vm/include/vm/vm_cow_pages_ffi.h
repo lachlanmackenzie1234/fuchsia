@@ -7,10 +7,16 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_FFI_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_FFI_H_
 
+#include <stdint.h>
+#include <zircon/compiler.h>
+#include <zircon/types.h>
+
 #include "vm/vm_cow_pages.h"
 
 __BEGIN_CDECLS
 
+zx_status_t cpp_vm_cow_pages_replace_page_with_loaned(VmCowPages* cow, void* before_page,
+                                                      uint64_t offset);
 void* cpp_vm_cow_pages_get_ref_counted(const VmCowPages* cow);
 void cpp_vm_cow_pages_free(VmCowPages* cow);
 

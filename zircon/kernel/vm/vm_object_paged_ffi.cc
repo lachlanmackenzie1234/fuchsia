@@ -31,4 +31,12 @@ VmObject* cpp_vm_object_paged_as_vm_object(VmObjectPaged* vmo) {
   return static_cast<VmObject*>(vmo);
 }
 
+VmCowPages* cpp_vm_object_paged_debug_get_cow_pages(VmObjectPaged* vmo) {
+  if (!vmo) {
+    return nullptr;
+  }
+  fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+  return fbl::ExportToRawPtr(&cow);
+}
+
 }  // extern "C"

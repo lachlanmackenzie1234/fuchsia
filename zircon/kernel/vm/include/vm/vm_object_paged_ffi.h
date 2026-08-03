@@ -20,6 +20,8 @@ VmObjectPaged* cpp_vm_object_paged_create_contiguous(uint32_t pmm_alloc_flags, u
                                                      uint8_t alignment_log2,
                                                      zx_status_t* out_status);
 VmObject* cpp_vm_object_paged_as_vm_object(VmObjectPaged* vmo);
+VmCowPages* cpp_vm_object_paged_debug_get_cow_pages(VmObjectPaged* vmo);
+
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_PAGED_FFI_H_

@@ -316,6 +316,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "cpp_vm_object_paged_as_vm_object",
     "cpp_vm_object_paged_create",
     "cpp_vm_object_paged_create_contiguous",
+    "cpp_vm_object_paged_debug_get_cow_pages",
   ]
   type_allowlist = [ "VmObjectPaged" ]
   type_blocklist = [
@@ -331,12 +332,14 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "--blocklist-item=VmObjectPaged_.*",
   ]
   deps = [
+    ":vm-cow-pages-bindings",
     ":vm-object-bindings",
     "//sdk/rust/zx-types",
   ]
 
   raw_lines = [
     "#![no_std]",
+    "use vm_cow_pages_bindings::VmCowPages;",
     "use vm_object_bindings::VmObject;",
     "use zx_types::zx_status_t;",
   ]
@@ -351,8 +354,9 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
 
   notice_year = 2026
   function_allowlist = [
-    "cpp_vm_cow_pages_get_ref_counted",
     "cpp_vm_cow_pages_free",
+    "cpp_vm_cow_pages_get_ref_counted",
+    "cpp_vm_cow_pages_replace_page_with_loaned",
   ]
   type_allowlist = [ "VmCowPages" ]
   type_blocklist = [
@@ -368,7 +372,12 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
 
   edition = "2024"
 
-  raw_lines = [ "#![no_std]" ]
+  deps = [ "//sdk/rust/zx-types" ]
+
+  raw_lines = [
+    "#![no_std]",
+    "use zx_types::zx_status_t;",
+  ]
 }
 
 kernel_rust_mod("vm-rs") {

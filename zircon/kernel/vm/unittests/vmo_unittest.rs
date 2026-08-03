@@ -38,9 +38,12 @@ mod vmo_rs {
             assert_ok!(contiguous_vmo.decommit_range(0, PAGE_SIZE));
 
             // we will replace the only page in vmo with a loaned page
-            let (_vmo, [_before_page]) = unwrap_ok!(make_committed_pager_vmo(
+            let (vmo, [before_page]) = unwrap_ok!(make_committed_pager_vmo(
                 /*trap_dirty*/ false, /*resizable*/ false
             ));
+            let offset = 0;
+            let cow_pages = vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages");
+            assert_ok!(cow_pages.replace_page_with_loaned(before_page, offset));
         }
     }
 }

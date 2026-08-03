@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::vm_cow_pages::VmCowPages;
 use super::vm_object::VmObject;
 use core::marker::PhantomPinned;
 use core::ops::Deref;
@@ -65,6 +66,12 @@ impl VmObjectPaged {
         };
         Status::ok(status)?;
         unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
+    }
+
+    /// Returns the backing `VmCowPages` hierarchy.
+    pub fn debug_get_cow_pages(&self) -> Option<RefPtr<VmCowPages>> {
+        let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_cow_pages(self.as_raw()) };
+        unsafe { VmCowPages::from_raw(raw) }
     }
 }
 

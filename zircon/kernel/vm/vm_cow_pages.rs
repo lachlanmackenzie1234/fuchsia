@@ -4,11 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::page::VmPagePtr;
 use core::marker::PhantomPinned;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
 use vm_cow_pages_bindings as bindings;
+use zx_status::Status;
 
 /// A copy-on-write page hierarchy.
 #[repr(C)]
@@ -49,5 +51,21 @@ impl VmCowPages {
     /// `ptr` must be a valid raw `VmCowPages` pointer exported from C++.
     pub unsafe fn from_raw(ptr: *mut bindings::VmCowPages) -> Option<RefPtr<Self>> {
         unsafe { RefPtr::try_from_raw(ptr.cast::<Self>()) }
+    }
+
+    /// Replaces a page at offset with a loaned page.
+    pub fn replace_page_with_loaned(
+        &self,
+        before_page: VmPagePtr,
+        offset: u64,
+    ) -> Result<(), Status> {
+        let status = unsafe {
+            bindings::cpp_vm_cow_pages_replace_page_with_loaned(
+                self.as_raw(),
+                before_page.as_raw(),
+                offset,
+            )
+        };
+        Status::ok(status)
     }
 }
