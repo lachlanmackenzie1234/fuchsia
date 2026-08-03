@@ -64,7 +64,7 @@ async fn get_attributes() {
     let proxy = connect_at(
         &root,
         "server",
-        fio::Flags::PROTOCOL_NODE,
+        fio::Flags::PROTOCOL_NODE | fio::Flags::PERM_GET_ATTRIBUTES,
         #[cfg(feature = "fdomain")]
         &scope.domain(),
     );
@@ -118,7 +118,7 @@ async fn clone() {
     let proxy = connect_at(
         &root,
         "server",
-        fio::Flags::PROTOCOL_NODE,
+        fio::Flags::PROTOCOL_NODE | fio::Flags::PERM_GET_ATTRIBUTES,
         #[cfg(feature = "fdomain")]
         &scope.domain(),
     );

@@ -2933,7 +2933,10 @@ mod tests {
             let file = open_file_checked(
                 &root,
                 FILE,
-                fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_FILE,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE
+                    | fio::Flags::PERM_GET_ATTRIBUTES,
                 &fio::Options::default(),
             )
             .await;

@@ -3270,7 +3270,7 @@ mod tests {
         let file = open_file_checked(
             parent.as_ref(),
             &encrypted_name,
-            fio::Flags::PROTOCOL_FILE,
+            fio::Flags::PROTOCOL_FILE | fio::Flags::PERM_GET_ATTRIBUTES,
             &Default::default(),
         )
         .await;
@@ -5104,7 +5104,10 @@ mod tests {
             let dir = open_dir_checked(
                 &root,
                 DIR,
-                fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_DIRECTORY
+                    | fio::Flags::PERM_GET_ATTRIBUTES,
                 fio::Options {
                     attributes: Some(fio::NodeAttributesQuery::CHANGE_TIME),
                     ..Default::default()
@@ -5196,7 +5199,10 @@ mod tests {
         let dir = open_dir_checked(
             &root,
             "foo",
-            fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY,
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY
+                | fio::Flags::PERM_GET_ATTRIBUTES,
             fio::Options::default(),
         )
         .await;
@@ -5211,7 +5217,10 @@ mod tests {
         let dir = open_dir_checked(
             &root,
             "bar",
-            fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY,
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY
+                | fio::Flags::PERM_GET_ATTRIBUTES,
             fio::Options::default(),
         )
         .await;

@@ -114,7 +114,10 @@ void NodeConnection::SetAttr(SetAttrRequestView request, SetAttrCompleter::Sync&
 
 void NodeConnection::GetAttributes(fio::wire::NodeGetAttributesRequest* request,
                                    GetAttributesCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/346585458): This operation should require the GET_ATTRIBUTES right.
+  if (!(rights() & fuchsia_io::Rights::kGetAttributes)) {
+    completer.ReplyError(ZX_ERR_BAD_HANDLE);
+    return;
+  }
   internal::NodeAttributeBuilder builder(vnode());
   completer.Reply(builder.Build(request->query));
 }

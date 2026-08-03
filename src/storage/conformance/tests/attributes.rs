@@ -570,3 +570,115 @@ async fn update_attributes_directory_node_reference_not_allowed() {
         Err(zx::Status::BAD_HANDLE.into_raw())
     );
 }
+
+#[fuchsia::test]
+async fn get_attributes_file_with_insufficient_rights() {
+    let harness = TestHarness::new().await;
+    let entries = vec![file(TEST_FILE, vec![])];
+    let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+
+    // Test opening file connection as node reference
+    {
+        let file_proxy = dir
+            .open_node::<fio::NodeMarker>(TEST_FILE, fio::Flags::PROTOCOL_NODE, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            file_proxy
+                .get_attributes(fio::NodeAttributesQuery::empty())
+                .await
+                .expect("FIDL call failed")
+                .map_err(zx::Status::from_raw),
+            Err(zx::Status::BAD_HANDLE)
+        );
+    }
+
+    // Test file connection
+    {
+        let file_proxy = dir
+            .open_node::<fio::FileMarker>(TEST_FILE, fio::Flags::PROTOCOL_FILE, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            file_proxy
+                .get_attributes(fio::NodeAttributesQuery::empty())
+                .await
+                .expect("FIDL call failed")
+                .map_err(zx::Status::from_raw),
+            Err(zx::Status::BAD_HANDLE)
+        );
+    }
+}
+
+#[fuchsia::test]
+async fn get_attributes_directory_with_insufficient_rights() {
+    let harness = TestHarness::new().await;
+    let entries = vec![directory("dir", vec![])];
+    let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+
+    // Test opening directory connection as node reference
+    {
+        let dir_proxy =
+            dir.open_node::<fio::NodeMarker>("dir", fio::Flags::PROTOCOL_NODE, None).await.unwrap();
+
+        assert_eq!(
+            dir_proxy
+                .get_attributes(fio::NodeAttributesQuery::empty())
+                .await
+                .expect("FIDL call failed")
+                .map_err(zx::Status::from_raw),
+            Err(zx::Status::BAD_HANDLE)
+        );
+    }
+
+    // Test directory connection
+    {
+        let dir_proxy = dir
+            .open_node::<fio::DirectoryMarker>("dir", fio::Flags::PROTOCOL_DIRECTORY, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            dir_proxy
+                .get_attributes(fio::NodeAttributesQuery::empty())
+                .await
+                .expect("FIDL call failed")
+                .map_err(zx::Status::from_raw),
+            Err(zx::Status::BAD_HANDLE)
+        );
+    }
+}
+
+#[fuchsia::test]
+async fn open_symlink_without_get_attributes_fails() {
+    let harness = TestHarness::new().await;
+    let dir = harness.get_directory(vec![], harness.dir_rights.all_flags());
+
+    // Create a symlink.
+    let (symlink_client, symlink_server) = fidl::endpoints::create_proxy::<fio::SymlinkMarker>();
+    let create_result = dir
+        .create_symlink("symlink", b"target", Some(symlink_server))
+        .await
+        .expect("FIDL call failed")
+        .map_err(zx::Status::from_raw);
+
+    if let Err(status) = create_result {
+        if status == zx::Status::NOT_SUPPORTED {
+            // Symlinks not supported by this filesystem.
+            return;
+        }
+        panic!("create_symlink failed: {:?}", status);
+    }
+
+    // Close the client we got from creation (it has all rights).
+    drop(symlink_client);
+
+    // Attempt to open the symlink without PERM_GET_ATTRIBUTES.
+    let status = dir
+        .open_node::<fio::SymlinkMarker>("symlink", fio::Flags::PROTOCOL_SYMLINK, None)
+        .await
+        .unwrap_err();
+    assert_eq!(status, zx::Status::INVALID_ARGS);
+}

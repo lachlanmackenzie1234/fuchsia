@@ -142,14 +142,11 @@ impl<T: Symlink> Connection<T> {
             }
             fio::SymlinkRequest::GetAttributes { query, responder } => {
                 async move {
-                    // TODO(https://fxbug.dev/293947862): Restrict GET_ATTRIBUTES.
-                    let attrs = self.symlink.get_attributes(query).await;
-                    responder.send(
-                        attrs
-                            .as_ref()
-                            .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
-                            .map_err(|status| status.into_raw()),
-                    )
+                    match self.handle_get_attributes(query).await {
+                        Ok(attrs) => responder
+                            .send(Ok((&attrs.mutable_attributes, &attrs.immutable_attributes))),
+                        Err(status) => responder.send(Err(status.into_raw())),
+                    }
                 }
                 .trace(trace::trace_future_args!("storage", "Symlink::GetAttributes"))
                 .await?;
@@ -242,6 +239,17 @@ impl<T: Symlink> Connection<T> {
             }
         }
         Ok(false)
+    }
+    async fn handle_get_attributes(
+        &self,
+        query: fio::NodeAttributesQuery,
+    ) -> Result<fio::NodeAttributes2, Status> {
+        // Note: Symlink connections are required to have GET_ATTRIBUTES rights upon creation
+        // (enforced in `to_symlink_options`). We check it here anyway for consistency and safety.
+        if !self.options.rights.intersects(fio::Operations::GET_ATTRIBUTES) {
+            return Err(Status::BAD_HANDLE);
+        }
+        self.symlink.get_attributes(query).await
     }
 
     async fn handle_clone(&mut self, server_end: ServerEnd<fio::SymlinkMarker>) {

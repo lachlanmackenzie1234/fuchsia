@@ -642,14 +642,11 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::GetAttributes { query, responder } => {
                 async move {
-                    // TODO(https://fxbug.dev/293947862): Restrict GET_ATTRIBUTES.
-                    let attrs = self.file.get_attributes(query).await;
-                    responder.send(
-                        attrs
-                            .as_ref()
-                            .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
-                            .map_err(|status| status.into_raw()),
-                    )
+                    match self.handle_get_attributes(query).await {
+                        Ok(attrs) => responder
+                            .send(Ok((&attrs.mutable_attributes, &attrs.immutable_attributes))),
+                        Err(status) => responder.send(Err(status.into_raw())),
+                    }
                 }
                 .trace(trace::trace_future_args!("storage", "File::GetAttributes"))
                 .await?;
@@ -837,6 +834,15 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             fio::FileRequest::_UnknownMethod { .. } => (),
         }
         Ok(ConnectionState::Alive)
+    }
+    async fn handle_get_attributes(
+        &self,
+        query: fio::NodeAttributesQuery,
+    ) -> Result<fio::NodeAttributes2, Status> {
+        if !self.options.rights.intersects(fio::Operations::GET_ATTRIBUTES) {
+            return Err(Status::BAD_HANDLE);
+        }
+        self.file.get_attributes(query).await
     }
 
     fn handle_clone(&mut self, server_end: ServerEnd<fio::FileMarker>) {
@@ -1478,7 +1484,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_attributes() {
-        let env = init_mock_file(Box::new(always_succeed_callback), fio::Flags::empty());
+        let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
         let (mutable_attributes, immutable_attributes) = env
             .proxy
             .get_attributes(fio::NodeAttributesQuery::all())
@@ -1512,11 +1518,7 @@ mod tests {
             *events,
             vec![
                 FileOperation::Init {
-                    options: FileOptions {
-                        rights: fio::Operations::empty(),
-                        is_append: false,
-                        is_linkable: true
-                    }
+                    options: FileOptions { rights: RIGHTS_R, is_append: false, is_linkable: true }
                 },
                 FileOperation::GetAttributes { query: fio::NodeAttributesQuery::all() }
             ]

@@ -134,14 +134,11 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             }
             fio::DirectoryRequest::GetAttributes { query, responder } => {
                 async move {
-                    // TODO(https://fxbug.dev/346585458): Restrict or remove GET_ATTRIBUTES.
-                    let attrs = self.directory.get_attributes(query).await;
-                    responder.send(
-                        attrs
-                            .as_ref()
-                            .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
-                            .map_err(|status| status.into_raw()),
-                    )
+                    match self.handle_get_attributes(query).await {
+                        Ok(attrs) => responder
+                            .send(Ok((&attrs.mutable_attributes, &attrs.immutable_attributes))),
+                        Err(status) => responder.send(Err(status.into_raw())),
+                    }
                 }
                 .trace(trace::trace_future_args!("storage", "Directory::GetAttributes"))
                 .await?;
@@ -313,6 +310,15 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             fio::DirectoryRequest::_UnknownMethod { .. } => (),
         }
         Ok(ConnectionState::Alive)
+    }
+    async fn handle_get_attributes(
+        &self,
+        query: fio::NodeAttributesQuery,
+    ) -> Result<fio::NodeAttributes2, Status> {
+        if !self.options.rights.intersects(fio::Operations::GET_ATTRIBUTES) {
+            return Err(Status::BAD_HANDLE);
+        }
+        self.directory.get_attributes(query).await
     }
 
     fn handle_clone(&mut self, object: flex_client::Channel) {

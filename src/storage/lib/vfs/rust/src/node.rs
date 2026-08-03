@@ -266,13 +266,19 @@ impl<N: Node> Connection<N> {
             }
             fio::NodeRequest::GetAttributes { query, responder } => {
                 async move {
-                    let attrs = self.node.get_attributes(query).await;
-                    responder.send(
-                        attrs
-                            .as_ref()
-                            .map(|attrs| (&attrs.mutable_attributes, &attrs.immutable_attributes))
-                            .map_err(|status| status.into_raw()),
-                    )
+                    if !self.options.rights.intersects(fio::Operations::GET_ATTRIBUTES) {
+                        responder.send(Err(Status::BAD_HANDLE.into_raw()))
+                    } else {
+                        let attrs = self.node.get_attributes(query).await;
+                        responder.send(
+                            attrs
+                                .as_ref()
+                                .map(|attrs| {
+                                    (&attrs.mutable_attributes, &attrs.immutable_attributes)
+                                })
+                                .map_err(|status| status.into_raw()),
+                        )
+                    }
                 }
                 .trace(trace::trace_future_args!("storage", "Node::GetAttributes"))
                 .await?;

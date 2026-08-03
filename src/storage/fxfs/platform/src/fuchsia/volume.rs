@@ -2665,7 +2665,9 @@ mod tests {
                 let crypt_dir = open_dir_checked(
                     fixture.root(),
                     "crypt_dir",
-                    fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                    fio::Flags::FLAG_MUST_CREATE
+                        | fio::PERM_WRITABLE
+                        | fio::Flags::PERM_GET_ATTRIBUTES,
                     Default::default(),
                 )
                 .await;
@@ -2684,7 +2686,9 @@ mod tests {
                 let crypt_file = open_file_checked(
                     &crypt_dir,
                     "crypt_file",
-                    fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                    fio::Flags::FLAG_MUST_CREATE
+                        | fio::PERM_WRITABLE
+                        | fio::Flags::PERM_GET_ATTRIBUTES,
                     &Default::default(),
                 )
                 .await;
@@ -2703,7 +2707,9 @@ mod tests {
                 let file_proxy = open_file_checked(
                     fixture.root(),
                     &i.to_string(),
-                    fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                    fio::Flags::FLAG_MUST_CREATE
+                        | fio::PERM_WRITABLE
+                        | fio::Flags::PERM_GET_ATTRIBUTES,
                     &Default::default(),
                 )
                 .await;

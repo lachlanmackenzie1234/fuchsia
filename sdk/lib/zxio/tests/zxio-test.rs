@@ -95,7 +95,9 @@ async fn test_fsverity_enabled() {
             dir_zxio
                 .open(
                     "foo",
-                    fio::Flags::PROTOCOL_FILE | fio::Flags::PERM_UPDATE_ATTRIBUTES,
+                    fio::Flags::PROTOCOL_FILE
+                        | fio::Flags::PERM_UPDATE_ATTRIBUTES
+                        | fio::Flags::PERM_GET_ATTRIBUTES,
                     ZxioOpenOptions::new(Some(&mut attrs), None),
                 )
                 .expect("open failed"),
@@ -173,7 +175,9 @@ async fn test_not_fsverity_enabled() {
             dir_zxio
                 .open(
                     "foo",
-                    fio::Flags::PROTOCOL_FILE | fio::Flags::PERM_UPDATE_ATTRIBUTES,
+                    fio::Flags::PROTOCOL_FILE
+                        | fio::Flags::PERM_UPDATE_ATTRIBUTES
+                        | fio::Flags::PERM_GET_ATTRIBUTES,
                     ZxioOpenOptions::new(Some(&mut attrs), None),
                 )
                 .expect("open failed"),
@@ -608,7 +612,8 @@ async fn test_get_set_attributes_node() {
                 "test_file",
                 fio::Flags::FLAG_MAYBE_CREATE
                     | fio::Flags::PROTOCOL_FILE
-                    | fio::Flags::PERM_UPDATE_ATTRIBUTES,
+                    | fio::Flags::PERM_UPDATE_ATTRIBUTES
+                    | fio::Flags::PERM_GET_ATTRIBUTES,
                 ZxioOpenOptions::default(),
             )
             .expect("open failed");

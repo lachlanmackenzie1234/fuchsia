@@ -75,5 +75,60 @@
             }
         ],
         "compact_name": "fx/archivist_integration_test_cases_ctf30#meta/test_root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/pkgdir-tests_ctf27#meta/test-root.cm",
+        "cases": [
+            {
+                "name": "node::get_attributes",
+                "disabled": true,
+                "bug": "517452382"
+            }
+        ],
+        "compact_name": "fx/pkgdir-tests_ctf27#meta/test-root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/pkgdir-tests_ctf28#meta/test-root.cm",
+        "cases": [
+            {
+                "name": "node::get_attributes",
+                "disabled": true,
+                "bug": "517452382"
+            }
+        ],
+        "compact_name": "fx/pkgdir-tests_ctf28#meta/test-root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/pkgdir-tests_ctf29#meta/test-root.cm",
+        "cases": [
+            {
+                "name": "node::get_attributes",
+                "disabled": true,
+                "bug": "517452382"
+            }
+        ],
+        "compact_name": "fx/pkgdir-tests_ctf29#meta/test-root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/pkgdir-tests_ctf30#meta/test-root.cm",
+        "cases": [
+            {
+                "name": "node::get_attributes",
+                "disabled": true,
+                "bug": "517452382"
+            }
+        ],
+        "compact_name": "fx/pkgdir-tests_ctf30#meta/test-root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/pkgdir-tests_ctf31#meta/test-root.cm",
+        "cases": [
+            {
+                "name": "node::get_attributes",
+                "disabled": true,
+                "bug": "517452382"
+            }
+        ],
+        "compact_name": "fx/pkgdir-tests_ctf31#meta/test-root.cm"
     }
 ]
