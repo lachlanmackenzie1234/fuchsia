@@ -18,6 +18,7 @@ rustc_library(
         "//sdk/fidl:__subpackages__",
         "//sdk/lib/async:__subpackages__",
         "//sdk/lib/driver:__subpackages__",
+        "//src/bringup/lib/userboot:__subpackages__",
         "//src/connectivity/wlan:__subpackages__",
         "//src/devices:__subpackages__",
         "//src/graphics:__subpackages__",
@@ -30,6 +31,7 @@ rustc_library(
         "//tools/fidl/fidlc/testdata:__subpackages__",
         "//tools/fidl/fidlgen_rust_next:__subpackages__",
         "//vendor/google:__subpackages__",
+        "//zircon/kernel/lib/userabi/userboot:__subpackages__",
     ],
     with_unit_tests = True,
     deps = [

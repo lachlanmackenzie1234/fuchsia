@@ -61,6 +61,7 @@ rustc_library("fidl_next") {
     "//sdk/fidl/*",
     "//sdk/lib/async/*",
     "//sdk/lib/driver/*",
+    "//src/bringup/lib/userboot/*",
     "//src/connectivity/wlan/*",
     "//src/devices/*",
     "//src/graphics/*",
@@ -73,6 +74,7 @@ rustc_library("fidl_next") {
     "//tools/fidl/fidlc/testdata/*",
     "//tools/fidl/fidlgen_rust_next/*",
     "//vendor/google/*",
+    "//zircon/kernel/lib/userabi/userboot/*",
   ]
   with_unit_tests = true
   deps = [
