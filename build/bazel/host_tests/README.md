@@ -23,7 +23,7 @@ be run by infra builders.
 Hence, to define a Fuchsia-compatible host test in Bazel:
 
 - Use language-specific host test wrapper from
-  `//build/bazel/host_tests:host_<xxx>_test.bzl`, such as `host_rustc_test()`,
+  `//build/bazel/rules/host_tests:host_<xxx>_test.bzl`, such as `host_rustc_test()`,
   `host_go_test()`, etc.
 
   These are designed to be drop-in replacements for regular Bazel test rules,
@@ -32,10 +32,10 @@ Hence, to define a Fuchsia-compatible host test in Bazel:
 
 - Only if no language-specific wrappers are available for your test, use
   the generic `host_test()` wrapper from
-  `//build/bazel/host_tests:host_test.bzl`. For example:
+  `//build/bazel/rules/host_tests:host_test.bzl`. For example:
 
   ```starlark
-  load("//build/bazel/host_tests:host_test.bzl", "host_test")
+  load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
   load("@rules_sh//sh:sh_binary.bzl", "sh_binary")
 
   sh_binary(
@@ -62,7 +62,7 @@ Hence, to define a Fuchsia-compatible host test in Bazel:
   through one of the mechanisms:
 
   - As `test_data` dependencies to a `host_test_data_files()` or
-    `host_test_data_map()` target (see `//build/bazel/host_tests:host_test_data.bzl`).
+    `host_test_data_map()` target (see `//build/bazel/rules/host_tests:host_test_data.bzl`).
     These make the files available at runtime at fixed locations, relative to the
     test's execution directory, similar to the GN `host_test_data()` template.
 

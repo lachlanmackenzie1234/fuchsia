@@ -114,7 +114,7 @@ go_binary_host_tool(
 - **Rule Imports:**
   - `go_library` from `@io_bazel_rules_go//go:def.bzl`
   - `go_binary_host_tool` from `//build/bazel/rules/host:defs.bzl` (do NOT import standard `go_binary`)
-  - `host_go_test` from `//build/bazel/host_tests:host_go_test.bzl`
+  - `host_go_test` from `//build/bazel/rules/host_tests:host_go_test.bzl`
 - **`importpath` Alignment:** `importpath` in `go_library` MUST match the exact package import string used in dependent `.go` files.
 - **Strict Dependencies:** Local package dependencies must be explicitly declared in `deps`.
 - **Source Separation:** Explicitly separate `srcs`, `embedsrcs`, and `data`.
