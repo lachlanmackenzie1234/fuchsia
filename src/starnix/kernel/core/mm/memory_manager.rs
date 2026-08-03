@@ -3262,11 +3262,10 @@ impl MemoryManager {
         // offsets simpler.
         let backing_size = (user_vmar_info.base + user_vmar_info.len) as u64;
 
-        // Place the stack at the end of the address space, subject to ASLR adjustment.
+        // Place the stack at the end of the address space, subject to ASLR adjustment. The stack
+        // grows down, so the origin corresponds to the top of the initial stack.
         let stack_origin = UserAddress::from_ptr(
-            user_vmar_info.base + user_vmar_info.len
-                - MAX_STACK_SIZE
-                - generate_random_offset_for_aslr(arch_width),
+            user_vmar_info.base + user_vmar_info.len - generate_random_offset_for_aslr(arch_width),
         )
         .round_up(*PAGE_SIZE)?;
 
@@ -3758,7 +3757,7 @@ impl MemoryManager {
         prot_flags: ProtectionFlags,
     ) -> Result<UserAddress, Errno> {
         assert!(length <= MAX_STACK_SIZE);
-        let addr = self.state.read().stack_origin;
+        let addr = (self.state.read().stack_origin - length)?;
         // The address range containing stack_origin should normally be available: it's above the
         // mmap_top, and this method is called early enough in the process lifetime that only the
         // main ELF and the interpreter are already loaded. However, in the rare case that the
