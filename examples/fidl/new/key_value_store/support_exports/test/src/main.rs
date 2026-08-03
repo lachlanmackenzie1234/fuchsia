@@ -6,7 +6,7 @@ use anyhow::Error;
 use example_tester::{Client, Server, TestKind, assert_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_keyvaluestore_supportexports::StoreMarker;
-use fuchsia_async as fasync;
+
 use fuchsia_component_test::{ChildRef, RealmBuilder};
 
 async fn test_export(
@@ -39,18 +39,18 @@ async fn test_export(
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_export_success() -> Result<(), Error> {
     test_export("test_export_success", vec!["verse_1", "verse_2", "verse_3", "verse_4"], 10_000)
         .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_export_empty_error() -> Result<(), Error> {
     test_export("test_export_empty_error", Vec::<&str>::new(), 10_000).await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_export_storage_too_small_error() -> Result<(), Error> {
     test_export(
         "test_export_storage_too_small_error",

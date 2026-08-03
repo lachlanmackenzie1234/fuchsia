@@ -6,7 +6,7 @@ use anyhow::Error;
 use example_tester::{Client, Server, TestKind, assert_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_keyvaluestore_usegenericvalues::StoreMarker;
-use fuchsia_async as fasync;
+
 use fuchsia_component_test::{ChildRef, RealmBuilder};
 
 async fn test_write_items_twice(
@@ -45,22 +45,22 @@ async fn test_write_items_twice(
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_items_overwrite_success() -> Result<(), Error> {
     test_write_items_twice("test_write_items_overwrite_success", true, false).await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_items_concat_success() -> Result<(), Error> {
     test_write_items_twice("test_write_items_concat_success", false, true).await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_items_default_error() -> Result<(), Error> {
     test_write_items_twice("test_write_items_default_error", false, false).await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_items_default_success() -> Result<(), Error> {
     let test_name = "test_write_items_default_success";
     let client = Client::new(test_name, "#meta/keyvaluestore_usegenericvalues_client.cm");

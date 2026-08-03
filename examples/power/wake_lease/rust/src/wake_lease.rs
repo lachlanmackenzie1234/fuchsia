@@ -72,7 +72,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn test_acquire_then_release() -> Result<()> {
         let (client, stream) = create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
         let (wake_lease_active_tx, mut wake_lease_active_rx) = mpsc::unbounded::<bool>();

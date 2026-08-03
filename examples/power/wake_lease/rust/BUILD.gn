@@ -22,6 +22,7 @@ rustc_library("wake_lease_rust") {
   test_deps = [
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
   ]

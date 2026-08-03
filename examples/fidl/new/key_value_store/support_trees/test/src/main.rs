@@ -6,10 +6,10 @@ use anyhow::Error;
 use example_tester::{Client, Server, TestKind, assert_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_keyvaluestore_supporttrees::StoreMarker;
-use fuchsia_async as fasync;
+
 use fuchsia_component_test::{ChildRef, RealmBuilder};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_success() -> Result<(), Error> {
     let test_name = "test_write_success";
     let client = Client::new(test_name, "#meta/keyvaluestore_supporttrees_client.cm");
@@ -45,7 +45,7 @@ async fn test_write_success() -> Result<(), Error> {
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_empty_nested() -> Result<(), Error> {
     let test_name = "test_empty_nested";
     let client = Client::new(test_name, "#meta/keyvaluestore_supporttrees_client.cm");

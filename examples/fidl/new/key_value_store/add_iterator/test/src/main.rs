@@ -6,7 +6,7 @@ use anyhow::Error;
 use example_tester::{Client, Server, TestKind, assert_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_keyvaluestore_additerator::StoreMarker;
-use fuchsia_async as fasync;
+
 use fuchsia_component_test::{ChildRef, RealmBuilder};
 
 async fn test_iteration(test_name: &str, iterate_from: &str) -> Result<(), Error> {
@@ -40,12 +40,12 @@ async fn test_iteration(test_name: &str, iterate_from: &str) -> Result<(), Error
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_iteration_success() -> Result<(), Error> {
     test_iteration("test_iteration_success", "verse_2").await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_iteration_error() -> Result<(), Error> {
     test_iteration("test_iteration_error", "does_not_exist").await
 }

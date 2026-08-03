@@ -6,10 +6,10 @@ use anyhow::Error;
 use example_tester::{Client, Server, TestKind, assert_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_canvas_addlinemetered::InstanceMarker;
-use fuchsia_async as fasync;
+
 use fuchsia_component_test::{ChildRef, RealmBuilder};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_draw_success() -> Result<(), Error> {
     let test_name = "test_draw_success";
     let client = Client::new(test_name, "#meta/canvas_addlinemetered_client.cm");

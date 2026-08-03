@@ -13,7 +13,7 @@ rustc_test("runner_bin") {
   deps = [
     "//examples/fidl/new/key_value_store/add_read_item/fidl:examples.keyvaluestore.addreaditem_rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//third_party/rust_crates:anyhow",
     "//tools/fidl/example-tester:example_tester",

@@ -10,11 +10,13 @@
 
 use anyhow::{Context as _, Error};
 use clap::Parser;
+use fidl_fuchsia_examples_intl_wisdom as fwisdom;
+
 use fuchsia_component::client::connect_to_protocol;
-use {
-    fidl_fuchsia_examples_intl_wisdom as fwisdom, fuchsia_async as fasync, rust_icu_sys as usys,
-    rust_icu_udat as udat, rust_icu_uloc as uloc, rust_icu_ustring as ustring,
-};
+use rust_icu_sys as usys;
+use rust_icu_udat as udat;
+use rust_icu_uloc as uloc;
+use rust_icu_ustring as ustring;
 
 pub(crate) mod wisdom_client_impl;
 
@@ -48,7 +50,7 @@ fn parse_timestamp(timestamp: &str, timezone: &str) -> Result<usys::UDate, Error
     fmt.parse(timestamp).map_err(|e| e.into())
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     // Force the loading of ICU data at the beginning of the program.
     let icu_data_loader = icu_data::Loader::new()?;

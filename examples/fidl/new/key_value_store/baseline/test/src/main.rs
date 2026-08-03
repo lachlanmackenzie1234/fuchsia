@@ -6,10 +6,10 @@ use anyhow::Error;
 use example_tester::{Client, Server, TestKind, assert_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_keyvaluestore_baseline::StoreMarker;
-use fuchsia_async as fasync;
+
 use fuchsia_component_test::{ChildRef, RealmBuilder};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_item_success() -> Result<(), Error> {
     let test_name = "test_write_item_success";
     let client = Client::new(test_name, "#meta/keyvaluestore_baseline_client.cm");
@@ -59,7 +59,7 @@ async fn test_write_item_invalid(test_name: &str, input: &str) -> Result<(), Err
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_item_error_invalid_key() -> Result<(), Error> {
     test_write_item_invalid(
         "test_write_item_error_invalid_key",
@@ -70,12 +70,12 @@ async fn test_write_item_error_invalid_key() -> Result<(), Error> {
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_item_error_invalid_value() -> Result<(), Error> {
     test_write_item_invalid("test_write_item_error_invalid_value", "error_invalid_value").await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_write_item_error_already_found() -> Result<(), Error> {
     let test_name = "test_write_item_error_already_found";
     let client = Client::new(test_name, "#meta/keyvaluestore_baseline_client.cm");
