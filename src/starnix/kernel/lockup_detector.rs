@@ -237,11 +237,13 @@ fn check_lockups(context: &mut LockupDetectorContext) -> Lockups {
         return Lockups::default();
     }
 
+    // LINT.IfChange(starnix_lockup_detector)
     log_error!(
         "Detected threads locked up for more than {} minutes: {:?}",
         LOCKUP_DETECTOR_INTERVAL_MINUTES,
         current_koids
     );
+    // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:starnix_lockup_detector)
     Lockups { long_running, current_koids, newly_locked }
 }
 

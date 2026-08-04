@@ -714,6 +714,13 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			Type:               syslogType,
 			SkipAllPassedTests: true,
 		},
+		&stringInLogCheck{
+			// LINT.IfChange(starnix_lockup_detector)
+			String: "Detected threads locked up for more than 2 minutes",
+			// LINT.ThenChange(//src/starnix/kernel/lockup_detector.rs:starnix_lockup_detector)
+			Type:               serialLogType,
+			SkipAllPassedTests: true,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{
