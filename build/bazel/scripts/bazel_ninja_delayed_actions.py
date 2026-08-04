@@ -285,8 +285,9 @@ def main() -> int:
     response = DelayedActionsResponse(ninja_request.request_id, rc, "")
     write_file_if_changed(args.delayed_actions_response, response.to_json())
 
-    # Done!
-    return rc
+    # Done!  (Don't return the 'rc' from above, that's for the action itself,
+    # here we need to return 0 to tell Ninja that the script exited successfully.)
+    return 0
 
 
 def merge_gn_target_manifests(
