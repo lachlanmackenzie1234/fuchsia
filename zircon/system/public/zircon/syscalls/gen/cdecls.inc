@@ -476,6 +476,23 @@ _ZX_SYSCALL_DECL(resource_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 7,
                   uint64_t base, size_t size, const char* name, size_t name_size,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* resource_out))
 
+_ZX_SYSCALL_DECL(sampler_create, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
+                 (rsrc, options, config, per_cpu_buffers),
+                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t rsrc, uint64_t options,
+                  const zx_sampler_config_t* config,
+                  _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* per_cpu_buffers))
+
+_ZX_SYSCALL_DECL(sampler_read, zx_status_t, _ZX_SYSCALL_EXTERN_C, 4,
+                 (iobuffer, data, data_size, actual),
+                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t iobuffer, void* data,
+                  size_t data_size, size_t* actual))
+
+_ZX_SYSCALL_DECL(sampler_start, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (iobuffer),
+                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t iobuffer))
+
+_ZX_SYSCALL_DECL(sampler_stop, zx_status_t, _ZX_SYSCALL_EXTERN_C, 1, (iobuffer),
+                 (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t iobuffer))
+
 _ZX_SYSCALL_DECL(smc_call, zx_status_t, _ZX_SYSCALL_EXTERN_C, 3,
                  (handle, parameters, out_smc_result),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle,

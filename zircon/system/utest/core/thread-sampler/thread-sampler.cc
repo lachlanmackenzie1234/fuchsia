@@ -24,7 +24,6 @@
 
 #include <zxtest/zxtest.h>
 
-#include "../needs-next.h"
 #include "../threads/test-thread.h"
 #include "../threads/thread-functions/thread-functions.h"
 
@@ -33,8 +32,6 @@ constexpr bool sampler_enabled = EXPERIMENTAL_THREAD_SAMPLER_ENABLED;
 #else
 constexpr bool sampler_enabled = false;
 #endif
-
-NEEDS_NEXT_SYSCALL(zx_sampler_create);
 
 namespace {
 
@@ -139,8 +136,6 @@ zx::result<> ReadNRecordsContainingTid(zx_handle_t sampler, size_t buffer_size,
 }
 
 TEST(ThreadSampler, StartStop) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
   // Start the thread sampler on a thread, wait for some time while taking samples, check to see
   // that samples were written.
   size_t buffer_size = zx_system_get_page_size();
@@ -185,8 +180,6 @@ TEST(ThreadSampler, StartStop) {
 }
 
 TEST(ThreadSampler, SamplerLifetime) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
   // Once a sampler is created, another sampler should not be able to be created until the returned
   // buffer is release
   size_t buffer_size = zx_system_get_page_size();
@@ -225,8 +218,6 @@ TEST(ThreadSampler, SamplerLifetime) {
 }
 
 TEST(ThreadSampler, InvalidOptions) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
   size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
@@ -245,8 +236,6 @@ TEST(ThreadSampler, InvalidOptions) {
 }
 
 TEST(ThreadSampler, DroppedSampler) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
   // Ensure we clean up and can create a new sampler if we drop the old one mid session
   size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
@@ -300,8 +289,6 @@ TEST(ThreadSampler, DroppedSampler) {
 // We should be able to attach to a started but not running thread. If we do, we should be able to
 // get samples from it once it actually starts.
 TEST(ThreadSampler, NonRunningThread) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
   size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
@@ -350,7 +337,6 @@ TEST(ThreadSampler, NonRunningThread) {
 
 TEST(ThreadSampler, HighFrequency) {
   // Start the thread sampler a large number of threads at a high frequency to stress the sampler.
-  NEEDS_NEXT_SKIP(zx_sampler_create);
 
   // We use a larger buffer size than the other tests. We need enough buffer room that the buffers
   // don't immediately fill up and sampling stops.

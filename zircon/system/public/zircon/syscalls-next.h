@@ -125,22 +125,6 @@ typedef struct zx_restricted_exception {
 
 // ====== End wake vector support ====== //
 
-// ====== Software Sampling support ====== //
-
-// The act of taking a sample takes on the order of single digit microseconds.
-// A period close to or shorter than that doesn't make sense.
-#define ZX_SAMPLER_MIN_PERIOD ZX_USEC(10)
-
-#define ZX_SAMPLER_MAX_BUFFER_SIZE size_t(1024 * 1024 * 1024) /*1 GiB*/
-
-// Configuration struct for periodically sampling a thread
-typedef struct zx_sampler_config {
-  zx_duration_mono_t period;
-  size_t buffer_size;
-} zx_sampler_config_t;
-
-// ====== End of Software Sampling support ====== //
-
 // ====== Upcoming IOB support ====== //
 
 // Represents an IOBuffer region of "ID allocator" discipline, used to map sized

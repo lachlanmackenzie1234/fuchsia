@@ -11,6 +11,7 @@
 #include <lib/thread_sampler/thread_sampler.h>
 #include <lib/zx/result.h>
 #include <zircon/rights.h>
+#include <zircon/syscalls/sampler.h>
 #include <zircon/types.h>
 
 #include <object/dispatcher.h>

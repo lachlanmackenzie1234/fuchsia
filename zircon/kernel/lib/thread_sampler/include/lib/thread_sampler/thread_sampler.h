@@ -10,7 +10,7 @@
 #include <arch.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
-#include <zircon/syscalls-next.h>
+#include <zircon/syscalls/sampler.h>
 #include <zircon/types.h>
 
 #include <fbl/ref_ptr.h>
