@@ -14,16 +14,22 @@ rustc_library("mapping") {
     "src/blob.rs",
     "src/extents.rs",
     "src/lib.rs",
+    "src/pager.rs",
     "src/reader.rs",
+    "src/testing.rs",
   ]
 
   deps = [
+    "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",
     "//src/storage/lib/delivery_blob",
     "//src/storage/lib/storage_device",
     "//third_party/rust_crates:anyhow",
   ]
-  test_deps = [ "//src/storage/lib/ptr_slice" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/storage/lib/ptr_slice",
+  ]
 }
 
 fuchsia_unittest_package("mapping-tests") {

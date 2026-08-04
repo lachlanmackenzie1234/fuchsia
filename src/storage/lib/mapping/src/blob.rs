@@ -4,12 +4,13 @@
 
 use crate::Extents;
 use crate::reader::{BlockService, read_aligned_range};
+use delivery_blob::DataBuffer;
 use delivery_blob::compression::{CompressionInfo, StreamingDecompressor};
+use fuchsia_sync::Mutex;
 use std::cmp::min;
+use std::collections::HashMap;
 use std::ops::{ControlFlow, Range};
 use std::sync::Arc;
-
-use delivery_blob::DataBuffer;
 
 /// A mapped blob containing extents and decompression metadata.
 pub struct Blob {
@@ -113,82 +114,58 @@ impl Blob {
     }
 }
 
+/// A thread-safe registry of active [`Blob`] instances indexed by their Zircon pager port key.
+#[derive(Default)]
+pub struct Blobs {
+    map: Mutex<HashMap<u64, Arc<Blob>>>,
+}
+
+impl Blobs {
+    /// Creates a new empty blob registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Inserts a blob into the registry under `key`, returning the previous blob if one existed.
+    pub fn insert(&self, key: u64, blob: Arc<Blob>) -> Option<Arc<Blob>> {
+        self.map.lock().insert(key, blob)
+    }
+
+    /// Retrieves a cloned handle to the blob registered under `key`, or `None` if not present.
+    pub fn get(&self, key: u64) -> Option<Arc<Blob>> {
+        self.map.lock().get(&key).cloned()
+    }
+
+    /// Removes and returns the blob registered under `key`, or `None` if not present.
+    pub fn remove(&self, key: u64) -> Option<Arc<Blob>> {
+        self.map.lock().remove(&key)
+    }
+
+    /// Returns the number of blobs in the registry.
+    pub fn len(&self) -> usize {
+        self.map.lock().len()
+    }
+
+    /// Returns `true` if the registry contains no blobs.
+    pub fn is_empty(&self) -> bool {
+        self.map.lock().is_empty()
+    }
+
+    /// Removes all blobs from the registry.
+    pub fn clear(&self) {
+        self.map.lock().clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::reader::tests::FakeBlockService;
+    use crate::testing::TestVecBuffer;
     use crate::{BLOCK_SIZE, Extent};
     use anyhow::Error;
-    use delivery_blob::compression::{
-        ChunkedArchiveError, ChunkedArchiveOptions, CompressionAlgorithm,
-    };
-    use fuchsia_sync::Mutex;
+    use delivery_blob::compression::{ChunkedArchiveOptions, CompressionAlgorithm};
     use std::sync::Arc;
-    use storage_ptr_slice::MutPtrByteSlice;
-
-    #[derive(Default)]
-    struct TestVecBufferInner {
-        commits: Vec<(u64, usize)>,
-        output: Vec<u8>,
-    }
-
-    #[derive(Clone)]
-    struct TestVecBufferReceiver(Arc<Mutex<TestVecBufferInner>>);
-
-    impl TestVecBufferReceiver {
-        fn commits(&self) -> Vec<(u64, usize)> {
-            self.0.lock().commits.clone()
-        }
-
-        fn output(&self) -> Vec<u8> {
-            self.0.lock().output.clone()
-        }
-    }
-
-    struct TestVecBuffer {
-        data: Vec<u8>,
-        committed_len: usize,
-        offset: u64,
-        receiver: TestVecBufferReceiver,
-    }
-
-    impl TestVecBuffer {
-        fn new(size: usize) -> (Self, TestVecBufferReceiver) {
-            Self::new_with_offset(size, 0)
-        }
-
-        fn new_with_offset(size: usize, offset: u64) -> (Self, TestVecBufferReceiver) {
-            let receiver =
-                TestVecBufferReceiver(Arc::new(Mutex::new(TestVecBufferInner::default())));
-            let buf = Self {
-                data: vec![0u8; size],
-                committed_len: 0,
-                offset,
-                receiver: receiver.clone(),
-            };
-            (buf, receiver)
-        }
-    }
-
-    impl Drop for TestVecBuffer {
-        fn drop(&mut self) {
-            self.receiver.0.lock().output = std::mem::take(&mut self.data);
-        }
-    }
-
-    impl DataBuffer for TestVecBuffer {
-        fn mut_ptr_slice(&mut self) -> MutPtrByteSlice<'_> {
-            let remaining = &mut self.data[self.committed_len..];
-            MutPtrByteSlice::from(remaining)
-        }
-
-        fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
-            self.receiver.0.lock().commits.push((self.offset, size));
-            self.offset += size as u64;
-            self.committed_len += size;
-            Ok(())
-        }
-    }
 
     #[test]
     fn test_read_range_uncompressed() {
@@ -512,5 +489,25 @@ mod tests {
         assert_eq!(rx.commits(), vec![(0, chunk_size), (chunk_size as u64, 1024)]);
         assert_eq!(&rx.output()[..uncompressed_size], &uncompressed_data[..]);
         assert_eq!(&rx.output()[uncompressed_size..65536], &[0u8; 31744]);
+    }
+
+    #[test]
+    fn test_blobs_registry() {
+        let extents = Extents::encode_extents(&[Extent::new(0..4096, Some(0))]);
+        let extents = Extents::from_encoded(&extents).unwrap();
+        let blob = Arc::new(Blob::new(extents, 4096, None));
+        let blobs = Blobs::new();
+
+        assert!(blobs.is_empty());
+        assert_eq!(blobs.len(), 0);
+        assert!(blobs.get(100).is_none());
+
+        blobs.insert(100, blob.clone());
+        assert_eq!(blobs.len(), 1);
+        assert!(!blobs.is_empty());
+        assert!(blobs.get(100).is_some());
+
+        blobs.remove(100);
+        assert!(blobs.is_empty());
     }
 }

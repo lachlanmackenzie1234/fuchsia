@@ -4,9 +4,14 @@
 
 pub mod blob;
 pub mod extents;
+pub mod pager;
 pub mod reader;
 
-pub use blob::Blob;
+#[cfg(test)]
+pub mod testing;
+
+pub use blob::{Blob, Blobs};
 pub use extents::{Extent, Extents, ExtentsIterator};
+pub use pager::{PagerThread, run_pager_loop};
 
 pub const BLOCK_SIZE: u64 = 4096;
