@@ -8,6 +8,7 @@ use super::page::VmPagePtr;
 use super::vm_cow_pages::VmCowPages;
 use super::vm_object::VmObject;
 use core::marker::PhantomPinned;
+use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use fbl::{IsOpaqueRefCounted, RefPtr};
 use vm_object_paged_bindings as bindings;
@@ -81,6 +82,19 @@ impl VmObjectPaged {
     pub fn debug_get_page(&self, offset: u64) -> Option<VmPagePtr> {
         let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_page(self.as_raw(), offset) };
         unsafe { VmPagePtr::from_raw(raw) }
+    }
+
+    /// Converts a `RefPtr<VmObjectPaged>` into a base `RefPtr<VmObject>`.
+    pub fn into_vm_object(this: RefPtr<Self>) -> RefPtr<VmObject> {
+        let this = ManuallyDrop::new(this);
+        // SAFETY: `this.as_raw()` returns a valid `VmObjectPaged` pointer.
+        // `cpp_vm_object_paged_as_vm_object` converts the derived type pointer
+        // to its base `VmObject` pointer.
+        let raw_base = unsafe { bindings::cpp_vm_object_paged_as_vm_object(this.as_raw()) };
+        // SAFETY: `raw_base` points to a valid ref-counted `VmObject` whose
+        // reference count is owned by `this`.
+        unsafe { VmObject::from_raw(raw_base) }
+            .expect("RefPtr guarantees this is non-null and valid")
     }
 }
 

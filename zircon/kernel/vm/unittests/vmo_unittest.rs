@@ -7,6 +7,7 @@
 #[unittest::suite]
 mod vmo_rs {
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
+    use crate::vm::pinned_vm_object::PinnedVmObject;
     use crate::vm::pmm::ALLOC_FLAG_ANY;
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_object::{EvictionHint, VmObject};
@@ -108,6 +109,54 @@ mod vmo_rs {
                 vmo.debug_get_page(0).expect("vmo should have a page at offset 0 after hint_range");
 
             assert_false!(unsafe { page.is_loaned() });
+        }
+    }
+
+    /// Tests PinnedVmObject creation, move semantics, and RAII unpinning.
+    #[test]
+    fn vmo_pinned_wrapper_test() {
+        // Porting note: This is a verbatim conversion of the C++ test `vmo_pinned_wrapper_test`.
+        // It preserves move and assignment constructs from the C++ source that are trivial in Rust.
+
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+            let vmo = VmObjectPaged::into_vm_object(vmo);
+
+            let mut pinned = unwrap_ok!(PinnedVmObject::create(vmo.clone(), 0, PAGE_SIZE, true));
+            pinned = unwrap_ok!(PinnedVmObject::create(vmo, 0, PAGE_SIZE, true));
+            drop(pinned);
+        }
+
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+            let vmo = VmObjectPaged::into_vm_object(vmo);
+
+            let mut pinned = Some(unwrap_ok!(PinnedVmObject::create(vmo, 0, PAGE_SIZE, true)));
+            assert!(pinned.is_some());
+            let empty: Option<PinnedVmObject> = None;
+            pinned = empty;
+            drop(pinned);
+        }
+
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+            let vmo = VmObjectPaged::into_vm_object(vmo);
+
+            let pinned = unwrap_ok!(PinnedVmObject::create(vmo, 0, PAGE_SIZE, true));
+            let mut empty: Option<PinnedVmObject> = None;
+            assert!(empty.is_none());
+            empty = Some(pinned);
+            drop(empty);
+        }
+
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+            let vmo = VmObjectPaged::into_vm_object(vmo);
+
+            let mut pinned1 = unwrap_ok!(PinnedVmObject::create(vmo.clone(), 0, PAGE_SIZE, true));
+            let pinned2 = unwrap_ok!(PinnedVmObject::create(vmo, 0, PAGE_SIZE, true));
+            pinned1 = pinned2;
+            drop(pinned1);
         }
     }
 

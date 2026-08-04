@@ -403,6 +403,7 @@ kernel_rust_mod("vm-rs") {
     "page.rs",
     "page_state.rs",
     "physical_page_borrowing_config.rs",
+    "pinned_vm_object.rs",
     "pmm.rs",
     "scanner.rs",
     "vm.rs",
