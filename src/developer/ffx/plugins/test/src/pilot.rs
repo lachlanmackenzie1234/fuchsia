@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -22,9 +22,11 @@ pub fn convert_output_for_test_pilot(output_directory: &Path) -> Result<()> {
 
     let run_summary_path = output_directory.join(OLD_RUN_SUMMARY_FILE_NAME);
 
-    let file = fs::File::open(&run_summary_path)?;
+    let file = fs::File::open(&run_summary_path)
+        .with_context(|| format!("opening run summary file {run_summary_path:?}"))?;
     let mut reader = BufReader::new(file);
-    let run_summary_envelope: RunSummaryEnvelope = serde_json::from_reader(&mut reader)?;
+    let run_summary_envelope: RunSummaryEnvelope = serde_json::from_reader(&mut reader)
+        .with_context(|| format!("reading run summary file {run_summary_path:?}"))?;
 
     let run_summary = &run_summary_envelope.data;
 
@@ -53,7 +55,8 @@ pub fn convert_output_for_test_pilot(output_directory: &Path) -> Result<()> {
 
     // Create the test directory.
     let new_test_dir_path = output_directory.test_subdir();
-    fs::create_dir_all(new_test_dir_path.clone())?;
+    fs::create_dir_all(new_test_dir_path.clone())
+        .with_context(|| format!("creating test output subdirectory {new_test_dir_path:?}"))?;
 
     // Handle suite artifacts.
     let new_test_dir_rel_path = output_directory
@@ -84,11 +87,14 @@ pub fn convert_output_for_test_pilot(output_directory: &Path) -> Result<()> {
             let mut new_file_path = new_test_dir_path.clone();
             new_file_path.push(name);
 
-            fs::rename(old_file_path, new_file_path)?;
+            fs::rename(&old_file_path, &new_file_path).with_context(|| {
+                format!("renaming artifact file {old_file_path:?} to {new_file_path:?}")
+            })?;
         }
 
         if old_artifact_dir_path.exists() {
-            fs::remove_dir_all(old_artifact_dir_path)?;
+            fs::remove_dir_all(&old_artifact_dir_path)
+                .with_context(|| format!("removing directory {old_artifact_dir_path:?}"))?;
         }
     }
 
@@ -121,17 +127,36 @@ pub fn convert_output_for_test_pilot(output_directory: &Path) -> Result<()> {
             let old_artifact_dir_path =
                 output_directory.join(old_case.entity_common.artifact_dir.as_str());
 
+            let mut escaped_case_name = old_case.name.as_str().replace(['/', '*'], "_");
+
             let mut new_artifact_dir_path = new_test_dir_path.clone();
-            new_artifact_dir_path.push(old_case.name.as_str());
+            new_artifact_dir_path.push(escaped_case_name.as_str());
 
             if !old_case.entity_common.artifacts.is_empty() {
+                if new_artifact_dir_path.exists() {
+                    // The case name is a duplicate in the same test. Add a suffix
+                    // (e.g. "_2") to avoid using a duplicate directory name.
+                    let mut counter = 1;
+                    loop {
+                        counter += 1;
+                        let new_name = format!("{escaped_case_name}_{counter}");
+                        new_artifact_dir_path = new_test_dir_path.clone();
+                        new_artifact_dir_path.push(new_name.as_str());
+                        if !new_artifact_dir_path.exists() {
+                            escaped_case_name = new_name;
+                            break;
+                        }
+                    }
+                }
                 // Create the new artifact dir at <root>/test/<case name>.
-                fs::create_dir(new_artifact_dir_path.clone())?;
+                fs::create_dir(new_artifact_dir_path.clone()).with_context(|| {
+                    format!("creating case directory {new_artifact_dir_path:?}")
+                })?;
             }
 
             for (name, metadata) in &old_case.entity_common.artifacts {
                 let mut new_file_rel_path = new_test_dir_rel_path.clone();
-                new_file_rel_path.push(old_case.name.as_str());
+                new_file_rel_path.push(escaped_case_name.as_str());
                 new_file_rel_path.push(name);
 
                 case.common.artifacts.insert(
@@ -146,11 +171,15 @@ pub fn convert_output_for_test_pilot(output_directory: &Path) -> Result<()> {
                 let mut new_file_path = new_artifact_dir_path.clone();
                 new_file_path.push(name);
 
-                fs::rename(old_file_path, new_file_path)?;
+                fs::rename(&old_file_path, &new_file_path).with_context(|| {
+                    format!("renaming artifact file {old_file_path:?} to {new_file_path:?}")
+                })?;
             }
 
             if old_artifact_dir_path.exists() {
-                fs::remove_dir_all(old_artifact_dir_path)?;
+                fs::remove_dir_all(&old_artifact_dir_path).with_context(|| {
+                    format!("removing old artifact directory {old_artifact_dir_path:?}")
+                })?;
             }
         }
 
@@ -166,12 +195,17 @@ pub fn convert_output_for_test_pilot(output_directory: &Path) -> Result<()> {
         new_summary.common.outcome = case_outcomes_merged;
     }
 
+    let test_summary_path = output_directory.test_summary();
     fs::write(
-        output_directory.test_summary().to_str().unwrap(),
+        test_summary_path.to_str().unwrap(),
         serde_json::to_string_pretty(&new_summary).unwrap(),
-    )?;
+    )
+    .with_context(|| {
+        format!("writing new summmary file {:?}", test_summary_path.to_str().unwrap())
+    })?;
 
-    fs::remove_file(run_summary_path)?;
+    fs::remove_file(&run_summary_path)
+        .with_context(|| format!("removing old summmary file {run_summary_path:?}"))?;
 
     Ok(())
 }
