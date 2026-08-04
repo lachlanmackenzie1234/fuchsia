@@ -124,6 +124,9 @@ void DisplayPowerManager::AddSetPowerModeInspectValues(PowerMode power_mode, zx_
 
         // TODO(b/475953032): Remove unsuffixed `power_mode_str` when it is no longer used directly.
         n.RecordInt(power_mode_str, mono_now.get());
+        // This is used in system health analyses. Without it, the fallback is `mono_now` above,
+        // which is wrong.
+        n.RecordInt(std::format("{}_boot_ns", power_mode_str), boot_now.get());
         n.RecordInt(std::format("{}_mono_ns", power_mode_str), mono_now.get());
 
         // Detect potential inaccuracy in the monotonic clock reading.  This instructs the
