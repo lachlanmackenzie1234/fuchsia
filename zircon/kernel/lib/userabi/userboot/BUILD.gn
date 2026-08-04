@@ -36,6 +36,7 @@ test("userboot-integration-tests-bin") {
   ]
   data_deps = [
     ":userboot-rust.executable",
+    ":userboot-test-rust.executable",
     "//src/bringup/lib/userboot:userboot-lib-static-pie-test",
   ]
 }
@@ -87,6 +88,12 @@ rust_redirect("userboot-rust") {
   install_name = "userboot"
 }
 
+rust_redirect("userboot-test-rust") {
+  binary_label = ":userboot-test-rust.executable"
+  binary_output_name = "userboot_test_rust"
+  install_name = "userboot-test-rust"
+}
+
 static_remove_configs = [
   "//build/config/fuchsia:fdio_config",
   "//build/config/fuchsia:dynamic_rust_standard_library",
@@ -109,6 +116,37 @@ rustc_binary("userboot-rust.executable") {
     "//src/firmware/lib/zbi-rs",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:zerocopy",
+  ]
+
+  exclude_toolchain_tags = [ "uses-shadow" ]
+}
+
+rustc_binary("userboot-test-rust.executable") {
+  output_name = "userboot_test_rust"
+  configs += static_remove_configs
+  configs -= static_remove_configs
+
+  rustenv = [ "BOOT_TEST_SUCCESS_STRING=$boot_test_success_string" ]
+
+  edition = "2024"
+  source_root = "test_main.rs"
+  sources = [ source_root ]
+  deps = [
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust_next",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_next",
+    "//sdk/lib/c/stubs",
+    "//sdk/rust/zx",
+    "//src/bringup/lib/userboot/rust",
+    "//src/bringup/lib/userboot/rust:bootfs",
+    "//src/bringup/lib/userboot/rust:cmdline",
+    "//src/bringup/lib/userboot/rust:program",
+    "//src/firmware/lib/zbi-rs",
+    "//src/lib/fidl/rust_next/fidl_next",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-runtime",
+    "//src/lib/process_builder",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:zerocopy",
   ]

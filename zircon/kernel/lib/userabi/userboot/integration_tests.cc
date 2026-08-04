@@ -158,4 +158,32 @@ TEST_F(UserbootTests, UserbootRust) {
   EXPECT_THAT(log, HasSubstr("Hello from userland!")) << log;
 }
 
+TEST_F(UserbootTests, UserbootRustTest) {
+  auto child_vmo = userboot::testing::GetExecutable("/pkg/test/userboot-lib-static-pie-test");
+  ASSERT_TRUE(child_vmo.is_ok()) << child_vmo.status_string();
+
+  uint64_t child_size = 0;
+  ASSERT_EQ(child_vmo->get_size(&child_size), ZX_OK);
+  std::vector<uint8_t> child_bytes(child_size);
+  ASSERT_EQ(child_vmo->read(child_bytes.data(), 0, child_size), ZX_OK);
+
+  zx::vmo bootfs_vmo = CreateBootfsVmo({{"test/userboot-child", child_bytes}});
+  zx::vmo zbi_vmo = CreateZbiVmo("userboot.test.next=test/userboot-child", bootfs_vmo);
+
+  userboot::testing::TestJob test_job;
+  test_job.Init();
+
+  std::vector<zx::handle> handles = CreateUserbootHandles(test_job.Get(), zbi_vmo);
+
+  ASSERT_NO_FATAL_FAILURE(Launch("/pkg/bin/userboot_test_rust", std::move(handles)));
+
+  auto result = Wait();
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_EQ(*result, 0);
+
+  std::string log = FinishLog();
+  EXPECT_THAT(log, HasSubstr("Started child process: test/userboot-child")) << log;
+  EXPECT_THAT(log, HasSubstr("Hello from userland!")) << log;
+}
+
 }  // namespace
