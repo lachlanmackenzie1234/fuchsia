@@ -17,6 +17,7 @@ static_library("sim-env") {
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
     "//sdk/lib/async",
+    "//src/connectivity/wlan/drivers/lib/macaddr",
     "//src/connectivity/wlan/lib/common/cpp:common",
   ]
 

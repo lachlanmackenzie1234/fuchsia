@@ -30,6 +30,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "fidl/fuchsia.wlan.common/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
@@ -44,12 +46,11 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_hw.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_iovar.h"
 #include "wlan/common/element.h"
-#include "wlan/common/macaddr.h"
 #include "wlan/drivers/components/frame_storage.h"
 
 namespace wlan::brcmfmac {
 
-const common::MacAddr kZeroMac({0x0, 0x0, 0x0, 0x0, 0x0, 0x0});
+const wlan::common::MacAddr kZeroMac({0x0, 0x0, 0x0, 0x0, 0x0, 0x0});
 // The amount of time we will wait for an association response after an association request
 constexpr zx::duration kAssocTimeout = zx::sec(1);
 // The amount of time we will wait for an authentication response after an authentication request
@@ -105,7 +106,7 @@ class SimFirmware {
     fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
     fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
     fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
-    common::MacAddr bssid;
+    wlan::common::MacAddr bssid;
     wlan::CapabilityInfo bss_capability;
     int8_t rssi_dbm;
     int8_t snr;
@@ -124,7 +125,7 @@ class SimFirmware {
 
     // Optional filters
     std::optional<fuchsia_wlan_ieee80211::Ssid> ssid;
-    std::optional<common::MacAddr> bssid;
+    std::optional<wlan::common::MacAddr> bssid;
 
     // Time per channel
     zx::duration dwell_time;
@@ -143,14 +144,14 @@ class SimFirmware {
   };
 
   struct AssocOpts {
-    common::MacAddr bssid;
+    wlan::common::MacAddr bssid;
     fuchsia_wlan_ieee80211::Ssid ssid;
     fuchsia_wlan_common::wire::BssType bss_type;
   };
 
   // During a reassociation attempt, this is where reassoc params are stored.
   struct ReassocOpts {
-    common::MacAddr bssid;
+    wlan::common::MacAddr bssid;
 
     // Real firmware returns target BSS info in a buffer that contains a
     // struct, an offset, then an arbitrary length of IE bytes. Sim firmware
@@ -223,7 +224,7 @@ class SimFirmware {
 
     uint64_t auth_timer_id;
     enum simulation::SimSecProtoType sec_type = simulation::SEC_PROTO_TYPE_OPEN;
-    common::MacAddr bssid;
+    wlan::common::MacAddr bssid;
   };
 
   struct ChannelSwitchState {
@@ -325,10 +326,10 @@ class SimFirmware {
                                          const uint8_t bssid[ETH_ALEN]);
 
   // Send a spurious REASSOC attempt event.
-  void TriggerFirmwareReassocEvent(const common::MacAddr& bssid);
+  void TriggerFirmwareReassocEvent(const wlan::common::MacAddr& bssid);
 
   // Send a spurious ROAM NO_NETWORKS failure event.
-  void TriggerFirmwareRoamEvent(const common::MacAddr& bssid);
+  void TriggerFirmwareRoamEvent(const wlan::common::MacAddr& bssid);
 
   void SetSuspendHook(fit::function<zx_status_t()> suspend_hook) {
     suspend_hook_ = std::move(suspend_hook);
@@ -435,8 +436,8 @@ class SimFirmware {
     // AUTHENTICATED, no INIT or HOME state needed.
     enum State { AUTHENTICATED, ASSOCIATED };
 
-    Client(common::MacAddr mac_addr, State state) : mac_addr(mac_addr), state(state) {}
-    common::MacAddr mac_addr;
+    Client(wlan::common::MacAddr mac_addr, State state) : mac_addr(mac_addr), state(state) {}
+    wlan::common::MacAddr mac_addr;
     State state;
   };
   /* SoftAP specific config
@@ -469,7 +470,7 @@ class SimFirmware {
    */
 
   typedef struct sim_iface_entry {
-    common::MacAddr mac_addr;
+    wlan::common::MacAddr mac_addr;
     bool mac_addr_set;
     int32_t bsscfgidx;
     bool allocated;
@@ -508,7 +509,7 @@ class SimFirmware {
 
   // Iovar handlers
   zx_status_t SetMacAddr(uint16_t ifidx, const uint8_t* mac_addr);
-  common::MacAddr GetMacAddr(uint16_t ifidx);
+  wlan::common::MacAddr GetMacAddr(uint16_t ifidx);
   zx_status_t HandleEscanRequest(const brcmf_escan_params_le* value, size_t value_len);
   zx_status_t HandleIfaceTblReq(const bool add_entry, const void* data, uint8_t* iface_id,
                                 int32_t bsscfgidx);
@@ -517,7 +518,7 @@ class SimFirmware {
   zx_status_t HandleJoinRequest(const void* value, size_t value_len);
   void HandleAssocReq(std::shared_ptr<const simulation::SimAssocReqFrame> frame);
   void HandleDisconnectForClientIF(std::shared_ptr<const simulation::SimManagementFrame> frame,
-                                   const common::MacAddr& bssid,
+                                   const wlan::common::MacAddr& bssid,
                                    wlan_ieee80211_wire::ReasonCode reason);
   void HandleAuthReq(std::shared_ptr<const simulation::SimAuthFrame> frame);
   void HandleAuthResp(std::shared_ptr<const simulation::SimAuthFrame> frame);
@@ -552,7 +553,7 @@ class SimFirmware {
   void DeauthLocalClient(wlan_ieee80211_wire::ReasonCode reason);
   void SetStateToDisassociated(wlan_ieee80211_wire::ReasonCode reason, bool locally_initiated);
   void SetStateToDeauthenticated(wlan_ieee80211_wire::ReasonCode reason, bool locally_initiated,
-                                 const common::MacAddr& bssid);
+                                 const wlan::common::MacAddr& bssid);
   // Get the Sim firmware ready for a target_bss_info iovar request.
   void SetTargetBssInfo(const brcmf_bss_info_le& bss_info, cpp20::span<uint8_t> ie_buf);
   void ReassocInit(std::unique_ptr<ReassocOpts> reassoc_opts,
@@ -626,7 +627,7 @@ class SimFirmware {
   void SendEventToDriver(size_t payload_size, std::shared_ptr<std::vector<uint8_t>> buffer_in,
                          uint32_t event_type, uint32_t status, uint16_t ifidx,
                          char* ifname = nullptr, uint16_t flags = 0, uint32_t reason = 0,
-                         std::optional<common::MacAddr> addr = {},
+                         std::optional<wlan::common::MacAddr> addr = {},
                          std::optional<zx::duration> delay = {});
 
   // Send received frame over the bus to the driver
@@ -634,7 +635,7 @@ class SimFirmware {
                          std::shared_ptr<const simulation::WlanRxInfo> info);
 
   // Get the idx of the SoftAP IF based on Mac address
-  int16_t GetIfidxByMac(const common::MacAddr& addr);
+  int16_t GetIfidxByMac(const wlan::common::MacAddr& addr);
 
   // Get the channel of IF the parameter indicates whether we need to find softAP ifidx or client
   // ifidx.
@@ -649,9 +650,9 @@ class SimFirmware {
   // motivation_auth means whether this function is triggered by receiving disauth frame, the
   // value "true" means it is triggered by a deauth frame, and "false" means ut's triggered by a
   // disassoc frame.
-  bool FindAndRemoveClient(const common::MacAddr client_mac, bool motivation_deauth,
+  bool FindAndRemoveClient(const wlan::common::MacAddr client_mac, bool motivation_deauth,
                            wlan_ieee80211_wire::ReasonCode deauth_reason);
-  std::shared_ptr<Client> FindClient(const common::MacAddr client_mac);
+  std::shared_ptr<Client> FindClient(const wlan::common::MacAddr client_mac);
   void ScheduleLinkEvent(zx::duration when, uint16_t ifidx);
   void SendAPStartLinkEvent(uint16_t ifidx);
   zx_status_t StopInterface(const int32_t bsscfgidx);
@@ -720,7 +721,7 @@ class SimFirmware {
   // Internal firmware state variables
   std::array<uint8_t, ETH_ALEN> mac_addr_;
   bool mac_addr_set_ = false;
-  common::MacAddr pfn_mac_addr_;
+  wlan::common::MacAddr pfn_mac_addr_;
   bool default_passive_scan_ = true;
   uint32_t default_passive_time_ = -1;  // In ms. -1 indicates value has not been set.
   int32_t power_mode_ = 0;              // Default value of PM in FW is 0 (OFF)

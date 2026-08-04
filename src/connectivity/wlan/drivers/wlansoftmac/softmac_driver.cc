@@ -41,6 +41,9 @@
 #include <wlan/common/channel.h>
 #include <wlan/drivers/fidl_bridge.h>
 #include <wlan/drivers/log.h>
+#include <wlan/drivers/macaddr.h>
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::drivers::wlansoftmac {
 
@@ -228,7 +231,7 @@ zx_status_t SoftmacDriver::EthernetImplQuery(uint32_t options, ethernet_info_t* 
             status = FidlErrorToStatus(result.error_value());
             fdf::error("Failed getting query result (FIDL error {})", zx_status_get_string(status));
           } else {
-            common::MacAddr(result.value().sta_addr()->data()).CopyTo(out_info->mac);
+            MacAddr(result.value().sta_addr()->data()).CopyTo(out_info->mac);
           }
           request_returned.Signal();
         });

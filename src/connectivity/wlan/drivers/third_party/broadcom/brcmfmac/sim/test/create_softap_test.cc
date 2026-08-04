@@ -8,6 +8,7 @@
 #include <zircon/errors.h>
 
 #include <wlan/common/channel.h>
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
@@ -15,8 +16,9 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/test/device_inspect_test_utils.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
 #include "src/devices/lib/broadcom/commands.h"
+
+using wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -32,7 +34,7 @@ constexpr uint16_t kDefaultCh = 149;
 constexpr fuchsia_wlan_ieee80211::wire::WlanBand kDefaultBand =
     fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz;
 
-const common::MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
+const MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
 
 class CreateSoftAPTest;
 
@@ -70,11 +72,11 @@ class CreateSoftAPTest : public SimTest {
   // We track a specific firmware error condition seen in AP start.
   void GetApSetSsidErrInspectCount(uint64_t* out_count);
 
-  void TxAuthReq(simulation::SimAuthType auth_type, common::MacAddr client_mac);
-  void TxAssocReq(common::MacAddr client_mac);
-  void TxDisassocReq(common::MacAddr client_mac);
-  void TxDeauthReq(common::MacAddr client_mac);
-  void DeauthClient(common::MacAddr client_mac);
+  void TxAuthReq(simulation::SimAuthType auth_type, MacAddr client_mac);
+  void TxAssocReq(MacAddr client_mac);
+  void TxDisassocReq(MacAddr client_mac);
+  void TxDeauthReq(MacAddr client_mac);
+  void DeauthClient(MacAddr client_mac);
   void VerifyAuth();
   void VerifyAssoc();
   void VerifyNotAssoc();
@@ -86,7 +88,7 @@ class CreateSoftAPTest : public SimTest {
   void InjectChanspecError();
   void InjectSetSsidError();
   void InjectStopAPError();
-  void SetExpectMacForInds(common::MacAddr set_mac);
+  void SetExpectMacForInds(MacAddr set_mac);
 
   void OnAuthInd(const wlan_fullmac_wire::WlanFullmacImplIfcAuthIndRequest* ind);
   void OnDeauthInd(const fuchsia_wlan_fullmac::WlanFullmacImplIfcDeauthIndRequest* ind);
@@ -112,7 +114,7 @@ class CreateSoftAPTest : public SimTest {
   fuchsia_wlan_fullmac::StopResult stop_conf_status_;
 
   // The expect mac address for indications
-  common::MacAddr ind_expect_mac_ = kFakeMac;
+  MacAddr ind_expect_mac_ = kFakeMac;
 
  protected:
   simulation::WlanTxInfo tx_info_ = {
@@ -327,7 +329,7 @@ void CreateSoftAPTest::InjectSetSsidError() {
   });
 }
 
-void CreateSoftAPTest::SetExpectMacForInds(common::MacAddr set_mac) { ind_expect_mac_ = set_mac; }
+void CreateSoftAPTest::SetExpectMacForInds(MacAddr set_mac) { ind_expect_mac_ = set_mac; }
 
 zx_status_t CreateSoftAPTest::StopSoftAP() {
   auto builder = wlan_fullmac_wire::WlanFullmacImplStopBssRequest::Builder(test_arena_);
@@ -386,26 +388,26 @@ void CreateSoftAPTest::OnStopConf(
 void CreateSoftAPTest::OnChannelSwitch(
     const fuchsia_wlan_fullmac::WlanFullmacImplIfcOnChannelSwitchRequest* ind) {}
 
-void CreateSoftAPTest::TxAssocReq(common::MacAddr client_mac) {
+void CreateSoftAPTest::TxAssocReq(MacAddr client_mac) {
   // Get the mac address of the SoftAP
-  common::MacAddr soft_ap_mac;
+  MacAddr soft_ap_mac;
   softap_ifc_.GetMacAddr(&soft_ap_mac);
   simulation::SimAssocReqFrame assoc_req_frame(client_mac, soft_ap_mac, kDefaultSsid);
   env_->Tx(assoc_req_frame, tx_info_, this);
 }
 
-void CreateSoftAPTest::TxAuthReq(simulation::SimAuthType auth_type, common::MacAddr client_mac) {
+void CreateSoftAPTest::TxAuthReq(simulation::SimAuthType auth_type, MacAddr client_mac) {
   // Get the mac address of the SoftAP
-  common::MacAddr soft_ap_mac;
+  MacAddr soft_ap_mac;
   softap_ifc_.GetMacAddr(&soft_ap_mac);
   simulation::SimAuthFrame auth_req_frame(client_mac, soft_ap_mac, 1, auth_type,
                                           wlan_ieee80211::StatusCode::kSuccess);
   env_->Tx(auth_req_frame, tx_info_, this);
 }
 
-void CreateSoftAPTest::TxDisassocReq(common::MacAddr client_mac) {
+void CreateSoftAPTest::TxDisassocReq(MacAddr client_mac) {
   // Get the mac address of the SoftAP
-  common::MacAddr soft_ap_mac;
+  MacAddr soft_ap_mac;
   softap_ifc_.GetMacAddr(&soft_ap_mac);
   // Disassociate with the SoftAP
   simulation::SimDisassocReqFrame disassoc_req_frame(
@@ -413,9 +415,9 @@ void CreateSoftAPTest::TxDisassocReq(common::MacAddr client_mac) {
   env_->Tx(disassoc_req_frame, tx_info_, this);
 }
 
-void CreateSoftAPTest::TxDeauthReq(common::MacAddr client_mac) {
+void CreateSoftAPTest::TxDeauthReq(MacAddr client_mac) {
   // Get the mac address of the SoftAP
-  common::MacAddr soft_ap_mac;
+  MacAddr soft_ap_mac;
   softap_ifc_.GetMacAddr(&soft_ap_mac);
   // Disassociate with the SoftAP
   simulation::SimDeauthFrame deauth_frame(client_mac, soft_ap_mac,
@@ -423,7 +425,7 @@ void CreateSoftAPTest::TxDeauthReq(common::MacAddr client_mac) {
   env_->Tx(deauth_frame, tx_info_, this);
 }
 
-void CreateSoftAPTest::DeauthClient(common::MacAddr client_mac) {
+void CreateSoftAPTest::DeauthClient(MacAddr client_mac) {
   auto builder =
       fuchsia_wlan_fullmac::wire::WlanFullmacImplDeauthRequest::Builder(softap_ifc_.test_arena_);
 
@@ -674,7 +676,7 @@ TEST_F(CreateSoftAPTest, DeauthWhileAssociated) {
   VerifyNumOfClient(0);
 }
 
-const common::MacAddr kSecondClientMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x04});
+const MacAddr kSecondClientMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x04});
 
 TEST_F(CreateSoftAPTest, DeauthMultiClients) {
   StartSoftAP();

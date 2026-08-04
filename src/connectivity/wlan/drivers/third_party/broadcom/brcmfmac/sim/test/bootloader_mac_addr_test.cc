@@ -3,20 +3,22 @@
 
 #include <zircon/errors.h>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
 class BootloaderMacAddrTest : public SimTest {
  protected:
-  void Init(const common::MacAddr& mac_addr);
+  void Init(const MacAddr& mac_addr);
 };
 
 // Perform a test initialization with the bootloader mac address set to a specified value
-void BootloaderMacAddrTest::Init(const common::MacAddr& mac_addr) {
+void BootloaderMacAddrTest::Init(const MacAddr& mac_addr) {
   ASSERT_EQ(PreInit(), ZX_OK);
 
   WithSimDevice([&mac_addr](brcmfmac::SimDevice* device) {
@@ -30,7 +32,7 @@ void BootloaderMacAddrTest::Init(const common::MacAddr& mac_addr) {
 // Verify that the value from the bootloader is assigned to a client interface
 TEST_F(BootloaderMacAddrTest, GetMacAddrFromBootloader) {
   const uint8_t kMacAddr[ETH_ALEN] = {1, 2, 3, 4, 5, 6};
-  common::MacAddr mac_addr(kMacAddr);
+  MacAddr mac_addr(kMacAddr);
 
   Init(mac_addr);
 
@@ -38,7 +40,7 @@ TEST_F(BootloaderMacAddrTest, GetMacAddrFromBootloader) {
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc), ZX_OK);
 
   // Verify that the client interface was assigned the value provided by the simulated bootloader
-  common::MacAddr actual_mac_addr;
+  MacAddr actual_mac_addr;
   client_ifc.GetMacAddr(&actual_mac_addr);
   ASSERT_EQ(actual_mac_addr, mac_addr);
 }
@@ -51,7 +53,7 @@ TEST_F(BootloaderMacAddrTest, ZeroMacAddr) {
   SimInterface client_ifc;
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc), ZX_OK);
 
-  common::MacAddr actual_mac_addr;
+  MacAddr actual_mac_addr;
   client_ifc.GetMacAddr(&actual_mac_addr);
   ASSERT_FALSE(actual_mac_addr.IsZero());
 }
@@ -64,7 +66,7 @@ TEST_F(BootloaderMacAddrTest, BroadcastMacAddr) {
   SimInterface client_ifc;
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc), ZX_OK);
 
-  common::MacAddr actual_mac_addr;
+  MacAddr actual_mac_addr;
   client_ifc.GetMacAddr(&actual_mac_addr);
   ASSERT_FALSE(actual_mac_addr.IsBcast());
 }

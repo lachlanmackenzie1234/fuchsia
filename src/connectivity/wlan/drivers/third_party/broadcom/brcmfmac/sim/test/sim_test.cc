@@ -17,8 +17,11 @@
 #include <bind/fuchsia/wlan/fullmac/cpp/bind.h>
 #include <fbl/string_buffer.h>
 #include <wlan/common/channel.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "fidl/fuchsia.wlan.fullmac/cpp/wire_types.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -371,14 +374,13 @@ void SimInterface::QueryTelemetrySupport(fuchsia_wlan_stats::wire::TelemetrySupp
   *out_resp = result->value()->resp();
 }
 
-void SimInterface::GetMacAddr(common::MacAddr* out_macaddr) {
+void SimInterface::GetMacAddr(MacAddr* out_macaddr) {
   fuchsia_wlan_fullmac::WlanFullmacImplQueryResponse info = Query();
   ZX_ASSERT(info.sta_addr().has_value());
   memcpy(out_macaddr->byte, info.sta_addr()->data(), ETH_ALEN);
 }
 
-void SimInterface::StartConnect(const common::MacAddr& bssid,
-                                const fuchsia_wlan_ieee80211::Ssid& ssid,
+void SimInterface::StartConnect(const MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
                                 const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                                 fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
                                 const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
@@ -420,7 +422,7 @@ void SimInterface::AssociateWith(const simulation::FakeAp& ap, std::optional<zx:
   // This should only be performed on a Client interface
   ZX_ASSERT(role_ == wlan_common::WlanMacRole::kClient);
 
-  common::MacAddr bssid = ap.GetBssid();
+  MacAddr bssid = ap.GetBssid();
   fuchsia_wlan_ieee80211::Ssid ssid = ap.GetSsid();
   fuchsia_wlan_ieee80211::wire::ChannelNumber channel = ap.GetChannel();
   fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw = ap.GetChannelBandwidth();
@@ -435,7 +437,7 @@ void SimInterface::AssociateWith(const simulation::FakeAp& ap, std::optional<zx:
   }
 }
 
-void SimInterface::StartRoam(const common::MacAddr& bssid,
+void SimInterface::StartRoam(const MacAddr& bssid,
                              const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                              fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
                              const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80) {
@@ -459,8 +461,7 @@ void SimInterface::StartRoam(const common::MacAddr& bssid,
   ZX_ASSERT(result.ok());
 }
 
-void SimInterface::DisassociateFrom(const common::MacAddr& bssid,
-                                    wlan_ieee80211::ReasonCode reason) {
+void SimInterface::DisassociateFrom(const MacAddr& bssid, wlan_ieee80211::ReasonCode reason) {
   // This should only be performed on a Client interface
   ZX_ASSERT(role_ == wlan_common::WlanMacRole::kClient);
 
@@ -474,8 +475,7 @@ void SimInterface::DisassociateFrom(const common::MacAddr& bssid,
   ZX_ASSERT(result.ok());
 }
 
-void SimInterface::DeauthenticateFrom(const common::MacAddr& bssid,
-                                      wlan_ieee80211::ReasonCode reason) {
+void SimInterface::DeauthenticateFrom(const MacAddr& bssid, wlan_ieee80211::ReasonCode reason) {
   // This should only be performed on a Client interface
   ZX_ASSERT(role_ == wlan_common::WlanMacRole::kClient);
 
@@ -663,7 +663,7 @@ zx_status_t SimTest::CreateFactoryClient() {
 }
 
 zx_status_t SimTest::StartInterface(wlan_common::WlanMacRole role, SimInterface* sim_ifc,
-                                    std::optional<common::MacAddr> mac_addr) {
+                                    std::optional<MacAddr> mac_addr) {
   zx_status_t status;
   if ((status = sim_ifc->Init(env_.get(), role)) != ZX_OK) {
     return status;

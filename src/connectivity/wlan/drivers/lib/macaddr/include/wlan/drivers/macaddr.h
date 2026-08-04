@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_MACADDR_H_
-#define SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_MACADDR_H_
+// LINT.IfChange
+
+#ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_MACADDR_INCLUDE_WLAN_DRIVERS_MACADDR_H_
+#define SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_MACADDR_INCLUDE_WLAN_DRIVERS_MACADDR_H_
 
 #include <zircon/compiler.h>
 #include <zircon/types.h>
@@ -152,4 +154,6 @@ extern const MacAddr kBcastMac;
 }  // namespace common
 }  // namespace wlan
 
-#endif  // SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_MACADDR_H_
+#endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_LIB_MACADDR_INCLUDE_WLAN_DRIVERS_MACADDR_H_
+
+// LINT.ThenChange(//src/connectivity/wlan/lib/ieee80211/src/mac_addr.rs)

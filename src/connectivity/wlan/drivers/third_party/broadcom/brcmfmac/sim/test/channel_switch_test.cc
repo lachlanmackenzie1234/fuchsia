@@ -4,10 +4,13 @@
 
 #include <zircon/errors.h>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -19,7 +22,7 @@ constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kSwitchedChannel = {
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kSecondSwitchedChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 30};
 const uint16_t kDefaultCSACount = 3;
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 class ChannelSwitchTest : public SimTest {
  public:
@@ -193,7 +196,7 @@ TEST_F(ChannelSwitchTest, NotSwitchForDifferentAP) {
   const fuchsia_wlan_ieee80211::Ssid kWrongSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a',
                                                    ' ', 'F', 'a', 'k', 'e', ' ', 'A'};
   ASSERT_NE(kDefaultSsid.size(), kWrongSsid.size());
-  const common::MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9b, 0xbc});
+  const MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9b, 0xbc});
   ASSERT_NE(kDefaultBssid, kWrongBssid);
 
   Init();

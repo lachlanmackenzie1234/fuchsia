@@ -6,13 +6,16 @@
 #include <array>
 #include <vector>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil_types.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
 #include "src/devices/lib/broadcom/commands.h"
+
+using ::wlan::common::MacAddr;
+
 namespace wlan::brcmfmac {
 
 class ErrInjTest : public SimTest {
@@ -119,7 +122,7 @@ TEST_F(ErrInjTest, CheckIfErrInjIovarEnabledWorks) {
 }
 
 TEST_F(ErrInjTest, CmdFirmwareErrorLifecycle) {
-  const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+  const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
   constexpr uint16_t kDefaultChanspec = 53397;
 
   ASSERT_EQ(Init(), ZX_OK);
@@ -171,7 +174,7 @@ TEST_F(ErrInjTest, CmdFirmwareErrorLifecycle) {
 }
 
 TEST_F(ErrInjTest, IovarFirmwareErrorLifecycle) {
-  const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+  const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
   ASSERT_EQ(Init(), ZX_OK);
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc_), ZX_OK);

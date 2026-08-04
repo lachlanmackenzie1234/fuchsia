@@ -6,12 +6,15 @@
 
 #include <memory>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/feature.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
 #include "zxtest/zxtest.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -23,8 +26,8 @@ constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kAp1Channel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 11};
 const uint8_t kAp1OperatingClass = 101;
 
-const common::MacAddr kAp0Bssid("12:34:56:78:9a:bc");
-const common::MacAddr kAp1Bssid("ff:ee:dd:cc:bb:aa");
+const MacAddr kAp0Bssid("12:34:56:78:9a:bc");
+const MacAddr kAp1Bssid("ff:ee:dd:cc:bb:aa");
 
 class WnmTest : public SimTest {
  public:
@@ -119,7 +122,7 @@ TEST_F(WnmTest, IgnoreBtmReqWhenBtmUnsupported) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -158,7 +161,7 @@ TEST_F(WnmTest, RoamOnBtmReqWhenConfiguredToRoam) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -200,7 +203,7 @@ TEST_F(WnmTest, RoamOnBtmReqButTargetApIgnoresReassoc) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -259,7 +262,7 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDeauthForTargetInterruptsRoam) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -319,7 +322,7 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDisassocInterruptsRoam) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -373,7 +376,7 @@ TEST_F(WnmTest, RoamOnBtmReqButSmeDeauthInterruptsRoam) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -438,7 +441,7 @@ TEST_F(WnmTest, DisconnectOnBtmReqWhenTargetBssInfoUnsupported) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -498,7 +501,7 @@ TEST_F(WnmTest, DisconnectOnBtmReqWhenTargetBssInfoIeBufferMalformed) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{
@@ -588,7 +591,7 @@ TEST_F(WnmTest, FwInitiatedRoamHeapBufferOverflow) {
   });
 
   // 4. Trigger a BTM request from ap_0 to roam to ap_1.
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   const simulation::SimBtmReqMode req_mode{.preferred_candidate_list_included = true};
   const simulation::SimNeighborReportElement neighbor{

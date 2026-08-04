@@ -7,8 +7,6 @@
 
 #include <net/ethernet.h>
 
-#include <wlan/common/macaddr.h>
-
 #include "sim-frame.h"
 
 namespace wlan::simulation {

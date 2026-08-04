@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sta-ifc.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 namespace {
@@ -28,27 +31,25 @@ const simulation::WlanTxInfo kDefaultTxInfo = {
     .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
     .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kApSsid = Ssid("Fuchsia Fake AP", 15);
-const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
-const common::MacAddr kSrcClientMacAddr({0x11, 0x22, 0x33, 0x44, 0xee, 0xff});
-const common::MacAddr kDstClientMacAddr({0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54});
+const MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kSrcClientMacAddr({0x11, 0x22, 0x33, 0x44, 0xee, 0xff});
+const MacAddr kDstClientMacAddr({0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54});
 const std::vector<uint8_t> kSampleEthBody = {0x00, 0x45, 0x00, 0x00, 0xE3};
 
 class DataTest : public ::testing::Test, public simulation::StationIfc {
  public:
-  std::vector<uint8_t> CreateEthernetFrame(common::MacAddr dstAddr, common::MacAddr srcAddr,
-                                           uint16_t ethType);
+  std::vector<uint8_t> CreateEthernetFrame(MacAddr dstAddr, MacAddr srcAddr, uint16_t ethType);
 
   DataTest()
       : ap_(&env_, kApBssid, kApSsid, kDefaultTxInfo.primary_channel, kDefaultTxInfo.bandwidth,
             kDefaultTxInfo.vht_secondary_80_channel) {
     env_.AddStation(this);
   }
-  void FinishAuth(common::MacAddr addr);
-  void FinishAssoc(common::MacAddr addr);
-  void ScheduleTx(common::MacAddr apAddr, common::MacAddr srcAddr, common::MacAddr dstAddr,
-                  std::vector<uint8_t>& ethFrame, zx::duration delay);
-  void Tx(common::MacAddr apAddr, common::MacAddr srcAddr, common::MacAddr dstAddr,
-          std::vector<uint8_t>& ethFrame);
+  void FinishAuth(MacAddr addr);
+  void FinishAssoc(MacAddr addr);
+  void ScheduleTx(MacAddr apAddr, MacAddr srcAddr, MacAddr dstAddr, std::vector<uint8_t>& ethFrame,
+                  zx::duration delay);
+  void Tx(MacAddr apAddr, MacAddr srcAddr, MacAddr dstAddr, std::vector<uint8_t>& ethFrame);
   simulation::Environment env_;
   simulation::FakeAp ap_;
 
@@ -61,7 +62,7 @@ class DataTest : public ::testing::Test, public simulation::StationIfc {
           std::shared_ptr<const simulation::WlanRxInfo> info) override;
 };
 
-std::vector<uint8_t> DataTest::CreateEthernetFrame(common::MacAddr dstAddr, common::MacAddr srcAddr,
+std::vector<uint8_t> DataTest::CreateEthernetFrame(MacAddr dstAddr, MacAddr srcAddr,
                                                    uint16_t ethType) {
   std::vector<uint8_t> ethFrame;
   ethFrame.resize(14 + kSampleEthBody.size());
@@ -113,24 +114,24 @@ void DataTest::Rx(std::shared_ptr<const simulation::SimFrame> frame,
 
 // Send a authentication request frame at the beginning to make the status for kSrcClientMacAddr is
 // AUTHENTICATED in AP.
-void DataTest::FinishAuth(common::MacAddr addr) {
+void DataTest::FinishAuth(MacAddr addr) {
   simulation::SimAuthFrame auth_req_frame(addr, kApBssid, 1, simulation::AUTH_TYPE_OPEN,
                                           wlan_ieee80211::StatusCode::kSuccess);
   env_.Tx(auth_req_frame, kDefaultTxInfo, this);
 }
 
-void DataTest::FinishAssoc(common::MacAddr addr) {
+void DataTest::FinishAssoc(MacAddr addr) {
   simulation::SimAssocReqFrame assoc_req_frame(addr, kApBssid, kApSsid);
   env_.Tx(assoc_req_frame, kDefaultTxInfo, this);
 }
 
-void DataTest::ScheduleTx(common::MacAddr apAddr, common::MacAddr srcAddr, common::MacAddr dstAddr,
+void DataTest::ScheduleTx(MacAddr apAddr, MacAddr srcAddr, MacAddr dstAddr,
                           std::vector<uint8_t>& ethFrame, zx::duration delay) {
   env_.ScheduleNotification(std::bind(&DataTest::Tx, this, apAddr, srcAddr, dstAddr, ethFrame),
                             delay);
 }
 
-void DataTest::Tx(common::MacAddr apAddr, common::MacAddr srcAddr, common::MacAddr dstAddr,
+void DataTest::Tx(MacAddr apAddr, MacAddr srcAddr, MacAddr dstAddr,
                   std::vector<uint8_t>& ethFrame) {
   simulation::SimQosDataFrame dataFrame(true, false, apAddr, srcAddr, dstAddr, 0, ethFrame);
   env_.Tx(dataFrame, kDefaultTxInfo, this);
@@ -148,7 +149,7 @@ TEST_F(DataTest, IgnoreWrongBssid) {
       CreateEthernetFrame(kDstClientMacAddr, kSrcClientMacAddr, htobe16(ETH_P_IP));
 
   // Create and send data frame but with the wrong ap
-  const common::MacAddr kWrongApBssid({0x00, 0x11, 0x22, 0x33, 0x44, 0x55});
+  const MacAddr kWrongApBssid({0x00, 0x11, 0x22, 0x33, 0x44, 0x55});
   ScheduleTx(kWrongApBssid, kSrcClientMacAddr, kDstClientMacAddr, ethFrame, zx::usec(50));
 
   env_.Run(kSimulatedClockDuration);

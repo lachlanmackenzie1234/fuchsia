@@ -6,6 +6,7 @@
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 #include <zircon/errors.h>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
@@ -16,15 +17,16 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_data_path.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_utils.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
 namespace {
 #define OUR_MAC {0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa}
 #define THEIR_MAC {0xde, 0xad, 0xbe, 0xef, 0x00, 0x02}
-const common::MacAddr kOurMac(OUR_MAC);
-const common::MacAddr kTheirMac(THEIR_MAC);
+const MacAddr kOurMac(OUR_MAC);
+const MacAddr kTheirMac(THEIR_MAC);
 
 // A simple ARP request
 const ether_arp kSampleArpReq = {.ea_hdr = {.ar_hrd = htons(ETH_P_802_3),
@@ -141,7 +143,7 @@ void ArpTest::Init() {
 
 void ArpTest::TxAuthandAssocReq() {
   // Get the mac address of the SoftAP
-  const common::MacAddr mac(kTheirMac);
+  const MacAddr mac(kTheirMac);
   simulation::WlanTxInfo tx_info = {
       .primary_channel = SimInterface::kDefaultSoftApChannelNum,
       .bandwidth = fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20,
@@ -172,8 +174,8 @@ void ArpTest::CleanupApInterface() {
 
 void ArpTest::Tx(const std::vector<uint8_t>& ethFrame) {
   const ethhdr* eth_hdr = reinterpret_cast<const ethhdr*>(ethFrame.data());
-  common::MacAddr dst(eth_hdr->h_dest);
-  common::MacAddr src(eth_hdr->h_source);
+  MacAddr dst(eth_hdr->h_dest);
+  MacAddr src(eth_hdr->h_source);
   simulation::SimQosDataFrame dataFrame(true, false, dst, src, common::kBcastMac, 0, ethFrame);
   simulation::WlanTxInfo tx_info = {
       .primary_channel = SimInterface::kDefaultSoftApChannelNum,
@@ -199,7 +201,7 @@ void ArpTest::ScheduleNonArpFrameTx(zx::duration when) {
 }
 
 void ArpTest::StartAndStopSoftAP() {
-  common::MacAddr ap_mac({0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff});
+  MacAddr ap_mac({0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff});
   GenericIfc softap_ifc;
   softap_ifc.test_ = this;
 

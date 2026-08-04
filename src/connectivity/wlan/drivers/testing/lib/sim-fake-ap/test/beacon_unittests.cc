@@ -10,6 +10,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <wlan/common/ieee80211.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
@@ -18,6 +19,8 @@
 
 // zx::time() gives us an absolute time of zero
 #define ABSOLUTE_TIME(delay) (zx::time() + (delay))
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 
@@ -30,7 +33,7 @@ class BeaconTest : public ::testing::Test, public simulation::StationIfc {
     Beacon(zx::time time, const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
            fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
            const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80,
-           const fuchsia_wlan_ieee80211::Ssid& ssid, const common::MacAddr& bssid)
+           const fuchsia_wlan_ieee80211::Ssid& ssid, const MacAddr& bssid)
         : time_(time),
           primary_(channel),
           bandwidth_(cbw),
@@ -46,7 +49,7 @@ class BeaconTest : public ::testing::Test, public simulation::StationIfc {
     uint8_t channel_to_switch_ = 0;
     uint8_t channel_switch_count_ = 0;
     fuchsia_wlan_ieee80211::Ssid ssid_;
-    common::MacAddr bssid_;
+    MacAddr bssid_;
     bool privacy = false;
   };
 
@@ -134,7 +137,7 @@ const simulation::WlanTxInfo kDefaultTxInfo = {
 
 const fuchsia_wlan_ieee80211::Ssid kDefaultSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                    'F', 'a', 'k', 'e', ' ', 'A', 'P'};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 const fuchsia_wlan_ieee80211::Ssid kErrInjBeaconSsid = {'C', 'h', 'a', 'n', 'g', 'e', 'd'};
 
@@ -211,7 +214,7 @@ constexpr zx::duration kNewBeaconPeriod = zx::msec(42);
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kNewChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = 136};
 const fuchsia_wlan_ieee80211::Ssid kNewSsid = {'D', 'u', 'm', 'b', 'o'};
-const common::MacAddr new_bssid({0xcb, 0xa9, 0x87, 0x65, 0x43, 0x21});
+const MacAddr new_bssid({0xcb, 0xa9, 0x87, 0x65, 0x43, 0x21});
 
 void BeaconTest::UpdateBeaconCallback() {
   ap_.SetChannel(kNewChannel, wlan_ieee80211::ChannelBandwidth::kCbw20,
@@ -274,7 +277,7 @@ constexpr zx::duration kCsaBeaconInterval = zx::msec(120);
 constexpr zx::duration kLongCsaBeaconInterval = zx::msec(350);
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kFirstChannelSwitched = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10};
-const common::MacAddr kClientMacAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+const MacAddr kClientMacAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 
 // Used in OverlapTest
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kSecondChannelSwitched = {

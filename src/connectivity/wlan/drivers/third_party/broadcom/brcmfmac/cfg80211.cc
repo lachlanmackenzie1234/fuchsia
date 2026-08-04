@@ -36,10 +36,8 @@
 #include <optional>
 #include <vector>
 
-#include <wlan/common/element.h>
 #include <wlan/common/ieee80211.h>
-#include <wlan/common/ieee80211_codes.h>
-#include <wlan/common/macaddr.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "fidl/fuchsia.wlan.common/cpp/natural_types.h"
 #include "fidl/fuchsia.wlan.fullmac/cpp/natural_types.h"
@@ -104,6 +102,7 @@
   }
 
 namespace fuchsia_wlan_ieee80211_wire = fuchsia_wlan_ieee80211::wire;
+using ::wlan::common::MacAddr;
 
 static bool check_vif_up(struct brcmf_cfg80211_vif* vif) {
   if (!brcmf_test_bit(brcmf_vif_status_bit_t::READY, &vif->sme_state)) {
@@ -339,8 +338,7 @@ static zx_status_t brcmf_cfg80211_request_ap_if(struct brcmf_if* ifp) {
 }
 
 /*For now this function should always be called when adding iface*/
-static zx_status_t brcmf_set_iface_macaddr(net_device* ndev,
-                                           const wlan::common::MacAddr& mac_addr) {
+static zx_status_t brcmf_set_iface_macaddr(net_device* ndev, const MacAddr& mac_addr) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   bcme_status_t fw_err = BCME_OK;
   zx_status_t err = ZX_OK;
@@ -370,7 +368,7 @@ static zx_status_t brcmf_set_iface_macaddr(net_device* ndev,
 
 // Derive the mac address for the SoftAP interface from the system mac address
 // (which is used for the client interface).
-zx_status_t brcmf_gen_ap_macaddr(struct brcmf_if* ifp, wlan::common::MacAddr& out_mac_addr) {
+zx_status_t brcmf_gen_ap_macaddr(struct brcmf_if* ifp, MacAddr& out_mac_addr) {
   bcme_status_t fw_err = BCME_OK;
   uint8_t gen_mac_addr[ETH_ALEN];
 
@@ -393,8 +391,8 @@ zx_status_t brcmf_gen_ap_macaddr(struct brcmf_if* ifp, wlan::common::MacAddr& ou
 }
 
 static zx_status_t brcmf_set_ap_macaddr(struct brcmf_if* ifp,
-                                        const std::optional<wlan::common::MacAddr>& in_mac_addr) {
-  wlan::common::MacAddr mac_addr;
+                                        const std::optional<MacAddr>& in_mac_addr) {
+  MacAddr mac_addr;
   zx_status_t err = ZX_OK;
 
   // Use the provided mac_addr if it passed.
@@ -476,7 +474,7 @@ done:
  * @dev_out: address of wireless dev pointer
  */
 static zx_status_t brcmf_ap_add_vif(struct brcmf_cfg80211_info* cfg, const char* name,
-                                    const std::optional<wlan::common::MacAddr>& mac_addr,
+                                    const std::optional<MacAddr>& mac_addr,
                                     struct wireless_dev** dev_out) {
   struct brcmf_if* ifp = cfg_to_if(cfg);
   struct brcmf_cfg80211_vif* vif;
@@ -587,8 +585,8 @@ static bool brcmf_is_existing_macaddr(brcmf_pub* drvr, const uint8_t mac_addr[ET
 
 zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct vif_params* params,
                                      fuchsia_wlan_common::WlanMacRole role,
-                                     std::optional<wlan::common::MacAddr> mac_addr,
-                                     zx::channel mlme_channel, struct wireless_dev** wdev_out) {
+                                     std::optional<MacAddr> mac_addr, zx::channel mlme_channel,
+                                     struct wireless_dev** wdev_out) {
   zx_status_t err;
   net_device* ndev = nullptr;
   wireless_dev* wdev;
@@ -676,7 +674,7 @@ zx_status_t brcmf_cfg80211_add_iface(brcmf_pub* drvr, const char* name, struct v
 
       // Use input mac_addr if it's provided. Otherwise, fallback to the bootloader
       // MAC address. Note that this fallback MAC address is intended for client ifaces only.
-      wlan::common::MacAddr client_mac_addr;
+      MacAddr client_mac_addr;
       if (mac_addr) {
         client_mac_addr = *mac_addr;
       } else {
@@ -6259,9 +6257,9 @@ zx_status_t brcmf_if_sae_frame_tx(net_device* ndev,
       reinterpret_cast<brcmf_sae_auth_frame*>(cmd_buf + offsetof(assoc_mgr_cmd_t, params));
 
   // Set MAC addresses in MAC header, firmware will check these parts, and fill other missing parts.
-  sae_frame->mac_hdr.addr1 = wlan::common::MacAddr(frame->peer_sta_address().data());  // DA
-  sae_frame->mac_hdr.addr2 = wlan::common::MacAddr(ifp->mac_addr);                     // SA
-  sae_frame->mac_hdr.addr3 = wlan::common::MacAddr(frame->peer_sta_address().data());  // BSSID
+  sae_frame->mac_hdr.addr1 = MacAddr(frame->peer_sta_address().data());  // DA
+  sae_frame->mac_hdr.addr2 = MacAddr(ifp->mac_addr);                     // SA
+  sae_frame->mac_hdr.addr3 = MacAddr(frame->peer_sta_address().data());  // BSSID
 
   BRCMF_DBG(CONN,
             "The peer_sta_address: " FMT_MAC ", the ifp mac is: " FMT_MAC

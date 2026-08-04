@@ -4,18 +4,22 @@
 
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
 constexpr uint16_t kDefaultCh = 149;
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz, .number = kDefaultCh};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
-const common::MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
 const simulation::WlanTxInfo kDefaultTxInfo = {
     .primary_channel = kDefaultChannel,
     .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
@@ -53,7 +57,7 @@ void MfgTest::StartSoftAP() { softap_ifc_.StartSoftAp(kDefaultSoftApSsid, kDefau
 
 void MfgTest::TxAuthAndAssocReq() {
   // Get the mac address of the SoftAP
-  common::MacAddr soft_ap_mac;
+  MacAddr soft_ap_mac;
   softap_ifc_.GetMacAddr(&soft_ap_mac);
   const fuchsia_wlan_ieee80211::Ssid ssid = {'S', 'i', 'm', '_', 'A', 'P'};
   // Pass the auth stop for softAP iface before assoc.

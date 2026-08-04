@@ -17,7 +17,6 @@ cc_library(
         "ieee80211_codes.cc",
         "logging.cc",
         "mac_frame.cc",
-        "macaddr.cc",
         "mcs_rate_lookup.cc",
     ],
     hdrs = [
@@ -30,7 +29,6 @@ cc_library(
         "include/wlan/common/ieee80211_codes.h",
         "include/wlan/common/logging.h",
         "include/wlan/common/mac_frame.h",
-        "include/wlan/common/macaddr.h",
         "include/wlan/common/mcs_rate_lookup.h",
     ],
     features = ["enable_zircon_asserts"],
@@ -40,6 +38,7 @@ cc_library(
         "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_hlcpp",
         "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_hlcpp",
         "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_hlcpp",
+        "//src/connectivity/wlan/drivers/lib/macaddr",
         "//zircon/system/ulib/fbl",
         "//zircon/system/ulib/zx",
         "@fuchsia_sdk//pkg/async-cpp",

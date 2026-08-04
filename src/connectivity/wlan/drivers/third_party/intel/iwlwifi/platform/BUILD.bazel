@@ -149,6 +149,7 @@ cc_library(
         ":platform",
         ":rcu_manager",
         "//src/connectivity/wlan/lib/common/cpp:common",
+        "//src/connectivity/wlan/drivers/lib/macaddr",
         "@fuchsia_sdk//fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp_driver",
         "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_cpp",
         "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp_driver",

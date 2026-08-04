@@ -6,11 +6,14 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sta-ifc.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 namespace {
@@ -29,7 +32,7 @@ constexpr simulation::WlanTxInfo kAp1TxInfo = {
     .vht_secondary_80_channel = {.band = kAp1Channel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kAp1Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '1'};
-const common::MacAddr kAp1Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kAp1Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kAp2Channel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 10};
@@ -39,9 +42,9 @@ constexpr simulation::WlanTxInfo kAp2TxInfo = {
     .vht_secondary_80_channel = {.band = kAp2Channel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kAp2Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '2'};
-const common::MacAddr kAp2Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xcc});
+const MacAddr kAp2Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xcc});
 
-const common::MacAddr kClientMacAddr({0x11, 0x22, 0x33, 0x44, 0xee, 0xff});
+const MacAddr kClientMacAddr({0x11, 0x22, 0x33, 0x44, 0xee, 0xff});
 
 class ProbeTest : public ::testing::Test, public simulation::StationIfc {
  public:
@@ -58,7 +61,7 @@ class ProbeTest : public ::testing::Test, public simulation::StationIfc {
   simulation::FakeAp ap_2_;
 
   unsigned probe_resp_count_ = 0;
-  std::list<common::MacAddr> bssid_resp_list_;
+  std::list<MacAddr> bssid_resp_list_;
   std::list<fuchsia_wlan_ieee80211::Ssid> ssid_resp_list_;
   std::list<fuchsia_wlan_ieee80211::wire::ChannelNumber> channel_resp_list_;
   std::list<double> sig_strength_resp_list;

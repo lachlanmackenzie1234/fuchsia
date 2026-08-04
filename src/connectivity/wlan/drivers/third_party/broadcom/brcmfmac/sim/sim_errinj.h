@@ -24,6 +24,8 @@
 #include <optional>
 #include <vector>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "fidl/fuchsia.wlan.ieee80211/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/bits.h"

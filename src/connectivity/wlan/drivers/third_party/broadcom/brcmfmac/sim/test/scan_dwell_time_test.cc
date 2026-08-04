@@ -4,17 +4,20 @@
 
 #include <lib/zx/clock.h>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
 // Fake AP configuration
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 constexpr zx::duration kBeaconInterval = zx::msec(SimInterface::kDefaultPassiveScanDwellTimeMs - 1);
 
 // How many scans we will run. Each time we will expect to see a beacon from the fake AP.
@@ -70,7 +73,7 @@ TEST_F(ScanTest, PassiveDwellTime) {
     for (const fuchsia_wlan_fullmac::WlanFullmacImplIfcOnScanResultRequest& scan_result :
          *scan_result_list) {
       auto& bss = scan_result.bss();
-      EXPECT_EQ(kDefaultBssid, common::MacAddr(bss->bssid().data()));
+      EXPECT_EQ(kDefaultBssid, MacAddr(bss->bssid().data()));
       auto ssid = brcmf_find_ssid_in_ies(bss->ies().data(), bss->ies().size());
       EXPECT_EQ(kDefaultSsid, ssid);
       EXPECT_EQ(kDefaultChannel.number, bss->primary().number());

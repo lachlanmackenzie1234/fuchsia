@@ -4,21 +4,23 @@
 #include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 #include <zircon/errors.h>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "fidl/fuchsia.wlan.fullmac/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
 static constexpr zx::duration kTestDuration = zx::sec(100);
 static constexpr auto kDisassocReason = wlan_ieee80211::ReasonCode::kNotAuthenticated;
 static constexpr auto kDeauthReason = wlan_ieee80211::ReasonCode::kNotAuthenticated;
-static const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+static const MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 static constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kApChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
-static const common::MacAddr kStaMacAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+static const MacAddr kStaMacAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 
 TEST_F(SimTest, DisassocFromApResultsInDisassocInd) {
   simulation::FakeAp ap(env_.get(), kApBssid, kDefaultSsid, kApChannel,

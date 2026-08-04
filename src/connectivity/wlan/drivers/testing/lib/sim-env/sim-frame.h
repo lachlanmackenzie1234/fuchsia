@@ -15,9 +15,10 @@
 #include <memory>
 #include <optional>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sta-ifc.h"
 #include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/mac_frame.h"
-#include "wlan/common/macaddr.h"
 
 namespace wlan_ieee80211_wire = fuchsia_wlan_ieee80211::wire;
 
@@ -133,7 +134,7 @@ class SimManagementFrame : public SimFrame {
 
   SimManagementFrame() = default;
 
-  SimManagementFrame(const common::MacAddr& src, const common::MacAddr& dst)
+  SimManagementFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst)
       : src_addr_(src), dst_addr_(dst) {}
 
   SimManagementFrame(const SimManagementFrame& mgmt_frame);
@@ -150,8 +151,8 @@ class SimManagementFrame : public SimFrame {
   std::shared_ptr<InformationElement> FindIe(InformationElement::SimIeType ie_type) const;
   void RemoveIe(InformationElement::SimIeType);
 
-  common::MacAddr src_addr_ = {};
-  common::MacAddr dst_addr_ = {};
+  wlan::common::MacAddr src_addr_ = {};
+  wlan::common::MacAddr dst_addr_ = {};
   std::list<std::shared_ptr<InformationElement>> IEs_;
   std::vector<uint8_t> raw_ies_;
   // This is a brief alternative for security related IEs since we don't include entire IE for
@@ -165,7 +166,8 @@ class SimManagementFrame : public SimFrame {
 class SimBeaconFrame : public SimManagementFrame {
  public:
   SimBeaconFrame() = default;
-  explicit SimBeaconFrame(const fuchsia_wlan_ieee80211::Ssid& ssid, const common::MacAddr& bssid);
+  explicit SimBeaconFrame(const fuchsia_wlan_ieee80211::Ssid& ssid,
+                          const wlan::common::MacAddr& bssid);
 
   SimBeaconFrame(const SimBeaconFrame& beacon);
 
@@ -175,7 +177,7 @@ class SimBeaconFrame : public SimManagementFrame {
 
   SimFrame* CopyFrame() const override;
 
-  common::MacAddr bssid_;
+  wlan::common::MacAddr bssid_;
   zx::duration interval_;
   wlan::CapabilityInfo capability_info_;
 };
@@ -183,7 +185,7 @@ class SimBeaconFrame : public SimManagementFrame {
 class SimProbeReqFrame : public SimManagementFrame {
  public:
   SimProbeReqFrame() = default;
-  explicit SimProbeReqFrame(const common::MacAddr& src) : SimManagementFrame(src, {}) {}
+  explicit SimProbeReqFrame(const wlan::common::MacAddr& src) : SimManagementFrame(src, {}) {}
 
   SimProbeReqFrame(const SimProbeReqFrame& probe_req);
 
@@ -197,7 +199,7 @@ class SimProbeReqFrame : public SimManagementFrame {
 class SimProbeRespFrame : public SimManagementFrame {
  public:
   SimProbeRespFrame() = default;
-  explicit SimProbeRespFrame(const common::MacAddr& src, const common::MacAddr& dst,
+  explicit SimProbeRespFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
                              const fuchsia_wlan_ieee80211::Ssid& ssid);
 
   SimProbeRespFrame(const SimProbeRespFrame& probe_resp);
@@ -214,7 +216,7 @@ class SimProbeRespFrame : public SimManagementFrame {
 class SimAssocReqFrame : public SimManagementFrame {
  public:
   SimAssocReqFrame() = default;
-  explicit SimAssocReqFrame(const common::MacAddr& src, const common::MacAddr bssid,
+  explicit SimAssocReqFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr bssid,
                             const fuchsia_wlan_ieee80211::Ssid& ssid)
       : SimManagementFrame(src, {}), bssid_(bssid), ssid_(ssid) {}
 
@@ -226,14 +228,14 @@ class SimAssocReqFrame : public SimManagementFrame {
 
   SimFrame* CopyFrame() const override;
 
-  common::MacAddr bssid_;
+  wlan::common::MacAddr bssid_;
   fuchsia_wlan_ieee80211::Ssid ssid_;
 };
 
 class SimAssocRespFrame : public SimManagementFrame {
  public:
   SimAssocRespFrame() = default;
-  explicit SimAssocRespFrame(const common::MacAddr& src, const common::MacAddr& dst,
+  explicit SimAssocRespFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
                              wlan_ieee80211_wire::StatusCode status)
       : SimManagementFrame(src, dst), status_(status) {
     capability_info_.set_ess(1);
@@ -254,7 +256,7 @@ class SimAssocRespFrame : public SimManagementFrame {
 class SimDisassocReqFrame : public SimManagementFrame {
  public:
   SimDisassocReqFrame() = default;
-  explicit SimDisassocReqFrame(const common::MacAddr& src, const common::MacAddr& dst,
+  explicit SimDisassocReqFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
                                wlan_ieee80211_wire::ReasonCode reason)
       : SimManagementFrame(src, dst), reason_(reason) {}
 
@@ -273,8 +275,8 @@ class SimDisassocReqFrame : public SimManagementFrame {
 class SimAuthFrame : public SimManagementFrame {
  public:
   SimAuthFrame() = default;
-  explicit SimAuthFrame(const common::MacAddr& src, const common::MacAddr& dst, uint16_t seq,
-                        SimAuthType auth_type, wlan_ieee80211_wire::StatusCode status)
+  explicit SimAuthFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
+                        uint16_t seq, SimAuthType auth_type, wlan_ieee80211_wire::StatusCode status)
       : SimManagementFrame(src, dst), seq_num_(seq), auth_type_(auth_type), status_(status) {}
 
   SimAuthFrame(const SimAuthFrame& auth);
@@ -297,7 +299,7 @@ class SimAuthFrame : public SimManagementFrame {
 class SimDeauthFrame : public SimManagementFrame {
  public:
   SimDeauthFrame() = default;
-  explicit SimDeauthFrame(const common::MacAddr& src, const common::MacAddr& dst,
+  explicit SimDeauthFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
                           wlan_ieee80211_wire::ReasonCode reason)
       : SimManagementFrame(src, dst), reason_(reason) {}
 
@@ -316,7 +318,7 @@ class SimDeauthFrame : public SimManagementFrame {
 class SimReassocReqFrame : public SimManagementFrame {
  public:
   SimReassocReqFrame() = default;
-  explicit SimReassocReqFrame(const common::MacAddr& src, const common::MacAddr bssid)
+  explicit SimReassocReqFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr bssid)
       : SimManagementFrame(src, {}), bssid_(bssid) {}
 
   SimReassocReqFrame(const SimReassocReqFrame& reassoc_req);
@@ -327,14 +329,14 @@ class SimReassocReqFrame : public SimManagementFrame {
 
   SimFrame* CopyFrame() const override;
 
-  common::MacAddr bssid_;
+  wlan::common::MacAddr bssid_;
 };
 
 // IEEE 802.11-2020 9.3.3.8
 class SimReassocRespFrame : public SimManagementFrame {
  public:
   SimReassocRespFrame() = default;
-  explicit SimReassocRespFrame(const common::MacAddr& src, const common::MacAddr& dst,
+  explicit SimReassocRespFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
                                wlan_ieee80211_wire::StatusCode status)
       : SimManagementFrame(src, dst), status_(status) {
     capability_info_.set_ess(1);
@@ -360,7 +362,7 @@ class SimActionFrame : public SimManagementFrame {
     WNM,
   };
 
-  explicit SimActionFrame(const common::MacAddr& src, const common::MacAddr& dst,
+  explicit SimActionFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
                           SimActionCategory category)
       : SimManagementFrame(src, dst), category_(category) {}
 
@@ -386,7 +388,7 @@ class SimWnmActionFrame : public SimActionFrame {
     BSS_TRANSITION_MANAGEMENT_REQUEST,
   };
 
-  explicit SimWnmActionFrame(const common::MacAddr& src, const common::MacAddr& dst)
+  explicit SimWnmActionFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst)
       : SimActionFrame(src, dst, SimActionCategory::WNM) {}
 
   SimWnmActionFrame(const SimWnmActionFrame& wnm_action);
@@ -409,7 +411,7 @@ struct SimBtmReqMode {
 
 // Info about a neighboring AP. IEEE 802.11-2020 9.4.2.36.
 struct SimNeighborReportElement {
-  common::MacAddr bssid;
+  wlan::common::MacAddr bssid;
   uint8_t operating_class;  // IEEE 802.11-2020 Annex E
   uint8_t channel_number;
 };
@@ -417,7 +419,7 @@ struct SimNeighborReportElement {
 // IEEE 802.11-2020 9.6.13.9.
 class SimBtmReqFrame : public SimWnmActionFrame {
  public:
-  explicit SimBtmReqFrame(const common::MacAddr& src, const common::MacAddr& dst,
+  explicit SimBtmReqFrame(const wlan::common::MacAddr& src, const wlan::common::MacAddr& dst,
                           const SimBtmReqMode& request_mode,
                           const std::vector<SimNeighborReportElement>& candidate_list)
       : SimWnmActionFrame(src, dst), request_mode_(request_mode), candidate_list_(candidate_list) {}
@@ -444,9 +446,9 @@ class SimDataFrame : public SimFrame {
   enum SimDataFrameType { FRAME_TYPE_QOS_DATA };
 
   SimDataFrame() = default;
-  explicit SimDataFrame(bool toDS, bool fromDS, common::MacAddr addr1, common::MacAddr addr2,
-                        common::MacAddr addr3, std::optional<uint16_t> qosControl,
-                        std::vector<uint8_t> payload)
+  explicit SimDataFrame(bool toDS, bool fromDS, wlan::common::MacAddr addr1,
+                        wlan::common::MacAddr addr2, wlan::common::MacAddr addr3,
+                        std::optional<uint16_t> qosControl, std::vector<uint8_t> payload)
       : toDS_(toDS),
         fromDS_(fromDS),
         addr1_(addr1),
@@ -469,13 +471,13 @@ class SimDataFrame : public SimFrame {
   bool fromDS_;
 
   // IEEE Std. 802.11-2016, 9.3.2.1 Table 9-26
-  common::MacAddr addr1_;
+  wlan::common::MacAddr addr1_;
 
-  common::MacAddr addr2_;
+  wlan::common::MacAddr addr2_;
 
-  common::MacAddr addr3_;
+  wlan::common::MacAddr addr3_;
 
-  std::optional<common::MacAddr> addr4_;
+  std::optional<wlan::common::MacAddr> addr4_;
 
   std::optional<uint16_t> qosControl_;
 
@@ -486,9 +488,9 @@ class SimDataFrame : public SimFrame {
 class SimQosDataFrame : public SimDataFrame {
  public:
   SimQosDataFrame() = default;
-  explicit SimQosDataFrame(bool toDS, bool fromDS, common::MacAddr addr1, common::MacAddr addr2,
-                           common::MacAddr addr3, std::optional<uint16_t> qosControl,
-                           std::vector<uint8_t> payload)
+  explicit SimQosDataFrame(bool toDS, bool fromDS, wlan::common::MacAddr addr1,
+                           wlan::common::MacAddr addr2, wlan::common::MacAddr addr3,
+                           std::optional<uint16_t> qosControl, std::vector<uint8_t> payload)
       : SimDataFrame(toDS, fromDS, addr1, addr2, addr3, qosControl, payload) {}
 
   SimQosDataFrame(const SimQosDataFrame& qos_data);

@@ -19,8 +19,12 @@
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_device.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_utils.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -195,7 +199,7 @@ void SimDataPath::Init(fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_di
   });
 }
 
-void SimDataPath::TxEthernet(uint16_t id, common::MacAddr dst, common::MacAddr src, uint16_t type,
+void SimDataPath::TxEthernet(uint16_t id, MacAddr dst, MacAddr src, uint16_t type,
                              cpp20::span<const uint8_t> body) {
   const size_t frame_size = body.size() + sim_utils::kEthernetHeaderSize +
                             device_info_.tx_head_length().value() +

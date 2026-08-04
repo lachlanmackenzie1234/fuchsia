@@ -65,9 +65,6 @@
 #include <map>
 #include <mutex>
 
-#include <wlan/common/ieee80211.h>
-#include <wlan/common/macaddr.h>
-
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sig-loss-model.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sta-ifc.h"

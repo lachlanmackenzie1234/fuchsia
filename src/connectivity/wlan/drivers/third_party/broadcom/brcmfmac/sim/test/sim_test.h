@@ -12,6 +12,7 @@
 
 #include <map>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "lib/fdf/cpp/dispatcher.h"
@@ -42,7 +43,7 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
       kAssociated,
     } state = kNone;
 
-    common::MacAddr bssid;
+    wlan::common::MacAddr bssid;
     std::vector<uint8_t> ies;
     fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
   };
@@ -146,12 +147,12 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
   void QueryTelemetrySupport(fuchsia_wlan_stats::wire::TelemetrySupport* out_resp);
 
   // Get the Mac address of an interface
-  void GetMacAddr(common::MacAddr* out_macaddr);
+  void GetMacAddr(wlan::common::MacAddr* out_macaddr);
 
   // Start an assocation with a fake AP. We can use these for subsequent association events, but
   // not interleaved association events (which I doubt are terribly useful, anyway). Note that for
   // the moment only non-authenticated associations are supported.
-  void StartConnect(const common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
+  void StartConnect(const wlan::common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
                     const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                     fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
                     const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80);
@@ -160,13 +161,13 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
 
   // Start a roam attempt with a fake AP. Note: like connect, only non-authenticated associations
   // are supported.
-  void StartRoam(const common::MacAddr& bssid,
+  void StartRoam(const wlan::common::MacAddr& bssid,
                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                  fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& secondary80);
 
-  void DisassociateFrom(const common::MacAddr& bssid, wlan_ieee80211::ReasonCode reason);
-  void DeauthenticateFrom(const common::MacAddr& bssid, wlan_ieee80211::ReasonCode reason);
+  void DisassociateFrom(const wlan::common::MacAddr& bssid, wlan_ieee80211::ReasonCode reason);
+  void DeauthenticateFrom(const wlan::common::MacAddr& bssid, wlan_ieee80211::ReasonCode reason);
 
   // Scan operations
   void StartScan(
@@ -273,7 +274,7 @@ class SimTest : public ::zxtest::Test, public simulation::StationIfc {
   // Create a new interface on the simulated device, providing the specified role and function
   // callbacks
   zx_status_t StartInterface(wlan_common::WlanMacRole role, SimInterface* sim_ifc,
-                             std::optional<common::MacAddr> mac_addr = std::nullopt);
+                             std::optional<wlan::common::MacAddr> mac_addr = std::nullopt);
 
   // Stop and delete a SimInterface
   zx_status_t DeleteInterface(SimInterface* ifc);

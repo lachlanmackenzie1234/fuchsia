@@ -11,13 +11,15 @@
 #include <vector>
 
 #include <wlan/common/channel.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_utils.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/test/device_inspect_test_utils.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 // infrastructure BSS diagram:
 //        ap
@@ -42,7 +44,7 @@ constexpr simulation::WlanTxInfo kDefaultTxInfo = {
     .primary_channel = kDefaultChannel,
     .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
     .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
-const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 constexpr uint8_t kIes[] = {
     // SSID
     0x00, 0x0f, 'F', 'u', 'c', 'h', 's', 'i', 'a', ' ', 'F', 'a', 'k', 'e', ' ', 'A', 'P',
@@ -82,7 +84,7 @@ constexpr uint8_t kIes[] = {
     0xdd, 0x1d, 0x00, 0x50, 0xf2, 0x04, 0x10, 0x4a, 0x00, 0x01, 0x10, 0x10, 0x44, 0x00, 0x01, 0x02,
     0x10, 0x3c, 0x00, 0x01, 0x03, 0x10, 0x49, 0x00, 0x06, 0x00, 0x37, 0x2a, 0x00, 0x01, 0x20};
 
-const common::MacAddr kClientMacAddress({0xde, 0xad, 0xbe, 0xef, 0x00, 0x01});
+const MacAddr kClientMacAddress({0xde, 0xad, 0xbe, 0xef, 0x00, 0x01});
 // Sample IPv4 + TCP body
 const std::vector<uint8_t> kSampleEthBody = {
     0x00, 0xB0, 0x00, 0x00, 0xE3, 0xDC, 0x78, 0x00, 0x00, 0x40, 0x06, 0xEF, 0x37, 0xC0, 0xA8, 0x01,
@@ -140,11 +142,10 @@ class DataFrameTest : public SimTest {
   void StartConnect();
 
   // Send a eapol request
-  void TxEapolRequest(common::MacAddr dstAddr, common::MacAddr srcAddr,
-                      const std::vector<uint8_t>& eapol);
+  void TxEapolRequest(MacAddr dstAddr, MacAddr srcAddr, const std::vector<uint8_t>& eapol);
 
   // Send a data frame to the ap
-  void ClientTx(common::MacAddr dstAddr, common::MacAddr srcAddr, std::vector<uint8_t>& ethFrame);
+  void ClientTx(MacAddr dstAddr, MacAddr srcAddr, std::vector<uint8_t>& ethFrame);
 
   // Fullmac event handlers
   void OnDeauthInd(const wlan_fullmac_wire::WlanFullmacImplIfcDeauthIndRequest* ind);
@@ -174,7 +175,7 @@ class DataFrameTest : public SimTest {
     // Information about the BSS we are attempting to associate with. Used to generate the
     // appropriate MLME calls (Join => Auth => Assoc).
     fuchsia_wlan_ieee80211::wire::ChannelNumber primary = kDefaultChannel;
-    common::MacAddr bssid = kApBssid;
+    MacAddr bssid = kApBssid;
     fuchsia_wlan_ieee80211::Ssid ssid = kDefaultSsid;
     std::vector<uint8_t> ies = std::vector<uint8_t>(kIes, kIes + sizeof(kIes));
 
@@ -206,7 +207,7 @@ class DataFrameTest : public SimTest {
   std::list<simulation::SimQosDataFrame> env_data_frame_capture_;
 
   // filter for data frame caputre
-  common::MacAddr recv_addr_capture_filter;
+  MacAddr recv_addr_capture_filter;
 
   // number of non-eapol data frames received
   size_t non_eapol_data_count;
@@ -218,7 +219,7 @@ class DataFrameTest : public SimTest {
   DataFrameInterface client_ifc_;
 
   // The MAC address of our client interface
-  common::MacAddr ifc_mac_;
+  MacAddr ifc_mac_;
 
   AssocContext assoc_context_;
 
@@ -378,7 +379,7 @@ void DataFrameTest::StartConnect() {
   EXPECT_TRUE(result.ok());
 }
 
-void DataFrameTest::TxEapolRequest(common::MacAddr dstAddr, common::MacAddr srcAddr,
+void DataFrameTest::TxEapolRequest(MacAddr dstAddr, MacAddr srcAddr,
                                    const std::vector<uint8_t>& eapol) {
   fidl::Array<uint8_t, ETH_ALEN> src_addr;
   fidl::Array<uint8_t, ETH_ALEN> dst_addr;
@@ -398,8 +399,7 @@ void DataFrameTest::TxEapolRequest(common::MacAddr dstAddr, common::MacAddr srcA
   EXPECT_TRUE(result.ok());
 }
 
-void DataFrameTest::ClientTx(common::MacAddr dstAddr, common::MacAddr srcAddr,
-                             std::vector<uint8_t>& ethFrame) {
+void DataFrameTest::ClientTx(MacAddr dstAddr, MacAddr srcAddr, std::vector<uint8_t>& ethFrame) {
   simulation::SimQosDataFrame dataFrame(true, false, kApBssid, srcAddr, dstAddr, 0, ethFrame);
   env_->Tx(dataFrame, kDefaultTxInfo, this);
 }

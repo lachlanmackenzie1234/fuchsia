@@ -6,6 +6,7 @@
 #include <zircon/errors.h>
 
 #include <wlan/common/channel.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/brcmu_wifi.h"
@@ -13,14 +14,15 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
-const common::MacAddr kWrongBssid({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kWrongBssid({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
 constexpr uint8_t kIes[] = {
     // SSID
     0x00, 0x0f, 'F', 'u', 'c', 'h', 's', 'i', 'a', ' ', 'F', 'a', 'k', 'e', ' ', 'A', 'P',
@@ -509,7 +511,7 @@ void AuthTest::OnConnectConf(const wlan_fullmac_wire::WlanFullmacImplIfcConnectC
 
 void AuthTest::OnSaeHandshakeInd(
     const wlan_fullmac_wire::WlanFullmacImplIfcSaeHandshakeIndRequest* ind) {
-  common::MacAddr peer_sta_addr(ind->peer_sta_address().data());
+  MacAddr peer_sta_addr(ind->peer_sta_address().data());
   ASSERT_EQ(peer_sta_addr, kDefaultBssid);
 
   // Send the error injected commit frame instead if it exists.
@@ -535,7 +537,7 @@ void AuthTest::OnSaeHandshakeInd(
 
 void AuthTest::OnSaeFrameRx(const wlan_fullmac_wire::SaeFrame* frame) {
   ASSERT_TRUE(frame->has_peer_sta_address());
-  common::MacAddr peer_sta_addr(frame->peer_sta_address().data());
+  MacAddr peer_sta_addr(frame->peer_sta_address().data());
   ASSERT_EQ(peer_sta_addr, kDefaultBssid);
 
   if (sae_auth_state_ == COMMIT) {

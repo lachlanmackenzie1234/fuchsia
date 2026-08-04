@@ -6,6 +6,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
@@ -13,6 +14,8 @@
 
 // zx::time() gives us an absolute time of zero
 #define ABSOLUTE_TIME(delay) (zx::time() + (delay))
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 namespace {
@@ -32,7 +35,7 @@ constexpr simulation::WlanTxInfo kDefaultTxInfo = {
     .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kDefaultSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                    'F', 'a', 'k', 'e', ' ', 'A', 'P'};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 // This is the distance between stations we used in this test.
 const int32_t kDefaultTestDis = 3;
@@ -64,7 +67,7 @@ class SimStation : public wlan::simulation::StationIfc {
                    std::shared_ptr<const simulation::WlanRxInfo> info);
 
   static uint8_t instance_count;
-  common::MacAddr mac_addr_;
+  MacAddr mac_addr_;
   std::list<zx::time> recv_times_;
   simulation::Environment* env_;
 };

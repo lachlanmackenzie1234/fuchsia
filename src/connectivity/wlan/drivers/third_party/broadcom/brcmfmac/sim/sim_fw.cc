@@ -29,6 +29,7 @@
 #include <third_party/bcmdhd/crossdriver/dhd.h>
 #include <third_party/bcmdhd/crossdriver/wlioctl.h>
 #include <wlan/common/mac_frame.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "fidl/fuchsia.wlan.ieee80211/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
@@ -45,10 +46,11 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_utils.h"
 #include "src/devices/lib/broadcom/commands.h"
 #include "third_party/bcmdhd/crossdriver/include/proto/802.11.h"
-#include "wlan/common/macaddr.h"
 #include "wlan/drivers/log.h"
 #include "zircon/errors.h"
 #include "zircon/types.h"
+
+using ::wlan::common::MacAddr;
 
 namespace {
 
@@ -543,16 +545,16 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
         if (iface_tbl_[kClientIfidx].allocated && kClientIfidx == ifidx) {
           // Initiate Disassoc from AP
           auto scb_val = reinterpret_cast<brcmf_scb_val_le*>(data);
-          auto req_bssid = reinterpret_cast<common::MacAddr*>(scb_val->ea);
+          auto req_bssid = reinterpret_cast<MacAddr*>(scb_val->ea);
           if (!assoc_state_.opts) {
             BRCMF_DBG(SIM, "BRCMF_C_DISASSOC issued without assoc - ignore");
             break;
           }
-          common::MacAddr bssid(assoc_state_.opts->bssid);
+          MacAddr bssid(assoc_state_.opts->bssid);
           const bool is_current_bss = *req_bssid == bssid;
           bool is_target_bss = false;
           if (assoc_state_.reassoc_opts) {
-            common::MacAddr target_bssid(assoc_state_.reassoc_opts->bssid);
+            MacAddr target_bssid(assoc_state_.reassoc_opts->bssid);
             is_target_bss = *req_bssid == target_bssid;
           }
           ZX_ASSERT(is_current_bss || is_target_bss);
@@ -576,7 +578,7 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
       if (status == ZX_OK) {
         if (softap_ifidx_ != std::nullopt && softap_ifidx_ == ifidx) {
           auto scb_val = reinterpret_cast<brcmf_scb_val_le*>(data);
-          auto req_mac = reinterpret_cast<common::MacAddr*>(scb_val->ea);
+          auto req_mac = reinterpret_cast<MacAddr*>(scb_val->ea);
           auto client = FindClient(*req_mac);
           if (client) {
             // Deauthenticate also disassocs the client
@@ -854,16 +856,16 @@ zx_status_t SimFirmware::BusTxFrameSingle(const wlan::drivers::components::Frame
       ZX_ASSERT_MSG(false, "Non-infrastructure types not currently supported by sim-fw\n");
       dataFrame.toDS_ = 0;
       dataFrame.fromDS_ = 0;
-      dataFrame.addr1_ = common::MacAddr(ethFrame->h_dest);
-      dataFrame.addr2_ = common::MacAddr(ethFrame->h_source);
+      dataFrame.addr1_ = MacAddr(ethFrame->h_dest);
+      dataFrame.addr2_ = MacAddr(ethFrame->h_source);
       dataFrame.addr3_ = assoc_state_.opts->bssid;
       break;
     case fuchsia_wlan_common::wire::BssType::kInfrastructure:
       dataFrame.toDS_ = 1;
       dataFrame.fromDS_ = 0;
       dataFrame.addr1_ = assoc_state_.opts->bssid;
-      dataFrame.addr2_ = common::MacAddr(ethFrame->h_source);
-      dataFrame.addr3_ = common::MacAddr(ethFrame->h_dest);
+      dataFrame.addr2_ = MacAddr(ethFrame->h_source);
+      dataFrame.addr3_ = MacAddr(ethFrame->h_dest);
       // Sim FW currently doesn't distinguish QoS from non-QoS association. If it does, this should
       // only be set for a QoS association.
       dataFrame.qosControl_ = frame.Priority();
@@ -961,24 +963,24 @@ void SimFirmware::TriggerFirmwareDeauth(wlan_ieee80211_wire::ReasonCode reason) 
 
 void SimFirmware::TriggerFirmwareDisassocIndFromBssid(wlan_ieee80211_wire::ReasonCode reason,
                                                       const uint8_t bssid[ETH_ALEN]) {
-  common::MacAddr src{bssid};
+  MacAddr src{bssid};
   SendEventToDriver(0, nullptr, BRCMF_E_DISASSOC_IND, BRCMF_E_STATUS_SUCCESS, kClientIfidx, 0, 0,
                     fidl::ToUnderlying(reason), src);
 }
 
 void SimFirmware::TriggerFirmwareDeauthIndFromBssid(wlan_ieee80211_wire::ReasonCode reason,
                                                     const uint8_t bssid[ETH_ALEN]) {
-  common::MacAddr src{bssid};
+  MacAddr src{bssid};
   SendEventToDriver(0, nullptr, BRCMF_E_DEAUTH_IND, BRCMF_E_STATUS_SUCCESS, kClientIfidx, 0, 0,
                     fidl::ToUnderlying(reason), src);
 }
 
-void SimFirmware::TriggerFirmwareReassocEvent(const common::MacAddr& bssid) {
+void SimFirmware::TriggerFirmwareReassocEvent(const MacAddr& bssid) {
   SendEventToDriver(0, nullptr, BRCMF_E_REASSOC, BRCMF_E_STATUS_ATTEMPT, kClientIfidx, 0, 0, 0,
                     bssid);
 }
 
-void SimFirmware::TriggerFirmwareRoamEvent(const common::MacAddr& bssid) {
+void SimFirmware::TriggerFirmwareRoamEvent(const MacAddr& bssid) {
   SendEventToDriver(0, nullptr, BRCMF_E_ROAM, BRCMF_E_STATUS_NO_NETWORKS, kClientIfidx, 0, 0, 0,
                     bssid);
 }
@@ -1324,8 +1326,8 @@ void SimFirmware::AssocHandleFailure(wlan_ieee80211_wire::StatusCode status) {
 
 void SimFirmware::AuthStart() {
   BRCMF_DBG(SIM, "Auth Start");
-  common::MacAddr srcAddr(GetMacAddr(kClientIfidx));
-  common::MacAddr bssid(assoc_state_.opts->bssid);
+  MacAddr srcAddr(GetMacAddr(kClientIfidx));
+  MacAddr bssid(assoc_state_.opts->bssid);
 
   hw_.RequestCallback(std::bind(&SimFirmware::AssocHandleFailure, this,
                                 wlan_ieee80211_wire::StatusCode::kRejectedSequenceTimeout),
@@ -1457,7 +1459,7 @@ void SimFirmware::HandleAuthResp(std::shared_ptr<const simulation::SimAuthFrame>
     return;
   }
   // Ignore if this is not intended for us
-  common::MacAddr mac_addr(GetMacAddr(kClientIfidx));
+  MacAddr mac_addr(GetMacAddr(kClientIfidx));
   if (frame->dst_addr_ != mac_addr) {
     return;
   }
@@ -1515,8 +1517,8 @@ void SimFirmware::HandleAuthResp(std::shared_ptr<const simulation::SimAuthFrame>
 
       auth_state_.state = AuthState::EXPECTING_FOURTH;
 
-      common::MacAddr srcAddr(GetMacAddr(kClientIfidx));
-      common::MacAddr bssid(assoc_state_.opts->bssid);
+      MacAddr srcAddr(GetMacAddr(kClientIfidx));
+      MacAddr bssid(assoc_state_.opts->bssid);
       simulation::SimAuthFrame auth_req_frame(srcAddr, bssid, frame->seq_num_ + 1,
                                               simulation::AUTH_TYPE_SHARED_KEY,
                                               wlan_ieee80211_wire::StatusCode::kSuccess);
@@ -1603,8 +1605,8 @@ zx_status_t SimFirmware::LocalUpdateExternalSaeStatus(uint16_t seq_num,
     return ZX_ERR_INVALID_ARGS;
   }
 
-  common::MacAddr srcAddr(GetMacAddr(kClientIfidx));
-  common::MacAddr bssid(assoc_state_.opts->bssid);
+  MacAddr srcAddr(GetMacAddr(kClientIfidx));
+  MacAddr bssid(assoc_state_.opts->bssid);
   // Create a template auth_req_frame, might be modified later.
   simulation::SimAuthFrame auth_req_frame(srcAddr, bssid, 1, simulation::AUTH_TYPE_SAE,
                                           wlan_ieee80211_wire::StatusCode::kSuccess);
@@ -1645,7 +1647,7 @@ zx_status_t SimFirmware::LocalUpdateExternalSaeStatus(uint16_t seq_num,
 }
 
 // Remove the client from the list. If found return true else false.
-bool SimFirmware::FindAndRemoveClient(const common::MacAddr client_mac, bool motivation_deauth,
+bool SimFirmware::FindAndRemoveClient(const MacAddr client_mac, bool motivation_deauth,
                                       wlan_ieee80211_wire::ReasonCode deauth_reason) {
   if (softap_ifidx_ == std::nullopt) {
     BRCMF_ERR("SoftAP iface has not been allocated or started.");
@@ -1679,7 +1681,7 @@ bool SimFirmware::FindAndRemoveClient(const common::MacAddr client_mac, bool mot
 }
 
 // Return true if client is in the assoc list else false
-std::shared_ptr<SimFirmware::Client> SimFirmware::FindClient(const common::MacAddr client_mac) {
+std::shared_ptr<SimFirmware::Client> SimFirmware::FindClient(const MacAddr client_mac) {
   if (softap_ifidx_ == std::nullopt) {
     BRCMF_ERR("SoftAP iface has not been allocated or started.");
     return std::shared_ptr<SimFirmware::Client>(nullptr);
@@ -1725,7 +1727,7 @@ void SimFirmware::RxDeauthReq(std::shared_ptr<const simulation::SimDeauthFrame> 
 
 void SimFirmware::AssocStart() {
   BRCMF_DBG(SIM, "Assoc Start");
-  common::MacAddr srcAddr(GetMacAddr(kClientIfidx));
+  MacAddr srcAddr(GetMacAddr(kClientIfidx));
 
   hw_.RequestCallback(std::bind(&SimFirmware::AssocHandleFailure, this,
                                 wlan_ieee80211_wire::StatusCode::kRefusedReasonUnspecified),
@@ -1733,13 +1735,13 @@ void SimFirmware::AssocStart() {
 
   // We can't use assoc_state_.opts->bssid directly because it may get free'd during TxAssocReq
   // handling if a response is sent.
-  common::MacAddr bssid(assoc_state_.opts->bssid);
+  MacAddr bssid(assoc_state_.opts->bssid);
   simulation::SimAssocReqFrame assoc_req_frame(srcAddr, bssid, assoc_state_.opts->ssid);
   hw_.Tx(assoc_req_frame);
 }
 
 // Get the index of the SoftAP IF based on Mac.
-int16_t SimFirmware::GetIfidxByMac(const common::MacAddr& addr) {
+int16_t SimFirmware::GetIfidxByMac(const MacAddr& addr) {
   for (uint8_t i = 0; i < kMaxIfSupported; i++) {
     if (iface_tbl_[i].allocated && iface_tbl_[i].mac_addr == addr) {
       return i;
@@ -2074,8 +2076,8 @@ void SimFirmware::DisassocLocalClient(wlan_ieee80211_wire::ReasonCode reason) {
   BRCMF_DBG(SIM, "Driver initiated firmware disassoc.");
   if (assoc_state_.state == AssocState::ASSOCIATED ||
       assoc_state_.state == AssocState::REASSOCIATING) {
-    common::MacAddr src_addr(GetMacAddr(kClientIfidx));
-    common::MacAddr bssid(assoc_state_.opts->bssid);
+    MacAddr src_addr(GetMacAddr(kClientIfidx));
+    MacAddr bssid(assoc_state_.opts->bssid);
     // Transmit the disassoc req and since there is no response for it, indicate disassoc done to
     // driver now
     simulation::SimDisassocReqFrame disassoc_req_frame(src_addr, bssid, reason);
@@ -2091,8 +2093,8 @@ void SimFirmware::DisassocLocalClient(wlan_ieee80211_wire::ReasonCode reason) {
     hw_.Tx(disassoc_req_frame);
     SetStateToDisassociated(reason, true);
   } else if (auth_state_.state == AuthState::AUTHENTICATED) {
-    common::MacAddr srcAddr(GetMacAddr(kClientIfidx));
-    common::MacAddr bssid(assoc_state_.opts->bssid);
+    MacAddr srcAddr(GetMacAddr(kClientIfidx));
+    MacAddr bssid(assoc_state_.opts->bssid);
     // Transmit the deauth frame clear AP state.
     simulation::SimDeauthFrame deauth_frame(srcAddr, bssid, reason);
     hw_.Tx(deauth_frame);
@@ -2105,8 +2107,8 @@ void SimFirmware::DisassocLocalClient(wlan_ieee80211_wire::ReasonCode reason) {
 void SimFirmware::DeauthLocalClient(wlan_ieee80211_wire::ReasonCode reason) {
   BRCMF_DBG(SIM, "Driver initiated firmware deauth.");
   if (auth_state_.state == AuthState::AUTHENTICATED) {
-    common::MacAddr src_addr(GetMacAddr(kClientIfidx));
-    common::MacAddr bssid(assoc_state_.opts->bssid);
+    MacAddr src_addr(GetMacAddr(kClientIfidx));
+    MacAddr bssid(assoc_state_.opts->bssid);
     // Transmit the deauth req and since there is no response for it, indicate deauth done to
     // driver now
     simulation::SimDeauthFrame deauth_frame(src_addr, bssid, reason);
@@ -2118,10 +2120,10 @@ void SimFirmware::DeauthLocalClient(wlan_ieee80211_wire::ReasonCode reason) {
 
 // Disassoc/deauth Request from FakeAP for the Client IF.
 void SimFirmware::HandleDisconnectForClientIF(
-    std::shared_ptr<const simulation::SimManagementFrame> frame, const common::MacAddr& bssid,
+    std::shared_ptr<const simulation::SimManagementFrame> frame, const MacAddr& bssid,
     wlan_ieee80211_wire::ReasonCode reason) {
   // Ignore if this is not intended for us
-  common::MacAddr mac_addr(iface_tbl_[kClientIfidx].mac_addr);
+  MacAddr mac_addr(iface_tbl_[kClientIfidx].mac_addr);
   if (frame->dst_addr_ != mac_addr) {
     return;
   }
@@ -2157,7 +2159,7 @@ void SimFirmware::SetStateToDisassociated(wlan_ieee80211_wire::ReasonCode reason
 }
 
 void SimFirmware::SetStateToDeauthenticated(wlan_ieee80211_wire::ReasonCode reason,
-                                            bool locally_initiated, const common::MacAddr& bssid) {
+                                            bool locally_initiated, const MacAddr& bssid) {
   // Disable beacon watchdog that triggers disconnect
   DisableBeaconWatchdog();
   // Note: real firmware has been observed to send E_DISASSOC in response to
@@ -2247,7 +2249,7 @@ void SimFirmware::ReassocInit(std::unique_ptr<ReassocOpts> reassoc_opts,
 
 void SimFirmware::ReassocStart() {
   BRCMF_DBG(SIM, "Reassoc Start");
-  const common::MacAddr srcAddr(GetMacAddr(kClientIfidx));
+  const MacAddr srcAddr(GetMacAddr(kClientIfidx));
 
   if (assoc_state_.state != AssocState::REASSOCIATING) {
     BRCMF_DBG(SIM, "Cannot reassociate because STA left reassociating state");
@@ -2265,7 +2267,7 @@ void SimFirmware::ReassocStart() {
 
   // We can't use reassoc_opts->bssid directly because it may get free'd during Tx
   // handling if a response is sent.
-  const common::MacAddr bssid(assoc_state_.reassoc_opts->bssid);
+  const MacAddr bssid(assoc_state_.reassoc_opts->bssid);
   const simulation::SimReassocReqFrame reassoc_req_frame(srcAddr, bssid);
   hw_.Tx(reassoc_req_frame);
 }
@@ -2366,7 +2368,7 @@ zx_status_t SimFirmware::HandleJoinRequest(const void* value, size_t value_len) 
   }
 
   // Specify BSSID filter, if applicable
-  common::MacAddr bssid(join_params->assoc_le.bssid);
+  MacAddr bssid(join_params->assoc_le.bssid);
   if (!bssid.IsZero()) {
     scan_opts->bssid = bssid;
   }
@@ -3058,12 +3060,12 @@ zx_status_t SimFirmware::SetMacAddr(uint16_t ifidx, const uint8_t* mac_addr) {
   return ZX_OK;
 }
 
-common::MacAddr SimFirmware::GetMacAddr(uint16_t ifidx) {
+MacAddr SimFirmware::GetMacAddr(uint16_t ifidx) {
   if (ifidx < kMaxIfSupported && iface_tbl_[ifidx].allocated && iface_tbl_[ifidx].mac_addr_set) {
     return iface_tbl_[ifidx].mac_addr;
   }
   ZX_ASSERT(mac_addr_set_);
-  return common::MacAddr(mac_addr_);
+  return MacAddr(mac_addr_);
 }
 
 zx_status_t SimFirmware::ScanStart(std::unique_ptr<ScanOpts> opts) {
@@ -3691,7 +3693,7 @@ void SimFirmware::SendEventToDriver(size_t payload_size,
                                     std::shared_ptr<std::vector<uint8_t>> buffer_in,
                                     uint32_t event_type, uint32_t status, uint16_t ifidx,
                                     char* ifname, uint16_t flags, uint32_t reason,
-                                    std::optional<common::MacAddr> addr,
+                                    std::optional<MacAddr> addr,
                                     std::optional<zx::duration> delay) {
   BRCMF_DBG(SIM, "*****Sending Event: %d*****", event_type);
   brcmf_event_msg_be* msg_be;

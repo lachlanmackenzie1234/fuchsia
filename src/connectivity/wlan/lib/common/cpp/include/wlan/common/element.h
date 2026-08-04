@@ -16,7 +16,6 @@
 #include <wlan/common/bitfield.h>
 #include <wlan/common/element_id.h>
 #include <wlan/common/logging.h>
-#include <wlan/common/macaddr.h>
 
 namespace wlan {
 

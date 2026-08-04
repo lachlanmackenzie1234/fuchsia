@@ -25,7 +25,6 @@
 
 #include <ddktl/device.h>
 #include <fbl/ref_ptr.h>
-#include <wlan/common/macaddr.h>
 #include <wlan/drivers/log.h>
 
 #include "fuchsia/hardware/ethernet/c/banjo.h"

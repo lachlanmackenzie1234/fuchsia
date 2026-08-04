@@ -5,13 +5,14 @@
 #ifndef SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_ACTION_FRAME_H_
 #define SRC_CONNECTIVITY_WLAN_LIB_COMMON_CPP_INCLUDE_WLAN_COMMON_ACTION_FRAME_H_
 
+#include <zircon/compiler.h>
+#include <zircon/types.h>
+
 #include <cstdint>
 
 #include <wlan/common/bitfield.h>
 #include <wlan/common/element.h>
-#include <wlan/common/macaddr.h>
-#include <zircon/compiler.h>
-#include <zircon/types.h>
+#include <wlan/drivers/macaddr.h>
 
 namespace wlan {
 

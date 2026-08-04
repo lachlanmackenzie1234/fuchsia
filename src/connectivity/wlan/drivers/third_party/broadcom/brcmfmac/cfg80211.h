@@ -26,7 +26,7 @@
 
 #include <atomic>
 
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+#include <wlan/drivers/macaddr.h>
 
 /* for brcmu_d11inf */
 #include "brcmu_d11.h"

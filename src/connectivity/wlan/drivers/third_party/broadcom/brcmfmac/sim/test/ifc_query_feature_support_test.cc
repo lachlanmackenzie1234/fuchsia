@@ -3,10 +3,12 @@
 
 #include <zircon/errors.h>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 namespace {
@@ -15,7 +17,7 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 
 }  // namespace
 
-const common::MacAddr kDefaultMac({0x12, 0x34, 0x56, 0x65, 0x43, 0x21});
+const MacAddr kDefaultMac({0x12, 0x34, 0x56, 0x65, 0x43, 0x21});
 
 // Verify that a query for security features support works on a client interface
 TEST_F(SimTest, ClientIfcQuerySecuritySupport) {

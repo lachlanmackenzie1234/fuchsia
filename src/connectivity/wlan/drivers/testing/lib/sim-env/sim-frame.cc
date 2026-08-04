@@ -4,6 +4,10 @@
 
 #include "sim-frame.h"
 
+#include <wlan/drivers/macaddr.h>
+
+using ::wlan::common::MacAddr;
+
 namespace wlan::simulation {
 
 /* InformationElement function implementations.*/
@@ -123,8 +127,7 @@ void SimManagementFrame::RemoveIe(InformationElement::SimIeType ie_type) {
 }
 
 /* SimBeaconFrame function implementations.*/
-SimBeaconFrame::SimBeaconFrame(const fuchsia_wlan_ieee80211::Ssid& ssid,
-                               const common::MacAddr& bssid)
+SimBeaconFrame::SimBeaconFrame(const fuchsia_wlan_ieee80211::Ssid& ssid, const MacAddr& bssid)
     : bssid_(bssid) {
   // Beacon automatically gets the SSID information element.
   AddSsidIe(ssid);
@@ -156,7 +159,7 @@ SimManagementFrame::SimMgmtFrameType SimProbeReqFrame::MgmtFrameType() const {
 SimFrame* SimProbeReqFrame::CopyFrame() const { return new SimProbeReqFrame(*this); }
 
 /* SimProbeRespFrame function implementations.*/
-SimProbeRespFrame::SimProbeRespFrame(const common::MacAddr& src, const common::MacAddr& dst,
+SimProbeRespFrame::SimProbeRespFrame(const MacAddr& src, const MacAddr& dst,
                                      const fuchsia_wlan_ieee80211::Ssid& ssid)
     : SimManagementFrame(src, dst) {
   // Probe response automatically gets the SSID information element.

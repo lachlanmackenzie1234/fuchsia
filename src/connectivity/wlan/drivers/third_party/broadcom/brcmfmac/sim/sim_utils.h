@@ -12,19 +12,20 @@
 #include <span>
 #include <vector>
 
-#include <wlan/common/macaddr.h>
+#include <wlan/drivers/macaddr.h>
 
 namespace wlan::brcmfmac::sim_utils {
 
 static constexpr size_t kEthernetHeaderSize = sizeof(ethhdr);
 
 // Writes an ethernet frame to `out` with the given parameters.
-zx_status_t WriteEthernetFrame(cpp20::span<uint8_t> out, common::MacAddr dst, common::MacAddr src,
-                               uint16_t type, cpp20::span<const uint8_t> body);
+zx_status_t WriteEthernetFrame(cpp20::span<uint8_t> out, wlan::common::MacAddr dst,
+                               wlan::common::MacAddr src, uint16_t type,
+                               cpp20::span<const uint8_t> body);
 
 // Returns a newly allocated vector containing an ethernet frame with the given parameters.
-std::vector<uint8_t> CreateEthernetFrame(common::MacAddr dst, common::MacAddr src, uint16_t type,
-                                         cpp20::span<const uint8_t> body);
+std::vector<uint8_t> CreateEthernetFrame(wlan::common::MacAddr dst, wlan::common::MacAddr src,
+                                         uint16_t type, cpp20::span<const uint8_t> body);
 
 // Derive SNR from RSSI & Noise. Restrict it to int8_t.
 int8_t SnrDbFromSignalStrength(double signal_strength, double noise_level);

@@ -4,8 +4,11 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 
@@ -18,8 +21,8 @@ using ::testing::SizeIs;
 
 const fuchsia_wlan_ieee80211::Ssid kDefaultSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                    'F', 'a', 'k', 'e', ' ', 'A', 'P'};
-const common::MacAddr kDefaultBssid{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc};
-const common::MacAddr kDefaultDest{0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa};
+const MacAddr kDefaultBssid{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc};
+const MacAddr kDefaultDest{0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa};
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 20};
 
@@ -201,8 +204,8 @@ TEST_F(FrameIeTest, CsaIeToRawIe) {
 
 // Tests that deep copy works for frames.
 TEST_F(FrameIeTest, DeepCopyBeaconFrame) {
-  const common::MacAddr kDefaultSrcAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
-  const common::MacAddr kDefaultDstAddr({0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc});
+  const MacAddr kDefaultSrcAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+  const MacAddr kDefaultDstAddr({0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc});
   zx::duration kDefaultInterval = zx::msec(50);
 
   simulation::SimBeaconFrame origin_beacon(kDefaultSsid, kDefaultBssid);
@@ -269,8 +272,8 @@ TEST_F(FrameIeTest, DeepCopyBeaconFrame) {
 
 // If the SSID IE is removed, make sure it does not reappear when that beacon is copied.
 TEST_F(FrameIeTest, RemovedSsidIeDoesNotAppearInDeepCopyOfBeaconFrame) {
-  const common::MacAddr kDefaultSrcAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
-  const common::MacAddr kDefaultDstAddr({0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc});
+  const MacAddr kDefaultSrcAddr({0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+  const MacAddr kDefaultDstAddr({0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc});
   zx::duration kDefaultInterval = zx::msec(50);
 
   simulation::SimBeaconFrame origin_beacon(kDefaultSsid, kDefaultBssid);
@@ -292,9 +295,9 @@ TEST_F(FrameIeTest, RemovedSsidIeDoesNotAppearInDeepCopyOfBeaconFrame) {
 }
 
 TEST_F(FrameIeTest, DeepCopyQosDataFrame) {
-  const common::MacAddr kDefaultAddr1({0x11, 0x11, 0x11, 0x11, 0x11, 0x11});
-  const common::MacAddr kDefaultAddr2({0x22, 0x22, 0x22, 0x22, 0x22, 0x22});
-  const common::MacAddr kDefaultAddr3({0x33, 0x33, 0x33, 0x33, 0x33, 0x33});
+  const MacAddr kDefaultAddr1({0x11, 0x11, 0x11, 0x11, 0x11, 0x11});
+  const MacAddr kDefaultAddr2({0x22, 0x22, 0x22, 0x22, 0x22, 0x22});
+  const MacAddr kDefaultAddr3({0x33, 0x33, 0x33, 0x33, 0x33, 0x33});
   const std::vector<uint8_t> kDefaultPayload = {0xaa, 0xbb};
 
   simulation::SimQosDataFrame qos_data_frame(false, false, kDefaultAddr1, kDefaultAddr2,

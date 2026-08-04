@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <memory>
 
-#include <wlan/common/macaddr.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "third_party/iwlwifi/platform/kernel.h"
 
@@ -20,6 +20,8 @@ extern "C" {
 
 #include "third_party/iwlwifi/platform/mvm-mlme.h"
 #include "third_party/iwlwifi/platform/wlansoftmac-device.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::iwlwifi {
 
@@ -62,7 +64,7 @@ void WlanPhyDevice::CreateIface(CreateIfaceRequest& request,
   wlan_phy_impl_create_iface_req_t create_iface_req{};
 
   if (request.init_sta_addr().has_value() &&
-      !wlan::common::MacAddr(*request.init_sta_addr()).IsZero()) {
+      !MacAddr(*request.init_sta_addr()).IsZero()) {
     create_iface_req.has_init_sta_addr = true;
     std::copy(request.init_sta_addr()->begin(), request.init_sta_addr()->end(),
               create_iface_req.init_sta_addr);

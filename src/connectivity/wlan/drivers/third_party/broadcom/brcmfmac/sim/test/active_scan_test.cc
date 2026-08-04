@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
@@ -17,7 +18,8 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_utils.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 namespace {
@@ -28,7 +30,7 @@ constexpr zx::duration kSimulatedClockDuration = zx::sec(10);
 }  // namespace
 
 struct ApInfo {
-  explicit ApInfo(simulation::Environment* env, const common::MacAddr& bssid,
+  explicit ApInfo(simulation::Environment* env, const MacAddr& bssid,
                   const fuchsia_wlan_ieee80211::Ssid& ssid,
                   const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel)
       : ap_(env, bssid, ssid, channel, fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0) {}
@@ -66,7 +68,7 @@ class ActiveScanTest : public SimTest {
   }
   void SetUp() override;
 
-  void StartFakeAp(const common::MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
+  void StartFakeAp(const MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
                    const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                    zx::duration beacon_interval = kBeaconInterval);
 
@@ -119,9 +121,9 @@ class ActiveScanTest : public SimTest {
   std::list<std::unique_ptr<ApInfo>> aps_;
 
   // Mac address of sim_fw
-  common::MacAddr sim_fw_mac_;
-  common::MacAddr last_pfn_mac_ = common::kZeroMac;
-  std::optional<common::MacAddr> sim_fw_pfn_mac_;
+  MacAddr sim_fw_mac_;
+  MacAddr last_pfn_mac_ = common::kZeroMac;
+  std::optional<MacAddr> sim_fw_pfn_mac_;
   uint32_t num_probe_reqs_seen = 0;
 };
 
@@ -151,8 +153,7 @@ void ActiveScanTest::SetUp() {
   client_ifc_.GetMacAddr(&sim_fw_mac_);
 }
 
-void ActiveScanTest::StartFakeAp(const common::MacAddr& bssid,
-                                 const fuchsia_wlan_ieee80211::Ssid& ssid,
+void ActiveScanTest::StartFakeAp(const MacAddr& bssid, const fuchsia_wlan_ieee80211::Ssid& ssid,
                                  const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                                  zx::duration beacon_interval) {
   auto ap_info = std::make_unique<ApInfo>(env_.get(), bssid, ssid, channel);
@@ -191,7 +192,7 @@ void ActiveScanTest::VerifyScanResults() {
     int matches_seen = 0;
 
     for (auto& ap_info : aps_) {
-      common::MacAddr mac_addr = ap_info->ap_.GetBssid();
+      MacAddr mac_addr = ap_info->ap_.GetBssid();
       ASSERT_EQ(result.bss()->bssid().size(), sizeof(mac_addr.byte));
       if (!std::memcmp(result.bss()->bssid().data(), mac_addr.byte, sizeof(mac_addr.byte))) {
         ap_info->probe_resp_seen_ = true;
@@ -268,17 +269,17 @@ constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel1 = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 2};
 const fuchsia_wlan_ieee80211::Ssid kAp1Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '1'};
-const common::MacAddr kAp1Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kAp1Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 const fuchsia_wlan_ieee80211::Ssid kAp2Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '2'};
-const common::MacAddr kAp2Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
+const MacAddr kAp2Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
 
 // AP 3 on channel 4.
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel2 = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 4};
 const fuchsia_wlan_ieee80211::Ssid kAp3Ssid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                'F', 'a', 'k', 'e', ' ', 'A', 'P', '3'};
-const common::MacAddr kAp3Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbe});
+const MacAddr kAp3Bssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbe});
 
 // This test case might fail in a very low possibility because it's random.
 TEST_F(ActiveScanTest, RandomMacThreeAps) {

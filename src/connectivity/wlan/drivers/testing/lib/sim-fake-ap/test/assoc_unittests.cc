@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sta-ifc.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 namespace {
@@ -23,8 +26,8 @@ const simulation::WlanTxInfo kDefaultTxInfo = {
     .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kApSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                               'F', 'a', 'k', 'e', ' ', 'A', 'P'};
-const common::MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
-const common::MacAddr kClientMacAddr({0x11, 0x22, 0x33, 0x44, 0xee, 0xff});
+const MacAddr kApBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kClientMacAddr({0x11, 0x22, 0x33, 0x44, 0xee, 0xff});
 constexpr auto kClientDisassocReason = wlan_ieee80211::ReasonCode::kUnspecifiedReason;
 constexpr auto kApDisassocReason = wlan_ieee80211::ReasonCode::kInvalidAuthentication;
 
@@ -35,7 +38,7 @@ class AssocTest : public ::testing::Test, public simulation::StationIfc {
             kDefaultTxInfo.vht_secondary_80_channel) {
     env_.AddStation(this);
   }
-  void DisassocFromAp(const common::MacAddr& sta, wlan_ieee80211::ReasonCode reason);
+  void DisassocFromAp(const MacAddr& sta, wlan_ieee80211::ReasonCode reason);
   void FinishAuth();
   simulation::Environment env_;
   simulation::FakeAp ap_;
@@ -60,7 +63,7 @@ void validateChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
   EXPECT_EQ(secondary80.band, kDefaultTxInfo.vht_secondary_80_channel.band);
 }
 
-void AssocTest::DisassocFromAp(const common::MacAddr& sta, wlan_ieee80211::ReasonCode reason) {
+void AssocTest::DisassocFromAp(const MacAddr& sta, wlan_ieee80211::ReasonCode reason) {
   EXPECT_EQ(ap_.GetNumAssociatedClient(), 1U);
   ap_.DisassocSta(sta, reason);
 }
@@ -160,7 +163,7 @@ TEST_F(AssocTest, IgnoredRequests) {
       .vht_secondary_80_channel = {.band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz,
                                    .number = 0}};
 
-  static const common::MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
+  static const MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
 
   // Schedule assoc req on different channel
   simulation::SimAssocReqFrame wrong_chan_frame(kClientMacAddr, kApBssid, kApSsid);

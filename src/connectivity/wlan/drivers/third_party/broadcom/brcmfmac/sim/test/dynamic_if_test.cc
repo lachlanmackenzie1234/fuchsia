@@ -6,14 +6,17 @@
 #include <lib/fidl/cpp/wire/arena.h>
 #include <zircon/errors.h>
 
+#include <wlan/drivers/macaddr.h>
+
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/defs.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
 #include "src/devices/lib/broadcom/commands.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -30,8 +33,8 @@ const simulation::WlanTxInfo kDefaultTxInfo = {
     .primary_channel = kDefaultChannel,
     .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
     .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
-const common::MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kFakeMac({0xde, 0xad, 0xbe, 0xef, 0x00, 0x02});
 const char kFakeClientName[] = "fake-client-iface";
 const char kFakeApName[] = "fake-ap-iface";
 // Iovar get/set command pairs used in metadata. The set command is in the metadata and the
@@ -131,7 +134,7 @@ void DynamicIfTest::ChannelCheck() {
 
 void DynamicIfTest::TxAuthAndAssocReq() {
   // Get the mac address of the SoftAP
-  common::MacAddr soft_ap_mac;
+  MacAddr soft_ap_mac;
   softap_ifc_.GetMacAddr(&soft_ap_mac);
   fuchsia_wlan_ieee80211::Ssid ssid = {'S', 'i', 'm', '_', 'A', 'P'};
   // Pass the auth stop for softAP iface before assoc.
@@ -280,7 +283,7 @@ TEST_F(DynamicIfTest, CreateDestroy) {
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc_, kFakeMac), ZX_OK);
 
   // Verify whether the provided MAC addr is used when creating the client iface.
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   EXPECT_EQ(client_mac, kFakeMac);
 
@@ -289,7 +292,7 @@ TEST_F(DynamicIfTest, CreateDestroy) {
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kAp, &softap_ifc_, kDefaultBssid), ZX_OK);
 
   // Verify whether the default bssid is correctly set to sim-fw when creating softAP iface.
-  common::MacAddr soft_ap_mac;
+  MacAddr soft_ap_mac;
   softap_ifc_.GetMacAddr(&soft_ap_mac);
   EXPECT_EQ(soft_ap_mac, kDefaultBssid);
 
@@ -418,7 +421,7 @@ TEST_F(DynamicIfTest, CreateApWithSameMacAsClient) {
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc_), ZX_OK);
 
   // Create AP iface with the same mac addr.
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   EXPECT_EQ(StartInterface(wlan_common::WlanMacRole::kAp, &softap_ifc_, client_mac),
             ZX_ERR_ALREADY_EXISTS);
@@ -430,7 +433,7 @@ TEST_F(DynamicIfTest, CreateApWithSameMacAsClient) {
 TEST_F(DynamicIfTest, CreateApWithNoMACAddress) {
   Init();
 
-  wlan::common::MacAddr expected_mac_addr;
+  MacAddr expected_mac_addr;
   WithSimDevice([&](brcmfmac::SimDevice* device) {
     brcmf_simdev* sim = device->GetSim();
 
@@ -443,7 +446,7 @@ TEST_F(DynamicIfTest, CreateApWithNoMACAddress) {
 
   // Ensure passing nullopt for mac_addr results in use of auto generated MAC address.
   EXPECT_EQ(StartInterface(wlan_common::WlanMacRole::kAp, &softap_ifc_, std::nullopt), ZX_OK);
-  common::MacAddr softap_mac;
+  MacAddr softap_mac;
   softap_ifc_.GetMacAddr(&softap_mac);
   EXPECT_EQ(softap_mac, expected_mac_addr);
 
@@ -454,7 +457,7 @@ TEST_F(DynamicIfTest, CreateApWithNoMACAddress) {
 // pre-set one, no error will be returned.
 TEST_F(DynamicIfTest, CreateClientWithPreAllocMac) {
   Init();
-  common::MacAddr pre_set_mac;
+  MacAddr pre_set_mac;
 
   WithSimDevice([&](brcmfmac::SimDevice* device) {
     brcmf_simdev* sim = device->GetSim();
@@ -632,7 +635,7 @@ TEST_F(DynamicIfTest, CreateClientWithCustomMac) {
   EXPECT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc_, kFakeMac), ZX_OK);
 
   WithSimDevice([&](brcmfmac::SimDevice* device) {
-    common::MacAddr retrieved_mac;
+    MacAddr retrieved_mac;
     brcmf_simdev* sim = device->GetSim();
     struct brcmf_if* ifp = brcmf_get_ifp(sim->drvr, 0);
     EXPECT_EQ(ZX_OK, brcmf_fil_iovar_data_get(ifp, "cur_etheraddr", retrieved_mac.byte, ETH_ALEN,
@@ -648,8 +651,8 @@ TEST_F(DynamicIfTest, CreateClientWithCustomMac) {
 // (or random) MAC address.
 TEST_F(DynamicIfTest, ClientDefaultMacFallback) {
   Init();
-  common::MacAddr pre_set_mac;
-  common::MacAddr retrieved_mac;
+  MacAddr pre_set_mac;
+  MacAddr retrieved_mac;
 
   WithSimDevice([&](brcmfmac::SimDevice* device) {
     brcmf_simdev* sim = device->GetSim();

@@ -150,6 +150,7 @@ source_set("core") {
     ":timer",
     "//sdk/lib/async",
     "//sdk/lib/driver/component/cpp",
+    "//src/connectivity/wlan/drivers/lib/macaddr",
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/inspect",
     "//src/connectivity/wlan/lib/common/cpp:common",
     "//third_party/bcmdhd/crossdriver:bcmdhd_crossdriver",

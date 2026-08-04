@@ -2,14 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <wlan/drivers/macaddr.h>
+
 #include "fidl/fuchsia.wlan.fullmac/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
 #include "src/devices/lib/broadcom/commands.h"
 #include "zircon/errors.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -24,8 +27,8 @@ const simulation::WlanTxInfo kAp0TxInfo = {
     .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
     .vht_secondary_80_channel = {.band = kAp0Channel.band, .number = 0}};
 
-const common::MacAddr kAp0Bssid("12:34:56:78:9a:bc");
-const common::MacAddr kAp1Bssid("ff:ee:dd:cc:bb:aa");
+const MacAddr kAp0Bssid("12:34:56:78:9a:bc");
+const MacAddr kAp1Bssid("ff:ee:dd:cc:bb:aa");
 
 class ReassocTest : public SimTest {
  public:
@@ -101,7 +104,7 @@ TEST_F(ReassocTest, RoamSucceeds) {
 
   client_ifc_.AssociateWith(ap_0, zx::sec(1));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
 
   ScheduleRoam(ap_1, zx::sec(3));
@@ -130,7 +133,7 @@ TEST_F(ReassocTest, IgnoreSpuriousReassocResp) {
 
   client_ifc_.AssociateWith(ap_0, zx::msec(10));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
   // Intentionally create a response frame that never had a corresponding request.
   simulation::SimReassocRespFrame reassoc_resp(kAp0Bssid, client_mac,
@@ -164,7 +167,7 @@ TEST_F(ReassocTest, RoamTimeoutWhenNoReassocResponseReceived) {
 
   client_ifc_.AssociateWith(ap_0, zx::sec(1));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
 
   ScheduleRoam(ap_1, zx::sec(3));
@@ -198,7 +201,7 @@ TEST_F(ReassocTest, DisconnectOnFirmwareReassocCommandFailure) {
   });
   client_ifc_.AssociateWith(ap_0, zx::sec(1));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
 
   ScheduleRoam(ap_1, zx::sec(3));
@@ -234,7 +237,7 @@ TEST_F(ReassocTest, DisconnectOnRoamSuccessWhenDriverCannotSyncChannel) {
   });
   client_ifc_.AssociateWith(ap_0, zx::sec(1));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
 
   ScheduleRoam(ap_1, zx::sec(3));
@@ -265,7 +268,7 @@ TEST_F(ReassocTest, RoamSucceedsUpdatesConnectionId) {
   fuchsia_wlan_stats::wire::IfaceStats stats_1 = {};
   GetIfaceStats(&stats_1, zx::sec(2));
 
-  common::MacAddr client_mac;
+  MacAddr client_mac;
   client_ifc_.GetMacAddr(&client_mac);
 
   ScheduleRoam(ap_1, zx::sec(3));

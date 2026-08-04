@@ -7,6 +7,7 @@
 #include <zircon/errors.h>
 
 #include <wlan/common/channel.h>
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
@@ -16,8 +17,9 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
-#include "src/connectivity/wlan/lib/common/cpp/include/wlan/common/macaddr.h"
 #include "src/devices/lib/broadcom/commands.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::brcmfmac {
 
@@ -64,8 +66,8 @@ constexpr uint8_t kIes[] = {
     // Vendor IE - WPS
     0xdd, 0x1d, 0x00, 0x50, 0xf2, 0x04, 0x10, 0x4a, 0x00, 0x01, 0x10, 0x10, 0x44, 0x00, 0x01, 0x02,
     0x10, 0x3c, 0x00, 0x01, 0x03, 0x10, 0x49, 0x00, 0x06, 0x00, 0x37, 0x2a, 0x00, 0x01, 0x20};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
-const common::MacAddr kMadeupClient({0xde, 0xad, 0xbe, 0xef, 0x00, 0x01});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kMadeupClient({0xde, 0xad, 0xbe, 0xef, 0x00, 0x01});
 constexpr auto kDefaultApDisassocReason = wlan_ieee80211::ReasonCode::kUnspecifiedReason;
 constexpr auto kDefaultClientDisassocReason = wlan_ieee80211::ReasonCode::kUnspecifiedReason;
 constexpr auto kDefaultApDeauthReason = wlan_ieee80211::ReasonCode::kInvalidAuthentication;
@@ -120,7 +122,7 @@ class ConnectTest : public SimTest {
   void SendOpenAuthResp();
 
   // Send Disassociate request to SIM FW
-  void DisassocClient(const common::MacAddr& mac_addr);
+  void DisassocClient(const MacAddr& mac_addr);
 
   // Pretend to transmit Disassoc from AP
   void TxFakeDisassocReq();
@@ -154,7 +156,7 @@ class ConnectTest : public SimTest {
         .primary_channel = kDefaultChannel,
         .bandwidth = wlan_ieee80211::ChannelBandwidth::kCbw20,
         .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
-    common::MacAddr bssid = kDefaultBssid;
+    MacAddr bssid = kDefaultBssid;
     fuchsia_wlan_ieee80211::Ssid ssid = kDefaultSsid;
     std::vector<uint8_t> ies = std::vector<uint8_t>(kIes, kIes + sizeof(kIes));
 
@@ -191,8 +193,8 @@ class ConnectTest : public SimTest {
     fuchsia_wlan_ieee80211::wire::ChannelNumber primary;
     fuchsia_wlan_ieee80211::wire::ChannelBandwidth bandwidth;
     fuchsia_wlan_ieee80211::wire::ChannelNumber vht_secondary_80_channel;
-    common::MacAddr src;
-    common::MacAddr dst;
+    MacAddr src;
+    MacAddr dst;
     wlan_ieee80211::StatusCode status;
   };
 
@@ -353,7 +355,7 @@ void ConnectTest::Init() {
 }
 
 void ConnectTest::DisassocFromAp() {
-  common::MacAddr my_mac;
+  MacAddr my_mac;
   client_ifc_.GetMacAddr(&my_mac);
 
   // Disassoc the STA
@@ -735,7 +737,7 @@ void ConnectTest::StartDeauth() {
   }
 }
 
-void ConnectTest::DisassocClient(const common::MacAddr& mac_addr) {
+void ConnectTest::DisassocClient(const MacAddr& mac_addr) {
   auto builder =
       fuchsia_wlan_fullmac::wire::WlanFullmacImplDisassocRequest::Builder(client_ifc_.test_arena_);
 
@@ -763,7 +765,7 @@ void ConnectTest::DeauthClient() {
 
 void ConnectTest::DeauthFromAp() {
   // Figure out our own MAC
-  common::MacAddr my_mac;
+  MacAddr my_mac;
   client_ifc_.GetMacAddr(&my_mac);
 
   // Send a Deauth to our STA
@@ -773,7 +775,7 @@ void ConnectTest::DeauthFromAp() {
 
 void ConnectTest::TxFakeDisassocReq() {
   // Figure out our own MAC
-  common::MacAddr my_mac;
+  MacAddr my_mac;
   client_ifc_.GetMacAddr(&my_mac);
 
   // Send a Disassoc Req to our STA (which is not associated)
@@ -782,13 +784,13 @@ void ConnectTest::TxFakeDisassocReq() {
   env_->Tx(not_associated_frame, context_.tx_info, this);
 
   // Send a Disassoc Req from the wrong bss
-  common::MacAddr wrong_src(context_.bssid);
+  MacAddr wrong_src(context_.bssid);
   wrong_src.byte[ETH_ALEN - 1]++;
   simulation::SimDisassocReqFrame wrong_bss_frame(wrong_src, my_mac, kDefaultApDisassocReason);
   env_->Tx(wrong_bss_frame, context_.tx_info, this);
 
   // Send a Disassoc Req to a different STA
-  common::MacAddr wrong_dst(my_mac);
+  MacAddr wrong_dst(my_mac);
   wrong_dst.byte[ETH_ALEN - 1]++;
   simulation::SimDisassocReqFrame wrong_sta_frame(context_.bssid, wrong_dst,
                                                   kDefaultApDisassocReason);
@@ -808,7 +810,7 @@ TEST_F(ConnectTest, NoAps) {
   // Create our device instance
   Init();
 
-  const common::MacAddr kBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+  const MacAddr kBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
   context_.bssid = kBssid;
   context_.expected_results.push_front(wlan_ieee80211::StatusCode::kRejectedSequenceTimeout);
   context_.ssid = {'T', 'e', 's', 't', 'A', 'P'};
@@ -900,7 +902,7 @@ TEST_F(ConnectTest, WrongIds) {
   const fuchsia_wlan_ieee80211::Ssid kWrongSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a',
                                                    ' ', 'F', 'a', 'k', 'e', ' ', 'A'};
   ASSERT_NE(kDefaultSsid.size(), kWrongSsid.size());
-  const common::MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9b, 0xbc});
+  const MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9b, 0xbc});
   ASSERT_NE(kDefaultBssid, kWrongBssid);
 
   // Start up fake APs
@@ -1073,18 +1075,18 @@ TEST_F(ConnectTest, SimFwIgnoreConnectReq) {
 
 void ConnectTest::SendBadResp() {
   // Figure out our own MAC
-  common::MacAddr my_mac;
+  MacAddr my_mac;
   client_ifc_.GetMacAddr(&my_mac);
 
   // Send a response from the wrong bss
-  common::MacAddr wrong_src(context_.bssid);
+  MacAddr wrong_src(context_.bssid);
   wrong_src.byte[ETH_ALEN - 1]++;
   simulation::SimAssocRespFrame wrong_bss_frame(wrong_src, my_mac,
                                                 wlan_ieee80211::StatusCode::kSuccess);
   env_->Tx(wrong_bss_frame, context_.tx_info, this);
 
   // Send a response to a different STA
-  common::MacAddr wrong_dst(my_mac);
+  MacAddr wrong_dst(my_mac);
   wrong_dst.byte[ETH_ALEN - 1]++;
   simulation::SimAssocRespFrame wrong_dst_frame(context_.bssid, wrong_dst,
                                                 wlan_ieee80211::StatusCode::kSuccess);
@@ -1122,7 +1124,7 @@ void ConnectTest::SendMultipleResp() {
   constexpr unsigned kRespCount = 100;
 
   // Figure out our own MAC
-  common::MacAddr my_mac;
+  MacAddr my_mac;
   client_ifc_.GetMacAddr(&my_mac);
   simulation::SimAssocRespFrame multiple_resp_frame(context_.bssid, my_mac,
                                                     wlan_ieee80211::StatusCode::kSuccess);
@@ -1139,7 +1141,7 @@ void ConnectTest::SendAssocRespWithWmm() {
     zx_status_t status = brcmf_fil_iovar_data_get(ifp, "cur_etheraddr", mac_buf, ETH_ALEN, nullptr);
     EXPECT_EQ(status, ZX_OK);
   });
-  common::MacAddr my_mac(mac_buf);
+  MacAddr my_mac(mac_buf);
   simulation::SimAssocRespFrame assoc_resp_frame(context_.bssid, my_mac,
                                                  wlan_ieee80211::StatusCode::kSuccess);
 
@@ -1159,7 +1161,7 @@ void ConnectTest::SendAssocRespWithWmm() {
 }
 
 void ConnectTest::SendOpenAuthResp() {
-  common::MacAddr my_mac;
+  MacAddr my_mac;
   client_ifc_.GetMacAddr(&my_mac);
   simulation::SimAuthFrame auth_resp(context_.bssid, my_mac, 2, simulation::AUTH_TYPE_OPEN,
                                      wlan_ieee80211::StatusCode::kSuccess);

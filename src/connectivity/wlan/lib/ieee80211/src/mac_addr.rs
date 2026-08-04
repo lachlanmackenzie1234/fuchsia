@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// LINT.IfChange
+
 use crate::Bssid;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use std::fmt;
 use std::str::FromStr;
@@ -124,7 +126,7 @@ fn detect_delimiter(s: &str) -> Result<char, Error> {
     match (contains_semicolon, contains_hyphen) {
         (true, true) => return Err(format_err!("Either exclusively ':' or '-' must be used.")),
         (false, false) => {
-            return Err(format_err!("No valid delimiter found. Only ':' and '-' are supported."))
+            return Err(format_err!("No valid delimiter found. Only ':' and '-' are supported."));
         }
         (true, false) => Ok(':'),
         (false, true) => Ok('-'),
@@ -249,3 +251,5 @@ mod tests {
         assert!("11-23-11-11-11-11-".parse::<MacAddr>().is_err());
     }
 }
+
+// LINT.ThenChange(//src/connectivity/wlan/drivers/lib/macaddr/include/wlan/drivers/macaddr.h)

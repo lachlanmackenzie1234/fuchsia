@@ -31,6 +31,7 @@ cc_test_executable("rx_tests") {
   sources = [ "rx_tests.cc" ]
 
   deps = [
+    "//src/connectivity/wlan/drivers/lib/macaddr",
     "//src/connectivity/wlan/drivers/testing/lib/sim-env",
     "//src/lib/fxl/test/:gtest_main",
     "//third_party/googletest:gmock",
@@ -49,6 +50,7 @@ cc_test_executable("frame_ie_tests") {
   sources = [ "frame_ie_tests.cc" ]
 
   deps = [
+    "//src/connectivity/wlan/drivers/lib/macaddr",
     "//src/connectivity/wlan/drivers/testing/lib/sim-env",
     "//src/lib/fxl/test/:gtest_main",
     "//third_party/googletest:gmock",
@@ -67,6 +69,7 @@ cc_test_executable("location_tests") {
   sources = [ "location_tests.cc" ]
 
   deps = [
+    "//src/connectivity/wlan/drivers/lib/macaddr",
     "//src/connectivity/wlan/drivers/testing/lib/sim-env",
     "//src/lib/fxl/test/:gtest_main",
     "//third_party/googletest:gmock",
@@ -85,6 +88,7 @@ cc_test_executable("trans_time_tests") {
   sources = [ "trans_time_tests.cc" ]
 
   deps = [
+    "//src/connectivity/wlan/drivers/lib/macaddr",
     "//src/connectivity/wlan/drivers/testing/lib/sim-env",
     "//src/lib/fxl/test/:gtest_main",
     "//third_party/googletest:gmock",

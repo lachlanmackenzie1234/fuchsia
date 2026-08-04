@@ -19,6 +19,7 @@
 #include <zircon/status.h>
 
 #include <wlan/common/ieee80211.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "fidl/fuchsia.wlan.phy/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
@@ -27,6 +28,8 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/feature.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/wlan_interface.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan {
 namespace brcmfmac {
@@ -370,9 +373,9 @@ void Device::CreateIface(CreateIfaceRequest& request, CreateIfaceCompleter::Sync
   }
 
   wireless_dev* wdev = nullptr;
-  std::optional<wlan::common::MacAddr> mac_addr;
+  std::optional<MacAddr> mac_addr;
   if (request.init_sta_addr().has_value()) {
-    wlan::common::MacAddr addr(request.init_sta_addr().value().data());
+    MacAddr addr(request.init_sta_addr().value().data());
     if (!addr.IsZero()) {
       mac_addr = addr;
     }

@@ -18,7 +18,7 @@
 #include <wlan/common/action_frame.h>
 #include <wlan/common/bitfield.h>
 #include <wlan/common/element.h>
-#include <wlan/common/macaddr.h>
+#include <wlan/drivers/macaddr.h>
 
 namespace wlan {
 

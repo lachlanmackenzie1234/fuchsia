@@ -3,11 +3,14 @@
 // found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-frame.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sta-ifc.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/sim-fake-ap.h"
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 namespace {
@@ -29,9 +32,9 @@ constexpr simulation::WlanTxInfo kWrongChannelTxInfo = {
                                  .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kApSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                               'F', 'a', 'k', 'e', ' ', 'A', 'P'};
-const common::MacAddr kApBssid({0x11, 0x11, 0x11, 0x11, 0x11, 0x11});
-static const common::MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
-const common::MacAddr kClientMacAddr({0x22, 0x22, 0x22, 0x22, 0x22, 0x22});
+const MacAddr kApBssid({0x11, 0x11, 0x11, 0x11, 0x11, 0x11});
+static const MacAddr kWrongBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbd});
+const MacAddr kClientMacAddr({0x22, 0x22, 0x22, 0x22, 0x22, 0x22});
 
 void validateChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                      fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,

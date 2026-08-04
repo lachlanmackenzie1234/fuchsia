@@ -5,6 +5,7 @@
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/inspect.h>
 
+#include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
@@ -13,11 +14,13 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/test/sim_test.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/test/device_inspect_test_utils.h"
 
+using ::wlan::common::MacAddr;
+
 namespace wlan::brcmfmac {
 
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
     .band = fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz, .number = 9};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 class CrashRecoveryTest : public SimTest {
  public:
@@ -58,7 +61,7 @@ class CrashRecoveryTest : public SimTest {
 
   simulation::FakeAp ap_;
   SimInterface client_ifc_;
-  common::MacAddr client_mac_addr_;
+  MacAddr client_mac_addr_;
 };
 
 void CrashRecoveryTest::InitWithInterface() {
@@ -117,7 +120,7 @@ void CrashRecoveryTest::VerifyScanResult(const uint64_t scan_id, size_t min_resu
       client_ifc_.ScanResultList(scan_id)->back();
   auto ssid = brcmf_find_ssid_in_ies(back_scan_result.bss()->ies().data(),
                                      back_scan_result.bss()->ies().size());
-  common::MacAddr bssid(back_scan_result.bss()->bssid().data());
+  MacAddr bssid(back_scan_result.bss()->bssid().data());
 
   EXPECT_EQ(bssid, kDefaultBssid);
   EXPECT_EQ(ssid, kDefaultSsid);

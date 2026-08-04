@@ -9,10 +9,14 @@
 
 #include <algorithm>
 
+#include <wlan/drivers/macaddr.h>
+
+using ::wlan::common::MacAddr;
+
 namespace wlan::brcmfmac::sim_utils {
 
-zx_status_t WriteEthernetFrame(cpp20::span<uint8_t> out, common::MacAddr dst, common::MacAddr src,
-                               uint16_t type, cpp20::span<const uint8_t> body) {
+zx_status_t WriteEthernetFrame(cpp20::span<uint8_t> out, MacAddr dst, MacAddr src, uint16_t type,
+                               cpp20::span<const uint8_t> body) {
   if (out.size() < body.size() + kEthernetHeaderSize) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -25,7 +29,7 @@ zx_status_t WriteEthernetFrame(cpp20::span<uint8_t> out, common::MacAddr dst, co
   return ZX_OK;
 }
 
-std::vector<uint8_t> CreateEthernetFrame(common::MacAddr dst, common::MacAddr src, uint16_t type,
+std::vector<uint8_t> CreateEthernetFrame(MacAddr dst, MacAddr src, uint16_t type,
                                          cpp20::span<const uint8_t> body) {
   std::vector<uint8_t> out(body.size() + kEthernetHeaderSize);
   ZX_ASSERT(WriteEthernetFrame(out, dst, src, type, body) == ZX_OK);

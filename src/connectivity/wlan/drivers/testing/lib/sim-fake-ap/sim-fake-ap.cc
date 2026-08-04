@@ -6,6 +6,10 @@
 
 #include <zircon/assert.h>
 
+#include <wlan/drivers/macaddr.h>
+
+using ::wlan::common::MacAddr;
+
 namespace wlan::simulation {
 
 void FakeAp::SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
@@ -55,7 +59,7 @@ void FakeAp::SetChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& chann
   }
 }
 
-void FakeAp::SetBssid(const common::MacAddr& bssid) {
+void FakeAp::SetBssid(const MacAddr& bssid) {
   bssid_ = bssid;
   beacon_state_.beacon_frame_.bssid_ = bssid;
 }
@@ -141,13 +145,13 @@ inline void FakeAp::CancelNotification(uint64_t id) {
   ZX_ASSERT(environment_->CancelNotification(id) == ZX_OK);
 }
 
-std::shared_ptr<FakeAp::Client> FakeAp::AddClient(common::MacAddr mac_addr) {
+std::shared_ptr<FakeAp::Client> FakeAp::AddClient(MacAddr mac_addr) {
   auto client = std::make_shared<Client>(mac_addr, Client::NOT_AUTHENTICATED);
   clients_.push_back(client);
   return client;
 }
 
-std::shared_ptr<FakeAp::Client> FakeAp::FindClient(wlan::common::MacAddr mac_addr) {
+std::shared_ptr<FakeAp::Client> FakeAp::FindClient(MacAddr mac_addr) {
   for (auto it = clients_.begin(); it != clients_.end(); it++) {
     if (mac_addr == (*it)->mac_addr_) {
       return *it;
@@ -157,7 +161,7 @@ std::shared_ptr<FakeAp::Client> FakeAp::FindClient(wlan::common::MacAddr mac_add
   return std::shared_ptr<FakeAp::Client>(nullptr);
 }
 
-void FakeAp::RemoveClient(common::MacAddr mac_addr) {
+void FakeAp::RemoveClient(MacAddr mac_addr) {
   for (auto it = clients_.begin(); it != clients_.end();) {
     if (mac_addr == (*it)->mac_addr_) {
       it = clients_.erase(it);
@@ -177,17 +181,17 @@ uint32_t FakeAp::GetNumAssociatedClient() const {
   return client_count;
 }
 
-void FakeAp::ScheduleAssocResp(wlan_ieee80211::StatusCode status, const common::MacAddr& dst) {
+void FakeAp::ScheduleAssocResp(wlan_ieee80211::StatusCode status, const MacAddr& dst) {
   environment_->ScheduleNotification(
       std::bind(&FakeAp::HandleAssocRespNotification, this, status, dst), assoc_resp_interval_);
 }
 
-void FakeAp::ScheduleReassocResp(wlan_ieee80211::StatusCode status, const common::MacAddr& dst) {
+void FakeAp::ScheduleReassocResp(wlan_ieee80211::StatusCode status, const MacAddr& dst) {
   environment_->ScheduleNotification(
       [this, status, dst] { HandleReassocRespNotification(status, dst); }, reassoc_resp_interval_);
 }
 
-void FakeAp::ScheduleProbeResp(const common::MacAddr& dst) {
+void FakeAp::ScheduleProbeResp(const MacAddr& dst) {
   environment_->ScheduleNotification(std::bind(&FakeAp::HandleProbeRespNotification, this, dst),
                                      probe_resp_interval_);
 }
@@ -210,9 +214,8 @@ void FakeAp::ScheduleAuthResp(std::shared_ptr<const SimAuthFrame> auth_frame_in,
       std::bind(&FakeAp::HandleAuthRespNotification, this, auth_resp_frame), auth_resp_interval_);
 }
 
-void FakeAp::ScheduleQosData(bool toDS, bool fromDS, const common::MacAddr& addr1,
-                             const common::MacAddr& addr2, const common::MacAddr& addr3,
-                             const std::vector<uint8_t>& payload) {
+void FakeAp::ScheduleQosData(bool toDS, bool fromDS, const MacAddr& addr1, const MacAddr& addr2,
+                             const MacAddr& addr3, const std::vector<uint8_t>& payload) {
   environment_->ScheduleNotification(std::bind(&FakeAp::HandleQosDataNotification, this, toDS,
                                                fromDS, addr1, addr2, addr3, payload),
                                      data_forward_interval_);
@@ -532,7 +535,7 @@ void FakeAp::RxDataFrame(std::shared_ptr<const SimDataFrame> data_frame) {
   }
 }
 
-zx_status_t FakeAp::DisassocSta(const common::MacAddr& sta_mac, wlan_ieee80211::ReasonCode reason) {
+zx_status_t FakeAp::DisassocSta(const MacAddr& sta_mac, wlan_ieee80211::ReasonCode reason) {
   // Make sure the client is already associated
   SimDisassocReqFrame disassoc_req_frame(bssid_, sta_mac, reason);
   for (auto client : clients_) {
@@ -547,7 +550,7 @@ zx_status_t FakeAp::DisassocSta(const common::MacAddr& sta_mac, wlan_ieee80211::
   return ZX_ERR_INVALID_ARGS;
 }
 
-zx_status_t FakeAp::DeauthSta(const common::MacAddr& sta_mac, wlan_ieee80211::ReasonCode reason) {
+zx_status_t FakeAp::DeauthSta(const MacAddr& sta_mac, wlan_ieee80211::ReasonCode reason) {
   // Make sure the client is already associated
   SimDeauthFrame deauth_frame(bssid_, sta_mac, reason);
   for (const auto& client : clients_) {
@@ -608,19 +611,19 @@ void FakeAp::HandleStopCsaBeaconNotification() {
   beacon_state_.is_switching_channel = false;
 }
 
-void FakeAp::HandleAssocRespNotification(wlan_ieee80211::StatusCode status, common::MacAddr dst) {
+void FakeAp::HandleAssocRespNotification(wlan_ieee80211::StatusCode status, MacAddr dst) {
   SimAssocRespFrame assoc_resp_frame(bssid_, dst, status);
   assoc_resp_frame.capability_info_.set_val(beacon_state_.beacon_frame_.capability_info_.val());
   environment_->Tx(assoc_resp_frame, tx_info_, this);
 }
 
-void FakeAp::HandleReassocRespNotification(wlan_ieee80211::StatusCode status, common::MacAddr dst) {
+void FakeAp::HandleReassocRespNotification(wlan_ieee80211::StatusCode status, MacAddr dst) {
   SimReassocRespFrame reassoc_resp_frame(bssid_, dst, status);
   reassoc_resp_frame.capability_info_.set_val(beacon_state_.beacon_frame_.capability_info_.val());
   environment_->Tx(reassoc_resp_frame, tx_info_, this);
 }
 
-void FakeAp::HandleProbeRespNotification(common::MacAddr dst) {
+void FakeAp::HandleProbeRespNotification(MacAddr dst) {
   SimProbeRespFrame probe_resp_frame(bssid_, dst, ssid_);
   probe_resp_frame.capability_info_.set_val(beacon_state_.beacon_frame_.capability_info_.val());
 
@@ -631,8 +634,8 @@ void FakeAp::HandleAuthRespNotification(SimAuthFrame auth_resp_frame) {
   environment_->Tx(auth_resp_frame, tx_info_, this);
 }
 
-void FakeAp::HandleQosDataNotification(bool toDS, bool fromDS, const common::MacAddr& addr1,
-                                       const common::MacAddr& addr2, const common::MacAddr& addr3,
+void FakeAp::HandleQosDataNotification(bool toDS, bool fromDS, const MacAddr& addr1,
+                                       const MacAddr& addr2, const MacAddr& addr3,
                                        const std::vector<uint8_t>& payload) {
   SimQosDataFrame data_frame(toDS, fromDS, addr1, addr2, addr3, 0, payload);
   environment_->Tx(data_frame, tx_info_, this);

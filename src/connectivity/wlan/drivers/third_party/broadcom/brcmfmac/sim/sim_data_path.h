@@ -19,9 +19,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include <wlan/common/macaddr.h>
 #include <wlan/drivers/components/frame_storage.h>
 #include <wlan/drivers/components/network_device.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/lib/components/cpp/test/network_device_client.h"
 #include "src/connectivity/wlan/drivers/lib/components/cpp/test/test_network_device_ifc.h"
@@ -49,7 +49,7 @@ class SimDataPath {
   // Transmit a single ethernet frame. This will internally construct the ethernet header.
   // The `id` is used to identify the transmitted frame. Tests can keep track of the ids that are
   // sent and use it to verify that the expected frames were transmitted.
-  void TxEthernet(uint16_t id, common::MacAddr dst, common::MacAddr src, uint16_t type,
+  void TxEthernet(uint16_t id, wlan::common::MacAddr dst, wlan::common::MacAddr src, uint16_t type,
                   cpp20::span<const uint8_t> body);
 
   // Transmit raw bytes contained in a body.

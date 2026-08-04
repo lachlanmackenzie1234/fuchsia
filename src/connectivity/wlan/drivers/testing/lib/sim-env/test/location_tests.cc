@@ -4,11 +4,14 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <wlan/drivers/macaddr.h>
 
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-env.h"
 #include "src/connectivity/wlan/drivers/testing/lib/sim-env/sim-sta-ifc.h"
 
 // Verify that signal strengths are being properly calculated and delivered by the environment
+
+using ::wlan::common::MacAddr;
 
 namespace wlan::testing {
 namespace {
@@ -28,7 +31,7 @@ constexpr simulation::WlanTxInfo kDefaultTxInfo = {
     .vht_secondary_80_channel = {.band = kDefaultChannel.band, .number = 0}};
 const fuchsia_wlan_ieee80211::Ssid kDefaultSsid = {'F', 'u', 'c', 'h', 's', 'i', 'a', ' ',
                                                    'F', 'a', 'k', 'e', ' ', 'A', 'P'};
-const common::MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
+const MacAddr kDefaultBssid({0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc});
 
 void checkChannel(const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
                   fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
@@ -85,7 +88,7 @@ class SimStation : public wlan::simulation::StationIfc {
   }
 
   static uint8_t instance_count;
-  common::MacAddr mac_addr_;
+  MacAddr mac_addr_;
   bool signal_received = false;
   double signal_strength = 0;
 };

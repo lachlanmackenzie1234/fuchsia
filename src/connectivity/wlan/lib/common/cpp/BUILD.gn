@@ -24,11 +24,9 @@ source_set("common") {
     "include/wlan/common/ieee80211_codes.h",
     "include/wlan/common/logging.h",
     "include/wlan/common/mac_frame.h",
-    "include/wlan/common/macaddr.h",
     "include/wlan/common/mcs_rate_lookup.h",
     "logging.cc",
     "mac_frame.cc",
-    "macaddr.cc",
     "mcs_rate_lookup.cc",
   ]
 
@@ -40,6 +38,7 @@ source_set("common") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//src/connectivity/wlan/drivers/lib/macaddr",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
