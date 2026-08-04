@@ -289,7 +289,7 @@ mod metrics_tests {
     use fuchsia_async as fasync;
     use futures::FutureExt;
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn mock_metric_event_logger_factory() {
         let loggers = LoggersHandle::default();
 
@@ -314,7 +314,7 @@ mod metrics_tests {
         assert!(loggers.lock().await.get(&1234).is_some());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn mock_metric_event_logger_and_query_interface_single_event() {
         let loggers = LoggersHandle::default();
 
@@ -356,7 +356,7 @@ mod metrics_tests {
         );
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn mock_metric_event_logger_and_query_interface_multiple_events() {
         let loggers = LoggersHandle::default();
 
@@ -499,7 +499,7 @@ mod metrics_tests {
         assert!(exec.run_until_stalled(&mut test).is_pending());
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn mock_metric_event_logger_logger_type_tracking() -> Result<(), anyhow::Error> {
         let loggers = LoggersHandle::default();
 
@@ -559,7 +559,7 @@ mod metrics_tests {
         Ok(())
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn mock_query_interface_reset_state() {
         let loggers = LoggersHandle::default();
 
