@@ -23,6 +23,7 @@ from pydap.models import (
     ScopesArguments,
     SetBreakpointsArguments,
     StackTraceArguments,
+    StepInArguments,
     StepOutArguments,
     VariablesArguments,
 )
@@ -414,6 +415,102 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(req_val["arguments"]["threadId"], 2)
         self.assertNotIn("singleThread", req_val["arguments"])
         self.assertNotIn("granularity", req_val["arguments"])
+
+    async def test_step_in(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        args = StepInArguments(
+            thread_id=1, single_thread=True, target_id=0, granularity="line"
+        )
+        send_task = asyncio.create_task(client.step_in(args))
+
+        await asyncio.sleep(0)
+        await client._write_queue.join()
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "stepIn",
+        }
+
+        feed_dap_response(reader, response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["arguments"]["threadId"], 1)
+        self.assertTrue(req_val["arguments"]["singleThread"])
+        self.assertEqual(req_val["arguments"]["targetId"], 0)
+        self.assertEqual(req_val["arguments"]["granularity"], "line")
+
+    async def test_step_in_minimal(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        args = StepInArguments(thread_id=2)
+        send_task = asyncio.create_task(client.step_in(args))
+
+        await asyncio.sleep(0)
+        await client._write_queue.join()
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 11,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "stepIn",
+        }
+
+        feed_dap_response(reader, response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["arguments"]["threadId"], 2)
+        self.assertNotIn("singleThread", req_val["arguments"])
+        self.assertNotIn("targetId", req_val["arguments"])
+        self.assertNotIn("granularity", req_val["arguments"])
+
+    async def test_step_in_error(self) -> None:
+        client = DapClient()
+        reader, writer = self._start_client(client)
+
+        args = StepInArguments(thread_id=1)
+        send_task = asyncio.create_task(client.step_in(args))
+
+        await asyncio.sleep(0)
+        await client._write_queue.join()
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 12,
+            "type": "response",
+            "request_seq": seq,
+            "success": False,
+            "command": "stepIn",
+            "message": "Thread not stopped",
+        }
+
+        feed_dap_response(reader, response)
+
+        with self.assertRaises(DapError) as ctx:
+            await send_task
+        self.assertIn("Thread not stopped", str(ctx.exception))
 
     async def test_threads(self) -> None:
         client = DapClient()

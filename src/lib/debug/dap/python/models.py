@@ -240,6 +240,22 @@ class NextArguments(DapBaseModel):
     granularity: SteppingGranularity | None = None
 
 
+class StepInArguments(DapBaseModel):
+    """Arguments for `stepIn` request.
+
+    Attributes:
+        thread_id: Specifies the thread for which to step in.
+        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
+        target_id: Id of the target frame to step into.
+        granularity: Stepping granularity ('statement' | 'line' | 'instruction').
+    """
+
+    thread_id: int
+    single_thread: bool | None = None
+    target_id: int | None = None
+    granularity: SteppingGranularity | None = None
+
+
 class LaunchArguments(DapBaseModel):
     """Arguments for `launch` request."""
 

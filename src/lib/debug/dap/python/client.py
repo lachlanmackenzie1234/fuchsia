@@ -27,6 +27,7 @@ from .models import (
     SetBreakpointsResponse,
     StackTraceArguments,
     StackTraceResponse,
+    StepInArguments,
     StepOutArguments,
     ThreadsResponse,
     VariablesArguments,
@@ -454,6 +455,18 @@ class DapClient:
             The response model.
         """
         resp = await self._send_request("next", args)
+        return Response.model_validate(resp)
+
+    async def step_in(self, args: StepInArguments) -> Response:
+        """Sends a stepIn request.
+
+        Args:
+            args: Arguments for the stepIn request.
+
+        Returns:
+            The response model.
+        """
+        resp = await self._send_request("stepIn", args)
         return Response.model_validate(resp)
 
     async def threads(self) -> ThreadsResponse:
