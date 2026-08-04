@@ -1162,5 +1162,10 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:                  serialLogType,
 			emitSyntheticTestCase: true,
 		},
+		// For b/532222717
+		&stringInLogCheck{
+			String: "mobly.signals.TestFailure: Details=Conne[57 chars]code=92, is_credential_rejected=False, is_reconnect=False)) != Conne[57 chars]code=<StatusCode.SUCCESS: 0>, is_credential_re[29 chars]lse)), Extras=None",
+			Type:   swarmingOutputType,
+		},
 	}
 }
