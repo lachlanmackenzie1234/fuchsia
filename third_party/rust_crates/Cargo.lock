@@ -6240,16 +6240,6 @@ dependencies = [
 ]
 
 [[patch.unused]]
-name = "cloudabi"
-version = "0.0.3"
-
-
-[[patch.unused]]
 name = "fuchsia-cprng"
 version = "0.1.1"
-
-
-[[patch.unused]]
-name = "hermit-abi"
-version = "0.1.19"
 
