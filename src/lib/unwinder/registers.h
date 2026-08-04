@@ -5,10 +5,12 @@
 #ifndef SRC_LIB_UNWINDER_REGISTERS_H_
 #define SRC_LIB_UNWINDER_REGISTERS_H_
 
+#include <lib/fit/result.h>
+
 #include <cstdint>
 #include <map>
+#include <ranges>
 
-#include "lib/fit/result.h"
 #include "src/lib/unwinder/error.h"
 
 namespace unwinder {
@@ -156,6 +158,16 @@ class Registers {
   auto size() const { return regs_.size(); }
   auto begin() const { return regs_.begin(); }
   auto end() const { return regs_.end(); }
+
+  // Yields a range of std::pair<std::string, uint64_t>, with the rhs actually
+  // being whatever value_projection returns when called on uint64_t.
+  auto WithNames(auto value_projection) const {
+    return std::views::transform(regs_, [this, proj = std::move(value_projection)](auto reg) {
+      auto [id, value] = reg;
+      return std::make_pair(GetRegName(id), proj(value));
+    });
+  }
+  auto WithNames() const { return WithNames(std::identity{}); }
 
   Error Get(RegisterID reg_id, uint64_t& val) const;
   Error Set(RegisterID reg_id, uint64_t val);

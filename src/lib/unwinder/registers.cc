@@ -4,11 +4,9 @@
 
 #include "src/lib/unwinder/registers.h"
 
-#include <algorithm>
 #include <cstdint>
-#include <sstream>
+#include <format>
 #include <string>
-#include <vector>
 
 namespace unwinder {
 
@@ -181,17 +179,11 @@ Error Registers::AdjustPCForThumb() {
 }
 
 std::string Registers::Describe() const {
-  std::stringstream ss;
-  for (const auto& [id, val] : regs_) {
-    ss << GetRegName(id) << "=0x" << std::hex << val << " ";
-  }
-
-  std::string s = std::move(ss).str();
-  // Remove the last space
-  if (!s.empty()) {
-    s.pop_back();
-  }
-  return s;
+  constexpr auto format_reg = [](const auto& reg) {
+    const auto& [name, value] = reg;
+    return std::format("{}={:#x}", name, value);
+  };
+  return std::format("{:n:s}", std::views::transform(WithNames(), format_reg));
 }
 
 std::string Registers::GetRegName(RegisterID reg_id) const {
