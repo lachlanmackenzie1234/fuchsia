@@ -251,33 +251,6 @@ class ClientStateSummary:
         )
 
 
-class WlanBand(enum.StrEnum):
-    """Wlan band type."""
-
-    TWO_GHZ = "TwoGhz"
-    FIVE_GHZ = "FiveGhz"
-    UNKNOWN = "Unknown"
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_ieee80211.WlanBand) -> "WlanBand":
-        match fidl:
-            case f_wlan_ieee80211.WlanBand.TWO_GHZ:
-                return WlanBand.TWO_GHZ
-            case f_wlan_ieee80211.WlanBand.FIVE_GHZ:
-                return WlanBand.FIVE_GHZ
-            case _:
-                raise TypeError(f"Unknown WlanBand FIDL value: {fidl}")
-
-    def to_fidl(self) -> f_wlan_ieee80211.WlanBand:
-        match self:
-            case WlanBand.TWO_GHZ:
-                return f_wlan_ieee80211.WlanBand.TWO_GHZ
-            case WlanBand.FIVE_GHZ:
-                return f_wlan_ieee80211.WlanBand.FIVE_GHZ
-            case WlanBand.UNKNOWN:
-                raise TypeError("WlanBand.UNKNOWN doesn't have FIDL equivalent")
-
-
 @dataclass(frozen=True)
 class WlanInterfaces:
     """WLAN interfaces separated by device type and keyed by MAC address."""
