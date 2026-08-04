@@ -1,3 +1,4 @@
+## require is_coverage=false
 [zxdb] break step_plt.cc:12
 Created Breakpoint 1 @ step_plt.cc:12
 
