@@ -5,13 +5,20 @@
 import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
+import("//build/drivers/dml.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("aml-nna-dml") {
+  dml = "meta/aml-nna.dml"
+  driver_name = "aml-nna"
+}
+
 driver_bind_rules("aml_nna_bind") {
-  rules = "meta/aml-nna.bind"
+  dml_label = ":aml-nna-dml"
   bind_output = "aml-nna.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.devicetree",
@@ -66,7 +73,7 @@ fuchsia_driver_component("aml-nna") {
   component_name = "aml-nna"
   deps = [ ":aml-nna-driver" ]
   info = "meta/aml-nna-info.json"
-  manifest = "meta/aml-nna.cml"
+  dml_label = ":aml-nna-dml"
 }
 
 fuchsia_driver_package("package") {
