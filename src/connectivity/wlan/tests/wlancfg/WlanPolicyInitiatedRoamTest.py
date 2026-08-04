@@ -4,23 +4,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import time
+import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import fidl_fuchsia_wlan_common as f_wlan_common
-import fuchsia_async_extension
+import fuchsia_wlan_base_test
 from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
-from mobly.records import TestResultRecord
 from openwrt_access_point import Radio
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -42,6 +39,8 @@ from openwrt_access_point.lib.access_point_config import (
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,15 +87,15 @@ _DUT_SECURITY_TO_COMPATIBLE_AP_SECURITIES: dict[
 }
 
 
-class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
+class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests Fuchsia's WLAN Policy-initiated roam support.
 
     Testbed Requirements:
     * One Fuchsia device
-    * One Whirlwind access point
+    * One Whirlwind or OpenWrt access point
     """
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         test_args: list[tuple[TestParams]] = []
 
         for (
@@ -160,42 +159,28 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
             arg_sets=test_args,
         )
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
 
-        self.fuchsia_device, self.dut = self.get_dut_type(
-            FuchsiaDevice, AssociationMode.POLICY
-        )
-
-        self.openwrt_ap = None
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
+        if not self.openwrt_ap and not self.access_point:
             raise signals.TestAbortClass("Requires at least one access point")
 
-    def teardown_class(self) -> None:
-        self.dut.disconnect()
+    async def teardown_class(self) -> None:
         if self.access_point:
             self.access_point.stop_all_aps()
-        super().teardown_class()
+        await super().teardown_class()
 
-    def teardown_test(self) -> None:
-        self.dut.disconnect()
-        self.download_logs()
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
+
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
         if self.access_point:
             self.access_point.stop_all_aps()
-        super().teardown_test()
+        await super().teardown_test()
 
-    def on_fail(self, record: TestResultRecord) -> None:
-        self.dut.disconnect()
-        if self.access_point:
-            self.access_point.stop_all_aps()
-        super().on_fail(record)
-
-    def _get_client_mac(self) -> str:
+    async def _get_client_mac(self) -> str:
         """Get the MAC address of the DUT client interface.
 
         Returns:
@@ -204,29 +189,40 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
             ValueError if there is no DUT client interface.
             WlanError if the DUT interface query fails.
         """
-        for wlan_iface in self.dut.get_wlan_interface_id_list():
-            result = fuchsia_async_extension.get_loop().run_until_complete(
-                self.fuchsia_device.honeydew_fd.wlan_core.query_iface(
-                    wlan_iface
-                )
-            )
+        for wlan_iface in await self.dut.wlan_core.get_iface_id_list():
+            result = await self.dut.wlan_core.query_iface(wlan_iface)
             if result.role == f_wlan_common.WlanMacRole.CLIENT:
                 return utils.mac_address_list_to_str(bytes(result.sta_addr))
         raise ValueError(
             "Failed to get client interface mac address. No client interface found."
         )
 
-    def _test_logic(self, test: TestParams) -> None:
+    async def _test_logic(self, test: TestParams) -> None:
         """Setup the APs, associate a DUT, and slowly reduce AP signal strength until roam.
 
         Args:
             test: Test parameters
         """
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
-        original_password = None
-        if not isinstance(test.original_security, SecurityOpen):
-            # Length 13, so it can be used for WEP or WPA
-            original_password = utils.rand_ascii_str(13)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
+        # Length 13, so it can be used for WEP or WPA
+        password = AccessPointConfig.random_string(13)
+        original_password = (
+            password
+            if not isinstance(test.original_security, SecurityOpen)
+            else None
+        )
+        target_password = (
+            password
+            if not isinstance(test.target_security, SecurityOpen)
+            else None
+        )
+        dut_password = (
+            password
+            if not isinstance(test.dut_security, SecurityOpen)
+            else None
+        )
 
         if self.openwrt_ap:
             config = AccessPointConfig(
@@ -247,7 +243,7 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                             BssSettings(
                                 ssid=ssid,
                                 security=test.target_security,
-                                password=original_password,
+                                password=target_password,
                             )
                         ],
                     ),
@@ -275,18 +271,19 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                     password=original_password,
                 ),
             )
-        asserts.assert_true(
-            self.dut.associate(
-                ssid,
-                target_pwd=original_password,
-                target_security=ConfigMapper.to_hostapd_security(
-                    test.dut_security
-                ),
-            ),
-            "Failed to associate.",
+        await self.dut.wlan_policy.save_network(
+            ssid,
+            test.dut_security.to_fidl_wlan_policy(),
+            target_pwd=dut_password,
         )
+        await self.dut.wlan_policy.connect(
+            ssid,
+            test.dut_security.to_fidl_wlan_policy(),
+        )
+
         # Verify that DUT is actually associated (as seen from AP).
-        client_mac = self._get_client_mac()
+        client_mac = await self._get_client_mac()
+        iface_status = None
 
         original_identifier = ""
         target_identifier = ""
@@ -337,7 +334,7 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                     security_mode=ConfigMapper.to_hostapd_security(
                         test.target_security
                     ),
-                    password=original_password,
+                    password=target_password,
                 ),
             )
 
@@ -367,6 +364,10 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                 )
                 self.access_point.iwconfig.ap_iwconfig(id, "txpower auto")
         for i in range(NUM_ITERATIONS):
+            logger.info(
+                f"Iteration {i + 1}/{NUM_ITERATIONS}: "
+                f"Reducing power from {current_dbm} dBm."
+            )
             # Reduce power, but with a floor of 1 dBm.
             current_dbm = max(current_dbm // 2, 1)
             if self.openwrt_ap:
@@ -393,6 +394,9 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                         )
 
                     if is_authorized:
+                        logger.info(
+                            "DUT successfully roamed and is authorized on target BSS!"
+                        )
                         break
                     # We want to detect if DUT disconnected from the original BSS without roaming to the
                     # target BSS. Specifically, we want to avoid a false positive if DUT does a full
@@ -417,7 +421,7 @@ class WlanPolicyInitiatedRoamTest(base_test.WifiBaseTest):
                         raise signals.TestFailure(
                             "DUT left original BSS without roaming to target BSS"
                         )
-                time.sleep(0.25)
+                await asyncio.sleep(0.25)
 
         if test.expect_roam:
             # Verify that DUT roamed (as seen from AP).
