@@ -133,6 +133,9 @@ pub struct RemoteFs {
 
     // The rights used for the root node.
     root_rights: fio::Flags,
+
+    /// Casefold support is only assumed if QueryFilesystem exists and fs_type is Fxfs.
+    casefold: bool,
 }
 
 impl RemoteFs {
@@ -525,7 +528,7 @@ impl RemoteFs {
             root_proxy.query_filesystem(zx::MonotonicInstant::INFINITE).map_err(|_| errno!(EIO))?;
 
         // Be tolerant of errors here; many filesystems return `ZX_ERR_NOT_SUPPORTED`.
-        let use_remote_ids = status == 0
+        let is_fxfs = status == 0
             && info
                 .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
                 .unwrap_or(false);
@@ -538,7 +541,16 @@ impl RemoteFs {
         )
         .map_err(map_sync_io_client_error)?;
 
-        Ok((RemoteFs { use_remote_ids, root_proxy, root_rights }, remote_node, node_info, node_id))
+        // We currently only support remote_ids and casefold on Fxfs.
+        let use_remote_ids = is_fxfs;
+        let casefold = is_fxfs;
+
+        Ok((
+            RemoteFs { use_remote_ids, root_proxy, root_rights, casefold },
+            remote_node,
+            node_info,
+            node_id,
+        ))
     }
 
     pub fn new_fs(
@@ -1223,6 +1235,10 @@ impl FsNodeOps for RemoteNode {
             })
             .map(|r| r.map_err(|status| from_status_like_fdio!(status)).flatten())
             .collect()
+    }
+
+    fn has_casefold_support(&self, node: &FsNode) -> bool {
+        RemoteFs::from_fs(&node.fs()).casefold
     }
 
     fn truncate(
@@ -4731,6 +4747,61 @@ mod test {
             assert_eq!(node.entry.node.get_size(&current_task).expect("get_size failed"), 3);
         })
         .await;
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_remote_fs_casefold_not_supported_on_non_fxfs() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
+            let (server, client) = zx::Channel::create();
+            fdio::open("/pkg", rights, server).expect("failed to open /pkg");
+            let fs = RemoteFs::new_fs(
+                &kernel,
+                client,
+                FileSystemOptions { source: FlyByteStr::new(b"/pkg"), ..Default::default() },
+                rights,
+            )
+            .unwrap();
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            assert!(!root.entry.node.ops().has_casefold_support(&root.entry.node));
+            assert_eq!(
+                root.entry.node.update_attributes(&current_task, |info| {
+                    info.casefold = true;
+                    Ok(())
+                }),
+                error!(ENOTSUP)
+            );
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_remote_fs_casefold_supported_on_fxfs() {
+        let fixture = TestFixture::new().await;
+        let (server, client) = zx::Channel::create();
+        fixture.root().clone(server.into()).expect("clone failed");
+
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
+            let fs = RemoteFs::new_fs(
+                &kernel,
+                client,
+                FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
+                rights,
+            )
+            .expect("new_fs failed");
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            assert!(root.entry.node.ops().has_casefold_support(&root.entry.node));
+        })
+        .await;
+
         fixture.close().await;
     }
 }
