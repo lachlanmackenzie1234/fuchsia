@@ -7,11 +7,17 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("aml-canvas-dml") {
+  dml = "meta/aml-canvas.dml"
+  driver_name = "aml-canvas"
+}
+
 driver_bind_rules("aml_canvas_bind") {
-  rules = "meta/aml-canvas.bind"
+  dml_label = ":aml-canvas-dml"
   bind_output = "aml-canvas.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.devicetree",
     "//src/devices/bind/fuchsia.platform",
@@ -56,7 +62,7 @@ fuchsia_driver_component("aml-canvas") {
   component_name = "aml-canvas"
   deps = [ ":aml-canvas-driver" ]
   info = "meta/aml-canvas-info.json"
-  manifest = "meta/aml-canvas.cml"
+  dml_label = ":aml-canvas-dml"
 }
 
 fuchsia_driver_package("package") {
