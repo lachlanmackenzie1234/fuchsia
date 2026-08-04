@@ -437,19 +437,6 @@ pub(super) trait Validate {
     fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error>;
 }
 
-pub(super) trait ValidateArray<M, D> {
-    /// The type of error that may be returned from `validate()`, usually [`ParseError`] or
-    /// [`anyhow::Error`].
-    type Error: Into<anyhow::Error>;
-
-    /// Validates a `Self`, returning a `Self::Error` if `self` is internally inconsistent.
-    fn validate_array(
-        context: &PolicyValidationContext,
-        metadata: &M,
-        items: &[D],
-    ) -> Result<(), Self::Error>;
-}
-
 /// Treat a type as metadata that contains a count of subsequent data.
 pub(super) trait Counted {
     /// Returns the count of subsequent data items.
@@ -553,73 +540,6 @@ impl<T: Clone + Debug + FromBytes + KnownLayout + Immutable + PartialEq + Unalig
         bytes.parse::<T>().map_err(anyhow::Error::from)
     }
 }
-
-/// Defines a at type that wraps an [`Array`], implementing `Deref`-as-`Array` and [`Parse`]. This
-/// macro should be used in contexts where using a general [`Array`] implementation may introduce
-/// conflicting implementations on account of general [`Array`] type parameters.
-macro_rules! array_type {
-    ($type_name:ident, $metadata_type:ty, $data_type:ty, $metadata_type_name:expr, $data_type_name:expr) => {
-        #[doc = "An [`Array`] with [`"]
-        #[doc = $metadata_type_name]
-        #[doc = "`] metadata and [`"]
-        #[doc = $data_type_name]
-        #[doc = "`] data items."]
-        #[derive(Debug, PartialEq)]
-        pub(super) struct $type_name(super::Array<$metadata_type, $data_type>);
-
-        impl std::ops::Deref for $type_name {
-            type Target = super::Array<$metadata_type, $data_type>;
-
-            fn deref(&self) -> &Self::Target {
-                &self.0
-            }
-        }
-
-        impl super::Parse for $type_name
-        where
-            super::Array<$metadata_type, $data_type>: super::Parse,
-        {
-            type Error = <Array<$metadata_type, $data_type> as super::Parse>::Error;
-
-            fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-                let (array, tail) = Array::<$metadata_type, $data_type>::parse(bytes)?;
-                Ok((Self(array), tail))
-            }
-        }
-    };
-
-    ($type_name:ident, $metadata_type:ty, $data_type:ty) => {
-        array_type!(
-            $type_name,
-            $metadata_type,
-            $data_type,
-            stringify!($metadata_type),
-            stringify!($data_type)
-        );
-    };
-}
-
-pub(super) use array_type;
-
-macro_rules! array_type_validate_deref_both {
-    ($type_name:ident) => {
-        impl Validate for $type_name {
-            type Error = anyhow::Error;
-
-            fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-                let metadata = &self.metadata;
-                metadata.validate(context)?;
-
-                self.data.validate(context).map_err(Into::<anyhow::Error>::into)?;
-
-                Self::validate_array(context, metadata, &self.data)
-                    .map_err(Into::<anyhow::Error>::into)
-            }
-        }
-    };
-}
-
-pub(super) use array_type_validate_deref_both;
 
 #[cfg(test)]
 pub(super) mod tests {
@@ -1788,8 +1708,6 @@ pub(super) mod tests {
     }
 
     #[test]
-    // TODO(http://b/334968228): Determine whether allow-role-transition check belongs in `compute_create_context()`, or in the calling hooks, or `PermissionCheck::has_permission()`.
-    #[ignore]
     fn compute_create_context_role_transition_not_allowed() {
         let policy_bytes = include_bytes!(
             "../../testdata/composite_policies/compiled/role_transition_not_allowed_policy"
@@ -1804,9 +1722,50 @@ pub(super) mod tests {
             .expect("valid target security context");
 
         let actual = policy.compute_create_context(&source, &target, FileClass::File);
+        let expected: SecurityContext = policy
+            .parse_security_context(b"source_u:transition_r:target_t:s0:c0".into())
+            .expect("valid expected security context");
 
-        // TODO(http://b/334968228): Update expectation once role validation is implemented.
-        assert!(policy.validate_security_context(&actual).is_err());
+        // Role-allow rules are not checked during `compute_create_context()`; they are checked
+        // during `compute_access_decision()` on the "process" class.
+        assert_eq!(expected, actual);
+        assert!(policy.validate_security_context(&actual).is_ok());
+    }
+
+    #[test]
+    fn compute_access_decision_role_allow() {
+        // 1. With `role_transition_policy`, `allow source_r transition_r;` is present.
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+        let source = policy
+            .parse_security_context(b"source_u:source_r:source_t:s0:c0-s2:c0.c1".into())
+            .expect("valid source security context");
+        let target = policy
+            .parse_security_context(b"source_u:transition_r:target_t:s0:c0".into())
+            .expect("valid target security context");
+
+        let decision_allowed =
+            policy.compute_access_decision(&source, &target, KernelClass::Process);
+        assert_ne!(decision_allowed.allow, AccessVector::NONE);
+
+        // 2. With `role_transition_not_allowed_policy`, `allow source_r transition_r;` is missing.
+        let policy_bytes = include_bytes!(
+            "../../testdata/composite_policies/compiled/role_transition_not_allowed_policy"
+        );
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+        let source = policy
+            .parse_security_context(b"source_u:source_r:source_t:s0:c0-s2:c0.c1".into())
+            .expect("valid source security context");
+        let target = policy
+            .parse_security_context(b"source_u:transition_r:target_t:s0:c0".into())
+            .expect("valid target security context");
+
+        let decision_denied =
+            policy.compute_access_decision(&source, &target, KernelClass::Process);
+        assert_eq!(decision_denied.allow, AccessVector::NONE);
     }
 
     #[test]

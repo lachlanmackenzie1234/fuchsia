@@ -7,7 +7,7 @@ use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::PolicyCursor;
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{NewPolicy, TypeSet};
+use super::{ClassId, NewPolicy, TypeId, TypeSet};
 
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
@@ -91,10 +91,54 @@ impl Validate for RoleId {
     }
 }
 
+/// SELinux policy role transition rule (`role_transition`).
+#[derive(Clone, Debug, PartialEq, Eq, Parse, Serialize, Validate)]
+pub struct RoleTransition {
+    current_role: RoleId,
+    type_: TypeId,
+    new_role: RoleId,
+    class: ClassId,
+}
+
+impl RoleTransition {
+    pub fn current_role(&self) -> RoleId {
+        self.current_role
+    }
+
+    pub fn type_(&self) -> TypeId {
+        self.type_
+    }
+
+    pub fn new_role(&self) -> RoleId {
+        self.new_role
+    }
+
+    pub fn class(&self) -> ClassId {
+        self.class
+    }
+}
+
+/// SELinux policy role allow rule (`allow` for roles).
+#[derive(Clone, Debug, PartialEq, Eq, Parse, Serialize, Validate)]
+pub struct RoleAllow {
+    source_role: RoleId,
+    new_role: RoleId,
+}
+
+impl RoleAllow {
+    pub fn source_role(&self) -> RoleId {
+        self.source_role
+    }
+
+    pub fn new_role(&self) -> RoleId {
+        self.new_role
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::traits::{HasName, HasPolicyId};
+    use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 
     #[test]
     fn test_role_parse_and_serialize() {
@@ -123,5 +167,52 @@ mod tests {
         let mut writer = Vec::new();
         role.serialize(&mut writer).unwrap();
         assert_eq!(writer, data);
+    }
+
+    #[test]
+    fn test_role_transition_parse_and_serialize() {
+        let data = [
+            1, 0, 0, 0, // current_role = 1
+            2, 0, 0, 0, // type_ = 2
+            3, 0, 0, 0, // new_role = 3
+            4, 0, 0, 0, // class = 4
+        ];
+        let mut cursor = PolicyCursor::new(&data);
+        let trans = RoleTransition::parse(&mut cursor).unwrap();
+        assert_eq!(trans.current_role(), RoleId::from_u32(1).unwrap());
+        assert_eq!(trans.type_(), TypeId::from_u32(2).unwrap());
+        assert_eq!(trans.new_role(), RoleId::from_u32(3).unwrap());
+        assert_eq!(trans.class(), ClassId::from_u32(4).unwrap());
+
+        let mut writer = Vec::new();
+        trans.serialize(&mut writer).unwrap();
+        assert_eq!(writer, data);
+    }
+
+    #[test]
+    fn test_role_allow_parse_and_serialize() {
+        let data = [
+            1, 0, 0, 0, // source_role = 1
+            2, 0, 0, 0, // new_role = 2
+        ];
+        let mut cursor = PolicyCursor::new(&data);
+        let allow = RoleAllow::parse(&mut cursor).unwrap();
+        assert_eq!(allow.source_role(), RoleId::from_u32(1).unwrap());
+        assert_eq!(allow.new_role(), RoleId::from_u32(2).unwrap());
+
+        let mut writer = Vec::new();
+        allow.serialize(&mut writer).unwrap();
+        assert_eq!(writer, data);
+    }
+
+    #[test]
+    fn test_role_policy_elements() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy");
+        let new_policy = NewPolicy::parse(policy_bytes).expect("parse role_transition policy");
+        new_policy.validate().expect("validate role_transition policy");
+
+        assert_eq!(new_policy.role_transitions().len(), 2);
+        assert_eq!(new_policy.role_allowlist().len(), 1);
     }
 }

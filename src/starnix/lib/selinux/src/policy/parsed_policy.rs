@@ -6,7 +6,7 @@ use super::arrays::{
     Context, DeprecatedFilenameTransition, FilenameTransition, FilenameTransitionList, FsUse,
     GenericFsContext, IPv6Node, InfinitiBandEndPort, InfinitiBandPartitionKey, InitialSid,
     MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPair, Node, Port,
-    RangeTransition, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
+    RangeTransition, SimpleArray,
 };
 use super::error::{ParseError, ValidateError};
 use crate::new_policy::TypeSet;
@@ -53,10 +53,6 @@ pub struct ParsedPolicy {
     /// [`NewPolicy`] that handles the header and base tables.
     new_policy: Arc<NewPolicy>,
 
-    /// The set of role transitions to apply when instantiating new objects.
-    role_transitions: RoleTransitions,
-    /// The set of role transitions allowed by policy.
-    role_allowlist: RoleAllows,
     filename_transition_list: FilenameTransitionList,
     initial_sids: SimpleArray<InitialSid>,
     filesystems: SimpleArray<NamedContextPair>,
@@ -295,14 +291,6 @@ impl ParsedPolicy {
         self.generic_fs_contexts.find_all(query, &self.data)
     }
 
-    pub(super) fn role_allowlist(&self) -> &[RoleAllow] {
-        &self.role_allowlist.data
-    }
-
-    pub(super) fn role_transitions(&self) -> &[RoleTransition] {
-        &self.role_transitions.data
-    }
-
     pub(super) fn range_transitions(&self) -> &[RangeTransition] {
         &self.range_transitions.data
     }
@@ -435,14 +423,6 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (role_transitions, tail) = RoleTransitions::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing role transitions")?;
-
-    let (role_allowlist, tail) = RoleAllows::parse(tail)
-        .map_err(Into::<anyhow::Error>::into)
-        .context("parsing role allow rules")?;
-
     let (filename_transition_list, tail) = if new_policy.policy_version() >= 33 {
         let (filename_transition_list, tail) = SimpleArray::<FilenameTransition>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
@@ -527,8 +507,6 @@ fn parse_policy_remaining(
             data: rest_data,
             new_policy: Arc::new(new_policy),
 
-            role_transitions,
-            role_allowlist,
             filename_transition_list,
             initial_sids,
             filesystems,
@@ -556,14 +534,6 @@ impl ParsedPolicy {
             new_policy: self.new_policy.clone(),
         };
 
-        self.role_transitions
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating role_transitions")?;
-        self.role_allowlist
-            .validate(&context)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("validating role_allowlist")?;
         self.filename_transition_list
             .validate(&context)
             .map_err(Into::<anyhow::Error>::into)
@@ -620,7 +590,6 @@ impl ParsedPolicy {
         // Collate the sets of user, role, type, sensitivity and category Ids.
         let user_ids: HashSet<UserId> = self.new_policy.users().iter().map(|x| x.id()).collect();
         let role_ids: HashSet<RoleId> = self.roles().iter().map(|x| x.id()).collect();
-        let class_ids: HashSet<ClassId> = self.classes().iter().map(|x| x.id()).collect();
         let type_ids: HashSet<TypeId> = self.new_policy.types().iter().map(|t| t.id()).collect();
         let sensitivity_ids: HashSet<SensitivityId> =
             self.new_policy.sensitivities().iter().map(|x| x.id()).collect();
@@ -671,18 +640,6 @@ impl ParsedPolicy {
                     &category_ids,
                 )?;
             }
-        }
-
-        // Validate that roles output by role- transitions & allows are defined.
-        for transition in &self.role_transitions.data {
-            validate_id(&role_ids, transition.current_role(), "current_role")?;
-            validate_id(&type_ids, transition.type_(), "type")?;
-            validate_id(&class_ids, transition.class(), "class")?;
-            validate_id(&role_ids, transition.new_role(), "new_role")?;
-        }
-        for allow in &self.role_allowlist.data {
-            validate_id(&role_ids, allow.source_role(), "source_role")?;
-            validate_id(&role_ids, allow.new_role(), "new_role")?;
         }
 
         // To-do comments for cross-policy validations yet to be implemented go here.

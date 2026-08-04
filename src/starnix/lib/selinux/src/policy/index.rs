@@ -4,14 +4,19 @@
 
 use super::arrays::{FsContext, FsUseType};
 use super::security_context::SecurityContext;
-use super::{AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId};
+use super::{
+    AccessDecision, AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId,
+};
 use crate::new_policy::rules::{HasRuleKey, RuleKind};
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{
     Class, ClassDefault, ClassDefaultRange, CommonSymbol, HandleUnknown, IdAndNameIndexed,
     SymbolArray,
 };
-use crate::{ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap};
+use crate::{
+    ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap,
+    ProcessPermission,
+};
 
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -45,6 +50,8 @@ pub struct PolicyIndex {
     parsed_policy: ParsedPolicy,
     /// The "object_r" role used as a fallback for new file context transitions.
     cached_object_r_role: RoleId,
+    /// The cached `ClassId` for the "process" class, if defined by the policy.
+    cached_process_class: Option<ClassId>,
 }
 
 impl PolicyIndex {
@@ -109,7 +116,15 @@ impl PolicyIndex {
             .ok_or_else(|| anyhow::anyhow!("missing 'object_r' role"))?
             .id();
 
-        let index = Self { classes, permissions, parsed_policy, cached_object_r_role };
+        let cached_process_class = classes.get(&KernelClass::Process).copied();
+
+        let index = Self {
+            classes,
+            permissions,
+            parsed_policy,
+            cached_object_r_role,
+            cached_process_class,
+        };
 
         // Verify that the initial Security Contexts are all defined, and valid.
         for initial_sids in crate::InitialSid::all_variants() {
@@ -301,6 +316,53 @@ impl PolicyIndex {
         SecurityContext::new(user, role, type_, low_level, high_level)
     }
 
+    /// Evaluates the access rights allowed, and whether an audit should be emitted for any allowed
+    /// or denied permissions, by `source_context` acting on `target_context` as `target_class`.
+    pub(super) fn compute_access_decision(
+        &self,
+        source_context: &SecurityContext,
+        target_context: &SecurityContext,
+        target_class: &Class,
+    ) -> AccessDecision {
+        let mut access_decision = self.parsed_policy.compute_access_decision(
+            source_context,
+            target_context,
+            target_class,
+        );
+
+        // Process domain transitions ("transition" and "dyntransition") across different roles
+        // require explicit authorization in policy via a role allow rule ("allow old_role new_role;").
+        if source_context.role() != target_context.role()
+            && Some(target_class.id()) == self.cached_process_class
+        {
+            let process_trans_perms = self.process_trans_perms();
+            if (access_decision.allow & process_trans_perms) != AccessVector::NONE
+                && !self.role_transition_is_explicitly_allowed(
+                    source_context.role(),
+                    target_context.role(),
+                )
+            {
+                // The source is granted one or both of the "transition" permissions, but the role
+                // transition is not explicitly allowed, so remove those permissions from the
+                // returned decision.
+                access_decision.allow -= process_trans_perms;
+            }
+        }
+
+        access_decision
+    }
+
+    /// Returns the combined permissions mask for process `transition` and `dyntransition`.
+    fn process_trans_perms(&self) -> AccessVector {
+        let mut perms = self
+            .kernel_permission_to_access_vector(ProcessPermission::Transition)
+            .unwrap_or(AccessVector::NONE);
+        perms |= self
+            .kernel_permission_to_access_vector(ProcessPermission::DynTransition)
+            .unwrap_or(AccessVector::NONE);
+        perms
+    }
+
     /// Returns the Id of the "object_r" role within the `parsed_policy`, for use when validating
     /// Security Context fields.
     pub(super) fn object_role(&self) -> RoleId {
@@ -454,17 +516,10 @@ impl PolicyIndex {
             .map(|x| x.new_role())
     }
 
-    #[allow(dead_code)]
-    // TODO(http://b/334968228): fn to be used again when checking role allow rules separately from
-    // SID calculation.
     fn role_transition_is_explicitly_allowed(&self, source_role: RoleId, new_role: RoleId) -> bool {
-        self.parsed_policy
-            .role_allowlist()
-            .iter()
-            .find(|role_allow| {
-                role_allow.source_role() == source_role && role_allow.new_role() == new_role
-            })
-            .is_some()
+        self.parsed_policy.role_allowlist().iter().any(|role_allow| {
+            role_allow.source_role() == source_role && role_allow.new_role() == new_role
+        })
     }
 
     fn type_transition_new_type_with_name(

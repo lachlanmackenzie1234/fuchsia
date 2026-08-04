@@ -9,7 +9,7 @@ use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use super::view::{ArrayView, Walk};
 use super::{
     Array, ClassId, Counted, MlsLevel, MlsRange, Parse, PolicyValidationContext, RoleId, TypeId,
-    UserId, Validate, ValidateArray, array_type, array_type_validate_deref_both,
+    UserId, Validate,
 };
 use crate::new_policy::TypeSet;
 
@@ -51,106 +51,6 @@ impl<T: Validate + Parse + Walk> Validate for SimpleArrayView<T> {
 impl Counted for le::U32 {
     fn count(&self) -> u32 {
         self.get()
-    }
-}
-
-array_type!(RoleTransitions, le::U32, RoleTransition);
-
-array_type_validate_deref_both!(RoleTransitions);
-
-impl ValidateArray<le::U32, RoleTransition> for RoleTransitions {
-    type Error = anyhow::Error;
-
-    /// [`RoleTransitions`] have no additional metadata (beyond length encoding).
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &le::U32,
-        _items: &[RoleTransition],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct RoleTransition {
-    role: le::U32,
-    role_type: le::U32,
-    new_role: le::U32,
-    tclass: le::U32,
-}
-
-impl RoleTransition {
-    pub(super) fn current_role(&self) -> RoleId {
-        RoleId::from_u32(self.role.get()).unwrap()
-    }
-
-    pub(super) fn type_(&self) -> TypeId {
-        TypeId::from_u32(self.role_type.get()).unwrap()
-    }
-
-    pub(super) fn class(&self) -> ClassId {
-        ClassId::try_from(self.tclass.get()).unwrap()
-    }
-
-    pub(super) fn new_role(&self) -> RoleId {
-        RoleId::from_u32(self.new_role.get()).unwrap()
-    }
-}
-
-impl Validate for RoleTransition {
-    type Error = anyhow::Error;
-
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        RoleId::from_u32(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        TypeId::from_u32(self.role_type.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        ClassId::from_u32(self.tclass.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        RoleId::from_u32(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        Ok(())
-    }
-}
-
-array_type!(RoleAllows, le::U32, RoleAllow);
-
-array_type_validate_deref_both!(RoleAllows);
-
-impl ValidateArray<le::U32, RoleAllow> for RoleAllows {
-    type Error = anyhow::Error;
-
-    /// [`RoleAllows`] have no additional metadata (beyond length encoding).
-    fn validate_array(
-        _context: &PolicyValidationContext,
-        _metadata: &le::U32,
-        _items: &[RoleAllow],
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
-#[repr(C, packed)]
-pub(super) struct RoleAllow {
-    role: le::U32,
-    new_role: le::U32,
-}
-
-impl RoleAllow {
-    pub(super) fn source_role(&self) -> RoleId {
-        RoleId::from_u32(self.role.get()).unwrap()
-    }
-
-    pub(super) fn new_role(&self) -> RoleId {
-        RoleId::from_u32(self.new_role.get()).unwrap()
-    }
-}
-
-impl Validate for RoleAllow {
-    type Error = anyhow::Error;
-
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        RoleId::from_u32(self.role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        RoleId::from_u32(self.new_role.get()).ok_or(ValidateError::NonOptionalIdIsZero)?;
-        Ok(())
     }
 }
 

@@ -49,7 +49,7 @@ pub use mls::{Category, Sensitivity};
 pub use parser::SymbolArray;
 pub use permissions::PermissionId;
 pub use policy_cap::{PolicyCap, PolicyCapSet};
-pub use roles::{Role, RoleId, RoleSet};
+pub use roles::{Role, RoleAllow, RoleId, RoleSet, RoleTransition};
 pub use rules::{
     AccessDecision, AccessVectorRules, ConditionalNode, IndexedAccessVectorRules,
     SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap,
@@ -105,6 +105,8 @@ pub struct NewPolicy {
     categories: IdAndNameIndexed<SymbolArray<Category>>,
     access_vector_rules: IndexedAccessVectorRules,
     conditional_nodes: Array<ConditionalNode>,
+    role_transitions: Array<RoleTransition>,
+    role_allowlist: Array<RoleAllow>,
     rest: RemainingBytes,
 }
 
@@ -188,6 +190,16 @@ impl NewPolicy {
     /// Returns the list of conditional nodes.
     pub fn conditional_nodes(&self) -> &[ConditionalNode] {
         self.conditional_nodes.as_ref()
+    }
+
+    /// Returns the role transitions rules array.
+    pub(crate) fn role_transitions(&self) -> &[RoleTransition] {
+        self.role_transitions.as_ref()
+    }
+
+    /// Returns the role allow rules array.
+    pub(crate) fn role_allowlist(&self) -> &[RoleAllow] {
+        self.role_allowlist.as_ref()
     }
 
     /// Returns a shared reference to the remaining unparsed bytes.
