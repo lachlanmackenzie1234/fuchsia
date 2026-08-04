@@ -4,6 +4,7 @@
 
 composite aml_sdmmc;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
@@ -31,7 +32,7 @@ primary parent "pdev" {
 
 optional parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.SDMMC_RESET;
+  fuchsia.NAME == "SDMMC_RESET";
 }
 
 optional parent "pwm" {

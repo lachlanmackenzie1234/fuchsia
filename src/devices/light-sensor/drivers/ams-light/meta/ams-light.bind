@@ -4,13 +4,15 @@
 
 composite tcs3400_light;
 
+using fuchsia;
+
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
 }
 
 parent "gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.LIGHT_INTERRUPT;
+  fuchsia.NAME == "LIGHT_INTERRUPT";
 }
 
 parent "pdev" {

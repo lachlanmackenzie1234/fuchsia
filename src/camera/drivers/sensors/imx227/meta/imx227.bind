@@ -4,6 +4,7 @@
 
 composite imx227_sensor;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.clock;
 using fuchsia.gpio;
@@ -36,17 +37,17 @@ parent "i2c" {
 
 parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.CAM_RESET;
+  fuchsia.NAME == "CAM_RESET";
 }
 
 parent "gpio-vana" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VANA_ENABLE;
+  fuchsia.NAME == "VANA_ENABLE";
 }
 
 parent "gpio-vdig" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VDIG_ENABLE;
+  fuchsia.NAME == "VDIG_ENABLE";
 }
 
 parent "clock-sensor" {

@@ -4,6 +4,7 @@
 
 composite aml_tdm;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
@@ -44,7 +45,7 @@ optional parent "gpio-init" {
 
 optional parent "gpio-enable" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.SOC_AUDIO_ENABLE;
+  fuchsia.NAME == "SOC_AUDIO_ENABLE";
 }
 
 optional parent "codec-01" {

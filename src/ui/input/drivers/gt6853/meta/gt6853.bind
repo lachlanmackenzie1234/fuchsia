@@ -4,6 +4,7 @@
 
 composite gt6853_touch;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.goodix.platform;
 using fuchsia.gpio;
@@ -25,12 +26,12 @@ parent "i2c" {
 
 parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_INTERRUPT;
+  fuchsia.NAME == "TOUCH_INTERRUPT";
 }
 
 parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_RESET;
+  fuchsia.NAME == "TOUCH_RESET";
 }
 
 optional parent "gpio-init" {

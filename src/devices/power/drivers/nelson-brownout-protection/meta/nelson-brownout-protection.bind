@@ -4,6 +4,7 @@
 
 composite brownout_protection;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.ti.platform;
 using fuchsia.amlogic.platform.s905d3;
@@ -23,7 +24,7 @@ parent "power-sensor" {
 
 parent "alert-gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.GPIO_ALERT_PWR_L;
+  fuchsia.NAME == "GPIO_ALERT_PWR_L";
 }
 
 optional parent "gpio-init" {

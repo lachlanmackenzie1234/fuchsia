@@ -4,6 +4,7 @@
 
 composite gt92xx_touch;
 
+using fuchsia;
 
 primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
@@ -12,12 +13,12 @@ primary parent "i2c" {
 
 parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_INTERRUPT;
+  fuchsia.NAME == "TOUCH_INTERRUPT";
 }
 
 parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_RESET;
+  fuchsia.NAME == "TOUCH_RESET";
 }
 
 optional parent "pdev" {

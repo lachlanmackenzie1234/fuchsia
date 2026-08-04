@@ -4,6 +4,7 @@
 
 composite aml_pwm_init;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.hardware.gpio;
@@ -19,7 +20,7 @@ optional parent "gpio-init" {
 
 parent "gpio-bt" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.BT_REG_ON;
+  fuchsia.NAME == "BT_REG_ON";
 }
 
 optional parent "pin-states-0" {

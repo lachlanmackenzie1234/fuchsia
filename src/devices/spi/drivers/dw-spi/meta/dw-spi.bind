@@ -4,6 +4,7 @@
 
 composite dw_spi;
 
+using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.clock;
 using fuchsia.devicetree;
@@ -37,7 +38,7 @@ parent "power-domain" {
 
 optional parent "gpio-cs-0" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
-  fuchsia.gpio.FUNCTION == "fuchsia.gpio.FUNCTION.cs-0";
+  fuchsia.NAME == "cs-0";
 }
 
 optional parent "gpio-init-0" {
