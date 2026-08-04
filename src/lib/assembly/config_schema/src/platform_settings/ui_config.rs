@@ -142,7 +142,7 @@ impl Default for PlatformUiConfig {
             use_separate_input_thread: true,
             display_composition: false,
             display_composition_enable_heuristics: false,
-            use_flatland2_uberstruct_schema: true,
+            use_flatland2_uberstruct_schema: false,
             supported_input_devices: Default::default(),
             display_rotation: Default::default(),
             display_pixel_density: Default::default(),
