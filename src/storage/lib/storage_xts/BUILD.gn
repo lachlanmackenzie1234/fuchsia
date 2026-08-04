@@ -16,6 +16,8 @@ rustc_library("storage_xts") {
     "//third_party/rust_crates:zerocopy",
   ]
 
+  test_deps = [ "//third_party/rust_crates:test-case" ]
+
   sources = [ "src/lib.rs" ]
 
   # Default optimizations are for size, but that has a noticeable impact on
