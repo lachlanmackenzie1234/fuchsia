@@ -177,8 +177,11 @@ zx::result<zx::process> Launcher::Launch(zx::job job, zx::vmo executable, fbl::u
     return zx::error{status};
   }
 
-  // Start the process running.
   zx::process process;
+  zx::thread thread;
+  uintptr_t entry = 0;
+  uintptr_t stack = 0;
+  uintptr_t vdso_base = 0;
   std::vector<zx::handle> initial_handles;
   {
     fidl::UnownedClientEnd<fprocess::Launcher> client_end{channel_.borrow()};
@@ -200,14 +203,11 @@ zx::result<zx::process> Launcher::Launch(zx::job job, zx::vmo executable, fbl::u
     }
 
     auto& data = reply.value().data;
-    status = data->process.start(data->thread, data->entry, data->stack,
-                                 std::move(bootstrap_receive), data->vdso_base);
-    EXPECT_EQ(status, ZX_OK) << "zx_process_start: " << zx_status_get_string(status);
-    if (status != ZX_OK) {
-      return zx::error{status};
-    }
-
     process = std::move(data->process);
+    thread = std::move(data->thread);
+    entry = data->entry;
+    stack = data->stack;
+    vdso_base = data->vdso_base;
 
     // Most of the handles are in the data.  But the launcher doesn't give us
     // the ELF image VMAR handle; that's only in the bootstrap message it
@@ -229,6 +229,13 @@ zx::result<zx::process> Launcher::Launch(zx::job job, zx::vmo executable, fbl::u
 
   if (auto send = sender.SendHandles(std::move(handles)); send.is_error()) {
     return send.take_error();
+  }
+
+  // Start the process running.
+  status = process.start(thread, entry, stack, std::move(bootstrap_receive), vdso_base);
+  EXPECT_EQ(status, ZX_OK) << "zx_process_start: " << zx_status_get_string(status);
+  if (status != ZX_OK) {
+    return zx::error{status};
   }
 
   return zx::ok(std::move(process));
