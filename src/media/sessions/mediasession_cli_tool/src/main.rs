@@ -5,7 +5,6 @@
 use argh::FromArgs;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_media_sessions2::*;
-use fuchsia_async as fasync;
 use fuchsia_component::client;
 use futures::prelude::*;
 
@@ -72,7 +71,7 @@ struct Pause {}
 /// Tears down the session.
 struct Stop {}
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), anyhow::Error> {
     let invocation: Invocation = argh::from_env();
     let discovery = client::connect_to_protocol::<DiscoveryMarker>()?;

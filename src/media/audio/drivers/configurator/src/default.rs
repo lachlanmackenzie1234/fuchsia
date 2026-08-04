@@ -882,7 +882,7 @@ mod tests {
 
     // Integration tests using //src/media/audio/drivers/testing/realm devices.
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_default_configurator_devices_found() -> Result<()> {
         let (_realm_instance, codec_proxy) = get_dev_proxy("class/codec").await?;
@@ -932,7 +932,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_default_configurator_devices_not_found() -> Result<()> {
         let (_realm_instance, codec_proxy) = get_dev_proxy("class/codec").await?;
@@ -994,7 +994,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_default_configurator_create_ring_buffer() -> Result<()> {
         let (_realm_instance, dai_proxy) = get_dev_proxy("class/dai").await?;
@@ -1037,7 +1037,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_default_configurator_create_ring_buffer_with_codec() -> Result<()> {
         let (_realm_instance, dai_proxy) = get_dev_proxy("class/dai").await?;
@@ -1645,7 +1645,7 @@ mod tests {
         assert_eq!(plug_state.plug_state_time, Some(TEST_CODEC_PLUG_STATE_TIME));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_default_configurator_find_codecs_check_dai_channel() -> Result<()> {
         let mut config = Config::new()?;
         let number_of_codecs = 5;
@@ -1691,7 +1691,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_default_configurator_find_codecs_check_input_output_codecs() -> Result<()> {
         let mut config = Config::new()?;
 
@@ -1789,7 +1789,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_default_configurator_find_codec_with_signal_processing() -> Result<()> {
         let mut config = Config::new()?;
         config.load_device(

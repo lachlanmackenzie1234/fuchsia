@@ -151,7 +151,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_dai_api() -> Result<(), Error> {
         let (_realm_instance, dev_proxy) = get_dev_proxy("class/dai").await?;

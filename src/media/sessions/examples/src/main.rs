@@ -6,10 +6,10 @@
 
 use anyhow::{Context as _, Error};
 use fidl::endpoints::create_endpoints;
-use fidl_fuchsia_media::{Metadata, Property, TimelineFunction, METADATA_LABEL_ARTIST};
+use fidl_fuchsia_media::{METADATA_LABEL_ARTIST, Metadata, Property, TimelineFunction};
 use fidl_fuchsia_media_sessions2::*;
+use fuchsia_component as component;
 use futures::prelude::*;
-use {fuchsia_async as fasync, fuchsia_component as component};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -72,7 +72,7 @@ impl Player {
     }
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<()> {
     let (player_client_end, player_server_end) = create_endpoints::<PlayerMarker>();
 

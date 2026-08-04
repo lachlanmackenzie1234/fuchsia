@@ -115,7 +115,7 @@ mod tests {
     use crate::testing::tests::{NullConfigurator, get_dev_proxy};
     use anyhow::Result;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_find_codecs() -> Result<()> {
         let (_realm_instance, dev_proxy) = get_dev_proxy("class/codec").await?;
@@ -125,7 +125,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_find_dais() -> Result<()> {
         let (_realm_instance, dev_proxy) = get_dev_proxy("class/dai").await?;

@@ -308,7 +308,7 @@ async fn main() -> Result<(), Error> {
 mod tests {
     use super::*;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_play_unknown_render_usage() {
         let connector = Arc::new(Mutex::new(DeviceControlConnector::new()));
         let request = fac::PlayerPlayRequest {
@@ -325,7 +325,7 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_record_unknown_capture_usage() {
         let connector = Arc::new(Mutex::new(DeviceControlConnector::new()));
         let request = fac::RecorderRecordRequest {
