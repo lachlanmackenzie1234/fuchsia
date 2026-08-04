@@ -2162,7 +2162,7 @@ static zx::result<chanspec_t> bss_chanspec_2g_bw40(
 
   uint8_t center_channel = primary;
 
-  uint8_t sb = WL_CHANSPEC_CTL_SB_NONE;
+  chanspec_t sb = WL_CHANSPEC_CTL_SB_NONE;
   if (cbw == ChannelBandwidth::kCbw40) {
     center_channel += 2;
     sb = WL_CHANSPEC_CTL_SB_LOWER;
@@ -2191,7 +2191,7 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
   // Some scenarios require specific bandwidth overrides.
   const auto cbw_override = enforce_bandwidth_limitations(bss.primary(), bss.bandwidth());
 
-  uint16_t bandwidth;
+  chanspec_t bandwidth;
   switch (cbw_override) {
     case ChannelBandwidth::kCbw20:
       bandwidth = WL_CHANSPEC_BW_20;
@@ -2214,7 +2214,7 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
     case ChannelBandwidth::kCbw80P80: {
       // Special case for 80+80 MHz channel, because channel2chanspec doesn't support it.
       const auto cbw_override = enforce_bandwidth_limitations(bss.primary(), bss.bandwidth());
-      const uint16_t chanspec = channel_to_chanspec(&cfg->d11inf, bss.primary(), cbw_override);
+      const chanspec_t chanspec = channel_to_chanspec(&cfg->d11inf, bss.primary(), cbw_override);
 
       if (chspec_malformed(chanspec)) {
         return zx::error(ZX_ERR_INTERNAL);
