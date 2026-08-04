@@ -825,3 +825,42 @@ exit 0
 		t.Errorf("Expected 'target list' in args, got: %s", args)
 	}
 }
+
+func TestFFXStrictClient_TargetWait(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "my-target"
+	client.SetDefaultTarget(&target)
+
+	err = client.TargetWait(ctx)
+	if err != nil {
+		t.Fatalf("TargetWait failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "target wait") {
+		t.Errorf("Expected 'target wait' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "--target my-target") {
+		t.Errorf("Expected '--target my-target' in args, got: %s", args)
+	}
+}
