@@ -21,6 +21,7 @@ from daemon.handlers import (
     continue_req,
     detach,
     evaluate,
+    finish,
     get_state,
     hello,
     pause,
@@ -161,10 +162,13 @@ class Daemon:
 
         # Statically register handlers.
         handlers = [
+            # keep-sorted start
             attach,
             break_req,
             continue_req,
             detach,
+            evaluate,
+            finish,
             get_state,
             hello,
             pause,
@@ -174,7 +178,7 @@ class Daemon:
             threads,
             variables,
             wait_for_event,
-            evaluate,
+            # keep-sorted end
         ]
         for mod in handlers:
             handler_fn = functools.partial(mod.handle, self)

@@ -28,6 +28,7 @@ if (is_host) {
       "handlers/continue_req.py",
       "handlers/detach.py",
       "handlers/evaluate.py",
+      "handlers/finish.py",
       "handlers/get_state.py",
       "handlers/hello.py",
       "handlers/pause.py",

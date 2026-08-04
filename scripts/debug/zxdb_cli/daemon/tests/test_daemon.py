@@ -16,6 +16,7 @@ from shared.protocol import (
 from shared.protocol.attach import AttachRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
+from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.threads import ThreadsRequest
@@ -112,6 +113,24 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(resp.success)
         mock_dap_client.continue_thread.assert_called_once()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_finish(self, mock_dap_client_class: Mock) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_finish_resp = Mock()
+        mock_finish_resp.dump_dap.return_value = {"success": True}
+        mock_dap_client.step_out = AsyncMock(return_value=mock_finish_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "finish",
+            FinishRequest(command="finish", thread_id=1, single_thread=True),
+        )
+        self.assertTrue(resp.success, resp.message)
+        mock_dap_client.step_out.assert_called_once()
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_pause_sync(self, mock_dap_client_class: Mock) -> None:

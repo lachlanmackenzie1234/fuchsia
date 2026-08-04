@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from shared.protocol import PROTOCOL_VERSION, make_request
 from shared.protocol.attach import AttachRequest
 from shared.protocol.detach import DetachRequest
+from shared.protocol.finish import FinishRequest
 from shared.protocol.hello import HelloRequest
 from shared.protocol.start import StartRequest
 from shared.protocol.stop import StopRequest
@@ -95,6 +96,13 @@ class TestPolymorphicParsing(unittest.TestCase):
         req = make_request(data)
         self.assertTrue(isinstance(req, StopRequest))
         self.assertEqual(req.ack_seq, 10)
+
+    def test_parse_finish(self) -> None:
+        data = {"command": "finish", "thread_id": 1, "single_thread": True}
+        req = make_request(data)
+        self.assertTrue(isinstance(req, FinishRequest))
+        self.assertEqual(req.thread_id, 1)
+        self.assertTrue(req.single_thread)
 
     def test_parse_unknown_command(self) -> None:
         data = {"command": "unknown-cmd"}

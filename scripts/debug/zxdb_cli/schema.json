@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 6,
+    "version": 7,
     "requests": {
         "$defs": {
             "AttachRequest": {
@@ -272,6 +272,62 @@
                     "expression"
                 ],
                 "title": "EvaluateRequest",
+                "type": "object"
+            },
+            "FinishRequest": {
+                "description": "Request to finish execution of current frame (step out).",
+                "properties": {
+                    "command": {
+                        "const": "finish",
+                        "default": "finish",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "thread_id": {
+                        "title": "Thread Id",
+                        "type": "integer"
+                    },
+                    "single_thread": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Single Thread"
+                    }
+                },
+                "required": [
+                    "thread_id"
+                ],
+                "title": "FinishRequest",
                 "type": "object"
             },
             "GetStateRequest": {
@@ -672,6 +728,7 @@
                 "continue": "#/$defs/ContinueRequest",
                 "detach": "#/$defs/DetachRequest",
                 "evaluate": "#/$defs/EvaluateRequest",
+                "finish": "#/$defs/FinishRequest",
                 "get-state": "#/$defs/GetStateRequest",
                 "hello": "#/$defs/HelloRequest",
                 "pause": "#/$defs/PauseRequest",
@@ -699,6 +756,9 @@
             },
             {
                 "$ref": "#/$defs/EvaluateRequest"
+            },
+            {
+                "$ref": "#/$defs/FinishRequest"
             },
             {
                 "$ref": "#/$defs/GetStateRequest"

@@ -23,6 +23,7 @@ from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
+from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
 from shared.protocol.hello import HelloRequest
 from shared.protocol.pause import PauseRequest
@@ -39,6 +40,7 @@ RequestType = Annotated[
     | ContinueRequest
     | DetachRequest
     | EvaluateRequest
+    | FinishRequest
     | GetStateRequest
     | HelloRequest
     | PauseRequest
@@ -68,6 +70,7 @@ __all__ = [
     "DetachRequest",
     "EvaluateRequest",
     "EvaluateResponse",
+    "FinishRequest",
     "GetStateRequest",
     "HelloRequest",
     "PauseRequest",

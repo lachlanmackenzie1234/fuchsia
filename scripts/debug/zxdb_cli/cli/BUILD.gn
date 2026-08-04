@@ -24,6 +24,7 @@ if (is_host) {
       "commands/continue_cmd.py",
       "commands/detach.py",
       "commands/evaluate.py",
+      "commands/finish.py",
       "commands/get_state.py",
       "commands/pause.py",
       "commands/schema.py",

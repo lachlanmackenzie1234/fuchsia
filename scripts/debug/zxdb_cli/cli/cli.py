@@ -13,6 +13,7 @@ from cli.commands import (
     continue_cmd,
     detach,
     evaluate,
+    finish,
     get_state,
     pause,
     schema,
@@ -57,10 +58,13 @@ async def main(args: list[str]) -> int:
     # Statically register commands.
     commands: dict[str, type[BaseCommand]] = {}
     command_classes = [
+        # keep-sorted start
         attach.Command,
         break_cmd.Command,
         continue_cmd.Command,
         detach.Command,
+        evaluate.Command,
+        finish.Command,
         get_state.Command,
         pause.Command,
         schema.Command,
@@ -70,7 +74,7 @@ async def main(args: list[str]) -> int:
         threads.Command,
         variables.Command,
         wait_for_event.Command,
-        evaluate.Command,
+        # keep-sorted end
     ]
     for cmd_class in command_classes:
         existing_choices = set(subparsers.choices.keys())

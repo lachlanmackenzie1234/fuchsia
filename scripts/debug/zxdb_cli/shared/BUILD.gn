@@ -28,6 +28,7 @@ if (is_host) {
       "protocol/continue_request.py",
       "protocol/detach.py",
       "protocol/evaluate.py",
+      "protocol/finish.py",
       "protocol/get_state.py",
       "protocol/hello.py",
       "protocol/pause.py",

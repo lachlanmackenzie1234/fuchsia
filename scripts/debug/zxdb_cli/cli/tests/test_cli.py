@@ -20,6 +20,7 @@ from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest
+from shared.protocol.finish import FinishRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.stop import StopRequest
@@ -105,6 +106,41 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             ContinueRequest(thread_id=1, single_thread=True)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_finish_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["finish", "1", "--single-thread"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            FinishRequest(command="finish", thread_id=1, single_thread=True)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_finish_command_aliases(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        for alias in ["step-out", "step_out", "stepout"]:
+            mock_send.reset_mock()
+            exit_code = await main([alias, "1"])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                FinishRequest(command="finish", thread_id=1)
+            )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_finish(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        # TODO(https://fxbug.dev/541037615): support aliases such as step_out and step-out in JSON mode.
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "finish", "thread_id": 1, "single_thread": true}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            FinishRequest(command="finish", thread_id=1, single_thread=True)
         )
 
     @patch("cli.cli.send_command")
