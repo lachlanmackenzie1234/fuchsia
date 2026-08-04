@@ -4,5 +4,5 @@
 
 declare_args() {
   # If true, use zxsh as the BootFS shell binary (/boot/bin/sh) instead of dash.
-  use_zxsh = false
+  use_zxsh = true
 }
