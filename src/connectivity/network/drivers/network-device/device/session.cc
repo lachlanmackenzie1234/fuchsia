@@ -10,6 +10,7 @@
 #include <lib/fidl/epitaph.h>
 #include <lib/fit/defer.h>
 
+#include <limits>
 #include <optional>
 
 #include <fbl/alloc_checker.h>
@@ -425,6 +426,10 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
       }
       if (expect_chain == 0 && buffer->tail_length) {
         cur->length += buffer->tail_length;
+      }
+      if (std::numeric_limits<uint32_t>::max() - total_length < part_desc.data_length) {
+        LOGF_ERROR("%s: tx buffer length overflow on descriptor %d", name(), desc_idx);
+        return ZX_ERR_IO_INVALID;
       }
       total_length += part_desc.data_length;
       buffer->data.set_size(buffer->data.size() + 1);

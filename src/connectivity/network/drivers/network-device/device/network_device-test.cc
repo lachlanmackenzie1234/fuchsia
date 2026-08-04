@@ -9,6 +9,7 @@
 #include <lib/sync/cpp/completion.h>
 
 #include <future>
+#include <limits>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -1658,6 +1659,36 @@ TEST_F(NetworkDeviceTest, RejectsSmallTxBuffers) {
       .salt = GetSaltedPortId(kPort13).salt,
   };
   desc.data_length = kMinTxLength - 1;
+  ASSERT_OK(session.SendTx(kDescriptorIndex0));
+  // Session should be killed because of contract breach:
+  ASSERT_OK(session.WaitClosed(TEST_DEADLINE));
+  // We should NOT have received that frame:
+  ASSERT_FALSE(impl_.PopTxBuffer());
+}
+
+TEST_F(NetworkDeviceTest, RejectsTxLengthOverflow) {
+  ASSERT_OK(CreateDeviceWithPort13());
+  fidl::WireSyncClient connection = OpenConnection();
+  TestSession session;
+  ASSERT_OK(OpenSession(&session));
+  ASSERT_OK(AttachSessionPort(session, port13_));
+  ASSERT_OK(WaitStart());
+  const netdev::wire::PortId port13_id = GetSaltedPortId(kPort13);
+  {
+    buffer_descriptor_t& desc = session.ResetDescriptor(kDescriptorIndex0);
+    desc.port_id = {
+        .base = port13_id.base,
+        .salt = port13_id.salt,
+    };
+    desc.data_length = std::numeric_limits<uint32_t>::max() - 10;
+    desc.chain_length = 1;
+    desc.nxt = kDescriptorIndex1;
+  }
+  {
+    buffer_descriptor_t& desc = session.ResetDescriptor(kDescriptorIndex1);
+    desc.data_length = 20;
+    desc.chain_length = 0;
+  }
   ASSERT_OK(session.SendTx(kDescriptorIndex0));
   // Session should be killed because of contract breach:
   ASSERT_OK(session.WaitClosed(TEST_DEADLINE));
