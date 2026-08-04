@@ -475,7 +475,6 @@ def get_default_compile_flags_feature(
                     _flag_configs.no_exceptions,
                     _flag_configs.no_rtti,
                     _flag_configs.pic,
-                    _flag_configs.symbol_no_undefined,
                     _flag_configs.icf,
                     _flag_configs.relpath_debug_info,
                 ]) + (
@@ -483,6 +482,42 @@ def get_default_compile_flags_feature(
                         _flag_configs.link_zircon,
                     ]) if target_os == "fuchsia" else []
                 ),
+            ),
+            # This is subtle, normally all binaries (executables and
+            # shared libraries) should be linked with --no-undefined.
+            #
+            # However, on host platforms, sanitizer runtimes are normally
+            # linked statically to executables, and are *not* linked to
+            # shared libraries, expecting symbols like __asan_init() to
+            # be provided by the executable itself.
+            #
+            # This implies that shared library links cannot use --no-undefined
+            # when sanitizers are used, as linking them would always fail
+            # otherwise. The two following flag_set() deal with this special
+            # case.
+
+            # Apply --no-undefined unconditionally to executables.
+            flag_set(
+                actions = [ACTION_NAMES.cpp_link_executable],
+                flag_groups = _iter_ldflags([
+                    _flag_configs.symbol_no_undefined,
+                ]),
+            ),
+            # Apply --no-undefined to shared libraries only when no
+            # clang sanitizers are used on the host.
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+                ],
+                flag_groups = _iter_ldflags([
+                    _flag_configs.symbol_no_undefined,
+                ]),
+                with_features = [
+                    with_feature_set(
+                        not_features = ["clang_sanitizer"],
+                    ),
+                ] if is_host else [],
             ),
             # These are ldflags that will be added to dbg builds
             flag_set(
