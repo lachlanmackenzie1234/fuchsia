@@ -14,6 +14,7 @@ use crate::util::pseudo_energy::{EwmaSignalData, RssiVelocity};
 use anyhow::{Context, Error, format_err};
 use cobalt_client::traits::AsEventCode;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
+use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_sme as fidl_sme;
@@ -351,9 +352,15 @@ pub enum TelemetryEvent {
         enabled_duration: zx::MonotonicDuration,
     },
     /// Notify telemetry of the result of a create iface request.
-    IfaceCreationResult(Result<(), ()>),
+    IfaceCreationResult {
+        role: fidl_common::WlanMacRole,
+        result: Result<u16, ()>,
+    },
     /// Notify telemetry of the result of destroying an interface.
-    IfaceDestructionResult(Result<(), ()>),
+    IfaceDestructionResult {
+        role: fidl_common::WlanMacRole,
+        result: Result<u16, ()>,
+    },
     /// Notify telemetry of the result of a StartAp request.
     StartApResult(Result<(), ()>),
     /// Record scan fulfillment time
@@ -1654,11 +1661,11 @@ impl Telemetry {
                 // Any completed SME operation tells us the SME is operational.
                 self.report_sme_timeout_resolved().await;
             }
-            TelemetryEvent::IfaceCreationResult(result) => {
-                self.stats_logger.log_iface_creation_result(result).await;
+            TelemetryEvent::IfaceCreationResult { result, .. } => {
+                self.stats_logger.log_iface_creation_result(result.map(|_| ())).await;
             }
-            TelemetryEvent::IfaceDestructionResult(result) => {
-                self.stats_logger.log_iface_destruction_result(result).await;
+            TelemetryEvent::IfaceDestructionResult { result, .. } => {
+                self.stats_logger.log_iface_destruction_result(result.map(|_| ())).await;
             }
             TelemetryEvent::StartApResult(result) => {
                 self.stats_logger.log_ap_start_result(result).await;
@@ -4490,13 +4497,12 @@ mod tests {
                         // while clearing out any potentially blocking Cobalt events
                         $test_helper.drain_cobalt_events(&mut $test_fut);
                         // Manually respond to iface stats request
-                        if let Some(telemetry_svc_stream) = &mut $test_helper.telemetry_svc_stream {
-                            if !telemetry_svc_stream.is_terminated() {
-                                respond_iface_histogram_stats_req(
-                                    &mut $test_helper.exec,
-                                    telemetry_svc_stream,
-                                );
-                            }
+                        $test_helper.telemetry_svc_streams.retain(|s| !s.is_terminated());
+                        for telemetry_svc_stream in &mut $test_helper.telemetry_svc_streams {
+                            respond_iface_histogram_stats_req(
+                                &mut $test_helper.exec,
+                                telemetry_svc_stream,
+                            );
                         }
 
                     }
@@ -9115,8 +9121,8 @@ mod tests {
         TelemetryEvent::RecoveryEvent {
             reason: RecoveryReason::CreateIfaceFailure(PhyRecoveryMechanism::PhyReset)
         },
-        TelemetryEvent::IfaceCreationResult(Err(())),
-        TelemetryEvent::IfaceCreationResult(Err(())),
+        TelemetryEvent::IfaceCreationResult { role: fidl_common::WlanMacRole::Client, result: Err(()) },
+        TelemetryEvent::IfaceCreationResult { role: fidl_common::WlanMacRole::Client, result: Err(()) },
         metrics::INTERFACE_CREATION_RECOVERY_OUTCOME_METRIC_ID,
         vec![RecoveryOutcome::Failure as u32] ;
         "create iface still does not work after recovery"
@@ -9125,8 +9131,8 @@ mod tests {
         TelemetryEvent::RecoveryEvent {
             reason: RecoveryReason::CreateIfaceFailure(PhyRecoveryMechanism::PhyReset)
         },
-        TelemetryEvent::IfaceCreationResult(Ok(())),
-        TelemetryEvent::IfaceCreationResult(Ok(())),
+        TelemetryEvent::IfaceCreationResult { role: fidl_common::WlanMacRole::Client, result: Ok(IFACE_ID) },
+        TelemetryEvent::IfaceCreationResult { role: fidl_common::WlanMacRole::Client, result: Ok(IFACE_ID) },
         metrics::INTERFACE_CREATION_RECOVERY_OUTCOME_METRIC_ID,
         vec![RecoveryOutcome::Success as u32] ;
         "create iface works after recovery"
@@ -9152,8 +9158,8 @@ mod tests {
         TelemetryEvent::RecoveryEvent {
             reason: RecoveryReason::DestroyIfaceFailure(PhyRecoveryMechanism::PhyReset)
         },
-        TelemetryEvent::IfaceDestructionResult(Err(())),
-        TelemetryEvent::IfaceDestructionResult(Err(())),
+        TelemetryEvent::IfaceDestructionResult { role: fidl_common::WlanMacRole::Client, result: Err(()) },
+        TelemetryEvent::IfaceDestructionResult { role: fidl_common::WlanMacRole::Client, result: Err(()) },
         metrics::INTERFACE_DESTRUCTION_RECOVERY_OUTCOME_METRIC_ID,
         vec![RecoveryOutcome::Failure as u32] ;
         "destroy iface does not work after recovery"
@@ -9162,8 +9168,8 @@ mod tests {
         TelemetryEvent::RecoveryEvent {
             reason: RecoveryReason::DestroyIfaceFailure(PhyRecoveryMechanism::PhyReset)
         },
-        TelemetryEvent::IfaceDestructionResult(Ok(())),
-        TelemetryEvent::IfaceDestructionResult(Ok(())),
+        TelemetryEvent::IfaceDestructionResult { role: fidl_common::WlanMacRole::Client, result: Ok(IFACE_ID) },
+        TelemetryEvent::IfaceDestructionResult { role: fidl_common::WlanMacRole::Client, result: Ok(IFACE_ID) },
         metrics::INTERFACE_DESTRUCTION_RECOVERY_OUTCOME_METRIC_ID,
         vec![RecoveryOutcome::Success as u32] ;
         "destroy iface works after recovery"
@@ -9913,7 +9919,7 @@ mod tests {
         telemetry_sender: TelemetrySender,
         inspector: Inspector,
         monitor_svc_stream: fidl_fuchsia_wlan_device_service::DeviceMonitorRequestStream,
-        telemetry_svc_stream: Option<fidl_fuchsia_wlan_sme::TelemetryRequestStream>,
+        telemetry_svc_streams: Vec<fidl_fuchsia_wlan_sme::TelemetryRequestStream>,
         cobalt_stream: fidl_fuchsia_metrics::MetricEventLoggerRequestStream,
         iface_stats_resp:
             Option<Box<dyn Fn() -> fidl_fuchsia_wlan_sme::TelemetryGetIfaceStatsResult>>,
@@ -9934,8 +9940,8 @@ mod tests {
             &mut self,
             test_fut: &mut (impl Future<Output = T> + Unpin),
         ) -> Poll<T> {
-            let result = self.exec.run_until_stalled(test_fut);
-            if let Poll::Ready(Some(Ok(req))) =
+            let mut result = self.exec.run_until_stalled(test_fut);
+            while let Poll::Ready(Some(Ok(req))) =
                 self.exec.run_until_stalled(&mut self.monitor_svc_stream.next())
             {
                 match req {
@@ -9947,14 +9953,13 @@ mod tests {
                         assert_eq!(iface_id, IFACE_ID);
                         let telemetry_stream = telemetry_server.into_stream();
                         responder.send(Ok(())).expect("Failed to respond to telemetry request");
-                        self.telemetry_svc_stream = Some(telemetry_stream);
-                        self.exec.run_until_stalled(test_fut)
+                        self.telemetry_svc_streams.push(telemetry_stream);
+                        result = self.exec.run_until_stalled(test_fut);
                     }
                     _ => panic!("Unexpected device monitor request: {req:?}"),
                 }
-            } else {
-                result
             }
+            result
         }
 
         /// Advance executor by `duration`.
@@ -9976,9 +9981,8 @@ mod tests {
             // This poll flushes those pending events at their correct virtual arrival time and
             // registers any new timers they might schedule.
             assert_eq!(self.advance_test_fut(&mut test_fut), Poll::Pending);
-            if let Some(telemetry_svc_stream) = &mut self.telemetry_svc_stream
-                && !telemetry_svc_stream.is_terminated()
-            {
+            self.telemetry_svc_streams.retain(|s| !s.is_terminated());
+            for telemetry_svc_stream in &mut self.telemetry_svc_streams {
                 respond_iface_counter_stats_req(
                     &mut self.exec,
                     telemetry_svc_stream,
@@ -10002,9 +10006,8 @@ mod tests {
                 let _ = self.exec.wake_expired_timers();
                 assert_eq!(self.advance_test_fut(&mut test_fut), Poll::Pending);
 
-                if let Some(telemetry_svc_stream) = &mut self.telemetry_svc_stream
-                    && !telemetry_svc_stream.is_terminated()
-                {
+                self.telemetry_svc_streams.retain(|s| !s.is_terminated());
+                for telemetry_svc_stream in &mut self.telemetry_svc_streams {
                     respond_iface_counter_stats_req(
                         &mut self.exec,
                         telemetry_svc_stream,
@@ -10090,10 +10093,8 @@ mod tests {
             Box<dyn Fn() -> fidl_fuchsia_wlan_sme::TelemetryGetIfaceStatsResult>,
         >,
     ) {
-        let telemetry_svc_req_fut = telemetry_svc_stream.try_next();
-        let mut telemetry_svc_req_fut = pin!(telemetry_svc_req_fut);
-        if let Poll::Ready(Ok(Some(request))) =
-            executor.run_until_stalled(&mut telemetry_svc_req_fut)
+        while let Poll::Ready(Ok(Some(request))) =
+            executor.run_until_stalled(&mut pin!(telemetry_svc_stream.try_next()))
         {
             match request {
                 fidl_fuchsia_wlan_sme::TelemetryRequest::GetIfaceStats { responder } => {
@@ -10107,9 +10108,11 @@ mod tests {
                             })
                         }
                     };
-                    responder
-                        .send(resp.as_ref().map_err(|e| *e))
-                        .expect("expect sending GetIfaceStats response to succeed");
+                    let _ = responder.send(resp.as_ref().map_err(|e| *e));
+                    break;
+                }
+                fidl_fuchsia_wlan_sme::TelemetryRequest::QueryTelemetrySupport { responder } => {
+                    let _ = responder.send(Ok(&Default::default()));
                 }
                 _ => {
                     panic!("unexpected request: {request:?}");
@@ -10122,16 +10125,27 @@ mod tests {
         executor: &mut fasync::TestExecutor,
         telemetry_svc_stream: &mut fidl_fuchsia_wlan_sme::TelemetryRequestStream,
     ) {
-        let telemetry_svc_req_fut = telemetry_svc_stream.try_next();
-        let mut telemetry_svc_req_fut = pin!(telemetry_svc_req_fut);
-        if let Poll::Ready(Ok(Some(request))) =
-            executor.run_until_stalled(&mut telemetry_svc_req_fut)
+        while let Poll::Ready(Ok(Some(request))) =
+            executor.run_until_stalled(&mut pin!(telemetry_svc_stream.try_next()))
         {
             match request {
                 fidl_fuchsia_wlan_sme::TelemetryRequest::GetHistogramStats { responder } => {
-                    responder
-                        .send(Ok(&fake_iface_histogram_stats()))
-                        .expect("expect sending GetHistogramStats response to succeed");
+                    let _ = responder.send(Ok(&fake_iface_histogram_stats()));
+                    break;
+                }
+                fidl_fuchsia_wlan_sme::TelemetryRequest::GetIfaceStats { responder } => {
+                    let seed = fasync::MonotonicInstant::now().into_nanos() as u64;
+                    let stats = fidl_fuchsia_wlan_stats::IfaceStats {
+                        connection_stats: Some(fake_connection_stats(seed)),
+                        ..Default::default()
+                    };
+                    let _ = responder.send(Ok(&stats));
+                }
+                fidl_fuchsia_wlan_sme::TelemetryRequest::GetSignalReport { responder } => {
+                    let _ = responder.send(Ok(&fidl_fuchsia_wlan_stats::SignalReport::default()));
+                }
+                fidl_fuchsia_wlan_sme::TelemetryRequest::QueryTelemetrySupport { responder } => {
+                    let _ = responder.send(Ok(&Default::default()));
                 }
                 _ => {
                     panic!("unexpected request: {request:?}");
@@ -10270,7 +10284,7 @@ mod tests {
             telemetry_sender,
             inspector,
             monitor_svc_stream,
-            telemetry_svc_stream: None,
+            telemetry_svc_streams: vec![],
             cobalt_stream,
             iface_stats_resp: None,
             cobalt_events: vec![],

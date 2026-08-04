@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::client::roaming::lib::RoamReason;
+use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use wlan_common::bss::Protection as BssProtection;
@@ -227,11 +228,25 @@ pub fn convert_to_wlan_telemetry_event(
                 wlan_telemetry::TelemetryEvent::ClientConnectionsToggle { event: toggle }
             })
         }
-        crate::telemetry::TelemetryEvent::IfaceCreationResult(Err(())) => {
-            Some(wlan_telemetry::TelemetryEvent::IfaceCreationFailure)
+        crate::telemetry::TelemetryEvent::IfaceCreationResult { role, result } => {
+            match (role, result) {
+                (fidl_common::WlanMacRole::Client, Ok(iface_id)) => {
+                    Some(wlan_telemetry::TelemetryEvent::ClientIfaceCreated { iface_id: *iface_id })
+                }
+                (_, Err(())) => Some(wlan_telemetry::TelemetryEvent::IfaceCreationFailure),
+                _ => None,
+            }
         }
-        crate::telemetry::TelemetryEvent::IfaceDestructionResult(Err(())) => {
-            Some(wlan_telemetry::TelemetryEvent::IfaceDestructionFailure)
+        crate::telemetry::TelemetryEvent::IfaceDestructionResult { role, result } => {
+            match (role, result) {
+                (fidl_common::WlanMacRole::Client, Ok(iface_id)) => {
+                    Some(wlan_telemetry::TelemetryEvent::ClientIfaceDestroyed {
+                        iface_id: *iface_id,
+                    })
+                }
+                (_, Err(())) => Some(wlan_telemetry::TelemetryEvent::IfaceDestructionFailure),
+                _ => None,
+            }
         }
         crate::telemetry::TelemetryEvent::SmeTimeout { source } => {
             Some(wlan_telemetry::TelemetryEvent::SmeTimeout { source: *source })
@@ -246,6 +261,8 @@ pub fn convert_to_wlan_telemetry_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
+    use test_case::test_case;
     use wlan_common::random_bss_description;
 
     #[fuchsia::test]
@@ -316,7 +333,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_convert_to_wlan_telemetry_event() {
+    fn test_convert_connect_result() {
         let bss = random_bss_description!(Wpa2);
         let connect_result_event = crate::telemetry::TelemetryEvent::ConnectResult {
             iface_id: 0,
@@ -345,16 +362,23 @@ mod tests {
             }
             _ => panic!("Expected ConnectResult event"),
         }
+    }
 
-        match convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::SmeTimeout {
-            source: wlan_telemetry::TimeoutSource::Scan,
-        }) {
+    #[fuchsia::test]
+    fn test_convert_sme_timeout() {
+        assert_matches!(
+            convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::SmeTimeout {
+                source: wlan_telemetry::TimeoutSource::Scan,
+            }),
             Some(wlan_telemetry::TelemetryEvent::SmeTimeout {
                 source: wlan_telemetry::TimeoutSource::Scan,
-            }) => {}
-            _ => panic!("Expected SmeTimeout event"),
-        }
+            })
+        );
+    }
 
+    #[fuchsia::test]
+    fn test_convert_disconnected() {
+        let bss = random_bss_description!(Wpa2);
         let disconnect_info = crate::telemetry::DisconnectInfo {
             iface_id: 42,
             connected_duration: zx::MonotonicDuration::from_seconds(120),
@@ -378,21 +402,92 @@ mod tests {
             }
             _ => panic!("Expected Disconnect event"),
         }
+    }
 
-        match convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::RecoveryEvent {
-            reason: crate::telemetry::RecoveryReason::Timeout(
-                crate::telemetry::TimeoutRecoveryMechanism::PhyReset,
-            ),
-        }) {
-            Some(wlan_telemetry::TelemetryEvent::RecoveryEvent) => {}
-            _ => panic!("Expected RecoveryEvent"),
+    #[fuchsia::test]
+    fn test_convert_recovery_event() {
+        assert_matches!(
+            convert_to_wlan_telemetry_event(&crate::telemetry::TelemetryEvent::RecoveryEvent {
+                reason: crate::telemetry::RecoveryReason::Timeout(
+                    crate::telemetry::TimeoutRecoveryMechanism::PhyReset,
+                ),
+            }),
+            Some(wlan_telemetry::TelemetryEvent::RecoveryEvent)
+        );
+    }
+
+    #[test_case(fidl_common::WlanMacRole::Client, Ok(42), Some(42); "client success")]
+    #[test_case(fidl_common::WlanMacRole::Ap, Ok(42), None; "ap success returns none")]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_convert_iface_creation_success(
+        role: fidl_common::WlanMacRole,
+        result: Result<u16, ()>,
+        expected_iface_id: Option<u16>,
+    ) {
+        let event = crate::telemetry::TelemetryEvent::IfaceCreationResult { role, result };
+        let converted = convert_to_wlan_telemetry_event(&event);
+        match expected_iface_id {
+            Some(iface_id) => {
+                assert_matches!(
+                    converted,
+                    Some(wlan_telemetry::TelemetryEvent::ClientIfaceCreated { iface_id: id }) if id == iface_id
+                );
+            }
+            None => assert_matches!(converted, None),
         }
+    }
 
-        assert!(
+    #[test_case(fidl_common::WlanMacRole::Client; "client failure")]
+    #[test_case(fidl_common::WlanMacRole::Ap; "ap failure")]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_convert_iface_creation_failure(role: fidl_common::WlanMacRole) {
+        let event = crate::telemetry::TelemetryEvent::IfaceCreationResult { role, result: Err(()) };
+        assert_matches!(
+            convert_to_wlan_telemetry_event(&event),
+            Some(wlan_telemetry::TelemetryEvent::IfaceCreationFailure)
+        );
+    }
+
+    #[test_case(fidl_common::WlanMacRole::Client, Ok(42), Some(42); "client success")]
+    #[test_case(fidl_common::WlanMacRole::Ap, Ok(42), None; "ap success returns none")]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_convert_iface_destruction_success(
+        role: fidl_common::WlanMacRole,
+        result: Result<u16, ()>,
+        expected_iface_id: Option<u16>,
+    ) {
+        let event = crate::telemetry::TelemetryEvent::IfaceDestructionResult { role, result };
+        let converted = convert_to_wlan_telemetry_event(&event);
+        match expected_iface_id {
+            Some(iface_id) => {
+                assert_matches!(
+                    converted,
+                    Some(wlan_telemetry::TelemetryEvent::ClientIfaceDestroyed { iface_id: id }) if id == iface_id
+                );
+            }
+            None => assert_matches!(converted, None),
+        }
+    }
+
+    #[test_case(fidl_common::WlanMacRole::Client; "client failure")]
+    #[test_case(fidl_common::WlanMacRole::Ap; "ap failure")]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_convert_iface_destruction_failure(role: fidl_common::WlanMacRole) {
+        let event =
+            crate::telemetry::TelemetryEvent::IfaceDestructionResult { role, result: Err(()) };
+        assert_matches!(
+            convert_to_wlan_telemetry_event(&event),
+            Some(wlan_telemetry::TelemetryEvent::IfaceDestructionFailure)
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_convert_unhandled_event_returns_none() {
+        assert_matches!(
             convert_to_wlan_telemetry_event(
                 &crate::telemetry::TelemetryEvent::ClearEstablishConnectionStartTime
-            )
-            .is_none()
+            ),
+            None
         );
     }
 }

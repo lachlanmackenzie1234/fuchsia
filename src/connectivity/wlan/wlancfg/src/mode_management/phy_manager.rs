@@ -315,11 +315,13 @@ impl PhyManager {
             })) => Ok(iface_id),
         };
 
+        self.telemetry_sender.send(TelemetryEvent::IfaceCreationResult {
+            role,
+            result: result.as_ref().map_err(|_| ()).copied(),
+        });
         if result.is_err() {
             self.record_defect(Defect::Phy(PhyFailure::IfaceCreationFailure { phy_id }));
-            return result;
         }
-        self.telemetry_sender.send(TelemetryEvent::IfaceCreationResult(Ok(())));
         result
     }
 }
@@ -498,7 +500,14 @@ impl PhyManagerApi for PhyManager {
             let mut lingering_ifaces = HashSet::new();
 
             for iface_id in phy_container.client_ifaces.drain() {
-                match destroy_iface(&self.device_monitor, iface_id, &self.telemetry_sender).await {
+                match destroy_iface(
+                    &self.device_monitor,
+                    iface_id,
+                    fidl_common::WlanMacRole::Client,
+                    &self.telemetry_sender,
+                )
+                .await
+                {
                     Ok(()) => {
                         let _ = phy_container.destroyed_ifaces.insert(iface_id);
                     }
@@ -585,7 +594,14 @@ impl PhyManagerApi for PhyManager {
         // the request to destroy the interface results in a failure.
         for (phy_id, phy_container) in self.phys.iter_mut() {
             if phy_container.ap_ifaces.remove(&iface_id) {
-                match destroy_iface(&self.device_monitor, iface_id, &self.telemetry_sender).await {
+                match destroy_iface(
+                    &self.device_monitor,
+                    iface_id,
+                    fidl_common::WlanMacRole::Ap,
+                    &self.telemetry_sender,
+                )
+                .await
+                {
                     Ok(()) => {
                         let _ = phy_container.destroyed_ifaces.insert(iface_id);
                     }
@@ -618,7 +634,14 @@ impl PhyManagerApi for PhyManager {
             // Continue tracking interface IDs for which deletion fails.
             let mut lingering_ifaces = HashSet::new();
             for iface_id in phy_container.ap_ifaces.drain() {
-                match destroy_iface(&self.device_monitor, iface_id, &self.telemetry_sender).await {
+                match destroy_iface(
+                    &self.device_monitor,
+                    iface_id,
+                    fidl_common::WlanMacRole::Ap,
+                    &self.telemetry_sender,
+                )
+                .await
+                {
                     Ok(()) => {
                         let _ = phy_container.destroyed_ifaces.insert(iface_id);
                     }
@@ -682,7 +705,6 @@ impl PhyManagerApi for PhyManager {
 
         match defect {
             Defect::Phy(PhyFailure::IfaceCreationFailure { phy_id }) => {
-                self.telemetry_sender.send(TelemetryEvent::IfaceCreationResult(Err(())));
                 if let Some(container) = self.phys.get_mut(&phy_id) {
                     container.defects.add_event(defect);
                     recovery_action = (self.recovery_profile)(
@@ -790,6 +812,7 @@ impl PhyManagerApi for PhyManager {
                             if let Err(_) = destroy_iface(
                                 &self.device_monitor,
                                 iface_id,
+                                fidl_common::WlanMacRole::Ap,
                                 &self.telemetry_sender,
                             )
                             .await
@@ -803,9 +826,14 @@ impl PhyManagerApi for PhyManager {
                         }
 
                         if phy_container.client_ifaces.remove(&iface_id) {
-                            if destroy_iface(&self.device_monitor, iface_id, &self.telemetry_sender)
-                                .await
-                                .is_err()
+                            if destroy_iface(
+                                &self.device_monitor,
+                                iface_id,
+                                fidl_common::WlanMacRole::Client,
+                                &self.telemetry_sender,
+                            )
+                            .await
+                            .is_err()
                             {
                                 let _ = phy_container.client_ifaces.insert(iface_id);
                             } else {
@@ -865,12 +893,13 @@ impl PhyManagerApi for PhyManager {
 async fn destroy_iface(
     proxy: &fidl_service::DeviceMonitorProxy,
     iface_id: u16,
+    role: fidl_common::WlanMacRole,
     telemetry_sender: &TelemetrySender,
 ) -> Result<(), PhyManagerError> {
     let request = fidl_service::DestroyIfaceRequest { iface_id };
     let (destroy_iface_response, metric) = match proxy.destroy_iface(&request).await {
         Ok(status) => match status {
-            zx::sys::ZX_OK => (Ok(()), Some(Ok(()))),
+            zx::sys::ZX_OK => (Ok(()), Some(Ok(iface_id))),
             zx::sys::ZX_ERR_NOT_FOUND => {
                 info!("Interface not found, assuming it is already destroyed");
                 // Don't return a metric here, we neither succeeded nor failed to destroy
@@ -887,8 +916,8 @@ async fn destroy_iface(
         }
     };
 
-    if let Some(metric) = metric {
-        telemetry_sender.send(TelemetryEvent::IfaceDestructionResult(metric));
+    if let Some(result) = metric {
+        telemetry_sender.send(TelemetryEvent::IfaceDestructionResult { role, result });
     }
 
     destroy_iface_response
@@ -3510,7 +3539,10 @@ mod tests {
         // Verify that there is nothing waiting on the telemetry receiver.
         assert_matches!(
             test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceCreationResult(Ok(()))))
+            Ok(Some(TelemetryEvent::IfaceCreationResult {
+                role: fidl_common::WlanMacRole::Client,
+                result: Ok(0),
+            }))
         )
     }
 
@@ -3550,7 +3582,10 @@ mod tests {
             // Verify that a metric has been logged.
             assert_matches!(
                 test_values.telemetry_receiver.try_next(),
-                Ok(Some(TelemetryEvent::IfaceCreationResult(Err(()))))
+                Ok(Some(TelemetryEvent::IfaceCreationResult {
+                    role: fidl_common::WlanMacRole::Client,
+                    result: Err(()),
+                }))
             );
         }
 
@@ -3594,7 +3629,10 @@ mod tests {
             // Verify that a metric has been logged.
             assert_matches!(
                 test_values.telemetry_receiver.try_next(),
-                Ok(Some(TelemetryEvent::IfaceCreationResult(Err(()))))
+                Ok(Some(TelemetryEvent::IfaceCreationResult {
+                    role: fidl_common::WlanMacRole::Client,
+                    result: Err(()),
+                }))
             );
         }
 
@@ -3612,7 +3650,12 @@ mod tests {
         let mut test_values = test_setup();
 
         // Issue a destroy iface request
-        let fut = destroy_iface(&test_values.monitor_proxy, 0, &test_values.telemetry_sender);
+        let fut = destroy_iface(
+            &test_values.monitor_proxy,
+            0,
+            fidl_common::WlanMacRole::Client,
+            &test_values.telemetry_sender,
+        );
         let mut fut = pin!(fut);
 
         // Wait for the request to stall out waiting for DeviceMonitor.
@@ -3627,7 +3670,10 @@ mod tests {
         // Verify that there is nothing waiting on the telemetry receiver.
         assert_matches!(
             test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionResult(Ok(()))))
+            Ok(Some(TelemetryEvent::IfaceDestructionResult {
+                role: fidl_common::WlanMacRole::Client,
+                result: Ok(0),
+            }))
         )
     }
 
@@ -3637,7 +3683,12 @@ mod tests {
         let mut test_values = test_setup();
 
         // Issue a destroy iface request
-        let fut = destroy_iface(&test_values.monitor_proxy, 0, &test_values.telemetry_sender);
+        let fut = destroy_iface(
+            &test_values.monitor_proxy,
+            0,
+            fidl_common::WlanMacRole::Client,
+            &test_values.telemetry_sender,
+        );
         let mut fut = pin!(fut);
 
         // Wait for the request to stall out waiting for DeviceMonitor.
@@ -3659,7 +3710,12 @@ mod tests {
         let mut test_values = test_setup();
 
         // Issue a destroy iface request
-        let fut = destroy_iface(&test_values.monitor_proxy, 0, &test_values.telemetry_sender);
+        let fut = destroy_iface(
+            &test_values.monitor_proxy,
+            0,
+            fidl_common::WlanMacRole::Client,
+            &test_values.telemetry_sender,
+        );
         let mut fut = pin!(fut);
 
         // Wait for the request to stall out waiting for DeviceMonitor.
@@ -3681,7 +3737,10 @@ mod tests {
         // Verify that a metric has been logged.
         assert_matches!(
             test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionResult(Err(()))))
+            Ok(Some(TelemetryEvent::IfaceDestructionResult {
+                role: fidl_common::WlanMacRole::Client,
+                result: Err(()),
+            }))
         )
     }
 
@@ -3693,7 +3752,12 @@ mod tests {
         drop(test_values.monitor_stream);
 
         // Issue a destroy iface request
-        let fut = destroy_iface(&test_values.monitor_proxy, 0, &test_values.telemetry_sender);
+        let fut = destroy_iface(
+            &test_values.monitor_proxy,
+            0,
+            fidl_common::WlanMacRole::Client,
+            &test_values.telemetry_sender,
+        );
         let mut fut = pin!(fut);
 
         // The request should immediately fail.
@@ -3705,7 +3769,10 @@ mod tests {
         // Verify that a metric has been logged.
         assert_matches!(
             test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionResult(Err(()))))
+            Ok(Some(TelemetryEvent::IfaceDestructionResult {
+                role: fidl_common::WlanMacRole::Client,
+                result: Err(()),
+            }))
         )
     }
 
