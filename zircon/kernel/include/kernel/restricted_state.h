@@ -147,4 +147,12 @@ class RestrictedState {
   }
 };
 
+extern "C" {
+
+zx_status_t rust_restricted_state_create(zx_exception_report_t* exception_report_ptr,
+                                         RestrictedState** out_ptr);
+void rust_restricted_state_destroy(RestrictedState* ptr);
+
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_RESTRICTED_STATE_H_
