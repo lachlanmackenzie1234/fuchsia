@@ -98,8 +98,13 @@ zx_status_t UsbMidiSink::WriteInternal(const uint8_t* src, size_t length) {
     buffer[2] = (message_length > 1 ? src[1] : 0);
     buffer[3] = (message_length > 2 ? src[2] : 0);
 
-    size_t result = req->CopyTo(buffer, 4, 0);
-    ZX_ASSERT(result == 4);
+    zx::result<size_t> result = req->CachedCopyTo(buffer, 4, 0);
+    if (result.is_error()) {
+      return result.status_value();
+    }
+    if (*result != 4) {
+      return ZX_ERR_IO;
+    }
     req->request()->header.length = 4;
     usb_request_complete_callback_t complete = {
         .callback = [](void* ctx,

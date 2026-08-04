@@ -5,6 +5,7 @@
 #include "usb/request-fidl.h"
 
 #include <lib/fake-bti/bti.h>
+#include <lib/fit/defer.h>
 
 #include <zxtest/zxtest.h>
 
@@ -221,6 +222,179 @@ TEST(RequestFidlTest, PoolTest) {
   // Make sure that we are able to destruct even with requests sitting in the pool.
   pool.Add(usb::FidlRequest(usb::EndpointType::BULK));
   EXPECT_TRUE(pool.Full());
+}
+
+TEST(RequestFidlTest, CopyAndCacheTest) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  uintptr_t mapped_addr = 0;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                       zx_system_get_page_size(), &mapped_addr));
+  auto unmap_guard = fit::defer([mapped_addr]() {
+    EXPECT_OK(zx::vmar::root_self()->unmap(mapped_addr, zx_system_get_page_size()));
+  });
+  auto get_mapped = [mapped_addr](const fuchsia_hardware_usb_request::Buffer& buffer)
+      -> zx::result<std::optional<usb::internal::MappedVmo>> {
+    return zx::ok(usb::internal::MappedVmo{mapped_addr, zx_system_get_page_size()});
+  };
+
+  usb::FidlRequest fidl_request;
+  fidl_request.add_vmo_id(0, 16, 0);
+
+  uint8_t write_data[32] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16,
+                            17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32};
+  auto cp_res = fidl_request.CachedCopyTo(0, write_data, 16, get_mapped);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 1u);
+  EXPECT_EQ(cp_res.value()[0], 16u);
+
+  uint8_t read_data[32] = {};
+  cp_res = fidl_request.CachedCopyFrom(0, read_data, 16, get_mapped);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 1u);
+  EXPECT_EQ(cp_res.value()[0], 16u);
+  EXPECT_BYTES_EQ(read_data, write_data, 16);
+
+  // Zero-length copies.
+  cp_res = fidl_request.CachedCopyTo(0, write_data, 0, get_mapped);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 1u);
+  EXPECT_EQ(cp_res.value()[0], 0u);
+  cp_res = fidl_request.CachedCopyFrom(0, read_data, 0, get_mapped);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 1u);
+  EXPECT_EQ(cp_res.value()[0], 0u);
+
+  // Out-of-bounds offset test.
+  cp_res = fidl_request.CachedCopyTo(100, write_data, 16, get_mapped);
+  ASSERT_STATUS(cp_res.status_value(), ZX_ERR_OUT_OF_RANGE);
+  cp_res = fidl_request.CachedCopyFrom(100, read_data, 16, get_mapped);
+  ASSERT_STATUS(cp_res.status_value(), ZX_ERR_OUT_OF_RANGE);
+
+  // Scatter-Gather multi-region test.
+  usb::FidlRequest sg_request;
+  sg_request.add_vmo_id(0, 16, 0).add_vmo_id(0, 16, 16);
+  cp_res = sg_request.CachedCopyTo(0, write_data, 32, get_mapped);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 2u);
+  EXPECT_EQ(cp_res.value()[0], 16u);
+  EXPECT_EQ(cp_res.value()[1], 16u);
+
+  memset(read_data, 0, sizeof(read_data));
+  cp_res = sg_request.CachedCopyFrom(0, read_data, 32, get_mapped);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 2u);
+  EXPECT_EQ(cp_res.value()[0], 16u);
+  EXPECT_EQ(cp_res.value()[1], 16u);
+  EXPECT_BYTES_EQ(read_data, write_data, 32);
+
+  // Inline data buffers test.
+  auto get_mapped_inline = [](const fuchsia_hardware_usb_request::Buffer& buffer)
+      -> zx::result<std::optional<usb::internal::MappedVmo>> { return zx::ok(std::nullopt); };
+  usb::FidlRequest inline_request;
+  inline_request.add_data({}, 16, 0).add_data({}, 16, 16);
+  cp_res = inline_request.CachedCopyTo(0, write_data, 32, get_mapped_inline);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 2u);
+  EXPECT_EQ(cp_res.value()[0], 16u);
+  EXPECT_EQ(cp_res.value()[1], 16u);
+
+  memset(read_data, 0, sizeof(read_data));
+  cp_res = inline_request.CachedCopyFrom(0, read_data, 32, get_mapped_inline);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 2u);
+  EXPECT_EQ(cp_res.value()[0], 16u);
+  EXPECT_EQ(cp_res.value()[1], 16u);
+  EXPECT_BYTES_EQ(read_data, write_data, 32);
+
+  // Inline data offset skipping test.
+  cp_res = inline_request.CachedCopyTo(16, write_data, 16, get_mapped_inline);
+  ASSERT_OK(cp_res.status_value());
+  ASSERT_EQ(cp_res.value().size(), 2u);
+  EXPECT_EQ(cp_res.value()[0], 0u);
+  EXPECT_EQ(cp_res.value()[1], 16u);
+
+  // Mapping error propagation test.
+  auto bad_get_mapped = [](const fuchsia_hardware_usb_request::Buffer& buffer)
+      -> zx::result<std::optional<usb::internal::MappedVmo>> {
+    return zx::error(ZX_ERR_BAD_HANDLE);
+  };
+  cp_res = fidl_request.CachedCopyTo(0, write_data, 16, bad_get_mapped);
+  ASSERT_STATUS(cp_res.status_value(), ZX_ERR_BAD_HANDLE);
+  cp_res = fidl_request.CachedCopyFrom(0, read_data, 16, bad_get_mapped);
+  ASSERT_STATUS(cp_res.status_value(), ZX_ERR_BAD_HANDLE);
+}
+
+TEST(RequestFidlTest, RangeCacheFlushTest) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  uintptr_t mapped_addr = 0;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                       zx_system_get_page_size(), &mapped_addr));
+  auto unmap_guard = fit::defer([mapped_addr]() {
+    EXPECT_OK(zx::vmar::root_self()->unmap(mapped_addr, zx_system_get_page_size()));
+  });
+  auto get_mapped = [mapped_addr](const fuchsia_hardware_usb_request::Buffer& buffer)
+      -> zx::result<std::optional<usb::internal::MappedVmo>> {
+    return zx::ok(usb::internal::MappedVmo{mapped_addr, zx_system_get_page_size()});
+  };
+
+  // 1. Flushing a partial slice of a VMO buffer.
+  usb::FidlRequest fidl_request;
+  fidl_request.add_vmo_id(0, 64, 0);
+  EXPECT_OK(fidl_request.CacheFlush(get_mapped, 16, 32));
+  EXPECT_OK(fidl_request.CacheFlushInvalidate(get_mapped, 16, 32));
+
+  // 2. Selective get_mapped to verify untouched preceding and subsequent regions are skipped.
+  usb::FidlRequest sg_request;
+  sg_request.add_vmo_id(0, 16, 0).add_vmo_id(1, 16, 16).add_vmo_id(2, 16, 32);
+  auto get_mapped_selective = [mapped_addr](const fuchsia_hardware_usb_request::Buffer& buffer)
+      -> zx::result<std::optional<usb::internal::MappedVmo>> {
+    if (buffer.vmo_id().value() == 1) {
+      return zx::ok(usb::internal::MappedVmo{mapped_addr, zx_system_get_page_size()});
+    }
+    return zx::error(ZX_ERR_BAD_STATE);
+  };
+  // Only flushing buffer 1 (offset 16 to 32) should succeed without querying buffer 0 or 2.
+  EXPECT_OK(sg_request.CacheFlush(get_mapped_selective, 16, 16));
+  EXPECT_OK(sg_request.CacheFlushInvalidate(get_mapped_selective, 16, 16));
+  // Flushing buffer 0 or 2 should fail.
+  EXPECT_STATUS(sg_request.CacheFlush(get_mapped_selective, 0, 16), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(sg_request.CacheFlushInvalidate(get_mapped_selective, 0, 16), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(sg_request.CacheFlush(get_mapped_selective, 32, 16), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(sg_request.CacheFlushInvalidate(get_mapped_selective, 32, 16), ZX_ERR_BAD_STATE);
+
+  // 3. Flushing across multiple scatter-gather VMO regions.
+  EXPECT_OK(sg_request.CacheFlush(get_mapped, 8, 32));
+  EXPECT_OK(sg_request.CacheFlushInvalidate(get_mapped, 8, 32));
+
+  // 4. Zero-length and out-of-bounds bounds.
+  EXPECT_OK(fidl_request.CacheFlush(get_mapped, 0, 0));
+  EXPECT_OK(fidl_request.CacheFlushInvalidate(get_mapped, 0, 0));
+  EXPECT_OK(fidl_request.CacheFlush(get_mapped, 10, 0));
+  EXPECT_OK(fidl_request.CacheFlushInvalidate(get_mapped, 10, 0));
+  // Out of bounds offset.
+  EXPECT_STATUS(fidl_request.CacheFlush(get_mapped, 1000, 16), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(fidl_request.CacheFlushInvalidate(get_mapped, 1000, 16), ZX_ERR_OUT_OF_RANGE);
+  // Partial out of bounds size (starts in bounds, exceeds total length).
+  EXPECT_OK(fidl_request.CacheFlush(get_mapped, 48, 100));
+  EXPECT_OK(fidl_request.CacheFlushInvalidate(get_mapped, 48, 100));
+
+  // 5. Zero-length buffer region and inline data region skipping.
+  usb::FidlRequest mixed_request;
+  mixed_request.add_vmo_id(0, 16, 0)
+      .add_vmo_id(0, 0, 16)
+      .add_data({}, 16, 16)
+      .add_vmo_id(0, 16, 32);
+  auto get_mapped_mixed = [mapped_addr](const fuchsia_hardware_usb_request::Buffer& buffer)
+      -> zx::result<std::optional<usb::internal::MappedVmo>> {
+    if (buffer.Which() == fuchsia_hardware_usb_request::Buffer::Tag::kData) {
+      return zx::ok(std::nullopt);
+    }
+    return zx::ok(usb::internal::MappedVmo{mapped_addr, zx_system_get_page_size()});
+  };
+  EXPECT_OK(mixed_request.CacheFlush(get_mapped_mixed, 0, 48));
+  EXPECT_OK(mixed_request.CacheFlushInvalidate(get_mapped_mixed, 0, 48));
 }
 
 }  // namespace

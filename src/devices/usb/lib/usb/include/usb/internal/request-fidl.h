@@ -27,13 +27,16 @@
 #endif
 
 #include <lib/zx/bti.h>
+#include <lib/zx/result.h>
 #include <lib/zx/vmar.h>
+#include <zircon/status.h>
 
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <queue>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -153,12 +156,12 @@ class FidlRequest {
     }
     return *this;
   }
-  FidlRequest& reset_buffers(const get_mapped_func_t& GetMapped) {
+  FidlRequest& reset_buffers(const get_mapped_func_t& get_mapped) {
     for (auto& d : *request_.data()) {
       d.offset(0);
       switch (d.buffer()->Which()) {
         case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId: {
-          auto mapped = GetMapped(*d.buffer());
+          auto mapped = get_mapped(*d.buffer());
           ZX_ASSERT(mapped.is_ok());
           d.size(mapped->size);
         } break;
@@ -174,17 +177,23 @@ class FidlRequest {
 
   // CopyTo: tries to copy `size` bytes from `buffer` to contiguous `request` buffers from
   // `offset`. Returns the number of bytes copied for each buffer.
+  //
+  // Cache management is the responsibility of the user. See `CachedCopyTo` below for a
+  // version of this method that performs cache management on the user's behalf.
   std::vector<size_t> CopyTo(size_t offset, const void* buffer, size_t size,
-                             const get_mapped_func_t& GetMapped) {
+                             const get_mapped_func_t& get_mapped) {
+    std::vector<size_t> cp_sizes(request_.data()->size(), 0);
+    if (size == 0) {
+      return cp_sizes;
+    }
     const uint8_t* start = static_cast<const uint8_t*>(buffer);
     size_t todo = size;
     size_t cur_offset = offset;
-    std::vector<size_t> cp_sizes(request_.data()->size(), 0);
     int32_t i = -1;
     for (auto& d : *request_.data()) {
       // Accumulator accounting done at head of loop due to multiple exit logic paths.
       i++;
-      auto mapped = GetMapped(*d.buffer());
+      auto mapped = get_mapped(*d.buffer());
       if (mapped.is_error()) {
         return cp_sizes;
       }
@@ -193,13 +202,30 @@ class FidlRequest {
       size_t buffer_size;
       if (!mapped.value()) {
         // Buffer is fuchsia_hardware_usb_request::Buffer::Tag::kData
-        buffer_size =
-            std::min(todo, static_cast<size_t>(fuchsia_hardware_usb_request::kMaxTransferSize));
-        d.buffer()->data()->resize(buffer_size);
+        if (*d.size() > 0) {
+          buffer_size = *d.size();
+        } else {
+          buffer_size = static_cast<size_t>(fuchsia_hardware_usb_request::kMaxTransferSize);
+          if (buffer_size > *d.offset()) {
+            buffer_size -= *d.offset();
+          } else {
+            buffer_size = 0;
+          }
+        }
+        d.buffer()->data()->resize(std::min(cur_offset + todo, buffer_size));
         addr = d.buffer()->data()->data();
       } else {
-        buffer_size = mapped->size;
-        addr = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(mapped->addr));
+        if (*d.size() > 0) {
+          buffer_size = *d.size();
+        } else {
+          buffer_size = mapped->size;
+          if (buffer_size > *d.offset()) {
+            buffer_size -= *d.offset();
+          } else {
+            buffer_size = 0;
+          }
+        }
+        addr = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(mapped->addr)) + *d.offset();
       }
 
       if (cur_offset >= buffer_size) {
@@ -209,6 +235,9 @@ class FidlRequest {
 
       size_t cp_size = std::min(todo, buffer_size - cur_offset);
       memcpy(addr + cur_offset, start, cp_size);
+      if (*d.size() < cur_offset + cp_size) {
+        d.size(cur_offset + cp_size);
+      }
       cur_offset = 0;
       start += cp_size;
       todo -= cp_size;
@@ -223,14 +252,25 @@ class FidlRequest {
     return cp_sizes;
   }
 
+  std::vector<size_t> CopyTo(size_t offset, std::span<const uint8_t> buffer,
+                             const get_mapped_func_t& get_mapped) {
+    return CopyTo(offset, buffer.data(), buffer.size(), get_mapped);
+  }
+
   // CopyFrom: tries to copy `size` bytes from `request` (starting from `offset`) to `buffer`.
   // Returns the number of bytes copied for each buffer.
+  //
+  // Cache management is the responsibility of the user. See `CachedCopyFrom` below for a
+  // version of this method that performs cache management on the user's behalf.
   std::vector<size_t> CopyFrom(size_t offset, void* buffer, size_t size,
-                               const get_mapped_func_t& GetMapped) {
+                               const get_mapped_func_t& get_mapped) {
+    std::vector<size_t> cp_sizes(request_.data()->size(), 0);
+    if (size == 0) {
+      return cp_sizes;
+    }
     uint8_t* start = static_cast<uint8_t*>(buffer);
     size_t todo = size;
     size_t cur_offset = offset;
-    std::vector<size_t> cp_sizes(request_.data()->size(), 0);
     int32_t i = -1;
     for (const auto& d : *request_.data()) {
       // Accumulator accounting done at head of loop due to multiple exit logic paths.
@@ -240,7 +280,7 @@ class FidlRequest {
         continue;
       }
 
-      auto mapped = GetMapped(*d.buffer());
+      auto mapped = get_mapped(*d.buffer());
       if (mapped.is_error()) {
         return cp_sizes;
       }
@@ -250,7 +290,7 @@ class FidlRequest {
         // Buffer is fuchsia_hardware_usb_request::Buffer::Tag::kData.
         addr = reinterpret_cast<zx_vaddr_t>(d.buffer()->data()->data());
       } else {
-        addr = mapped->addr;
+        addr = mapped->addr + *d.offset();
       }
 
       size_t cp_size = std::min(todo, *d.size() - cur_offset);
@@ -269,6 +309,11 @@ class FidlRequest {
     return cp_sizes;
   }
 
+  std::vector<size_t> CopyFrom(size_t offset, std::span<uint8_t> buffer,
+                               const get_mapped_func_t& get_mapped) {
+    return CopyFrom(offset, buffer.data(), buffer.size(), get_mapped);
+  }
+
   // About CacheFlush and CacheFlushInvalidate: CacheFlush or CacheFlush invalidate MUST always be
   // called after data is written to the VMO and before the data is processed on schedule (see
   // comment in endpoint.fidl on `RequestQueue`).
@@ -276,34 +321,111 @@ class FidlRequest {
   // and CacheFlushInvalidate should be called for operations where data needs to be read in.
   // CacheFlush and CacheFlushInvalidate flush and invalidate cache for all buffer regions of a
   // request.
-  zx_status_t CacheFlushInvalidate(get_mapped_func_t GetMapped) {
-    zx_status_t ret_status = ZX_OK;
-    for (const auto& d : *request_.data()) {
-      auto status = CacheHelper(d, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE, GetMapped);
-      if (status != ZX_OK) {
-        // Return the latest failed status value, but keep trying to flush other buffer regions
-        ret_status = status;
-      }
-    }
-    return ret_status;
+  zx_status_t CacheFlushInvalidate(get_mapped_func_t get_mapped) {
+    return CacheRangeHelper(0, length(), ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE,
+                            get_mapped);
   }
 
-  zx_status_t CacheFlush(get_mapped_func_t GetMapped) {
-    zx_status_t ret_status = ZX_OK;
-    for (const auto& d : *request_.data()) {
-      auto status = CacheHelper(d, ZX_CACHE_FLUSH_DATA, GetMapped);
-      if (status != ZX_OK) {
-        // Return the latest failed status value, but keep trying to flush other buffer regions
-        ret_status = status;
-      }
-    }
-    return ret_status;
+  zx_status_t CacheFlushInvalidate(get_mapped_func_t get_mapped, size_t offset, size_t size) {
+    return CacheRangeHelper(offset, size, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE,
+                            get_mapped);
   }
 
-  // CacheHelper flushes and invaldiates cache for specified buffer region.
+  zx_status_t CacheFlush(get_mapped_func_t get_mapped) {
+    return CacheRangeHelper(0, length(), ZX_CACHE_FLUSH_DATA, get_mapped);
+  }
+
+  zx_status_t CacheFlush(get_mapped_func_t get_mapped, size_t offset, size_t size) {
+    return CacheRangeHelper(offset, size, ZX_CACHE_FLUSH_DATA, get_mapped);
+  }
+
+  // Similar to `CopyTo`, copies `size` bytes from `buffer` to contiguous request buffers starting
+  // at `offset`. To ensure cache coherency, this method flushes the cache after copying.
+  //
+  // Only the range `[offset, offset + size)` is flushed.
+  //
+  // For multi-part writes into a request buffer (such as copying a header followed by payload
+  // data), use `CopyTo` for intermediate writes and only call `CachedCopyTo` on the last
+  // write (or use an explicit `CacheFlush` at the end) to avoid flushing cache lines multiple
+  // times.
+  //
+  // Parameters:
+  //  * offset: Byte offset into the request buffers to start writing.
+  //  * buffer: Source buffer to read data from.
+  //  * size: Number of bytes to copy.
+  //  * get_mapped: Callback to resolve virtual mapping information for buffer tags.
+  // Returns a vector of byte counts copied to each request buffer on success, or an error status
+  // if `CacheFlush` fails, mapping resolution fails, or `offset` is out of bounds
+  // (`ZX_ERR_OUT_OF_RANGE`).
+  zx::result<std::vector<size_t>> CachedCopyTo(size_t offset, const void* buffer, size_t size,
+                                               const get_mapped_func_t& get_mapped) {
+    if (size == 0) {
+      return zx::ok(std::vector<size_t>(request_.data()->size(), 0));
+    }
+    if (offset >= capacity(get_mapped)) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    auto cp_sizes = CopyTo(offset, buffer, size, get_mapped);
+    if (zx_status_t status = CacheFlush(get_mapped, offset, size); status != ZX_OK) {
+      FDF_LOG(ERROR, "CacheFlush(): %s", zx_status_get_string(status));
+      return zx::error(status);
+    }
+    return zx::ok(std::move(cp_sizes));
+  }
+
+  // Similar to `CopyFrom`, copies `size` bytes from contiguous request buffers starting at
+  // `offset` into `buffer`. To ensure cache coherency, this method invalidates the cache before
+  // copying.
+  //
+  // Only the range `[offset, offset + size)` is invalidated.
+  //
+  // For multi-part reads from a request buffer (such as reading a header followed by payload
+  // data), call `CachedCopyFrom` on the first read (or use an explicit `CacheFlushInvalidate`
+  // before reading) and use `CopyFrom` for subsequent reads to avoid invalidating cache lines
+  // multiple times.
+  //
+  // Parameters:
+  //  * offset: Byte offset into the request buffers to start reading.
+  //  * buffer: Destination buffer to write data into.
+  //  * size: Number of bytes to copy.
+  //  * get_mapped: Callback to resolve virtual mapping information for buffer tags.
+  //
+  // Returns a vector of byte counts copied from each request buffer on success, or an error status
+  // if `CacheFlushInvalidate` fails, mapping resolution fails, or `offset` is out of bounds
+  // (`ZX_ERR_OUT_OF_RANGE`).
+  zx::result<std::vector<size_t>> CachedCopyFrom(size_t offset, void* buffer, size_t size,
+                                                 const get_mapped_func_t& get_mapped) {
+    if (size == 0) {
+      return zx::ok(std::vector<size_t>(request_.data()->size(), 0));
+    }
+    if (offset >= length()) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    if (zx_status_t status = CacheFlushInvalidate(get_mapped, offset, size); status != ZX_OK) {
+      FDF_LOG(ERROR, "CacheFlushInvalidate(): %s", zx_status_get_string(status));
+      return zx::error(status);
+    }
+    return zx::ok(CopyFrom(offset, buffer, size, get_mapped));
+  }
+
+  zx::result<std::vector<size_t>> CachedCopyTo(size_t offset, std::span<const uint8_t> buffer,
+                                               const get_mapped_func_t& get_mapped) {
+    return CachedCopyTo(offset, buffer.data(), buffer.size(), get_mapped);
+  }
+
+  zx::result<std::vector<size_t>> CachedCopyFrom(size_t offset, std::span<uint8_t> buffer,
+                                                 const get_mapped_func_t& get_mapped) {
+    return CachedCopyFrom(offset, buffer.data(), buffer.size(), get_mapped);
+  }
+
+  // CacheHelper flushes and invalidates cache for a slice of a specified buffer region.
   zx_status_t CacheHelper(const fuchsia_hardware_usb_request::BufferRegion& buffer,
-                          uint32_t options, const get_mapped_func_t& GetMapped) {
-    auto mapped = GetMapped(*buffer.buffer());
+                          size_t offset_in_region, size_t flush_size, uint32_t options,
+                          const get_mapped_func_t& get_mapped) {
+    if (flush_size == 0 || *buffer.size() == 0) {
+      return ZX_OK;
+    }
+    auto mapped = get_mapped(*buffer.buffer());
     if (mapped.is_error()) {
       return mapped.error_value();
     }
@@ -311,12 +433,58 @@ class FidlRequest {
       return ZX_OK;
     }
 
-    auto status = zx_cache_flush(reinterpret_cast<void*>(static_cast<uintptr_t>(mapped->addr)),
-                                 *buffer.size(), options);
+    zx_status_t status = zx_cache_flush(reinterpret_cast<void*>(static_cast<uintptr_t>(mapped->addr) +
+                                                         *buffer.offset() + offset_in_region),
+                                 flush_size, options);
     if (status != ZX_OK) {
       return status;
     }
     return ZX_OK;
+  }
+
+  // CacheRangeHelper iterates across scatter-gather `BufferRegion` segments in the request and
+  // performs cache maintenance (flushing or invalidation) strictly on the byte slice
+  // `[offset, offset + size)`.
+  //
+  // The method tracks `cur_offset` across multiple contiguous buffer regions:
+  //  - If `cur_offset >= *d.size()`, the target slice starts in a subsequent region, so we subtract
+  //    the region's size from `cur_offset` and continue.
+  //  - Once inside the target range, we compute `flush_size` as the minimum of remaining `todo`
+  //    bytes
+  //    and remaining bytes in the current region (`*d.size() - cur_offset`).
+  //  - After flushing the slice in the current region via `CacheHelper`, `cur_offset` is reset to 0
+  //    for any subsequent regions until all `todo` bytes are processed.
+  zx_status_t CacheRangeHelper(size_t offset, size_t size, uint32_t options,
+                               const get_mapped_func_t& get_mapped) {
+    if (!request_.data().has_value() || size == 0) {
+      return ZX_OK;
+    }
+    if (offset >= capacity(get_mapped)) {
+      return ZX_ERR_OUT_OF_RANGE;
+    }
+    zx_status_t ret_status = ZX_OK;
+    size_t todo = size;
+    size_t cur_offset = offset;
+    for (const auto& d : *request_.data()) {
+      if (*d.size() == 0) {
+        continue;
+      }
+      if (cur_offset >= *d.size()) {
+        cur_offset -= *d.size();
+        continue;
+      }
+      size_t flush_size = std::min(todo, *d.size() - cur_offset);
+      zx_status_t status = CacheHelper(d, cur_offset, flush_size, options, get_mapped);
+      if (status != ZX_OK) {
+        ret_status = status;
+      }
+      cur_offset = 0;
+      todo -= flush_size;
+      if (todo == 0) {
+        break;
+      }
+    }
+    return ret_status;
   }
 
   // Pins VMOs if needed. For
@@ -341,7 +509,7 @@ class FidlRequest {
           // to/from data buffer in both directions regardless of endpoint direction, cache needs
           // to be flushed, vmo then unpinned, and then unmapped.
           zx::vmo vmo;
-          auto status = zx::vmo::create(*d.size(), 0, &vmo);
+          zx_status_t status = zx::vmo::create(*d.size(), 0, &vmo);
           if (status != ZX_OK) {
             return status;
           }
@@ -412,12 +580,12 @@ class FidlRequest {
                reinterpret_cast<void*>(static_cast<uintptr_t>(pinned.mapped.addr)),
                std::min((*request_.data())[idx].size().value(), pinned.mapped.size));
 
-        auto status = zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(pinned.mapped.addr),
+        zx_status_t status = zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(pinned.mapped.addr),
                                                    pinned.mapped.size);
         ZX_DEBUG_ASSERT(status == ZX_OK);
       }
 
-      auto status = zx_pmt_unpin(pinned.pmt);
+      zx_status_t status = zx_pmt_unpin(pinned.pmt);
       ZX_DEBUG_ASSERT(status == ZX_OK);
       delete[] pinned.phys_list;
     }
@@ -448,6 +616,34 @@ class FidlRequest {
       *_length = len;
     }
     return *_length;
+  }
+
+  // Returns the total capacity of all buffers in the request.
+  size_t capacity(const get_mapped_func_t& get_mapped) const {
+    size_t cap = 0;
+    if (!request_.data().has_value()) {
+      return 0;
+    }
+    for (const auto& d : *request_.data()) {
+      if (*d.size() > 0) {
+        cap += *d.size();
+        continue;
+      }
+      auto mapped = get_mapped(*d.buffer());
+      if (mapped.is_ok()) {
+        if (!mapped.value()) {
+          if (*d.offset() < static_cast<size_t>(fuchsia_hardware_usb_request::kMaxTransferSize)) {
+            cap +=
+                static_cast<size_t>(fuchsia_hardware_usb_request::kMaxTransferSize) - *d.offset();
+          }
+        } else {
+          if (*d.offset() < mapped->size) {
+            cap += mapped->size - *d.offset();
+          }
+        }
+      }
+    }
+    return cap;
   }
 
  private:

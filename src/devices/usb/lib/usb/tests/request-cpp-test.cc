@@ -701,6 +701,36 @@ TEST(UsbRequestTest, CacheInvalidateFlush) {
   EXPECT_EQ(request->CacheFlushInvalidate(zx_system_get_page_size() + 1, 0), ZX_ERR_OUT_OF_RANGE);
 }
 
+TEST(UsbRequestTest, CopyAndCache) {
+  std::optional<Request> request;
+  ASSERT_OK(Request::Alloc(&request, zx_system_get_page_size(), 0, kParentReqSize));
+
+  constexpr uint8_t kSampleData[] = "blahblahblah";
+  auto write_res = request->CachedCopyTo(kSampleData, sizeof(kSampleData), 10);
+  ASSERT_OK(write_res.status_value());
+  EXPECT_EQ(write_res.value(), sizeof(kSampleData));
+  uint8_t data[sizeof(kSampleData)] = {};
+  auto read_res = request->CachedCopyFrom(data, sizeof(data), 10);
+  ASSERT_OK(read_res.status_value());
+  EXPECT_EQ(read_res.value(), sizeof(data));
+  EXPECT_BYTES_EQ(data, kSampleData, sizeof(kSampleData));
+
+  // Zero-length copies.
+  write_res = request->CachedCopyTo(kSampleData, 0, 10);
+  ASSERT_OK(write_res.status_value());
+  EXPECT_EQ(write_res.value(), 0u);
+  read_res = request->CachedCopyFrom(data, 0, 10);
+  ASSERT_OK(read_res.status_value());
+  EXPECT_EQ(read_res.value(), 0u);
+
+  // Out-of-bounds error handling.
+  write_res =
+      request->CachedCopyTo(kSampleData, sizeof(kSampleData), zx_system_get_page_size() + 10);
+  ASSERT_STATUS(write_res.status_value(), ZX_ERR_OUT_OF_RANGE);
+  read_res = request->CachedCopyFrom(data, sizeof(data), zx_system_get_page_size() + 10);
+  ASSERT_STATUS(read_res.status_value(), ZX_ERR_OUT_OF_RANGE);
+}
+
 TEST(UsbRequestTest, PhysMap) {
   zx::bti bti;
   ASSERT_EQ(fake_bti_create(bti.reset_and_get_address()), ZX_OK, "");

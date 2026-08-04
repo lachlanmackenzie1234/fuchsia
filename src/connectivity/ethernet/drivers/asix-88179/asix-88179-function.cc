@@ -112,10 +112,11 @@ void FakeUsbAx88179Function::SetOnline(SetOnlineRequestView request,
   std::optional<usb::FidlRequest> req = intr_ep_.GetRequest();
   ZX_ASSERT(req.has_value());
 
-  std::vector<size_t> actual = req->CopyTo(0, status, sizeof(status), intr_ep_.GetMapped());
-  ZX_ASSERT(actual.size() == 1);
-  ZX_ASSERT(actual[0] == sizeof(status));
-  ZX_ASSERT(req->CacheFlush(intr_ep_.GetMapped()) == ZX_OK);
+  zx::result<std::vector<size_t>> actual =
+      req->CachedCopyTo(0, status, sizeof(status), intr_ep_.GetMapped());
+  ZX_ASSERT(actual.is_ok());
+  ZX_ASSERT(actual->size() == 1);
+  ZX_ASSERT((*actual)[0] == sizeof(status));
 
   std::vector<fuchsia_hardware_usb_request::Request> reqs;
   reqs.emplace_back(req->take_request());

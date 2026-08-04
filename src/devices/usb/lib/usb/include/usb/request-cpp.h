@@ -15,11 +15,13 @@
 #include <lib/io-buffer/phys-iter.h>
 #include <lib/operation/operation.h>
 #include <lib/zx/bti.h>
+#include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
 
 #include <optional>
+#include <span>
 
 #include "src/devices/usb/lib/usb/include/usb/usb-request.h"
 
@@ -158,15 +160,35 @@ class RequestBase {
   }
 
   // Copies data from the Request's vm object.
-  // Out of range operations are ignored.
+  // Out of range operations return 0 bytes copied.
+  //
+  // Cache management is the responsibility of the user. See `CachedCopyFrom` below for a
+  // version of this method that performs cache management on the user's behalf.
   __WARN_UNUSED_RESULT ssize_t CopyFrom(void* data, size_t length, size_t offset) {
+    if (length == 0 || offset >= request()->size) {
+      return 0;
+    }
     return usb_request_copy_from(request(), data, length, offset);
   }
 
+  __WARN_UNUSED_RESULT ssize_t CopyFrom(std::span<uint8_t> data, size_t offset) {
+    return CopyFrom(data.data(), data.size(), offset);
+  }
+
   // Copies data into a Request's vm object.
-  // Out of range operations are ignored.
+  // Out of range operations return 0 bytes copied.
+  //
+  // Cache management is the responsibility of the user. See `CachedCopyTo` below for a
+  // version of this method that performs cache management on the user's behalf.
   __WARN_UNUSED_RESULT ssize_t CopyTo(const void* data, size_t length, size_t offset) {
+    if (length == 0 || offset >= request()->size) {
+      return 0;
+    }
     return usb_request_copy_to(request(), data, length, offset);
+  }
+
+  __WARN_UNUSED_RESULT ssize_t CopyTo(std::span<const uint8_t> data, size_t offset) {
+    return CopyTo(data.data(), data.size(), offset);
   }
 
   // Maps the Request's vm object. The 'data' field is set with the mapped address if this
@@ -181,6 +203,83 @@ class RequestBase {
   // Performs a cache flush and invalidate on a range of memory in the request's buffer.
   zx_status_t CacheFlushInvalidate(zx_off_t offset, size_t length) {
     return usb_request_cache_flush_invalidate(request(), offset, length);
+  }
+
+  // Copies `length` bytes from `data` into the request's buffer starting at `offset`, then
+  // performs a data cache flush on the copied range.
+  //
+  // For multi-part writes into a request buffer (such as copying a header followed by payload
+  // data), use `CopyTo` for intermediate writes and only call `CachedCopyTo` on the last
+  // write (or use an explicit `CacheFlush` at the end) to avoid flushing cache lines multiple
+  // times.
+  //
+  // Parameters:
+  //  * data: Source buffer to copy data from.
+  //  * length: Number of bytes to copy.
+  //  * offset: Byte offset into the request's buffer to start writing.
+  //
+  // Returns the number of bytes copied on success, or an error status if `CopyTo` fails,
+  // `CacheFlush` fails, or `offset` is out of bounds (`ZX_ERR_OUT_OF_RANGE`).
+  __WARN_UNUSED_RESULT zx::result<size_t> CachedCopyTo(const void* data, size_t length,
+                                                       size_t offset) {
+    if (length == 0) {
+      return zx::ok(0);
+    }
+    if (offset >= request()->size) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    ssize_t copied = CopyTo(data, length, offset);
+    if (copied < 0) {
+      return zx::error(static_cast<zx_status_t>(copied));
+    }
+    if (copied > 0) {
+      if (zx_status_t status = CacheFlush(offset, static_cast<size_t>(copied)); status != ZX_OK) {
+        return zx::error(status);
+      }
+    }
+    return zx::ok(static_cast<size_t>(copied));
+  }
+
+  __WARN_UNUSED_RESULT zx::result<size_t> CachedCopyTo(std::span<const uint8_t> data,
+                                                       size_t offset) {
+    return CachedCopyTo(data.data(), data.size(), offset);
+  }
+
+  // Performs a cache flush and invalidate on the request's buffer starting at `offset` for
+  // `length` bytes, then copies the range into `data`.
+  //
+  // For multi-part reads from a request buffer (such as reading a header followed by payload
+  // data), call `CachedCopyFrom` on the first read (or use an explicit
+  // `CacheFlushInvalidate` before reading) and use `CopyFrom` for subsequent reads to avoid
+  // invalidating cache lines multiple times.
+  //
+  // Parameters:
+  //  * data: Destination buffer to copy data into.
+  //  * length: Number of bytes to copy.
+  //  * offset: Byte offset into the request's buffer to start reading.
+  //
+  // Returns the number of bytes copied on success, or an error status if `CacheFlushInvalidate`
+  // fails, `CopyFrom` fails, or `offset` is out of bounds (`ZX_ERR_OUT_OF_RANGE`).
+  __WARN_UNUSED_RESULT zx::result<size_t> CachedCopyFrom(void* data, size_t length, size_t offset) {
+    if (length == 0) {
+      return zx::ok(0);
+    }
+    if (offset >= request()->size) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+    length = std::min(length, static_cast<size_t>(request()->size - offset));
+    if (zx_status_t status = CacheFlushInvalidate(offset, length); status != ZX_OK) {
+      return zx::error(status);
+    }
+    ssize_t copied = CopyFrom(data, length, offset);
+    if (copied < 0) {
+      return zx::error(static_cast<zx_status_t>(copied));
+    }
+    return zx::ok(static_cast<size_t>(copied));
+  }
+
+  __WARN_UNUSED_RESULT zx::result<size_t> CachedCopyFrom(std::span<uint8_t> data, size_t offset) {
+    return CachedCopyFrom(data.data(), data.size(), offset);
   }
 
   // Looks up the physical pages backing this request's vm object.

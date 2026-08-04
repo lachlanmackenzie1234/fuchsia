@@ -120,7 +120,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
 
   zx_status_t cdc_generate_mac_address();
   void CdcIntrComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
-  void cdc_send_notifications();
+  void CdcSendNotifications();
   void CdcRxComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void CdcTxComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void ProcessRxCompletions(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);

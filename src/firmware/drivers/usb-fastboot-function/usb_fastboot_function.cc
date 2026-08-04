@@ -54,13 +54,16 @@ void UsbFastbootFunction::QueueTx() {
     }
 
     const size_t tx_size = std::min(kBulkRequestSize, total_to_send_ - queued_tx_size_);
-    auto actual = req->CopyTo(0, static_cast<uint8_t*>(send_vmo_.start()) + queued_tx_size_,
-                              tx_size, bulk_in_ep_.GetMapped());
-    ZX_ASSERT(actual.size() == 1);
-    (*req)->data()->at(0).size(actual[0]);
-    if (auto status = req->CacheFlush(bulk_in_ep_.GetMapped()); status != ZX_OK) {
-      ZX_PANIC("Cache flush failed %d", status);
+    zx::result<std::vector<size_t>> actual =
+        req->CachedCopyTo(0, static_cast<uint8_t*>(send_vmo_.start()) + queued_tx_size_, tx_size,
+                          bulk_in_ep_.GetMapped());
+    if (actual.is_error() || actual->size() != 1) {
+      fdf::error("QueueTx: CachedCopyTo failed: {}", actual.status_string());
+      CleanUpTx(actual.is_error() ? actual.status_value() : ZX_ERR_INTERNAL,
+                std::move(req.value()));
+      return;
     }
+    (*req)->data()->at(0).size((*actual)[0]);
 
     requests.emplace_back(req->take_request());
     queued_tx_size_ += tx_size;
@@ -69,7 +72,15 @@ void UsbFastbootFunction::QueueTx() {
   if (!requests.empty()) {
     auto result = bulk_in_ep_->QueueRequests(std::move(requests));
     if (result.is_error()) {
-      ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+      fdf::error("Failed to QueueRequests: {}", result.error_value().FormatDescription());
+      for (auto& req : requests) {
+        bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(req)));
+      }
+      if (send_completer_.has_value()) {
+        send_completer_->ReplyError(ZX_ERR_INTERNAL);
+        send_completer_.reset();
+      }
+      return;
     }
   }
   bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
@@ -180,7 +191,9 @@ void UsbFastbootFunction::QueueRx() {
     const size_t rx_size = CalculateRxHeaderLength(requested_size_ - queued_rx_size_);
     (*req)->data()->at(0).size(rx_size);  // Each request has one buffer.
     if (auto status = req->CacheFlushInvalidate(bulk_out_ep_.GetMapped()); status != ZX_OK) {
-      ZX_PANIC("Cache flush and invalidate failed %d", status);
+      fdf::error("QueueRx: CacheFlushInvalidate failed: {}", zx_status_get_string(status));
+      CleanUpRx(status, std::move(req.value()));
+      return;
     }
 
     requests.emplace_back(req->take_request());
@@ -190,7 +203,15 @@ void UsbFastbootFunction::QueueRx() {
   if (!requests.empty()) {
     auto result = bulk_out_ep_->QueueRequests(std::move(requests));
     if (result.is_error()) {
-      ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+      fdf::error("Failed to QueueRequests: {}", result.error_value().FormatDescription());
+      for (auto& req : requests) {
+        bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(req)));
+      }
+      if (receive_completer_.has_value()) {
+        receive_completer_->ReplyError(ZX_ERR_INTERNAL);
+        receive_completer_.reset();
+      }
+      return;
     }
   }
   bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
@@ -233,7 +254,9 @@ void UsbFastbootFunction::RxComplete(fuchsia_hardware_usb_endpoint::Completion c
   }
 
   if (auto status = req.CacheFlushInvalidate(bulk_out_ep_.GetMapped()); status != ZX_OK) {
-    ZX_PANIC("Cache flush and invalidate failed %d", status);
+    zxlogf(ERROR, "RxComplete: CacheFlushInvalidate failed: %s", zx_status_get_string(status));
+    CleanUpRx(status, std::move(req));
+    return;
   }
 
   const uint8_t* data = reinterpret_cast<const uint8_t*>(*addr);

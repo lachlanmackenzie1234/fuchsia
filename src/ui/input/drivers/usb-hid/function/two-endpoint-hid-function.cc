@@ -270,7 +270,9 @@ void FakeUsbHidFunction::UsbEndpointOutCallback(
     if (*completion.status() == ZX_OK) {
       usb::FidlRequest wrapped_req(std::move(*completion.request()));
       report_.resize(*completion.transfer_size());
-      wrapped_req.CopyFrom(0, report_.data(), *completion.transfer_size(), out_ep_.GetMapped());
+      zx::result<std::vector<size_t>> res = wrapped_req.CachedCopyFrom(
+          0, report_.data(), *completion.transfer_size(), out_ep_.GetMapped());
+      ZX_ASSERT(res.is_ok());
       out_ep_.PutRequest(std::move(wrapped_req));
     } else {
       fdf::error("request status: {}", zx_status_get_string(*completion.status()));

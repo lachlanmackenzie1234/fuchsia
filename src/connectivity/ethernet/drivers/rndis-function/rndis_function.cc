@@ -741,16 +741,21 @@ void RndisFunction::QueueTx(QueueTxRequestView request, fdf::Arena& arena,
       tx_req.value()->data()->at(i).size(copied[i]);
       offset += copied[i];
     }
-    copied =
+    std::vector<size_t> copied_payload =
         tx_req->CopyTo(offset, data.data() + region.offset, region.length, bulk_in_ep_.GetMapped());
-    for (size_t i = 0; i < copied.size(); i++) {
-      auto& data = tx_req.value()->data()->at(i);
-      data.size(data.size().value() + copied[i]);
+    for (size_t i = 0; i < copied_payload.size(); i++) {
+      auto& data_buf = tx_req.value()->data()->at(i);
+      data_buf.size(data_buf.size().value() + copied_payload[i]);
+    }
+    if (zx_status_t status = tx_req->CacheFlush(bulk_in_ep_.GetMapped()); status != ZX_OK) {
+      fdf::warn("failed to copy data and flush cache: {}", zx_status_get_string(status));
+      *results_iter++ = {.id = buffer.id, .status = status};
+      transmit_errors_++;
+      continue;
     }
 
     return_request.cancel();
     tx_completion_queue_.push(buffer.id);
-    tx_req->CacheFlush(bulk_in_ep_.GetMapped());
     *reqs_iter++ = fidl::ToWire(arena, tx_req->take_request());
     transmit_ok_++;
   }
@@ -907,11 +912,17 @@ void RndisFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> comp
     bulk_out_inspect_.AddRxBytes(completion.transfer_size().value_or(0));
 
     usb::FidlRequest req(std::move(completion.request().value()));
-    req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
 
     rndis_packet_header header;
-    std::vector<size_t> copied = req.CopyFrom(0, &header, sizeof(header), bulk_out_ep_.GetMapped());
-    size_t header_copied = std::accumulate(copied.begin(), copied.end(), 0);
+    zx::result<std::vector<size_t>> copied =
+        req.CachedCopyFrom(0, &header, sizeof(header), bulk_out_ep_.GetMapped());
+    if (copied.is_error()) {
+      reset_and_enqueue(std::move(req));
+      fdf::error("failed to invalidate cache or retrieve header from request: {}",
+                 copied.status_string());
+      continue;
+    }
+    size_t header_copied = std::accumulate(copied->begin(), copied->end(), 0);
     if (header_copied < sizeof(header)) {
       reset_and_enqueue(std::move(req));
       fdf::error("failed to retrieve header from request: {} bytes copied, want {}", header_copied,
@@ -998,12 +1009,16 @@ void RndisFunction::Notify() {
       .reserved = 0,
   };
 
-  std::vector<size_t> copied =
-      req->CopyTo(0, &notification, sizeof(notification), notification_ep_.GetMapped());
-  for (size_t i = 0; i < copied.size(); i++) {
-    req.value()->data()->at(i).size(copied[i]);
+  zx::result<std::vector<size_t>> copied =
+      req->CachedCopyTo(0, &notification, sizeof(notification), notification_ep_.GetMapped());
+  if (copied.is_error()) {
+    fdf::error("Failed to copy notify request: {}", copied.status_string());
+    notification_ep_.PutRequest(std::move(req.value()));
+    return;
   }
-  req->CacheFlush(notification_ep_.GetMapped());
+  for (size_t i = 0; i < copied->size(); i++) {
+    req.value()->data()->at(i).size((*copied)[i]);
+  }
 
   fdf::Arena arena(kArenaTag);
   frequest::wire::Request req_wire = fidl::ToWire(arena, req->take_request());
@@ -1013,7 +1028,7 @@ void RndisFunction::Notify() {
 
   if (!queue_status.ok()) {
     fdf::error("failed to queue notify requests: {}", queue_status.FormatDescription());
-    notification_ep_.PutRequest(std::move(*req));
+    notification_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(req_wire)));
   }
   notification_inspect_.UpdateTxQueue(notification_ep_.GetInFlightCount());
 }

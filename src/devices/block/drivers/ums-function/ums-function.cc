@@ -262,12 +262,14 @@ void UmsFunction::QueueCsw(uint8_t status, bool also_cbw) {
   csw->dCSWDataResidue = htole32(residue);
   csw->bmCSWStatus = status;
 
-  std::vector<size_t> actual = csw_req_->CopyTo(0, csw, sizeof(ums_csw_t), in_ep_.GetMapped());
-  ZX_ASSERT(actual.size() == 1);
-  ZX_ASSERT(actual[0] == sizeof(ums_csw_t));
+  zx::result<std::vector<size_t>> actual =
+      csw_req_->CachedCopyTo(0, csw, sizeof(ums_csw_t), in_ep_.GetMapped());
+  if (actual.is_error() || actual->size() != 1 || (*actual)[0] != sizeof(ums_csw_t)) {
+    fdf::error("QueueCsw: failed to copy CSW data");
+    return;
+  }
   (*csw_req_)->data()->at(0).size(sizeof(ums_csw_t));
 
-  csw_req_->CacheFlush(in_ep_.GetMapped());
   RequestQueue(&csw_req_.value());
 }
 
@@ -278,11 +280,14 @@ void UmsFunction::ContinueTransfer() {
   (*req)->data()->at(0).size(length);
 
   if (data_state_ == DATA_STATE_READ) {
-    std::vector<size_t> result =
-        req->CopyTo(0, static_cast<char*>(storage_) + data_offset_, length, in_ep_.GetMapped());
-    ZX_ASSERT(result.size() == 1);
-    ZX_ASSERT(result[0] == length);
-    req->CacheFlush(in_ep_.GetMapped());
+    zx::result<std::vector<size_t>> result = req->CachedCopyTo(
+        0, static_cast<char*>(storage_) + data_offset_, length, in_ep_.GetMapped());
+    if (result.is_error() || result->size() != 1 || (*result)[0] != length) {
+      fdf::error("ContinueTransfer: failed to copy read data");
+      data_state_ = DATA_STATE_NONE;
+      QueueCsw(CSW_FAILED);
+      return;
+    }
     QueueData(req);
   } else if (data_state_ == DATA_STATE_WRITE || data_state_ == DATA_STATE_UNMAP) {
     QueueData(req);
@@ -651,9 +656,13 @@ void UmsFunction::CbwComplete(fendpoint::Completion completion) {
 
   ums_cbw_t* cbw = &current_cbw_;
   memset(cbw, 0, sizeof(*cbw));
-  [[maybe_unused]] zx_status_t status = req->CacheFlushInvalidate(out_ep_.GetMapped());
-  [[maybe_unused]] std::vector<size_t> result =
-      req->CopyFrom(0, cbw, sizeof(*cbw), out_ep_.GetMapped());
+  zx::result<std::vector<size_t>> result =
+      req->CachedCopyFrom(0, cbw, sizeof(*cbw), out_ep_.GetMapped());
+  if (result.is_error() || result->size() != 1 || (*result)[0] != sizeof(*cbw)) {
+    fdf::error("Failed to copy CBW: {}", result.status_string());
+    QueueCsw(CSW_FAILED);
+    return;
+  }
   HandleCbw(cbw);
 }
 
@@ -675,11 +684,14 @@ void UmsFunction::DataComplete(fendpoint::Completion completion) {
   usb::FidlRequest* req = IsInData() ? &data_in_req_.value() : &data_out_req_.value();
 
   if (data_state_ == DATA_STATE_WRITE) {
-    req->CacheFlushInvalidate(out_ep_.GetMapped());
-    std::vector<size_t> result =
-        req->CopyFrom(0, static_cast<char*>(storage_) + data_offset_, actual, out_ep_.GetMapped());
-    ZX_ASSERT(result.size() == 1);
-    ZX_ASSERT(result[0] == *completion.transfer_size());
+    zx::result<std::vector<size_t>> result = req->CachedCopyFrom(
+        0, static_cast<char*>(storage_) + data_offset_, actual, out_ep_.GetMapped());
+    if (result.is_error() || result->size() != 1 || (*result)[0] != *completion.transfer_size()) {
+      fdf::error("DataComplete: failed to copy write data");
+      data_state_ = DATA_STATE_NONE;
+      QueueCsw(CSW_FAILED);
+      return;
+    }
   } else if (data_state_ == DATA_STATE_UNMAP) {
     if (actual < sizeof(scsi::UnmapParameterListHeader) + sizeof(scsi::UnmapBlockDescriptor)) {
       fdf::error("DataComplete: UNMAP actual size {} too small", actual);

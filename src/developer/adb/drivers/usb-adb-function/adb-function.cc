@@ -160,17 +160,18 @@ bool UsbAdbDevice::SendQueuedOnce() {
     req->clear_buffers();
 
     size_t to_copy = std::min(current.request.data().size() - current.start, kVmoDataSize);
-    auto actual = req->CopyTo(0, current.request.data().data() + current.start, to_copy,
-                              bulk_in_ep_.GetMapped());
-    size_t actual_total = 0;
-    for (size_t i = 0; i < actual.size(); i++) {
-      // Fill in size of data.
-      (*req)->data()->at(i).size(actual[i]);
-      actual_total += actual[i];
+    zx::result<std::vector<size_t>> actual = req->CachedCopyTo(
+        0, current.request.data().data() + current.start, to_copy, bulk_in_ep_.GetMapped());
+    if (actual.is_error() || actual->size() != (*req)->data()->size()) {
+      zxlogf(ERROR, "CachedCopyTo failed or size mismatch");
+      bulk_in_ep_.PutRequest(std::move(req.value()));
+      break;
     }
-    auto status = req->CacheFlush(bulk_in_ep_.GetMapped());
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Cache flush failed %s", zx_status_get_string(status));
+    size_t actual_total = 0;
+    for (size_t i = 0; i < actual->size(); i++) {
+      // Fill in size of data.
+      (*req)->data()->at(i).size((*actual)[i]);
+      actual_total += (*actual)[i];
     }
 
     requests.emplace_back(req->take_request());
@@ -183,6 +184,9 @@ bool UsbAdbDevice::SendQueuedOnce() {
   auto result = bulk_in_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
     zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    for (auto& req : requests) {
+      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(req)));
+    }
   }
 
   if (current.start == current.request.data().size()) {
@@ -245,6 +249,9 @@ bool UsbAdbDevice::ReceiveQueuedOnce() {
   auto result = bulk_out_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
     zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    for (auto& r : requests) {
+      bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(r)));
+    }
   }
 
   return true;
@@ -397,14 +404,19 @@ void UsbAdbDevice::EnableEndpoints() {
     req->reset_buffers(bulk_out_ep_.GetMapped());
     auto status = req->CacheFlushInvalidate(bulk_out_ep_.GetMapped());
     if (status != ZX_OK) {
-      ZX_PANIC("Cache flush and invalidate failed %d", status);
+      zxlogf(ERROR, "Cache flush and invalidate failed %s", zx_status_get_string(status));
+      bulk_out_ep_.PutRequest(std::move(req.value()));
+      continue;
     }
 
     requests.emplace_back(req->take_request());
   }
   auto result = bulk_out_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
-    ZX_PANIC("Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    zxlogf(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    for (auto& r : requests) {
+      bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(r)));
+    }
   }
 
   if (adb_binding_.has_value()) {

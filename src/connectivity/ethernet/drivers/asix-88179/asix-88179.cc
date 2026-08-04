@@ -400,7 +400,8 @@ void Asix88179Ethernet::InterruptComplete(usb_request_t* usb_request) {
       usb_request->response.actual == kInterruptRequestSize) {
     uint8_t status[kInterruptRequestSize];
 
-    if (request.CopyFrom(status, sizeof(status), 0) == kInterruptRequestSize) {
+    if (zx::result<size_t> res = request.CachedCopyFrom(status, sizeof(status), 0);
+        res.is_ok() && *res == kInterruptRequestSize) {
       bool online = (status[2] & 1) != 0;
       bool was_online = online_;
       online_ = online;
@@ -446,11 +447,19 @@ zx_status_t Asix88179Ethernet::RequestAppend(usb::Request<>& request,
     return ZX_ERR_BUFFER_TOO_SMALL;
   }
 
-  size_t result = request.CopyTo(&header, sizeof(header), offset);
-  ZX_ASSERT(result == sizeof(header));
-  result = request.CopyTo(netbuf.operation()->data_buffer, netbuf.operation()->data_size,
+  ssize_t copied = request.CopyTo(&header, sizeof(header), offset);
+  if (copied < 0 || static_cast<size_t>(copied) != sizeof(header)) {
+    return ZX_ERR_IO;
+  }
+  copied = request.CopyTo(netbuf.operation()->data_buffer, netbuf.operation()->data_size,
                           offset + sizeof(header));
-  ZX_ASSERT(result == netbuf.operation()->data_size);
+  if (copied < 0 || static_cast<size_t>(copied) != netbuf.operation()->data_size) {
+    return ZX_ERR_IO;
+  }
+  zx_status_t status = request.CacheFlush(offset, sizeof(header) + netbuf.operation()->data_size);
+  if (status != ZX_OK) {
+    return status;
+  }
   request.request()->header.length = offset + sizeof(header) + netbuf.operation()->data_size;
 
   return ZX_OK;

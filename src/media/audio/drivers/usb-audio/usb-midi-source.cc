@@ -111,11 +111,11 @@ zx_status_t UsbMidiSource::ReadInternal(void* data, size_t len, size_t* actual) 
   }
 
   // MIDI events are 4 bytes. We can ignore the zeroth byte
-  size_t copied = req->CopyFrom(data, 3, 1);
-  if (copied == 0) {
+  zx::result<size_t> copied = req->CachedCopyFrom(data, 3, 1);
+  if (copied.is_error() || *copied == 0) {
     *actual = 0;
   } else {
-    *actual = std::min<size_t>(copied, get_midi_message_length(*(static_cast<uint8_t*>(data))));
+    *actual = std::min<size_t>(*copied, get_midi_message_length(*(static_cast<uint8_t*>(data))));
   }
   free_read_reqs_.push(std::move(*req));
 

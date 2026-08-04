@@ -371,6 +371,8 @@ void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_st
     status = request->CacheFlush(bulk_in_ep_.GetMapped());
     if (status != ZX_OK) {
       FDF_SLOG(ERROR, "Cache flush failed", KV("status", zx_status_get_string(status)));
+      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(*request)));
+      return;
     }
     std::vector<fuchsia_hardware_usb_request::Request> requests;
     requests.emplace_back(request->take_request());
@@ -379,6 +381,9 @@ void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_st
     if (result.is_error()) {
       FDF_SLOG(ERROR, "Failed to QueueRequests",
                KV("status", result.error_value().FormatDescription()));
+      for (auto& req_wire : requests) {
+        bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(req_wire)));
+      }
     }
   } else {
     FDF_LOG(WARNING, "SendData failed, returning request to pool");
@@ -580,12 +585,19 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
   }
 
   if (*completion.status() == ZX_OK) {
+    if (zx_status_t status = request.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
+        status != ZX_OK) {
+      FDF_SLOG(ERROR, "Cache flush invalidate failed", KV("status", zx_status_get_string(status)));
+      bulk_out_ep_.PutRequest(std::move(request));
+      return;
+    }
     // This should always be true because when we registered VMOs, we only registered one per
     // request.
     ZX_ASSERT(request->data()->size() == 1);
     auto addr = bulk_out_ep_.GetMappedAddr(request.request(), 0);
     if (!addr.has_value()) {
       FDF_SLOG(ERROR, "Failed to map RX data");
+      bulk_out_ep_.PutRequest(std::move(request));
       return;
     }
 
@@ -606,10 +618,6 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
 
   if (Online()) {
     request.reset_buffers(bulk_out_ep_.GetMapped());
-    zx_status_t status = request.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
-    if (status != ZX_OK) {
-      FDF_SLOG(ERROR, "Cache flush failed", KV("status", zx_status_get_string(status)));
-    }
 
     std::vector<fuchsia_hardware_usb_request::Request> requests;
     requests.emplace_back(request.take_request());
@@ -618,6 +626,9 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
     if (result.is_error()) {
       FDF_SLOG(ERROR, "Failed to QueueRequests",
                KV("status", result.error_value().FormatDescription()));
+      for (auto& req_wire : requests) {
+        bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(req_wire)));
+      }
     }
   } else {
     if (std::holds_alternative<ShuttingDown>(state_)) {

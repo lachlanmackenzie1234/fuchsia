@@ -136,7 +136,7 @@ void UsbCdcFunction::CdcIntrComplete(std::vector<fendpoint::Completion> completi
   }
 }
 
-void UsbCdcFunction::cdc_send_notifications() {
+void UsbCdcFunction::CdcSendNotifications() {
   usb_cdc_notification_t network_notification = {
       .bmRequestType = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
       .bNotification = USB_CDC_NC_NETWORK_CONNECTION,
@@ -176,34 +176,51 @@ void UsbCdcFunction::cdc_send_notifications() {
   }
 
   req->clear_buffers();
-  std::vector<size_t> actual =
-      req->CopyTo(0, &network_notification, sizeof(network_notification), intr_ep_.GetMapped());
-
-  size_t actual_total = 0;
-  for (size_t i = 0; i < actual.size(); i++) {
-    req.value()->data()->at(i).size(actual[i]);
-    actual_total += actual[i];
-  }
-  ZX_ASSERT(actual_total == sizeof(network_notification));
-
-  req->CacheFlush(intr_ep_.GetMapped());
-  std::optional<usb::FidlRequest> req2 = intr_ep_.GetRequest();
-  if (!req2.has_value()) {
-    fdf::error("[bug] intr_ep_.GetRequest(): no request available");
+  zx::result<std::vector<size_t>> actual = req->CachedCopyTo(
+      0, &network_notification, sizeof(network_notification), intr_ep_.GetMapped());
+  if (actual.is_error()) {
+    fdf::error("CdcSendNotifications: CachedCopyTo failed: {}", actual.status_string());
+    intr_ep_.PutRequest(std::move(req.value()));
     return;
   }
 
-  req2->clear_buffers();
-  actual = req2->CopyTo(0, &speed_notification, sizeof(speed_notification), intr_ep_.GetMapped());
+  size_t actual_total = 0;
+  for (size_t i = 0; i < actual->size(); i++) {
+    req.value()->data()->at(i).size((*actual)[i]);
+    actual_total += (*actual)[i];
+  }
+  if (actual_total != sizeof(network_notification)) {
+    fdf::error("CdcSendNotifications: incomplete copy for network_notification");
+    intr_ep_.PutRequest(std::move(req.value()));
+    return;
+  }
+  std::optional<usb::FidlRequest> req2 = intr_ep_.GetRequest();
+  if (!req2.has_value()) {
+    fdf::error("[bug] intr_ep_.GetRequest(): no request available");
+    intr_ep_.PutRequest(std::move(req.value()));
+    return;
+  }
+
+  actual =
+      req2->CachedCopyTo(0, &speed_notification, sizeof(speed_notification), intr_ep_.GetMapped());
+  if (actual.is_error()) {
+    fdf::error("CdcSendNotifications: CachedCopyTo failed: {}", actual.status_string());
+    intr_ep_.PutRequest(std::move(req.value()));
+    intr_ep_.PutRequest(std::move(req2.value()));
+    return;
+  }
 
   actual_total = 0;
-  for (size_t i = 0; i < actual.size(); i++) {
-    req2.value()->data()->at(i).size(actual[i]);
-    actual_total += actual[i];
+  for (size_t i = 0; i < actual->size(); i++) {
+    req2.value()->data()->at(i).size((*actual)[i]);
+    actual_total += (*actual)[i];
   }
-  ZX_ASSERT(actual_total == sizeof(speed_notification));
-
-  req2->CacheFlush(intr_ep_.GetMapped());
+  if (actual_total != sizeof(speed_notification)) {
+    fdf::error("CdcSendNotifications: incomplete copy for speed_notification");
+    intr_ep_.PutRequest(std::move(req.value()));
+    intr_ep_.PutRequest(std::move(req2.value()));
+    return;
+  }
 
   fdf::Arena arena(kArenaTag);
   std::array<frequest::wire::Request, 2> reqs = {
@@ -275,11 +292,6 @@ void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> com
 
     fnetdev::wire::RxSpaceBuffer space = rx_space_buffers_.front();
 
-    status = req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
-    if (status != ZX_OK) {
-      fdf::error("[bug] CacheFlushInvalidate(): {}", zx_status_get_string(status));
-    }
-
     auto *stored_vmo = vmo_store_.GetVmo(space.region.vmo);
     if (!stored_vmo) {
       fdf::error("rx space with unknown vmo {}", space.region.vmo);
@@ -293,8 +305,14 @@ void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> com
       continue;
     }
 
-    req.CopyFrom(0, reinterpret_cast<void *>(stored_vmo->data().data() + space.region.offset),
-                 request_length, bulk_out_ep_.GetMapped());
+    if (zx::result<std::vector<size_t>> res = req.CachedCopyFrom(
+            0, reinterpret_cast<void *>(stored_vmo->data().data() + space.region.offset),
+            request_length, bulk_out_ep_.GetMapped());
+        res.is_error()) {
+      fdf::error("failed to copy rx data: {}", res.status_string());
+      reset_and_enqueue(std::move(req));
+      continue;
+    }
 
     *rx_buffers_parts_iter = fnetdev::wire::RxBufferPart{
         .id = space.id,
@@ -450,7 +468,7 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
     }
     speed_ = speed;
     configured_ = configured;
-    cdc_send_notifications();
+    CdcSendNotifications();
   } else {
     DisableAllEndpoints();
     DiscardPendingTxBuffers(ZX_ERR_CANCELED);
@@ -533,7 +551,7 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
 
   online_ = online;
   UpdatePortStatus();
-  cdc_send_notifications();
+  CdcSendNotifications();
 
   completer.Reply(zx::ok());
 }
@@ -912,12 +930,17 @@ void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *req
     }
 
     tx_req->clear_buffers();
-    std::vector<size_t> actual =
-        tx_req->CopyTo(0, data.data() + region.offset, region.length, bulk_in_ep_.GetMapped());
+    zx::result<std::vector<size_t>> actual = tx_req->CachedCopyTo(
+        0, data.data() + region.offset, region.length, bulk_in_ep_.GetMapped());
+    if (actual.is_error()) {
+      fdf::warn("failed to copy data and flush cache: {}", actual.status_string());
+      *results_iter++ = {.id = buffer.id, .status = actual.error_value()};
+      continue;
+    }
     size_t actual_total = 0;
-    for (size_t i = 0; i < actual.size(); i++) {
-      (*tx_req)->data()->at(i).size(actual[i]);
-      actual_total += actual[i];
+    for (size_t i = 0; i < actual->size(); i++) {
+      (*tx_req)->data()->at(i).size((*actual)[i]);
+      actual_total += (*actual)[i];
     }
     // CDC always needs a short packet to terminate the transfer.
     (*tx_req)->short_(true);
@@ -931,7 +954,6 @@ void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *req
     tx_completion_queue_.push(buffer.id);
     FDF_ASSERT_MSG(tx_completion_queue_.size() <= kTxDepth, "tx completion queue too large",
                    tx_completion_queue_.size());
-    tx_req->CacheFlush(bulk_in_ep_.GetMapped());
     *reqs_iter++ = fidl::ToWire(arena, tx_req->take_request());
   }
 
