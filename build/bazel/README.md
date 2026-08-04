@@ -163,7 +163,7 @@ fx clean
 
 # Build and run a series of host tests directly from Bazel
 # This does not invoke Ninja at all.
-fx bazel test --config=host //build/bazel/host_tests/...
+fx bazel test --config=host //build/tools/...
 
 # Build a host hello_world program with Bazel, invoked from
 # a Ninja action. Because this target definition uses

@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Tests of platform Bazel rules, macros, and migrated targets.
+"""Tests of platform Bazel rules, macros, and (temporarily) migrated targets.
 
 This file will always contain tests for rules and macros.
 
@@ -10,6 +10,7 @@ During the migration, it also contains migrated targets that are not yet
 otherwise part of the build.
 """
 
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 load(":rules.bzl", "build_for_host")
@@ -139,4 +140,23 @@ filegroup(
     # Individual test groups can use a transition to build targets in host
     # configurations if needed.
     target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+# A `test_suite()` containing all Bazel tests for rules and macros to be run in
+# the host configuration only.
+#
+# Unlike the other targets in this file, this `test_suite()` and the Bazel tests
+# it includes must be run with `bazel test` rather than `bazel build`, which is
+# currently used by GN to build the other targets. The tests are currently
+# included in the GN tree, via `//build/tools:host_tests`.
+# TODO(https://fxbug.dev/500485175): Enable building and running all rules tests
+# with one command, and remove the deps from `//build/tools:host_tests`.
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_CONSTRAINTS,
+    tests = [
+        "//build/bazel/rules/build_flags/tests:host_tests",
+        "//build/bazel/rules/host_tests/tests:host_tests",
+    ],
+    visibility = ["//build/tools:__pkg__"],
 )

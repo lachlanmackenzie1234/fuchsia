@@ -9,35 +9,18 @@ load("@fuchsia_build_info//:bazel_host_test_suites.bzl", test_suites_in_gn_graph
 
 package(default_applicable_licenses = ["//:license"])
 
-# The list of host tests that will be built in __ALL__ builder
-# configurations. These tests should be small and critical
-# to the build.
-#
-# To add other tests, consider adding them as dependencies to
-# a `test_suite()` target defined in a BUILD.bazel file.
-test_suite(
-    name = "default_host_tests",
-    tests = [
-        "//build/bazel/rules/build_flags/tests:host_tests",
-        "//build/bazel/rules/host_tests/tests:host_tests",
-    ],
-    visibility = ["//:__subpackages__"],
-)
-
 test_suite(
     name = "host_tests",
-    tests = test_suites_in_gn_graph + [
-        #  ________  _________  ________  ________
-        # |\   ____\|\___   ___\\   __  \|\   __  \
-        # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
-        #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
-        #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
-        #     ____\_\  \   \ \__\ \ \_______\ \__\
-        #    |\_________\   \|__|  \|_______|\|__|
-        #    \|_________|
-        #
-        # DO NOT ADD to this list directly, see //build/bazel/host_tests/README.md
-        # on how to export Bazel host tests.
-        ":default_host_tests",
-    ],
+    tests = test_suites_in_gn_graph,
+    #  ________  _________  ________  ________
+    # |\   ____\|\___   ___\\   __  \|\   __  \
+    # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+    #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+    #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+    #     ____\_\  \   \ \__\ \ \_______\ \__\
+    #    |\_________\   \|__|  \|_______|\|__|
+    #    \|_________|
+    #
+    # DO NOT ADD to this list directly, see //build/bazel/host_tests/README.md
+    # on how to export Bazel host tests.
 )

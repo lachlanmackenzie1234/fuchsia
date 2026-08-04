@@ -11,6 +11,13 @@ test_suite(
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
         "//build/tools/json_validator/test:tests",
+
+        # This `test_suite()` cannot currently be run by the "*tests" targets
+        # in `//build/bazel/rules/tests/BUILD.bazel`, so add this test suite to
+        # ensure they are included in `tests.json`.
+        # TODO(https://fxbug.dev/500485175): Ensure these are run at appropriate times,
+        # possibly including via `tests.json`-based mechanisms, by some other means.
+        "//build/bazel/rules/tests:host_tests",
     ],
     # TODO(https://fxbug.dev/532431203): Remove this and all such visibility
     # attributes in "host_tests" `test_suite()` targets once the
