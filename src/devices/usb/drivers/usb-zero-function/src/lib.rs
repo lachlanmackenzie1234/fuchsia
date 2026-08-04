@@ -39,6 +39,35 @@ const USB_ZERO_DEFAULT_MAX_PACKET_SIZE: u16 = USB_MAX_PACKET_SIZE_HIGH_SPEED;
 const USB_ZERO_OUT_VMO_ID: u64 = 1;
 const USB_ZERO_IN_VMO_ID: u64 = 2;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, enumn::N)]
+#[repr(u8)]
+enum VendorRequest {
+    SetStall = 0x50,
+    ClearStall = 0x51,
+    ConfigureEndpoint = 0x52,
+    DisableEndpoint = 0x53,
+    ConnectEndpoint = 0x54,
+    Deconfigure = 0x55,
+    WritePayload = 0x56,
+    ReadPayload = 0x57,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum ControlRequest {
+    Vendor(VendorRequest),
+    Standard(u8),
+}
+
+impl ControlRequest {
+    fn parse(b_request: u8) -> Self {
+        if let Some(vendor) = VendorRequest::n(b_request) {
+            ControlRequest::Vendor(vendor)
+        } else {
+            ControlRequest::Standard(b_request)
+        }
+    }
+}
+
 struct UsbZeroFunction {
     // Stored to keep the driver node handle alive per Fuchsia component driver lifecycle rules.
     _node: Node,
@@ -192,6 +221,16 @@ impl Driver for UsbZeroFunction {
     async fn stop(&self) {}
 }
 
+fn validate_vendor_out_request(
+    setup: &fusb_descriptor::UsbSetup,
+    write: &[u8],
+) -> Result<u8, Status> {
+    if (setup.bm_request_type & 0x80) != 0 || setup.w_length != 0 || !write.is_empty() {
+        return Err(Status::INVALID_ARGS);
+    }
+    u8::try_from(setup.w_value).map_err(|_| Status::INVALID_ARGS)
+}
+
 async fn configure_ep(
     function_client: &fusb_function::UsbFunctionProxy,
     ep_addr: u8,
@@ -291,6 +330,133 @@ impl UsbZeroFunctionDevice {
             Ok(None)
         }
     }
+    async fn handle_vendor_request(
+        &mut self,
+        vendor_req: VendorRequest,
+        setup: &fusb_descriptor::UsbSetup,
+        write: &[u8],
+    ) -> Result<Vec<u8>, Status> {
+        if (setup.bm_request_type & 0x60) != 0x40 {
+            return Err(Status::INVALID_ARGS);
+        }
+        match vendor_req {
+            VendorRequest::SetStall => {
+                let ep_addr = validate_vendor_out_request(setup, write)?;
+                self.function_client
+                    .endpoint_set_stall(ep_addr)
+                    .await
+                    .map_err(|e| {
+                        warn!("FIDL error setting stall: {:?}", e);
+                        Status::INTERNAL
+                    })?
+                    .map_err(Status::from_raw)?;
+                Ok(Vec::new())
+            }
+            VendorRequest::ClearStall => {
+                let ep_addr = validate_vendor_out_request(setup, write)?;
+                self.function_client
+                    .endpoint_clear_stall(ep_addr)
+                    .await
+                    .map_err(|e| {
+                        warn!("FIDL error clearing stall: {:?}", e);
+                        Status::INTERNAL
+                    })?
+                    .map_err(Status::from_raw)?;
+                Ok(Vec::new())
+            }
+            VendorRequest::ConfigureEndpoint => {
+                let ep_addr = validate_vendor_out_request(setup, write)?;
+                let ep_config = fusb_function::EndpointConfiguration {
+                    descriptor: Some(fusb_function::EndpointDescriptor {
+                        bm_attributes: fusb_descriptor::EndpointType::Bulk.into_primitive(),
+                        w_max_packet_size: USB_MAX_PACKET_SIZE_HIGH_SPEED,
+                        b_interval: 0,
+                    }),
+                    ..Default::default()
+                };
+                configure_ep(&self.function_client, ep_addr, &ep_config).await?;
+                Ok(Vec::new())
+            }
+            VendorRequest::DisableEndpoint => {
+                let ep_addr = validate_vendor_out_request(setup, write)?;
+                self.function_client
+                    .disable_endpoint(ep_addr)
+                    .await
+                    .map_err(|e| {
+                        warn!("FIDL error disabling endpoint: {:?}", e);
+                        Status::INTERNAL
+                    })?
+                    .map_err(Status::from_raw)?;
+                Ok(Vec::new())
+            }
+            VendorRequest::ConnectEndpoint => {
+                let ep_addr = validate_vendor_out_request(setup, write)?;
+                // Create placeholder endpoint pair purely to test that core accepts connect_to_endpoint FIDL call.
+                let (_ep_client, ep_server) =
+                    fidl::endpoints::create_endpoints::<fusb_endpoint::EndpointMarker>();
+                self.function_client
+                    .connect_to_endpoint(ep_addr, ep_server)
+                    .await
+                    .map_err(|e| {
+                        warn!("FIDL error connecting to endpoint: {:?}", e);
+                        Status::INTERNAL
+                    })?
+                    .map_err(Status::from_raw)?;
+                Ok(Vec::new())
+            }
+            VendorRequest::Deconfigure => {
+                if (setup.bm_request_type & 0x80) != 0 || setup.w_length != 0 || !write.is_empty() {
+                    return Err(Status::INVALID_ARGS);
+                }
+                let _ = self.loopback_tasks.take();
+                self.cleanup_endpoints().await;
+                self.is_configured = false;
+                self.function_client
+                    .deconfigure()
+                    .await
+                    .map_err(|e| {
+                        warn!("FIDL error deconfiguring: {:?}", e);
+                        Status::INTERNAL
+                    })?
+                    .map_err(Status::from_raw)?;
+                Ok(Vec::new())
+            }
+            VendorRequest::WritePayload => {
+                if (setup.bm_request_type & 0x80) != 0
+                    || setup.w_length as usize != write.len()
+                    || write != [0xDE, 0xAD, 0xBE, 0xEF]
+                {
+                    return Err(Status::INVALID_ARGS);
+                }
+                Ok(Vec::new())
+            }
+            VendorRequest::ReadPayload => {
+                if (setup.bm_request_type & 0x80) == 0 || setup.w_length < 4 || !write.is_empty() {
+                    return Err(Status::INVALID_ARGS);
+                }
+                Ok(vec![0x12, 0x34, 0x56, 0x78])
+            }
+        }
+    }
+
+    async fn handle_control_request(
+        &mut self,
+        setup: &fusb_descriptor::UsbSetup,
+        write: &[u8],
+    ) -> Result<Vec<u8>, Status> {
+        match ControlRequest::parse(setup.b_request) {
+            ControlRequest::Vendor(vendor_req) => {
+                self.handle_vendor_request(vendor_req, setup, write).await
+            }
+            ControlRequest::Standard(req) => match req {
+                USB_SETUP_REQ_GET_STATUS => Ok(vec![0x00, 0x00]),
+                USB_SETUP_REQ_CLEAR_FEATURE => Ok(Vec::new()),
+                USB_SETUP_REQ_SET_FEATURE => Ok(Vec::new()),
+                USB_SETUP_REQ_GET_INTERFACE => Ok(vec![0x00]),
+                _ => Err(Status::NOT_SUPPORTED),
+            },
+        }
+    }
     /// Processes incoming FIDL requests on the `UsbFunctionInterface` request stream,
     /// handling control transfers and configuration changes for the USB device.
     async fn handle_requests(
@@ -299,20 +465,10 @@ impl UsbZeroFunctionDevice {
     ) {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
-                fusb_function::UsbFunctionInterfaceRequest::Control {
-                    setup,
-                    write: _,
-                    responder,
-                } => {
+                fusb_function::UsbFunctionInterfaceRequest::Control { setup, write, responder } => {
                     info!("Received control request: {:?}", setup);
-                    let status = match setup.b_request {
-                        USB_SETUP_REQ_GET_STATUS => Ok(vec![0x00, 0x00]),
-                        USB_SETUP_REQ_CLEAR_FEATURE => Ok(Vec::new()),
-                        USB_SETUP_REQ_SET_FEATURE => Ok(Vec::new()),
-                        USB_SETUP_REQ_GET_INTERFACE => Ok(vec![0x00]),
-                        _ => Err(Status::NOT_SUPPORTED),
-                    };
-                    let response = status.as_deref().map_err(|&s| s.into_raw());
+                    let status = self.handle_control_request(&setup, &write).await;
+                    let response = status.as_deref().map_err(|s| s.into_raw());
                     let _ = responder.send(response);
                 }
                 fusb_function::UsbFunctionInterfaceRequest::SetConfigured {
@@ -618,6 +774,31 @@ mod tests {
         }
     }
 
+    async fn run_mock_function(mut stream: fusb_function::UsbFunctionRequestStream) {
+        while let Ok(Some(request)) = stream.try_next().await {
+            match request {
+                fusb_function::UsbFunctionRequest::ConfigureEndpoint { responder, .. } => {
+                    let _ = responder.send(Ok(()));
+                }
+                fusb_function::UsbFunctionRequest::DisableEndpoint { responder, .. } => {
+                    let _ = responder.send(Ok(()));
+                }
+                fusb_function::UsbFunctionRequest::EndpointSetStall { responder, .. } => {
+                    let _ = responder.send(Ok(()));
+                }
+                fusb_function::UsbFunctionRequest::EndpointClearStall { responder, .. } => {
+                    let _ = responder.send(Ok(()));
+                }
+                fusb_function::UsbFunctionRequest::ConnectToEndpoint { responder, .. } => {
+                    let _ = responder.send(Ok(()));
+                }
+                fusb_function::UsbFunctionRequest::Deconfigure { responder } => {
+                    let _ = responder.send(Ok(()));
+                }
+                _ => {}
+            }
+        }
+    }
     #[fuchsia::test]
     async fn test_loopback() {
         let (ep_in_client, ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
@@ -728,5 +909,168 @@ mod tests {
         let mut read_back = vec![0; test_data.len()];
         vmo_in.read(&mut read_back, 0).unwrap();
         assert_eq!(read_back, test_data);
+    }
+
+    #[fuchsia::test]
+    async fn test_vendor_requests() {
+        let (iface_client, iface_server) =
+            create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
+        let (func_client, func_server) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+        let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+        let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+        let scope = Arc::new(fasync::Scope::new_with_name("test_vendor"));
+        scope.spawn_local(run_mock_function(func_server.into_stream()));
+        let func_client_proxy = func_client.into_proxy();
+        let ep_in_proxy = ep_in_client.into_proxy();
+        let ep_out_proxy = ep_out_client.into_proxy();
+        scope.spawn_local(async move {
+            let mut zero_function =
+                UsbZeroFunctionDevice::new(func_client_proxy, ep_in_proxy, 1, ep_out_proxy, 2);
+            zero_function.handle_requests(iface_server.into_stream()).await;
+        });
+
+        let proxy = iface_client.into_proxy();
+
+        // Test VendorRequest::SetStall (0x50)
+        let setup_set_stall = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::SetStall as u8,
+            w_value: 1,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res = proxy.control(&setup_set_stall, &[]).await.unwrap();
+        assert_eq!(res, Ok(vec![]));
+
+        // Test VendorRequest::SetStall with invalid w_value (> 0xFF)
+        let setup_invalid_w_value = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::SetStall as u8,
+            w_value: 0x100,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res = proxy.control(&setup_invalid_w_value, &[]).await.unwrap();
+        assert_eq!(res, Err(Status::INVALID_ARGS.into_raw()));
+
+        // Test VendorRequest::SetStall with invalid direction bit (0xC0)
+        let setup_invalid_dir = fusb_descriptor::UsbSetup {
+            bm_request_type: 0xC0,
+            b_request: VendorRequest::SetStall as u8,
+            w_value: 1,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res = proxy.control(&setup_invalid_dir, &[]).await.unwrap();
+        assert_eq!(res, Err(Status::INVALID_ARGS.into_raw()));
+
+        // Test VendorRequest::ClearStall (0x51)
+        let setup_clear_stall = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::ClearStall as u8,
+            w_value: 1,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res = proxy.control(&setup_clear_stall, &[]).await.unwrap();
+        assert_eq!(res, Ok(vec![]));
+
+        // Test VendorRequest::ConfigureEndpoint (0x52)
+        let setup_config_ep = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::ConfigureEndpoint as u8,
+            w_value: 1,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res = proxy.control(&setup_config_ep, &[]).await.unwrap();
+        assert_eq!(res, Ok(vec![]));
+
+        // Test VendorRequest::DisableEndpoint (0x53)
+        let setup_disable_ep = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::DisableEndpoint as u8,
+            w_value: 1,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res = proxy.control(&setup_disable_ep, &[]).await.unwrap();
+        assert_eq!(res, Ok(vec![]));
+
+        // Test VendorRequest::ConnectEndpoint (0x54)
+        let setup_connect_ep = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::ConnectEndpoint as u8,
+            w_value: 1,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res = proxy.control(&setup_connect_ep, &[]).await.unwrap();
+        assert_eq!(res, Ok(vec![]));
+
+        // Test VendorRequest::Deconfigure (0x55)
+        let setup_deconfig = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::Deconfigure as u8,
+            w_value: 0,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res_deconfig = proxy.control(&setup_deconfig, &[]).await.unwrap();
+        assert_eq!(res_deconfig, Ok(vec![]));
+
+        // Test VendorRequest::WritePayload (0x56 - valid data)
+        let setup_write = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::WritePayload as u8,
+            w_value: 0,
+            w_index: 0,
+            w_length: 4,
+        };
+        let res_out = proxy.control(&setup_write, &[0xDE, 0xAD, 0xBE, 0xEF]).await.unwrap();
+        assert_eq!(res_out, Ok(vec![]));
+
+        // Test VendorRequest::WritePayload (0x56 - invalid payload content)
+        let res_err = proxy.control(&setup_write, &[0x00, 0x00, 0x00, 0x00]).await.unwrap();
+        assert_eq!(res_err, Err(Status::INVALID_ARGS.into_raw()));
+
+        // Test VendorRequest::WritePayload (0x56 - w_length mismatch)
+        let setup_write_mismatch = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::WritePayload as u8,
+            w_value: 0,
+            w_index: 0,
+            w_length: 5,
+        };
+        let res_mismatch =
+            proxy.control(&setup_write_mismatch, &[0xDE, 0xAD, 0xBE, 0xEF]).await.unwrap();
+        assert_eq!(res_mismatch, Err(Status::INVALID_ARGS.into_raw()));
+
+        // Test VendorRequest::ReadPayload (0x57 - valid)
+        let setup_read = fusb_descriptor::UsbSetup {
+            bm_request_type: 0xC0,
+            b_request: VendorRequest::ReadPayload as u8,
+            w_value: 0,
+            w_index: 0,
+            w_length: 4,
+        };
+        let res = proxy.control(&setup_read, &[]).await.unwrap();
+        assert_eq!(res, Ok(vec![0x12, 0x34, 0x56, 0x78]));
+
+        // Test VendorRequest::ReadPayload (0x57 - invalid non-empty write payload)
+        let res_read_nonempty = proxy.control(&setup_read, &[0x01]).await.unwrap();
+        assert_eq!(res_read_nonempty, Err(Status::INVALID_ARGS.into_raw()));
+
+        // Test 0x58 (unsupported request)
+        let setup_unsupported = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: 0x58,
+            w_value: 0,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res_unsupported = proxy.control(&setup_unsupported, &[]).await.unwrap();
+        assert_eq!(res_unsupported, Err(Status::NOT_SUPPORTED.into_raw()));
     }
 }
