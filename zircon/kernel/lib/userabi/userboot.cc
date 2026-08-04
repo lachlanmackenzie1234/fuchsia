@@ -460,14 +460,12 @@ void userboot_init(HandoffEnd handoff_end) {
   // Prepare the bootstrap message packet.  This allocates space for its
   // handles, which we'll fill in as we create things.
   MessagePacketPtr msg;
-  const uint32_t total_handle_count = BootOptions::Get()->userboot_experimental_protocol
-                                          ? userboot::kExperimentalProtocolHandleCount
-                                          : userboot::kHandleCount;
-  zx_status_t status = MessagePacket::Create(nullptr, 0, total_handle_count, &msg);
+  zx_status_t status =
+      MessagePacket::Create(nullptr, 0, userboot::kExperimentalProtocolHandleCount, &msg);
   ASSERT(status == ZX_OK);
   msg->set_owns_handles(true);
 
-  DEBUG_ASSERT(msg->num_handles() == total_handle_count);
+  DEBUG_ASSERT(msg->num_handles() == userboot::kExperimentalProtocolHandleCount);
   ktl::span<Handle*, userboot::kHandleCount> handles{msg->mutable_handles(),
                                                      userboot::kHandleCount};
 
@@ -542,25 +540,22 @@ void userboot_init(HandoffEnd handoff_end) {
   // first message.  When the old userboot code requiriing the rigid ordering
   // is gone, the second message will just be an arbitrary, unordered bag of
   // handles that are self-describing via object type, properties, etc.
-  if (BootOptions::Get()->userboot_experimental_protocol) {
-    KernelHandle<LogDispatcher> log;
-    zx_rights_t log_rights;
-    RETURN_IF_NOT_OK(LogDispatcher::Create(0, &log, &log_rights));
+  KernelHandle<LogDispatcher> log;
+  zx_rights_t log_rights;
+  RETURN_IF_NOT_OK(LogDispatcher::Create(0, &log, &log_rights));
 
-    HandleOwner log_for_second_msg = Handle::Make(log.dispatcher(), log_rights);
-    msg->mutable_handles()[userboot::kHandleCount] = log_for_second_msg.release();
+  HandleOwner log_for_second_msg = Handle::Make(log.dispatcher(), log_rights);
+  msg->mutable_handles()[userboot::kHandleCount] = log_for_second_msg.release();
 
-    HandleOwner log_for_first_msg = Handle::Make(ktl::move(log), log_rights);
-    auto get_handles = [log = ktl::move(log_for_first_msg), &handles](auto... idx) mutable {
-      return ktl::to_array<HandleOwner>({
-          ktl::move(log),
-          Handle::Dup(*handles[idx], handles[idx]->rights())...,
-      });
-    };
-    RETURN_IF_NOT_OK(bootstrap_channel->SendHandles(get_handles(  //
-        userboot::kProcSelf, userboot::kVmarRootSelf, userboot::kThreadSelf,
-        userboot::kVmarLoaded)));
-  }
+  HandleOwner log_for_first_msg = Handle::Make(ktl::move(log), log_rights);
+  auto get_handles = [log = ktl::move(log_for_first_msg), &handles](auto... idx) mutable {
+    return ktl::to_array<HandleOwner>({
+        ktl::move(log),
+        Handle::Dup(*handles[idx], handles[idx]->rights())...,
+    });
+  };
+  RETURN_IF_NOT_OK(bootstrap_channel->SendHandles(get_handles(  //
+      userboot::kProcSelf, userboot::kVmarRootSelf, userboot::kThreadSelf, userboot::kVmarLoaded)));
 
   // Send the bootstrap message.
   if (zx::result<> send_result = bootstrap_channel->Send(ktl::move(msg)); send_result.is_error()) {
