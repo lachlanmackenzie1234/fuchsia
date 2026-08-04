@@ -1,7 +1,8 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::util::convert_log_err;
+use crate::fastboot_interface;
+use crate::util::{U32_SIZE, convert_log_err};
 use crc32fast;
 use std::cmp::min;
 use std::range::Range;
@@ -22,8 +23,8 @@ use zerocopy::IntoBytes;
 // `Chunk` and `Payload` correspond to `StreamCommand` and `StreamOp` but are
 // used as intermediate structures while processing the partition image into operations.
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum StreamOp {
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+enum StreamOp {
     /// Arbitrary data backed by a checksum
     Flash { crc32: u32 },
     /// A repeated value
@@ -39,12 +40,13 @@ impl StreamOp {
         Self::Fill { val }
     }
 }
-#[derive(Debug, PartialEq, Eq)]
-pub struct StreamCommand {
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+struct StreamCommand {
     /// The range within the partition to write.
-    pub range: Range<u64>,
+    range: Range<u64>,
     /// The operation to generate write data.
-    pub op: StreamOp,
+    op: StreamOp,
 }
 
 impl<'a> StreamCommand {
@@ -64,8 +66,29 @@ pub struct StreamCommandList<'a> {
 
 impl<'a> StreamCommandList<'a> {
     /// Iterate over the commands and associated data segments.
-    pub fn commands_iter(&self) -> impl Iterator<Item = (&StreamCommand, &'a [u32])> {
-        self.commands.iter().map(|c| (c, &self.data[convert_range(c.range)]))
+    pub fn commands_iter(&self) -> impl Iterator<Item = fastboot_interface::StreamCommand<'a>> {
+        self.commands.iter().map(|c| (c, self.data).into())
+    }
+
+    pub fn commands_count(&self) -> usize {
+        self.commands.len()
+    }
+}
+
+impl<'a> From<(&StreamCommand, &'a [u32])> for fastboot_interface::StreamCommand<'a> {
+    fn from(value: (&StreamCommand, &'a [u32])) -> Self {
+        let (command, data) = value;
+        let StreamCommand { range, op } = *command;
+        let op = match op {
+            StreamOp::Fill { val } => {
+                fastboot_interface::StreamOp::Fill { val, length: range_length(range) * U32_SIZE }
+            }
+            StreamOp::Flash { crc32 } => fastboot_interface::StreamOp::Flash {
+                data: &data[convert_range(range)].as_bytes(),
+                crc32,
+            },
+        };
+        fastboot_interface::StreamCommand { offset: range.start * U32_SIZE, op }
     }
 }
 
@@ -207,24 +230,13 @@ pub fn generate_command_list<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::util::multi_chain;
 
     impl StreamCommand {
         fn new(start: u64, end: u64, op: StreamOp) -> Self {
             Self { range: Range { start, end }, op }
         }
     }
-
-    macro_rules! multi_chain (
-        ($datum:expr $(,)?) => {
-            $datum
-        };
-        ($datum_1:expr, $datum_2:expr $(,)?) => {
-            multi_chain!(core::iter::chain($datum_1, $datum_2))
-        };
-        ($datum_1:expr, $( $data:expr ),+ $(,)? ) => {
-            multi_chain!(core::iter::chain($datum_1, multi_chain!($($data,)*)))
-        };
-    );
 
     #[fuchsia::test()]
     fn test_stream_command_generation_basic() {

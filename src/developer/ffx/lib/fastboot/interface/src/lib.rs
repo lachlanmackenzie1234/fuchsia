@@ -10,7 +10,8 @@ pub mod util;
 
 pub mod test {
     use super::fastboot_interface::{
-        Fastboot, FastbootError, FastbootInterface, RebootEvent, UploadProgress, Variable,
+        Fastboot, FastbootError, FastbootInterface, RebootEvent, StreamCommand, UploadProgress,
+        Variable,
     };
     use async_trait::async_trait;
     use chrono::Duration;
@@ -179,6 +180,19 @@ pub mod test {
             let mut state = self.state.lock().unwrap();
             state.oem_commands.push(format!("oem {}", command));
             Ok(())
+        }
+
+        async fn stream<'a>(
+            &mut self,
+            _partition_name: &str,
+            _stream_command: StreamCommand<'a>,
+            listener: &Sender<UploadProgress>,
+            _timeout: Duration,
+        ) -> Result<(), FastbootError> {
+            listener
+                .send(UploadProgress::OnProgress { bytes_written: 1 })
+                .await
+                .map_err(|_| FastbootError::ProgressSendError)
         }
     }
 

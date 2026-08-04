@@ -5,6 +5,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Duration;
+use fastboot::command::Command;
 use tokio::sync::mpsc::Sender;
 
 pub trait FastbootInterface: std::fmt::Debug + Fastboot {}
@@ -47,6 +48,24 @@ pub trait Fastboot: Send {
     async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError>;
 
     async fn oem(&mut self, command: &str) -> Result<(), FastbootError>;
+
+    async fn stream<'a>(
+        &mut self,
+        partition_name: &str,
+        stream_command: StreamCommand<'a>,
+        listener: &Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError>;
+}
+
+pub enum StreamOp<'a> {
+    Flash { data: &'a [u8], crc32: u32 },
+    Fill { val: u32, length: u64 },
+}
+
+pub struct StreamCommand<'a> {
+    pub offset: u64,
+    pub op: StreamOp<'a>,
 }
 
 // We sometimes get called with the Box<FastbootInterface> that
@@ -112,6 +131,16 @@ impl<F: Fastboot + ?Sized> Fastboot for Box<F> {
 
     async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
         (**self).oem(command).await
+    }
+
+    async fn stream<'a>(
+        &mut self,
+        partition_name: &str,
+        stream_command: StreamCommand<'a>,
+        listener: &Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        (**self).stream(partition_name, stream_command, listener, timeout).await
     }
 }
 
@@ -225,6 +254,9 @@ pub enum FlashError {
 
     #[error("Failed to upload {}: {}", partition, message)]
     FlashFailed { partition: String, message: String },
+
+    #[error("Stream command '{command}' failed: {message}")]
+    StreamFailed { command: Command, message: String },
 
     #[error("{}", .0)]
     UploadFailed(#[from] StageError),

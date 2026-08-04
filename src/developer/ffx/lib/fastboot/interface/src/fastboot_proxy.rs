@@ -3,20 +3,21 @@
 // found in the LICENSE file.
 
 use crate::fastboot_interface::{
-    Fastboot, FastbootError, FastbootInterface, FlashError, RebootEvent, StageError,
-    UploadProgress, Variable,
+    Fastboot, FastbootError, FastbootInterface, FlashError, RebootEvent, StageError, StreamCommand,
+    StreamOp, UploadProgress, Variable,
 };
 use crate::interface_factory::InterfaceFactory;
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use chrono::Duration;
+use fastboot::UploadError::*;
 use fastboot::command::{ClientVariable, Command};
 use fastboot::reply::Reply;
 use fastboot::{
-    FastbootContext, download, send, send_with_listener, send_with_timeout, upload,
-    upload_with_read_timeout,
+    BUFFER_SIZE, FastbootContext, UploadProgressListener, download, read_and_log_info_with_timeout,
+    send, send_with_listener, send_with_timeout, upload, upload_with_read_timeout,
 };
-use futures::io::{AsyncRead, AsyncWrite};
+use futures::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use std::fmt::Debug;
 use std::fs::File;
 use tokio::sync::mpsc::Sender;
@@ -76,16 +77,16 @@ impl fastboot::InfoListener for VariableListener {
 }
 
 #[derive(Debug)]
-struct ProgressListener(Sender<UploadProgress>);
+struct ProgressListener<'a>(&'a Sender<UploadProgress>);
 
-impl ProgressListener {
-    fn new(listener: Sender<UploadProgress>) -> Self {
+impl<'a> ProgressListener<'a> {
+    fn new(listener: &'a Sender<UploadProgress>) -> Self {
         Self(listener)
     }
 }
 
 #[async_trait]
-impl fastboot::UploadProgressListener for ProgressListener {
+impl fastboot::UploadProgressListener for ProgressListener<'_> {
     async fn on_started(&self, size: usize) -> Result<(), fastboot::UploadError> {
         let size = size.try_into().map_err(|e| {
             fastboot::UploadError::CouldNotVerifyUpload(fastboot::ReadError::Io(
@@ -169,6 +170,77 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> FastbootProxy<T> {
     }
 }
 
+async fn handle_command<T: AsyncRead + AsyncWrite + Unpin>(
+    ctx: &FastbootContext,
+    cmd: &Command,
+    interface: &mut T,
+    timeout: Duration,
+) -> Result<(), FastbootError> {
+    match send_with_timeout(ctx.clone(), cmd.clone(), interface, timeout).await? {
+        Reply::Okay(m) if m == "" => Ok(()),
+        Reply::Fail(message) => {
+            Err(FlashError::StreamFailed { command: cmd.clone(), message }.into())
+        }
+        r => Err(FastbootError::UnexpectedReply { method: cmd.to_string(), reply: r.to_string() }),
+    }
+}
+
+async fn log_err(
+    err: fastboot::UploadError,
+    progress_listener: &ProgressListener<'_>,
+) -> Result<(), fastboot::FastbootError> {
+    log::error!("{}", err);
+    progress_listener.on_error(&err).await.map_err(|e| fastboot::FastbootError::from(e))?;
+    return Err(err.into());
+}
+
+async fn wait_for_ack<T: AsyncRead + AsyncWrite + Unpin>(
+    interface: &mut T,
+    progress_listener: &ProgressListener<'_>,
+    timeout: Duration,
+) -> Result<(), fastboot::FastbootError> {
+    match read_and_log_info_with_timeout(interface, timeout).await {
+        Ok(Reply::Okay(msg)) if msg == "" => Ok(()),
+        Ok(reply) => log_err(UnexpectedReply { reply }, progress_listener).await,
+        Err(err) => log_err(CouldNotVerifyUpload(err.into()), progress_listener).await,
+    }
+}
+
+async fn upload_data<T: AsyncRead + AsyncWrite + Unpin>(
+    ctx: &FastbootContext,
+    data: &[u8],
+    interface: &mut T,
+    progress_listener: &ProgressListener<'_>,
+    timeout: Duration,
+    mut bytes_offset: u64,
+) -> Result<(), fastboot::FastbootError> {
+    let expected = data.len().try_into().unwrap();
+    let reply =
+        send_with_timeout(ctx.clone(), Command::Download(expected), interface, timeout).await?;
+    let Reply::Data(received) = reply else {
+        return log_err(UnexpectedReply { reply }, progress_listener).await;
+    };
+    if received != expected {
+        return log_err(WrongSizeResponse { received, expected }, progress_listener).await;
+    }
+
+    log::trace!("fastboot: starting upload of {} bytes", data.len());
+    // Don't just write_all all the data so that we get incremental progress updates.
+    for chunk in data.chunks(BUFFER_SIZE) {
+        log::trace!("fastboot: uploading {} bytes", chunk.len());
+        if let Err(e) = interface.write_all(chunk).await {
+            return log_err(CouldNotWriteToInterface(e), progress_listener).await;
+        }
+
+        bytes_offset += u64::try_from(chunk.len()).unwrap();
+        progress_listener.on_progress(bytes_offset).await?;
+    }
+
+    wait_for_ack(interface, progress_listener, timeout).await?;
+    log::trace!("fastboot: uploaded {} bytes", expected);
+    Ok(())
+}
+
 #[async_trait]
 impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProxy<T> {
     async fn get_var(&mut self, name: &str) -> core::result::Result<String, FastbootError> {
@@ -227,7 +299,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         let mut file_to_flash = File::open(path).map_err(FlashError::from)?;
         let size = file_to_flash.metadata().map_err(FlashError::from)?.len();
         let size = u32::try_from(size).map_err(|e| FlashError::InvalidFileSize(e))?;
-        let progress_listener = ProgressListener::new(listener);
+        let progress_listener = ProgressListener::new(&listener);
         let upload_reply = upload_with_read_timeout(
             self.ctx.clone(),
             size,
@@ -445,7 +517,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         path: &str,
         listener: Sender<UploadProgress>,
     ) -> Result<(), FastbootError> {
-        let progress_listener = ProgressListener::new(listener);
+        let progress_listener = ProgressListener::new(&listener);
         let mut file_to_stage = File::open(path).map_err(StageError::from)?;
         let size = file_to_stage.metadata().map_err(StageError::from)?.len();
         let size = u32::try_from(size).map_err(|e| StageError::InvalidFileSize(e))?;
@@ -523,6 +595,42 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 reply: r.to_string(),
             }),
         }
+    }
+
+    async fn stream<'a>(
+        &mut self,
+        name: &str,
+        stream_command: StreamCommand<'a>,
+        listener: &Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        let progress_listener = ProgressListener::new(listener);
+        let StreamCommand { offset, op } = stream_command;
+        let ctx = self.ctx.clone();
+        let interface = self.interface().await?;
+
+        let (finishing_cmd, length) = match op {
+            StreamOp::Fill { val, length } => {
+                log::trace!("fastboot: filling {} bytes", length);
+                progress_listener
+                    .on_progress(offset + length)
+                    .await
+                    .map_err(|e| fastboot::FastbootError::from(e))?;
+
+                (Command::StreamFill { partition: name.to_owned(), offset, length, val }, length)
+            }
+            StreamOp::Flash { data, crc32 } => {
+                upload_data(&ctx, data, interface, &progress_listener, timeout, offset).await?;
+                (
+                    Command::StreamFlash { partition: name.to_owned(), offset, crc32 },
+                    u64::try_from(data.len()).unwrap(),
+                )
+            }
+        };
+
+        handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
+        log::trace!("fastboot: streamed {length} bytes to {name}");
+        Ok(())
     }
 }
 

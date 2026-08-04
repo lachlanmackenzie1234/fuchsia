@@ -381,6 +381,16 @@ mod test {
         async fn get_staged(&mut self, _path: &str) -> Result<(), FastbootError> {
             unimplemented!()
         }
+
+        async fn stream<'a>(
+            &mut self,
+            _partition_name: &str,
+            _stream_command: StreamCommand<'a>,
+            _listener: &Sender<UploadProgress>,
+            _timeout: chrono::TimeDelta,
+        ) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
     }
 
     #[fuchsia::test]
