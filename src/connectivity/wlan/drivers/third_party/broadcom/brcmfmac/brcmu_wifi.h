@@ -70,10 +70,10 @@
 #define WLC_BAND_2G 2   /* 2.4 Ghz */
 #define WLC_BAND_ALL 3  /* all bands */
 
-#define CHSPEC_SB_NONE(chspec) (((chspec)&WL_CHANSPEC_CTL_SB_MASK) == WL_CHANSPEC_CTL_SB_NONE)
-#define CHSPEC_CTL_CHAN(chspec)                                                \
-  ((CHSPEC_SB_LOWER(chspec)) ? (LOWER_20_SB(((chspec)&WL_CHANSPEC_CHAN_MASK))) \
-                             : (UPPER_20_SB(((chspec)&WL_CHANSPEC_CHAN_MASK))))
+#define CHSPEC_SB_NONE(chspec) (((chspec) & WL_CHANSPEC_CTL_SB_MASK) == WL_CHANSPEC_CTL_SB_NONE)
+#define CHSPEC_CTL_CHAN(chspec)                                                  \
+  ((CHSPEC_SB_LOWER(chspec)) ? (LOWER_20_SB(((chspec) & WL_CHANSPEC_CHAN_MASK))) \
+                             : (UPPER_20_SB(((chspec) & WL_CHANSPEC_CHAN_MASK))))
 
 #define CHSPEC2BAND(chspec) (CHSPEC_IS5G(chspec) ? BRCM_BAND_5G : BRCM_BAND_2G)
 
