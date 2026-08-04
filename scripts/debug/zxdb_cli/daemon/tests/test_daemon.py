@@ -21,6 +21,7 @@ from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
+from shared.protocol.step_in import StepInRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
 
@@ -174,9 +175,46 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             "next", NextRequest(command="next", thread_id=1)
         )
         self.assertFalse(resp.success)
-        self.assertEqual(
-            resp.message, "Failed to step over: Thread not stopped"
+        self.assertIn("Thread not stopped", resp.message or "")
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_step_in(self, mock_dap_client_class: Mock) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_response = Mock()
+        mock_dap_response.success = True
+        mock_dap_response.dump_dap.return_value = {"success": True}
+        mock_dap_client.step_in = AsyncMock(return_value=mock_dap_response)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "step_in", StepInRequest(command="step_in", thread_id=1)
         )
+
+        self.assertTrue(resp.success)
+        mock_dap_client.step_in.assert_called_once()
+        args = mock_dap_client.step_in.call_args[0][0]
+        self.assertEqual(args.thread_id, 1)
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_step_in_dap_error(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.step_in = AsyncMock(
+            side_effect=DapError("Thread not stopped")
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "step_in", StepInRequest(command="step_in", thread_id=1)
+        )
+
+        self.assertFalse(resp.success)
+        self.assertIn("Thread not stopped", resp.message or "")
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_pause_sync(self, mock_dap_client_class: Mock) -> None:

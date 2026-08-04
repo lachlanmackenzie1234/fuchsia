@@ -30,6 +30,7 @@ from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.start import StartRequest
+from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
@@ -48,6 +49,7 @@ RequestType = Annotated[
     | PauseRequest
     | StackTraceRequest
     | StartRequest
+    | StepInRequest
     | StopRequest
     | ThreadsRequest
     | VariablesRequest
@@ -79,6 +81,7 @@ __all__ = [
     "PauseRequest",
     "StackTraceRequest",
     "StartRequest",
+    "StepInRequest",
     "StopRequest",
     "ThreadsRequest",
     "VariablesRequest",

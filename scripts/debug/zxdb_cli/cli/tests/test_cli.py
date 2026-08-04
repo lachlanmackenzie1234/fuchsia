@@ -24,6 +24,7 @@ from shared.protocol.finish import FinishRequest
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
+from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
@@ -484,6 +485,50 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             EvaluateRequest(
                 thread_id=1, frame_index=2, expression="x", start=5, count=10
             )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_step_in_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "step-in",
+                "1",
+                "--single-thread",
+                "--target-id",
+                "0",
+                "--granularity",
+                "line",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StepInRequest(
+                thread_id=1, single_thread=True, target_id=0, granularity="line"
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_step_in_aliases(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        for alias in ["step-in", "step_in", "stepin", "s"]:
+            mock_send.reset_mock()
+            exit_code = await main([alias, "1"])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(StepInRequest(thread_id=1))
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_step_in(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "step_in", "thread_id": 1, "target_id": 0}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StepInRequest(thread_id=1, target_id=0)
         )
 
 

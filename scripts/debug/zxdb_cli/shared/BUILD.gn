@@ -35,6 +35,7 @@ if (is_host) {
       "protocol/pause.py",
       "protocol/stack_trace.py",
       "protocol/start.py",
+      "protocol/step_in.py",
       "protocol/stop.py",
       "protocol/threads.py",
       "protocol/variables.py",

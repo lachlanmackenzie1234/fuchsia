@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 from typing import Any
 
 from cli.commands.base import BaseCommand
@@ -18,9 +19,10 @@ class Command(BaseCommand):
             help="Finish execution of current function (step out)",
         )
         parser.add_argument("thread_id", type=int, help="Thread ID to finish")
+        # TODO(https://fxbug.dev/542494515): Support single_thread option.
         parser.add_argument(
             "--single-thread",
             action="store_true",
             default=None,
-            help="Resume only the specified thread during step out",
+            help=argparse.SUPPRESS,
         )

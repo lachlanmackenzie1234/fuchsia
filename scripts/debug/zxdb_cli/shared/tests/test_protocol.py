@@ -12,6 +12,7 @@ from shared.protocol.finish import FinishRequest
 from shared.protocol.hello import HelloRequest
 from shared.protocol.next_request import NextRequest
 from shared.protocol.start import StartRequest
+from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
 
@@ -121,6 +122,30 @@ class TestPolymorphicParsing(unittest.TestCase):
     def test_parse_next_invalid_granularity(self) -> None:
         data = {
             "command": "next",
+            "thread_id": 1,
+            "granularity": "invalid_granularity",
+        }
+        with self.assertRaises(ValidationError):
+            make_request(data)
+
+    def test_parse_step_in(self) -> None:
+        data = {
+            "command": "step_in",
+            "thread_id": 1,
+            "single_thread": True,
+            "target_id": 0,
+            "granularity": "line",
+        }
+        req = make_request(data)
+        self.assertTrue(isinstance(req, StepInRequest))
+        self.assertEqual(req.thread_id, 1)
+        self.assertTrue(req.single_thread)
+        self.assertEqual(req.target_id, 0)
+        self.assertEqual(req.granularity, "line")
+
+    def test_parse_step_in_invalid_granularity(self) -> None:
+        data = {
+            "command": "step_in",
             "thread_id": 1,
             "granularity": "invalid_granularity",
         }

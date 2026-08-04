@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 from typing import Any
 
 from cli.commands.base import BaseCommand
@@ -22,15 +23,17 @@ class Command(BaseCommand):
         parser.add_argument(
             "thread_id", type=int, help="Thread ID to step over"
         )
+        # TODO(https://fxbug.dev/542494515): Support single_thread option.
         parser.add_argument(
             "--single-thread",
             action="store_true",
             default=None,
-            help="Resume only the specified thread during step over",
+            help=argparse.SUPPRESS,
         )
+        # TODO(https://fxbug.dev/542495451): Support SteppingGranularity.
         parser.add_argument(
             "--granularity",
             choices=["statement", "line", "instruction"],
             default=None,
-            help="Stepping granularity",
+            help=argparse.SUPPRESS,
         )
