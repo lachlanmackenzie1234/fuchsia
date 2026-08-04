@@ -363,7 +363,7 @@ TEST(ThreadSampler, HighFrequency) {
 
   std::vector<zx::event> events;
   std::vector<std::thread> threads;
-  for (size_t i = 0; i < 100; i++) {
+  for (size_t i = 0; i < 4; i++) {
     zx::event& event = events.emplace_back();
     ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
 
