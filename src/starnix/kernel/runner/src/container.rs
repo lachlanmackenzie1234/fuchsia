@@ -608,6 +608,7 @@ async fn create_container(
     let mut android_provided_bootreason = None;
 
     let mut bootargs_has_serialno = false;
+    let mut bootargs_has_verifiedbootstate = false;
     // TODO(https://fxbug.dev/526770691): Newer versions of Android replace the 'androidboot.*'
     // kernel parameters with 'bootconfig'. We should expose this to the container to avoid having
     // to manage 'androidboot.*' parameters here.
@@ -622,6 +623,9 @@ async fn create_container(
                         }
                         if item.starts_with("androidboot.serialno") {
                             bootargs_has_serialno = true;
+                        }
+                        if item.starts_with("androidboot.verifiedbootstate") {
+                            bootargs_has_verifiedbootstate = true;
                         }
                         if item.starts_with("androidboot.bootreason") && features.android_bootreason
                         {
@@ -655,6 +659,9 @@ async fn create_container(
                     log_warn!("Could not get serial number from sysinfo: {err:?}");
                 }
             }
+        }
+        if !bootargs_has_verifiedbootstate {
+            kernel_cmdline.extend(b" androidboot.verifiedbootstate=orange");
         }
     }
     if features.android_bootreason {
