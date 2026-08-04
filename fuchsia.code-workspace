@@ -369,7 +369,6 @@
       "third_party/mini_chromium/**": true,
       "third_party/mobly/**": true,
       "third_party/modinv/**": true,
-      "third_party/modp_b64/**": true,
       "third_party/nlassert/**": true,
       "third_party/nlio/**": true,
       "third_party/ogg/**": true,

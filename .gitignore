@@ -127,7 +127,6 @@ tables_generator_tests_*.txt
 !/third_party/jellyfish/
 /third_party/jellyfish/jellyfish
 !/third_party/modinv/
-!/third_party/modp_b64
 !/third_party/OWNERS
 !/third_party/owners.toml
 !/third_party/scudo/

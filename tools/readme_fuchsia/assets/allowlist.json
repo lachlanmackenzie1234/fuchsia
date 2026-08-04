@@ -37,7 +37,6 @@
         "third_party/libpcap/README.fuchsia",
         "third_party/mesa-migrating/README.fuchsia",
         "third_party/mobly/README.fuchsia",
-        "third_party/modp_b64/README.fuchsia",
         "third_party/parameterized/README.fuchsia",
         "third_party/pigweed/README.fuchsia",
         "third_party/protobuf/README.fuchsia",

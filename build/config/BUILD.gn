@@ -1161,7 +1161,6 @@ config("Wno-conversion") {
     "//third_party/libc-tests/*",
     "//third_party/mesa-migrating/*",
     "//third_party/micro-ecc/*",
-    "//third_party/modp_b64:*",
     "//third_party/ogg/*",
     "//third_party/opus/*",
     "//third_party/rust_crates/compat/brotli:*",

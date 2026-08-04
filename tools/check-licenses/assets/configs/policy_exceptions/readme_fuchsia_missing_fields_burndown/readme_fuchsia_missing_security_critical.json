@@ -18,7 +18,6 @@
                     "third_party/jellyfish",
                     "third_party/libpcap",
                     "third_party/mobly",
-                    "third_party/modp_b64",
                     "third_party/parameterized",
                     "third_party/pigweed",
                     "third_party/protobuf",
