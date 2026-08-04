@@ -122,6 +122,15 @@ pub struct CurrentTask {
 
     pub thread_state: ThreadState<RegisterStorageEnum>,
 
+    /// The cached running state of the task.
+    ///
+    /// Extracting `TaskRunningState` from a generic `Task` requires acquiring an RCU read lock.
+    /// While this is a relatively inexpensive operation, it is unnecessary in most cases because
+    /// `CurrentTask` always corresponds to a running `Task`, and every running `Task` has a
+    /// `TaskRunningState`. As such, the `CurrentTask` can safely cache a reference to its
+    /// `TaskRunningState`. This reference will only be invalidated during task exit.
+    pub running_state: Option<Arc<TaskRunningState>>,
+
     /// The cached file descriptor table of the task.
     ///
     /// Extracting `FdTable` from a generic `Task` is a heavy operation with multiple levels of
@@ -185,12 +194,13 @@ impl fmt::Debug for CurrentTask {
 impl CurrentTask {
     pub fn new(task: Arc<Task>, thread_state: ThreadState<RegisterStorageEnum>) -> Self {
         let current_creds = RefCell::new(CurrentCreds::Cached(task.clone_creds()));
-        let files = task.files().ok();
-        debug_assert!(files.is_some(), "CurrentTask must have FdTable");
+        let running_state = task.running_state().expect("CurrentTask must have TaskRunningState");
+        let files = running_state.files().expect("CurrentTask must have FdTable");
         Self {
             task,
             thread_state,
-            files: RefCell::new(files),
+            running_state: Some(running_state),
+            files: RefCell::new(Some(files)),
             current_creds,
             security_state: Default::default(),
             _local_marker: Default::default(),
@@ -198,7 +208,7 @@ impl CurrentTask {
     }
 
     /// Exit the task by dropping its running state.
-    pub fn exit(&self) {
+    pub fn exit(mut self) {
         // When this method returns, the following invariants must be met:
         // 1. No new references to running `Task` state must be obtainable.
         // 2. All externally-visible `Task` state must reflect that the `Task` has exited.
@@ -209,13 +219,32 @@ impl CurrentTask {
 
         self.signal_vfork();
 
-        // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
-        *self.files.borrow_mut() = None;
-        if let Ok(running_state) = self.task.running_state() {
+        // Release references to resources specific to the running task before triggering its
+        // delayed releaser for the last time. This schedules any RCU-guarded references retained
+        // solely by this task for RCU reclamation. Triggering the delayed releaser runs RCU
+        // callbacks, ensuring that:
+        //
+        // 1. Any delayed release actions registered by the resource being dropped during
+        //    reclamation are applied during the final delayed releaser trigger.
+        // 2. Any other drop side-effects happen before the thread group sends zombie notifications.
+        //
+        // Specifically, the following resources require explicit release:
+        //
+        // 1. `running_state`: Transitively releases `fs` and `proc_pid_directory_cache`
+        // 2. `files`: Drops `FileHandle` to close open file descriptors
+        // 3. `mm`: Drops `FsNodeHandle` to remove memory-mapped filesystem nodes and drops
+        //    `FileWriteGuard` for executable mappings
+        // 4. `fs`: Drops `MountClientMarker` to allow unmounting and drops `FsNodeHandle` to remove
+        //    namespace filesystem nodes
+        // 5. `proc_pid_directory_cache`: Drops `FsNodeHandle` to remove /proc/<pid> nodes
+
+        if let Some(running_state) = self.running_state.take() {
             *running_state.files.lock() = None;
             running_state.mm.update(None);
         }
-        self.running_state.update(None);
+
+        *self.files.borrow_mut() = None;
+        self.task.running_state.update(None);
 
         self.trigger_delayed_releaser();
 
@@ -234,10 +263,22 @@ impl CurrentTask {
     /// # Panics
     ///
     /// Calling `running_state()` on a [`CurrentTask`] for which the [`Task`] has no running state
-    /// (i.e. exited tasks) panics. However, such tasks should not have a `CurrentTask`.
+    /// (i.e. exited tasks) panics. However, such tasks should not have a [`CurrentTask`].
+    ///
+    /// This is primarily a risk in delayed release actions, which receive `&CurrentTask` when its
+    /// delayed releaser is triggered for the final time. At that point the task is mid-exit and its
+    /// [`TaskRunningState`] has been dropped. As such, delayed releases must not use the following
+    /// accessors:
+    ///
+    /// - [`Self::running_state()`]
+    /// - [`Self::files()`]
+    /// - [`Self::fs()`]
+    ///
+    /// If access to [`TaskRunningState`] is required in a delayed release action, use
+    /// [`Task::running_state()`] or an equivalent fallible accessor.
     #[track_caller]
-    pub fn running_state(&self) -> Arc<TaskRunningState> {
-        self.task.running_state().expect("CurrentTask must have TaskRunningState")
+    pub fn running_state(&self) -> &Arc<TaskRunningState> {
+        self.running_state.as_ref().expect("CurrentTask must have TaskRunningState")
     }
 
     /// Returns the [`FdTable`] for the [`Task`].
