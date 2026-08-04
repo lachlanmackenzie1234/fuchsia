@@ -24,6 +24,8 @@ pub struct VmObject {
 }
 
 impl VmObject {
+    pub const MAX_SIZE: u64 = bindings::VmObject_MAX_SIZE;
+
     /// Domain-specific conversion: returns raw pointer for `VmObject`.
     pub fn as_raw(&self) -> *mut bindings::VmObject {
         core::ptr::from_ref(&self.raw).cast_mut()

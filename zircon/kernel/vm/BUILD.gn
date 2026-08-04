@@ -299,12 +299,16 @@ kernel_bindgen_crate("vm-object-bindings") {
     "--no-recursive-allowlist",
     "--blocklist-function=VmObject_.*",
   ]
+  var_allowlist = [ "VmObject_MAX_SIZE" ]
   deps = [ "//sdk/rust/zx-types" ]
   raw_lines = [
     "#![no_std]",
     "use zx_types::zx_status_t;",
   ]
-  expect_lints = [ "non_camel_case_types" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
 }
 
 kernel_bindgen_crate("vm-object-paged-bindings") {
@@ -331,10 +335,15 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "vm_page_t",
     "zx_status_t",
   ]
+  var_allowlist = [ "VmObjectPaged_kAlwaysPinned" ]
   additional_bindgen_flags = [
     "--opaque-type=VmObjectPaged",
     "--no-recursive-allowlist",
-    "--blocklist-item=VmObjectPaged_.*",
+    "--blocklist-function=VmObjectPaged_.*",
+  ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
   ]
   deps = [
     ":vm-cow-pages-bindings",

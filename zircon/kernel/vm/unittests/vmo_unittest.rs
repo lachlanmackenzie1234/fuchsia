@@ -9,13 +9,65 @@ mod vmo_rs {
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pmm::ALLOC_FLAG_ANY;
     use crate::vm::scanner::AutoVmScannerDisable;
-    use crate::vm::vm_object::EvictionHint;
+    use crate::vm::vm_object::{EvictionHint, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm_unittests::test_helper::make_committed_pager_vmo;
     use page::SIZE as PAGE_SIZE_USIZE;
-    use unittest::{assert_false, assert_ok, unwrap_ok};
+    use unittest::{assert_eq, assert_false, assert_ok, expect_eq, expect_ok, unwrap_ok};
+    use zx_status::Status;
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
+
+    /// Tests creating a VMO with maximum size and larger than maximum size.
+    #[test]
+    fn vmo_create_maximum_size() {
+        let vmo = VmObjectPaged::create(ALLOC_FLAG_ANY, 0, VmObject::MAX_SIZE);
+        // should be ok
+        expect_ok!(vmo.map(|_| ()));
+
+        let vmo = VmObjectPaged::create(ALLOC_FLAG_ANY, 0, VmObject::MAX_SIZE + PAGE_SIZE);
+        // should be too large
+        expect_eq!(Status::result_into_raw(vmo.map(|_| ())), Status::OUT_OF_RANGE.into_raw());
+    }
+
+    /// Checks that VMOs must be page aligned sizes.
+    #[test]
+    fn vmo_unaligned_size_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = 15;
+        let result = VmObjectPaged::create(ALLOC_FLAG_ANY, 0, alloc_size);
+        assert_eq!(Status::result_into_raw(result.map(|_| ())), Status::INVALID_ARGS.into_raw());
+    }
+
+    /// Tests that decommitting from a contiguous VMO fails when loaning is disabled.
+    #[test]
+    fn vmo_contiguous_decommit_disabled_test() {
+        let _enable_loaning = ScopedLoaningEnabled::new(false);
+
+        let alloc_size = PAGE_SIZE * 16;
+        let vmo = unwrap_ok!(VmObjectPaged::create_contiguous(
+            ALLOC_FLAG_ANY,
+            alloc_size,
+            /*alignment_log2*/ 0
+        ));
+
+        // decommit fails as expected
+        assert_eq!(
+            Status::result_into_raw(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE)),
+            Status::NOT_SUPPORTED.into_raw()
+        );
+        // decommit fails as expected
+        assert_eq!(
+            Status::result_into_raw(vmo.decommit_range(0, 4 * PAGE_SIZE)),
+            Status::NOT_SUPPORTED.into_raw()
+        );
+        // decommit fails as expected
+        assert_eq!(
+            Status::result_into_raw(vmo.decommit_range(alloc_size - PAGE_SIZE, PAGE_SIZE)),
+            Status::NOT_SUPPORTED.into_raw()
+        );
+    }
 
     /// Tests HintRange(AlwaysNeed) evicts loaned pages.
     #[test]
@@ -57,5 +109,19 @@ mod vmo_rs {
 
             assert_false!(unsafe { page.is_loaned() });
         }
+    }
+
+    /// Tests creating a zero-sized always-pinned VMO fails gracefully.
+    #[test]
+    fn vmo_always_pinned_with_no_pages_test() {
+        // Verify that we don't trigger a panic during destruction of an always-pinned, but empty VMO.
+        //
+        // This is a regression test for https://fxbug.dev/511552403.
+
+        let vmo = VmObjectPaged::create(ALLOC_FLAG_ANY, VmObjectPaged::ALWAYS_PINNED, 0);
+        // Note that this call will fail.  That's because we've requested a zero-sized always-pinned
+        // VMO, which is not a valid request.  However, under the hood, we'll make it far enough to create
+        // the VMO even thought it will be destroyed before the call returns.
+        assert_eq!(Status::result_into_raw(vmo.map(|_| ())), Status::INVALID_ARGS.into_raw());
     }
 }

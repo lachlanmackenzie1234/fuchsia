@@ -21,6 +21,8 @@ pub struct VmObjectPaged {
 }
 
 impl VmObjectPaged {
+    pub const ALWAYS_PINNED: u32 = bindings::VmObjectPaged_kAlwaysPinned;
+
     /// Domain-specific conversion: returns raw FFI pointer for `VmObjectPaged`.
     pub fn as_raw(&self) -> *mut bindings::VmObjectPaged {
         core::ptr::from_ref(&self.raw).cast_mut()
