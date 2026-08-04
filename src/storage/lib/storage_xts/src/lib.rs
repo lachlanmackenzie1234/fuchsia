@@ -39,10 +39,11 @@ pub struct XtsProcessor<'a, 'b> {
 impl<'a, 'b> XtsProcessor<'a, 'b> {
     // `tweak` should be encrypted. `src` and `dst` must have the same length and be 16 byte
     // aligned.
-    pub fn new(tweak: Tweak, src: PtrByteSlice<'a>, dst: MutPtrByteSlice<'b>) -> Self {
+    pub fn new(tweak: Tweak, src: PtrByteSlice<'a>, mut dst: MutPtrByteSlice<'b>) -> Self {
         assert_eq!(src.len(), dst.len(), "Source and destination lengths must match");
         assert!(src.as_ptr().cast::<u128>().is_aligned(), "src must be 16 byte aligned");
         assert!(dst.as_ptr().cast::<u128>().is_aligned(), "dst must be 16 byte aligned");
+        dst.zero_no_rfo();
         Self { tweak, src, dst }
     }
 
