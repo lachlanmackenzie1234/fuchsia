@@ -104,6 +104,16 @@ antlion_host_test("vape_interop_test") {
   timeout_secs = 900
 }
 
+antlion_host_test("wlan_policy_initiated_roam_test") {
+  main_source =
+      "//src/connectivity/wlan/tests/wlancfg/WlanPolicyInitiatedRoamTest.py"
+  libraries = [
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//src/testing/end_to_end/mobly_controller/openwrt_access_point:openwrt_access_point",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+  ]
+}
+
 antlion_host_test("ping_test") {
   main_source = "//src/connectivity/wlan/tests/wlancfg/PingTest.py"
   libraries = [
@@ -221,5 +231,12 @@ group("tests_for_release_testing") {
     # new WLAN firmware patches. Take it out of automation; it takes too long
     # otherwise.
     ":regulatory_compliance_test",
+
+    # WlanPolicyInitiatedRoamTest should not be run as part of standard
+    # automation. The production wlancfg roaming policy for smart displays
+    # explicitly prevents frequent roaming, making the test non-deterministic.
+    # RoamRequestTest is the stable alternative.
+    # See b/540853000 for details.
+    ":wlan_policy_initiated_roam_test",
   ]
 }

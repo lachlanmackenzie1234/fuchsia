@@ -16,12 +16,6 @@ antlion_host_test("soft_ap_test") {
   environments = []
 }
 
-antlion_host_test("wlan_policy_initiated_roam_test") {
-  main_source = "WlanPolicyInitiatedRoamTest.py"
-  environments = wlan_ap_envs
-  deps = [ "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension" ]
-}
-
 # wlan reboot tests
 # ap tests
 antlion_host_test("wlan_reboot_ap_open_test") {
@@ -106,8 +100,5 @@ group("e2e_tests_quick") {
 # Tests that are disabled in automation
 group("e2e_tests_manual") {
   testonly = true
-  public_deps = [
-    ":soft_ap_test",
-    ":wlan_policy_initiated_roam_test",
-  ]
+  public_deps = [ ":soft_ap_test" ]
 }
