@@ -5,6 +5,7 @@
 pub mod blob;
 pub mod extents;
 pub mod pager;
+pub mod protocol;
 pub mod reader;
 
 #[cfg(test)]
@@ -13,5 +14,6 @@ pub mod testing;
 pub use blob::{Blob, Blobs};
 pub use extents::{Extent, Extents, ExtentsIterator};
 pub use pager::{PagerThread, run_pager_loop};
+pub use protocol::{CLOSE_BLOB_COMMAND, MAPPINGS_COMMAND, MappingCommand, RawMappingCommand};
 
 pub const BLOCK_SIZE: u64 = 4096;

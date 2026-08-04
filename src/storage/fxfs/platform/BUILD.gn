@@ -108,7 +108,6 @@ template("fxfs_platform_library") {
       "//third_party/rust_crates:rustc-hash",
       "//third_party/rust_crates:scopeguard",
       "//third_party/rust_crates:static_assertions",
-      "//third_party/rust_crates:zerocopy",
       "//third_party/zstd",
     ]
 
