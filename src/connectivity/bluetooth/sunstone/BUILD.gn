@@ -30,6 +30,12 @@ if (is_host) {
     deps = [ "//third_party/rust_crates:proptest" ]
   }
 
+  rustc_test("sapphire_host_test") {
+    edition = "2024"
+    source_root = "sapphire-host/src/lib.rs"
+    sources = [ "sapphire-host/src/lib.rs" ]
+  }
+
   rustc_test("sapphire_peer_cache_test") {
     edition = "2024"
     source_root = "sapphire-peer-cache/src/lib.rs"
@@ -157,6 +163,7 @@ group("tests") {
     ":sapphire_collections_test($host_toolchain)",
     ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_hci_test($host_toolchain)",
+    ":sapphire_host_test($host_toolchain)",
     ":sapphire_peer_cache_test($host_toolchain)",
     ":sapphire_rpc_macro_test($host_toolchain)",
     ":sapphire_sync_test($host_toolchain)",

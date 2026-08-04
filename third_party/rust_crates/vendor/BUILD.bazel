@@ -2491,6 +2491,18 @@ alias(
 )
 
 alias(
+    name = "sapphire-host-0.1.0",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-host:sapphire_host",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sapphire-host",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-host:sapphire_host",
+    tags = ["manual"],
+)
+
+alias(
     name = "sapphire-peer-cache-0.1.0",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-peer-cache:sapphire_peer_cache",
     tags = ["manual"],

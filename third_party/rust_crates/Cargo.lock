@@ -1994,6 +1994,7 @@ dependencies = [
  "sapphire-collections",
  "sapphire-gatt",
  "sapphire-hci",
+ "sapphire-host",
  "sapphire-peer-cache",
  "sapphire-rpc-macro",
  "sapphire-sync",
@@ -4713,6 +4714,10 @@ dependencies = [
  "sapphire-sync",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "sapphire-host"
+version = "0.1.0"
 
 [[package]]
 name = "sapphire-peer-cache"
