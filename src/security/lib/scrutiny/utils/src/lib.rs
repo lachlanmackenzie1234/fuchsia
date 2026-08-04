@@ -9,6 +9,7 @@ pub mod build_checks;
 pub mod fs;
 pub mod fvm;
 pub mod golden;
+pub mod http_artifact;
 pub mod io;
 pub mod key_value;
 pub mod package;
