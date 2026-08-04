@@ -39,7 +39,7 @@ pub async fn run_test(
     Ok(events)
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_echo_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/go-test-runner-example#meta/echo-test-realm.cm";
     let events = run_test(test_url, false, Some(10), vec![]).await.unwrap();
@@ -55,7 +55,7 @@ async fn launch_and_test_echo_test() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_file_with_no_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/go-test-runner-example#meta/empty_go_test.cm";
     let events = run_test(test_url, false, Some(10), vec![]).await.unwrap();
@@ -175,18 +175,18 @@ async fn launch_and_run_sample_test_helper(parallel: Option<u16>) {
     assert_eq!(events, expected_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test() {
     launch_and_run_sample_test_helper(Some(10)).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test_no_concurrent() {
     launch_and_run_sample_test_helper(None).await;
 }
 
 // This test will hang if test cases are not executed in parallel.
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_parallel_execution() {
     let test_url = "fuchsia-pkg://fuchsia.com/go-test-runner-example#meta/concurrency-test.cm";
     let events = run_test(test_url, false, Some(5), vec![])

@@ -10,7 +10,7 @@ use fidl_fuchsia_update_installer_ext::{
 use pretty_assertions::assert_eq;
 use test_case::test_case;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn progress_reporting_fetch_multiple_packages() {
     let env = TestEnv::builder().build().await;
 
@@ -94,7 +94,7 @@ async fn progress_reporting_fetch_multiple_packages() {
     assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Commit);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn progress_reporting_fetch_multiple_blobs_packageless() {
     let image_content = vec![1; 500];
     let image_hash = fuchsia_merkle::root_from_slice(&image_content);
@@ -190,7 +190,7 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
     assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Commit);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn monitor_fails_when_no_update_running() {
     let env = TestEnv::builder().build().await;
 
@@ -202,7 +202,7 @@ async fn monitor_fails_when_no_update_running() {
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn monitor_connects_to_existing_attempt(update_url: &str) {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 
@@ -255,7 +255,7 @@ async fn monitor_connects_to_existing_attempt(update_url: &str) {
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn succeed_additional_start_requests_when_compatible(update_url: &str) {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 
@@ -318,7 +318,7 @@ async fn succeed_additional_start_requests_when_compatible(update_url: &str) {
 
 #[test_case(UPDATE_PKG_URL, "fuchsia-pkg://fuchsia.com/different-url")]
 #[test_case(MANIFEST_URL, "http://fuchsia.com/different-url")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fail_additional_start_requests_when_not_compatible(
     compatible_url: &str,
     incompatible_url: &str,

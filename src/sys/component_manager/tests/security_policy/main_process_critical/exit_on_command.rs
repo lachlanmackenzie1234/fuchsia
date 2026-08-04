@@ -9,7 +9,7 @@ use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use std::process;
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(move |stream| {

@@ -46,11 +46,10 @@ where
 mod tests {
     use super::*;
     use fidl_fuchsia_update_channelcontrol::ChannelControlMarker;
-    use fuchsia_async as fasync;
     use fuchsia_component::client::connect_to_protocol;
     use pretty_assertions::assert_eq;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fake_channel_control() {
         let control = connect_to_protocol::<ChannelControlMarker>().unwrap();
 

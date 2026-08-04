@@ -8,7 +8,6 @@ use fidl::endpoints::{ClientEnd, ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_io as fio;
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component_test::{
     Capability, ChildOptions, DEFAULT_COLLECTION_NAME, LocalComponentHandles, RealmBuilder, Ref,
@@ -86,7 +85,7 @@ async fn collect_storage_user_monikers<T: AsRef<str>>(
     storage_monikers
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn single_storage_user() {
     let (mock, done_signal) = new_data_user_mock("file", "data");
     let builder = RealmBuilder::new().await.unwrap();
@@ -138,7 +137,7 @@ async fn single_storage_user() {
     assert_eq!(fuchsia_fs::file::read_to_string(&file).await.unwrap(), "data".to_string());
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn multiple_storage_users() {
     const NUM_MOCKS: usize = 5;
     let builder = RealmBuilder::new().await.unwrap();
@@ -176,7 +175,7 @@ async fn multiple_storage_users() {
     assert_eq!(storage_users, expected_storage_users);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn destroyed_storage_user() {
     let (mock, done_signal) = new_data_user_mock("file", "data");
     let builder = RealmBuilder::new().await.unwrap();

@@ -87,7 +87,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_strings_request() {
         let mock = Arc::new(MockBootArgumentsService::new(hashmap! {
             "some-key".to_string() => Some("some-value".to_string()),
@@ -105,7 +105,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn handle_request_stream() {
         let mock = Arc::new(MockBootArgumentsService::new(
             hashmap! {"some-key".to_string() => Some("some-value".to_string())},

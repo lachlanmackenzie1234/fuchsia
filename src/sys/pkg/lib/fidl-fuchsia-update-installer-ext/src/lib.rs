@@ -275,7 +275,6 @@ mod tests {
     use fidl_fuchsia_update_installer::{
         InstallationProgress, InstallerMarker, InstallerRequest, MonitorProxy,
     };
-    use fuchsia_async as fasync;
     use futures::stream::StreamExt;
 
     const TEST_URL: &str = "fuchsia-pkg://fuchsia.com/update/0";
@@ -359,7 +358,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_attempt_monitor_forwards_and_acks_progress() {
         let (mut send, monitor) = UpdateAttemptMonitor::new_test();
 
@@ -385,7 +384,7 @@ mod tests {
         future::join(client_fut, server_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_attempt_monitor_rejects_invalid_state() {
         let (mut send, mut monitor) = UpdateAttemptMonitor::new_test();
 
@@ -422,7 +421,7 @@ mod tests {
         future::join(client_fut, server_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_update_forwards_args_and_returns_attempt_id() {
         let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
 
@@ -477,7 +476,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_install_error() {
         let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
 
@@ -521,7 +520,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_update_forwards_fidl_error() {
         let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
 
@@ -551,7 +550,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_state_decode_error() {
         let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
 
@@ -611,7 +610,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_server_close_unexpectedly() {
         let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
 
@@ -684,7 +683,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_update_uses_provided_attempt_id() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
 
@@ -704,7 +703,7 @@ mod tests {
         future::join(client_fut, server_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_update_handles_no_update_in_progress() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
 
@@ -727,7 +726,7 @@ mod tests {
         future::join(client_fut, server_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_update_forwards_fidl_error() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
 
@@ -745,7 +744,7 @@ mod tests {
         future::join(client_fut, server_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_update_forwards_and_acks_progress() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
 
@@ -777,7 +776,7 @@ mod tests {
 
         future::join(client_fut, server_fut).await;
     }
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_attempt_monitor_fdomain_forwards_and_acks_progress() {
         let (mut send, monitor, _client) = UpdateAttemptMonitorFDomain::new_test();
 
@@ -804,7 +803,7 @@ mod tests {
         future::join(client_fut, server_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_attempt_monitor_fdomain_rejects_invalid_state() {
         let (mut send, mut monitor, _client) = UpdateAttemptMonitorFDomain::new_test();
 
@@ -841,7 +840,7 @@ mod tests {
         future::join(client_fut, server_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_update_fdomain_forwards_args_and_returns_attempt_id() {
         let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
 
@@ -897,7 +896,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_install_error_fdomain() {
         let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
 

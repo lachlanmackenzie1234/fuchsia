@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_fidl_test_components as ftest;
 use fuchsia_component::client::connect_to_protocol_at_path;
-use {fidl_fidl_test_components as ftest, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let client_0 =
         connect_to_protocol_at_path::<ftest::TriggerMarker>("/svc/fuchsia.test.Protocol0").unwrap();

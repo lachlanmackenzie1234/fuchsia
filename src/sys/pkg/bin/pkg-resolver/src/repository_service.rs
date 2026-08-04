@@ -180,7 +180,7 @@ mod tests {
         results
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list_empty() {
         let dynamic_dir = tempfile::tempdir().unwrap();
         let mgr =
@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(results, vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list() {
         // First, create a bunch of repo configs we're going to use for testing.
         let configs = (0..200)
@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(results, configs);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_insert_list_remove() {
         let dynamic_dir = tempfile::tempdir().unwrap();
         let mgr =
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(results, vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_insert_fails_with_access_denied_if_disabled() {
         let dynamic_dir = tempfile::tempdir().unwrap();
         let mgr = RepositoryManagerBuilder::new_test(&dynamic_dir, Option::<String>::None)
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(list(&service).await, vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_remove_fails_with_access_denied_if_disabled() {
         let dynamic_dir = tempfile::tempdir().unwrap();
         let mgr = RepositoryManagerBuilder::new_test(&dynamic_dir, Option::<String>::None)

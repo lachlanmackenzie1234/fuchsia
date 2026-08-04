@@ -331,7 +331,7 @@ mod tests {
         assert_eq!(expected, index.all_blobs());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_maps_missing_packages_to_unknown_content_blobs() {
         let (_blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -347,7 +347,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_maps_present_packages_to_all_content_blobs() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -377,7 +377,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_maps_invalid_meta_far_to_unknown_content_blobs() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -401,7 +401,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_dedupes_content_blobs() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -417,7 +417,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_adds_subpackage() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -434,7 +434,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_adds_subpackage_of_subpackage() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -452,7 +452,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_ignores_missing_subpackage() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -469,7 +469,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populate_retained_index_duplicate_subpackage() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 

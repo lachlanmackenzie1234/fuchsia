@@ -5,10 +5,10 @@
 use component_events::events::*;
 use component_events::matcher::EventMatcher;
 use component_events::sequence::{EventSequence, Ordering};
+use fidl_fuchsia_component as fcomponent;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
-use {fidl_fuchsia_component as fcomponent, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn destroy() {
     let builder = RealmBuilder::new().await.unwrap();
     let collection_realm = builder
@@ -62,7 +62,7 @@ async fn destroy() {
     expectation.await.unwrap();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn destroy_and_recreate() {
     let builder = RealmBuilder::new().await.unwrap();
     let destroy_and_recreate = builder

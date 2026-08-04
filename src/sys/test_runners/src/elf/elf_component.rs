@@ -717,7 +717,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_component_error() {
         let start_info = fcrunner::ComponentStartInfo {
             resolved_url: None,
@@ -746,12 +746,12 @@ mod tests {
         assert_eq!(s, expected_status);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_component_works() {
         let _ = sample_test_component().await.unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn component_runtime_kill_job_works() {
         let component = sample_test_component().await.unwrap();
 

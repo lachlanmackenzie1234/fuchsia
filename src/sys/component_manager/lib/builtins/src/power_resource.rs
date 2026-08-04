@@ -66,7 +66,7 @@ mod tests {
         Ok(proxy)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn kind_type_is_power() -> Result<(), Error> {
         let power_resource_provider = serve_power_resource().await?;
         let power_resource: Resource = power_resource_provider.get().await?;

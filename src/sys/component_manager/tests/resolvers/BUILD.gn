@@ -25,7 +25,7 @@ rustc_binary("trigger-bin") {
   testonly = true
   output_name = "component_manager_test_trigger_bin"
   deps = [
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/sys/component_manager/tests/fidl:components_rust",
     "//third_party/rust_crates:anyhow",

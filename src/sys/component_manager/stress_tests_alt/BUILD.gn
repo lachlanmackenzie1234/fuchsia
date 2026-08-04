@@ -13,6 +13,7 @@ rustc_binary("unreliable_echo_server_bin") {
   source_root = "unreliable_echo_server.rs"
   deps = [
     "//examples/components/routing/fidl:echo_rust",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:futures",
@@ -29,6 +30,7 @@ rustc_binary("unreliable_echo_client_bin") {
   source_root = "unreliable_echo_client.rs"
   deps = [
     "//examples/components/routing/fidl:echo_rust",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:rand",

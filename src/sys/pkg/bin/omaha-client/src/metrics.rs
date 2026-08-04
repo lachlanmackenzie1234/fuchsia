@@ -350,7 +350,6 @@ mod tests {
     use super::*;
     use cobalt_client::traits::AsEventCodes;
     use fidl_fuchsia_metrics::MetricEventPayload;
-    use fuchsia_async as fasync;
     use futures::stream::StreamExt;
     use omaha_client::metrics::UpdateCheckFailureReason;
     use omaha_client::protocol::request::Event;
@@ -366,7 +365,7 @@ mod tests {
         assert_eq!(actual_events, expected_events,);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_report_update_check_response_time() {
         assert_metrics(
             Metrics::UpdateCheckResponseTime {
@@ -401,7 +400,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_report_update_check_interval() {
         assert_metrics(
             Metrics::UpdateCheckInterval {
@@ -442,7 +441,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_report_update_check_failure_reason() {
         assert_metrics(
             Metrics::UpdateCheckFailureReason(UpdateCheckFailureReason::Configuration),
@@ -466,7 +465,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_report_requests_per_check() {
         assert_metrics(
             Metrics::RequestsPerCheck { count: 3, successful: true },
@@ -481,7 +480,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_report_attempts_to_successful_check() {
         assert_metrics(
             Metrics::AttemptsToSuccessfulCheck(3),
@@ -497,7 +496,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_report_attempts_to_successful_install() {
         assert_metrics(
             Metrics::AttemptsToSuccessfulInstall { count: 3, successful: true },
@@ -546,7 +545,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_omaha_event_lost() {
         macro_rules! assert_lost_combo {
             ($typeId:ident, $resId:ident) => {

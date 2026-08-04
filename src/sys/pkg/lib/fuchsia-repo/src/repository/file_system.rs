@@ -715,7 +715,7 @@ mod tests {
         chunk_size = CHUNK_SIZE;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_blob_modification_time() {
         let env = TestEnv::new();
 
@@ -729,7 +729,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_reject_invalid_paths() {
         let env = TestEnv::new();
         env.write_metadata("empty", b"");
@@ -740,7 +740,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_watch() {
         let env = TestEnv::new();
 
@@ -789,7 +789,7 @@ mod tests {
         fasync::Timer::new(Duration::from_millis(100)).await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_watch_ignores_access() {
         let env = TestEnv::new();
 
@@ -812,7 +812,7 @@ mod tests {
         fasync::Timer::new(Duration::from_millis(100)).await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_blob_verifies_src_length() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -836,7 +836,7 @@ mod tests {
         assert_matches!(err.downcast_ref::<BlobSizeMismatchError>(), Some(_));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_blob_copy_detects_length_mismatch() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -879,7 +879,7 @@ mod tests {
         assert_eq!(&actual, &contents2[..]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_blob_copy_skips_present_blobs_of_correct_length() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -921,7 +921,7 @@ mod tests {
         assert_eq!(&actual, &contents[..]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_blob_copy_overwrite() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -963,7 +963,7 @@ mod tests {
         assert_eq!(&actual, &contents2[..]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_delivery_blob_hard_link() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1011,7 +1011,7 @@ mod tests {
         check_links(&blob_path).await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_blob_generates_delivery_blob() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1043,7 +1043,7 @@ mod tests {
         assert!(std::fs::metadata(&blob_path).unwrap().permissions().readonly());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_delivery_blob() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::realm::{get_all_instances, Instance};
-use anyhow::{bail, Result};
+use crate::realm::{Instance, get_all_instances};
+use anyhow::{Result, bail};
 use moniker::Moniker;
 
 use flex_fuchsia_sys2 as fsys;
@@ -67,7 +67,11 @@ pub async fn get_single_instance_from_query(
     if instances.len() > 1 {
         let monikers: Vec<String> = instances.into_iter().map(|i| i.moniker.to_string()).collect();
         let monikers = monikers.join("\n");
-        bail!("The query {:?} matches more than one component instance:\n{}\n\nTo avoid ambiguity, use one of the above monikers instead.", query, monikers);
+        bail!(
+            "The query {:?} matches more than one component instance:\n{}\n\nTo avoid ambiguity, use one of the above monikers instead.",
+            query,
+            monikers
+        );
     }
     if instances.is_empty() {
         bail!("No matching component instance found for query {:?}.", query);
@@ -127,7 +131,11 @@ pub async fn get_cml_moniker_from_query(
     if monikers.len() > 1 {
         let monikers: Vec<String> = monikers.into_iter().map(|m| m.to_string()).collect();
         let monikers = monikers.join("\n");
-        bail!("The query {:?} matches more than one component instance:\n{}\n\nTo avoid ambiguity, use one of the above monikers instead.", query, monikers);
+        bail!(
+            "The query {:?} matches more than one component instance:\n{}\n\nTo avoid ambiguity, use one of the above monikers instead.",
+            query,
+            monikers
+        );
     }
     if monikers.is_empty() {
         bail!("No matching component instance found for query {:?}.", query);
@@ -164,7 +172,7 @@ mod tests {
         serve_realm_query_instances(instances)
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_exact_match_and_prefixes() {
         let realm_query = setup_fake_realm_query_with_entries(vec![
             ("/", "#meta/1.cm", "1"),
@@ -197,7 +205,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_moniker_more_than_1() {
         let realm_query = setup_fake_realm_query();
         let results = get_cml_monikers_from_query("core", &realm_query).await.unwrap();
@@ -210,14 +218,14 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_moniker_exactly_1() {
         let realm_query = setup_fake_realm_query();
         let results = get_cml_monikers_from_query("foo", &realm_query).await.unwrap();
         assert_eq!(results, vec![Moniker::parse_str("/core/foo").unwrap()]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_url_more_than_1() {
         let realm_query = setup_fake_realm_query();
         let results = get_cml_monikers_from_query("bar.cm", &realm_query).await.unwrap();
@@ -230,14 +238,14 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_url_exactly_1() {
         let realm_query = setup_fake_realm_query();
         let results = get_cml_monikers_from_query("2bar.cm", &realm_query).await.unwrap();
         assert_eq!(results, vec![Moniker::parse_str("/core/boo").unwrap()]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_id_more_than_1() {
         let realm_query = setup_fake_realm_query();
         let results = get_cml_monikers_from_query("456", &realm_query).await.unwrap();
@@ -250,33 +258,33 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_id_exactly_1() {
         let realm_query = setup_fake_realm_query();
         let results = get_cml_monikers_from_query("123", &realm_query).await.unwrap();
         assert_eq!(results, vec![Moniker::parse_str("/core/foo").unwrap()]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_monikers_from_query_no_results() {
         let realm_query = setup_fake_realm_query();
         let results = get_cml_monikers_from_query("qwerty", &realm_query).await.unwrap();
         assert_eq!(results.len(), 0);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_moniker_from_query_no_match() {
         let realm_query = setup_fake_realm_query();
         get_cml_moniker_from_query("qwerty", &realm_query).await.unwrap_err();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_moniker_from_query_multiple_match() {
         let realm_query = setup_fake_realm_query();
         get_cml_moniker_from_query("bar.cm", &realm_query).await.unwrap_err();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_moniker_from_query_moniker_single_match() {
         let realm_query = setup_fake_realm_query();
         let moniker = get_cml_moniker_from_query("foo", &realm_query).await.unwrap();
@@ -287,14 +295,14 @@ mod tests {
         assert_eq!(moniker, Moniker::parse_str("/core/foo").unwrap());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_moniker_from_url_moniker_single_match() {
         let realm_query = setup_fake_realm_query();
         let moniker = get_cml_moniker_from_query("2bar.cm", &realm_query).await.unwrap();
         assert_eq!(moniker, Moniker::parse_str("/core/boo").unwrap());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_cml_moniker_from_url_id_single_match() {
         let realm_query = setup_fake_realm_query();
         let moniker = get_cml_moniker_from_query("123", &realm_query).await.unwrap();

@@ -23,7 +23,7 @@ enum IncomingRequest {
     Trigger(ftest::TriggerRequestStream),
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     info!("trigger.cm started");
     let args: Vec<String> = std::env::args().collect();

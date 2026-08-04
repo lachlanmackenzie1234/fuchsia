@@ -151,7 +151,7 @@ mod tests {
         client
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn empty_base_packages() {
         let expected_packages = HashMap::new();
         let client = spawn_pkg_cache(expected_packages.clone()).await;
@@ -172,7 +172,7 @@ mod tests {
         base
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn chunk_size_boundary() {
         let package_counts = [
             PACKAGE_INDEX_CHUNK_SIZE - 1,

@@ -4,13 +4,12 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test() {
     // Start the component manager component.
     let realm_svc = client::connect_to_protocol::<fcomponent::RealmMarker>()

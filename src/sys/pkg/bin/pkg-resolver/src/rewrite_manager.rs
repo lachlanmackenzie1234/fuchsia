@@ -402,7 +402,6 @@ pub(crate) mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async as fasync;
     use serde_json::json;
     use std::io;
     use std::path::Path;
@@ -446,7 +445,7 @@ pub(crate) mod tests {
         (proxy, filename)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty_configs() {
         let path = make_rule_config(vec![]);
         let (config_dir, config_file) = temp_path_into_proxy_and_path(&path);
@@ -463,7 +462,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_single_static_rule() {
         let rules = vec![rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice")];
 
@@ -484,7 +483,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), rules);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_single_dynamic_rule() {
         let rules = vec![rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice")];
 
@@ -499,7 +498,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), rules);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rejects_invalid_static_config() {
         let rules = vec![rule!("fuchsia.com" => "fuchsia.com", "/a" => "/b")];
         let dynamic_path = make_rule_config(rules.clone());
@@ -528,7 +527,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), rules);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_recovers_from_invalid_dynamic_config() {
         let path = make_temp_file(|writer| write!(writer, "invalid"));
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -558,7 +557,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), vec![rule]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rewrite_identity_if_no_rules_match() {
         let rules = vec![
             rule!("fuchsia.com" => "fuchsia.com", "/a" => "/aa"),
@@ -576,7 +575,7 @@ pub(crate) mod tests {
         assert_eq!(manager.rewrite(&url), url);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rewrite_first_rule_wins() {
         let rules = vec![
             rule!("fuchsia.com" => "fuchsia.com", "/package" => "/remapped"),
@@ -594,7 +593,7 @@ pub(crate) mod tests {
         assert_eq!(manager.rewrite(&url), "fuchsia-pkg://fuchsia.com/remapped".parse().unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rewrite_dynamic_rules_override_static_rules() {
         let dynamic_path = make_rule_config(vec![
             rule!("fuchsia.com" => "fuchsia.com", "/package" => "/remapped"),
@@ -617,7 +616,7 @@ pub(crate) mod tests {
         assert_eq!(manager.rewrite(&url), "fuchsia-pkg://fuchsia.com/remapped".parse().unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rewrite_with_pending_transaction() {
         let override_rule = rule!("fuchsia.com" => "fuchsia.com", "/a" => "/c");
         let path = make_rule_config(vec![rule!("fuchsia.com" => "fuchsia.com", "/a" => "/b")]);
@@ -640,7 +639,7 @@ pub(crate) mod tests {
         assert_eq!(manager.rewrite(&url), "fuchsia-pkg://fuchsia.com/c".parse().unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_commit_additional_rule() {
         let existing_rule = rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice");
         let new_rule = rule!("fuchsia.com" => "fuchsia.com", "/rolldice/" => "/rolldice/");
@@ -674,7 +673,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), new_rules);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_erase_all_dynamic_rules() {
         let rules = vec![
             rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice"),
@@ -705,7 +704,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_building_rewrite_manager_populates_inspect() {
         let inspector = fuchsia_inspect::Inspector::default();
         let node = inspector.root().create_child("rewrite_manager");
@@ -757,7 +756,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_rewrite_manager_no_dynamic_rules_path() {
         let inspector = fuchsia_inspect::Inspector::default();
         let node = inspector.root().create_child("rewrite_manager");
@@ -781,7 +780,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_transaction_updates_inspect() {
         let inspector = fuchsia_inspect::Inspector::default();
         let node = inspector.root().create_child("rewrite_manager");
@@ -830,14 +829,14 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_dynamic_rules_if_no_dynamic_rules_path() {
         let manager = RewriteManagerBuilder::new(None, Option::<&str>::None).await.unwrap().build();
 
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_same_dynamic_rules_if_apply_fails() {
         let path = make_rule_config(vec![]);
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -869,7 +868,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), vec![rule1.clone(), rule0.clone()]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_apply_fails_with_no_change_if_no_dynamic_rules_path() {
         let mut manager =
             RewriteManagerBuilder::new(None, Option::<&str>::None).await.unwrap().build();
@@ -883,7 +882,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rewrite_works_when_data_inaccessible() {
         let rule0 = rule!("test0.com" => "test0.com", "/a" => "/b");
         let (builder, _) =
@@ -897,7 +896,7 @@ pub(crate) mod tests {
         assert_eq!(manager.list().cloned().collect::<Vec<_>>(), vec![rule0.clone()]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_constructor_returns_not_found_if_file_missing() {
         let path = make_rule_config(vec![]);
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -915,7 +914,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_static_rules_return_not_found_if_file_missing() {
         let path = make_rule_config(vec![]);
         let (config_dir, config_file) = temp_path_into_proxy_and_path(&path);
@@ -934,7 +933,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create_rule_inspect_state_passes_through_fields() {
         let inspector = inspect::Inspector::default();
         let node = inspector.root().create_child("rule_node");

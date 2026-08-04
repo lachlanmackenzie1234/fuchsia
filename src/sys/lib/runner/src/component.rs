@@ -933,7 +933,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn custom_executable_vmo() -> Result<(), Error> {
             let (launcher_proxy, _recv) = start_launcher()?;
 
@@ -963,7 +963,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn extra_args() -> Result<(), Error> {
             let (launcher_proxy, recv) = start_launcher()?;
 
@@ -998,7 +998,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn namespace_added() -> Result<(), Error> {
             let (launcher_proxy, recv) = start_launcher()?;
 
@@ -1037,7 +1037,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn extra_namespace_entries() -> Result<(), Error> {
             let (launcher_proxy, recv) = start_launcher()?;
 
@@ -1085,7 +1085,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn handles_added() -> Result<(), Error> {
             let (launcher_proxy, recv) = start_launcher()?;
 
@@ -1122,7 +1122,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn handles_added_with_custom_loader_chan() -> Result<(), Error> {
             let (launcher_proxy, recv) = start_launcher()?;
 
@@ -1161,7 +1161,7 @@ mod tests {
             Ok(())
         }
 
-        #[fasync::run_singlethreaded(test)]
+        #[fuchsia::test]
         async fn extra_handles() -> Result<(), Error> {
             let (launcher_proxy, recv) = start_launcher()?;
 

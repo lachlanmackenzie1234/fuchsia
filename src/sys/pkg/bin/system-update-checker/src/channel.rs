@@ -189,7 +189,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_target_channel_manager_set_target_channel() {
         let dir = tempfile::tempdir().unwrap();
 
@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(channel_manager.get_target_channel(), Some(expected_channel));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_target_channel_manager_update_uses_vbmeta() {
         check_target_channel_manager_update(
             Some("not-devhost".to_string()),
@@ -220,12 +220,12 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_target_channel_manager_update_uses_fallback() {
         check_target_channel_manager_update(None, String::new()).await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_target_channel_manager_get_update_package_url() {
         let dir = tempfile::tempdir().unwrap();
         let connector = RepoMgrServiceConnector {
@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(channel_manager.get_target_channel_update_url(), None);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_target_channel_manager_get_channel_list_with_map() {
         let dir = tempfile::tempdir().unwrap();
         let connector = RepoMgrServiceConnector {
@@ -282,7 +282,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_target_channel_manager_get_channel_list() {
         let dir = tempfile::tempdir().unwrap();
         let connector =

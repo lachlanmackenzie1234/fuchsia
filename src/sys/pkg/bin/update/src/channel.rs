@@ -54,7 +54,6 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_update_channelcontrol::ChannelControlRequest;
-    use fuchsia_async as fasync;
     use futures::prelude::*;
 
     async fn perform_channel_test<PV, CV>(
@@ -81,7 +80,7 @@ mod tests {
         let ((), (), ()) = futures::join!(fut, provider_stream_fut, control_stream_fut);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_channel_get() {
         perform_channel_test(
             args::channel::Command::Get(args::channel::Get {}),
@@ -95,7 +94,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_channel_target() {
         perform_channel_test(
             args::channel::Command::Target(args::channel::Target {}),
@@ -110,7 +109,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_channel_set() {
         perform_channel_test(
             args::channel::Command::Set(args::channel::Set { channel: "new-channel".to_string() }),
@@ -126,7 +125,7 @@ mod tests {
         .await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_channel_list() {
         perform_channel_test(
             args::channel::Command::List(args::channel::List {}),

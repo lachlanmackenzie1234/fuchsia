@@ -431,7 +431,7 @@ mod tests {
     use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn query_non_current_configuration_with_a_current() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new().current_config(fpaver::Configuration::A).build(),
@@ -449,7 +449,7 @@ mod tests {
         assert_eq!(paver.take_events(), vec![PaverEvent::QueryCurrentConfiguration]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn query_non_current_configuration_with_b_current() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new().current_config(fpaver::Configuration::B).build(),
@@ -467,7 +467,7 @@ mod tests {
         assert_eq!(paver.take_events(), vec![PaverEvent::QueryCurrentConfiguration]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn query_non_current_configuration_with_r_current() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new().current_config(fpaver::Configuration::Recovery).build(),
@@ -485,7 +485,7 @@ mod tests {
         assert_eq!(paver.take_events(), vec![PaverEvent::QueryCurrentConfiguration]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn set_configuration_active_makes_call() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let boot_manager = paver.spawn_boot_manager_service();
@@ -498,7 +498,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn set_recovery_configuration_active_makes_calls() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let boot_manager = paver.spawn_boot_manager_service();
@@ -514,7 +514,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn set_arbitrary_configuration_active_makes_call() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let boot_manager = paver.spawn_boot_manager_service();
@@ -529,7 +529,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn query_configuration_status_makes_call() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let boot_manager = paver.spawn_boot_manager_service();
@@ -542,7 +542,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn flush_boot_manager_makes_call() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let boot_manager = paver.spawn_boot_manager_service();
@@ -580,7 +580,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_bails_out_if_current_pending_a() {
         assert_prepare_partition_metadata_bails_out_with_unhealthy_current(
             fpaver::Configuration::A,
@@ -589,7 +589,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_bails_out_if_current_unbootable_a() {
         assert_prepare_partition_metadata_bails_out_with_unhealthy_current(
             fpaver::Configuration::A,
@@ -598,7 +598,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_bails_out_if_current_pending_b() {
         assert_prepare_partition_metadata_bails_out_with_unhealthy_current(
             fpaver::Configuration::B,
@@ -607,7 +607,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_bails_out_if_current_unbootable_b() {
         assert_prepare_partition_metadata_bails_out_with_unhealthy_current(
             fpaver::Configuration::B,
@@ -635,7 +635,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_targets_b_in_config_a() {
         assert_successful_prepare_partition_metadata(
             fpaver::Configuration::A,
@@ -644,7 +644,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_targets_a_in_config_b() {
         assert_successful_prepare_partition_metadata(
             fpaver::Configuration::B,
@@ -653,7 +653,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_targets_a_in_config_r() {
         assert_successful_prepare_partition_metadata(
             fpaver::Configuration::Recovery,
@@ -662,7 +662,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn prepare_partition_metadata_does_nothing_if_abr_not_supported() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -675,7 +675,7 @@ mod tests {
         assert_eq!(paver.take_events(), vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_writes_firmware() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let data_sink = paver.spawn_data_sink_service();
@@ -715,7 +715,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_ignores_unsupported_firmware() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -745,7 +745,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_forwards_other_firmware_errors() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -777,7 +777,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_writes_asset_to_single_config() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let data_sink = paver.spawn_data_sink_service();
@@ -801,7 +801,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_write_asset_forwards_errors() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -858,7 +858,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn paver_flush_boot_manager_makes_calls() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let boot_manager = paver.spawn_boot_manager_service();
@@ -875,7 +875,7 @@ mod abr_not_supported_tests {
     use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn query_non_current_configuration_returns_not_supported() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -895,7 +895,7 @@ mod abr_not_supported_tests {
         assert_eq!(paver.take_events(), vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn query_current_configuration_returns_not_supported() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -912,7 +912,7 @@ mod abr_not_supported_tests {
         assert_eq!(paver.take_events(), vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn set_configuration_active_is_noop() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let boot_manager = paver.spawn_boot_manager_service();
@@ -924,7 +924,7 @@ mod abr_not_supported_tests {
         assert_eq!(paver.take_events(), vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_writes_asset_to_both_configs() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let data_sink = paver.spawn_data_sink_service();
@@ -974,7 +974,7 @@ mod abr_not_supported_tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_writes_firmware_to_both_configs() {
         let paver = Arc::new(MockPaverServiceBuilder::new().build());
         let data_sink = paver.spawn_data_sink_service();
@@ -1005,7 +1005,7 @@ mod abr_not_supported_tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_forwards_config_a_error() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -1042,7 +1042,7 @@ mod abr_not_supported_tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_ignores_config_b_not_supported_error() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -1084,7 +1084,7 @@ mod abr_not_supported_tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_write_firmware_ignores_unsupported_config_b() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -1122,7 +1122,7 @@ mod abr_not_supported_tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn write_image_forwards_other_config_b_errors() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -1166,7 +1166,7 @@ mod abr_not_supported_tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn paver_flush_boot_manager_doesnt_makes_calls() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()

@@ -94,7 +94,6 @@ mod tests {
     use super::*;
     use crate::TestUpdatePackage;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use proptest::prelude::*;
     use serde_json::json;
 
@@ -131,7 +130,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_update_mode_success_normal() {
         let p = TestUpdatePackage::new()
             .add_file("update-mode", &valid_update_mode_json_string("normal"))
@@ -139,7 +138,7 @@ mod tests {
         assert_matches!(p.update_mode().await, Ok(Some(UpdateMode::Normal)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_update_mode_success_force_recovery() {
         let p = TestUpdatePackage::new()
             .add_file("update-mode", &valid_update_mode_json_string("force-recovery"))
@@ -147,13 +146,13 @@ mod tests {
         assert_matches!(p.update_mode().await, Ok(Some(UpdateMode::ForceRecovery)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_update_mode_success_missing_update_mode_file() {
         let p = TestUpdatePackage::new();
         assert_matches!(p.update_mode().await, Ok(None));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_update_mode_fail_unsupported_mode() {
         let p = TestUpdatePackage::new()
             .add_file("update-mode", &valid_update_mode_json_string("potato"))
@@ -164,7 +163,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_update_mode_fail_deserialize() {
         let p = TestUpdatePackage::new().add_file("update-mode", "oh no! this isn't json.").await;
         assert_matches!(

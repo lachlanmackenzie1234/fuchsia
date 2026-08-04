@@ -4,10 +4,12 @@
 
 use anyhow::{Error, anyhow};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::{
     self as fpkg, PackageResolverMarker, PackageResolverProxy, PackageResolverRequestStream,
     PackageResolverResolveResponder,
 };
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::prelude::*;
@@ -16,7 +18,6 @@ use std::fs::{self, create_dir};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const PACKAGE_CONTENTS_PATH: &str = "package_contents";
 const META_FAR_MERKLE_ROOT_PATH: &str = "meta";
@@ -408,7 +409,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_resolver() {
         let resolved_urls = Arc::new(Mutex::new(vec![]));
         let resolved_urls_clone = resolved_urls.clone();
@@ -449,7 +450,7 @@ mod tests {
         assert_eq!(*resolved_urls.lock(), vec!["fuchsia-pkg://fuchsia.com/update"]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn block_once_blocks() {
         let resolver = Arc::new(MockResolverService::new(None));
         let mut handle_first = resolver.url("fuchsia-pkg://fuchsia.com/first").block_once();
@@ -472,7 +473,7 @@ mod tests {
         assert_eq!(read_file(&first_pkg, "meta").await, "fake merkle");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn multiple_predefined_responses() {
         let resolver = Arc::new(MockResolverService::new(None));
         let resolver_proxy = Arc::clone(&resolver).spawn_resolver_service();
@@ -495,7 +496,7 @@ mod tests {
         assert_eq!(meta_contents, "upd4t3");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test(logging = false)]
     #[should_panic(expected = "expected_results should be >= number of resolve requests")]
     async fn panics_when_not_enough_predefined_responses() {
         let resolver = Arc::new(MockResolverService::new(None));

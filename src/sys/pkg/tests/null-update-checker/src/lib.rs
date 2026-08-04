@@ -6,7 +6,6 @@ use assert_matches::assert_matches;
 use fidl::endpoints::{ControlHandle as _, Proxy as _, RequestStream as _};
 use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_channel as fupdate_channel;
-use fuchsia_async::{self as fasync};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use test_case::test_case;
 
@@ -147,7 +146,7 @@ impl TestEnv {
 
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn query_current_channel(idle_timeout_millis: i64) {
     let env = TestEnv::builder()
         .idle_timeout_millis(idle_timeout_millis)
@@ -160,7 +159,7 @@ async fn query_current_channel(idle_timeout_millis: i64) {
 
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn listener_closes(idle_timeout_millis: i64) {
     let env = TestEnv::builder()
         .idle_timeout_millis(idle_timeout_millis)
@@ -198,7 +197,7 @@ async fn listener_closes(idle_timeout_millis: i64) {
 //    component and be handled correctly
 // 2. activity on the out dir while the component is stopped will restart the component and be
 //    handled correctly
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn stop_on_idle_resume_on_use() {
     let mut event_stream = component_events::events::EventStream::open().await.unwrap();
     let env =

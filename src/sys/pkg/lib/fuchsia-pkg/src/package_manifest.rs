@@ -1597,7 +1597,7 @@ mod tests {
         assert!(result.is_err())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_from_package_manifest_archive_manifest() {
         let outdir = TempDir::new().unwrap();
 

@@ -238,7 +238,7 @@ mod tests {
     use flex_fuchsia_update_installer::{Initiator, MonitorMarker, MonitorRequest};
     use pretty_assertions::assert_eq;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_installer() {
         #[cfg(feature = "fdomain")]
         let client = fdomain_local::local_client_empty();

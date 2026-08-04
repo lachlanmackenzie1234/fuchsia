@@ -41,7 +41,6 @@ pub async fn do_commit(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
     use zx::Status;
@@ -63,17 +62,17 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_success_current_a() {
         run_success_test(&ConfigurationWithoutRecovery::A).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_success_current_b() {
         run_success_test(&ConfigurationWithoutRecovery::B).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fails_when_set_healthy_fails() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()

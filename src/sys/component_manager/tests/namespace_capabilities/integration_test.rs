@@ -4,10 +4,9 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
-use fuchsia_async as fasync;
 use fuchsia_component_test::*;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn component_manager_namespace() {
     // Define the realm inside component manager.
     let builder = RealmBuilder::new().await.unwrap();

@@ -412,7 +412,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn uses_default_on_read_error() {
         let history = UpdateHistory::load_from_or_default(
             future::ready(Err(anyhow!("oops"))),
@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(history.update_attempts, VecDeque::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn uses_default_on_parse_error() {
         let history =
             UpdateHistory::load_from_or_default(make_reader("not json"), inspect::Node::default())
@@ -430,7 +430,7 @@ mod tests {
         assert_eq!(history.update_attempts, VecDeque::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn creates_inspect_on_parse_error() {
         let inspector = Inspector::default();
         let history_node = inspector.root().create_child("history");
@@ -452,7 +452,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn runs_with_dropped_inspector() {
         // Simulate the oneshot mode, in which we create an inspector and then immediately drop it.
         // Make sure we can still parse history.
@@ -486,7 +486,7 @@ mod tests {
 
     // Ensure we populate inspect for both parsed update attempts and subsequent ones.
     // Also a useful test that we can actually parse history.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn populates_inspect() {
         let inspector = Inspector::default();
         let history_node = inspector.root().create_child("history");
@@ -830,7 +830,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn start_update_attempt_uses_last_successful_attempt_as_source_version() {
         let completed_target_version =
             Version::for_hash_and_empty_paver_hashes("completed target version");
@@ -895,7 +895,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn record_update_attempt_and_then_save() {
         let (send, recv) = futures::channel::oneshot::channel();
 
@@ -964,7 +964,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn record_update_attempt_only_keep_max_size() {
         let mut history = UpdateHistory::default();
         for i in 0..10 {
@@ -993,7 +993,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn empty_history_0_attempts() {
         let history = UpdateHistory::default();
         assert_eq!(
@@ -1002,7 +1002,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn single_attempt_history_has_1_attempt_to_new_version() {
         let mut history = UpdateHistory::default();
         record_fake_update_attempt(&mut history, 42).await;
@@ -1023,7 +1023,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn matching_version_attempts_history_max_attempts() {
         let mut history = UpdateHistory::default();
         for i in 0..MAX_UPDATE_ATTEMPTS {
@@ -1039,7 +1039,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn attempts_for_only_matches_most_recent_attempts() {
         let history = UpdateHistory {
             update_attempts: VecDeque::from(vec![
@@ -1093,7 +1093,7 @@ mod tests {
         assert_eq!(history.attempts_for(&Version::for_hash("old2"), &Version::for_hash("new2")), 0);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn mismatching_source_version_attempts_history_1_attempt() {
         let history = UpdateHistory {
             update_attempts: VecDeque::from(vec![
@@ -1132,7 +1132,7 @@ mod tests {
         assert_eq!(history.attempts_for(&Version::for_hash("old"), &Version::for_hash("new")), 1);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn mismatching_target_version_attempts_history_1_attempt() {
         let history = UpdateHistory {
             update_attempts: VecDeque::from(vec![

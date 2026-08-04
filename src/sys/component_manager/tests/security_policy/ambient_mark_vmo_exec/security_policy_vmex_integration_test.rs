@@ -7,14 +7,15 @@ use assert_matches::assert_matches;
 use component_events::events::*;
 use component_events::matcher::*;
 use component_events::sequence::{EventSequence, Ordering};
+use fidl_fuchsia_component as fcomponent;
+use fidl_test_policy as ftest;
 use fuchsia_component::client;
 use security_policy_test_util::{open_exposed_dir, start_policy_test};
-use {fidl_fuchsia_component as fcomponent, fidl_test_policy as ftest, fuchsia_async as fasync};
 
 const CM_URL: &str = "#meta/cm_for_test.cm";
 const ROOT_URL: &str = "#meta/test_root.cm";
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_ambient_vmex_default_denied() -> Result<(), Error> {
     let (_test, realm, _event_stream) = start_policy_test(CM_URL, ROOT_URL).await?;
 
@@ -31,7 +32,7 @@ async fn verify_ambient_vmex_default_denied() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_ambient_vmex_allowed() -> Result<(), Error> {
     let (_test, realm, _event_stream) = start_policy_test(CM_URL, ROOT_URL).await?;
     let child_name = "policy_allowed";
@@ -55,7 +56,7 @@ async fn verify_ambient_vmex_allowed() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_ambient_vmex_denied() -> Result<(), Error> {
     let (_test, realm, event_stream) = start_policy_test(CM_URL, ROOT_URL).await?;
 

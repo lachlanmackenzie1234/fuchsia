@@ -1300,7 +1300,7 @@ mod tests {
         assert_eq!(result, CheckDecision::ThrottledByPolicy);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_check_allowed_update_recent_update_check_times() {
         let mut mock_time = MockTimeSource::new_from_now();
         let now = mock_time.now();
@@ -1349,7 +1349,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_check_allowed_do_not_update_recent_update_check_times_when_not_ok() {
         let mock_time = MockTimeSource::new_from_now();
         let now = mock_time.now();
@@ -1422,7 +1422,7 @@ mod tests {
 
     // Test that update_check_allowed emits the update_check_opt_out_preference metric when it
     // determines that an update check is allowed.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_check_allowed_emits_opt_out_preference_metric_when_decision_is_ok() {
         let (metrics_reporter, mut metrics) = CobaltMetricsReporter::new_mock();
         let mock_time = MockTimeSource::new_from_now();
@@ -1474,7 +1474,7 @@ mod tests {
 
     // Test that update_check_allowed does not emit the update_check_opt_out_preference metric when
     // it determines that an update check is not allowed yet.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_check_allowed_does_not_emit_opt_out_preference_metric_when_not_time() {
         let (metrics_reporter, mut metrics) = CobaltMetricsReporter::new_mock();
 
@@ -1536,7 +1536,7 @@ mod tests {
 
     // Verifies that query_commit_status_and_update_status updates the commit status and stops
     // calling the FIDL server once the system is committed.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_query_commit_status_and_update_status() {
         let (proxy, mut stream) = create_proxy_and_stream::<CommitStatusProviderMarker>();
         let provider_fn = || Ok(proxy.clone());
@@ -1642,7 +1642,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_ui_activity_state_default_unknown() {
         let policy_engine = FuchsiaPolicyEngineBuilder::new(PolicyConfig::default())
             .time_source(StandardTimeSource)
@@ -1652,7 +1652,7 @@ mod tests {
         assert_eq!(ui_activity.state, State::Invalid);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_query_opt_out_preference_ok_responses() {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<OptOutMarker>();
 
@@ -1679,7 +1679,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_query_opt_out_preference_no_response_is_allow_all_updates() {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<OptOutMarker>();
         drop(stream);
@@ -1689,7 +1689,7 @@ mod tests {
         assert_eq!(query_opt_out_preference(provider).await, OptOutPreference::AllowAllUpdates);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_query_opt_out_preference_connect_error_is_allow_all_updates() {
         let provider = || Err(anyhow!("oops"));
 
@@ -1794,7 +1794,7 @@ mod tests {
         assert!(!FuchsiaPolicy::reboot_allowed(&policy_data, &CheckOptions::default()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_policy_engine_builder_interval_override() {
         let policy_config = FuchsiaPolicyEngineBuilder::new(PolicyConfig::default())
             .time_source(MockTimeSource::new_from_now())

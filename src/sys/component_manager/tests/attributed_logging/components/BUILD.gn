@@ -19,7 +19,7 @@ rustc_binary("use-unoffered") {
   source_root = "use-unoffered.rs"
   output_name = "use_unoffered"
   deps = [
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/sys/component_manager/tests/fidl:components_rust",
     "//third_party/rust_crates:futures",

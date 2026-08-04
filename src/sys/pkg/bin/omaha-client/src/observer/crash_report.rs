@@ -184,19 +184,19 @@ mod tests {
         assert_signature(recv.next().await.unwrap(), "foo");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_file_crash_report_success() {
         test_file_crash_report(Ok(FileReportResults::default())).await
     }
 
     /// We should ignore any errors from the CrashReporter service.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_file_crash_report_error_ignored() {
         test_file_crash_report(Err(FilingError::InvalidArgsError)).await
     }
 
     /// Verifies installation error reports are deduplicated over 24 hour periods.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_installation_error() {
         let (hook, mut recv) = ThrottleHook::new(Ok(FileReportResults::default()));
         let mock = Arc::new(MockCrashReporterService::new(hook));
@@ -233,7 +233,7 @@ mod tests {
         assert_signature(recv.next().await.unwrap(), "fuchsia-installation-error");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_consecutive_failed_update_checks() {
         let (hook, mut recv) = ThrottleHook::new(Ok(FileReportResults::default()));
         let mock = Arc::new(MockCrashReporterService::new(hook));
@@ -265,7 +265,7 @@ mod tests {
     }
 
     /// Tests that the number of pending crash reports is correctly bounded.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_max_pending_crash_reports() {
         let (hook, mut recv) = ThrottleHook::new(Ok(FileReportResults::default()));
         let mock = Arc::new(MockCrashReporterService::new(hook));
@@ -301,7 +301,7 @@ mod tests {
 
     /// Tests that when the control handle is dropped, the `handle_crash_reports_impl` future
     /// terminates.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_ch_dropped() {
         let mock = Arc::new(MockCrashReporterService::new(|_| Ok(FileReportResults::default())));
         let (proxy, _fidl_server) = mock.spawn_crash_reporter_service();

@@ -929,7 +929,7 @@ mod tests {
         BlobInfo { blob_id: blob_id(n), length: 0 }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn constructor() {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PackageCacheMarker>();
         let client = Client::from_proxy(proxy);
@@ -938,7 +938,7 @@ mod tests {
         assert_matches!(client.proxy().sync().await, Err(_));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_present_package() {
         let (client, mut server) = MockPackageCache::new();
 
@@ -969,7 +969,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_present_package_handles_slow_stream_close() {
         let (client, mut server) = MockPackageCache::new();
 
@@ -1011,7 +1011,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn needed_blobs_open_meta_far() {
         let (mut get, pending_get) = PendingGet::new().await;
 
@@ -1046,7 +1046,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn needed_blobs_open_content_blob() {
         let (mut get, pending_get) = PendingGet::new().await;
 
@@ -1084,7 +1084,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn needed_blobs_get_missing_blobs_on_closed_ok() {
         let (mut get, pending_get) = PendingGet::new().await;
         let _ = pending_get.finish();
@@ -1093,7 +1093,7 @@ mod tests {
         assert_eq!(get.get_missing_blobs().try_concat().await.unwrap(), vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn needed_blobs_get_missing_blobs() {
         let (mut get, pending_get) = PendingGet::new().await;
 
@@ -1116,7 +1116,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn needed_blobs_get_missing_blobs_fail_to_obtain_iterator() {
         let (mut get, pending_get) = PendingGet::new().await;
         drop(pending_get);
@@ -1130,7 +1130,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn needed_blobs_get_missing_blobs_iterator_contains_error() {
         let (mut get, pending_get) = PendingGet::new().await;
 
@@ -1274,7 +1274,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn empty_blob_write() {
         let (NeededBlob { blob }, blob_server) = MockNeededBlob::new();
 
@@ -1318,7 +1318,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn small_blob_write() {
         let (NeededBlob { blob }, blob_server) = MockNeededBlob::new();
 
@@ -1341,7 +1341,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blob_truncate_no_space() {
         let (NeededBlob { blob }, blob_server) = MockNeededBlob::new();
 
@@ -1356,7 +1356,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blob_write_no_space() {
         let (NeededBlob { blob }, blob_server) = MockNeededBlob::new();
 
@@ -1372,7 +1372,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blob_write_multiple_write() {
         let (NeededBlob { blob }, blob_server) = MockNeededBlob::new();
 
@@ -1398,7 +1398,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_already_cached_success() {
         let (client, mut server) = MockPackageCache::new();
 
@@ -1424,7 +1424,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_already_cached_missing_meta_far() {
         let (client, mut server) = MockPackageCache::new();
 
@@ -1446,7 +1446,7 @@ mod tests {
         .await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_already_cached_missing_content_blob() {
         let (client, mut server) = MockPackageCache::new();
 

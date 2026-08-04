@@ -457,7 +457,7 @@ mod tests {
         FailPrepareData, InstallationProgress, InstallerRequest, InstallerRequestStream,
         RebootControllerRequest, State, UpdateInfo,
     };
-    use fuchsia_async::{self as fasync, TestExecutor};
+    use fuchsia_async::TestExecutor;
     use fuchsia_sync::Mutex;
     use futures::future::BoxFuture;
     use omaha_client::protocol::response::{App, Manifest, Package, Packages};
@@ -556,7 +556,7 @@ mod tests {
         FuchsiaInstaller::new(app_set)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_start_update_with_reboot() {
         let (mut installer, mut stream, _) = new_mock_installer(true);
         let plan = FuchsiaInstallPlan {
@@ -657,7 +657,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_start_update_no_reboot() {
         let (mut installer, mut stream, _) = new_mock_installer(false);
         let plan = FuchsiaInstallPlan {
@@ -764,7 +764,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_eager_package_update() {
         let (mut installer, _, mut stream) = new_mock_installer(true);
         let plan = FuchsiaInstallPlan {
@@ -815,7 +815,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_install_error() {
         let (mut installer, mut stream, _) = new_mock_installer(true);
         let plan = FuchsiaInstallPlan {
@@ -855,7 +855,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_server_close_unexpectedly() {
         let (mut installer, mut stream, _) = new_mock_installer(true);
         let plan = FuchsiaInstallPlan {
@@ -899,7 +899,7 @@ mod tests {
         future::join(installer_fut, stream_fut).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_connect_to_installer_failed() {
         let (mut installer, _, _) = new_mock_installer(true);
         installer.installer_connector = MockConnector::failing();
@@ -935,7 +935,7 @@ mod tests {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_simple_response() {
         let request_params = RequestParams::default();
         let request_metadata = RequestMetadata {
@@ -986,7 +986,7 @@ mod tests {
         assert_eq!(install_plan.ecdsa_signature, Some(vec![13, 14, 15]));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_app() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1007,7 +1007,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_app() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1049,7 +1049,7 @@ mod tests {
         assert_eq!(install_plan.install_source, request_params.source);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_package_updates() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1116,7 +1116,7 @@ mod tests {
         assert_eq!(install_plan.install_source, request_params.source);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mixed_update() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(install_plan.install_source, request_params.source);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_update_check() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1191,7 +1191,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_urls() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1219,7 +1219,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_app_error_status() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1246,7 +1246,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_update() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1270,7 +1270,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_invalid_url() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1298,7 +1298,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_manifest() {
         let request_params = RequestParams::default();
         let request_metadata = None;
@@ -1326,7 +1326,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_urgent_update_attribute_true() {
         let request_params = RequestParams::default();
         let request_metadata = None;

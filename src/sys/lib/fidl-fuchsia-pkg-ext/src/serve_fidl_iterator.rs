@@ -91,7 +91,7 @@ where
 pub async fn serve_fidl_iterator_from_stream<I>(
     mut fidl_iterator: I,
     stream: impl futures::stream::Stream<Item = Vec<<I::Responder as FidlIteratorNextResponder>::Item>>
-        + Unpin,
+    + Unpin,
     max_stream_chunks: usize,
 ) -> Result<()>
 where
@@ -581,7 +581,7 @@ mod tests {
     // [2] https://fuchsia.dev/fuchsia-src/reference/fidl/language/wire-format
     const PACKAGE_INDEX_CHUNK_SIZE_MIN: usize = 194;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn package_index_iterator_paginates_shortest_entries() {
         let names = ('a'..='z').cycle().map(|c| c.to_string());
         let paths = names.map(|name| {
@@ -591,7 +591,7 @@ mod tests {
         verify_package_index_iterator_pagination(paths, PACKAGE_INDEX_CHUNK_SIZE_MAX).await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn package_index_iterator_paginates_longest_entries() {
         let names = ('a'..='z')
             .map(|c| std::iter::repeat(c).take(PackagePath::MAX_NAME_BYTES).collect::<String>())

@@ -1024,7 +1024,7 @@ async fn omaha_client_update(
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update() {
     let env = TestEnvBuilder::new().default_with_response(OmahaResponse::Update).build().await;
     omaha_client_update(
@@ -1050,7 +1050,7 @@ async fn test_omaha_client_update() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_multi_app() {
     use omaha_client::cup_ecdsa::test_support::make_default_public_key_id_for_test;
     let env = TestEnvBuilder::new()
@@ -1156,7 +1156,7 @@ async fn test_omaha_client_update_multi_app() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_eager_package() {
     let env = TestEnvBuilder::new()
         .responses_and_metadata(vec![
@@ -1266,7 +1266,7 @@ async fn test_omaha_client_update_eager_package() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_cup_force_historical_key() {
     // This test forces usage of a historical key -- the server is passed a
     // private key struct has key #100 as the latest and #42 in the historical
@@ -1332,7 +1332,7 @@ async fn test_omaha_client_update_cup_force_historical_key() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_cup_key_mismatch() {
     // If the server and client don't share a public/private keypair, no
     // handshake and no response.
@@ -1373,7 +1373,7 @@ async fn test_omaha_client_update_cup_key_mismatch() {
     do_failed_update_check(&env).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_cup_bad_etag() {
     // What if the server returns an empty etag?
     let env = TestEnvBuilder::new()
@@ -1407,7 +1407,7 @@ async fn test_omaha_client_update_cup_bad_etag() {
     do_failed_update_check(&env).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_cup_empty_etag() {
     // What if the server returns an empty etag?
     let env = TestEnvBuilder::new()
@@ -1441,7 +1441,7 @@ async fn test_omaha_client_update_cup_empty_etag() {
     do_failed_update_check(&env).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_attempt_monitor_update_progress_with_mock_installer() {
     let (mut sender, receiver) = mpsc::channel(0);
     let installer = MockUpdateInstallerService::builder().states_receiver(receiver).build();
@@ -1555,7 +1555,7 @@ async fn test_omaha_client_attempt_monitor_update_progress_with_mock_installer()
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_progress_with_mock_installer() {
     let (mut sender, receiver) = mpsc::channel(0);
     let installer = MockUpdateInstallerService::builder().states_receiver(receiver).build();
@@ -1661,7 +1661,7 @@ async fn test_omaha_client_update_progress_with_mock_installer() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_installation_deferred() {
     let (throttle_hook, throttler) = mphooks::throttle();
     let config_status_response = Arc::new(Mutex::new(Some(fpaver::ConfigurationStatus::Pending)));
@@ -1765,7 +1765,7 @@ async fn test_omaha_client_installation_deferred() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_update_error() {
     let env = TestEnvBuilder::new().default_with_response(OmahaResponse::Update).build().await;
 
@@ -1852,7 +1852,7 @@ async fn test_omaha_client_update_error() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_no_update() {
     let env = TestEnvBuilder::new().build().await;
 
@@ -1906,7 +1906,7 @@ async fn do_nop_update_check(env: &TestEnv) {
     assert_matches!(stream.next().await, None);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_invalid_response() {
     let env =
         TestEnvBuilder::new().default_with_response(OmahaResponse::InvalidResponse).build().await;
@@ -1926,7 +1926,7 @@ async fn test_omaha_client_invalid_response() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_invalid_url() {
     let env = TestEnvBuilder::new()
         .responses_and_metadata(vec![(
@@ -1978,7 +1978,7 @@ async fn test_omaha_client_invalid_url() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_invalid_app_set() {
     let env = TestEnvBuilder::new().version("invalid-version").build().await;
 
@@ -1993,7 +1993,7 @@ async fn test_omaha_client_invalid_app_set() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_policy_config_inspect() {
     let env = TestEnvBuilder::new().build().await;
 
@@ -2029,7 +2029,7 @@ fn assert_signature(report: CrashReport, expected_signature: &str) {
 }
 
 /// When we fail with an installation error, we should file a crash report.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_crash_report_installation_error() {
     let (hook, mut recv) = ThrottleHook::new(Ok(FileReportResults::default()));
     let env = TestEnvBuilder::new()
@@ -2067,7 +2067,7 @@ async fn test_crash_report_installation_error() {
 }
 
 /// When we fail 5 times to check for updates, we should file a crash report.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_crash_report_consecutive_failed_update_checks() {
     let (hook, mut recv) = ThrottleHook::new(Ok(FileReportResults::default()));
     let env = TestEnvBuilder::new()
@@ -2090,7 +2090,7 @@ async fn test_crash_report_consecutive_failed_update_checks() {
     assert_signature(recv.next().await.unwrap(), "fuchsia-6-consecutive-failed-update-checks");
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_update_check_sets_updatedisabled_when_opted_out() {
     use mock_omaha_server::UpdateCheckAssertion;
 
@@ -2109,7 +2109,7 @@ async fn test_update_check_sets_updatedisabled_when_opted_out() {
     do_nop_update_check(&env).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_keeps_cohort() {
     let env = TestEnvBuilder::new().build().await;
 
@@ -2119,7 +2119,7 @@ async fn test_omaha_client_keeps_cohort() {
     do_nop_update_check(&env).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_persists_cohort() {
     let mut env = TestEnvBuilder::new().build().await;
 
@@ -2146,7 +2146,7 @@ async fn test_omaha_client_persists_cohort() {
     do_nop_update_check(&env).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_omaha_client_urgent_update() {
     let env =
         TestEnvBuilder::new().default_with_response(OmahaResponse::UrgentUpdate).build().await;

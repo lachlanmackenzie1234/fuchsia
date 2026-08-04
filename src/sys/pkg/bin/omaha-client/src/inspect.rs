@@ -223,7 +223,6 @@ mod tests {
     use crate::app_set::{AppIdSource, AppMetadata};
     use crate::configuration::get_config;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async as fasync;
     use fuchsia_inspect::Inspector;
     use omaha_client::common::{App, UserCounting};
     use omaha_client::protocol::Cohort;
@@ -231,7 +230,7 @@ mod tests {
     use omaha_client::state_machine;
     use std::time::Duration;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_configuration_node() {
         let inspector = Inspector::default();
         let node = ConfigurationNode::new(inspector.root().create_child("configuration"));

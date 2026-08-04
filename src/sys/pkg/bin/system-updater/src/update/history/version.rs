@@ -336,7 +336,7 @@ mod tests {
     use std::sync::Arc;
     use zx::Vmo;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn version_for_invalid_update_package() {
         let update_pkg = FakeUpdatePackage::new();
         assert_eq!(
@@ -345,7 +345,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn version_for_valid_update_package() {
         let zbi_hash = [5; 32].into();
         let vbmeta_hash = [3; 32].into();
@@ -400,7 +400,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn version_for_valid_update_package_no_vbmeta() {
         let zbi_hash = [5; 32].into();
         let images_json = update_package::ImagePackagesManifest::builder()
@@ -445,7 +445,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn version_for_valid_update_package_no_fuchsia_package() {
         let hash = [5; 32].into();
         let images_json = update_package::ImagePackagesManifest::builder()
@@ -490,7 +490,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn version_for_valid_update_package_uses_images_json_if_present_v1() {
         let zbi_hash = [5; 32].into();
         let vbmeta_hash = [3; 32].into();
@@ -550,7 +550,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn version_current_copy_update_hash() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()

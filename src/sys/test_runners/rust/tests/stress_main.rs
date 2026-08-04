@@ -8,7 +8,7 @@ use crate::helpers::run_test;
 use fidl_fuchsia_test_manager::{CaseStatus, SuiteStatus};
 use test_manager_test_lib::{GroupRunEventByTestCase as _, RunEvent};
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_hugetest() {
     let test_url = "fuchsia-pkg://fuchsia.com/rust-test-runner-example#meta/huge_rust_tests.cm";
     let (events, _logs) = run_test(test_url, false, Some(100), vec![]).await.unwrap();

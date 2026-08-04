@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use fidl::endpoints;
+use fidl_fidl_test_components as ftest;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client;
-use {
-    fidl_fidl_test_components as ftest, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn routing() {
     let realm = client::connect_to_protocol::<fcomponent::RealmMarker>()
         .expect("could not connect to Realm service");

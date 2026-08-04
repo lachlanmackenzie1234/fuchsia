@@ -268,14 +268,13 @@ pub(crate) mod for_tests {
 pub mod tests {
     use super::for_tests::{EMPTY_REPO_PATH, ResolverForTest};
     use anyhow::{Context, Error};
-    use fuchsia_async as fasync;
     use fuchsia_component_test::RealmBuilder;
     use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
     use std::sync::Arc;
 
     const TEST_REPO_URL: &str = "fuchsia-pkg://test";
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_resolver() -> Result<(), Error> {
         let name = "test-resolver";
         let package = PackageBuilder::new(name)

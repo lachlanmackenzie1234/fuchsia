@@ -11,27 +11,27 @@ async fn test_helper(count: i8) {
     assert_eq!(echo.echo_string(Some(&msg)).await.unwrap(), Some(msg));
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_echo1() {
     test_helper(1).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_echo2() {
     test_helper(2).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_echo3() {
     test_helper(3).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_echo4() {
     test_helper(4).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_echo5() {
     test_helper(5).await;
 }

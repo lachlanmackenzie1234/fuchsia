@@ -6,16 +6,18 @@ use crate::{
     TestEnv, WriteErrorExt as _, blob_written, compress_and_write_blob, get_missing_blobs,
 };
 use assert_matches::assert_matches;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_paver as fpaver;
 use fidl_fuchsia_pkg::{self as fpkg, NeededBlobsMarker};
 use fidl_fuchsia_pkg_ext::BlobId;
 use fidl_fuchsia_pkg_garbagecollector::GcError;
+use fuchsia_async as fasync;
 use fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder};
 use futures::TryFutureExt as _;
 use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
 use rand::prelude::*;
 use std::collections::BTreeSet;
 use zx::{self as zx, Status};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_paver as fpaver, fuchsia_async as fasync};
 
 #[fuchsia::test]
 async fn gc_error_pending_commit() {
@@ -203,12 +205,12 @@ async fn gc_frees_space_so_write_can_succeed(blob_implementation: blobfs_ramdisk
     let () = pkg.verify_contents(&dir).await.unwrap();
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn gc_frees_space_so_write_can_succeed_cpp_blobfs() {
     let () = gc_frees_space_so_write_can_succeed(blobfs_ramdisk::Implementation::CppBlobfs).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn gc_frees_space_so_write_can_succeed_fxblob() {
     let () = gc_frees_space_so_write_can_succeed(blobfs_ramdisk::Implementation::Fxblob).await;
 }
@@ -380,17 +382,17 @@ async fn blobs_protected_from_gc_during_get(gc_protection: fpkg::GcProtection) {
     let () = env.stop().await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn blobs_protected_from_gc_during_get_by_retained_index() {
     let () = blobs_protected_from_gc_during_get(fpkg::GcProtection::Retained).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn blobs_protected_from_gc_during_get_by_writing_index() {
     let () = blobs_protected_from_gc_during_get(fpkg::GcProtection::OpenPackageTracking).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn blobs_protected_from_gc_by_open_package_tracking() {
     let env = TestEnv::builder().build().await;
     let () = env.block_until_started().await;
@@ -432,7 +434,7 @@ async fn blobs_protected_from_gc_by_open_package_tracking() {
     assert!(env.blobfs.list_blobs().unwrap().is_disjoint(&pkg0_protected));
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writing_index_clears_on_get_error() {
     let env = TestEnv::builder().build().await;
     let pkg = PackageBuilder::new("ephemeral")
@@ -481,7 +483,7 @@ async fn writing_index_clears_on_get_error() {
     assert!(!env.blobfs.list_blobs().unwrap().contains(pkg.hash()));
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn upgradable_packages_protected_from_gc() {
     let env = TestEnv::builder().enable_upgradable_packages().build().await;
     let () = env.block_until_started().await;

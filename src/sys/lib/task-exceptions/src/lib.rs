@@ -134,7 +134,7 @@ mod tests {
     use fuchsia_runtime as fruntime;
     use futures::TryStreamExt;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn catch_exception() -> Result<(), Error> {
         // Create a new job
         let child_job =

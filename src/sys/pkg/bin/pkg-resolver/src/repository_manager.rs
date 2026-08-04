@@ -925,7 +925,6 @@ mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
     use fidl_fuchsia_pkg_ext::{MirrorConfigBuilder, RepositoryConfigBuilder, RepositoryKey};
-    use fuchsia_async as fasync;
     use http::Uri;
     use maplit::hashmap;
     use std::borrow::Borrow;
@@ -1092,7 +1091,7 @@ mod tests {
         to_inspectable_map_with_node(from, inspector.root())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_insert_get_remove() {
         let env = TestEnv::builder().with_empty_dynamic_configs().build();
         let mut repomgr = env.repo_manager().await.unwrap();
@@ -1137,7 +1136,7 @@ mod tests {
         assert_eq!(repomgr.remove(&fuchsia_url).await, Ok(None));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn shadowing_static_config() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
 
@@ -1167,7 +1166,7 @@ mod tests {
         assert_eq!(repomgr.get(&fuchsia_url), Some(&fuchsia_config1));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn cannot_remove_static_config() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
 
@@ -1192,7 +1191,7 @@ mod tests {
         assert_eq!(repomgr.get(&fuchsia_url), Some(&fuchsia_config1));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_static_configs_dir_not_exists() {
         let dynamic_dir = tempfile::tempdir().unwrap();
 
@@ -1208,7 +1207,7 @@ mod tests {
         assert_does_not_exist_error(&errors[0], &does_not_exist_dir);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_static_configs_dir_invalid_config() {
         let dir = tempfile::tempdir().unwrap();
         let invalid_path = dir.path().join("invalid");
@@ -1268,7 +1267,7 @@ mod tests {
         assert_eq!(repomgr.dynamic_configs, HashMap::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_static_configs_dir() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
         let fuchsia_config = RepositoryConfigBuilder::new(fuchsia_url.clone()).build();
@@ -1294,7 +1293,7 @@ mod tests {
         assert_eq!(repomgr.dynamic_configs, HashMap::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_static_configs_dir_overlapping_filename_wins() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
 
@@ -1355,7 +1354,7 @@ mod tests {
         assert_eq!(repomgr.dynamic_configs, HashMap::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_static_configs_dir_overlapping_first_wins() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
 
@@ -1399,7 +1398,7 @@ mod tests {
         assert_eq!(repomgr.dynamic_configs, HashMap::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_dynamic_configs_path_ignores_if_not_exists() {
         let dynamic_dir = tempfile::tempdir().unwrap();
         let dynamic_configs_path = "config".to_string();
@@ -1413,7 +1412,7 @@ mod tests {
         assert_eq!(repomgr.dynamic_configs, HashMap::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_dynamic_configs_path_invalid_config() {
         let dir = tempfile::tempdir().unwrap();
         let invalid_path = "invalid".to_string();
@@ -1433,7 +1432,7 @@ mod tests {
         assert_eq!(repomgr.dynamic_configs, HashMap::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_builder_dynamic_configs_path() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
 
@@ -1453,7 +1452,7 @@ mod tests {
         assert_eq!(repomgr.dynamic_configs, to_inspectable_map(hashmap! { fuchsia_url => config }));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_persistence() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
 
@@ -1512,7 +1511,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list_empty() {
         let env = TestEnv::new();
         let repomgr = env.repo_manager().await.unwrap();
@@ -1520,7 +1519,7 @@ mod tests {
         assert_eq!(repomgr.list().collect::<Vec<_>>(), Vec::<&RepositoryConfig>::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list() {
         let example_url = RepositoryUrl::parse("fuchsia-pkg://example.com").unwrap();
         let example_config = RepositoryConfigBuilder::new(example_url).build();
@@ -1538,7 +1537,7 @@ mod tests {
         assert_eq!(repomgr.list().collect::<Vec<_>>(), vec![&example_config, &fuchsia_config,]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_dynamic_repos_if_no_dynamic_repo_path() {
         let repomgr =
             RepositoryManagerBuilder::new_test(&tempfile::tempdir().unwrap(), Option::<&str>::None)
@@ -1552,7 +1551,7 @@ mod tests {
         assert_eq!(repomgr.list().collect::<Vec<_>>(), Vec::<&RepositoryConfig>::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_insert_fails_with_no_change_if_no_dynamic_config_path() {
         let mut repomgr =
             RepositoryManagerBuilder::new_test(&tempfile::tempdir().unwrap(), Option::<&str>::None)
@@ -1573,7 +1572,7 @@ mod tests {
         assert_eq!(repomgr.list().collect::<Vec<_>>(), Vec::<&RepositoryConfig>::new());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_remove_fails_with_no_change_if_no_dynamic_config_path() {
         let mut repomgr =
             RepositoryManagerBuilder::new_test(&tempfile::tempdir().unwrap(), Option::<&str>::None)
@@ -1604,7 +1603,7 @@ mod tests {
         assert_eq!(repomgr.list().collect::<Vec<_>>(), vec![config.borrow()]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_building_repo_manager_with_static_configs_populates_inspect() {
         let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.test").unwrap();
         let mirror_config =
@@ -1668,7 +1667,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_building_repo_manager_with_no_static_configs_populates_inspect() {
         let env = TestEnv::builder().with_empty_dynamic_configs().with_persisted_repos().build();
 
@@ -1700,7 +1699,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_insert_remove_updates_inspect() {
         let env = TestEnv::builder().with_empty_dynamic_configs().with_persisted_repos().build();
 

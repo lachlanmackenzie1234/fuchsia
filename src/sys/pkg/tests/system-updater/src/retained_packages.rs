@@ -6,7 +6,7 @@ use super::*;
 use fidl_fuchsia_pkg::ResolveError;
 use pretty_assertions::assert_eq;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn succeeds_even_if_retained_packages_fails() {
     let env =
         TestEnv::builder().unregister_protocol(crate::Protocol::RetainedPackages).build().await;
@@ -54,7 +54,7 @@ async fn succeeds_even_if_retained_packages_fails() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn succeeds_even_if_retained_blobs_fails_packageless() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
@@ -93,7 +93,7 @@ async fn succeeds_even_if_retained_blobs_fails_packageless() {
 // Verifies that:
 //   1. pinned update pkg url causes both RetainedPackages uses to include the update package
 //   2. second RetainedPackages use includes packages from packages.json
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn pinned_url_and_non_empty_packages_json() {
     let env = TestEnv::builder().build().await;
 
@@ -154,7 +154,7 @@ async fn pinned_url_and_non_empty_packages_json() {
 // images.json entry is a ZBI with the empty hash, and the paver will report that the currently
 // written image in the available slot has the empty hash, and system-updater does not resolve
 // image packages if the desired image is already present.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn unpinned_url_and_non_empty_packages_json() {
     let env = TestEnv::builder().build().await;
 
@@ -218,7 +218,7 @@ async fn unpinned_url_and_non_empty_packages_json() {
 //   1. the update package hash is missing from the URL but obtained from the resolved package
 //   2. packages.json has an entry that needs to be added and removed from the index
 //   3. images.json has an entry that needs to be added and removed from the index
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn unpinned_url_and_resolved_image_package_and_non_empty_packages_json() {
     let env = TestEnv::builder().build().await;
 
@@ -312,7 +312,7 @@ async fn unpinned_url_and_resolved_image_package_and_non_empty_packages_json() {
 // Verifies that:
 //   1. pinned update pkg url causes both RetainedPackages uses to include the update package
 //   2. second RetainedPackages only has the update package
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn pinned_url_and_empty_packages_json() {
     let env = TestEnv::builder().build().await;
 
@@ -387,7 +387,7 @@ async fn pinned_url_and_empty_packages_json() {
 // images.json entry is a ZBI with the empty hash, and the paver will report that the currently
 // written image in the available slot has the empty hash, and system-updater does not resolve
 // image packages if the desired image is already present.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn unpinned_url_and_empty_packages_json() {
     let env = TestEnv::builder().build().await;
 
@@ -444,7 +444,7 @@ async fn unpinned_url_and_empty_packages_json() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn non_empty_blobs_packageless() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
@@ -479,7 +479,7 @@ async fn non_empty_blobs_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn empty_blobs_packageless() {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 

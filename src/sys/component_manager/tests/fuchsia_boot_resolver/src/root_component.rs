@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_pkg as fpkg;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt as _, TryStreamExt as _};
-use {fidl_fuchsia_pkg as fpkg, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(move |stream| {

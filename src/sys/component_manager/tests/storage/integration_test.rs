@@ -4,7 +4,6 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
-use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 
 /// Starts a nested component manager with a given root component URL using Realm Builer.
@@ -45,19 +44,19 @@ async fn wait_for_clean_stop(cm: RealmInstance, moniker_to_wait_on: &str) {
         .unwrap();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn storage() {
     let cm = start_nested_cm("#meta/component_manager.cm", "#meta/storage_realm.cm").await;
     wait_for_clean_stop(cm, "root/storage_user").await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn storage_from_collection() {
     let cm = start_nested_cm("#meta/component_manager.cm", "#meta/storage_realm_coll.cm").await;
     wait_for_clean_stop(cm, "root").await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn storage_from_collection_with_invalid_route() {
     let cm =
         start_nested_cm("#meta/component_manager.cm", "#meta/storage_realm_coll_invalid_route.cm")
@@ -65,7 +64,7 @@ async fn storage_from_collection_with_invalid_route() {
     wait_for_clean_stop(cm, "root").await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn storage_admin() {
     let cm = start_nested_cm("#meta/component_manager.cm", "#meta/storage_realm_admin.cm").await;
     wait_for_clean_stop(cm, "root").await;

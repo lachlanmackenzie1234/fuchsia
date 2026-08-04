@@ -7,7 +7,7 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_update_installer_ext::State;
 use pretty_assertions::assert_eq;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn cancel_update() {
     let env = TestEnv::builder().build().await;
 
@@ -34,7 +34,7 @@ async fn cancel_update() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn cancel_update_packageless() {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 

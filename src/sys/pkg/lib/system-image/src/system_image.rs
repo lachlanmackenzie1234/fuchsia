@@ -125,7 +125,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn cache_packages_fails_without_config_files() {
         let (_env, system_image) = TestEnv::new(SystemImageBuilder::new()).await;
         assert_matches!(
@@ -136,7 +136,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn cache_packages_deserialize_valid_line_oriented() {
         let (_env, system_image) = TestEnv::new(
             SystemImageBuilder::new()
@@ -155,7 +155,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn static_packages_deserialize_valid_line_oriented() {
         let (_env, system_image) = TestEnv::new(
             SystemImageBuilder::new()
@@ -169,7 +169,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn anchored_packages_fails_without_config_files() {
         let (_env, system_image) = TestEnv::new(SystemImageBuilder::new()).await;
         assert_matches!(
@@ -180,7 +180,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn anchored_packages_deserialize_valid() {
         let (_env, system_image) = TestEnv::new(SystemImageBuilder::new().anchored_package(
             AnchoredPackageSetType::OnDemand,

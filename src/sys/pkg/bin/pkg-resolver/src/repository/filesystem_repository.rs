@@ -275,7 +275,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
     use futures::io::Cursor;
     use tempfile::tempdir;
     use tuf::pouf::Pouf1;
@@ -290,7 +289,7 @@ mod tests {
         buffer
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_and_fetch_path() {
         let temp = tempdir().unwrap();
         let repo = FuchsiaFileSystemRepository::<Pouf1>::from_temp_dir(&temp);
@@ -337,7 +336,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fetch_metadata() {
         let temp = tempdir().unwrap();
         let expected_data = get_random_buffer();
@@ -354,7 +353,7 @@ mod tests {
         assert_eq!(data, expected_data);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fetch_target() {
         let temp = tempdir().unwrap();
         let expected_data = get_random_buffer();
@@ -368,7 +367,7 @@ mod tests {
         assert_eq!(data, expected_data);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_metadata() {
         let temp = tempdir().unwrap();
         let expected_data = get_random_buffer();
@@ -386,7 +385,7 @@ mod tests {
         assert_eq!(data, expected_data);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_store_target() {
         let temp = tempdir().unwrap();
         let expected_data = get_random_buffer();
@@ -398,7 +397,7 @@ mod tests {
         assert_eq!(data, expected_data);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fetch_fail_when_write_only() {
         let temp = tempdir().unwrap();
         let repo = FuchsiaFileSystemRepository::<Pouf1>::from_temp_dir(&temp);

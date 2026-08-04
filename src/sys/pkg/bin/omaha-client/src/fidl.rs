@@ -1267,7 +1267,7 @@ mod tests {
         v
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_on_state_change() {
         let fidl = FidlServerBuilder::new().build().await;
         FidlServer::on_state_change(
@@ -1282,7 +1282,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now() {
         let fidl = FidlServerBuilder::new().build().await;
         let proxy = spawn_fidl_server::<ManagerMarker>(fidl, IncomingServices::Manager);
@@ -1295,7 +1295,7 @@ mod tests {
         assert_matches!(result, Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_attempts_monitor() {
         let fidl = FidlServerBuilder::new().build().await;
         let proxy = spawn_fidl_server::<ManagerMarker>(fidl, IncomingServices::Manager);
@@ -1324,7 +1324,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_invalid_options() {
         let fidl = FidlServerBuilder::new().build().await;
         let proxy = spawn_fidl_server::<ManagerMarker>(fidl, IncomingServices::Manager);
@@ -1339,7 +1339,7 @@ mod tests {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_already_in_progress() {
         let fidl = FidlServerBuilder::new()
             .state_machine_control(MockStateMachineController::new(Ok(
@@ -1357,7 +1357,7 @@ mod tests {
         assert_matches!(result, Err(CheckNotStartedReason::AlreadyInProgress));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_throttled() {
         let fidl = FidlServerBuilder::new()
             .state_machine_control(MockStateMachineController::new(Ok(
@@ -1375,7 +1375,7 @@ mod tests {
         assert_matches!(result, Err(CheckNotStartedReason::Throttled));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_with_monitor() {
         let fidl = FidlServerBuilder::new().build().await;
         let proxy = spawn_fidl_server::<ManagerMarker>(Rc::clone(&fidl), IncomingServices::Manager);
@@ -1403,7 +1403,7 @@ mod tests {
         assert_eq!(None, expected_states.next());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_attempts_monitor_two_updates() {
         let fidl = FidlServerBuilder::new().build().await;
         let proxy = spawn_fidl_server::<ManagerMarker>(Rc::clone(&fidl), IncomingServices::Manager);
@@ -1457,7 +1457,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_with_closed_monitor() {
         let fidl = FidlServerBuilder::new().build().await;
         let proxy = spawn_fidl_server::<ManagerMarker>(Rc::clone(&fidl), IncomingServices::Manager);
@@ -1472,7 +1472,7 @@ mod tests {
         assert_matches!(result, Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_monitor_progress() {
         let fidl = FidlServerBuilder::new()
             .state_machine_control(MockStateMachineController::new(Ok(
@@ -1523,7 +1523,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_health_check_status() {
         let fidl = FidlServerBuilder::new().with_service_url().build().await;
 
@@ -1533,7 +1533,7 @@ mod tests {
         assert_eq!(HealthStatus::Healthy, proxy.get_health_status().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_health_check_status_bad_service_url() {
         let fidl = FidlServerBuilder::new().build().await;
 
@@ -1543,7 +1543,7 @@ mod tests {
         assert_eq!(HealthStatus::Unhealthy, proxy.get_health_status().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_channel_from_app() {
         let app_set = FuchsiaAppSet::new(
             App::builder()
@@ -1561,7 +1561,7 @@ mod tests {
         assert_eq!("current-channel", proxy.get_current().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_current_channel_from_constructor() {
         let fidl = FidlServerBuilder::new()
             .with_current_channel("current-channel".to_string().into())
@@ -1575,7 +1575,7 @@ mod tests {
         assert_eq!("current-channel", proxy.get_current().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_changing_target_doesnt_change_current_channel() {
         let fidl = FidlServerBuilder::new()
             .with_current_channel("current-channel".to_string().into())
@@ -1594,7 +1594,7 @@ mod tests {
         assert_eq!("current-channel", proxy.get_current().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_provider_get_channel_from_constructor() {
         let fidl = FidlServerBuilder::new()
             .with_current_channel("current-channel".to_string().into())
@@ -1606,7 +1606,7 @@ mod tests {
         assert_eq!("current-channel", proxy.get_current().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_provider_get_current_channel_from_app() {
         let app_set = FuchsiaAppSet::new(
             App::builder()
@@ -1623,7 +1623,7 @@ mod tests {
         assert_eq!("current-channel", proxy.get_current().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_changing_target_doesnt_change_current_channel_provider() {
         let fidl = FidlServerBuilder::new()
             .with_current_channel("current-channel".to_string().into())
@@ -1643,7 +1643,7 @@ mod tests {
         assert_eq!("current-channel", proxy.get_current().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_target() {
         let app_metadata = AppMetadata { appid_source: AppIdSource::VbMetadata };
         let app_set = FuchsiaAppSet::new(
@@ -1661,7 +1661,7 @@ mod tests {
         assert_eq!("target-channel", proxy.get_target().await.unwrap());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_target() {
         let fidl = FidlServerBuilder::new()
             .with_channel_configs(ChannelConfigs {
@@ -1690,7 +1690,7 @@ mod tests {
         assert!(storage.committed());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_target_empty() {
         let fidl = FidlServerBuilder::new()
             .with_channel_configs(ChannelConfigs {
@@ -1719,7 +1719,7 @@ mod tests {
         assert_eq!(None, storage.get_string(&apps[0].id).await);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_target_no_op() {
         let app_metadata = AppMetadata { appid_source: AppIdSource::VbMetadata };
         let app_set = FuchsiaAppSet::new(
@@ -1747,7 +1747,7 @@ mod tests {
         assert_eq!(storage.get_string(&apps[0].id).await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_target_list() {
         let fidl = FidlServerBuilder::new()
             .with_channel_configs(ChannelConfigs {
@@ -1769,7 +1769,7 @@ mod tests {
         assert!(response.contains(&"some-other-channel".to_string()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_target_list_when_no_channels_configured() {
         let fidl = FidlServerBuilder::new().build().await;
 
@@ -1780,7 +1780,7 @@ mod tests {
         assert!(response.is_empty());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_apps_on_state_change() {
         for &state in &[state_machine::State::Idle, state_machine::State::WaitingForReboot] {
             let inspector = Inspector::default();
@@ -1812,7 +1812,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_apps_on_channel_change() {
         let inspector = Inspector::default();
         let apps_node = AppsNode::new(inspector.root().create_child("apps"));
@@ -1843,7 +1843,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_state() {
         let inspector = Inspector::default();
         let state_node = StateNode::new(inspector.root().create_child("state"));
@@ -1877,7 +1877,7 @@ mod tests {
 
     // Test that calls to PerformPendingReboot are proxied to
     // collaborative reboots.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_perform_pending_reboot() {
         let fidl = FidlServerBuilder::new().build().await;
 
@@ -1899,7 +1899,7 @@ mod tests {
         };
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_urgent_update() {
         let fidl = FidlServerBuilder::new().build().await;
         fidl.borrow_mut().state = State {

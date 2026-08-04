@@ -170,7 +170,7 @@ impl std::ops::Deref for TestUpdatePackage {
 mod tests {
     use super::*;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn lifecycle() {
         let (proxy, _server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         UpdatePackage::new(proxy);

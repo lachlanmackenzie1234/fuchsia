@@ -308,7 +308,6 @@ mod tests {
     use eager_package_config::omaha_client::OmahaServer;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_pkg::CupRequest;
-    use fuchsia_async as fasync;
     use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
     use futures::prelude::*;
     use omaha_client::app_set::AppSet;
@@ -317,7 +316,7 @@ mod tests {
     };
     use omaha_client::cup_ecdsa::{PublicKeyAndId, PublicKeys};
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_config() {
         let client_config =
             ClientConfiguration::initialize_from("1.2.3.4", None, VbMetaData::default()).await;
@@ -330,7 +329,7 @@ mod tests {
         assert_eq!(config.service_url, "https://clients2.google.com/service/update2/fuchsia/json");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_config_service_url() {
         // If EagerPackageConfigs is present, use that service_url
         // whether or not vbmeta provides one.
@@ -379,7 +378,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_app_set_config_read_init() {
         let config =
             ClientConfiguration::initialize_from("1.2.3.4", None, VbMetaData::default()).await;
@@ -420,7 +419,7 @@ mod tests {
         assert_eq!(metadata.service_url, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_app_set_default_channel() {
         let config = ClientConfiguration::initialize_from(
             "1.2.3.4",
@@ -444,7 +443,7 @@ mod tests {
         assert_eq!(apps[0].cohort.hint, Some("default-channel".to_string()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_channel_data_configured() {
         let channel_config = ChannelConfig::with_appid_for_test("some-channel", "some-appid");
         let channel_configs = ChannelConfigs {
@@ -464,7 +463,7 @@ mod tests {
         assert_eq!(channel_data.config, Some(channel_config));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_app_set_appid_from_channel_configs() {
         let config = ClientConfiguration::initialize_from(
             "1.2.3.4",
@@ -489,7 +488,7 @@ mod tests {
         assert_eq!(apps[0].cohort.hint, Some("some-channel".to_string()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_app_set_invalid_version() {
         let config =
             ClientConfiguration::initialize_from("invalid version", None, VbMetaData::default())
@@ -498,7 +497,7 @@ mod tests {
         assert_eq!(apps[0].version, Version::from([0]));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_init_from_vbmeta() {
         let config = ClientConfiguration::initialize_from(
             "1.2.3.4",
@@ -537,7 +536,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_data_from_vbmeta() {
         let config = omaha_client_structured_config::Config {
             allow_reboot_when_idle: true,
@@ -563,7 +562,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_eager_packages() {
         let platform_config = get_config("1.0.0.0", None, None);
         let system_app = App::builder().id("system_app_id").version([1]).build();
@@ -698,7 +697,7 @@ mod tests {
         assert_eq!(app_set.get_apps(), vec![system_app, package_app, package2_app]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_eager_package_version_and_channel_fallback() {
         let (proxy, mut stream) = create_proxy_and_stream::<CupMarker>();
         let stream_fut = async move {

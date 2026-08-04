@@ -250,12 +250,11 @@ mod tests {
     use super::*;
     use crate::tests::example_archive;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use fuchsia_fs::file::Adapter;
     use futures::io::Cursor;
     use futures::stream::TryStreamExt as _;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn list() {
         let example = example_archive();
         let reader = AsyncReader::new(Adapter::new(Cursor::new(&example))).await.unwrap();
@@ -269,7 +268,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_file() {
         let example = example_archive();
         let mut reader = AsyncReader::new(Adapter::new(Cursor::new(&example))).await.unwrap();
@@ -281,7 +280,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_file_stream() {
         let example = example_archive();
         let reader = AsyncReader::new(Arc::new(Mutex::new(Adapter::new(Cursor::new(&example)))))
@@ -298,7 +297,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_size() {
         let example = example_archive();
         let reader = AsyncReader::new(Adapter::new(Cursor::new(&example))).await.unwrap();
@@ -309,7 +308,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn accessors_error_on_missing_path() {
         let example = example_archive();
         let mut reader = AsyncReader::new(Adapter::new(Cursor::new(&example))).await.unwrap();

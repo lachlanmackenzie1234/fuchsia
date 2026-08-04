@@ -466,6 +466,6 @@ pub(crate) mod tests {
 
     #[test]
     fn into_usize_no_panic() {
-        assert_eq!(u32::MAX.into_usize(), u32::MAX.try_into().unwrap());
+        assert_eq!(u32::MAX.into_usize(), usize::try_from(u32::MAX).unwrap());
     }
 }

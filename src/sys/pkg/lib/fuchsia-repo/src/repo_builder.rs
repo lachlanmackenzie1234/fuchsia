@@ -887,7 +887,7 @@ mod tests {
         entries
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -902,7 +902,7 @@ mod tests {
         assert_matches!(repo_client.update().await, Ok(true));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create_and_update_repo() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1014,7 +1014,7 @@ mod tests {
         assert!(!targets_description.hashes().is_empty());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create_and_update_repo_with_subpackages() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1224,7 +1224,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_error_if_package_manifest_is_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1243,7 +1243,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_not_stage_blobs_if_ignore_missing_files_and_package_files_are_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1275,7 +1275,7 @@ mod tests {
         assert_eq!(committed_blobs, BTreeSet::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_error_if_subpackage_manifest_is_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1323,7 +1323,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_not_stage_blobs_if_ignore_missing_files_and_subpackage_manifest_is_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1376,7 +1376,7 @@ mod tests {
         assert_eq!(committed_blobs, BTreeSet::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_not_stage_blobs_if_ignore_missing_files_and_subpackage_files_are_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1429,7 +1429,7 @@ mod tests {
         assert_eq!(committed_blobs, BTreeSet::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_refresh_metadata_with_all_keys() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1488,7 +1488,7 @@ mod tests {
         assert_eq!(targets1.delegations(), targets2.delegations());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_refresh_metadata_with_some_keys() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1552,7 +1552,7 @@ mod tests {
         assert_eq!(targets1.delegations(), targets2.delegations());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_refresh_metadata_with_no_keys() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1596,7 +1596,7 @@ mod tests {
         assert_eq!(timestamp1, timestamp2);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_refresh_metadata_with_root_metadata() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1648,7 +1648,7 @@ mod tests {
         assert!(repo_client.database().trusted_timestamp().is_some());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inherit_from_trusted_targets() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1713,7 +1713,7 @@ mod tests {
         Ed25519PrivateKey::from_pkcs8(&Ed25519PrivateKey::pkcs8().unwrap()).unwrap()
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_key_rotation() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1777,7 +1777,7 @@ mod tests {
     const FAKE_ABI_REVISION: version_history::AbiRevision =
         version_history::AbiRevision::from_u64(0x7171611eb2b7b74a);
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_conflicting_package_manifests_errors_out() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1815,7 +1815,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_stage_package_overwrites_corrupted_blob_in_blob_store() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1882,7 +1882,7 @@ mod tests {
         assert_eq!(actual, contents);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_stage_package_does_not_overwrite_corrupted_blob_in_blob_store_if_lengths_match() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1951,7 +1951,7 @@ mod tests {
         assert_eq!(actual, contents2);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_conflicting_package_archives_errors_out() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -1999,7 +1999,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_conflicting_package_archive_and_manifest_errors_out() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -2043,7 +2043,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_blob_size_differs_from_manifest_errors_out() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
@@ -2074,7 +2074,7 @@ mod tests {
         assert_matches!(err.downcast_ref::<BlobSizeMismatchError>(), Some(_));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rejects_distinct_merkles_referring_to_the_same_inode() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();

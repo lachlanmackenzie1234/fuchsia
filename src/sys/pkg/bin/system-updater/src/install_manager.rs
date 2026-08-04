@@ -9,6 +9,8 @@ use fidl_fuchsia_update_installer::{
     CancelError, ResumeError, SuspendError, UpdateNotStartedReason,
 };
 use fidl_fuchsia_update_installer_ext::State;
+use fuchsia_async as fasync;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_contrib::nodes::{BoundedListNode, NodeTimeExt};
 use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
@@ -16,7 +18,6 @@ use futures::select;
 use futures::stream::FusedStream;
 use log::{error, warn};
 use std::time::Duration;
-use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 const INSPECT_STATUS_NODE_NAME: &str = "status";
 // Suspend is allowed at most 7 days, after that update will automatically resume.
@@ -662,7 +663,7 @@ mod tests {
         (install_manager_ch, install_manager_task, updater_sender, state_sender)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_update_fails_when_no_update_running() {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, _state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -676,7 +677,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_update_fails_with_wrong_id() {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, _state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -696,7 +697,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_connects_via_start_update() {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -719,7 +720,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn monitor_update_succeeds() {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -761,7 +762,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn succeed_additional_start_requests_when_compatible() {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -876,7 +877,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn suspend_resume_errors() {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -1005,7 +1006,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn cancel_update() {
         let inspector = Inspector::default();
         let node = inspector.root().create_child("current_attempt");
@@ -1072,7 +1073,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn cancel_update_limit() {
         let inspector = Inspector::default();
         let node = inspector.root().create_child("current_attempt");
@@ -1111,7 +1112,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn cancel_update_errors() {
         let (mut install_manager_ch, _install_manager_task, _updater_sender, _state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -1134,7 +1135,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn fail_additional_start_requests_when_config_incompatible() {
         let (mut install_manager_ch, _install_manager_task, mut updater_sender, state_sender0) =
             start_install_manager_with_update_id("first-attempt-id").await;
@@ -1221,7 +1222,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_attempt_finishes_after_dropping_control_handle() {
         let (mut install_manager_ch, install_manager_task, _updater_sender, mut state_sender) =
             start_install_manager_with_update_id("my-attempt").await;
@@ -1255,7 +1256,7 @@ mod tests {
         install_manager_task.await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn writes_status_update_to_inspect() {
         let inspector = Inspector::default();
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
@@ -1305,7 +1306,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn writes_newest_status_update_to_inspect() {
         let inspector = Inspector::default();
         let (mut install_manager_ch, _install_manager_task, _updater_sender, mut state_sender) =
@@ -1364,7 +1365,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn writes_status_update_to_inspect_on_second_attempt() {
         let inspector = Inspector::default();
         let (mut install_manager_ch, _install_manager_task, mut updater_sender, mut state_sender) =
@@ -1457,7 +1458,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn writes_empty_attempt_node_if_no_attempt_running() {
         let inspector = Inspector::default();
         let (mut _install_manager_ch, _install_manager_task, _updater_sender, _state_sender) =
@@ -1477,7 +1478,7 @@ mod tests {
 
     /// The update attempt has started (so we should have a status node), but
     /// we haven't gotten a status update (so the said node should be empty).
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn writes_empty_status_node() {
         let inspector = Inspector::default();
         let (mut install_manager_ch, _install_manager_task, _updater_sender, _state_sender) =

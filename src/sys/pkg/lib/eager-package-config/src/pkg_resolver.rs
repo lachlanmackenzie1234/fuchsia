@@ -101,24 +101,23 @@ fn is_false(b: &bool) -> bool {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use omaha_client::cup_ecdsa::test_support::{
         make_default_json_public_keys_for_test, make_default_public_keys_for_test,
     };
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn not_found_tmp() {
         let configs = EagerPackageConfigs::from_path("/tmp/not-found").await.unwrap();
         assert_eq!(configs.packages, vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn not_found_pkg() {
         let configs = EagerPackageConfigs::from_path("/pkg/not-found").await.unwrap();
         assert_eq!(configs.packages, vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn success() {
         let json = serde_json::json!({
             "packages":[
@@ -143,7 +142,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn duplicate_path() {
         let json = serde_json::json!({
             "packages":[

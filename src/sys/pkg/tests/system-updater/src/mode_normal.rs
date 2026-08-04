@@ -7,7 +7,7 @@ use crate::progress_reporting::assert_success_monitor_states;
 use fidl_fuchsia_update_installer_ext::StateId;
 use pretty_assertions::assert_eq;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn updates_the_system() {
     let env = TestEnv::builder().build().await;
 
@@ -53,7 +53,7 @@ async fn updates_the_system() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn updates_the_system_packageless() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
@@ -101,7 +101,7 @@ async fn updates_the_system_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn requires_zbi() {
     let env = TestEnv::builder().build().await;
 
@@ -122,7 +122,7 @@ async fn requires_zbi() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn requires_zbi_packageless() {
     let manifest = OtaManifest { images: vec![], ..make_manifest([]) };
     let env = TestEnv::builder().ota_manifest(manifest).build().await;
@@ -133,7 +133,7 @@ async fn requires_zbi_packageless() {
     env.assert_interactions(initial_interactions());
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn updates_the_system_with_progress() {
     let env = TestEnv::builder().build().await;
 
@@ -194,7 +194,7 @@ async fn updates_the_system_with_progress() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn updates_the_system_with_progress_packageless() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);

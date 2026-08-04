@@ -13,7 +13,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_runtime::{HandleInfo, HandleType};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn collections() {
     let realm = client::connect_to_protocol::<fcomponent::RealmMarker>()
         .expect("could not connect to Realm service");
@@ -114,7 +114,7 @@ async fn collections() {
     assert_eq!("coll:a,coll:b", &children);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn child_args() {
     let realm = client::connect_to_protocol::<fcomponent::RealmMarker>()
         .expect("could not connect to Realm service");
@@ -233,7 +233,7 @@ async fn child_args() {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn eager() {
     let realm = client::connect_to_protocol::<fcomponent::RealmMarker>().unwrap();
 

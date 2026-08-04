@@ -203,7 +203,7 @@ mod test {
         route_validator
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_errors() {
         let validator = route_validator(
             "/test",
@@ -230,7 +230,7 @@ mod test {
         assert_eq!(error, "Access denied");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_errors() {
         let validator = route_validator(
             "/test",
@@ -257,7 +257,7 @@ mod test {
         assert!(report.error_summary.is_none());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_routes() {
         let validator = route_validator("test", vec![]);
 
@@ -266,7 +266,7 @@ mod test {
         assert!(reports.is_empty());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_parse_error() {
         let validator = route_validator(
             "/test",

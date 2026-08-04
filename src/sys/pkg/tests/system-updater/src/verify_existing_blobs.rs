@@ -5,7 +5,7 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verifies_existing_blobs_if_enabled() {
     let blob_content = b"valid blob content";
     let blob_hash = fuchsia_merkle::root_from_slice(blob_content);
@@ -64,7 +64,7 @@ async fn verifies_existing_blobs_if_enabled() {
 }
 
 // TODO(https://fxbug.dev/469472560): test corrupted blobs with real blobfs
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn re_fetches_corrupt_blob() {
     let blob_content = b"valid blob content";
     let blob_hash = fuchsia_merkle::root_from_slice(blob_content);

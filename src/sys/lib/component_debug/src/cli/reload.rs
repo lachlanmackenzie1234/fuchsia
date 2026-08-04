@@ -44,7 +44,7 @@ mod test {
     use super::*;
     use crate::test_utils::{serve_lifecycle_controller, serve_realm_query_instances};
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_success() -> Result<()> {
         let mut output = Vec::new();
         let lifecycle_controller = serve_lifecycle_controller("/core/ffx-laboratory:test");

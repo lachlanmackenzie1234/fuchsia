@@ -12,7 +12,7 @@ rustc_test("destruction_integration_test_bin") {
   source_root = "integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//src/sys/lib/component-events",
   ]
@@ -65,6 +65,7 @@ rustc_binary("destruction_trigger_bin") {
   edition = "2024"
   source_root = "trigger.rs"
   deps = [
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/sys/component_manager/tests/fidl:components_rust",

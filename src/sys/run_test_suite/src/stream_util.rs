@@ -71,14 +71,14 @@ mod tests {
     use super::*;
     use futures::stream::StreamExt;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn stops_after_test_fn_returns_true() {
         let stream = futures::stream::iter(0..u32::MAX);
         let results: Vec<_> = stream.take_until_stop_after(|num| *num == 5).collect().await;
         assert_eq!(vec![0, 1, 2, 3, 4, 5], results);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn does_not_poll_after_test_fn_returns_true() {
         let stream = futures::stream::iter(0..6).chain(futures::stream::pending());
         let results: Vec<_> = stream.take_until_stop_after(|num| *num == 5).collect().await;

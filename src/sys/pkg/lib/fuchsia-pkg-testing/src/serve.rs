@@ -532,7 +532,7 @@ mod tests {
     use crate::repo::RepositoryBuilder;
     use assert_matches::assert_matches;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore]
     async fn test_serve_empty_hangs_on_last_get() {
         let repo = Arc::new(RepositoryBuilder::new().build().await.unwrap());
@@ -561,7 +561,7 @@ mod tests {
         assert_matches!(get(url).await, Err(_));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_serve_empty() {
         let repo = Arc::new(RepositoryBuilder::new().build().await.unwrap());
         let served_repo = repo.server().start().unwrap();
@@ -583,7 +583,7 @@ mod tests {
         assert_eq!(bytes, also_bytes);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_serve_packages() {
         let same_contents = "same contents";
         let repo = RepositoryBuilder::new()

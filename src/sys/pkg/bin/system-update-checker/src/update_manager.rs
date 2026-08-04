@@ -19,8 +19,10 @@ use fidl_fuchsia_update_ext::{
     CheckOptions, CommitStatus, Initiator, InstallationDeferredData, InstallationErrorData,
     InstallationProgress, InstallingData, State, UpdateInfo, query_commit_status,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_hash::Hash;
+use fuchsia_inspect as finspect;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use futures::prelude::*;
@@ -28,7 +30,6 @@ use futures::stream::BoxStream;
 use futures::{pin_mut, select};
 use log::{error, info};
 use std::sync::Arc;
-use {fuchsia_async as fasync, fuchsia_inspect as finspect};
 
 #[derive(Debug)]
 pub struct UpdateManagerControlHandle<N: StateNotifier, A>(
@@ -943,7 +944,7 @@ pub(crate) mod tests {
         v
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_correct_initial_state() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -957,7 +958,7 @@ pub(crate) mod tests {
         assert_eq!(manager.get_state().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_last_update_package_changed_when_no_update_available() {
         let fake_update_checker = FakeUpdateChecker::new_up_to_date();
 
@@ -986,7 +987,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_last_update_package_unchanged_when_update_available() {
         let fake_update_checker = FakeUpdateChecker::new_update_available();
 
@@ -1039,7 +1040,7 @@ pub(crate) mod tests {
         assert_eq!(manager.get_last_known_update_package_hash().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_is_current_status_committed_called_when_none() {
         let fake_commit_querier = FakeCommitQuerier::new();
         let fidl_call_count = Arc::clone(&fake_commit_querier.call_count);
@@ -1063,7 +1064,7 @@ pub(crate) mod tests {
         assert_eq!(fidl_call_count.load(Ordering::SeqCst), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_is_current_status_committed_called_when_pending() {
         let fake_commit_querier = FakeCommitQuerier::new();
         let fidl_call_count = Arc::clone(&fake_commit_querier.call_count);
@@ -1087,7 +1088,7 @@ pub(crate) mod tests {
         assert_eq!(fidl_call_count.load(Ordering::SeqCst), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_is_current_status_committed_not_called_when_committed() {
         let fake_commit_querier = FakeCommitQuerier::new();
         let fidl_call_count = Arc::clone(&fake_commit_querier.call_count);
@@ -1111,7 +1112,7 @@ pub(crate) mod tests {
         assert_eq!(fidl_call_count.load(Ordering::SeqCst), 0);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_try_start_update_returns_started() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1126,7 +1127,7 @@ pub(crate) mod tests {
         assert_eq!(manager.try_start_update(options, None).await, Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_temporary_callbacks_dropped_after_update_attempt() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1150,7 +1151,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_try_start_update_callback_when_up_to_date() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1171,7 +1172,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_try_start_update_callback_when_update_available_and_apply_errors() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1206,7 +1207,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_try_start_update_callback_when_update_available_and_apply_succeeds() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1264,7 +1265,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_start_update_callback_when_update_available_and_pending() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1294,7 +1295,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_applier_called_if_update_available() {
         let update_applier = FakeUpdateApplier::new_error();
         let mut manager = FakeUpdateManager::from_checker_and_applier(
@@ -1314,7 +1315,7 @@ pub(crate) mod tests {
         assert_eq!(update_applier.call_count(), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_applier_not_called_if_up_to_date() {
         let update_applier = FakeUpdateApplier::new_error();
         let mut manager = FakeUpdateManager::from_checker_and_applier(
@@ -1334,7 +1335,7 @@ pub(crate) mod tests {
         assert_eq!(update_applier.call_count(), 0);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_return_to_initial_state_on_update_check_error() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1353,7 +1354,7 @@ pub(crate) mod tests {
         assert_eq!(manager.get_state().await, Default::default());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_return_to_initial_state_on_update_apply_error() {
         let mut manager = FakeUpdateManager::from_checker_and_applier(
             Arc::new(FakeTargetChannelUpdater::new()),
@@ -1401,7 +1402,7 @@ pub(crate) mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_state_in_checking_for_updates() {
         let (blocking_update_checker, sender) = BlockingUpdateChecker::new_checker_and_sender();
         let mut manager = BlockingManagerManager::from_checker_and_applier(
@@ -1430,7 +1431,7 @@ pub(crate) mod tests {
         while (manager.get_state().await).is_some() {}
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_concurrent_update_attempts_if_attach_not_requested() {
         let (blocking_update_checker, sender) = BlockingUpdateChecker::new_checker_and_sender();
         let update_applier = FakeUpdateApplier::new_error();
@@ -1455,7 +1456,7 @@ pub(crate) mod tests {
         assert_eq!(update_applier.call_count(), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_merge_update_attempt_monitors_if_attach_requested() {
         let (blocking_update_checker, sender) = BlockingUpdateChecker::new_checker_and_sender();
         let update_applier = FakeUpdateApplier::new_error();

@@ -12,7 +12,7 @@ use test_case::test_case;
 #[test_case("/blobs/1"; "root relative")]
 #[test_case("//fuchsia.com/blobs/1"; "no scheme")]
 #[test_case("https://fuchsia.com/blobs/1"; "absolute")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn packageless_update_with_relative_blob_base_url(blob_base_url: &str) {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
@@ -70,7 +70,7 @@ async fn packageless_update_with_relative_blob_base_url(blob_base_url: &str) {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn packageless_update_fails_with_wrong_signature() {
     let manifest = make_manifest([]);
     let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&[1; 32]).unwrap();
@@ -91,7 +91,7 @@ async fn packageless_update_fails_with_wrong_signature() {
     env.assert_interactions(initial_interactions());
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn packageless_update_with_valid_range() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
@@ -144,7 +144,7 @@ async fn packageless_update_with_valid_range() {
     env.run_update_with_options(MANIFEST_URL, options).await.unwrap();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn packageless_update_fails_with_overflowing_range() {
     let env = TestEnv::builder().build().await;
 

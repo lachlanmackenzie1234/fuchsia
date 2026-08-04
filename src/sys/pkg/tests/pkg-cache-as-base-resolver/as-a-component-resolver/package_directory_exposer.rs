@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_io as fio;
 use futures::stream::StreamExt as _;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Exposes the component's package directory.
 /// fake_dependencies.rs uses this to write the to-be-resolved subpackage to the blobfs it gives to
 /// the base-resolver under test.
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let mut fs = fuchsia_component::server::ServiceFs::new_local();
     fs.add_remote(

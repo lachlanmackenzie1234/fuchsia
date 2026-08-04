@@ -8,7 +8,7 @@ use test_case::test_case;
 
 #[test_case(Implementation::CppBlobfs; "blobfs")]
 #[test_case(Implementation::Fxblob; "fxblob")]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn open_missing_fails(implementation: Implementation) {
     let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
@@ -21,7 +21,7 @@ async fn open_missing_fails(implementation: Implementation) {
 
 #[test_case(Implementation::CppBlobfs; "blobfs")]
 #[test_case(Implementation::Fxblob; "fxblob")]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn corrupt_create_fails_on_last_byte_write(implementation: Implementation) {
     let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
     let creator = blobfs.blob_creator_proxy().unwrap();
@@ -48,7 +48,7 @@ async fn corrupt_create_fails_on_last_byte_write(implementation: Implementation)
     blobfs.stop().await.unwrap();
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn cppblobfs_concurrent_create_fails() {
     let blobfs = BlobfsRamdisk::builder().cpp_blobfs().start().await.unwrap();
     let creator = blobfs.blob_creator_proxy().unwrap();
@@ -68,7 +68,7 @@ async fn cppblobfs_concurrent_create_fails() {
     blobfs.stop().await.unwrap();
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fxblob_concurrent_creation_succeeds() {
     let blobfs = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
     let creator = blobfs.blob_creator_proxy().unwrap();
@@ -101,7 +101,7 @@ async fn fxblob_concurrent_creation_succeeds() {
 
 #[test_case(Implementation::CppBlobfs; "blobfs")]
 #[test_case(Implementation::Fxblob; "fxblob")]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn create_already_present_returns_already_exists(implementation: Implementation) {
     let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
     let creator = blobfs.blob_creator_proxy().unwrap();
@@ -129,7 +129,7 @@ async fn create_already_present_returns_already_exists(implementation: Implement
 // outstanding deletion requests.
 #[test_case(Implementation::CppBlobfs; "blobfs")]
 #[test_case(Implementation::Fxblob; "fxblob")]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn readdirents_only_returns_valid_blobs(implementation: Implementation) {
     let blobfs_server =
         BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
@@ -168,7 +168,7 @@ async fn readdirents_only_returns_valid_blobs(implementation: Implementation) {
 
 #[test_case(Implementation::CppBlobfs; "blobfs")]
 #[test_case(Implementation::Fxblob; "fxblob")]
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn create_partial_write_drop_create(implementation: Implementation) {
     let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
     let creator = blobfs.blob_creator_proxy().unwrap();

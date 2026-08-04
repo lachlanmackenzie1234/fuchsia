@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Error};
 use fidl_fidl_test_components::{TriggerRequest, TriggerRequestStream};
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use log::*;
@@ -16,7 +15,7 @@ enum IncomingRequest {
     TriggerProtocol(TriggerRequestStream),
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let mut service_fs = ServiceFs::new_local();
     service_fs.dir("svc").add_fidl_service(IncomingRequest::TriggerProtocol);

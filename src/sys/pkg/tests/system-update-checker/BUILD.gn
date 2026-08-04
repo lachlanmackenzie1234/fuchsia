@@ -21,6 +21,7 @@ rustc_test("driver") {
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",

@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use cm_stress_tests_lib::{create_child, stop_child, Child};
+use cm_stress_tests_lib::{Child, create_child, stop_child};
+use fidl_test_componentmanager_stresstests as fstresstests;
 use futures::prelude::*;
-use {fidl_test_componentmanager_stresstests as fstresstests, fuchsia_async as fasync};
 
 const NUM_CHILDREN: u16 = 128;
 
 /// Creates NUM_CHILDREN children, makes sure they are running and finally stops them.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_stress_test() {
     let stream = stream::iter(0..NUM_CHILDREN);
     const URL: &str =

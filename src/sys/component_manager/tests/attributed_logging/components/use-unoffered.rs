@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fidl_test_components as ftest;
 use fuchsia_component::client::connect_to_protocol;
-use {fidl_fidl_test_components as ftest, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 /// Tries to connect to the Trigger service, which it should not have access
 /// to. This should generate an expect log message from component manager that
 /// will be attributed to this component.

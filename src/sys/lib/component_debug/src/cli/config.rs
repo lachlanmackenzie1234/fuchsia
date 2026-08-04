@@ -322,7 +322,7 @@ mod test {
     #[test_case(vec!["foo=true".to_string()], true, true; "reload succeeds")]
     #[test_case(vec!["foo=42".to_string()], false, false; "wrong type fails")]
     #[test_case(vec!["bar=42".to_string()], false, true; "structured config override succeeds")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn config_set(key_values: Vec<String>, reload: bool, succeeds: bool) {
         let (lifecycle_controller, config_override, realm_query) = setup();
         let writer = Vec::new();
@@ -346,7 +346,7 @@ mod test {
     #[test_case(Some("my_foo".to_string()), true, true; "reload succeeds")]
     #[test_case(Some("my_bar".to_string()), false, false; "unknown query fails")]
     #[test_case(None, false, true; "empty moniker succeeds")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn config_unset(query: Option<String>, reload: bool, succeeds: bool) {
         let (lifecycle_controller, config_override, realm_query) = setup();
         let writer = Vec::new();

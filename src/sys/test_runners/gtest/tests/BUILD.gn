@@ -12,7 +12,7 @@ rustc_test("tests_bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/sys/test_manager:test_lib",
     "//src/sys/test_runners:test_lib",
     "//third_party/rust_crates:anyhow",
@@ -30,7 +30,10 @@ rustc_test("tests_bin") {
 
 fuchsia_test_component("gtest_runner_integration_test") {
   manifest = "meta/gtest_runner_integration_test.cml"
-  deps = [ ":tests_bin" ]
+  deps = [
+    ":tests_bin",
+    "//src/lib/fuchsia",
+  ]
   test_type = "test_arch"
 }
 
@@ -41,7 +44,7 @@ rustc_test("stress_tests_bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/sys/test_manager:test_lib",
     "//src/sys/test_runners:test_lib",
     "//third_party/rust_crates:anyhow",
@@ -55,7 +58,10 @@ rustc_test("stress_tests_bin") {
 
 fuchsia_test_component("gtest_runner_stress_test") {
   manifest = "meta/gtest_runner_stress_test.cml"
-  deps = [ ":stress_tests_bin" ]
+  deps = [
+    ":stress_tests_bin",
+    "//src/lib/fuchsia",
+  ]
   test_type = "test_arch"
 }
 
@@ -80,5 +86,6 @@ group("tests") {
   deps = [
     ":gtest-runner-integration-test",
     "../test_data:gtest-runner-example-tests",
+    "//src/lib/fuchsia",
   ]
 }

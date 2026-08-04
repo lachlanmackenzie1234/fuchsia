@@ -298,7 +298,7 @@ mod tests {
         async_generator::generate(cb).into_yielded().collect().await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn yields_expected_states_success() {
         let info = UpdateInfo::builder().download_size(0).build();
 
@@ -392,7 +392,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn yields_expected_states_fail_prepare() {
         assert_eq!(
             collect_states(|mut co| async move {
@@ -404,7 +404,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn yields_expected_states_fail_fetch() {
         let info = UpdateInfo::builder().download_size(0).build();
 
@@ -454,7 +454,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn yields_expected_states_fail_stage() {
         let info = UpdateInfo::builder().download_size(0).build();
 

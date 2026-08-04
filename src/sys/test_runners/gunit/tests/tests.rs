@@ -62,7 +62,7 @@ fn default_options() -> ftest_manager::RunSuiteOptions {
     }
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/gunit-runner-example-tests#meta/sample_tests.cm";
 
@@ -76,7 +76,7 @@ async fn launch_and_run_sample_test() {
     assert_events_eq(&events, &expected_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_test_with_custom_args() {
     let test_url =
         "fuchsia-pkg://fuchsia.com/gunit-runner-example-tests#meta/test_with_custom_args.cm";
@@ -95,7 +95,7 @@ async fn launch_and_run_test_with_custom_args() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_test_with_environ() {
     let test_url = "fuchsia-pkg://fuchsia.com/gunit-runner-example-tests#meta/test_with_environ.cm";
     let (events, _logs) = run_test(test_url, default_options()).await.unwrap();
@@ -111,7 +111,7 @@ async fn launch_and_run_test_with_environ() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test_include_disabled() {
     const TEST_URL: &str =
         "fuchsia-pkg://fuchsia.com/gunit-runner-example-tests#meta/sample_tests.cm";
@@ -169,7 +169,7 @@ async fn launch_and_run_sample_test_include_disabled() {
     assert_eq!(actual_skip_events, &expected_skip_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_empty_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/gunit-runner-example-tests#meta/empty_test.cm";
     let (events, _logs) = run_test(test_url, default_options()).await.unwrap();

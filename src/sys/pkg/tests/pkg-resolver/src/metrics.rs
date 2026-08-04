@@ -404,7 +404,7 @@ mod pkg_resolver_create_tuf_client {
             (504, 504, HttpGatewayTimeout),
             (505, 599, Http5xx),
         ]; "status_ranges_5xx")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     // 600-999 aren't real, but are sometimes used in e.g. CDN configurations to track state
     // machine transitions, and occasionally leak on bugs. Unfortunately, we don't get to test
     // these because StatusCode won't let us create new ones in this range.
@@ -506,7 +506,7 @@ mod pkg_resolver_update_tuf_client {
             (504, 504, HttpGatewayTimeout),
             (505, 599, Http5xx),
         ]; "status_ranges_5xx")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     // 600-999 aren't real, but are sometimes used in e.g. CDN configurations to track state
     // machine transitions, and occasionally leak on bugs. Unfortunately, we don't get to test
     // these because StatusCode won't let us create new ones in this range.

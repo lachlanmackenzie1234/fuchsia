@@ -7,18 +7,20 @@ use component_events::events::*;
 use component_events::matcher::*;
 use component_events::sequence::{EventSequence, Ordering};
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_component as fcomponent;
+use fidl_test_policy as ftest;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use futures::future::{Either, select};
 use security_policy_test_util::{open_exposed_dir, start_policy_test};
 use std::pin::pin;
-use {fidl_fuchsia_component as fcomponent, fidl_test_policy as ftest, fuchsia_async as fasync};
 
 const COMPONENT_MANAGER_URL: &str = "#meta/cm_for_test.cm";
 const ROOT_URL: &str = "#meta/test_root.cm";
 
 const COMPONENT_MANAGER_DEATH_TIMEOUT: i64 = 5;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_main_process_critical_default_denied() -> Result<(), Error> {
     let mut event_stream = EventStream::open().await.unwrap();
 
@@ -58,7 +60,7 @@ async fn verify_main_process_critical_default_denied() -> Result<(), Error> {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_main_process_critical_nonzero_flag_used() -> Result<(), Error> {
     let mut event_stream = EventStream::open().await.unwrap();
 
@@ -100,7 +102,7 @@ async fn verify_main_process_critical_nonzero_flag_used() -> Result<(), Error> {
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_main_process_critical_allowed() -> Result<(), Error> {
     let mut event_stream = EventStream::open().await.unwrap();
 
@@ -128,7 +130,7 @@ async fn verify_main_process_critical_allowed() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_main_process_critical_denied() -> Result<(), Error> {
     let (_test, realm, event_stream) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
 

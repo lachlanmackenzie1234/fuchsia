@@ -84,11 +84,10 @@ where
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use fuchsia_fs::file::Adapter;
     use futures::io::Cursor;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn new_rejects_non_utf8_path() {
         let mut far_bytes = vec![];
         let () = crate::write::write(
@@ -106,7 +105,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn list_does_not_panic() {
         let mut far_bytes = vec![];
         let () = crate::write::write(
@@ -124,7 +123,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_file() {
         let mut far_bytes = vec![];
         let () = crate::write::write(

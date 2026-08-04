@@ -9,10 +9,11 @@
 
 use anyhow::Error;
 use chrono::{DateTime, TimeZone as _, Timelike as _, Utc};
+use fuchsia_async as fasync;
+use fuchsia_runtime as runtime;
 use futures::prelude::*;
 use log::{info, warn};
 use std::sync::LazyLock;
-use {fuchsia_async as fasync, fuchsia_runtime as runtime};
 
 /// Delay between polls of system and userspace clocks.
 const POLL_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
@@ -24,7 +25,7 @@ static CLOCK_RIGHTS: LazyLock<zx::Rights> = LazyLock::new(|| {
         | zx::Rights::WAIT
 });
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let mut futures = vec![];
     RuntimeUtcMonitor::new();

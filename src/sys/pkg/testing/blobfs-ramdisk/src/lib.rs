@@ -517,7 +517,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn clean_start_and_stop(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
@@ -529,7 +529,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn clean_start_contains_no_blobs(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
@@ -556,7 +556,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn with_blob_ignores_duplicates(implementation: Implementation) {
         let blob = BlobInfo::from(&b"duplicate"[..]);
 
@@ -576,7 +576,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn build_with_two_blobs(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder()
             .implementation(implementation)
@@ -598,7 +598,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn remount(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder()
             .implementation(implementation)
@@ -617,7 +617,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blob_appears_in_readdir(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
@@ -629,7 +629,7 @@ mod tests {
         blobfs.stop().await.unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn ramdisk_builder_sets_block_count() {
         for block_count in [1, 2, 3, 16] {
             let ramdisk = Ramdisk::builder().block_count(block_count).start().await.unwrap();
@@ -642,7 +642,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn ramdisk_into_blobfs_formats_ramdisk(implementation: Implementation) {
         let _: BlobfsRamdisk = Ramdisk::builder()
             .into_blobfs_builder()
@@ -656,7 +656,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_and_write(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
@@ -672,7 +672,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blob_creator_api(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
         assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([]));
@@ -696,7 +696,7 @@ mod tests {
 
     #[test_case(Implementation::CppBlobfs; "blobfs")]
     #[test_case(Implementation::Fxblob; "fxblob")]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blob_reader_api(implementation: Implementation) {
         let data = "Hello blobfs!".as_bytes();
         let hash = fuchsia_merkle::root_from_slice(data);

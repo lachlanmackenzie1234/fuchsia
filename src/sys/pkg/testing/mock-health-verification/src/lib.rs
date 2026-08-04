@@ -1,3 +1,4 @@
+#![allow(unused_crate_dependencies)]
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -60,9 +61,8 @@ impl MockHealthVerificationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_verifier() {
         let mock = Arc::new(MockHealthVerificationService::new(|| zx::Status::OK));
         let (proxy, _server) = mock.spawn_health_verification_service();

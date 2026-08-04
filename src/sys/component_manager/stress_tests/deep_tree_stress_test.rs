@@ -4,10 +4,7 @@
 
 /// These tests will create a deep realm tree and stress test component manager by creating many
 /// components at each level.
-use {
-    cm_stress_tests_lib::{create_child, stop_child},
-    fuchsia_async as fasync,
-};
+use cm_stress_tests_lib::{create_child, stop_child};
 
 async fn create_deep_tree_stress_test(num_children: u16, height: u16, stop_children: bool) {
     let child = create_child(
@@ -24,7 +21,7 @@ async fn create_deep_tree_stress_test(num_children: u16, height: u16, stop_child
     stop_child(child).await.unwrap();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 #[ignore]
 // TODO(58378): Re-enable this test.
 async fn tree_with_height_100_with_1_children_each() {
@@ -32,7 +29,7 @@ async fn tree_with_height_100_with_1_children_each() {
     create_deep_tree_stress_test(1, 100, true).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 #[ignore]
 // TODO(60417): Enable this when issue is fixed.
 async fn tree_with_height_6_with_3_children_each() {
@@ -40,7 +37,7 @@ async fn tree_with_height_6_with_3_children_each() {
     create_deep_tree_stress_test(3, 6, true).await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 #[ignore]
 // TODO(58378): Re-enable this test.
 async fn tree_with_height_2_with_10_children_each() {

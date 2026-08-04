@@ -140,7 +140,7 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_file_stream() {
         for size in [0, CHUNK_SIZE - 1, CHUNK_SIZE, CHUNK_SIZE + 1, CHUNK_SIZE * 2 + 1] {
             let expected = (0..u8::MAX).cycle().take(size).collect::<Vec<_>>();
@@ -152,7 +152,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_file_stream_chunks() {
         let size = CHUNK_SIZE * 3 + 10;
 
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(expected_chunks.next(), None);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_file_stream_file_truncated() {
         let len = CHUNK_SIZE * 2;
         let long_len = CHUNK_SIZE * 3;
@@ -184,7 +184,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_file_stream_file_extended() {
         let len = CHUNK_SIZE * 3;
         let short_len = CHUNK_SIZE * 2;

@@ -12,7 +12,7 @@ use fidl_fuchsia_pkg_ext::BlobId;
 use fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder};
 use futures::TryFutureExt;
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn cached_packages_are_retained() {
     // Packages to be retained.
     let packages = vec![
@@ -67,7 +67,7 @@ async fn cached_packages_are_retained() {
     verify_packages_cached(&env.proxies.package_cache, &packages).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn packages_are_retained_gc_mid_process() {
     let env = TestEnv::builder().build().await;
     let package = PackageBuilder::new("multi-pkg-a")

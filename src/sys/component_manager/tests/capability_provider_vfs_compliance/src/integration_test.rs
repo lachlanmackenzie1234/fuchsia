@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use assert_matches::assert_matches;
+use fidl_fuchsia_io as fio;
 use fuchsia_fs::node::OpenError;
 use futures::StreamExt;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync, zx_status};
+use zx_status;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn component_manager_namespace() {
     let nodes = [
         "/svc/fuchsia.component.Binder",

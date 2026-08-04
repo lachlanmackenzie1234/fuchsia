@@ -51,21 +51,20 @@ mod tests {
     use super::*;
     use crate::TestUpdatePackage;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn verify_board_success_file_exists() {
         let p = TestUpdatePackage::new().add_file("board", "kourtney").await;
         assert_matches!(p.verify_board("kourtney").await, Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn verify_board_success_file_does_not_exist() {
         let p = TestUpdatePackage::new();
         assert_matches!(p.verify_board("kim").await, Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn verify_board_failure_verify_contents() {
         let p = TestUpdatePackage::new().add_file("board", "khloe").await;
         assert_matches!(

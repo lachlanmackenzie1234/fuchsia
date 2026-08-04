@@ -264,10 +264,9 @@ pub(crate) mod for_tests {
 #[cfg(test)]
 mod tests {
     use super::for_tests::CacheForTest;
-    use fuchsia_async as fasync;
     use fuchsia_component_test::RealmBuilder;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_cache_handles_sync() {
         let realm_builder = RealmBuilder::new().await.unwrap();
         let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.expect("starting blobfs");

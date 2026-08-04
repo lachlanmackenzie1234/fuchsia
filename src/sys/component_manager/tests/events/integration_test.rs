@@ -49,7 +49,7 @@ async fn start_nested_cm_and_wait_for_clean_stop(root_url: &str, moniker_to_wait
         .unwrap();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn from_framework_should_not_work() {
     let root_url = "#meta/async_reporter.cm";
     let moniker_to_wait_on = "./root";
@@ -85,17 +85,17 @@ async fn from_framework_should_not_work() {
         .unwrap();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn async_event_source_test() {
     start_nested_cm_and_wait_for_clean_stop("#meta/async_reporter.cm", "./root").await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn scoped_events_test() {
     start_nested_cm_and_wait_for_clean_stop("#meta/echo_realm.cm", "./root/echo_reporter").await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn realm_offered_event_source_test() {
     start_nested_cm_and_wait_for_clean_stop(
         "#meta/realm_offered_root.cm",
@@ -104,12 +104,12 @@ async fn realm_offered_event_source_test() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn nested_event_source_test() {
     start_nested_cm_and_wait_for_clean_stop("#meta/nested_reporter.cm", "./root").await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn event_capability_requested() {
     start_nested_cm_and_wait_for_clean_stop("#meta/capability_requested_root.cm", "./root").await;
 }

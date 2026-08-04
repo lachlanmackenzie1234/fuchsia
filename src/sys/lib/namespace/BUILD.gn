@@ -24,7 +24,10 @@ rustc_library("namespace") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  test_deps = [ "//third_party/rust_crates:assert_matches" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:assert_matches",
+  ]
 
   if (is_fuchsia) {
     deps += [
@@ -33,7 +36,6 @@ rustc_library("namespace") {
       "//src/storage/lib/vfs/rust:vfs",
     ]
     test_deps += [
-      "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-fs",
       "//src/storage/lib/vfs/rust:vfs",
     ]

@@ -159,7 +159,7 @@ mod tests {
         entries.iter().map(|entry| entry.name.clone()).collect::<Vec<String>>()
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_objects_test() -> Result<(), Error> {
         // Open this test's real /pkg/lib directory to use for this test, and then check to see
         // whether an asan subdirectory is present, and use it instead if so.
@@ -249,7 +249,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn config_test() -> Result<(), Error> {
         // This /pkg/lib/config_test/ directory is added by the build rules for this test package,
         // since we need a directory that supports OPEN_RIGHT_EXECUTABLE. It contains a file 'foo'

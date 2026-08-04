@@ -1012,7 +1012,7 @@ mod tests {
         task.await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_start_stop() {
         let manager = RepositoryManager::new();
         let addr = (Ipv4Addr::LOCALHOST, 0).into();
@@ -1029,7 +1029,7 @@ mod tests {
         task.await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty_server() {
         let client = fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1045,7 +1045,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_repositories_from_empty_path() {
         let client = &fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1079,7 +1079,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_packages_from_empty_resource_path() {
         let client = &fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1118,7 +1118,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty_packages_from_empty_resource_path() {
         let client = &fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1150,7 +1150,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_404_from_repositories() {
         let client = &fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1172,7 +1172,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_files_from_repositories() {
         let client = &fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1204,7 +1204,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_files_with_close_range_from_repositories() {
         let client = &fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1249,7 +1249,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_files_with_get_416_when_range_too_big() {
         let client = &fuchsia_hyper::new_client();
         let manager = RepositoryManager::new();
@@ -1282,7 +1282,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_auto_inner() {
         let client = &fuchsia_hyper::new_https_client();
         let manager = RepositoryManager::new();
@@ -1360,7 +1360,7 @@ mod tests {
         fasync::Timer::new(Duration::from_millis(100)).await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_shutdown_timeout() {
         let client = fuchsia_hyper::new_https_client();
         let manager = RepositoryManager::new();

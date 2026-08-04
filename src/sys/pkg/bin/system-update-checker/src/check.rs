@@ -539,7 +539,7 @@ pub mod test_check_for_system_update_impl {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_missing_system_meta_file() {
         let mut file_system = FakeFileSystem { contents: hashmap![] };
         let package_resolver = PackageResolverProxyTempDir::new_with_default_meta();
@@ -563,7 +563,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(result, Err(Error::ReadSystemMeta(_)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_malformatted_system_meta_file() {
         let mut file_system = FakeFileSystem {
             contents: hashmap![
@@ -591,7 +591,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(result, Err(Error::ParseSystemMeta(_)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_resolve_update_package_fidl_error() {
         struct PackageResolverProxyFidlError;
         impl PackageResolverProxyInterface for PackageResolverProxyFidlError {
@@ -644,7 +644,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(result, Err(Error::UpdatePackage(errors::UpdatePackage::ResolveFidl(_))));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_package_garbage_collection_called_no_space() {
         struct PackageResolverProxyNoSpaceOnce {
             temp_dir: tempfile::TempDir,
@@ -733,7 +733,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(*package_resolver.call_count.lock(), 2);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_package_garbage_collection_succeeds() {
         struct PackageResolverProxyNoSpaceError;
         impl PackageResolverProxyInterface for PackageResolverProxyNoSpaceError {
@@ -792,7 +792,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(*mock_space_manager.call_count.lock(), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_resolve_update_package_zx_error() {
         struct PackageResolverProxyZxError;
         impl PackageResolverProxyInterface for PackageResolverProxyZxError {
@@ -845,7 +845,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(result, Err(Error::UpdatePackage(errors::UpdatePackage::Resolve(_))));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_resolve_update_package_directory_closed() {
         struct PackageResolverProxyDirectoryCloser;
         impl PackageResolverProxyInterface for PackageResolverProxyDirectoryCloser {
@@ -898,7 +898,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(result, Err(Error::UpdatePackage(errors::UpdatePackage::Hash(_))));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_package_missing_packages_json() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_default_meta();
@@ -924,7 +924,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_package_empty_packages_json() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_empty_packages_json();
@@ -950,7 +950,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_package_bad_system_image() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver =
@@ -976,7 +976,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_same_update_package_up_to_date() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_vbmeta(ACTIVE_VBMETA_HASH);
@@ -1016,7 +1016,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_up_to_date_with_missing_vbmeta() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_vbmeta(ACTIVE_VBMETA_HASH);
@@ -1056,7 +1056,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_available() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver =
@@ -1091,7 +1091,7 @@ pub mod test_check_for_system_update_impl {
         assert_matches!(*mock_space_manager.call_count.lock(), 0);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_available_changing_target_channel() {
         let update_url: &str = "fuchsia-pkg://target.channel.test/my-update-package";
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
@@ -1129,7 +1129,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_different_update_package_hash_does_not_trigger_update() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver =
@@ -1172,7 +1172,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_vbmeta_only_update_available() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_vbmeta(NEW_VBMETA_HASH);
@@ -1216,7 +1216,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_zbi_only_update_available() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_zbi(NEW_ZBI_HASH);
@@ -1260,7 +1260,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_vbmeta_did_not_require_update() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_vbmeta(ACTIVE_VBMETA_HASH);
@@ -1300,7 +1300,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_zbi_did_not_require_update() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_zbi(ACTIVE_ZBI_HASH);
@@ -1340,7 +1340,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_zbi_only_no_abr_update_available() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_zbi(NEW_ZBI_HASH);
@@ -1384,7 +1384,7 @@ pub mod test_check_for_system_update_impl {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_zbi_no_abr_did_not_require_update() {
         let mut file_system = FakeFileSystem::new_with_valid_system_meta();
         let package_resolver = PackageResolverProxyTempDir::new_with_zbi(ACTIVE_ZBI_HASH);

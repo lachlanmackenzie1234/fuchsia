@@ -59,7 +59,7 @@ mod tests {
 
     /// Test that the HttpRequest implementation works against a simple server and returns
     /// the expected response body.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_simple_request() {
         let server =
             TestServer::builder().handler(StaticResponse::ok_body("some data")).start().await;
@@ -71,7 +71,7 @@ mod tests {
 
     /// Test that the HttpRequest implementation properly times out if the server doesn't return
     /// a response over the socket after accepting the connection.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_hang() {
         let server = TestServer::builder().handler(Hang).start().await;
         let mut client = FuchsiaHyperHttpRequest::using_timeout(Duration::from_secs(1));
@@ -81,7 +81,7 @@ mod tests {
 
     /// Test that the HttpRequest implementation properly times out if the server doesn't return
     /// a the entire body that's expected (after returning a response header).
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_hang_body() {
         let server = TestServer::builder().handler(HangBody::content_length(500)).start().await;
         let mut client = FuchsiaHyperHttpRequest::using_timeout(Duration::from_secs(1));

@@ -477,7 +477,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn enumerate_sample_test() -> Result<(), Error> {
         let component = sample_test_component().await.unwrap();
         let server = TestServer::new();
@@ -509,7 +509,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn enumerate_empty_test_file() -> Result<(), Error> {
         let component = test_component(
             "fuchsia-pkg://fuchsia.com/go-test-runner-test#empty-go-test.cm",
@@ -526,7 +526,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn invalid_executable_file() -> Result<(), Error> {
         let err = test_component(
             "fuchsia-pkg://fuchsia.com/rust-test-runner-test#invalid-test.cm",
@@ -707,7 +707,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_no_test() -> Result<(), Error> {
         let events = run_tests(
             vec![],
@@ -727,7 +727,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_one_test() -> Result<(), Error> {
         let events = run_tests(
             names_to_invocation(vec!["TestPassing"]),

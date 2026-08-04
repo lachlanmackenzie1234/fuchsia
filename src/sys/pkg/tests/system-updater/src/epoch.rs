@@ -8,7 +8,7 @@ use pretty_assertions::assert_eq;
 use test_case::test_case;
 
 /// When epoch.json is in an unexpected format, we should expect to fail with the Internal reason.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn invalid_epoch() {
     let env = TestEnv::builder().build().await;
     env.resolver
@@ -37,7 +37,7 @@ async fn invalid_epoch() {
 // When target epoch < current epoch, we should fail with the UnsupportedDowngrade reason.
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn unsupported_downgrade(update_url: &str) {
     let env = TestEnv::builder()
         .ota_manifest(OtaManifest { epoch: SOURCE_EPOCH - 1, ..make_manifest([]) })

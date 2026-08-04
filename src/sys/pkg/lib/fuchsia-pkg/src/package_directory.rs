@@ -9,10 +9,11 @@ use crate::{
     MetaSubpackagesError,
 };
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_io as fio;
 use fuchsia_hash::{Hash, ParseHashError};
 use thiserror::Error;
 use version_history::AbiRevision;
-use {fidl_fuchsia_io as fio, zx_status};
+use zx_status;
 
 // re-export wrapped fuchsia_fs errors.
 pub use fuchsia_fs::file::ReadError;
@@ -186,13 +187,13 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl::endpoints::Proxy;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn open_close() {
         let pkg = PackageDirectory::open_from_namespace().unwrap();
         let () = pkg.close().await.unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn reopen_is_new_connection() {
         let pkg = PackageDirectory::open_from_namespace().unwrap();
 
@@ -203,7 +204,7 @@ mod tests {
         pkg.into_proxy().into_channel().expect("no other users of the wrapped channel");
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn merkle_root_is_pkg_meta() {
         let pkg = PackageDirectory::open_from_namespace().unwrap();
 
@@ -212,7 +213,7 @@ mod tests {
         assert_eq!(pkg.merkle_root().await.unwrap(), merkle);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn list_blobs() {
         let pkg = PackageDirectory::open_from_namespace().unwrap();
 
@@ -225,7 +226,7 @@ mod tests {
         assert_eq!(blobs.iter().filter(|hash| *hash == &duplicate_blob_merkle).count(), 2);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn package_name_is_test_package_name() {
         let pkg = PackageDirectory::open_from_namespace().unwrap();
 
@@ -235,14 +236,14 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn missing_subpackages_file_is_empty_subpackages() {
         let pkg = PackageDirectory::open_from_namespace().unwrap();
 
         assert_eq!(pkg.meta_subpackages().await.unwrap(), MetaSubpackages::default(),);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn abi_revision_succeeds() {
         let pkg = PackageDirectory::open_from_namespace().unwrap();
 

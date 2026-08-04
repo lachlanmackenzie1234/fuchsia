@@ -223,7 +223,7 @@ mod tests {
         (request_stream, v)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_monitor_sees_on_state_events() {
         let proxy = spawn_update_service(
             FakeTargetChannelUpdater::new(),
@@ -258,7 +258,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_multiple_clients_see_on_state_events() {
         let (blocking_update_checker, unblocker) = BlockingUpdateChecker::new_checker_and_sender();
         let (proxy0, mut service) = spawn_update_service(
@@ -331,7 +331,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_global_attempt_monitor_gets_events() {
         let proxy = spawn_update_service(
             FakeTargetChannelUpdater::new(),
@@ -380,7 +380,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_global_attempt_monitor_gets_state_events() {
         let proxy = spawn_update_service(
             FakeTargetChannelUpdater::new(),
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(events, attempt_monitor_events);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_monitor_already_in_progress() {
         let (blocking_update_checker, unblocker) = BlockingUpdateChecker::new_checker_and_sender();
         let proxy = spawn_update_service(
@@ -464,7 +464,7 @@ mod tests {
         assert_eq!(collect_all_on_state_events(request_stream1).await, vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_attempt_monitor_already_in_progress() {
         let (blocking_update_checker, unblocker) = BlockingUpdateChecker::new_checker_and_sender();
         let proxy = spawn_update_service(
@@ -524,7 +524,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_attempt_monitor_persists_dropped_update() {
         let (blocking_update_checker, unblocker) = BlockingUpdateChecker::new_checker_and_sender();
         let (proxy0, mut service) = spawn_update_service(
@@ -593,7 +593,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_attempt_monitor_two_updates() {
         let proxy = spawn_update_service(
             FakeTargetChannelUpdater::new(),
@@ -676,7 +676,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_invalid_options() {
         let proxy = spawn_update_service(
             FakeTargetChannelUpdater::new(),
@@ -701,7 +701,7 @@ mod tests {
         assert_eq!(collect_all_on_state_events(request_stream).await, vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_check_now_monitor_already_in_progress_but_allow_attaching_to_existing_update_check()
      {
         let (blocking_update_checker, unblocker) = BlockingUpdateChecker::new_checker_and_sender();
@@ -751,7 +751,7 @@ mod tests {
         assert_eq!(collect_all_on_state_events(request_stream1).await, expected_states);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_update_attempt_persists_across_client_disconnect_reconnect() {
         let (blocking_update_checker, unblocker) = BlockingUpdateChecker::new_checker_and_sender();
         let fake_update_applier = FakeUpdateApplier::new_error();
@@ -817,7 +817,7 @@ mod tests {
         assert_eq!(fake_update_applier.call_count(), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_perform_pending_reboot_returns_false() {
         let proxy = spawn_update_service(
             FakeTargetChannelUpdater::new(),

@@ -75,7 +75,7 @@ rustc_binary("stub_component_bin") {
   source_root = "stub/component.rs"
   testonly = true
   deps = [
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//third_party/rust_crates:futures",
   ]
 
@@ -141,7 +141,7 @@ rustc_binary("capability_requested_child_bin") {
   source_root = "capability_requested/child.rs"
   testonly = true
   deps = [
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/sys/component_manager/tests/fidl:components_rust",
     "//third_party/rust_crates:anyhow",

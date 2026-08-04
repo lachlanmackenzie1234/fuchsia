@@ -479,7 +479,7 @@ enum Services {
 mod tests {
     use super::*;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn escrow_state_round_trip() {
         let (p_internal, p_external) = zx::EventPair::create();
         let frozen_inspect = Some(zx::Event::create().into());
@@ -495,7 +495,7 @@ mod tests {
         assert!(loaded.frozen_inspect.is_some());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn escrow_state_round_trip_missing_inspect() {
         let (p_internal, p_external) = zx::EventPair::create();
 

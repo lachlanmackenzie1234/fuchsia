@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::{create_proxy, ProtocolMarker};
+use fidl::endpoints::{ProtocolMarker, create_proxy};
+use fidl_fidl_test_components as ftest;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_component_test::*;
-use {
-    fidl_fidl_test_components as ftest, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-    fuchsia_async as fasync,
-};
 
 const COMPONENT_MANAGER_URL: &str = "#meta/component_manager_for_rights_test.cm";
 
@@ -82,7 +81,7 @@ async fn run_test(url: &str, expected_result: &str) {
 // Verifies that the component_manager supports routing capabilities with different rights and that
 // offer right filtering and right inference are correctly working. The use statement will attempt
 // to access permissions it isn't allowed and verify they return ACCESS_DENIED.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn offer_dir_rights() {
     run_test("#meta/root_offer_dir_rights.cm", "All tests passed").await
 }
@@ -90,7 +89,7 @@ async fn offer_dir_rights() {
 // Verifies that an invalidly configured use in a component will result in a failure on attempt to
 // access that directory. Over accessing permissions will prevent that directory being routed to
 // the component.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn invalid_use_in_offer_dir_rights_prevented() {
     run_test(
         "#meta/root_invalid_use_in_offer_dir_rights.cm",
@@ -103,7 +102,7 @@ async fn invalid_use_in_offer_dir_rights_prevented() {
 
 // Verifies that an invalid offer that offers more than is exposed to it is invalid and will result
 // in the directory not being offered to the child process.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn invalid_offer_dir_rights_prevented() {
     run_test(
         "#meta/root_invalid_offer_dir_rights.cm",
@@ -114,7 +113,7 @@ async fn invalid_offer_dir_rights_prevented() {
 
 // Verifies that an invalid intermediate expose that attempts to increase its rights to a read only
 // directory fails with that exposed direcotry not being mapped into the testing proccess.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn invalid_intermediate_expose_prevented() {
     run_test(
         "#meta/root_invalid_expose_intermediate_offer_dir_rights.cm",
@@ -125,21 +124,21 @@ async fn invalid_intermediate_expose_prevented() {
 
 // Verifies that an intermediate expose that attempts to reduces the rights on a directory is able
 // to have that propagate through to the rest of the system.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn intermediate_expose_rights() {
     run_test("#meta/root_expose_intermediate_offer_dir_rights.cm", "All tests passed").await
 }
 
 // Verifies that an intermediate offer that attempts to reduces the rights on a directory is able
 // to have that propagate down to children nodes.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn intermediate_offer_rights() {
     run_test("#meta/root_offer_intermediate_offer_dir_rights.cm", "All tests passed").await
 }
 
 // Verifies that an intermediate offer that attempts to increase its rights to a directory results
 // in that directory not being mapped into the child proccess.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn invalid_intermediate_offer_prevented() {
     run_test(
         "#meta/root_invalid_offer_intermediate_offer_dir_rights.cm",
@@ -150,14 +149,14 @@ async fn invalid_intermediate_offer_prevented() {
 
 // Verifies that if the offer utilizes aliases instead of direct mapping rights scoping
 // rules are still correctly enforced.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn alias_offer_dir_rights() {
     run_test("#meta/root_alias_offer_dir_rights.cm", "All tests passed").await
 }
 
 // Verifies that component_manager supports directory capabilities with differing rights
 // when the source of the capability is component_manager's namespace.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn route_directories_from_component_manager_namespace() {
     // Define the realm inside component manager.
     let builder = RealmBuilder::with_params(
@@ -227,13 +226,13 @@ async fn route_directories_from_component_manager_namespace() {
 }
 
 // Verifies that if the storage capability offered is valid then you can write to the storage.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn storage_offer_from_rw_dir() {
     run_test("#meta/root_storage_offer_rights.cm", "All tests passed").await
 }
 
 // Verifies you can't write to storage if its backing source capability is not writable.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn storage_offer_from_r_dir_fails() {
     run_test("#meta/root_invalid_storage_offer_rights.cm", "Failed to write to file").await
 }

@@ -221,7 +221,7 @@ mod test_apply_system_update_impl {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_call_installer() {
         let mut update_installer = WasCalledUpdateInstaller { was_called: false };
 
@@ -265,7 +265,7 @@ mod test_apply_system_update_impl {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_call_install_with_right_arguments() {
         let mut update_installer = ArgumentCapturingUpdateInstaller::default();
 
@@ -291,7 +291,7 @@ mod test_apply_system_update_impl {
         assert_matches!(update_installer.reboot_controller_server_end, Some(Some(_)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_call_install_with_right_arguments_and_target_channel() {
         let mut update_installer = ArgumentCapturingUpdateInstaller::default();
 
@@ -319,7 +319,7 @@ mod test_apply_system_update_impl {
     }
 
     // Test that if system updater succeeds, system-update-checker calls the reboot service.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_reboot_on_success() {
         let info = UpdateInfo::builder().download_size(0).build();
         let state = State::WaitToReboot(UpdateInfoAndProgress::done(info));
@@ -369,7 +369,7 @@ mod test_apply_system_update_impl {
     }
 
     // Test that if system updater fails, we don't reboot the system.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_does_not_reboot_on_failure() {
         let mut update_installer = FailingUpdateInstaller::default();
         let (_, error) = apply_system_update_impl(
@@ -406,7 +406,7 @@ mod test_apply_system_update_impl {
 
     // Test that if the reboot controller isn't working, we surface the appropriate error after
     // updating. This would be a bad state to be in, but at least a user would get output.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_reboot_errors_on_no_service() {
         let mut update_installer = RebootUpdateInstaller;
 
@@ -497,7 +497,7 @@ mod test_apply_system_update_impl {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_yield_progress_event() {
         let info = UpdateInfo::builder().download_size(1000).build();
         let mut update_installer = ProgressUpdateInstaller::new(vec![
@@ -541,7 +541,7 @@ mod test_apply_system_update_impl {
         assert_matches!(stream.next().now_or_never(), None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_installer_complete_state() {
         let info = UpdateInfo::builder().download_size(1000).build();
         let mut update_installer = ProgressUpdateInstaller::new(vec![
@@ -577,7 +577,7 @@ mod test_apply_system_update_impl {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_installer_failure_event() {
         let mut update_installer = ProgressUpdateInstaller::new(vec![
             State::Prepare,

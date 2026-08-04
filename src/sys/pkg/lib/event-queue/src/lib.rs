@@ -536,7 +536,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_simple() {
         let (event_queue, mut handle) = EventQueue::<MpscNotifier<String>>::new();
         fasync::Task::local(event_queue).detach();
@@ -662,7 +662,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn flush_only_applies_to_active_clients() {
         let (event_queue, mut handle) = EventQueue::<MpscNotifier<&'static str>>::new();
         let _event_queue = fasync::Task::local(event_queue);
@@ -692,7 +692,7 @@ mod tests {
         handle.try_flush(Duration::from_secs(1)).await.unwrap().await.unwrap();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn notify_flush_commands_do_not_count_towards_limit() {
         let (event_queue, mut handle) = EventQueue::<MpscNotifier<&'static str>>::with_limit(3);
         let _event_queue = fasync::Task::local(event_queue);
@@ -723,7 +723,7 @@ mod tests {
         assert_eq!(receiver2.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn notify_flush_commands_do_not_interfere_with_event_merge() {
         let (event_queue, mut handle) = EventQueue::<MpscNotifier<&'static str>>::new();
         let _event_queue = fasync::Task::local(event_queue);
@@ -745,7 +745,7 @@ mod tests {
         assert_eq!(receiver.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_simple_fidl() {
         let mut handle = start_event_queue();
         let mut stream = add_client(&mut handle).await;
@@ -755,7 +755,7 @@ mod tests {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_multi_client_multi_event() {
         let mut handle = start_event_queue();
         let mut stream1 = add_client(&mut handle).await;
@@ -773,7 +773,7 @@ mod tests {
         assert_matches!(stream2.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_clear_clients() {
         let mut handle = start_event_queue();
         let mut stream1 = add_client(&mut handle).await;
@@ -792,7 +792,7 @@ mod tests {
         assert_matches!(stream2.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_drop_unresponsive_clients() {
         let mut handle = start_event_queue();
         let mut stream = add_client(&mut handle).await;
@@ -803,7 +803,7 @@ mod tests {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_drop_unresponsive_clients_custom_limit() {
         let (event_queue, mut handle) = EventQueue::<FidlNotifier>::with_limit(2);
         fasync::Task::local(event_queue).detach();
@@ -816,7 +816,7 @@ mod tests {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_drop_unresponsive_clients_custom_limit_merge() {
         let (event_queue, mut handle) = EventQueue::<FidlNotifier>::with_limit(2);
         fasync::Task::local(event_queue).detach();
@@ -832,7 +832,7 @@ mod tests {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_drop_failed_clients() {
         let mut handle = start_event_queue();
         let mut stream = add_client(&mut handle).await;
@@ -847,7 +847,7 @@ mod tests {
         assert_matches!(stream.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_drop_failed_clients_multiple() {
         let mut handle = start_event_queue();
         let mut stream1 = add_client(&mut handle).await;
@@ -868,7 +868,7 @@ mod tests {
         assert_matches!(stream2.next().await, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_event_queue_merge_events() {
         let mut handle = start_event_queue();
         let mut stream = add_client(&mut handle).await;

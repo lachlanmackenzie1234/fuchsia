@@ -8,7 +8,7 @@ use fidl_fuchsia_update_installer_ext::{PrepareFailureReason, State};
 use maplit::btreemap;
 use pretty_assertions::assert_eq;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn rejects_invalid_package_name() {
     let env = TestEnv::builder().build().await;
 
@@ -44,7 +44,7 @@ async fn rejects_invalid_package_name() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_if_package_unavailable() {
     let env = TestEnv::builder().build().await;
 
@@ -58,7 +58,7 @@ async fn fails_if_package_unavailable() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_if_manifest_unavailable_packageless() {
     let env = TestEnv::builder().build().await;
 
@@ -69,7 +69,7 @@ async fn fails_if_manifest_unavailable_packageless() {
     env.assert_interactions(initial_interactions());
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn uses_custom_update_package() {
     let env = TestEnv::builder().build().await;
 
@@ -99,7 +99,7 @@ async fn uses_custom_update_package() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_malformed_images_manifest_update_package() {
     let env_with_bad_images_json = TestEnv::builder().build().await;
 
@@ -153,7 +153,7 @@ async fn fails_on_malformed_images_manifest_update_package() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_malformed_ota_manifest_packageless() {
     let env_with_bad_manifest_json =
         TestEnv::builder().ota_manifest_raw("fake manifest").build().await;
@@ -174,7 +174,7 @@ async fn fails_on_malformed_ota_manifest_packageless() {
     env_no_manifest_json.assert_interactions(initial_interactions());
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retry_update_package_resolve_once() {
     let env = TestEnv::builder().build().await;
 
@@ -212,7 +212,7 @@ async fn retry_update_package_resolve_once() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retry_update_package_resolve_twice() {
     let env = TestEnv::builder().build().await;
 
@@ -256,7 +256,7 @@ async fn retry_update_package_resolve_twice() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retry_update_package_resolve_thrice_fails_update_attempt() {
     let env = TestEnv::builder().build().await;
 
@@ -289,7 +289,7 @@ async fn retry_update_package_resolve_thrice_fails_update_attempt() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fully_populated_images_manifest() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .recovery_package(
@@ -507,7 +507,7 @@ async fn fully_populated_images_manifest() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fully_populated_images_manifest_packageless() {
     let zbi_content = b"zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);

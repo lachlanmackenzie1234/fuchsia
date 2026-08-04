@@ -46,7 +46,7 @@ use test_case::test_case;
     fidl_fuchsia_pkg::ResolveError::UnavailableBlob,
     metrics::OtaResultAttemptsMigratedMetricDimensionStatusCode::ErrorNetworking
 )]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_resolve_error_maps_to_cobalt_status_code(
     update_url: &str,
     error: fidl_fuchsia_pkg::ResolveError,
@@ -86,7 +86,7 @@ async fn test_resolve_error_maps_to_cobalt_status_code(
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn succeeds_even_if_metrics_fail_to_send() {
     let env = TestEnv::builder().unregister_protocol(Protocol::FuchsiaMetrics).build().await;
 
@@ -117,7 +117,7 @@ async fn succeeds_even_if_metrics_fail_to_send() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn succeeds_even_if_metrics_fail_to_send_packageless() {
     let env = TestEnv::builder()
         .unregister_protocol(Protocol::FuchsiaMetrics)

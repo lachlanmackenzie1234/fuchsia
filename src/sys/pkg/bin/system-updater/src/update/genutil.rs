@@ -123,7 +123,7 @@ mod tests {
     use super::*;
     use futures::channel::oneshot;
     #[allow(clippy::bool_assert_comparison)]
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn when_done_handles_empty_generator() {
         let (send, recv) = oneshot::channel();
 
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(recv.await.unwrap(), 42);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn when_done_provides_last_yielded_item() {
         let (send, recv) = oneshot::channel();
 
@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(recv.await.unwrap(), 42);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn when_done_fuses_to_none_after_handling_first_complete() {
         let evil_stream = stream::iter(vec![
             GeneratorState::Yielded(1u32),
@@ -196,7 +196,7 @@ mod tests {
         assert!(stream.is_terminated());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn when_done_skips_closure_if_missing_complete() {
         let (send, recv) = oneshot::channel();
         futures::pin_mut!(recv);

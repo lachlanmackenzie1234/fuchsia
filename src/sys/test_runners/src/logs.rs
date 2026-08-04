@@ -205,7 +205,7 @@ mod tests {
     use std::sync::mpsc;
     use test_case::test_case;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn log_writer_reader_work() {
         let (sock1, sock2) = zx::Socket::create_stream();
         let mut log_writer = SocketLogWriter::new(fasync::Socket::from_socket(sock1));
@@ -224,7 +224,7 @@ mod tests {
 
     #[test_case(String::from("Hello World!") ; "consumes_simple_msg")]
     #[test_case(get_random_string(10000) ; "consumes_large_msg")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn logger_stream_read_to_end(msg: String) -> Result<(), Error> {
         let (stream, tx) = create_logger_stream()?;
 
@@ -236,7 +236,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn logger_stream_read_to_end_consumes_concat_msgs() -> Result<(), Error> {
         let (stream, tx) = create_logger_stream()?;
         let msgs =
@@ -253,7 +253,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn buffer_and_drain_reads_each_line_as_a_new_message() -> Result<(), Error> {
         let (stream, tx) = create_logger_stream()?;
         let (mut logger, rx) = create_datagram_logger()?;
@@ -286,7 +286,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn buffer_and_drain_does_not_buffer_past_maximum_size() -> Result<(), Error> {
         let msg = get_random_string(MAX_LINE_BUFFER_LENGTH + 10);
         let (stream, tx) = create_logger_stream()?;
@@ -318,7 +318,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn buffer_and_drain_dumps_full_buffer_if_no_newline_seen() -> Result<(), Error> {
         let (stream, tx) = create_logger_stream()?;
         let (mut logger, rx) = create_datagram_logger()?;
@@ -364,7 +364,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn buffer_and_drain_return_error_if_stream_polls_err() -> Result<(), Error> {
         let (_tx, rx) = zx::Socket::create_stream();
         // If we don't have read rights the socket returns an error when polled.

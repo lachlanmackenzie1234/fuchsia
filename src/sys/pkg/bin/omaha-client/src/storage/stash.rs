@@ -174,55 +174,54 @@ impl Storage for Stash {
 mod tests {
     use super::*;
     use fidl_fuchsia_stash::StoreAccessorRequest;
-    use fuchsia_async as fasync;
     use omaha_client::storage::tests::*;
 
     // NOTE:  Each test here needs to use it's own, uniquely-named Stash instance, or the tests will
     // interfere with each other.  The Stash instances are real, not hermetic st
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_get_remove_string() {
         let mut storage = Stash::new("test_set_get_remove_string").await;
         do_test_set_get_remove_string(&mut storage).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_get_remove_int() {
         let mut storage = Stash::new("test_set_get_remove_int").await;
         do_test_set_get_remove_int(&mut storage).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_option_int() {
         let mut storage = Stash::new("test_set_option_int").await;
         do_test_set_option_int(&mut storage).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_get_remove_bool() {
         let mut storage = Stash::new("test_set_get_remove_bool").await;
         do_test_set_get_remove_bool(&mut storage).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_set_get_remove_time() {
         let mut storage = Stash::new("test_set_get_remove_time").await;
         do_test_set_get_remove_time(&mut storage).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_return_none_for_wrong_value_type() {
         let mut storage = Stash::new("test_return_none_for_wrong_value_type").await;
         do_return_none_for_wrong_value_type(&mut storage).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_ensure_no_error_remove_nonexistent_key() {
         let mut storage = Stash::new("test_ensure_no_error_remove_nonexistent_key").await;
         do_ensure_no_error_remove_nonexistent_key(&mut storage).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_commit() {
         let (mut storage, mut stream) = Stash::new_mock();
         storage.commit().await.unwrap();

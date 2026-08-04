@@ -9,7 +9,7 @@ use fidl_fuchsia_test_manager::{CaseStatus, SuiteStatus};
 use pretty_assertions::assert_eq;
 use test_manager_test_lib::{GroupRunEventByTestCase as _, RunEvent};
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_echo_test() {
     let test_url =
         "fuchsia-pkg://fuchsia.com/rust-test-runner-example#meta/echo_integration_testing.cm";
@@ -28,7 +28,7 @@ async fn launch_and_test_echo_test() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_file_with_no_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/rust-test-runner-example#meta/no_rust_tests.cm";
     let (events, _logs) = run_test(test_url, false, Some(10), vec![]).await.unwrap();
@@ -134,17 +134,17 @@ async fn launch_and_run_sample_test_internal(parallel: u16) {
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test() {
     launch_and_run_sample_test_internal(10).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test_no_concurrency() {
     launch_and_run_sample_test_internal(1).await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test_include_disabled() {
     let test_url = "fuchsia-pkg://fuchsia.com/rust-test-runner-example#meta/sample_rust_tests.cm";
     let (events, _logs) = run_test(test_url, true, Some(10), vec![]).await.unwrap();
@@ -205,7 +205,7 @@ async fn launch_and_run_sample_test_include_disabled() {
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_parallel_execution() {
     let test_url = "fuchsia-pkg://fuchsia.com/rust-test-runner-example#meta/concurrency-test.cm";
     let (events, _logs) = run_test(test_url, false, Some(100), vec![]).await.unwrap();

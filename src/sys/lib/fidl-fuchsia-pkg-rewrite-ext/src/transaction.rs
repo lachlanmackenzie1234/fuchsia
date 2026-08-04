@@ -5,9 +5,10 @@
 use crate::errors::EditTransactionError;
 use crate::rule::Rule;
 use flex_client::ProxyHasDomain;
+use flex_fuchsia_pkg_rewrite as rewrite;
 use flex_fuchsia_pkg_rewrite::{EditTransactionProxy, EngineProxy};
 use std::future::Future;
-use {flex_fuchsia_pkg_rewrite as rewrite, zx_status as zx};
+use zx_status as zx;
 
 const RETRY_ATTEMPTS: usize = 100;
 
@@ -222,7 +223,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_empty_always_commits() {
         let engine = Engine::new();
 
@@ -231,7 +232,7 @@ mod tests {
         assert_eq!(engine.take_events(), vec![Event::Commit]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_reset_all() {
         let engine = Engine::new();
 
@@ -245,7 +246,7 @@ mod tests {
         assert_eq!(engine.take_events(), vec![Event::ResetAll, Event::Commit]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_list_dynamic() {
         let engine = Engine::new();
 
@@ -276,7 +277,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_add() {
         let engine = Engine::new();
 
@@ -301,7 +302,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_closure_error_does_not_commit() {
         let engine = Engine::new();
 
@@ -318,7 +319,7 @@ mod tests {
         assert_eq!(engine.take_events(), vec![]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_retries_commit_errors() {
         let engine = Engine::with_fail_attempts(5, zx::Status::UNAVAILABLE);
 
@@ -344,7 +345,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_eventually_gives_up() {
         let engine = Engine::with_fail_attempts(RETRY_ATTEMPTS + 1, zx::Status::UNAVAILABLE);
 
@@ -364,7 +365,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_transaction_does_not_retry_other_errors() {
         let engine = Engine::with_fail_attempts(5, zx::Status::INTERNAL);
 

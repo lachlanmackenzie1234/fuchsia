@@ -454,7 +454,7 @@ mod test {
         lifecycle_controller
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create_child() {
         let parent = Moniker::parse_str("core").unwrap();
         let url =
@@ -479,7 +479,7 @@ mod test {
         .unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create_child_with_numbered_handles() {
         let parent = Moniker::parse_str("core").unwrap();
         let url =
@@ -512,7 +512,7 @@ mod test {
         .unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_create_already_exists() {
         let parent = Moniker::parse_str("core").unwrap();
         let url =
@@ -532,7 +532,7 @@ mod test {
         assert_matches!(err, CreateError::InstanceAlreadyExists);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_destroy_child() {
         let parent = Moniker::parse_str("core").unwrap();
         let lc = lifecycle_destroy_instance("core", "foo", "bar");
@@ -546,7 +546,7 @@ mod test {
         .unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_start() {
         let moniker = Moniker::parse_str("core/foo").unwrap();
         let lc = lifecycle_start("core/foo");
@@ -555,28 +555,28 @@ mod test {
             .unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_stop() {
         let moniker = Moniker::parse_str("core/foo").unwrap();
         let lc = lifecycle_stop("core/foo");
         stop_instance(&lc, &moniker).await.unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_resolve() {
         let moniker = Moniker::parse_str("core/foo").unwrap();
         let lc = lifecycle_resolve("core/foo");
         resolve_instance(&lc, &moniker).await.unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_unresolve() {
         let moniker = Moniker::parse_str("core/foo").unwrap();
         let lc = lifecycle_unresolve("core/foo");
         unresolve_instance(&lc, &moniker).await.unwrap();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_instance_not_found() {
         let moniker = Moniker::parse_str("core/foo").unwrap();
         let lc = lifecycle_start_fail(fsys::StartError::InstanceNotFound);

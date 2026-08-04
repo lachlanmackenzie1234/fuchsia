@@ -422,7 +422,7 @@ async fn build_test_package() -> Result<Package, Error> {
         .context("Building test package")
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_no_network() -> Result<(), Error> {
     // Test what happens when we can't reach the remote repo.
     let bad_mirror =
@@ -466,7 +466,7 @@ pub async fn test_no_network() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_pave_fails() -> Result<(), Error> {
     // Test what happens if the paver fails while paving.
     let test_package = build_test_package().await?;
@@ -516,7 +516,7 @@ pub async fn test_pave_fails() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_updater_succeeds() -> Result<(), Error> {
     let mut builder = TestEnvBuilder::new()
         .test_executor(IsolatedOtaTestExecutor::new())
@@ -646,7 +646,7 @@ async fn serve_failing_blobfs(mut stream: fio::DirectoryRequestStream) -> Result
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_blobfs_broken() -> Result<(), Error> {
     let (client, server) = fidl::endpoints::create_request_stream();
     let package = build_test_package().await?;
@@ -673,7 +673,7 @@ pub async fn test_blobfs_broken() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_omaha_broken() -> Result<(), Error> {
     let bad_omaha_config = OmahaConfig {
         app_id: "broken-omaha-test".to_owned(),
@@ -695,7 +695,7 @@ pub async fn test_omaha_broken() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_omaha_works() -> Result<(), Error> {
     let mut builder = TestEnvBuilder::new()
         .test_executor(IsolatedOtaTestExecutor::new())
@@ -781,7 +781,7 @@ pub async fn test_omaha_works() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 pub async fn test_system_image_broken_works() -> Result<(), Error> {
     let package = build_test_package().await?;
     let env = TestEnvBuilder::new()

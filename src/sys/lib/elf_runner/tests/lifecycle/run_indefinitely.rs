@@ -4,7 +4,7 @@
 
 use fuchsia_async as fasync;
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 /// Simple program that never exits and logs every 5 minutes
 async fn main() {
     println!("Child created!");

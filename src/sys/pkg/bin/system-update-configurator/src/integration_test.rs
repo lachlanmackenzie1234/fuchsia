@@ -8,10 +8,9 @@ use anyhow::{Context as _, Error};
 use fidl_fuchsia_update_config::{
     OptOutAdminMarker, OptOutAdminSynchronousProxy, OptOutMarker, OptOutSynchronousProxy,
 };
-use fuchsia_async as fasync;
 use fuchsia_component::client::connect_channel_to_protocol;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_basic() -> Result<(), Error> {
     // Initialize a channel, and label the two ends as the server_end and client_end
     let (server_end, client_end) = zx::Channel::create();

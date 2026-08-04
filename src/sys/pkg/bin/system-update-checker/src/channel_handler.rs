@@ -152,7 +152,7 @@ mod tests {
         tempdir
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fidl_get_current_works() {
         let tempdir = create_info_dir_with_channel("current_channel.json");
         let proxy = spawn_provider_handler(&tempdir);
@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(res.map_err(|e| e.to_string()), Ok("example".into()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fidl_channel_control_get_current_works() {
         let tempdir = create_info_dir_with_channel("current_channel.json");
         let proxy = spawn_channel_handler(&tempdir);
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(res.map_err(|e| e.to_string()), Ok("example".into()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fidl_get_current_return_empty_string_if_current_channel_missing() {
         let tempdir = TempDir::new().expect("create tempdir");
         let proxy = spawn_provider_handler_with_channel_handler(
@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(res.map_err(|e| e.to_string()), Ok("".into()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_fidl_set_get_target_works() {
         let tempdir = TempDir::new().expect("create tempdir");
         let proxy = spawn_channel_handler(&tempdir);

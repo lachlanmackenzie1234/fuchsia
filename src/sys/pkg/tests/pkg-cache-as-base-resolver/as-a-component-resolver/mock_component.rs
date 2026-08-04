@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use fidl_test_ping::{PingRequest, PingRequestStream};
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 
@@ -11,7 +10,7 @@ enum IncomingRequest {
     Ping(PingRequestStream),
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingRequest::Ping);

@@ -5,17 +5,16 @@
 use component_events::events::*;
 use component_events::matcher::*;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_protocol;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
 
 // This test is identical to storage_realm_coll, but the storage routing to `storage_user` is
 // invalid. We want to confirm that the child is successfully stopped and destroyed in the situation
 // where component manager is unable to find the storage the component wanted to use.
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main(logging = false)]
 async fn main() {
     // Create the dynamic child
     let realm = connect_to_protocol::<fcomponent::RealmMarker>().unwrap();

@@ -898,7 +898,7 @@ pub mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_events() -> Result<(), Error> {
         let paver = MockPaverForTest::new(|p| p);
         let data = "hello there".as_bytes();
@@ -944,7 +944,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_hook() -> Result<(), Error> {
         let hook = |_: &PaverEvent| zx::Status::NOT_SUPPORTED;
         let paver = MockPaverForTest::new(|p| p.insert_hook(hooks::return_error(hook)));
@@ -959,7 +959,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_config_status_hook() -> Result<(), Error> {
         let config_status_hook =
             |_: paver::Configuration| Ok(paver::ConfigurationStatus::Unbootable);
@@ -1031,7 +1031,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_active_config() -> Result<(), Error> {
         let paver = MockPaverForTest::new(|p| p.active_config(paver::Configuration::B));
         assert_eq!(
@@ -1042,7 +1042,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_active_config_when_recovery() -> Result<(), Error> {
         let paver = MockPaverForTest::new(|p| p.active_config(paver::Configuration::Recovery));
         assert_eq!(
@@ -1053,7 +1053,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_boot_manager_epitaph() -> Result<(), Error> {
         let paver =
             MockPaverForTest::new(|p| p.boot_manager_close_with_epitaph(zx::Status::NOT_SUPPORTED));
@@ -1067,7 +1067,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_set_config_a_healthy() -> Result<(), Error> {
         let paver = MockPaverForTest::new(|p| p);
         assert_eq!(
@@ -1081,7 +1081,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_set_recovery_config_healthy() -> Result<(), Error> {
         let paver = MockPaverForTest::new(|p| p);
         assert_eq!(

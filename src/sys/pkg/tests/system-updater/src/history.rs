@@ -9,7 +9,7 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 use test_case::test_case;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn succeeds_without_writable_data() {
     let env = TestEnv::builder().mount_data(false).build().await;
 
@@ -52,7 +52,7 @@ async fn succeeds_without_writable_data() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn succeeds_without_writable_data_packageless() {
     let env = TestEnv::builder().mount_data(false).ota_manifest(make_manifest([])).build().await;
 
@@ -148,7 +148,7 @@ fn strip_start_time(mut value: serde_json::Value) -> serde_json::Value {
     "838b5199d12c8ff4ef92bfd9771d2f8781b7b8fd739dd59bcf63f353a1a93f67"
 )]
 #[test_case(MANIFEST_URL, "", "")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: &str) {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -289,7 +289,7 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
 
 #[test_case(UPDATE_PKG_URL, UPDATE_HASH)]
 #[test_case(MANIFEST_URL, "")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn replaces_bogus_history(update_url: &str, update_hash: &str) {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 
@@ -353,7 +353,7 @@ async fn replaces_bogus_history(update_url: &str, update_hash: &str) {
 
 #[test_case(UPDATE_PKG_URL, UPDATE_HASH, "fuchsia-pkg://fuchsia.com/not-found")]
 #[test_case(MANIFEST_URL, "", "https://fuchsia.com/not-found")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn increments_attempts_counter_on_retry(
     update_url: &str,
     update_hash: &str,

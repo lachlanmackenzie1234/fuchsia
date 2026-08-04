@@ -69,10 +69,9 @@ impl MockRebootService {
 mod tests {
     use super::*;
     use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownReason};
-    use fuchsia_async as fasync;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_reboot() {
         let reboot_service = Arc::new(MockRebootService::new(Box::new(|_| Ok(()))));
 
@@ -90,7 +89,7 @@ mod tests {
             .expect("shutdown call succeeded");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_reboot_fails() {
         let reboot_service =
             Arc::new(MockRebootService::new(Box::new(|_| Err(zx::Status::INTERNAL.into_raw()))));
@@ -109,7 +108,7 @@ mod tests {
         assert_eq!(shutdown_result, Err(zx::Status::INTERNAL.into_raw()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_reboot_fails_on_no_action() {
         let reboot_service = Arc::new(MockRebootService::new(Box::new(|_| Ok(()))));
 
@@ -126,7 +125,7 @@ mod tests {
         assert_eq!(shutdown_result, Err(zx::Status::INVALID_ARGS.into_raw()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_reboot_call_hook() {
         let reboot_service = Arc::new(MockRebootService::new(Box::new(|options| {
             if let Some(reasons) = options.reasons {
@@ -165,7 +164,7 @@ mod tests {
         assert_eq!(error_reboot_result, Err(zx::Status::NOT_SUPPORTED.into_raw()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_reboot_with_external_state() {
         let called = Arc::new(AtomicU32::new(0));
         let called_clone = Arc::clone(&called);

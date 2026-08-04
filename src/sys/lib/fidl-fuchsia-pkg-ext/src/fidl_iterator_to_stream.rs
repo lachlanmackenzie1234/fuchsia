@@ -77,7 +77,7 @@ mod tests {
         fpkg::BlobInfo { blob_id: fpkg::BlobId { merkle_root: [u; 32] }, length: 0 }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_one_item() {
         let (mut server, mut stream) = MockIteratorServer::new();
 
@@ -86,7 +86,7 @@ mod tests {
         assert_matches!(item, Some(Ok(v)) if v == vec![blob_info(1)]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_two_items() {
         let (mut server, mut stream) = MockIteratorServer::new();
 
@@ -103,7 +103,7 @@ mod tests {
         assert_matches!(second, Some(Ok(v)) if v == vec![blob_info(2)]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn error_terminates() {
         let (mut server, mut stream) = MockIteratorServer::new();
 
@@ -119,7 +119,7 @@ mod tests {
         assert_matches!(second, None);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn empty_response_terminates() {
         let (mut server, mut stream) = MockIteratorServer::new();
 
@@ -128,7 +128,7 @@ mod tests {
         assert_matches!(item, None);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_one_item_then_terminate_successfully() {
         let (mut server, stream) = MockIteratorServer::new();
 
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(items, Ok(vec![blob_info(1)]));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_one_item_then_terminate_with_error() {
         let (mut server, stream) = MockIteratorServer::new();
 

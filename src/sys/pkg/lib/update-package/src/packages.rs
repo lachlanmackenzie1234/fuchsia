@@ -107,7 +107,7 @@ mod tests {
         assert_matches!(parse_packages_json(&[]), Err(ParsePackageError::JsonError(_)));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn smoke_test_packages_json_version_string() {
         let pkg_list = [
             "fuchsia-pkg://fuchsia.com/ls/0?hash=71bad1a35b87a073f72f582065f6b6efec7b6a4a129868f37f6131f02107f1ea",
@@ -122,7 +122,7 @@ mod tests {
         assert_eq!(update_pkg.packages().await.unwrap(), pkg_urls(pkg_list));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn expect_failure_json() {
         let update_pkg = TestUpdatePackage::new();
         let packages = "{}";
@@ -130,7 +130,7 @@ mod tests {
         assert_matches!(update_pkg.packages().await, Err(ParsePackageError::JsonError(_)))
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn expect_failure_version_not_supported() {
         let pkg_list = vec![
             "fuchsia-pkg://fuchsia.com/ls/0?hash=71bad1a35b87a073f72f582065f6b6efec7b6a4a129868f37f6131f02107f1ea",
@@ -148,7 +148,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn expect_failure_no_files() {
         let update_pkg = TestUpdatePackage::new();
         assert_matches!(update_pkg.packages().await, Err(ParsePackageError::FailedToOpen(_)))

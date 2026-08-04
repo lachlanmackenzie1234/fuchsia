@@ -22,7 +22,7 @@ rustc_test("security_policy_vmex_integration_test_bin") {
     "../util:security_policy_test_util",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/rust/zx",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/sys/lib/component-events",
     "//third_party/rust_crates:anyhow",
@@ -46,6 +46,7 @@ rustc_binary("protected_ops_util") {
   deps = [
     ":test.policy_rust",
     "//sdk/rust/zx",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",

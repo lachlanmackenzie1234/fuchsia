@@ -17,7 +17,7 @@ pub async fn run_test(test_url: &str) -> Result<(Vec<RunEvent>, Vec<String>), Er
     Ok(ret)
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn always_fail() {
     let test_url = "fuchsia-pkg://fuchsia.com/stress-runner-integration-test#meta/always_fail.cm";
     let (events, _logs) = run_test(test_url)
@@ -39,7 +39,7 @@ async fn always_fail() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn always_pass() {
     let test_url = "fuchsia-pkg://fuchsia.com/stress-runner-integration-test#meta/always_pass.cm";
     let (events, _logs) = run_test(test_url)
@@ -57,7 +57,7 @@ async fn always_pass() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn timeout() {
     let test_url = "fuchsia-pkg://fuchsia.com/stress-runner-integration-test#meta/timeout.cm";
     let (events, _logs) = run_test(test_url)
@@ -76,7 +76,7 @@ async fn timeout() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn echo() {
     let test_url = "fuchsia-pkg://fuchsia.com/stress-runner-integration-test#meta/echo_test.cm";
     let (events, _logs) = run_test(test_url)

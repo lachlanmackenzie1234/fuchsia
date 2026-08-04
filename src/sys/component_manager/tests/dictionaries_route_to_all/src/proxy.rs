@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use fidl_fidl_examples_routing_echo::{EchoMarker, EchoRequest, EchoRequestStream};
-use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
@@ -22,7 +21,7 @@ async fn run_echo_service(mut stream: EchoRequestStream) {
     }
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let mut fs = ServiceFs::new_local();
     // Generic trigger, routed to all clients

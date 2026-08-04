@@ -54,7 +54,7 @@ mod test {
         lifecycle_controller
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_success() -> Result<()> {
         let mut output = Vec::new();
         let lifecycle_controller = setup_fake_lifecycle_controller("/core/ffx-laboratory:test");

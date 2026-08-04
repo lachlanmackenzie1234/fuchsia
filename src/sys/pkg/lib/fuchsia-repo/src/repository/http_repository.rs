@@ -318,7 +318,7 @@ mod tests {
         chunk_size = CHUNK_SIZE;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_blob_modification_time() {
         let env = TestEnv::new().await;
 
@@ -331,7 +331,7 @@ mod tests {
         env.stop().await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_watch() {
         let env = TestEnv::new().await;
 

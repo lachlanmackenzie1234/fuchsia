@@ -78,7 +78,7 @@ rustc_test("bin_test") {
   deps = [
     "//sdk/fidl/fuchsia.update.config:fuchsia.update.config_rust",
     "//sdk/rust/zx",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
   ]

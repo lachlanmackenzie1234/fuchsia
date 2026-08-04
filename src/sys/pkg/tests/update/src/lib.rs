@@ -284,7 +284,7 @@ fn assert_async_output_not_ready(socket: &mut fasync::Socket) {
     assert_matches!(socket.read(&mut [0; 1]).now_or_never(), None);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn force_install_fails_on_invalid_url() {
     let env = TestEnv::new();
     let output = shell_process::run_process(
@@ -304,7 +304,7 @@ async fn force_install_fails_on_invalid_url() {
     env.assert_reboot_controller_called_with(vec![]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn force_install_reboot() {
     let update_info = installer::UpdateInfo::builder().download_size(1000).build();
     let env = TestEnv::builder()
@@ -367,7 +367,7 @@ State: WaitToReboot(UpdateInfoAndProgress { info: UpdateInfo { download_size: 10
     env.assert_reboot_controller_called_with(vec![]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn force_install_no_reboot() {
     let update_info = installer::UpdateInfo::builder().download_size(1000).build();
     let env = TestEnv::builder()
@@ -430,7 +430,7 @@ State: DeferReboot(UpdateInfoAndProgress { info: UpdateInfo { download_size: 100
     env.assert_reboot_controller_called_with(vec![CapturedRebootControllerRequest::Detach]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn force_install_failure_state() {
     let env = TestEnv::builder()
         .installer_states(vec![
@@ -474,7 +474,7 @@ State: FailPrepare(Internal)\n",
     env.assert_reboot_controller_called_with(vec![]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn force_install_unexpected_end() {
     let env = TestEnv::builder().installer_states(vec![installer::State::Prepare]).build();
     let output = shell_process::run_process(
@@ -512,7 +512,7 @@ State: Prepare\n",
     env.assert_reboot_controller_called_with(vec![]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn force_install_service_initiated_flag() {
     let env = TestEnv::new();
     let _output = shell_process::run_process(
@@ -534,7 +534,7 @@ async fn force_install_service_initiated_flag() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn check_now_service_initiated_flag() {
     let env = TestEnv::new();
     let output = shell_process::run_process(
@@ -555,7 +555,7 @@ async fn check_now_service_initiated_flag() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn check_now_error_if_throttled() {
     let env = TestEnv::new();
     *env.update_manager.check_now_response.lock() =
@@ -574,7 +574,7 @@ async fn check_now_error_if_throttled() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn check_now_monitor_flag() {
     let env = TestEnv::builder()
         .manager_states(vec![
@@ -615,7 +615,7 @@ async fn check_now_monitor_flag() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn check_now_monitor_error_checking() {
     let env = TestEnv::builder()
         .manager_states(vec![State::CheckingForUpdates, State::ErrorCheckingForUpdate])
@@ -644,7 +644,7 @@ async fn check_now_monitor_error_checking() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn check_now_monitor_error_installing() {
     let env = TestEnv::builder()
         .manager_states(vec![
@@ -694,7 +694,7 @@ async fn check_now_monitor_error_installing() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn monitor_all_update_checks() {
     let (mut sender, receiver) = mpsc::channel(0);
     let env = TestEnv::builder().manager_states_receiver(receiver).build();
@@ -764,7 +764,7 @@ async fn monitor_all_update_checks() {
     assert_eq!(update.await, 0); // exit status OK.
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn wait_for_commit_success() {
     let (p0, p1) = EventPair::create();
     let env = TestEnv::builder().commit_status_provider_response(p1).build();
@@ -784,7 +784,7 @@ async fn wait_for_commit_success() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn revert_success() {
     #[derive(Debug, PartialEq)]
     enum Interaction {

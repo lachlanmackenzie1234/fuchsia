@@ -8,7 +8,7 @@ use test_case::test_case;
 
 #[test_case(UPDATE_PKG_URL, vec![UPDATE_PKG_URL])]
 #[test_case(MANIFEST_URL, vec![])]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn validates_board(update_url: &str, expected_resolved_urls: Vec<&str>) {
     let env = TestEnv::builder()
         .ota_manifest(OtaManifest { board: "x64".into(), ..make_manifest([]) })
@@ -31,7 +31,7 @@ async fn validates_board(update_url: &str, expected_resolved_urls: Vec<&str>) {
 
 #[test_case(UPDATE_PKG_URL, vec![UPDATE_PKG_URL])]
 #[test_case(MANIFEST_URL, vec![])]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn rejects_mismatched_board(update_url: &str, expected_resolved_urls: Vec<&str>) {
     let env = TestEnv::builder()
         .ota_manifest(OtaManifest { board: "arm".into(), ..make_manifest([]) })

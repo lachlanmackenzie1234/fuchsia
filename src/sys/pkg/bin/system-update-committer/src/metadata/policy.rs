@@ -98,12 +98,11 @@ impl PolicyEngine {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
 
     /// Test we should NOT verify and commit when when the device is in recovery.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_skip_when_device_in_recovery() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -121,7 +120,7 @@ mod tests {
     }
 
     /// Test we should NOT verify and commit when the device does not support ABR.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_skip_when_device_does_not_support_abr() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -160,12 +159,12 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_skip_when_current_is_healthy_a() {
         test_skip_when_current_is_healthy(paver::Configuration::A).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_skip_when_current_is_healthy_b() {
         test_skip_when_current_is_healthy(paver::Configuration::B).await
     }
@@ -197,12 +196,12 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verify_and_commit_when_current_is_pending_a() {
         test_verify_and_commit_when_current_is_pending(&ConfigurationWithoutRecovery::A).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verify_and_commit_when_current_is_pending_b() {
         test_verify_and_commit_when_current_is_pending(&ConfigurationWithoutRecovery::B).await
     }
@@ -236,18 +235,18 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_returns_error_when_current_unbootable_a() {
         test_returns_error_when_current_unbootable(&ConfigurationWithoutRecovery::A).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_returns_error_when_current_unbootable_b() {
         test_returns_error_when_current_unbootable(&ConfigurationWithoutRecovery::B).await
     }
 
     /// Test the build fn fails on a standard paver error.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_build_fails_when_paver_fails() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()

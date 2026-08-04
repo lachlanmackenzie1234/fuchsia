@@ -6,10 +6,9 @@ use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component::RealmMarker;
 use fidl_fuchsia_component_decl::ChildRef;
 use fidl_test_ping::PingMarker;
-use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_dir_root};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn base_resolver_test() {
     let realm =
         connect_to_protocol::<RealmMarker>().expect("failed to connect to fuchsia.component.Realm");
@@ -24,7 +23,7 @@ async fn base_resolver_test() {
     assert_eq!(ping.ping("ping").await.expect("Ping FIDL call failed"), "ping pong");
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn base_resolver_resolves_subpackages() {
     let realm =
         connect_to_protocol::<RealmMarker>().expect("failed to connect to fuchsia.component.Realm");

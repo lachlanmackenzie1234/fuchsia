@@ -11,7 +11,7 @@ use fidl_fuchsia_update_installer_ext::{
 use pretty_assertions::assert_eq;
 use test_case::test_case;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_package_resolver_connect_error() {
     let env = TestEnvBuilder::new().unregister_protocol(Protocol::PackageResolver).build().await;
 
@@ -24,7 +24,7 @@ async fn fails_on_package_resolver_connect_error() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn package_resolver_not_needed_for_packageless_update() {
     let env = TestEnvBuilder::new()
         .unregister_protocol(Protocol::PackageResolver)
@@ -35,7 +35,7 @@ async fn package_resolver_not_needed_for_packageless_update() {
     env.run_packageless_update().await.unwrap();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_ota_downloader_connect_error_packageless() {
     let env = TestEnvBuilder::new()
         .unregister_protocol(Protocol::OtaDownloader)
@@ -62,7 +62,7 @@ async fn fails_on_ota_downloader_connect_error_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_system_image_package_fetch_error() {
     let env = TestEnv::builder().build().await;
 
@@ -103,7 +103,7 @@ async fn fails_on_system_image_package_fetch_error() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_blob_fetch_error_packageless() {
     let env = TestEnvBuilder::new()
         .ota_manifest(make_manifest([manifest::Blob {
@@ -141,7 +141,7 @@ async fn fails_on_blob_fetch_error_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_content_package_fetch_error() {
     let env = TestEnv::builder().build().await;
 
@@ -249,7 +249,7 @@ async fn fails_on_content_package_fetch_error() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_when_package_cache_sync_fails() {
     let env = TestEnv::builder().build().await;
     env.cache_service.set_sync_response(Err(Status::INTERNAL));
@@ -280,7 +280,7 @@ async fn fails_when_package_cache_sync_fails() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_when_package_cache_sync_fails_packageless() {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
     env.cache_service.set_sync_response(Err(Status::INTERNAL));
@@ -312,7 +312,7 @@ async fn fails_when_package_cache_sync_fails_packageless() {
 #[test_case(fidl_fuchsia_pkg::ResolveError::Io, PrepareFailureReason::Internal)]
 #[test_case(fidl_fuchsia_pkg::ResolveError::PackageNotFound, PrepareFailureReason::Internal)]
 #[test_case(fidl_fuchsia_pkg::ResolveError::UnavailableBlob, PrepareFailureReason::Internal)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_prepare_failure_reason(
     resolve_error: fidl_fuchsia_pkg::ResolveError,
     expected_reason: PrepareFailureReason,
@@ -334,7 +334,7 @@ async fn test_prepare_failure_reason(
 #[test_case(fidl_fuchsia_pkg::ResolveError::Io, StageFailureReason::Internal)]
 #[test_case(fidl_fuchsia_pkg::ResolveError::BlobNotFound, StageFailureReason::Internal)]
 #[test_case(fidl_fuchsia_pkg::ResolveError::UnavailableBlob, StageFailureReason::Internal)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_stage_failure_reason_packageless(
     resolve_error: fidl_fuchsia_pkg::ResolveError,
     expected_reason: StageFailureReason,
@@ -412,7 +412,7 @@ async fn test_stage_failure_reason_packageless(
     fidl_fuchsia_pkg::ResolveError::UnavailableBlob,
     FetchFailureReason::Internal
 )]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_fetch_failure_reason(
     update_url: &str,
     resolve_error: fidl_fuchsia_pkg::ResolveError,

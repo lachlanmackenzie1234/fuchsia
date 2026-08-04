@@ -57,7 +57,7 @@ mod tests {
         bytes
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn allows_expected_name_and_variant() {
         assert_matches!(
             TestUpdatePackage::new()
@@ -69,7 +69,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn rejects_unexpected_name() {
         assert_matches!(
             TestUpdatePackage::new()
@@ -82,7 +82,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn rejects_unexpected_variant() {
         let name: PackageName = "invalid".parse().unwrap();
         let variant: PackageVariant = "42".parse().unwrap();
@@ -96,7 +96,7 @@ mod tests {
                 if actual.name() == &name && actual.variant() == &variant
         );
     }
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn rejects_invalid_meta_package() {
         assert_matches!(
             TestUpdatePackage::new().add_file("meta/package", "bad json").await.verify_name().await,
@@ -104,7 +104,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn rejects_missing_meta_package() {
         assert_matches!(
             TestUpdatePackage::new().verify_name().await,

@@ -111,10 +111,9 @@ impl Hook for ThrottleHook {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_crash_reporter() {
         let mock = Arc::new(MockCrashReporterService::new(|_| Ok(FileReportResults::default())));
         let (proxy, _server) = mock.spawn_crash_reporter_service();
@@ -124,7 +123,7 @@ mod tests {
         assert_eq!(file_result, Ok(FileReportResults::default()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_crash_reporter_fails() {
         let mock = Arc::new(MockCrashReporterService::new(|_| Err(FilingError::InvalidArgsError)));
         let (proxy, _server) = mock.spawn_crash_reporter_service();
@@ -134,7 +133,7 @@ mod tests {
         assert_eq!(file_result, Err(FilingError::InvalidArgsError));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_crash_reporter_with_external_state() {
         let called = Arc::new(AtomicU32::new(0));
         let called_clone = Arc::clone(&called);

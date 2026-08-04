@@ -396,7 +396,7 @@ mod test_inspect {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_inspect_update_state() {
         let inspector = fuchsia_inspect::Inspector::default();
         let (fut, att_fut, mut update_monitor) =

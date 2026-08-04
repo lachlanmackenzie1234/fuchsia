@@ -292,7 +292,6 @@ fn get_root_keys(config: &pkg::RepositoryConfig) -> Result<Vec<PublicKey>, anyho
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use fuchsia_pkg_testing::serve::{
         HttpResponder, ServedRepository, ServedRepositoryBuilder, responder,
     };
@@ -415,7 +414,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_log_ctx_correctly_set() {
         // Serve static repo and connect to it
         let pkg = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -428,7 +427,7 @@ mod tests {
         assert_matches!(repo.log_ctx, LogContext { repo_url } if repo_url == TEST_REPO_URL);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_merkle_at_path() {
         // Serve static repo and connect to it
         let pkg = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -450,7 +449,7 @@ mod tests {
         assert_eq!(size, pkg.meta_far().unwrap().metadata().unwrap().len());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_merkle_at_path_fails_when_no_package() {
         let env = TestEnv::new().await;
         let (_served_repository, repo_config) = env.serve_repo().start(TEST_REPO_URL);
@@ -467,7 +466,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_merkle_at_path_fails_when_remote_repo_down() {
         // Serve static repo
         let pkg = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -505,7 +504,7 @@ mod tests {
         assert_eq!(size, pkg.meta_far().unwrap().metadata().unwrap().len());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_merkle_path_fails_and_logs_when_remote_server_500s() {
         // Serve static repo
         let pkg = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -553,7 +552,7 @@ mod tests {
         (env, served_repository, notified, repo)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn update_subscribed_repo_on_auto_event() {
         let (_env, served_repository, mut ts_metadata_fetched, _repo) =
             make_repo_with_auto_and_watched_timestamp_metadata().await;
@@ -566,7 +565,7 @@ mod tests {
         ts_metadata_fetched.next().await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn only_update_subscribed_repo_if_stale() {
         let initial_time = zx::MonotonicInstant::from_nanos(0);
         clock::mock::set(initial_time);
@@ -596,7 +595,7 @@ mod tests {
         assert_matches!(ts_metadata_fetched.try_next(), Err(_));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn auto_client_reconnects() {
         let (_env, served_repository, _ts_metadata_fetched, _repo) =
             make_repo_with_auto_and_watched_timestamp_metadata().await;
@@ -607,7 +606,7 @@ mod tests {
         served_repository.wait_for_n_connected_auto_clients(1).await;
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn persisted_repos() {
         let pkg = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
         let env = TestEnv::builder().add_package(&pkg).enable_persisted_repos().build().await;
@@ -641,7 +640,7 @@ mod tests {
         assert!(dir.join("1.root.json").exists());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn resolve_caches_metadata() {
         clock::mock::set(zx::MonotonicInstant::from_nanos(0));
 
@@ -701,7 +700,6 @@ mod tests {
 mod inspect_tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_async as fasync;
     use fuchsia_pkg_testing::serve::responder;
     use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
     use fuchsia_url::RepositoryUrl;
@@ -716,7 +714,7 @@ mod inspect_tests {
         ProtocolSender::new(sender)
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn initialization_and_destruction() {
         let inspector = inspect::Inspector::default();
         let repo = Arc::new(
@@ -769,7 +767,7 @@ mod inspect_tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn get_merkle_at_path_updates_inspect() {
         clock::mock::set(zx::MonotonicInstant::from_nanos(0));
 
@@ -825,7 +823,7 @@ mod inspect_tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn subscribed_repo_after_event() {
         clock::mock::set(zx::MonotonicInstant::from_nanos(0));
         let inspector = inspect::Inspector::default();

@@ -11,6 +11,7 @@ rustc_binary("bin") {
 
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:anyhow",

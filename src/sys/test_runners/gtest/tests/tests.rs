@@ -19,7 +19,7 @@ fn default_options() -> ftest_manager::RunSuiteOptions {
     }
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/sample_tests.cm";
 
@@ -33,7 +33,7 @@ async fn launch_and_run_sample_test() {
     assert_events_eq(&events, &expected_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_test_with_custom_args() {
     let test_url =
         "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/test_with_custom_args.cm";
@@ -52,7 +52,7 @@ async fn launch_and_run_test_with_custom_args() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_test_with_environ() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/test_with_environ.cm";
     let (events, _logs) = run_test(test_url, default_options()).await.unwrap();
@@ -68,7 +68,7 @@ async fn launch_and_run_test_with_environ() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test_no_concurrent() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/sample_tests.cm";
     let mut run_options = default_options();
@@ -83,7 +83,7 @@ async fn launch_and_run_sample_test_no_concurrent() {
     assert_events_eq(&events, &expected_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_sample_test_include_disabled() {
     const TEST_URL: &str =
         "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/sample_tests.cm";
@@ -141,7 +141,7 @@ async fn launch_and_run_sample_test_include_disabled() {
     assert_eq!(actual_skip_events, &expected_skip_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_empty_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/empty_test.cm";
     let (events, _logs) = run_test(test_url, default_options()).await.unwrap();
@@ -152,7 +152,7 @@ async fn launch_and_run_empty_test() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_echo_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/echo_test_realm.cm";
     let (events, _logs) = run_test(test_url, default_options()).await.unwrap();
@@ -168,7 +168,7 @@ async fn launch_and_test_echo_test() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_parallel_execution() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/concurrency-test.cm";
     let mut run_options = default_options();
@@ -192,7 +192,7 @@ async fn test_parallel_execution() {
     assert_events_eq(&expected_events, &events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_zxtest_success() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/zxtest_success.cm";
     let mut run_options = default_options();
@@ -230,7 +230,7 @@ async fn launch_and_test_zxtest_success() {
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_zxtest_failure() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/zxtest_failure.cm";
     let mut run_options = default_options();
@@ -260,7 +260,7 @@ async fn launch_and_test_zxtest_failure() {
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_gtest_setup_failure() {
     let test_url =
         "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/gtest_setup_failure.cm";
@@ -291,7 +291,7 @@ async fn launch_and_test_gtest_setup_failure() {
     )
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_zxtest_setup_failure() {
     let test_url =
         "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/zxtest_setup_failure.cm";
@@ -325,7 +325,7 @@ async fn launch_and_test_zxtest_setup_failure() {
     );
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_test_zxtest_env_setup_failure() {
     let test_url =
         "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/zxtest_env_setup_failure.cm";

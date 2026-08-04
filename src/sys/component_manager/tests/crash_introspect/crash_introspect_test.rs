@@ -3,13 +3,15 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_fuchsia_sys2 as fsys;
+use fidl_fuchsia_test as ftest;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
 };
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt, TryStreamExt};
-use {fidl_fuchsia_sys2 as fsys, fidl_fuchsia_test as ftest, fuchsia_async as fasync};
 
 async fn crash_receiver(
     handles: LocalComponentHandles,
@@ -65,7 +67,7 @@ async fn crash_receiver(
     }
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn crashed_component_generates_a_record() -> Result<(), Error> {
     let expected_crash_info = fsys::ComponentCrashInfo {
         url: Some("realm-builder://1/report_then_panic_on_start".to_string()),

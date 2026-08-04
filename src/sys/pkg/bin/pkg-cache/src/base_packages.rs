@@ -300,7 +300,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn identifies_all_blobs() {
         let base_subpackage = PackageBuilder::new("base-subpackage")
             .add_resource_at("base-subpackage-blob", &b"base-subpackage-blob-contents"[..])
@@ -337,7 +337,7 @@ mod tests {
         assert_eq!(base_packages.list_blobs().len(), 6);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn correct_blob_count_shared_blob() {
         let a_base_package0 = PackageBuilder::new("a-base-package0")
             .add_resource_at("a-base-blob0", &b"duplicate-blob-contents"[..])
@@ -362,7 +362,7 @@ mod tests {
         assert_eq!(base_packages.list_blobs().len(), 5);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn inspect_base_packages() {
         let base_subpackage = PackageBuilder::new("base-subpackage").build().await.unwrap();
         let a_base_package = PackageBuilder::new("a-base-package")
@@ -391,7 +391,7 @@ mod tests {
         });
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn paths_and_hashes_includes_system_image() {
         let a_base_package = PackageBuilder::new("a-base-package")
             .add_resource_at("a-base-blob", &b"a-base-blob-contents"[..])
@@ -417,7 +417,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn paths_and_hashes_includes_system_image_even_if_no_static_packages() {
         let (env, base_packages) = TestEnv::new(&[]).await;
 
@@ -434,7 +434,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn is_base_package_root_package() {
         let (env, base_packages) = TestEnv::new(&[]).await;
         let system_image = *env.system_image.hash();
@@ -446,7 +446,7 @@ mod tests {
         assert!(!base_packages.is_package(not_system_image));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn is_base_package_subpackage() {
         let subpackage = PackageBuilder::new("base-subpackage").build().await.unwrap();
         let superpackage = PackageBuilder::new("base-superpackage")
@@ -460,7 +460,7 @@ mod tests {
         assert!(base_packages.is_package(*subpackage.hash()));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn base_packages_fails_when_reading_manifest_fails() {
         let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
         let blobfs_client = blobfs.client();
@@ -481,7 +481,7 @@ mod tests {
         assert_matches!(base_packages_res, Err(_))
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn base_packages_fails_when_reading_package_fails() {
         let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
         let blobfs_client = blobfs.client();
@@ -514,7 +514,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn cache_packages_ignores_failed_package_load() {
         let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
         let blobfs_client = blobfs.client();

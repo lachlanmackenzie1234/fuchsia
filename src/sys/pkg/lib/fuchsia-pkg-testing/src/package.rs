@@ -818,7 +818,7 @@ mod tests {
         };
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_basic() -> Result<(), Error> {
         let pkg = PackageBuilder::new("rolldice")
             .dir("bin")
@@ -843,7 +843,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_content_blob_files() -> Result<(), Error> {
         let pkg = PackageBuilder::new("rolldice")
             .dir("bin")
@@ -870,7 +870,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_dir_semantics() -> Result<(), Error> {
         let with_dir = PackageBuilder::new("data-file")
             .dir("data")
@@ -913,7 +913,7 @@ mod tests {
         Ok(dir)
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_from_dir() {
         let abi_revision = AbiRevision::from_u64(0x5836508c2defac54); // Random value.
 
@@ -947,7 +947,7 @@ mod tests {
         assert_eq!(from_dir.meta_far_merkle, pkg.meta_far_merkle);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_identity() -> Result<(), Error> {
         let pkg = Package::identity().await.unwrap();
 
@@ -971,7 +971,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verify_contents_rejects_extra_blob() -> Result<(), Error> {
         let pkg = Package::identity().await?;
         let pkg_dir = make_this_package_dir()?;
@@ -990,7 +990,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verify_contents_rejects_extra_meta_file() -> Result<(), Error> {
         let pkg = Package::identity().await?;
         let pkg_dir = make_this_package_dir()?;
@@ -1009,7 +1009,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verify_contents_rejects_missing_blob() -> Result<(), Error> {
         let pkg = Package::identity().await?;
         let pkg_dir = make_this_package_dir()?;
@@ -1028,7 +1028,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verify_contents_rejects_different_contents() -> Result<(), Error> {
         let pkg = Package::identity().await?;
         let pkg_dir = make_this_package_dir()?;
@@ -1047,14 +1047,14 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_meta_subpackages_with_no_subpackages() {
         let pkg = PackageBuilder::new("pkg").build().await.unwrap();
 
         assert!(pkg.meta_subpackages().unwrap().subpackages().is_empty());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_subpackage() {
         // Package with subpackage.
         let sub_sub_pkg = PackageBuilder::new("sub-sub-pkg")
@@ -1117,7 +1117,7 @@ mod tests {
         assert_eq!(pkg.list_blobs(), expected_all_blobs);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_subpackage_by_hash() {
         let pkg = PackageBuilder::new("pkg")
             .add_subpackage_by_hash("subpackage-name", Hash::from([0; 32]))

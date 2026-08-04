@@ -66,7 +66,7 @@ mod test {
     use crate::test_utils::make_readonly_empty_repository;
     const REPO_NAME: &str = "fake-repo";
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add() {
         let repo = make_readonly_empty_repository().await.unwrap();
 
@@ -79,7 +79,7 @@ mod test {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_add_accepts_valid_names() {
         for name in ["fuchsia.com", "my-repository", "hello.there.world"] {
             let repo = make_readonly_empty_repository().await.unwrap();
@@ -89,7 +89,7 @@ mod test {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_remove() {
         let repo = make_readonly_empty_repository().await.unwrap();
 
@@ -105,7 +105,7 @@ mod test {
         assert!(manager.repositories().next().is_none());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_clear() {
         let repo1 = make_readonly_empty_repository().await.unwrap();
         let repo2 = make_readonly_empty_repository().await.unwrap();

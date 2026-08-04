@@ -44,6 +44,7 @@ rustc_library("lib") {
   ]
 
   test_deps = [
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:rand",
@@ -86,6 +87,7 @@ rustc_library("test_lib") {
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
@@ -107,6 +109,7 @@ rustc_binary("echo_server_for_concurrency_test_bin") {
   source_root = "src/echo_server_for_concurrency_test.rs"
   deps = [
     "//examples/components/routing/fidl:echo_rust",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:futures",

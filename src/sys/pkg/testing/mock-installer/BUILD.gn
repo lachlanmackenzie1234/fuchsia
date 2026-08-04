@@ -38,7 +38,10 @@ mock_installer_library("mock-installer") {
     "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust_flex",
   ]
 
-  test_deps = [ "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_flex" ]
+  test_deps = [
+    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_flex",
+    "//src/lib/fuchsia",
+  ]
 }
 
 mock_installer_library("mock-installer_fdomain") {
@@ -49,6 +52,7 @@ mock_installer_library("mock-installer_fdomain") {
   test_deps = [
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_fdomain_flex",
     "//src/lib/fdomain/local",
+    "//src/lib/fuchsia",
   ]
   features = [ "fdomain" ]
 }

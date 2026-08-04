@@ -5,9 +5,10 @@
 use crate::cli::format::format_create_error;
 use crate::lifecycle::create_instance_in_collection;
 use anyhow::{Result, format_err};
+use flex_fuchsia_component_decl as fdecl;
+use flex_fuchsia_sys2 as fsys;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use moniker::Moniker;
-use {flex_fuchsia_component_decl as fdecl, flex_fuchsia_sys2 as fsys};
 
 pub async fn create_cmd<W: std::io::Write>(
     url: AbsoluteComponentUrl,
@@ -87,7 +88,7 @@ mod test {
         lifecycle_controller
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_success() -> Result<()> {
         let mut output = Vec::new();
         let lifecycle_controller = setup_fake_lifecycle_controller(

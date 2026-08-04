@@ -40,6 +40,7 @@ rustc_binary("dict_trigger_bin") {
     "//examples/components/routing/fidl:echo_rust",
     "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/storage/lib/vfs/rust:vfs",

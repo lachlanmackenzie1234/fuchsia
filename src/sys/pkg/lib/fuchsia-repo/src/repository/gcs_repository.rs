@@ -437,7 +437,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_blob_modification_time() {
         let env = TestEnv::new().await;
 
@@ -447,7 +447,7 @@ mod tests {
         assert_matches!(env.repo.blob_modification_time("empty-blob").await, Ok(None));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_watch() {
         let env = TestEnv::new().await;
 

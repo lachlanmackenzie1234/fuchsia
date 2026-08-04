@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_test_policy as ftest;
 use fuchsia_component::client;
 use security_policy_test_util::{open_exposed_dir, start_policy_test};
-use {fidl_test_policy as ftest, fuchsia_async as fasync};
 
 const COMPONENT_MANAGER_URL: &str = "#meta/cm_for_test.cm";
 const ROOT_URL: &str = "#meta/test_root.cm";
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_restricted_capability_allowed() -> Result<(), Error> {
     let (_test, realm, _event_stream) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
     let child_name = "policy_allowed";
@@ -22,7 +22,7 @@ async fn verify_restricted_capability_allowed() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_restrited_capability_disallowed() -> Result<(), Error> {
     let (_test, realm, _event_stream) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
     let child_name = "policy_denied";
@@ -34,7 +34,7 @@ async fn verify_restrited_capability_disallowed() -> Result<(), Error> {
     Ok(())
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn verify_unrestricted_capability_allowed() -> Result<(), Error> {
     let (_test, realm, _event_stream) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
     let child_name = "policy_not_violated";

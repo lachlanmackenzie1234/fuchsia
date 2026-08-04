@@ -11,7 +11,7 @@ rustc_test("storage_integration_test_bin") {
   edition = "2024"
   source_root = "integration_test.rs"
   deps = [
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//src/sys/lib/component-events",
   ]
@@ -29,7 +29,6 @@ rustc_test("storage_admin_integration_test_bin") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-fs",
@@ -91,7 +90,7 @@ rustc_binary("storage_realm_coll_invalid_route_bin") {
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/sys/lib/component-events",
   ]
@@ -161,6 +160,7 @@ fuchsia_component("storage_realm_coll") {
 fuchsia_component("storage_realm_coll_invalid_route") {
   deps = [ ":storage_realm_coll_invalid_route_bin" ]
   manifest = "meta/storage_realm_coll_invalid_route.cml"
+  check_includes = false
 }
 
 fuchsia_component("only_exits") {

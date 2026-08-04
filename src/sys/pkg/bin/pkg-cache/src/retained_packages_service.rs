@@ -102,7 +102,7 @@ mod tests {
         ))
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn collect_blob_ids_test() -> Result<(), Error> {
         let blob_ids = vec![BlobId::parse(ZEROES_HASH)?, BlobId::parse(ONES_HASH)?]
             .into_iter()

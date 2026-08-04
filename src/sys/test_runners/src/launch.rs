@@ -306,7 +306,6 @@ mod tests {
     use fidl::endpoints::{ClientEnd, Proxy, create_proxy_and_stream};
     use fidl_fuchsia_component_runner as fcrunner;
     use fidl_fuchsia_io as fio;
-    use fuchsia_async as fasync;
     use fuchsia_runtime::{job_default, process_self, swap_utc_clock_handle};
     use futures::prelude::*;
 
@@ -343,7 +342,7 @@ mod tests {
         assert_eq!(ret_job.raw_handle(), raw_handle);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     #[ignore] // TODO: b/422533641 - remove
     async fn utc_clock_is_cloned() {
         let clock = fuchsia_runtime::UtcClock::create(zx::ClockOpts::MONOTONIC, None)

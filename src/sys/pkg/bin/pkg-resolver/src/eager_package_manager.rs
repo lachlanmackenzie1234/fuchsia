@@ -1009,7 +1009,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_get_eager_package_with_empty_config() {
         let config = EagerPackageConfigs { packages: Vec::new() };
         let manager = TestEagerPackageManagerBuilder::default().config(config).build().await;
@@ -1025,7 +1025,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_resolve_pinned_hash_mismatch() {
         let pinned_url = PinnedAbsolutePackageUrl::from_unpinned(
             TEST_URL.parse().unwrap(),
@@ -1037,7 +1037,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_persistent_eager_packages() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let url2 = UnpinnedAbsolutePackageUrl::parse("fuchsia-pkg://example.com/package2").unwrap();
@@ -1128,7 +1128,7 @@ mod tests {
         assert_eq!(manager.packages[&url2].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_persistent_eager_packages_with_different_host_name_in_cup() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (pkg_cache, pkg_cache_stream) = get_mock_pkg_cache();
@@ -1165,7 +1165,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_persistent_eager_packages_signature_invalid() {
         // We intentionally stage a mismatch between the PublicKeys used
         // to configure the EagerPackageManager (latest.key_id = 777) and the
@@ -1221,7 +1221,7 @@ mod tests {
         assert!(manager.packages[&url].package_directory_and_hash.is_none());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_persistent_eager_packages_not_available() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (cobalt_sender, mut cobalt_receiver) = get_fake_cobalt_sender();
@@ -1246,7 +1246,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_persistent_eager_packages_storage_error() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (cobalt_sender, mut cobalt_receiver) = get_fake_cobalt_sender();
@@ -1262,7 +1262,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_no_data_fallback_to_cache() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (pkg_cache, pkg_cache_stream) = get_mock_pkg_cache();
@@ -1287,7 +1287,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_empty_persistent_fidl_fallback_to_cache() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (pkg_cache, pkg_cache_stream) = get_mock_pkg_cache();
@@ -1321,7 +1321,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_write() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (package_resolver, _test_dir) = get_test_package_resolver_with_hash(TEST_HASH);
@@ -1366,7 +1366,7 @@ mod tests {
         assert_eq!(manager2.packages[&url].cup, Some(cup));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_write_persist_fail() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (package_resolver, _test_dir) = get_test_package_resolver_with_hash(TEST_HASH);
@@ -1391,7 +1391,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_write_omaha_response_different_url_hash() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (package_resolver, _test_dir) = get_test_package_resolver_with_hash(TEST_HASH);
@@ -1420,7 +1420,7 @@ mod tests {
         assert!(manager.packages[&url].cup.is_none());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_write_omaha_response_different_url_host() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let (package_resolver, _test_dir) = get_test_package_resolver_with_hash(TEST_HASH);
@@ -1458,7 +1458,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, Some(cup));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_write_unknown_url() {
         let url = UnpinnedAbsolutePackageUrl::parse("fuchsia-pkg://example.com/package2").unwrap();
         let config = EagerPackageConfigs {
@@ -1487,7 +1487,7 @@ mod tests {
         assert!(manager.packages[&url].cup.is_none());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_write_too_old() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
 
@@ -1512,7 +1512,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_write_signature_invalid() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let package_resolver = MockResolver::new(move |_url, _gc_protection| async move {
@@ -1542,7 +1542,7 @@ mod tests {
         assert_eq!(manager.packages[&url].cup, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_get_info() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let mut manager = TestEagerPackageManagerBuilder::default().build().await;
@@ -1554,7 +1554,7 @@ mod tests {
         assert_eq!(channel, "stable");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_get_info_not_available() {
         let manager = TestEagerPackageManagerBuilder::default().build().await;
         assert_matches!(
@@ -1563,7 +1563,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_get_info_unknown_url() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let mut manager = TestEagerPackageManagerBuilder::default().build().await;
@@ -1579,7 +1579,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_get_info_url_different_hostname() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let mut manager = TestEagerPackageManagerBuilder::default().build().await;
@@ -1595,7 +1595,7 @@ mod tests {
         assert_eq!(channel, "stable");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_get_info_omaha_response_different_url() {
         let url = UnpinnedAbsolutePackageUrl::parse("fuchsia-pkg://example.com/package2").unwrap();
         let config = EagerPackageConfigs {
@@ -1620,7 +1620,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cup_get_info_fallback() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
 
@@ -1651,7 +1651,7 @@ mod tests {
         assert_eq!(channel, "");
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_load_cup_and_package_directory() {
         let url = UnpinnedAbsolutePackageUrl::parse(TEST_URL).unwrap();
         let cache_packages = CachePackages::from_entries(vec![TEST_PINNED_URL.parse().unwrap()]);

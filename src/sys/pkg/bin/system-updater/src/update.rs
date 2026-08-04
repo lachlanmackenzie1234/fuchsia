@@ -1944,12 +1944,11 @@ async fn replace_retained_blobs(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use fuchsia_pkg_testing::make_epoch_json;
 
     // Simulate the cobalt test hanging indefinitely, and ensure we time out correctly.
     // This test deliberately logs an error.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn flush_cobalt_succeeds_when_cobalt_hangs() {
         let hung_task = futures::future::pending();
         flush_cobalt(hung_task, Duration::from_secs(2)).await;

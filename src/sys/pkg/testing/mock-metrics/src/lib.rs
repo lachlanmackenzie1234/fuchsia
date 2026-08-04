@@ -107,7 +107,7 @@ mod tests {
     use ::fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_metrics::ProjectSpec;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_metrics() {
         let mock = Arc::new(MockMetricEventLoggerFactory::new());
         let (factory, stream) = create_proxy_and_stream::<fidl::MetricEventLoggerFactoryMarker>();

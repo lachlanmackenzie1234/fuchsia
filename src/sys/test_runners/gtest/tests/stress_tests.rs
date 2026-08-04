@@ -10,7 +10,7 @@ use ftest_manager::{CaseStatus, SuiteStatus};
 use test_manager_test_lib::{GroupRunEventByTestCase, RunEvent};
 
 // Stress test with a very large gtest suite.
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_hugetest() {
     let test_url = "fuchsia-pkg://fuchsia.com/gtest-runner-example-tests#meta/huge_gtest.cm";
     let (events, _logs) = run_test(

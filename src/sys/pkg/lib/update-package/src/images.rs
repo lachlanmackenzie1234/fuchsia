@@ -988,7 +988,7 @@ mod tests {
         assert_eq!(without_zbi.verify(UpdateMode::ForceRecovery), Ok(()));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn image_packages_detects_missing_manifest() {
         let proxy = vfs::directory::serve_read_only(
             pseudo_directory! {},
@@ -998,7 +998,7 @@ mod tests {
         assert_matches!(image_packages(&proxy).await, Err(ImagePackagesError::NotFound));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn image_packages_detects_invalid_json() {
         let proxy = vfs::directory::serve_read_only(
             pseudo_directory! {
@@ -1010,7 +1010,7 @@ mod tests {
         assert_matches!(image_packages(&proxy).await, Err(ImagePackagesError::Parse(_)));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn image_packages_loads_valid_manifest() {
         let proxy = vfs::directory::serve_read_only(
             pseudo_directory! {

@@ -6,13 +6,14 @@ use anyhow::Error;
 use cm_rust::push_box;
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_update_verify as fupdate;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, LocalComponentHandles, RealmBuilder, Ref, Route,
 };
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
-use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};
 
 async fn verifier_client(
     handles: LocalComponentHandles,
@@ -127,7 +128,7 @@ async fn add_health_check_expose(
 
 /// Asserts that all component monikers listed in the configuration implement the server side of the
 /// `ComponentOtaHealthCheck` protocol and report a healthy status.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn healthy_components_returns_healthy() -> Result<(), Error> {
     let (verify_success_sender, mut verify_success_receiver) = mpsc::channel(1);
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);
@@ -170,7 +171,7 @@ async fn healthy_components_returns_healthy() -> Result<(), Error> {
 /// Asserts that the components corresponding to the monikers in the configuration
 /// must be present in the component tree. Although `thing_one` reports a healthy
 /// status, `thing_two` is missing so we treat that as a failing case.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn missing_component_fails_to_verify() -> Result<(), Error> {
     let (verify_success_sender, mut verify_success_receiver) = mpsc::channel(1);
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);
@@ -199,7 +200,7 @@ async fn missing_component_fails_to_verify() -> Result<(), Error> {
 
 /// Assert that a component reporting an Unhealthy status results in the verifier reporting
 /// an error status.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn unhealthy_components_short_circuits_verifier() -> Result<(), Error> {
     let (verify_success_sender, mut verify_success_receiver) = mpsc::channel(1);
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);
@@ -247,7 +248,7 @@ async fn unhealthy_components_short_circuits_verifier() -> Result<(), Error> {
 
 /// Assert that a component reporting an Unhealthy status does not affect the verifier
 /// if that component's moniker is not listed in the configuration.
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn extra_component_doesnt_affect_result() -> Result<(), Error> {
     let (verify_success_sender, mut verify_success_receiver) = mpsc::channel(1);
     let (success_sender_1, mut success_receiver_1) = mpsc::channel(1);

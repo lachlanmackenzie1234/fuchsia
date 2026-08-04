@@ -5,7 +5,7 @@
 use crate::cli::format::format_destroy_error;
 use crate::lifecycle::destroy_instance_in_collection;
 use crate::query::get_cml_moniker_from_query;
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use flex_fuchsia_sys2 as fsys;
 
 pub async fn destroy_cmd<W: std::io::Write>(
@@ -76,7 +76,7 @@ mod test {
         lifecycle_controller
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_success() -> Result<()> {
         let mut output = Vec::new();
         let lifecycle_controller =

@@ -264,7 +264,7 @@ mod tests {
         assert!(get_program_strvec(&dict, "rename").unwrap().is_none());
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_filter_and_rename_graceful_failure() {
         let (dir_proxy, _server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let mut fs = ServiceFs::<ServiceObj<'_, ()>>::new();
@@ -277,7 +277,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_broker_caching_and_routing_end_to_end() {
         let (svc_dir, svc_server_end) = create_proxy::<fio::DirectoryMarker>();
         let mut fake_svc_fs = ServiceFs::new();

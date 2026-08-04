@@ -4,10 +4,11 @@
 
 use anyhow::{Error, format_err};
 use fidl::prelude::*;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_ldsvc::{LoaderRequest, LoaderRequestStream};
+use fuchsia_async as fasync;
 use futures::{TryFutureExt, TryStreamExt};
 use log::*;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Helper function to load `object_name` from `search_dirs`.
 /// This function looks in the given directories, and returns the
@@ -154,7 +155,7 @@ mod tests {
         entries.iter().map(|entry| entry.name.clone()).collect::<Vec<String>>()
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_objects_test() -> Result<(), Error> {
         // Open this test's real /pkg/lib directory to use for this test, and then check to see
         // whether an asan subdirectory is present, and use it instead if so.
@@ -210,7 +211,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn config_test() -> Result<(), Error> {
         // This /pkg/lib/config_test/ directory is added by the build rules for this test package,
         // since we need a directory that supports OPEN_RIGHT_EXECUTABLE. It contains a file 'foo'
@@ -259,7 +260,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn load_objects_multiple_dir_test() -> Result<(), Error> {
         // This /pkg/lib/config_test/ directory is added by the build rules for this test package,
         // since we need a directory that supports OPEN_RIGHT_EXECUTABLE. It contains a file 'foo'

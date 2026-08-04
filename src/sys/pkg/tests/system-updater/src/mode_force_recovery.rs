@@ -7,7 +7,7 @@ use fidl_fuchsia_update_installer_ext::StateId;
 use pretty_assertions::assert_eq;
 use test_case::test_case;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_recovery_and_force_reboots_into_it() {
     let env = TestEnv::builder().build().await;
 
@@ -49,7 +49,7 @@ async fn writes_recovery_and_force_reboots_into_it() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_recovery_and_force_reboots_into_it_packageless() {
     let env = TestEnv::builder().ota_manifest(make_forced_recovery_manifest()).build().await;
 
@@ -88,7 +88,7 @@ async fn writes_recovery_and_force_reboots_into_it_packageless() {
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn reboots_regardless_of_reboot_controller(update_url: &str) {
     let env = TestEnv::builder().ota_manifest(make_forced_recovery_manifest()).build().await;
 
@@ -115,7 +115,7 @@ async fn reboots_regardless_of_reboot_controller(update_url: &str) {
     assert_eq!(env.take_interactions().last().unwrap(), &Reboot);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn rejects_zbi() {
     let env = TestEnv::builder().build().await;
 
@@ -134,7 +134,7 @@ async fn rejects_zbi() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn rejects_zbi_packageless() {
     let manifest = OtaManifest { images: vec![], ..make_forced_recovery_manifest() };
     let env = TestEnv::builder().ota_manifest(manifest).build().await;
@@ -147,7 +147,7 @@ async fn rejects_zbi_packageless() {
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn rejects_skip_recovery_flag(update_url: &str) {
     let env = TestEnv::builder().ota_manifest(make_forced_recovery_manifest()).build().await;
 

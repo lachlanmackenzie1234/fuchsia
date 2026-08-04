@@ -2389,7 +2389,7 @@ pub mod tests {
         ) => {
             $(paste::paste!{
                 #[allow(non_snake_case)]
-                #[fuchsia_async::run_until_stalled(test)]
+                #[fuchsia::test(allow_stalls = false)]
                 #[should_panic]
                 async fn [< confirm_invalid_transition___ $test_name>]() {
                     confirm_invalid_transition($($args,)+).await;

@@ -23,6 +23,7 @@ rustc_test("security_policy_critical_integration_test_bin") {
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/sys/lib/component-events",
@@ -47,6 +48,7 @@ rustc_binary("exit_on_command_bin") {
   source_root = "exit_on_command.rs"
   deps = [
     ":test.policy_rust",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",

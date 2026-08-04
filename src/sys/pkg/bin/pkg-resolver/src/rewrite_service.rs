@@ -244,7 +244,7 @@ mod tests {
         collect_iterator(move || iterator.next())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list() {
         let dynamic_rules = vec![
             rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice"),
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(list_rules(state.clone()).await, expected);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_list_static() {
         let path = make_rule_config(vec![
             rule!("fuchsia.com" => "dynamic.fuchsia.com", "/1" => "/1"),
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(list_static_rules(state.clone()).await, static_rules);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_reset_all() {
         let rules = vec![
             rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice"),
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(state.read().await.transaction(), Transaction::new(vec![], 1));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_transaction_list_dynamic() {
         let dynamic_rules = vec![
             rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice"),
@@ -354,7 +354,7 @@ mod tests {
         assert_eq!(pending_list.await, dynamic_rules);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_concurrent_edit() {
         let rules = vec![
             rule!("fuchsia.com" => "fuchsia.com", "/rolldice" => "/rolldice"),
@@ -403,7 +403,7 @@ mod tests {
         assert_eq!(state.read().await.transaction(), Transaction::new(vec![], 2));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_concurrent_list_and_edit() {
         let path = make_rule_config(vec![]);
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(list_rules(state.clone()).await, vec![rule]);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rewrite() {
         let path = make_rule_config(vec![]);
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -477,7 +477,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_rewrite_rejects_invalid_inputs() {
         let path = make_rule_config(vec![]);
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -494,7 +494,7 @@ mod tests {
         }
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_concurrent_rewrite_and_edit() {
         let path = make_rule_config(vec![rule!("fuchsia.com" => "fuchsia.com", "/a" => "/b")]);
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -529,7 +529,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_enables_amber_source() {
         let path = make_rule_config(vec![]);
         let (dynamic_config_dir, dynamic_config_file) = temp_path_into_proxy_and_path(&path);
@@ -571,7 +571,7 @@ mod tests {
         assert_yields_result!(client.commit(), Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_disables_amber_sources() {
         let rules = vec![rule!("fuchsia.com" => "enabled.fuchsia.com", "/" => "/")];
 
@@ -597,7 +597,7 @@ mod tests {
         assert_yields_result!(client.commit(), Ok(()));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_transaction_commit_fails_if_no_dynamic_rules_path() {
         let state = Arc::new(RwLock::new(
             RewriteManagerBuilder::new(None, Option::<&str>::None).await.unwrap().build(),

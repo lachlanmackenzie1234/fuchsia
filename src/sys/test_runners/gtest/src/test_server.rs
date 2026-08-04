@@ -752,7 +752,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn can_enumerate_sample_test() -> Result<(), Error> {
         let test_data = TestDataDir::new()?;
 
@@ -802,7 +802,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn invalid_executable_file() -> Result<(), Error> {
         let err = test_component(
             "fuchsia-pkg://fuchsia.com/rust-test-runner-test#invalid-test.cm",
@@ -821,7 +821,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn can_enumerate_test_with_custom_args() -> Result<(), Error> {
         let test_data = TestDataDir::new()?;
 
@@ -844,7 +844,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn can_enumerate_empty_test_file() -> Result<(), Error> {
         let test_data = TestDataDir::new()?;
 
@@ -864,7 +864,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn enumerate_huge_tests() -> Result<(), Error> {
         let test_data = TestDataDir::new()?;
         let component = test_component(
@@ -1107,7 +1107,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_no_test() -> Result<(), Error> {
         let events = run_tests(
             vec![],
@@ -1128,7 +1128,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_one_test() -> Result<(), Error> {
         let events = run_tests(
             names_to_invocation(vec!["SampleTest2.SimplePass"]),

@@ -87,7 +87,7 @@ mod tests {
     };
     use futures::task::Poll;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn reboot_calls_shutdown_with_correct_options() {
         let (proxy, mut stream) = create_proxy_and_stream::<AdminMarker>();
 

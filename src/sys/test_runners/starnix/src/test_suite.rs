@@ -11,6 +11,8 @@ use crate::syscalls::*;
 use crate::vts_binary::*;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_test::{self as ftest};
 use frunner::{ComponentRunnerMarker, ComponentRunnerProxy, ComponentStartInfo};
 use futures::TryStreamExt;
@@ -20,7 +22,6 @@ use rust_measure_tape_for_case::Measurable as _;
 use std::sync::Arc;
 use test_runners_lib::elf::SuiteServerError;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
-use {fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata};
 
 /// Determines what type of tests the program is.
 ///
@@ -396,7 +397,7 @@ mod tests {
         .detach();
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_number_of_test_cases() {
         let iterator_proxy = set_up_iterator("test");
         let first_result = iterator_proxy.get_next().await.expect("Didn't get first result");
@@ -406,7 +407,7 @@ mod tests {
         assert_eq!(second_result.len(), 0);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_case_name() {
         let test_name = "test_name";
         let iterator_proxy = set_up_iterator(test_name);
@@ -416,7 +417,7 @@ mod tests {
 
     /// Tests that when starnix closes the component controller with an `OK` status, the test case
     /// passes.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_component_controller_epitaph_ok() {
         let component_runner = spawn_runner(zx::Status::OK);
         let (run_listener, run_listener_stream) =
@@ -427,7 +428,7 @@ mod tests {
 
     /// Tests that when starnix closes the component controller with an error status, the test case
     /// fails.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_component_controller_epitaph_not_ok() {
         let component_runner = spawn_runner(zx::Status::INTERNAL);
         let (run_listener, run_listener_stream) =

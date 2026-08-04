@@ -5,7 +5,7 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_setting_configuration_active() {
     let env = TestEnv::builder()
         .paver_service(|builder| {
@@ -51,7 +51,7 @@ async fn fails_setting_configuration_active() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_setting_configuration_active_packageless() {
     let env = TestEnv::builder()
         .paver_service(|builder| {
@@ -93,7 +93,7 @@ async fn fails_setting_configuration_active_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_commit_recovery() {
     let env = TestEnv::builder()
         .paver_service(|builder| {
@@ -141,7 +141,7 @@ async fn fails_commit_recovery() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_commit_recovery_packageless() {
     let env = TestEnv::builder()
         .paver_service(|builder| {

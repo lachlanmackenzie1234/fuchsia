@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_mem as fmem;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use log::*;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
-};
 
 /// Wraps all hosted protocols into a single type that can be matched against
 /// and dispatched.
@@ -115,7 +116,7 @@ fn build_decl() -> fmem::Data {
     fmem::Data::Bytes(fidl::persist(&component_decl).expect("encoded"))
 }
 
-#[fuchsia::main]
+#[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     let mut service_fs = ServiceFs::new_local();
     service_fs.dir("svc").add_fidl_service(IncomingRequest::ResolverProtocol);

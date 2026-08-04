@@ -6,7 +6,6 @@ use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component::RealmMarker;
 use fidl_fuchsia_component_decl::ChildRef;
 use fidl_test_ping::{PingMarker, PingRequest, PingRequestStream};
-use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_dir_root};
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
@@ -15,7 +14,7 @@ enum IncomingRequest {
     Ping(PingRequestStream),
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingRequest::Ping);

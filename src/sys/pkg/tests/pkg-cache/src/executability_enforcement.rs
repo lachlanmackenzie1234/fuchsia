@@ -72,7 +72,7 @@ async fn verify_package_executability(
     let () = env.stop().await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn base_package_executable() {
     let pkg = PackageBuilder::new("base-package").build().await.unwrap();
     let superpkg =
@@ -90,7 +90,7 @@ async fn base_package_executable() {
     .await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn cache_package_not_executable() {
     let pkg = PackageBuilder::new("cache-package").build().await.unwrap();
     let superpkg =
@@ -108,7 +108,7 @@ async fn cache_package_not_executable() {
     .await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retained_index_package_not_executable() {
     let pkg = PackageBuilder::new("retained-package").build().await.unwrap();
     let superpkg =
@@ -126,7 +126,7 @@ async fn retained_index_package_not_executable() {
     .await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn enforcement_disabled_cache_package_executable() {
     let pkg = PackageBuilder::new("cache-package").build().await.unwrap();
     let superpkg =
@@ -146,7 +146,7 @@ async fn enforcement_disabled_cache_package_executable() {
     .await;
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn enforcement_disabled_retained_index_package_executable() {
     let pkg = PackageBuilder::new("retained-package").build().await.unwrap();
     let superpkg =

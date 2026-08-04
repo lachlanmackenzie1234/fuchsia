@@ -6,7 +6,6 @@
 
 use anyhow::{Context as _, Error};
 use fidl_fuchsia_update::{CommitStatusProviderRequest, CommitStatusProviderRequestStream};
-use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use std::sync::Arc;
@@ -30,7 +29,7 @@ pub async fn run_system_update_committer_service(
     Ok(())
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingServices::CommitStatusProvider);
@@ -56,8 +55,9 @@ async fn main() -> Result<(), Error> {
 mod tests {
     use super::*;
     use fidl_fuchsia_update::CommitStatusProviderMarker;
+    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn fake_system_update_committer() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<CommitStatusProviderMarker>();

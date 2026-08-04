@@ -6,7 +6,7 @@ use crate::{TestEnv, replace_retained_blobs};
 use assert_matches::assert_matches;
 use fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder};
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retained_blobs_are_not_garbage_collected() {
     let retained_package = PackageBuilder::new("pkg-a")
         .add_resource_at("bin/foo", "a-bin-foo".as_bytes())

@@ -18,7 +18,7 @@ rustc_test("elf_runner_test_bin") {
   source_root = "elf_runner_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//src/sys/lib/component-events",
   ]

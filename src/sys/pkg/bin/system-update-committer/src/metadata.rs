@@ -6,13 +6,14 @@
 
 use commit::do_commit;
 use errors::MetadataError;
+use fidl_fuchsia_paver as fpaver;
 use fidl_fuchsia_update_verify::HealthVerificationProxy;
 use fuchsia_async::TimeoutExt as _;
+use fuchsia_inspect as finspect;
 use futures::channel::oneshot;
 use policy::PolicyEngine;
 use std::time::Instant;
 use zx::{EventPair, Peered};
-use {fidl_fuchsia_paver as fpaver, fuchsia_inspect as finspect};
 
 mod commit;
 mod configuration_without_recovery;
@@ -177,7 +178,7 @@ mod tests {
 
     /// When we don't support ABR, we should not update metadata.
     /// However, the FIDL server should still be unblocked.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_does_not_change_metadata_when_device_does_not_support_abr() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -212,7 +213,7 @@ mod tests {
 
     /// When we're in recovery, we should not update metadata.
     /// However, the FIDL server should still be unblocked.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_does_not_change_metadata_when_device_in_recovery() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -293,13 +294,13 @@ mod tests {
         assert_eq!(health_verification_call_count.load(Ordering::SeqCst), 0);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_does_not_change_metadata_when_current_is_healthy_a() {
         test_does_not_change_metadata_when_current_is_healthy(&ConfigurationWithoutRecovery::A)
             .await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_does_not_change_metadata_when_current_is_healthy_b() {
         test_does_not_change_metadata_when_current_is_healthy(&ConfigurationWithoutRecovery::B)
             .await
@@ -351,18 +352,18 @@ mod tests {
         assert_eq!(health_verification_call_count.load(Ordering::SeqCst), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verifies_and_commits_when_current_is_pending_a() {
         test_verifies_and_commits_when_current_is_pending(&ConfigurationWithoutRecovery::A).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_verifies_and_commits_when_current_is_pending_b() {
         test_verifies_and_commits_when_current_is_pending(&ConfigurationWithoutRecovery::B).await
     }
 
     /// When we fail to verify and the config says to ignore, we should still do the commit.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_commits_when_failed_verification_ignored() {
         let paver = Arc::new(
             MockPaverServiceBuilder::new()
@@ -445,17 +446,17 @@ mod tests {
         assert_eq!(health_verification_call_count.load(Ordering::SeqCst), 1);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_errors_when_failed_verification_not_ignored_a() {
         test_errors_when_failed_verification_not_ignored(&ConfigurationWithoutRecovery::A).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_errors_when_failed_verification_not_ignored_b() {
         test_errors_when_failed_verification_not_ignored(&ConfigurationWithoutRecovery::B).await
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn commit_inspect_handles_missing_count() {
         let inspector = finspect::Inspector::default();
         let commit_inspect = CommitInspect::new(inspector.root().create_child("commit"));

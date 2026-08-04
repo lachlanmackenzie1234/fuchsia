@@ -292,7 +292,6 @@ rustc_test("metrics") {
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
     "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
     "//third_party/cobalt/src/lib/client/rust:cobalt-client",
@@ -303,10 +302,7 @@ rustc_test("metrics") {
 
   # TODO(b/308214783): Re-enable on risc-v when flakes fixed.
   if (current_cpu == "riscv64") {
-    deps -= [
-      "//src/lib/fuchsia-async",
-      "//third_party/rust_crates:test-case",
-    ]
+    deps -= [ "//third_party/rust_crates:test-case" ]
   }
   sources = [ "src/metrics.rs" ]
 }

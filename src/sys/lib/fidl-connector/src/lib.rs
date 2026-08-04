@@ -120,7 +120,7 @@ mod tests {
     use futures::prelude::*;
     use std::cell::Cell;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_service_reconnector() {
         let ns = fdio::Namespace::installed().expect("installed namespace");
         let service_device_path = "/test/service_connector/svc";

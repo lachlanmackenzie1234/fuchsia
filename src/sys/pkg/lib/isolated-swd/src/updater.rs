@@ -555,11 +555,10 @@ pub mod tests {
     use super::for_tests::UpdaterBuilder;
     use super::*;
     use fidl_fuchsia_paver::Asset;
-    use fuchsia_async as fasync;
     use fuchsia_pkg_testing::PackageBuilder;
     use mock_paver::PaverEvent;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     pub async fn test_updater() {
         let data = "hello world!".as_bytes();
         let test_package = PackageBuilder::new("test_package")

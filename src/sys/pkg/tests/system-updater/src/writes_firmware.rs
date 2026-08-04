@@ -9,7 +9,7 @@ use fidl_fuchsia_update_installer_ext::{
 use maplit::btreemap;
 use pretty_assertions::assert_eq;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn images_manifest_update_package_firmware_no_match() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -85,7 +85,7 @@ async fn images_manifest_update_package_firmware_no_match() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn images_manifest_firmware_no_match_packageless() {
     let firmware_content = b"_ contents";
     let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
@@ -155,7 +155,7 @@ async fn images_manifest_firmware_no_match_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn images_manifest_update_package_firmware_match_desired_config() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -215,7 +215,7 @@ async fn images_manifest_update_package_firmware_match_desired_config() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn images_manifest_firmware_match_desired_config_packageless() {
     let firmware_content = b"matching";
     let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
@@ -275,7 +275,7 @@ async fn images_manifest_firmware_match_desired_config_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn images_manifest_update_package_firmware_match_active_config() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -347,7 +347,7 @@ async fn images_manifest_update_package_firmware_match_active_config() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn images_manifest_firmware_match_active_config_packageless() {
     let firmware_content = b"matching";
     let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
@@ -419,7 +419,7 @@ async fn images_manifest_firmware_match_active_config_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn firmware_comparing_respects_fuchsia_mem_buffer_size() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -503,7 +503,7 @@ async fn firmware_comparing_respects_fuchsia_mem_buffer_size() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn firmware_comparing_respects_fuchsia_mem_buffer_size_packageless() {
     let firmware_content = b"matching";
     let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
@@ -582,7 +582,7 @@ async fn firmware_comparing_respects_fuchsia_mem_buffer_size_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn firmware_copying_sets_fuchsia_mem_buffer_size() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -657,7 +657,7 @@ async fn firmware_copying_sets_fuchsia_mem_buffer_size() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn firmware_copying_sets_fuchsia_mem_buffer_size_packageless() {
     let firmware_content = b"matching";
     let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
@@ -732,7 +732,7 @@ async fn firmware_copying_sets_fuchsia_mem_buffer_size_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_multiple_firmware_types() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -815,7 +815,7 @@ async fn writes_multiple_firmware_types() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_multiple_firmware_types_packageless() {
     let firmware_a_content = b"A contents";
     let firmware_a_hash = fuchsia_merkle::root_from_slice(firmware_a_content);
@@ -912,7 +912,7 @@ async fn writes_multiple_firmware_types_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn skips_unsupported_firmware_type() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -985,7 +985,7 @@ async fn skips_unsupported_firmware_type() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn skips_unsupported_firmware_type_packageless() {
     let firmware_content = b"A contents";
     let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);
@@ -1056,7 +1056,7 @@ async fn skips_unsupported_firmware_type_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_firmware_write_error() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .firmware_package(btreemap! {
@@ -1138,7 +1138,7 @@ async fn fails_on_firmware_write_error() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_firmware_write_error_packageless() {
     let firmware_content = b"A contents";
     let firmware_hash = fuchsia_merkle::root_from_slice(firmware_content);

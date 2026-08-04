@@ -12,7 +12,7 @@ use test_case::test_case;
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_paver_connect_error(update_url: &str) {
     let env = TestEnv::builder()
         .unregister_protocol(Protocol::Paver)
@@ -41,7 +41,7 @@ async fn fails_on_paver_connect_error(update_url: &str) {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_image_write_error() {
     let images_json = serde_json::to_string(
         &::update_package::ImagePackagesManifest::builder()
@@ -112,7 +112,7 @@ async fn fails_on_image_write_error() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn fails_on_image_write_error_packageless() {
     let zbi_content = b"zbi zbi";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
@@ -173,7 +173,7 @@ async fn fails_on_image_write_error_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_to_both_configs_if_abr_not_supported() {
     let images_json = serde_json::to_string(
         &::update_package::ImagePackagesManifest::builder()
@@ -243,7 +243,7 @@ async fn writes_to_both_configs_if_abr_not_supported() {
     ]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_to_both_configs_if_abr_not_supported_packageless() {
     let zbi_content = b"zbi zbi";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
@@ -306,7 +306,7 @@ async fn writes_to_both_configs_if_abr_not_supported_packageless() {
 // If the current partition isn't healthy, the system-updater aborts.
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn does_not_update_with_unhealthy_current_partition(update_url: &str) {
     let current_config = paver::Configuration::A;
 
@@ -354,7 +354,7 @@ async fn does_not_update_with_unhealthy_current_partition(update_url: &str) {
 // If the alternate configuration can't be marked unbootable, the system-updater fails.
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn does_not_update_if_alternate_cant_be_marked_unbootable(update_url: &str) {
     let current_config = paver::Configuration::A;
 
@@ -409,7 +409,7 @@ async fn does_not_update_if_alternate_cant_be_marked_unbootable(update_url: &str
 #[test_case(paver::Configuration::A, paver::Configuration::B; "writes_to_b_if_abr_supported_and_current_config_a")]
 #[test_case(paver::Configuration::B, paver::Configuration::A; "writes_to_a_if_abr_supported_and_current_config_b")]
 #[test_case(paver::Configuration::Recovery, paver::Configuration::A; "writes_to_a_if_abr_supported_and_current_config_r")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn assert_writes_for_current_and_target(
     current_config: paver::Configuration,
     target_config: paver::Configuration,
@@ -491,7 +491,7 @@ async fn assert_writes_for_current_and_target(
 #[test_case(paver::Configuration::A, paver::Configuration::B; "writes_to_b_if_abr_supported_and_current_config_a")]
 #[test_case(paver::Configuration::B, paver::Configuration::A; "writes_to_a_if_abr_supported_and_current_config_b")]
 #[test_case(paver::Configuration::Recovery, paver::Configuration::A; "writes_to_a_if_abr_supported_and_current_config_r")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn assert_writes_for_current_and_target_packageless(
     current_config: paver::Configuration,
     target_config: paver::Configuration,
@@ -572,7 +572,7 @@ async fn assert_writes_for_current_and_target_packageless(
 #[test_case(fidl_fuchsia_pkg::ResolveError::Io, StageFailureReason::Internal; "internal_io")]
 #[test_case(fidl_fuchsia_pkg::ResolveError::PackageNotFound, StageFailureReason::Internal; "internal_package_not_found")]
 #[test_case(fidl_fuchsia_pkg::ResolveError::UnavailableBlob, StageFailureReason::Internal; "internal_unavailable_blob")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn stage_failure_reason(
     resolve_error: fidl_fuchsia_pkg::ResolveError,
     expected_reason: StageFailureReason,
@@ -629,7 +629,7 @@ async fn stage_failure_reason(
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retry_image_package_resolve_once() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -707,7 +707,7 @@ async fn retry_image_package_resolve_once() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retry_image_blob_fetch_once_packageless() {
     let zbi_content = b"real zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
@@ -787,7 +787,7 @@ async fn retry_image_blob_fetch_once_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retry_image_package_resolve_twice_fails_update() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -869,7 +869,7 @@ async fn retry_image_package_resolve_twice_fails_update() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn retry_image_blob_fetch_twice_fails_update_packageless() {
     let zbi_content = b"real zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
@@ -957,7 +957,7 @@ fn construct_events(
         .collect()
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_fuchsia() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -1031,7 +1031,7 @@ async fn writes_fuchsia() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_fuchsia_packageless() {
     let zbi_content = b"zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
@@ -1096,7 +1096,7 @@ async fn writes_fuchsia_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_fuchsia_vbmeta() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -1176,7 +1176,7 @@ async fn writes_fuchsia_vbmeta() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_fuchsia_vbmeta_packageless() {
     let zbi_content = b"zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
@@ -1261,7 +1261,7 @@ async fn writes_fuchsia_vbmeta_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn zbi_match_in_desired_config() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -1304,7 +1304,7 @@ async fn zbi_match_in_desired_config() {
     assert_eq!(env.take_interactions(), construct_events(events));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn zbi_match_in_desired_config_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifest {
@@ -1348,7 +1348,7 @@ async fn zbi_match_in_desired_config_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn zbi_match_in_active_config() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -1405,7 +1405,7 @@ async fn zbi_match_in_active_config() {
     assert_eq!(env.take_interactions(), construct_events(events));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn zbi_match_in_active_config_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifest {
@@ -1461,7 +1461,7 @@ async fn zbi_match_in_active_config_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn zbi_match_in_active_config_error_in_desired_config() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -1519,7 +1519,7 @@ async fn zbi_match_in_active_config_error_in_desired_config() {
     assert_eq!(env.take_interactions(), construct_events(events));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn zbi_match_in_active_config_error_in_desired_config_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifest {
@@ -1576,7 +1576,7 @@ async fn zbi_match_in_active_config_error_in_desired_config_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn asset_comparing_respects_fuchsia_mem_buffer_size() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -1651,7 +1651,7 @@ async fn asset_comparing_respects_fuchsia_mem_buffer_size() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn asset_comparing_respects_fuchsia_mem_buffer_size_packageless() {
     let zbi_content = b"matching";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
@@ -1714,7 +1714,7 @@ async fn asset_comparing_respects_fuchsia_mem_buffer_size_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn asset_copying_sets_fuchsia_mem_buffer_size() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .fuchsia_package(
@@ -1776,7 +1776,7 @@ async fn asset_copying_sets_fuchsia_mem_buffer_size() {
     assert_eq!(env.take_interactions(), construct_events(events));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn asset_copying_sets_fuchsia_mem_buffer_size_packageless() {
     let zbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifest {
@@ -1837,7 +1837,7 @@ async fn asset_copying_sets_fuchsia_mem_buffer_size_packageless() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn recovery_already_present() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .recovery_package(
@@ -1905,7 +1905,7 @@ async fn recovery_already_present() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn recovery_already_present_packageless() {
     let rzbi_hash = fuchsia_merkle::root_from_slice(b"matching");
     let manifest = OtaManifest {
@@ -1968,7 +1968,7 @@ async fn recovery_already_present_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_recovery() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .recovery_package(
@@ -2036,7 +2036,7 @@ async fn writes_recovery() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_recovery_packageless() {
     let rzbi_content = b"recovery zbi";
     let rzbi_hash = fuchsia_merkle::root_from_slice(rzbi_content);
@@ -2101,7 +2101,7 @@ async fn writes_recovery_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_recovery_vbmeta() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .recovery_package(
@@ -2185,7 +2185,7 @@ async fn writes_recovery_vbmeta() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn writes_recovery_vbmeta_packageless() {
     let rzbi_content = b"recovery zbi";
     let rzbi_hash = fuchsia_merkle::root_from_slice(rzbi_content);
@@ -2277,7 +2277,7 @@ async fn writes_recovery_vbmeta_packageless() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn recovery_present_but_should_write_recovery_is_false() {
     let images_json = ::update_package::ImagePackagesManifest::builder()
         .recovery_package(
@@ -2352,7 +2352,7 @@ async fn recovery_present_but_should_write_recovery_is_false() {
     ]));
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn recovery_present_but_should_write_recovery_is_false_packageless() {
     let zbi_content = b"zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);

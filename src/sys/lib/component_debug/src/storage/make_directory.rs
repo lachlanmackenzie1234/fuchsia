@@ -4,7 +4,7 @@
 
 use crate::io::{Directory, RemoteDirectory};
 use crate::path::RemoteComponentStoragePath;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 use flex_client::ProxyHasDomain;
 use flex_fuchsia_io as fio;
@@ -92,7 +92,7 @@ mod test {
         .detach();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_make_directory() -> Result<()> {
         let storage_admin = setup_fake_storage_admin("123456", setup_fake_directory);
         make_directory(storage_admin, "123456::test".to_string()).await

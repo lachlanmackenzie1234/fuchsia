@@ -57,11 +57,10 @@ mod tests {
     use crate::app_set::{AppIdSource, AppMetadata};
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_feedback::ComponentDataRegisterRequest;
-    use fuchsia_async as fasync;
     use futures::prelude::*;
     use omaha_client::common::App;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_publish_ids_to_feedback() {
         let app_set = Rc::new(Mutex::new(FuchsiaAppSet::new(
             App::builder()

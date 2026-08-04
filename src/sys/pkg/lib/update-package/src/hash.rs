@@ -32,13 +32,12 @@ pub(crate) async fn hash(proxy: &fio::DirectoryProxy) -> Result<Hash, HashError>
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
     use fuchsia_fs::directory::open_in_namespace;
     use std::fs::File;
     use std::io::Write as _;
     use tempfile::tempdir;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn open_error() {
         let temp_dir = tempdir().expect("/tmp to exist");
         let proxy = open_in_namespace(temp_dir.path().to_str().unwrap(), fio::PERM_READABLE)
@@ -47,7 +46,7 @@ mod tests {
         assert_matches!(hash(&proxy).await, Err(HashError::Open(_)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_error() {
         let temp_dir = tempdir().expect("/tmp to exist");
         File::create(temp_dir.path().join("meta")).unwrap();
@@ -57,7 +56,7 @@ mod tests {
         assert_matches!(hash(&proxy).await, Err(HashError::Parse(_)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn success() {
         let temp_dir = tempdir().expect("/tmp to exist");
         let mut meta = File::create(temp_dir.path().join("meta")).unwrap();

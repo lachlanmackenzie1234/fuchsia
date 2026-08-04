@@ -4,7 +4,7 @@
 
 use crate::io::{Directory, RemoteDirectory};
 use crate::path::RemoteComponentStoragePath;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use flex_client::ProxyHasDomain;
 use flex_fuchsia_io as fio;
@@ -118,13 +118,13 @@ mod test {
         .detach();
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_delete_file() -> Result<()> {
         let storage_admin = setup_fake_storage_admin("123456", setup_fake_directory);
         delete(storage_admin.clone(), "123456::foo".to_string()).await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_delete_file_no_file() -> Result<()> {
         let storage_admin = setup_fake_storage_admin("123456", setup_fake_directory);
         match delete(storage_admin.clone(), "123456::nope".to_string()).await {
@@ -136,7 +136,7 @@ mod test {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_delete_file_empty_path() -> Result<()> {
         let storage_admin = setup_fake_storage_admin("123456", setup_fake_directory);
         match delete(storage_admin.clone(), "123456::".to_string()).await {

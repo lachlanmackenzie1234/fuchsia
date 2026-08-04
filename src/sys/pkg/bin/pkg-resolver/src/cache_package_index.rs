@@ -112,21 +112,21 @@ mod tests {
         client
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn error_yields_empty() {
         let (client, _) = fidl::endpoints::create_proxy::<PackageCacheMarker>();
         let cache_packages = from_proxy(&client).await;
         assert_eq!(cache_packages, system_image::CachePackages::from_entries(vec![]));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn empty_iterator() {
         let client = spawn_pkg_cache(vec![]).await;
         let cache_packages = from_proxy(&client).await;
         assert_eq!(cache_packages, system_image::CachePackages::from_entries(vec![]));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn variant_does_not_default_to_zero() {
         let client = spawn_pkg_cache(vec![(
             "fuchsia-pkg://fuchsia.com/no-variant".parse().unwrap(),
@@ -145,7 +145,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn set_variant_passes_through() {
         let client = spawn_pkg_cache(vec![(
             "fuchsia-pkg://fuchsia.com/has-variant/5".parse().unwrap(),
@@ -177,7 +177,7 @@ mod tests {
         cache
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn chunk_size_boundary() {
         let package_counts = [
             PACKAGE_INDEX_CHUNK_SIZE - 1,

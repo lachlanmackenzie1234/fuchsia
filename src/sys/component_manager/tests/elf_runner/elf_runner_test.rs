@@ -4,15 +4,15 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
+use fidl_fuchsia_component as fcomponent;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
-use {fidl_fuchsia_component as fcomponent, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn echo_with_args() {
     run_single_test("#meta/reporter_args.cm").await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn echo_without_args() {
     run_single_test("#meta/reporter_no_args.cm").await
 }

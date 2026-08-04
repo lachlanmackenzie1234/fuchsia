@@ -597,7 +597,7 @@ mod tests {
         .await
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn enumerate_simple_test() -> Result<(), Error> {
         let component = sample_test_component().await.unwrap();
         let server = TestServer::new();
@@ -632,7 +632,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn enumerate_empty_test_file() -> Result<(), Error> {
         let component = test_component(
             "fuchsia-pkg://fuchsia.com/rust-test-runner-test#no-rust-tests.cm",
@@ -649,7 +649,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn enumerate_huge_test() -> Result<(), Error> {
         let component = test_component(
             "fuchsia-pkg://fuchsia.com/rust-test-runner-test#huge-rust-tests.cm",
@@ -679,7 +679,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn invalid_executable_file() -> Result<(), Error> {
         let err = test_component(
             "fuchsia-pkg://fuchsia.com/rust-test-runner-test#invalid-test.cm",
@@ -727,7 +727,7 @@ mod tests {
         collect_listener_event(run_listener).await.context("Failed to collect results")
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_one_test() -> Result<(), Error> {
         let events =
             run_tests(names_to_invocation(vec!["my_tests::passing_test"]), RunOptions::default())
@@ -748,7 +748,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_multiple_tests_exclude_disabled_tests() -> Result<(), Error> {
         let events = run_tests(
             names_to_invocation(vec![
@@ -829,7 +829,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_multiple_tests_parallel() -> Result<(), Error> {
         let mut events = run_tests(
             names_to_invocation(vec![
@@ -898,7 +898,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn run_multiple_tests_include_disabled_tests() -> Result<(), Error> {
         let events = run_tests(
             names_to_invocation(vec![

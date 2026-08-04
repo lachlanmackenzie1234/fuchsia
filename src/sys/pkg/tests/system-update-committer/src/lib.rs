@@ -10,8 +10,10 @@ use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
 use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_paver::{self as fpaver, Configuration, ConfigurationStatus};
 use fidl_fuchsia_update::{CommitStatusProviderMarker, CommitStatusProviderProxy};
+use fidl_fuchsia_update_verify as fupdate_verify;
 use fuchsia_async::{self as fasync, OnSignals, TimeoutExt};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
@@ -24,7 +26,6 @@ use mock_reboot::MockRebootService;
 use std::sync::Arc;
 use std::time::Duration;
 use test_case::test_case;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_update_verify as fupdate_verify};
 
 const SYSTEM_UPDATE_COMMITTER_CM: &str = "#meta/system-update-committer.cm";
 const HANG_DURATION: Duration = Duration::from_millis(500);
@@ -300,7 +301,7 @@ impl TestEnv {
 /// QueryConfigurationStatusAndBootAttempts.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn is_current_system_committed_hangs_until_query_configuration_status(
     idle_timeout_millis: i64,
 ) {
@@ -349,7 +350,7 @@ async fn is_current_system_committed_hangs_until_query_configuration_status(
 /// verifications complete, we should observe the `USER_0` signal.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn system_pending_commit(idle_timeout_millis: i64) {
     let (throttle_hook, throttler) = mphooks::throttle();
 
@@ -403,7 +404,7 @@ async fn system_pending_commit(idle_timeout_millis: i64) {
 /// `USER_0` asserted.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn system_already_committed(idle_timeout_millis: i64) {
     let (throttle_hook, throttler) = mphooks::throttle();
 
@@ -432,7 +433,7 @@ async fn system_already_committed(idle_timeout_millis: i64) {
 /// a sanity check to verify our implementation can handle multiple clients.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn multiple_commit_status_provider_requests(idle_timeout_millis: i64) {
     let env = TestEnv::builder().idle_timeout_millis(idle_timeout_millis).build().await;
 
@@ -452,7 +453,7 @@ async fn multiple_commit_status_provider_requests(idle_timeout_millis: i64) {
 /// Make sure the inspect data is plumbed through after successful verifications.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn inspect_health_status_ok(idle_timeout_millis: i64) {
     let env = TestEnv::builder()
         .idle_timeout_millis(idle_timeout_millis)
@@ -492,7 +493,7 @@ async fn inspect_health_status_ok(idle_timeout_millis: i64) {
 /// Make sure the inspect data correctly report multiple verification failures.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn inspect_multiple_failures(idle_timeout_millis: i64) {
     let (reboot_sender, reboot_recv) = oneshot::channel();
     let reboot_sender = Arc::new(Mutex::new(Some(reboot_sender)));
@@ -550,7 +551,7 @@ async fn inspect_multiple_failures(idle_timeout_millis: i64) {
 /// https://testing.googleblog.com/2019/12/testing-on-toilet-tests-too-dry-make.html.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn paver_failure_causes_reboot(idle_timeout_millis: i64) {
     let (reboot_sender, reboot_recv) = oneshot::channel();
     let reboot_sender = Arc::new(Mutex::new(Some(reboot_sender)));
@@ -604,7 +605,7 @@ async fn paver_failure_causes_reboot(idle_timeout_millis: i64) {
 
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn paver_timeout_causes_reboot(idle_timeout_millis: i64) {
     let (throttle_hook, _throttler) = mphooks::throttle();
     let (reboot_sender, reboot_recv) = oneshot::channel();
@@ -659,7 +660,7 @@ async fn paver_timeout_causes_reboot(idle_timeout_millis: i64) {
 /// When the health verifications fail and the config says to reboot, we should reboot.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn health_verification_failure_causes_reboot(idle_timeout_millis: i64) {
     let (reboot_sender, reboot_recv) = oneshot::channel();
     let reboot_sender = Arc::new(Mutex::new(Some(reboot_sender)));
@@ -715,7 +716,7 @@ async fn health_verification_failure_causes_reboot(idle_timeout_millis: i64) {
 /// When in recovery mode, we should never call health verification.
 #[test_case(-1i64; "never idle")]
 #[test_case(0i64; "rapid idle")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn recovery_mode_does_not_verify_health(idle_timeout_millis: i64) {
     let (reboot_sender, mut reboot_recv) = oneshot::channel();
     let reboot_sender = Arc::new(Mutex::new(Some(reboot_sender)));
@@ -776,7 +777,7 @@ async fn recovery_mode_does_not_verify_health(idle_timeout_millis: i64) {
 //    handled correctly
 // 4. inspect data is escrowed
 // 5. the internal end of the event pair is escrowed
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn stop_on_idle_resume_on_use() {
     let mut event_stream = component_events::events::EventStream::open().await.unwrap();
     let (throttle_hook, throttler) = mphooks::throttle();

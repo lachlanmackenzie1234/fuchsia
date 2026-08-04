@@ -4,7 +4,6 @@
 
 #![cfg(test)]
 
-use fuchsia_async as fasync;
 use shell_process::ProcessOutput;
 use std::fs::File;
 use std::path::Path;
@@ -38,13 +37,13 @@ async fn assert_far_fails_to_open_missing_archive_file(
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn list_fails_missing_archive() {
     assert_far_fails_to_open_missing_archive_file(vec!["list", "--archive=missing-archive"], None)
         .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn extract_fails_missing_archive() {
     assert_far_fails_to_open_missing_archive_file(
         vec!["extract", "--archive=missing-archive", "--output=missing-output"],
@@ -53,7 +52,7 @@ async fn extract_fails_missing_archive() {
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn extract_file_fails_missing_archive() {
     assert_far_fails_to_open_missing_archive_file(
         vec![
@@ -67,7 +66,7 @@ async fn extract_file_fails_missing_archive() {
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn cat_fails_missing_archive() {
     assert_far_fails_to_open_missing_archive_file(
         vec!["cat", "--archive=missing-archive", "--file=missing-file"],
@@ -76,7 +75,7 @@ async fn cat_fails_missing_archive() {
     .await
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn create_fails_missing_archive() {
     let injected_dir = TempDir::new().unwrap();
     let _injected_manifest = File::create(injected_dir.path().join("empty-manifest")).unwrap();

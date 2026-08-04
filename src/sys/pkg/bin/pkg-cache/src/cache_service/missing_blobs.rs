@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use super::ServeNeededBlobsError;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fuchsia_hash::Hash;
 use futures::future::FutureExt as _;
 use std::collections::HashSet;
-use {fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as fpkg_ext};
 
 /// fuchsia.pkg/PackageCache.Get helper for extracting needed blob hashes (content blobs and
 /// subpackage meta.fars) from package_directory::RootDirs and sending them to a stream that can be
@@ -314,7 +315,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn sends_content_blob() {
         let env = TestEnv::new().await;
         let pkg = PackageBuilder::new("pkg")
@@ -344,7 +345,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn filters_content_blobs_from_blobfs() {
         let env = TestEnv::new().await;
         let pkg = PackageBuilder::new("pkg")
@@ -373,7 +374,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn deduplicates_content_blobs_within_root_dir() {
         let env = TestEnv::new().await;
         let pkg = PackageBuilder::new("pkg")
@@ -404,7 +405,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn deduplicates_content_blobs_across_root_dirs() {
         let env = TestEnv::new().await;
         let subpackage = PackageBuilder::new("subpackage")
@@ -444,7 +445,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn sends_subpackage_meta_far() {
         let env = TestEnv::new().await;
         let subpackage = PackageBuilder::new("subpackage").build().await.unwrap();
@@ -474,7 +475,7 @@ mod tests {
         assert_eq!(env.blob_recorder.hashes().await, HashSet::from_iter([*subpackage.hash()]));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn already_cached_subpackage_meta_far_is_recursed_instead_of_sent() {
         let env = TestEnv::new().await;
         let subsubpackage = PackageBuilder::new("subsubpackage").build().await.unwrap();
@@ -515,7 +516,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn deduplicates_content_blobs_with_subpackage_meta_fars() {
         let env = TestEnv::new().await;
         let subpackage = PackageBuilder::new("subpackage").build().await.unwrap();
@@ -553,7 +554,7 @@ mod tests {
         assert_eq!(env.blob_recorder.hashes().await, HashSet::from_iter([*subpackage.hash(),]));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn deduplicates_subpackage_meta_fars_with_content_blobs() {
         let env = TestEnv::new().await;
         let subsubpackage = PackageBuilder::new("subsubpackage").build().await.unwrap();

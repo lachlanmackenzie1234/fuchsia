@@ -98,7 +98,7 @@ fn assert_index_written(dir: &TempDir, index: StoredIndex) {
     assert_eq!(actual, expected)
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_fdrs_nominally() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -118,7 +118,7 @@ async fn test_it_fdrs_nominally() {
     assert_factory_reset_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_fdrs_nominally_at_boundry() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -138,7 +138,7 @@ async fn test_it_fdrs_nominally_at_boundry() {
     assert_factory_reset_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_does_not_fdr_when_equal_index() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -158,7 +158,7 @@ async fn test_it_does_not_fdr_when_equal_index() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_does_not_fdr_when_greater_index() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -178,7 +178,7 @@ async fn test_it_does_not_fdr_when_greater_index() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_does_not_fdr_when_channel_not_in_list() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -198,7 +198,7 @@ async fn test_it_does_not_fdr_when_channel_not_in_list() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_writes_stored_file_when_missing() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -221,7 +221,7 @@ async fn test_it_writes_stored_file_when_missing() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_writes_stored_file_when_file_empty() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -246,7 +246,7 @@ async fn test_it_writes_stored_file_when_file_empty() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_writes_stored_file_when_file_invalid() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -272,7 +272,7 @@ async fn test_it_writes_stored_file_when_file_invalid() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_skips_fdr_when_config_invalid() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -292,7 +292,7 @@ async fn test_it_skips_fdr_when_config_invalid() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_skips_fdr_when_config_empty() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -312,7 +312,7 @@ async fn test_it_skips_fdr_when_config_empty() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_skips_fdr_when_config_missing() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -332,7 +332,7 @@ async fn test_it_skips_fdr_when_config_missing() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_skips_fdr_when_config_channel_list_empty() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -352,7 +352,7 @@ async fn test_it_skips_fdr_when_config_channel_list_empty() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_skips_fdr_when_channel_unavailable() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");
@@ -377,7 +377,7 @@ async fn test_it_skips_fdr_when_channel_unavailable() {
     assert_factory_reset_not_triggered(fdr_call_count);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_it_overwrites_stored_index_on_channel_change() {
     // Setup
     let dir = TempDir::new().expect("create tempdir");

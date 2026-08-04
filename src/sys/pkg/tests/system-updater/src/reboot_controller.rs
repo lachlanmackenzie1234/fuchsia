@@ -9,7 +9,7 @@ use test_case::test_case;
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn reboot_controller_detach_causes_deferred_reboot(update_url: &str) {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 
@@ -39,7 +39,7 @@ async fn reboot_controller_detach_causes_deferred_reboot(update_url: &str) {
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn reboot_controller_unblock_causes_reboot(update_url: &str) {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 
@@ -69,7 +69,7 @@ async fn reboot_controller_unblock_causes_reboot(update_url: &str) {
 
 #[test_case(UPDATE_PKG_URL)]
 #[test_case(MANIFEST_URL)]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn reboot_controller_dropped_causes_reboot(update_url: &str) {
     let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
 

@@ -113,7 +113,7 @@ mod tests {
         Hash::from([n; 32])
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn success_no_subpackages() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
         let () = add_meta_far_to_blobfs(&blobfs_fake, hash(0), "pkg-0", [hash(1)], []);
@@ -135,7 +135,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn success_recursive_subpackages() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
         let () = add_meta_far_to_blobfs(&blobfs_fake, hash(0), "pkg-0", [], [hash(1), hash(2)]);
@@ -165,7 +165,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn missing_meta_far() {
         let (_blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
 
@@ -181,7 +181,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn best_effort_missing_subpackage_meta_far() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
         let () = add_meta_far_to_blobfs(&blobfs_fake, hash(0), "pkg-0", [hash(1)], [hash(2)]);
@@ -204,7 +204,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn propagate_failure_missing_subpackage_meta_far() {
         let (blobfs_fake, blobfs) = fuchsia_pkg_testing::blobfs::Fake::new();
         let () = add_meta_far_to_blobfs(&blobfs_fake, hash(0), "pkg-0", [hash(1)], [hash(2)]);

@@ -49,9 +49,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_do_with_atomic_file() {
         let dir = tempfile::tempdir().unwrap();
         let dir_proxy = fuchsia_fs::directory::open_in_namespace(

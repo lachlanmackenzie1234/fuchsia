@@ -371,12 +371,12 @@ mod test {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_graph_top_to_bottom_orientation() {
         test_graph_orientation(GraphOrientation::TopToBottom, "TB").await;
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_graph_left_to_right_orientation() {
         test_graph_orientation(GraphOrientation::LeftToRight, "LR").await;
     }

@@ -13,7 +13,7 @@ rustc_test("tests_bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/sys/test_manager:test_lib",
     "//src/sys/test_runners:test_lib",
     "//third_party/rust_crates:anyhow",
@@ -30,7 +30,10 @@ rustc_test("tests_bin") {
 
 fuchsia_test_component("gunit_runner_integration_test") {
   manifest = "meta/gunit_runner_integration_test.cml"
-  deps = [ ":tests_bin" ]
+  deps = [
+    ":tests_bin",
+    "//src/lib/fuchsia",
+  ]
   test_type = "test_arch"
 }
 
@@ -46,21 +49,30 @@ fuchsia_component("empty_test_component") {
   testonly = true
   manifest = "meta/empty_test.cml"
   component_name = "empty_test"
-  deps = [ "//src/sys/test_runners/gtest/test_data/:gunit_runner_no_tests" ]
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/sys/test_runners/gtest/test_data/:gunit_runner_no_tests",
+  ]
 }
 
 fuchsia_component("gunit_runner_sample_tests_component") {
   testonly = true
   manifest = "meta/sample_tests.cml"
   component_name = "sample_tests"
-  deps = [ "//src/sys/test_runners/gtest/test_data/:gunit_runner_sample_tests" ]
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/sys/test_runners/gtest/test_data/:gunit_runner_sample_tests",
+  ]
 }
 
 fuchsia_component("gunit_runner_test_with_custom_args_component") {
   testonly = true
   manifest = "meta/test_with_custom_args.cml"
   component_name = "test_with_custom_args"
-  deps = [ "//src/sys/test_runners/gtest/test_data/:gunit_runner_test_with_custom_args" ]
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/sys/test_runners/gtest/test_data/:gunit_runner_test_with_custom_args",
+  ]
 }
 
 fuchsia_component("gunit_runner_test_with_environ_component") {
@@ -68,6 +80,7 @@ fuchsia_component("gunit_runner_test_with_environ_component") {
   manifest = "meta/test_with_environ.cml"
   component_name = "test_with_environ"
   deps = [
+    "//src/lib/fuchsia",
     "//src/sys/test_runners/gtest/test_data/:gunit_runner_test_with_environ",
   ]
 }
@@ -79,20 +92,27 @@ fuchsia_package("gunit-runner-example-tests") {
     ":gunit_runner_sample_tests_component",
     ":gunit_runner_test_with_custom_args_component",
     ":gunit_runner_test_with_environ_component",
+    "//src/lib/fuchsia",
   ]
 }
 
 cc_test_executable("gunit_simple_test") {
   testonly = true
   sources = [ "simple_test.cc" ]
-  deps = [ "//src/sys/test_runners/gtest/test_data:gunit_main" ]
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/sys/test_runners/gtest/test_data:gunit_main",
+  ]
 }
 
 fuchsia_component("simple_test_component") {
   testonly = true
   manifest = "meta/simple_test.cml"
   component_name = "simple_test"
-  deps = [ ":gunit_simple_test" ]
+  deps = [
+    ":gunit_simple_test",
+    "//src/lib/fuchsia",
+  ]
 }
 
 fuchsia_test_package("gunit-runner-smoke-test") {
@@ -105,5 +125,6 @@ group("tests") {
     ":gunit-runner-example-tests",
     ":gunit-runner-integration-test",
     ":gunit-runner-smoke-test",
+    "//src/lib/fuchsia",
   ]
 }

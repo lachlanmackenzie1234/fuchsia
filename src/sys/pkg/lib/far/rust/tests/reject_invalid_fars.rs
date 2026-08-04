@@ -32,13 +32,12 @@ macro_rules! tests {
         mod async_tests {
             use {
                 super::*,
-                fuchsia_async as fasync,
                 fuchsia_archive::AsyncReader,
                 assert_matches::assert_matches,
             };
 
             $(
-                #[fasync::run_singlethreaded(test)]
+                #[fuchsia::test]
                 async fn $fn() {
                     let mut filename = stringify!($fn).replace("_", "-");
                     filename.push_str(".far");

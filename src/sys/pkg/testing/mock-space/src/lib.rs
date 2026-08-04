@@ -53,7 +53,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_space() {
         let called = Arc::new(AtomicU32::new(0));
         let called_clone = Arc::clone(&called);
@@ -78,7 +78,7 @@ mod tests {
         assert_eq!(called.load(Ordering::SeqCst), 3);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_mock_error() {
         let called = Arc::new(AtomicU32::new(0));
         let called_clone = Arc::clone(&called);

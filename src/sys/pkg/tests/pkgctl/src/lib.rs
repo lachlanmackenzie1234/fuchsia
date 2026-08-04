@@ -570,7 +570,7 @@ fn make_test_repo_config() -> RepositoryConfig {
     .build()
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_repo() {
     let env = TestEnv::new();
     env.add_repository(
@@ -586,7 +586,7 @@ async fn test_repo() {
     env.assert_only_repository_manager_called_with(vec![CapturedRepositoryManagerRequest::List]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_repo_show() {
     let env = TestEnv::new();
 
@@ -612,7 +612,7 @@ async fn test_repo_show() {
     env.assert_only_repository_manager_called_with(vec![CapturedRepositoryManagerRequest::List]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_repo_sorts_lines() {
     let env = TestEnv::new();
     env.add_repository(
@@ -636,7 +636,7 @@ async fn test_repo_sorts_lines() {
 macro_rules! repo_verbose_tests {
     ($($test_name:ident: $flag:expr,)*) => {
         $(
-            #[fasync::run_singlethreaded(test)]
+            #[fuchsia::test]
             async fn $test_name() {
                 let env = TestEnv::new();
                 let repo_config = make_test_repo_config();
@@ -659,7 +659,7 @@ repo_verbose_tests! {
     test_repo_verbose_long: "--verbose",
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_repo_rm() {
     let env = TestEnv::new();
 
@@ -671,7 +671,7 @@ async fn test_repo_rm() {
     ]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_dump_dynamic() {
     let env = TestEnv::new();
     env.add_rule(Rule::new("fuchsia.com", "test", "/", "/").unwrap());
@@ -696,7 +696,7 @@ async fn test_dump_dynamic() {
 macro_rules! repo_add_tests {
     ($($test_name:ident: $source:expr, $name:expr,)*) => {
         $(
-            #[fasync::run_singlethreaded(test)]
+            #[fuchsia::test]
             async fn $test_name() {
                 let env = TestEnv::new();
 
@@ -744,7 +744,7 @@ repo_add_tests! {
     test_repo_add_url_with_name: "url", "example.com",
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_gc_success() {
     let env = TestEnv::new();
     *env.space_manager.gc_err.lock() = None;
@@ -753,7 +753,7 @@ async fn test_gc_success() {
     env.assert_only_space_manager_called();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_gc_error() {
     let env = TestEnv::new();
     *env.space_manager.gc_err.lock() = Some(fpkg_gc::GcError::Internal);
@@ -762,7 +762,7 @@ async fn test_gc_error() {
     env.assert_only_space_manager_called();
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_experiment_enable_no_admin_service() {
     let env = TestEnv::new();
     let output = env.run_pkgctl(vec!["experiment", "enable", "lightbulb"]).await;
@@ -773,14 +773,14 @@ async fn test_experiment_enable_no_admin_service() {
     assert!(output.is_ok());
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_experiment_disable_no_admin_service() {
     let env = TestEnv::new();
     let output = env.run_pkgctl(vec!["experiment", "enable", "lightbulb"]).await;
     assert_eq!(output.return_code(), 1);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_hash_success() {
     let hash = "0000000000000000000000000000000000000000000000000000000000000000";
     let env = TestEnv::new();
@@ -797,7 +797,7 @@ async fn test_get_hash_success() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_get_hash_failure() {
     let env = TestEnv::new();
     env.package_resolver.get_hash_response.lock().replace(Err(Status::UNAVAILABLE));
@@ -810,7 +810,7 @@ async fn test_get_hash_failure() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_pkg_status_success() {
     let hash: fidl_fuchsia_pkg::BlobId =
         "0000000000000000000000000000000000000000000000000000000000000000"
@@ -836,7 +836,7 @@ async fn test_pkg_status_success() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_pkg_status_fail_pkg_in_tuf_repo_but_not_on_disk() {
     let hash: fidl_fuchsia_pkg::BlobId =
         "0000000000000000000000000000000000000000000000000000000000000000"
@@ -863,7 +863,7 @@ async fn test_pkg_status_fail_pkg_in_tuf_repo_but_not_on_disk() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_pkg_status_fail_pkg_not_in_tuf_repo() {
     let env = TestEnv::new();
     env.package_resolver.get_hash_response.lock().replace(Err(Status::NOT_FOUND));
@@ -881,7 +881,7 @@ async fn test_pkg_status_fail_pkg_not_in_tuf_repo() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_resolve() {
     let env = TestEnv::new();
     env.package_resolver.resolve_response.lock().replace((
@@ -898,7 +898,7 @@ async fn test_resolve() {
     }]);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_resolve_verbose() {
     let env = TestEnv::new();
     env.package_resolver.resolve_response.lock().replace((

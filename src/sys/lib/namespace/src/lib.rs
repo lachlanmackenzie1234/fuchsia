@@ -339,7 +339,6 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl::endpoints::Proxy as _;
-    use fuchsia_async as fasync;
     use zx::{AsHandleRef, Peered};
 
     fn ns_path(str: &str) -> NamespacePath {
@@ -375,7 +374,7 @@ mod tests {
     }
 
     #[cfg(target_os = "fuchsia")]
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_clone() {
         use vfs::file::vmo::read_only;
 

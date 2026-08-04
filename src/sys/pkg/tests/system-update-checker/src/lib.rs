@@ -6,6 +6,10 @@
 #![cfg(test)]
 use anyhow::anyhow;
 use assert_matches::assert_matches;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_paver as fpaver;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fidl_fuchsia_update::{
     AttemptsMonitorMarker, AttemptsMonitorRequest, AttemptsMonitorRequestStream, CheckOptions,
     CheckingForUpdatesData, CommitStatusProviderMarker, CommitStatusProviderProxy, Initiator,
@@ -14,6 +18,10 @@ use fidl_fuchsia_update::{
     MonitorRequest, MonitorRequestStream, State, UpdateInfo,
 };
 use fidl_fuchsia_update_channel::{ProviderMarker, ProviderProxy};
+use fidl_fuchsia_update_installer as finstaller;
+use fidl_fuchsia_update_installer_ext as installer;
+use fidl_fuchsia_update_verify as fupdate_verify;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_pkg_testing::make_packages_json;
@@ -29,12 +37,6 @@ use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tempfile::TempDir;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_paver as fpaver, fidl_fuchsia_pkg as fpkg,
-    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_update_installer as finstaller,
-    fidl_fuchsia_update_installer_ext as installer, fidl_fuchsia_update_verify as fupdate_verify,
-    fuchsia_async as fasync,
-};
 
 struct Mounts {
     system: TempDir,
@@ -403,7 +405,7 @@ fn progress(fraction_completed: Option<f32>) -> Option<InstallationProgress> {
     Some(InstallationProgress { fraction_completed, ..Default::default() })
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_channel_provider_get_current() {
     let env = TestEnvBuilder::new().build().await;
 
@@ -413,7 +415,7 @@ async fn test_channel_provider_get_current() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_update_manager_check_now_error_checking_for_update() {
     let env = TestEnvBuilder::new().build().await;
 
@@ -451,7 +453,7 @@ async fn test_update_manager_check_now_error_checking_for_update() {
     );
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_update_manager_progress() {
     let (mut sender, receiver) = mpsc::channel(0);
     let installer = MockUpdateInstallerService::builder().states_receiver(receiver).build();
@@ -559,7 +561,7 @@ async fn test_update_manager_progress() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_monitor_all_updates() {
     let (mut sender, receiver) = mpsc::channel(0);
     let installer = MockUpdateInstallerService::builder().states_receiver(receiver).build();
@@ -675,7 +677,7 @@ async fn test_monitor_all_updates() {
     .await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_update_manager_out_of_space_gc_succeeds() {
     let called = Arc::new(AtomicU32::new(0));
     let space = {
@@ -737,7 +739,7 @@ async fn test_update_manager_out_of_space_gc_succeeds() {
     assert_eq!(called.load(Ordering::SeqCst), 1);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_update_manager_out_of_space_gc_fails() {
     let called = Arc::new(AtomicU32::new(0));
     let space = {
@@ -799,7 +801,7 @@ async fn test_update_manager_out_of_space_gc_fails() {
     assert_eq!(called.load(Ordering::SeqCst), 1);
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn test_installation_deferred() {
     let (throttle_hook, throttler) = mphooks::throttle();
     let config_status_response = Arc::new(Mutex::new(Some(fpaver::ConfigurationStatus::Pending)));

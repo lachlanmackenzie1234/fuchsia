@@ -20,7 +20,7 @@ rustc_test("security_policy_capability_allowlist_integration_test_bin") {
   deps = [
     ":test.policy_rust",
     "../util:security_policy_test_util",
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
   ]
@@ -44,6 +44,7 @@ rustc_binary("policy_service_bin") {
   source_root = "policy_service.rs"
   deps = [
     ":test.policy_rust",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
@@ -58,7 +59,7 @@ rustc_binary("dir_service_bin") {
   edition = "2024"
   source_root = "dir_service.rs"
   deps = [
-    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:futures",
@@ -75,6 +76,7 @@ rustc_binary("cap_getter_bin") {
     ":test.policy_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fdio/rust:fdio",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",

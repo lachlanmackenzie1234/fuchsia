@@ -135,9 +135,8 @@ mod tests {
     use super::*;
     use crate::TestUpdatePackage;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_version_success_file_exists() {
         let p = TestUpdatePackage::new().add_file("version", "123").await;
         assert_eq!(
@@ -146,7 +145,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_version_success_opaque() {
         let p = TestUpdatePackage::new().add_file("version", "2020-09-08T10:17:00+10:00").await;
         assert_eq!(
@@ -155,7 +154,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_version_trims_trailing_whitespace() {
         let p = TestUpdatePackage::new().add_file("version", "2020-09-08T10:17:00+10:00\n").await;
         assert_eq!(
@@ -164,7 +163,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_version_fail_file_does_not_exist() {
         let p = TestUpdatePackage::new();
         assert_matches!(read_version(p.proxy()).await, Err(ReadVersionError::OpenFile(_)));

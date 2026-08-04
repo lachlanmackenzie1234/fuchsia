@@ -194,7 +194,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_entry_open_self() {
         let (_env, validation) = TestEnv::new().await;
         let proxy = vfs::directory::serve(validation, ExecutionScope::new(), fio::PERM_READABLE);
@@ -207,7 +207,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_entry_open_rejects_invalid_flags() {
         let (_env, validation) = TestEnv::new().await;
 
@@ -230,7 +230,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_entry_open_rejects_file_flags() {
         let (_env, validation) = TestEnv::new().await;
 
@@ -263,7 +263,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_entry_open_missing() {
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
             Arc::new(BasePackages::new_test_only(
@@ -286,7 +286,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_entry_entry_info() {
         let (_env, validation) = TestEnv::new().await;
 
@@ -348,7 +348,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_read_dirents() {
         let (_env, validation) = TestEnv::new().await;
 
@@ -366,7 +366,7 @@ mod tests {
         assert_eq!(pos, TraversalPosition::End);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_register_watcher_not_supported() {
         let (_env, validation) = TestEnv::new().await;
 
@@ -383,7 +383,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn directory_get_attributes() {
         let (_env, validation) = TestEnv::new().await;
 
@@ -404,14 +404,14 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn make_missing_contents_empty() {
         let (_env, validation) = TestEnv::new().await;
 
         assert_eq!(validation.make_missing_contents().await, Vec::<u8>::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn make_missing_contents_missing_blob() {
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
             Arc::new(BasePackages::new_test_only(
@@ -428,7 +428,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn make_missing_contents_two_missing_blob() {
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
             Arc::new(BasePackages::new_test_only(
@@ -447,7 +447,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn make_missing_contents_irrelevant_blobfs_blob() {
         let blob = vec![0u8, 1u8];
         let hash = fuchsia_merkle::root_from_slice(&blob);
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(validation.make_missing_contents().await, Vec::<u8>::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn make_missing_contents_present_blob() {
         let blob = vec![0u8, 1u8];
         let hash = fuchsia_merkle::root_from_slice(&blob);
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(validation.make_missing_contents().await, Vec::<u8>::new());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn make_missing_contents_present_blob_missing_blob() {
         let blob = vec![0u8, 1u8];
         let hash = fuchsia_merkle::root_from_slice(&blob);

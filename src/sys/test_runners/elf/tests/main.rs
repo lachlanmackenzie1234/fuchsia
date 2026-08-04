@@ -24,7 +24,7 @@ pub async fn run_test(
     Ok(events)
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_passing_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/elf-test-runner-example-tests#meta/passing_test.cm";
 
@@ -47,7 +47,7 @@ async fn launch_and_run_passing_test() {
     assert_eq!(events, expected_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_failing_test() {
     let test_url = "fuchsia-pkg://fuchsia.com/elf-test-runner-example-tests#meta/failing_test.cm";
 
@@ -64,7 +64,7 @@ async fn launch_and_run_failing_test() {
     assert_eq!(events, expected_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_test_with_custom_args() {
     let test_url = "fuchsia-pkg://fuchsia.com/elf-test-runner-example-tests#meta/arg_test.cm";
     let mut options = default_options();
@@ -86,7 +86,7 @@ async fn launch_and_run_test_with_custom_args() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_test_with_environ() {
     let test_url = "fuchsia-pkg://fuchsia.com/elf-test-runner-example-tests#meta/environ_test.cm";
     let events = run_test(test_url, default_options()).await.unwrap();
@@ -102,7 +102,7 @@ async fn launch_and_run_test_with_environ() {
     assert_eq!(expected_events, events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_ambient_exec_test_without_ambient_exec_should_fail() {
     // Ambient exec test should fail under elf-test-runner
     let test_url =
@@ -121,7 +121,7 @@ async fn launch_and_run_ambient_exec_test_without_ambient_exec_should_fail() {
     assert_eq!(events, expected_events);
 }
 
-#[fuchsia_async::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn launch_and_run_ambient_exec_test_with_ambient_exec_runner_should_succeed() {
     let test_url =
         "fuchsia-pkg://fuchsia.com/elf-test-runner-example-tests#meta/ambient_exec_test.cm";

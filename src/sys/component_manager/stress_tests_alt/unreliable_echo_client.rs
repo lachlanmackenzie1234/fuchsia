@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use fasync::TimeoutExt;
+use fidl_fidl_examples_routing_echo as fecho;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use std::time::Duration;
-use {fidl_fidl_examples_routing_echo as fecho, fuchsia_async as fasync};
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() {
     let timeout = rand::random_range(0..10);
     let timeout = Duration::from_secs(timeout);

@@ -224,7 +224,7 @@ mod tests {
     use anyhow::anyhow;
     use assert_matches::assert_matches;
     use fidl_fuchsia_feedback::{CrashReport, FileReportResults};
-    use fuchsia_async::{self as fasync, Task};
+    use fuchsia_async::Task;
     use fuchsia_inspect::Inspector;
     use futures::channel::mpsc;
     use mock_crash_reporter::{MockCrashReporterService, ThrottleHook};
@@ -251,7 +251,7 @@ mod tests {
         )
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cache_target_version() {
         let mut observer = new_test_observer().await;
         assert_eq!(observer.target_version, None);
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(observer.target_version, None);
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_cache_target_version_no_update() {
         let mut observer = new_test_observer().await;
         assert_eq!(observer.target_version, None);
@@ -291,7 +291,7 @@ mod tests {
 
     /// When we fail to get the CrashReporter proxy, the start_handling_crash_reports_impl
     /// future should immediately complete and we shouldn't set a control handle.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_start_handling_crash_reports_proxyfn_error() {
         let mut observer = new_test_observer().await;
 
@@ -303,7 +303,7 @@ mod tests {
     }
 
     /// Verify we file crash reports on installation errors within a 24 hour band.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_installation_error_crash_report() {
         let mut observer = new_test_observer().await;
 
@@ -354,7 +354,7 @@ mod tests {
     }
 
     /// Verify we file crash reports on >= 5 consecutive failed update checks.
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_consecutive_failed_update_checks_crash_report() {
         let mut observer = new_test_observer().await;
 

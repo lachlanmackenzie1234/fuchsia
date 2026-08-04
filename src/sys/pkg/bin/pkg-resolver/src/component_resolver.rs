@@ -321,7 +321,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn fidl_wiring_and_serving() {
         const OUT_DIR_FLAGS: fio::Flags =
             fio::PERM_READABLE.union(fio::PERM_WRITABLE).union(fio::PERM_EXECUTABLE);
@@ -784,7 +784,7 @@ mod tests {
         );
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn resolve_component_sets_pkg_abi_revision() {
         let cm_bytes = fidl::persist(&fdecl::Component::default().clone())
             .expect("failed to encode ComponentDecl FIDL");

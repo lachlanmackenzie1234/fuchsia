@@ -335,7 +335,7 @@ mod tests {
     use futures::StreamExt;
     use vfs::directory::helper::DirectlyMutable;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn serve() {
         let (proxy, server_end) = fidl::endpoints::create_proxy();
         let package = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -362,7 +362,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn serve_path_open_root() {
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let package = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -390,7 +390,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn serve_path_open_meta() {
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::FileMarker>();
         let package = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -415,7 +415,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn serve_path_open_missing_path_in_package() {
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
         let package = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(node_into_on_open_status(proxy).await, Some(zx::Status::NOT_FOUND));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn serve_path_open_missing_package() {
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
         let (_blobfs_fake, blobfs_client) = FakeBlobfs::new();
@@ -535,7 +535,7 @@ mod tests {
         fuchsia_merkle::root_from_slice(BLOB_CONTENTS)
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn bootfs_get_vmo_blob() {
         let directory = vfs::directory::immutable::simple();
         directory.add_entry(blob_contents_hash(), vfs::file::read_only(BLOB_CONTENTS)).unwrap();
@@ -545,7 +545,7 @@ mod tests {
         assert_eq!(vmo.read_to_vec::<u8>(0, BLOB_CONTENTS.len() as u64).unwrap(), BLOB_CONTENTS);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn bootfs_read_blob() {
         let directory = vfs::directory::immutable::simple();
         directory.add_entry(blob_contents_hash(), vfs::file::read_only(BLOB_CONTENTS)).unwrap();
@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(proxy.read_blob(&blob_contents_hash()).await.unwrap(), BLOB_CONTENTS);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn bootfs_get_vmo_blob_missing_blob() {
         let directory = vfs::directory::immutable::simple();
         let proxy = vfs::directory::serve_read_only(directory, ExecutionScope::new());
@@ -563,7 +563,7 @@ mod tests {
         assert_matches!(result, Err(NonMetaStorageError::OpenBlob(e)) if e.is_not_found_error());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn bootfs_read_blob_missing_blob() {
         let directory = vfs::directory::immutable::simple();
         let proxy = vfs::directory::serve_read_only(directory, ExecutionScope::new());
@@ -572,7 +572,7 @@ mod tests {
         assert_matches!(result, Err(NonMetaStorageError::ReadBlob(e)) if e.is_not_found_error());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blobfs_get_vmo_blob() {
         let (blobfs_fake, blobfs_client) = FakeBlobfs::new();
         blobfs_fake.add_blob(blob_contents_hash(), BLOB_CONTENTS);
@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(vmo.read_to_vec::<u8>(0, BLOB_CONTENTS.len() as u64).unwrap(), BLOB_CONTENTS);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blobfs_read_blob() {
         let (blobfs_fake, blobfs_client) = FakeBlobfs::new();
         blobfs_fake.add_blob(blob_contents_hash(), BLOB_CONTENTS);
@@ -590,7 +590,7 @@ mod tests {
         assert_eq!(blobfs_client.read_blob(&blob_contents_hash()).await.unwrap(), BLOB_CONTENTS);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blobfs_get_vmo_blob_missing_blob() {
         let (_blobfs_fake, blobfs_client) = FakeBlobfs::new();
 
@@ -598,7 +598,7 @@ mod tests {
         assert_matches!(result, Err(e) if e.is_not_found_error());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn blobfs_read_blob_missing_blob() {
         let (_blobfs_fake, blobfs_client) = FakeBlobfs::new();
 

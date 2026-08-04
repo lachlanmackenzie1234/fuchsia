@@ -21,6 +21,7 @@ rustc_library("fidl-connector") {
   test_deps = [
     ":test.fidl.connector_rust",
     "//src/lib/fdio",
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
   ]

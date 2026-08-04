@@ -42,9 +42,8 @@ mod tests {
     use super::*;
     use crate::TestUpdatePackage;
     use assert_matches::assert_matches;
-    use fuchsia_async as fasync;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_epoch_success() {
         let p = TestUpdatePackage::new()
             .add_file("epoch.json", serde_json::to_vec(&EpochFile::Version1 { epoch: 3 }).unwrap())
@@ -52,13 +51,13 @@ mod tests {
         assert_matches!(p.epoch().await, Ok(Some(3)));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_epoch_success_missing_epoch_file() {
         let p = TestUpdatePackage::new();
         assert_matches!(p.epoch().await, Ok(None));
     }
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn parse_epoch_fail_deserialize() {
         let p = TestUpdatePackage::new().add_file("epoch.json", "oh no! this isn't json.").await;
         assert_matches!(

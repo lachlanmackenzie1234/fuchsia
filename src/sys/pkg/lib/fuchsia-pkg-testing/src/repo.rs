@@ -363,7 +363,7 @@ mod tests {
     use super::*;
     use crate::package::PackageBuilder;
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_repo_builder() {
         let same_contents = b"same contents";
         let repo = RepositoryBuilder::new()
@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(repo.list_blobs().unwrap(), blobs);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_repo_builder_template() -> Result<(), Error> {
         let repodir = tempfile::tempdir().context("create tempdir")?;
 

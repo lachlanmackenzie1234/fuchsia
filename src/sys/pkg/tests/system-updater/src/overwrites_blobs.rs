@@ -5,7 +5,7 @@
 use super::*;
 use fidl_fuchsia_storage_blobfs::OverwriteFormat;
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn packageless_update_checks_needs_overwrite() {
     let blob_content = "blob content".as_bytes();
     let blob_hash = fuchsia_merkle::root_from_slice(blob_content);
