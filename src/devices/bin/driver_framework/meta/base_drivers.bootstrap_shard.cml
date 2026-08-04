@@ -179,6 +179,7 @@
         },
         {
             service: [
+                "fuchsia.hardware.adc.Service",
                 "fuchsia.hardware.backlight.Service",
                 "fuchsia.hardware.cpu.ctrl.Service",
                 "fuchsia.hardware.display.Service",
@@ -189,6 +190,7 @@
                 "fuchsia.hardware.rtc.Service",
                 "fuchsia.hardware.spmi.DebugService",
                 "fuchsia.hardware.suspend.SuspendService",
+                "fuchsia.hardware.temperature.Service",
                 "fuchsia.hardware.trippoint.DebugService",
                 "fuchsia.hardware.trippoint.Service",
                 "fuchsia.hardware.usb.peripheral.Service",
