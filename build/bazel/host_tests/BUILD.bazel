@@ -20,7 +20,6 @@ test_suite(
     tests = [
         "//build/bazel/rules/build_flags/tests:host_tests",
         "//build/bazel/rules/host_tests/tests:host_tests",
-        "//build/tools/json_validator/test:tests",
     ],
     visibility = ["//:__subpackages__"],
 )

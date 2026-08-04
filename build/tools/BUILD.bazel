@@ -1,0 +1,19 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_CONSTRAINTS,
+    tests = [
+        "//build/tools/json_validator/test:tests",
+    ],
+    # TODO(https://fxbug.dev/532431203): Remove this and all such visibility
+    # attributes in "host_tests" `test_suite()` targets once the
+    # `bazel_host_test_suite()` no longer uses a target in that package.
+    visibility = ["//build/bazel/host_tests:__pkg__"],
+)
