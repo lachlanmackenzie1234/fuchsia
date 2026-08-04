@@ -27,6 +27,7 @@ Specifically, it exercises:
 
 import asyncio
 import hashlib
+import ipaddress
 import logging
 import os
 import subprocess
@@ -130,15 +131,16 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                     self.dut.ffx.run_ssh_cmd,
                     f"echo '{large_payload}'",
                 )
-                asserts.assert_equal(
-                    ssh_output.strip(),
-                    large_payload,
-                    f"Iteration {i}: SSH packet payload mismatch over CDC network link.",
-                )
             except Exception as e:
                 asserts.fail(
                     f"CDC network stack failed during packet transfer iteration {i}: {e}"
                 )
+
+            asserts.assert_equal(
+                ssh_output.strip(),
+                large_payload,
+                f"Iteration {i}: SSH packet payload mismatch over CDC network link.",
+            )
 
         _LOGGER.info(
             "Successfully completed %d iterations of CDC packet stress.",
@@ -176,21 +178,22 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                     self.dut.ffx.run_ssh_cmd,
                     f'printf "X%{expected_bytes - 2}sX" ""',
                 )
-                actual_bytes = len(ssh_output)
-                asserts.assert_equal(
-                    actual_bytes,
-                    expected_bytes,
-                    f"Iteration {i}: Transferred Target->Host payload size mismatch over CDC link (expected {expected_bytes}, got {actual_bytes}).",
-                )
-                _LOGGER.info(
-                    "Iteration %d successfully streamed %d bytes from Target->Host over CDC link.",
-                    i,
-                    actual_bytes,
-                )
             except Exception as e:
                 asserts.fail(
                     f"CDC network stack failed during Target->Host large file transfer iteration {i}: {e}"
                 )
+
+            actual_bytes = len(ssh_output)
+            asserts.assert_equal(
+                actual_bytes,
+                expected_bytes,
+                f"Iteration {i}: Transferred Target->Host payload size mismatch over CDC link (expected {expected_bytes}, got {actual_bytes}).",
+            )
+            _LOGGER.info(
+                "Iteration %d successfully streamed %d bytes from Target->Host over CDC link.",
+                i,
+                actual_bytes,
+            )
 
         _LOGGER.info(
             "Successfully completed %d iterations of CDC Target->Host large file transfer stress.",
@@ -216,8 +219,6 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
 
         await self._verify_cdc_routing()
 
-        target_payload_path = f"/tmp/cdc_ota_target_{os.getpid()}.bin"
-
         with tempfile.TemporaryDirectory(prefix="cdc_ota_") as tmp_dir:
             host_payload_path = os.path.join(tmp_dir, "host_payload.bin")
             _LOGGER.info(
@@ -225,79 +226,59 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                 transfer_mb,
                 host_payload_path,
             )
+            payload = b"X" * expected_bytes
+            host_sha1 = hashlib.sha1(payload).hexdigest()
             with open(host_payload_path, "wb") as f:
-                f.write(b"X" * expected_bytes)
+                f.write(payload)
 
-            with open(host_payload_path, "rb") as f:
-                expected_sha1 = hashlib.sha1(f.read()).hexdigest()
-            _LOGGER.info(
-                "Expected SHA1 hash of %d MB payload: %s",
-                transfer_mb,
-                expected_sha1,
-            )
-
-            try:
-                for i in range(1, num_iterations + 1):
-                    _LOGGER.info(
-                        "Host->Target large file transfer stress iteration %d/%d (%d MB)",
-                        i,
-                        num_iterations,
-                        transfer_mb,
-                    )
-                    try:
-                        ffx_cmd = self.dut.ffx.generate_ffx_cmd(
-                            cmd=[
-                                "target",
-                                "ssh",
-                                f"cat > {target_payload_path}",
-                            ],
-                            include_target=True,
-                            machine=MachineFormat.RAW,
-                        )
-                        with open(host_payload_path, "rb") as f:
-                            await asyncio.to_thread(
-                                subprocess.run,
-                                ffx_cmd,
-                                stdin=f,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                check=True,
-                            )
-
-                        sha1_str = await asyncio.to_thread(
-                            self.dut.ffx.run_ssh_cmd,
-                            f"sha1sum {target_payload_path}",
-                        )
-                        target_sha1 = sha1_str.strip().split()[0]
-                        asserts.assert_equal(
-                            target_sha1,
-                            expected_sha1,
-                            f"Iteration {i}: Transferred Host->Target payload SHA1 content mismatch over CDC link (expected {expected_sha1}, got {target_sha1}).",
-                        )
-                        _LOGGER.info(
-                            "Iteration %d successfully verified SHA1 hash (%s) of %d transferred bytes from Host->Target over CDC link.",
-                            i,
-                            target_sha1,
-                            expected_bytes,
-                        )
-                    except Exception as e:
-                        err_msg = str(e)
-                        if (
-                            isinstance(e, subprocess.CalledProcessError)
-                            and e.stderr
-                        ):
-                            err_msg += f" (stderr: {e.stderr.decode('utf-8', errors='replace')})"
-                        asserts.fail(
-                            f"CDC network stack failed during Host->Target large file transfer iteration {i}: {err_msg}"
-                        )
-            finally:
+            for i in range(1, num_iterations + 1):
+                _LOGGER.info(
+                    "Host->Target large file transfer stress iteration %d/%d (%d MB)",
+                    i,
+                    num_iterations,
+                    transfer_mb,
+                )
                 try:
-                    await asyncio.to_thread(
-                        self.dut.ffx.run_ssh_cmd,
-                        f"rm -f {target_payload_path}",
+                    ffx_cmd = self.dut.ffx.generate_ffx_cmd(
+                        cmd=[
+                            "target",
+                            "ssh",
+                            "sha1sum",
+                        ],
+                        include_target=True,
+                        machine=MachineFormat.RAW,
                     )
-                except Exception:
-                    pass
+                    with open(host_payload_path, "rb") as f:
+                        result = await asyncio.to_thread(
+                            subprocess.run,
+                            ffx_cmd,
+                            stdin=f,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            check=True,
+                        )
+                        target_sha1 = result.stdout.decode("utf-8").split()[0]
+                        asserts.assert_equal(
+                            host_sha1,
+                            target_sha1,
+                            "Transferred payload corrupted! sha1 mismatch",
+                        )
+
+                    _LOGGER.info(
+                        "Iteration %d successfully streamed %d bytes from Host->Target over CDC link.",
+                        i,
+                        expected_bytes,
+                    )
+                except Exception as e:
+                    err_msg = str(e)
+                    if (
+                        isinstance(e, subprocess.CalledProcessError)
+                        and e.stderr
+                    ):
+                        err_msg += f" (stderr: {e.stderr.decode('utf-8', errors='replace')})"
+                    asserts.fail(
+                        f"CDC network stack failed during Host->Target large file transfer iteration {i}: {err_msg}"
+                    )
 
         _LOGGER.info(
             "Successfully completed %d iterations of CDC Host->Target large file transfer stress.",
@@ -329,66 +310,100 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         await self._verify_cdc_routing()
 
         ssh_addr = self.dut.ffx.get_target_ssh_address()
+        asserts.assert_is_not_none(
+            ssh_addr,
+            "Failed to obtain FFX SSH target address.",
+        )
         target_ip = str(ssh_addr.ip)
+        parsed_ip = ipaddress.ip_address(target_ip.split("%")[0])
+        ip_version = parsed_ip.version
+
+        # Prefer IPv6 if target_ip is IPv4, by checking for active CDC IPv6 interface addresses.
+        if ip_version == 4:
+            try:
+                interfaces = await self.dut.netstack.list_interfaces()
+                found_ipv6 = False
+                for iface in interfaces:
+                    has_ssh_ip = any(
+                        target_ip == str(ip).split("/")[0]
+                        for ip in iface.ipv4_addresses
+                    )
+                    if (
+                        iface.name != "lo"
+                        and iface.port_class == PortClass.ETHERNET
+                        and has_ssh_ip
+                    ):
+                        for ip in iface.ipv6_addresses:
+                            ip_str = str(ip).split("/")[0]
+                            if not ip_str.startswith("fe80:"):
+                                target_ip = ip_str
+                                parsed_ip = ipaddress.ip_address(ip_str)
+                                ip_version = parsed_ip.version
+                                _LOGGER.info(
+                                    "Discovered target global IPv6 address %s for ICMP stress",
+                                    target_ip,
+                                )
+                                found_ipv6 = True
+                                break
+                    if found_ipv6:
+                        break
+            except Exception as e:
+                _LOGGER.debug(
+                    "Could not query netstack for IPv6 addresses: %s", e
+                )
 
         for bs in packet_sizes:
             _LOGGER.info(
-                "Testing ICMPv6 packet burst with payload size %d bytes (%d packets) to %s",
+                "Testing ICMPv%d packet burst with payload size %d bytes (%d packets) to %s",
+                ip_version,
                 bs,
                 burst_count,
                 target_ip,
             )
             try:
-                # Construct ping command with specific ICMPv6 flags:
-                #   -6: Force IPv6 protocol (required for CDC Ethernet link-local addresses).
-                #   -c <burst_count>: Number of echo request packets to send in this burst.
-                #   -i 0.05: Wait 50 milliseconds between sending each packet (20 packets/sec)
-                #            to stress the network stack rapidly without requiring root privileges.
-                #   -s <bs>: Specify the exact payload size in bytes to test MTU boundary
-                #            fragmentation and CDC-NCM Network Transfer Block aggregation.
-                #   -W 5: Timeout in seconds to wait for a response before failing.
+                # Python Host-side Mobly Test:
+                # Execute ping ON THE TARGET pointing back to the Host
+                # to stress the network stack rapidly without requiring root privileges on infra bots.
+                # Extract host IP dynamically from SSH_CONNECTION to avoid hardcoding interfaces.
                 cmd = [
-                    "ping",
-                    "-6",
-                    "-c",
-                    str(burst_count),
-                    "-i",
-                    "0.05",
-                    "-s",
-                    str(bs),
-                    "-W",
-                    "5",
-                    target_ip,
+                    "target",
+                    "ssh",
+                    f"host_ip=${{SSH_CONNECTION%% *}} && ping -c {burst_count} -i 200 -s {bs} -t 5000 $host_ip",
                 ]
+                ffx_cmd = self.dut.ffx.generate_ffx_cmd(
+                    cmd=cmd, include_target=True, machine=MachineFormat.RAW
+                )
                 result = await asyncio.to_thread(
                     subprocess.run,
-                    cmd,
+                    ffx_cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                )
-                asserts.assert_equal(
-                    result.returncode,
-                    0,
-                    f"Payload size {bs}B: ping failed with exit code {result.returncode}. Stderr: {result.stderr}",
-                )
-                asserts.assert_in(
-                    " 0% packet loss",
-                    result.stdout,
-                    f"Payload size {bs}B: Detected packet loss during ping stress. Output:\n{result.stdout}",
-                )
-                _LOGGER.info(
-                    "Payload size %dB: Successfully transmitted and received %d ICMPv6 echo packets with 0%% packet loss.",
-                    bs,
-                    burst_count,
                 )
             except Exception as e:
                 err_msg = str(e)
                 if isinstance(e, subprocess.CalledProcessError) and e.stderr:
                     err_msg += f" (stderr: {e.stderr})"
                 asserts.fail(
-                    f"CDC network stack failed during ICMPv6 packet stress with payload size {bs}B: {err_msg}"
+                    f"CDC network stack failed during ICMPv{ip_version} packet stress with payload size {bs}B: {err_msg}"
                 )
+
+            asserts.assert_equal(
+                result.returncode,
+                0,
+                f"Payload size {bs}B: ping failed with exit code {result.returncode}. Stderr: {result.stderr}",
+            )
+            asserts.assert_in(
+                "0% packet loss",
+                result.stdout,
+                f"Payload size {bs}B: Detected packet loss during ping stress. Output:\n{result.stdout}",
+            )
+            _LOGGER.info(
+                "Payload size %dB: Successfully transmitted and received %d ICMPv%d echo packets with 0%% packet loss.",
+                bs,
+                burst_count,
+                ip_version,
+            )
 
         _LOGGER.info(
             "Successfully completed CDC varying packet size stress across all block sizes."
@@ -448,15 +463,16 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                             iface.mac,
                         )
                         break
-                asserts.assert_true(
-                    cdc_iface_found,
-                    f"Iteration {i}: Failed to discover online CDC network interface via FIDL.",
-                )
-                await asyncio.sleep(1)
             except Exception as e:
                 asserts.fail(
                     f"CDC network stack failed during FIDL interface polling iteration {i}: {e}"
                 )
+
+            asserts.assert_true(
+                cdc_iface_found,
+                f"Iteration {i}: Failed to discover online CDC network interface via FIDL.",
+            )
+            await asyncio.sleep(1)
 
         _LOGGER.info(
             "Successfully completed %d iterations of FIDL interface polling.",
