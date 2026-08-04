@@ -16,7 +16,7 @@ use super::traits::{Parse, PolicyId, Serialize, Validate};
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 /// Tag type for type safety of policy class identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct ClassTag;
 
 /// Identifies a class within a policy.

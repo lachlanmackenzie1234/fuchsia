@@ -12,7 +12,7 @@ use super::{ClassId, NewPolicy, TypeId, TypeSet};
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 /// Tag type for type safety of policy role identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct RoleTag;
 
 /// Identifies a role within a policy.

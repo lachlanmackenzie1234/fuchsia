@@ -28,10 +28,11 @@ impl<T, Tag> IdType<T, Tag> {
 impl<Tag> IdType<NonZeroU16, Tag> {
     /// Constructs an [`IdType`] directly from a 16-bit identifier value.
     pub fn from_u16(value: u16) -> Option<Self> {
-        NonZeroU16::new(value).map(Self::new)
+        let value = NonZeroU16::new(value)?;
+        Some(Self { value, _phantom: PhantomData })
     }
 
-    /// Returns the underlying 16-bit integer value.
+    /// Returns the wrapped 16-bit identifier value.
     pub fn as_u16(&self) -> u16 {
         self.value.get()
     }
@@ -51,7 +52,7 @@ where
 // Implement PolicyId for 8-bit IDs (wrapped in NonZeroU8)
 impl<Tag> PolicyId for IdType<NonZeroU8, Tag>
 where
-    Tag: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + Ord + PartialOrd,
+    Tag: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash,
 {
     fn as_u32(&self) -> u32 {
         self.value.get() as u32
@@ -67,7 +68,7 @@ where
 // Implement PolicyId for 16-bit IDs (wrapped in NonZeroU16)
 impl<Tag> PolicyId for IdType<NonZeroU16, Tag>
 where
-    Tag: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + Ord + PartialOrd,
+    Tag: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash,
 {
     fn as_u32(&self) -> u32 {
         self.value.get() as u32
@@ -83,7 +84,7 @@ where
 // Implement PolicyId for 32-bit IDs (wrapped in NonZeroU32)
 impl<Tag> PolicyId for IdType<NonZeroU32, Tag>
 where
-    Tag: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + Ord + PartialOrd,
+    Tag: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash,
 {
     fn as_u32(&self) -> u32 {
         self.value.get()

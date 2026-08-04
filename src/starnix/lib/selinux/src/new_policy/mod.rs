@@ -58,7 +58,7 @@ pub use types::*;
 pub use users::User;
 
 /// Tag type for type safety of policy user identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct UserTag;
 
 /// Identifies a user within a policy.

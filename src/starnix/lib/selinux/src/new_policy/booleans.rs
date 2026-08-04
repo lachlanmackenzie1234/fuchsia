@@ -11,7 +11,7 @@ use super::traits::{Parse, PolicyId, Serialize, Validate};
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 /// Tag type for type safety of policy conditional boolean identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct ConditionalBooleanTag;
 
 /// Identifies a conditional boolean within a policy.

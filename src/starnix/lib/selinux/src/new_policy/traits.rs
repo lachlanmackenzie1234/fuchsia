@@ -26,9 +26,7 @@ pub trait Validate {
 /// Types implementing [`PolicyId`] can be parsed from and serialized to `u32` values
 /// in the binary policy database, but are represented as strongly-typed integers
 /// (often wrapping `NonZeroU16` or `NonZeroU32`) in the logical domain model.
-pub trait PolicyId:
-    Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + Ord + PartialOrd
-{
+pub trait PolicyId: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + PartialEq {
     /// Returns the raw `u32` value of the ID.
     fn as_u32(&self) -> u32;
 

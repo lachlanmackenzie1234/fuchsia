@@ -12,7 +12,7 @@ use super::traits::{Parse, PolicyId, Serialize, Validate};
 use selinux_policy_derive::{HasName, HasPolicyId};
 
 /// Tag type for type safety of policy permission identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct PermissionTag;
 
 /// Identifies a permission within an object class (class-relative, 1-indexed).

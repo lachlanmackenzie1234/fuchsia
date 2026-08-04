@@ -8,7 +8,7 @@ use thiserror::Error;
 /// Compact 24-bit (3-byte) index into a policy array.
 ///
 /// Reduces memory footprint compared to `u32`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct U24Index([u8; 3]);
 
 impl U24Index {

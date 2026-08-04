@@ -16,7 +16,7 @@ use super::traits::{HasName, Parse, PolicyId, Serialize, Validate};
 use super::{NewPolicy, U24Index};
 
 /// Tag type for type safety of policy type identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct TypeTag;
 
 /// Identifies a type (or type attribute) within a policy.
