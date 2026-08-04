@@ -24,19 +24,32 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
       // set up link TRB pointing back to the start of the fifo
       zx_paddr_t trb_phys = Fifo::GetPhys(first_);
       last_--;
-      last_->ptr_low = (uint32_t)trb_phys;
-      last_->ptr_high = (uint32_t)(trb_phys >> 32);
-      last_->status = 0;
-      last_->control = TRB_TRBCTL_LINK | TRB_HWO;
-      CacheFlushIfCached(buffer_.get(), (last_ - first_) * sizeof(dwc3_trb_t), sizeof(dwc3_trb_t));
+      const zx_off_t offset = (last_ - first_) * sizeof(dwc3_trb_t);
+      if (auto status = buffer_->ExecuteWriteOps(offset, sizeof(dwc3_trb_t),
+                                                 [&](uint8_t* ptr) {
+                                                   auto link_trb =
+                                                       reinterpret_cast<dwc3_trb_t*>(ptr);
+                                                   link_trb->ptr_low = (uint32_t)trb_phys;
+                                                   link_trb->ptr_high = (uint32_t)(trb_phys >> 32);
+                                                   link_trb->status = 0;
+                                                   link_trb->control = TRB_TRBCTL_LINK | TRB_HWO;
+                                                 });
+          status.is_error()) {
+        fdf::error("ExecuteWriteOps failed: {}", status);
+        return status.take_error();
+      }
     }
     return zx::ok();
   }
 
-  const dwc3_trb_t& ReadOne() {
+  zx::result<dwc3_trb_t> ReadOne() {
     const zx_off_t offset = (read_ - first_) * sizeof(dwc3_trb_t);
-    CacheFlushInvalidateIfCashed(buffer_.get(), offset, sizeof(dwc3_trb_t));
-    return *read_;
+    if (auto status = buffer_->CacheFlushInvalidate(offset, sizeof(dwc3_trb_t));
+        status.is_error()) {
+      fdf::error("CacheFlushInvalidate failed: {}", status);
+      return status.take_error();
+    }
+    return zx::ok(*read_);
   }
 
   dwc3_trb_t* current_read() { return read_; }
@@ -51,12 +64,20 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
   }
 
   void Reset() {
-    for (auto x = first_; x < last_; x++) {
-      x->control = 0;
+    const size_t len = (last_ - first_) * sizeof(dwc3_trb_t);
+    if (auto status = buffer_->ExecuteWriteOps(
+            0, len,
+            [&](uint8_t* ptr) {
+              auto trbs = reinterpret_cast<dwc3_trb_t*>(ptr);
+              for (size_t i = 0; i < static_cast<size_t>(last_ - first_); i++) {
+                trbs[i].control = 0;
+              }
+            });
+        status.is_error()) {
+      fdf::error("ExecuteWriteOps failed: {}", status);
     }
     write_ = first_;
     read_ = write_;
-    CacheFlushIfCached(buffer_.get(), 0, (last_ - first_) * sizeof(dwc3_trb_t));
   }
 };
 

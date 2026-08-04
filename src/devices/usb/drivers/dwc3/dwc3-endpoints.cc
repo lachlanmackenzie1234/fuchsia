@@ -351,7 +351,12 @@ void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
 
   // Complete all finished TRBs.
   while (!uep.server->active_reqs.empty()) {
-    const dwc3_trb_t& trb = uep.fifo.ReadOne();
+    auto trb_res = uep.fifo.ReadOne();
+    if (trb_res.is_error()) {
+      fdf::error("ReadOne failed: {}", trb_res.status_string());
+      break;
+    }
+    const dwc3_trb_t& trb = *trb_res;
 
     if (trb.control & TRB_HWO) {
       // not yet completed by the controller

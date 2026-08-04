@@ -51,7 +51,11 @@ void Dwc3::Ep0QueueSetup() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0QueueSetup");
   ep0_.in.transfer_state = Endpoint::TransferState::kIdle;
   ep0_.out.transfer_state = Endpoint::TransferState::kIdle;
-  CacheFlushInvalidate(ep0_.buffer.get(), 0, sizeof(fdescriptor::wire::UsbSetup));
+  if (auto status = ep0_.buffer->CacheFlushInvalidate(0, sizeof(fdescriptor::wire::UsbSetup));
+      status.is_error()) {
+    fdf::error("CacheFlushInvalidate failed: {}", status);
+    return;
+  }
   EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_SETUP, ep0_.buffer->phys(),
                   sizeof(fdescriptor::wire::UsbSetup));
   ep0_.state = Ep0::State::Setup;
@@ -77,9 +81,15 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
   ZX_ASSERT(is_ep0_num(ep_num));
 
   // Only DataOut and DataIn states need TRB read.
-  dwc3_trb_t trb = (ep0_.state == Ep0::State::DataOut || ep0_.state == Ep0::State::DataIn)
-                       ? ep0_.shared_fifo.ReadOne()
-                       : dwc3_trb_t{};
+  dwc3_trb_t trb{};
+  if (ep0_.state == Ep0::State::DataOut || ep0_.state == Ep0::State::DataIn) {
+    if (auto res = ep0_.shared_fifo.ReadOne(); res.is_ok()) {
+      trb = *res;
+    } else {
+      fdf::error("ReadOne failed: {}", res.status_string());
+      return;
+    }
+  }
   // Only advance the shared FIFO read pointer if the FIFO is not empty upon
   // receiving EP0 completion interrupts. When stall recovery (Ep0EndAndStall)
   // clears the TRB ring (read_ == write_), advancing unconditionally triggers
@@ -93,8 +103,14 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       // Control Endpoint stall is cleared upon receiving SETUP.
       ep0_.out.stalled = false;
 
-      CacheFlushInvalidate(ep0_.buffer.get(), 0, ep0_.buffer->size());
-      memcpy(&ep0_.cur_setup, ep0_.buffer->virt(), sizeof(ep0_.cur_setup));
+      if (auto setup = ep0_.buffer->ReadStruct<decltype(ep0_.cur_setup)>(); setup.is_ok()) {
+        ep0_.cur_setup = *setup;
+      } else {
+        fdf::error("ReadStruct failed: {}", setup.status_string());
+        Ep0EndAndStall(ep0_.out);
+        Ep0QueueSetup();
+        break;
+      }
 
       fdf::debug("got setup: type: 0x{:02x} req: {} value: {} index: {} length: {}",
                  ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
@@ -145,7 +161,13 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       ep0_.out.total_transfers++;
       ep0_.out.total_bytes += received;
       ep0_.state = Ep0::State::WaitNrdyIn;
-      CacheFlushInvalidate(ep0_.buffer.get(), 0, ep0_.buffer->size());
+      if (auto status = ep0_.buffer->CacheFlushInvalidate(0, ep0_.buffer->size());
+          status.is_error()) {
+        fdf::error("CacheFlushInvalidate failed: {}", status);
+        Ep0EndAndStall(ep0_.out);
+        Ep0QueueSetup();
+        break;
+      }
       HandleEp0Setup(received);
       break;
     }
@@ -401,12 +423,16 @@ void Dwc3::HandleEp0Setup(size_t length) {
               }
 
               if (!read_data.empty()) {
-                std::memcpy(ep0_.buffer->virt(), read_data.data(), read_data.size_bytes());
+                if (auto status = ep0_.buffer->Write(read_data.data(), 0, read_data.size_bytes());
+                    status.is_error()) {
+                  fdf::error("Write failed: {}", status);
+                  fail();
+                  return;
+                }
               }
 
               fdf::debug("HandleSetup success: actual {}", read_data.size_bytes());
               // queue a write for the data phase
-              CacheFlush(ep0_.buffer.get(), 0, read_data.size_bytes());
               ep0_.cur_transfer_len = read_data.size_bytes();
               EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,
                               ep0_.buffer->phys(), read_data.size_bytes());

@@ -413,36 +413,7 @@ zx::result<> QualcommExtension::VoteClocks(bool on) {
   return zx::ok();
 }
 
-zx_status_t CacheFlushCommon(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length,
-                             uint32_t flush_options) {
-  TRACE_DURATION("dwc3", "CacheFlushCommon", "offset", offset, "length", length, "flush_options",
-                 flush_options);
-  if (offset + length < offset || offset + length > buffer->size()) {
-    fdf::error("CacheFlushCommon invalid arguments offset {} + length {} > buffer size {}", offset,
-               length, buffer->size());
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-  auto virt{reinterpret_cast<const uint8_t*>(buffer->virt()) + offset};
-  zx_status_t status = zx_cache_flush(virt, length, flush_options);
-  if (status != ZX_OK) {
-    fdf::error("zx_cache_flush() error: {}", zx_status_get_string(status));
-  }
-
-  return status;
-}
-
 }  // namespace
-
-zx_status_t CacheFlush(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length) {
-  TRACE_DURATION("dwc3", "CacheFlush", "offset", offset, "length", length);
-  return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA);
-}
-
-zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset,
-                                 size_t length) {
-  TRACE_DURATION("dwc3", "CacheFlushInvalidate", "offset", offset, "length", length);
-  return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
-}
 
 zx::eventpair Dwc3::AcquireWakeLease() {
   TRACE_DURATION("dwc3", "AcquireWakeLease");

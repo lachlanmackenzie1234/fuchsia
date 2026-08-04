@@ -10,15 +10,6 @@
 
 namespace dwc3 {
 
-zx_status_t CacheFlush(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length) {
-  return ZX_OK;
-}
-
-zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset,
-                                 size_t length) {
-  return ZX_OK;
-}
-
 class TrbFifoTest : public testing::Test {
  public:
   void SetUp() override {
@@ -66,7 +57,9 @@ TEST_F(TrbFifoTest, WriteAndRead) {
   trb->control = 0xef;
   fifo_.AdvanceWrite();
 
-  dwc3_trb_t read_trb = fifo_.ReadOne();
+  auto read_trb_res = fifo_.ReadOne();
+  ASSERT_TRUE(read_trb_res.is_ok());
+  dwc3_trb_t read_trb = *read_trb_res;
   EXPECT_EQ(read_trb.ptr_low, 0x1234u);
   EXPECT_EQ(read_trb.ptr_high, 0x5678u);
   EXPECT_EQ(read_trb.status, 0xabcdu);

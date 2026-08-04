@@ -10,15 +10,6 @@
 
 namespace dwc3 {
 
-zx_status_t CacheFlush(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length) {
-  return ZX_OK;
-}
-
-zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset,
-                                 size_t length) {
-  return ZX_OK;
-}
-
 template <typename T>
 class FifoTest : public testing::Test {
  public:

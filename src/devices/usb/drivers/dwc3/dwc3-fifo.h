@@ -16,12 +16,6 @@ class TestFixture;
 
 static inline const uint32_t kBufferSize = zx_system_get_page_size();
 
-// A dma_buffer::ContiguousBuffer is cached, but leaves cache management to the user. These methods
-// wrap zx_cache_flush with sensible boundary checking and validation.
-zx_status_t CacheFlush(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset, size_t length);
-zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset,
-                                 size_t length);
-
 template <typename T>
 class Fifo {
   template <bool manage_lifetime, typename gtest_base>
@@ -30,7 +24,6 @@ class Fifo {
  public:
   virtual zx::result<> Init(zx::bti& bti, bool cached) {
     if (!buffer_) {
-      cached_ = cached;
       zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(
           bti, kBufferSize, 12,
           cached ? dma_buffer::CacheOptions::kEnabled : dma_buffer::CacheOptions::kDisabled,
@@ -84,28 +77,37 @@ class Fifo {
 
   std::vector<T> Read(T*& ptr, size_t count) {
     ZX_ASSERT((ptr >= first_) && (ptr <= last_));
-    // invalidate cache so we can read fresh events
     const zx_off_t offset = (ptr - first_) * sizeof(T);
     const size_t todo = std::min<size_t>(last_ - ptr, count);
     std::vector<T> values(count);
-    CacheFlushInvalidateIfCashed(buffer_.get(), offset, todo * sizeof(T));
-    memcpy(values.data(), ptr, todo * sizeof(T));
+    if (auto status = buffer_->Read(offset, todo * sizeof(T), values.data()); status.is_error()) {
+      fdf::error("Read failed: {}", status);
+      return {};
+    }
     if (count > todo) {
-      CacheFlushInvalidateIfCashed(buffer_.get(), 0, (count - todo) * sizeof(T));
-      memcpy(values.data() + todo, first_, (count - todo) * sizeof(T));
-    };
+      if (auto status = buffer_->Read(0, (count - todo) * sizeof(T), values.data() + todo);
+          status.is_error()) {
+        fdf::error("Read failed: {}", status);
+        return {};
+      }
+    }
 
     return values;
   }
 
   zx_paddr_t Write(T*& ptr, size_t count = 1) {
     ZX_ASSERT((ptr >= first_) && (ptr <= last_));
-    // invalidate cache so we can read fresh events
     const zx_off_t offset = (ptr - first_) * sizeof(T);
     const size_t todo = std::min<size_t>(last_ - ptr, count);
-    CacheFlushIfCached(buffer_.get(), offset, todo * sizeof(T));
+    if (auto status = buffer_->CacheFlush(offset, todo * sizeof(T)); status.is_error()) {
+      fdf::error("CacheFlush failed: {}", status);
+      return 0;
+    }
     if (count > todo) {
-      CacheFlushIfCached(buffer_.get(), 0, (count - todo) * sizeof(T));
+      if (auto status = buffer_->CacheFlush(0, (count - todo) * sizeof(T)); status.is_error()) {
+        fdf::error("CacheFlush failed: {}", status);
+        return 0;
+      }
     }
     return GetPhys(ptr);
   }
@@ -129,28 +131,12 @@ class Fifo {
   }
 
  protected:
-  zx_status_t CacheFlushIfCached(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset,
-                                 size_t length) const {
-    if (cached_) {
-      return CacheFlush(buffer, offset, length);
-    }
-    return ZX_OK;
-  }
-  zx_status_t CacheFlushInvalidateIfCashed(dma_buffer::ContiguousBuffer* buffer, zx_off_t offset,
-                                           size_t length) const {
-    if (cached_) {
-      return CacheFlushInvalidate(buffer, offset, length);
-    }
-    return ZX_OK;
-  }
-
   zx_paddr_t GetPhys(T* ptr) const {
     ZX_ASSERT((ptr >= first_) && (ptr <= last_));
     return buffer_->phys() + ((ptr - first_) * sizeof(T));
   }
 
   std::unique_ptr<dma_buffer::ContiguousBuffer> buffer_;
-  bool cached_;
 
   T* first_{nullptr};  // first slot in the fifo
   T* write_{nullptr};  // next free write slot in the fifo
