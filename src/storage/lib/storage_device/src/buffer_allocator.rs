@@ -975,8 +975,8 @@ mod tests {
 
         let mut owned_buf = allocator.allocate_buffer_sync_owned(2048);
         assert_eq!(owned_buf.len(), 2048);
-        owned_buf.as_mut_slice().fill(0xcc);
-        assert_eq!(owned_buf.as_slice(), vec![0xcc; 2048]);
+        owned_buf.as_mut_ptr_slice().fill(0xcc);
+        assert_eq!(owned_buf.as_ptr_slice().to_vec(), vec![0xcc; 2048]);
 
         // Allocating remaining 2048 bytes should succeed.
         let owned_buf2 = allocator.try_allocate_buffer_owned(2048).expect("Must succeed");
@@ -990,8 +990,8 @@ mod tests {
 
         // Now allocation of 2048 bytes should succeed again.
         let mut owned_buf3 = allocator.try_allocate_buffer_owned(2048).expect("Must succeed");
-        owned_buf3.as_mut_slice().fill(0xdd);
-        assert_eq!(owned_buf3.as_slice(), vec![0xdd; 2048]);
+        owned_buf3.as_mut_ptr_slice().fill(0xdd);
+        assert_eq!(owned_buf3.as_ptr_slice().to_vec(), vec![0xdd; 2048]);
     }
 
     #[fuchsia::test]
@@ -1001,15 +1001,15 @@ mod tests {
 
         let mut buf = allocator.allocate_buffer_sync(2048);
         assert_eq!(buf.len(), 2048);
-        buf.as_mut_slice().fill(0xee);
-        assert_eq!(buf.as_slice(), vec![0xee; 2048]);
+        buf.as_mut_ptr_slice().fill(0xee);
+        assert_eq!(buf.as_ptr_slice().to_vec(), vec![0xee; 2048]);
 
         std::mem::drop(buf);
 
         let mut buf2 = allocator.allocate_buffer_sync(4096);
         assert_eq!(buf2.len(), 4096);
-        buf2.as_mut_slice().fill(0xff);
-        assert_eq!(buf2.as_slice(), vec![0xff; 4096]);
+        buf2.as_mut_ptr_slice().fill(0xff);
+        assert_eq!(buf2.as_ptr_slice().to_vec(), vec![0xff; 4096]);
     }
 
     #[fuchsia::test]

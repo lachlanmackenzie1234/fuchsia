@@ -604,7 +604,7 @@ mod tests {
             let mut transaction =
                 handle.new_transaction().await.expect("failed to create transaction");
             let mut buf = handle.allocate_buffer(8192).await;
-            buf.as_mut_slice().fill(0xaa);
+            buf.as_mut_ptr_slice().fill(0xaa);
             handle
                 .txn_write(&mut transaction, 0, buf.as_ref())
                 .await

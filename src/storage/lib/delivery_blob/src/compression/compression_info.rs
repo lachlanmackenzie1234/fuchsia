@@ -260,7 +260,11 @@ impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
 
     /// Pushes a newly read compressed block buffer slice and decompresses any complete chunks.
     /// Fuses on error: if an error occurs or has previously occurred, returns `Err`.
-    pub fn push(&mut self, buffer_slice: &[u8]) -> Result<(), ChunkedArchiveError> {
+    pub fn push<'b>(
+        &mut self,
+        buffer_slice: impl Into<PtrByteSlice<'b>>,
+    ) -> Result<(), ChunkedArchiveError> {
+        let buffer_slice = buffer_slice.into();
         if self.failed {
             return Err(ChunkedArchiveError::IntegrityError);
         }
@@ -285,7 +289,7 @@ impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
                 .unwrap_or_else(|| info.compressed_size());
             let chunk = chunk_start..chunk_end;
 
-            let decompress_chunk = |compressed_src: &[u8],
+            let decompress_chunk = |compressed_src: PtrByteSlice<'_>,
                                     dest_buf: &mut B|
              -> Result<(), ChunkedArchiveError> {
                 let mut dest_buffer = dest_buf.mut_ptr_slice().subslice_mut(0..chunk_size as usize);
@@ -322,8 +326,10 @@ impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
                 assert!(!self.accumulator.is_empty());
                 if chunk.end <= buffer.end {
                     let needed = (chunk.end - buffer.start) as usize;
-                    self.accumulator.extend_from_slice(&buffer_slice[..needed]);
-                    if let Err(e) = decompress_chunk(&self.accumulator, &mut self.dest_buf) {
+                    buffer_slice.subslice(0..needed).append_to(&mut self.accumulator);
+                    if let Err(e) =
+                        decompress_chunk(self.accumulator.as_slice().into(), &mut self.dest_buf)
+                    {
                         self.failed = true;
                         return Err(e);
                     }
@@ -332,14 +338,14 @@ impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
                     self.chunk_index += 1;
                     continue;
                 } else {
-                    self.accumulator.extend_from_slice(buffer_slice);
+                    buffer_slice.append_to(&mut self.accumulator);
                     break;
                 }
             } else if chunk.end <= buffer.end {
                 // Chunk is fully contained in current buffer.
                 let rel_start = (chunk.start - buffer.start) as usize;
                 let rel_end = (chunk.end - buffer.start) as usize;
-                let compressed_slice = &buffer_slice[rel_start..rel_end];
+                let compressed_slice = buffer_slice.subslice(rel_start..rel_end);
 
                 if let Err(e) = decompress_chunk(compressed_slice, &mut self.dest_buf) {
                     self.failed = true;
@@ -350,7 +356,9 @@ impl<C: Borrow<CompressionInfo>, B: DataBuffer> StreamingDecompressor<C, B> {
             } else {
                 // Chunk extends past current buffer; accumulate prefix and await next buffer.
                 let rel_start = (chunk.start - buffer.start) as usize;
-                self.accumulator.extend_from_slice(&buffer_slice[rel_start..]);
+                buffer_slice
+                    .subslice(rel_start..buffer_slice.len())
+                    .append_to(&mut self.accumulator);
                 break;
             }
         }

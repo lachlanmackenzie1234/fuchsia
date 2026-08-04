@@ -153,19 +153,6 @@ impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> BufferImpl<'a, H, A> {
         self.range.end - self.range.start
     }
 
-    /// Returns a slice of the buffer's contents.
-    pub fn as_slice(&self) -> &[u8] {
-        // SAFETY: `self.slice` points to a valid memory range of `self.len()` bytes.
-        unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) }
-    }
-
-    /// Returns a mutable slice of the buffer's contents.
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        // SAFETY: `&mut self` guarantees exclusive mutable access to this range of `self.len()`
-        // bytes.
-        unsafe { std::slice::from_raw_parts_mut(self.slice.as_mut_ptr(), self.len()) }
-    }
-
     /// Returns a reference to the underlying data if the buffer is trusted.
     /// Returns None if the buffer is untrusted (shared with the driver).
     pub fn try_as_slice(&self) -> Option<&[u8]> {
@@ -203,7 +190,7 @@ impl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> BufferImpl<'a, H, A> {
     ///
     /// Panics if `src.len() != self.len()`.
     pub fn copy_from_slice(&mut self, src: &[u8]) {
-        self.as_mut_slice().copy_from_slice(src);
+        self.slice.copy_from_ptr_slice(src.into());
     }
 
     /// Copies the contents of `src` buffer into this buffer.
@@ -292,13 +279,6 @@ impl<'a> BufferRef<'a> {
     #[cfg(target_os = "fuchsia")]
     pub(crate) fn allocator_id(&self) -> usize {
         self.allocator_id
-    }
-
-    /// Returns a slice of the buffer's contents.
-    pub fn as_slice(&self) -> &[u8] {
-        // SAFETY: The caller must ensure safety if the buffer is shared. This is a temporary
-        // compatibility shim during the soft-transition.
-        unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) }
     }
 
     /// Returns a reference to the underlying data if the buffer is trusted.
@@ -429,20 +409,6 @@ impl<'a> MutableBufferRef<'a> {
             allocator_id: self.allocator_id,
             trusted: self.trusted,
         }
-    }
-
-    /// Returns a slice of the buffer's contents.
-    pub fn as_slice(&self) -> &[u8] {
-        // SAFETY: The caller must ensure safety if the buffer is shared. This is a temporary
-        // compatibility shim during the soft-transition.
-        unsafe { std::slice::from_raw_parts(self.slice.as_ptr(), self.len()) }
-    }
-
-    /// Returns a mutable slice of the buffer's contents.
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        // SAFETY: The caller must ensure safety if the buffer is shared. This is a temporary
-        // compatibility shim during the soft-transition.
-        unsafe { std::slice::from_raw_parts_mut(self.slice.as_mut_ptr(), self.len()) }
     }
 
     /// Returns a reference to the underlying data if the buffer is trusted.

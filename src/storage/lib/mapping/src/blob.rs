@@ -78,7 +78,7 @@ impl Blob {
                         dest_buf
                             .mut_ptr_slice()
                             .subslice_mut(0..valid_len)
-                            .copy_from_slice(&buffer.as_slice()[..valid_len]);
+                            .copy_from_ptr_slice(buffer.as_ptr_slice().subslice(0..valid_len));
                         if dest_buf.commit(valid_len).is_err() {
                             return ControlFlow::Break(());
                         }
@@ -104,7 +104,7 @@ impl Blob {
                             return ControlFlow::Break(());
                         }
                     };
-                    if decompressor.push(buffer.as_slice()).is_err() {
+                    if decompressor.push(buffer.as_ptr_slice()).is_err() {
                         return ControlFlow::Break(());
                     }
                     ControlFlow::Continue(())

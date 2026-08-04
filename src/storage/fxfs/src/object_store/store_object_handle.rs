@@ -2295,7 +2295,7 @@ mod tests {
 
         // Write 8KiB at offset 0 and 8KiB at offset 16KiB, leaving a hole in between.
         let mut buf = object.allocate_buffer(8192).await;
-        buf.as_mut_slice().fill(0xaa);
+        buf.as_mut_ptr_slice().fill(0xaa);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         object.write_or_append(Some(16384), buf.as_ref()).await.expect("write failed");
 

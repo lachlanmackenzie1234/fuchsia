@@ -434,9 +434,8 @@ pub(crate) mod tests {
 
         read_aligned_range(&mappings, 0..4096, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
-            let slice = buffer.as_slice();
-            assert_eq!(slice.len(), 4096);
-            assert!(slice.iter().all(|&b| b == 42));
+            assert_eq!(buffer.len(), 4096);
+            assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b.read() == 42));
             completed_clone.store(true, Ordering::Relaxed);
             ControlFlow::Continue(())
         });
@@ -461,7 +460,7 @@ pub(crate) mod tests {
 
         read_aligned_range(&mappings, 0..8192, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
-            received_bytes.extend_from_slice(buffer.as_slice());
+            buffer.as_ptr_slice().append_to(&mut received_bytes);
             if received_bytes.len() == 8192 {
                 assert!(received_bytes[0..4096].iter().all(|&b| b == 1));
                 assert!(received_bytes[4096..8192].iter().all(|&b| b == 2));
@@ -486,9 +485,8 @@ pub(crate) mod tests {
 
         read_aligned_range(&mappings, 0..4096, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
-            let slice = buffer.as_slice();
-            assert_eq!(slice.len(), 4096);
-            assert!(slice.iter().all(|&b| b == 0));
+            assert_eq!(buffer.len(), 4096);
+            assert!(buffer.as_ptr_slice().iter_as::<u64>().all(|b| b.read() == 0));
             completed_clone.store(true, Ordering::Relaxed);
             ControlFlow::Continue(())
         });
@@ -516,7 +514,7 @@ pub(crate) mod tests {
         read_aligned_range(&mappings, 0..8192, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
             chunk_count += 1;
-            received_bytes.extend_from_slice(buffer.as_slice());
+            buffer.as_ptr_slice().append_to(&mut received_bytes);
             if received_bytes.len() == 8192 {
                 assert_eq!(chunk_count, 2, "Should have streamed in 2 rounds of 4096 bytes");
                 assert!(received_bytes[0..4096].iter().all(|&b| b == 1));
@@ -596,7 +594,7 @@ pub(crate) mod tests {
 
         read_aligned_range(&mappings, 0..12288, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
-            let first_byte = buffer.as_slice()[0];
+            let first_byte = buffer.as_ptr_slice().to_vec()[0];
             received_chunks.push(first_byte);
             if received_chunks.len() == 3 {
                 // Verify strict delivery order: chunk 0 (10), then chunk 1 (20), then chunk 2 (30).
@@ -666,7 +664,7 @@ pub(crate) mod tests {
 
         read_aligned_range(&mappings, 0..16384, &*service, move |res| {
             let buffer = res.expect("read_aligned_range should succeed");
-            received_bytes.extend_from_slice(buffer.as_slice());
+            buffer.as_ptr_slice().append_to(&mut received_bytes);
             if received_bytes.len() == 16384 {
                 assert!(received_bytes[0..4096].iter().all(|&b| b == 1));
                 assert!(received_bytes[4096..8192].iter().all(|&b| b == 2));
@@ -941,8 +939,16 @@ pub(crate) mod tests {
             count_clone.fetch_add(1, Ordering::Relaxed);
             let buffer = res.expect("merged read should succeed");
             assert_eq!(buffer.len(), 16384);
-            assert!(buffer.as_slice()[0..4096].iter().all(|&b| b == 0xAA));
-            assert!(buffer.as_slice()[4096..16384].iter().all(|&b| b == 0xBB));
+            assert!(
+                buffer.as_ptr_slice().subslice(0..4096).iter_as::<u8>().all(|b| b.read() == 0xAA)
+            );
+            assert!(
+                buffer
+                    .as_ptr_slice()
+                    .subslice(4096..16384)
+                    .iter_as::<u8>()
+                    .all(|b| b.read() == 0xBB)
+            );
             completed_clone.store(true, Ordering::Relaxed);
             ControlFlow::Continue(())
         });

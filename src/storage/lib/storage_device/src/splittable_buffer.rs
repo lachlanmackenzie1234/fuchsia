@@ -109,8 +109,8 @@ mod tests {
         let (mut splittable, handle) = SplittableBuffer::new(owned);
         let mut child1 = splittable.take_prefix(1024);
         let mut child2 = splittable.take_prefix(1024);
-        child1.as_mut_slice().fill(0x33);
-        child2.as_mut_slice().fill(0x44);
+        child1.as_mut_ptr_slice().fill(0x33);
+        child2.as_mut_ptr_slice().fill(0x44);
 
         // Drop splittable and child1 first while child2 is still active.
         drop(splittable);
@@ -123,7 +123,9 @@ mod tests {
         drop(child2);
         let merged = handle.into_buffer().expect("into_buffer must succeed when sole reference");
         assert_eq!(merged.len(), 2048);
-        assert!(merged.as_slice()[..1024].iter().all(|&b| b == 0x33));
-        assert!(merged.as_slice()[1024..].iter().all(|&b| b == 0x44));
+        assert!(merged.as_ptr_slice().subslice(0..1024).iter_as::<u8>().all(|b| b.read() == 0x33));
+        assert!(
+            merged.as_ptr_slice().subslice(1024..2048).iter_as::<u8>().all(|b| b.read() == 0x44)
+        );
     }
 }

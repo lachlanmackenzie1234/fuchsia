@@ -1010,7 +1010,7 @@ mod tests {
         read_aligned_range(&extents, 0..4096, &*service, move |buffer_result| {
             let buffer = buffer_result.unwrap();
             let mut read_guard = read_buf.lock().unwrap();
-            read_guard.extend_from_slice(buffer.as_slice());
+            buffer.as_ptr_slice().append_to(&mut read_guard);
             if read_guard.len() == 4096 {
                 if let Some(s) = send.lock().unwrap().take() {
                     let _ = s.send(read_guard.clone());
@@ -1064,7 +1064,7 @@ mod tests {
                 read_aligned_range(&extents, range, &*service, move |buffer_result| {
                     let buffer = buffer_result.unwrap();
                     let mut read_guard = read_buf.lock().unwrap();
-                    read_guard.extend_from_slice(buffer.as_slice());
+                    buffer.as_ptr_slice().append_to(&mut read_guard);
                     if read_guard.len() == target_len {
                         if let Some(s) = send.lock().unwrap().take() {
                             let _ = s.send(read_guard.clone());
