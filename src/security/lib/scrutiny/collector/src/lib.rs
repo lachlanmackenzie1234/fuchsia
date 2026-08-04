@@ -14,4 +14,5 @@ mod zbi;
 mod package_test_utils;
 
 pub mod component_model;
+pub mod ota_verification;
 pub mod unified_collector;

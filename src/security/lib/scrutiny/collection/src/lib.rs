@@ -8,6 +8,7 @@ pub mod core;
 pub mod error;
 pub mod model;
 pub mod model_config;
+pub mod ota_verification;
 pub mod static_packages;
 pub mod v2_component_model;
 pub mod zbi;

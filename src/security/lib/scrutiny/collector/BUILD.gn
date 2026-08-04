@@ -69,6 +69,7 @@ if (is_host) {
       ":testdata",
       "//src/lib/fuchsia",
       "//src/security/lib/scrutiny/testing",
+      "//src/storage/lib/delivery_blob",
       "//third_party/rust_crates:tempfile",
     ]
     configs += [ ":test_config" ]
@@ -79,6 +80,7 @@ if (is_host) {
       "src/additional_boot_args.rs",
       "src/component_model.rs",
       "src/lib.rs",
+      "src/ota_verification.rs",
       "src/package.rs",
       "src/package_reader.rs",
       "src/package_test_utils.rs",

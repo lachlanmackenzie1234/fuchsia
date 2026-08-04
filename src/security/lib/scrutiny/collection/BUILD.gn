@@ -37,6 +37,7 @@ if (is_host) {
       "src/lib.rs",
       "src/model.rs",
       "src/model_config.rs",
+      "src/ota_verification.rs",
       "src/static_packages.rs",
       "src/v2_component_model.rs",
       "src/zbi.rs",
