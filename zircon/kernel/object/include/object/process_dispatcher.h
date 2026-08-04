@@ -442,6 +442,7 @@ zx_status_t cpp_handle_table_get_dispatcher(zx_handle_t handle, fbl::RefPtr<Disp
                                             zx_rights_t* out_rights);
 zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher* process,
                                                         uint32_t policy);
+int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROCESS_DISPATCHER_H_

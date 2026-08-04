@@ -7,7 +7,9 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_TIMER_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_TIMER_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <sys/types.h>
+#include <zircon/compiler.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
@@ -15,40 +17,56 @@
 #include <kernel/timer.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class TimerDispatcher final : public SoloDispatcher<TimerDispatcher, ZX_DEFAULT_TIMER_RIGHTS> {
+class TimerDispatcher;
+
+extern "C" {
+
+zx_status_t cpp_timer_dispatcher_create(uint32_t options, zx_clock_t clock_id,
+                                        KernelHandle<TimerDispatcher>* handle_out);
+void cpp_timer_dispatcher_init_dpc(void* dpc_storage, const TimerDispatcher* disp);
+void timer_irq_callback(Timer* timer, zx_time_t now, void* arg);
+
+void rust_timer_dispatcher_state_init(void* state, void* disp, uint32_t options,
+                                      zx_clock_t clock_id);
+void rust_timer_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_timer_dispatcher_state_get_lock(const void* state);
+void rust_timer_dispatcher_on_zero_handles(const TimerDispatcher* disp);
+void rust_timer_dispatcher_on_timer_fired(const TimerDispatcher* disp);
+zx_info_timer_t rust_timer_dispatcher_get_info(const TimerDispatcher* disp);
+
+}  // extern "C"
+
+class TimerDispatcher final : public Dispatcher {
  public:
-  static zx_status_t Create(uint32_t options, zx_clock_t clock_id,
-                            KernelHandle<TimerDispatcher>* handle, zx_rights_t* rights);
-
   ~TimerDispatcher() final;
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_TIMER; }
-  void on_zero_handles() final;
+  void on_zero_handles() final { rust_timer_dispatcher_on_zero_handles(this); }
+  bool is_waitable() const final { return true; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
 
-  // Timer specific ops.
-  zx_status_t Set(zx_time_t deadline, zx_duration_t slack_amount);
-  zx_status_t Cancel();
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return UserSignalSelfSolo(this, clear_mask, set_mask, 0);
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
 
   // Timer callback.
   void OnTimerFired();
 
   zx_info_timer_t GetInfo() const;
 
- private:
-  explicit TimerDispatcher(uint32_t options, zx_clock_t clock_id);
-  void SetTimerLocked(bool cancel_first) TA_REQ(get_lock());
-  bool CancelTimerLocked() TA_REQ(get_lock());
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
-  const uint32_t options_;
-  const zx_clock_t clock_id_;
-  Dpc timer_dpc_;
-  // The deadline should be interpreted as:
-  // * zx_instant_mono_t if clock_id_ equals ZX_CLOCK_MONOTONIC.
-  // * zx_instant_boot_t if clock_id_ equals ZX_CLOCK_BOOT.
-  zx_time_t deadline_ TA_GUARDED(get_lock());
-  zx_duration_t slack_amount_ TA_GUARDED(get_lock());
-  bool cancel_pending_ TA_GUARDED(get_lock());
-  Timer timer_ TA_GUARDED(get_lock());
+ private:
+  friend zx_status_t cpp_timer_dispatcher_create(uint32_t options, zx_clock_t clock_id,
+                                                 KernelHandle<TimerDispatcher>* handle_out);
+  TimerDispatcher(uint32_t options, zx_clock_t clock_id);
+
+  OpaqueStorage<kTimerDispatcherStateSize, kTimerDispatcherStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_TIMER_DISPATCHER_H_

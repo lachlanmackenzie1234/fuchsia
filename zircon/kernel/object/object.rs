@@ -34,6 +34,8 @@ mod suspend_token_dispatcher;
 mod suspend_token_dispatcher_ffi;
 mod thread_dispatcher;
 mod thread_dispatcher_ffi;
+mod timer_dispatcher;
+mod timer_dispatcher_ffi;
 mod vm_address_region_dispatcher;
 mod vm_address_region_dispatcher_ffi;
 mod vm_object_dispatcher;
@@ -57,12 +59,7 @@ pub use resource_ffi::{
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use sampler_dispatcher_ffi::*;
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
-#[allow(unused_imports)]
-pub use suspend_token_dispatcher_ffi::*;
-#[allow(unused_imports)]
 pub use thread_dispatcher::ThreadDispatcher;
-#[allow(unused_imports)]
-pub use thread_dispatcher_ffi::*;
-#[allow(unused_imports)]
+pub use timer_dispatcher::TimerDispatcher;
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
 pub use vm_object_dispatcher::VmObjectDispatcher;

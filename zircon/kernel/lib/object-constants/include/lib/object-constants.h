@@ -62,4 +62,13 @@ constexpr size_t kSuspendTokenDispatcherStateOffset = 48;
 constexpr size_t kSchedulerStateBaseProfileSize = 32;
 constexpr size_t kSchedulerStateBaseProfileAlign = 8;
 
+// Size and alignment for TimerDispatcherState.
+constexpr size_t kTimerDispatcherStateSize = 200;
+constexpr size_t kTimerDispatcherStateAlign = 8;
+constexpr size_t kTimerDispatcherStateOffset = 48;
+
+// Size and alignment for DpcStorage (Dpc).
+constexpr size_t kDpcStorageSize = 32;
+constexpr size_t kDpcStorageAlign = 8;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

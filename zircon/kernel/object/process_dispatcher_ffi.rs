@@ -94,4 +94,9 @@ unsafe extern "C" {
         process: *const ProcessDispatcher,
         policy: u32,
     ) -> zx_status_t;
+
+    /// Returns the timer slack policy amount for the given process.
+    pub(crate) fn cpp_process_dispatcher_get_timer_slack_policy_amount(
+        process: *const ProcessDispatcher,
+    ) -> i64;
 }

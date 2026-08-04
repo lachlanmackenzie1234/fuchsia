@@ -59,7 +59,6 @@ source_set("impl") {
     "system_ffi.cc",
     "task.cc",
     "test.cc",
-    "timer.cc",
     "vmar.cc",
     "vmo.cc",
     "zircon.cc",
@@ -146,6 +145,7 @@ kernel_rust_mod("syscalls-rs") {
     "system.rs",
     "task.rs",
     "test.rs",
+    "timer.rs",
   ]
   deps = [
     "macros:syscalls-macro",

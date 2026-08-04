@@ -109,4 +109,14 @@ impl ProcessDispatcher {
             unsafe { cpp_process_dispatcher_enforce_basic_policy(self as *const _, policy) };
         Status::ok(status)
     }
+
+    /// Returns the timer slack policy amount for this process.
+    pub fn get_timer_slack_policy_amount(&self) -> i64 {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe {
+            super::process_dispatcher_ffi::cpp_process_dispatcher_get_timer_slack_policy_amount(
+                self as *const _,
+            )
+        }
+    }
 }

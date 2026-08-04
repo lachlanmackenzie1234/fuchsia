@@ -46,4 +46,8 @@ zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher*
   return const_cast<ProcessDispatcher*>(process)->EnforceBasicPolicy(policy);
 }
 
+int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process) {
+  return process->GetTimerSlackPolicy().amount();
+}
+
 }  // extern "C"

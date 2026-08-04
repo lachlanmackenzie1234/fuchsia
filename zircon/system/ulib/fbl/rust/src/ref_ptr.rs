@@ -168,6 +168,15 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
         };
         Self::try_init(init)
     }
+
+    /// Manually increments the reference count of `target`.
+    ///
+    /// Every call to `add_ref` should be balanced by a subsequent drop of a
+    /// `RefPtr` (e.g. constructed via `RefPtr::from_raw`), otherwise memory will
+    /// be leaked. It is safe to leak memory in Rust.
+    pub fn add_ref(target: &T) {
+        target.ref_count().add_ref();
+    }
 }
 
 impl<T: HasRefCount + Recyclable> Deref for RefPtr<T> {
@@ -382,5 +391,21 @@ mod tests {
     fn test_null_try_from() {
         let maybe_ref_ptr = unsafe { RefPtr::try_from_raw(null::<TestRustRefCounted>()) };
         assert!(maybe_ref_ptr.is_none());
+    }
+
+    #[test]
+    fn test_add_ref() {
+        let destroyed = Arc::new(AtomicBool::new(false));
+        {
+            let ref_ptr =
+                make_ref_counted!(TestRustRefCounted { destroyed: destroyed.clone() }).unwrap();
+            assert!(!destroyed.load(Ordering::Relaxed));
+            RefPtr::add_ref(&*ref_ptr);
+            let ref_ptr2 = unsafe { RefPtr::from_raw(RefPtr::as_ptr(&ref_ptr)) };
+            drop(ref_ptr);
+            assert!(!destroyed.load(Ordering::Relaxed));
+            drop(ref_ptr2);
+            assert!(destroyed.load(Ordering::Relaxed));
+        }
     }
 }
