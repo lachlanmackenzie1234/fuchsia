@@ -18,6 +18,7 @@ executable("minfs") {
   ]
   deps = [
     "//src/storage/lib/host",
+    "//src/storage/lib/vfs/cpp",
     "//src/storage/lib/vfs/cpp/journal",
     "//src/storage/minfs",
     "//zircon/system/ulib/bitmap",

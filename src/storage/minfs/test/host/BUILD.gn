@@ -4,10 +4,12 @@
 
 import("//build/test.gni")
 
-test("minfs_host") {
-  sources = [ "bcache_test.cc" ]
-  deps = [
-    "//src/storage/minfs",
-    "//zircon/system/ulib/zxtest",
-  ]
+if (is_host) {
+  test("minfs_host") {
+    sources = [ "bcache_test.cc" ]
+    deps = [
+      "//src/storage/minfs",
+      "//zircon/system/ulib/zxtest",
+    ]
+  }
 }

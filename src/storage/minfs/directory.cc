@@ -523,7 +523,9 @@ zx_status_t Directory::Append(const void* data, size_t len, size_t* out_end, siz
 
 zx_status_t Directory::Lookup(std::string_view name, fbl::RefPtr<fs::Vnode>* out) {
   TRACE_DURATION("minfs", "Directory::Lookup", "name", name);
-  ZX_DEBUG_ASSERT(fs::IsValidName(name));
+  if (!fs::IsValidName(name)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
 
   return Vfs()->GetNodeOperations()->lookup.Track([&] {
     auto vn_or = LookupInternal(name);

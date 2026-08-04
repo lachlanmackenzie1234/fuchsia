@@ -11,11 +11,13 @@
 
 #include <algorithm>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include <fbl/algorithm.h>
 
 #include "minfs.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 #include "src/storage/minfs/format.h"
 #include "src/storage/minfs/fsck.h"
 #include "src/storage/minfs/host.h"
@@ -528,6 +530,10 @@ zx_status_t MinfsCreator::ProcessEntityAndChildren(char* src, char* dst) {
   while ((dir_entry = current_dir.ReadDir()) != nullptr) {
     if (!strcmp(dir_entry->d_name, ".") || !strcmp(dir_entry->d_name, "..")) {
       continue;
+    }
+    if (!fs::IsValidName(dir_entry->d_name)) {
+      fprintf(stderr, "error: invalid directory entry name '%s'\n", dir_entry->d_name);
+      return ZX_ERR_INVALID_ARGS;
     }
     size_t name_len = strlen(dir_entry->d_name);
     if (src_len + name_len + 1 > PATH_MAX - 1 || dst_len + name_len + 1 > PATH_MAX - 1) {

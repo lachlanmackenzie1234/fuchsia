@@ -76,5 +76,34 @@ TEST(ValidateDirentTest, ShortReadOfDirentNameFails) {
   [[maybe_unused]] auto bcache = Runner::Destroy(std::move(fs_or.value()));
 }
 
+TEST(DirectoryTest, LookupInvalidNameRejectsTraversal) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+
+  constexpr uint64_t kBlockCount = 1 << 20;
+  auto device = std::make_unique<FakeBlockDevice>(kBlockCount, kMinfsBlockSize);
+
+  auto bcache_or = Bcache::Create(std::move(device), kBlockCount);
+  ASSERT_TRUE(bcache_or.is_ok());
+  ASSERT_TRUE(Mkfs(bcache_or.value().get()).is_ok());
+  MountOptions options = {};
+
+  auto fs_or = Runner::Create(loop.dispatcher(), std::move(bcache_or.value()), options);
+  ASSERT_TRUE(fs_or.is_ok());
+
+  {
+    auto root = fs_or->minfs().VnodeGet(kMinfsRootIno);
+    ASSERT_TRUE(root.is_ok());
+
+    fbl::RefPtr<fs::Vnode> unused_child;
+    EXPECT_EQ(root->Lookup("..", &unused_child), ZX_ERR_INVALID_ARGS);
+    EXPECT_EQ(root->Lookup(".", &unused_child), ZX_ERR_INVALID_ARGS);
+    EXPECT_EQ(root->Lookup("foo/bar", &unused_child), ZX_ERR_INVALID_ARGS);
+    EXPECT_EQ(root->Lookup("../foo", &unused_child), ZX_ERR_INVALID_ARGS);
+    EXPECT_EQ(root->Lookup("", &unused_child), ZX_ERR_INVALID_ARGS);
+  }
+
+  [[maybe_unused]] auto bcache = Runner::Destroy(std::move(fs_or.value()));
+}
+
 }  // namespace
 }  // namespace minfs
