@@ -53,10 +53,7 @@
             to: [ "#dns_resolver" ],
         },
         {
-            config: [
-                "fuchsia.http-client.StopOnIdleTimeoutMillis",
-                "fuchsia.http-client.TcpReceiveBufferSizeBytes",
-            ],
+            config: "fuchsia.http-client.StopOnIdleTimeoutMillis",
             from: "void",
             to: "#http_client",
             availability: "optional",
