@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 composite dwc3;
+using fuchsia;
 
 
 primary parent "pdev" {
@@ -48,27 +49,27 @@ optional parent "usb-interconnect" {
 }
 
 optional parent "core-clk" {
-  fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.core-clk";
+  fuchsia.NAME == "core-clk";
 }
 
 optional parent "iface-clk" {
-  fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.iface-clk";
+  fuchsia.NAME == "iface-clk";
 }
 
 optional parent "bus-aggr-clk" {
-  fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.bus-aggr-clk";
+  fuchsia.NAME == "bus-aggr-clk";
 }
 
 optional parent "xo" {
-  fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.xo";
+  fuchsia.NAME == "xo";
 }
 
 optional parent "sleep-clk" {
-  fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.sleep-clk";
+  fuchsia.NAME == "sleep-clk";
 }
 
 optional parent "utmi-clk" {
-  fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.utmi-clk";
+  fuchsia.NAME == "utmi-clk";
 }
 
 optional parent "reset" {

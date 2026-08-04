@@ -20,6 +20,7 @@ fuchsia_driver_bind_bytecode(
     output = "dw-i2c-bind.bindbc",
     rules = "meta/dw-i2c.bind",
     deps = [
+        "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.clock",
         "@fuchsia_sdk//bind/fuchsia.devicetree",
         "@fuchsia_sdk//bind/fuchsia.gpio",

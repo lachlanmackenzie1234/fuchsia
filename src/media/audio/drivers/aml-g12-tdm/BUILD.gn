@@ -106,6 +106,7 @@ driver_bind_rules("aml-g12-tdm-dai-bind") {
   tests = "meta/tests-dai.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",
     "//src/devices/bind/fuchsia.devicetree",

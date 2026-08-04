@@ -92,7 +92,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.clock.FUNCTION": " fuchsia.clock.FUNCTION.CAMERA_SENSOR"
+                    "fuchsia.NAME": "\"CAMERA_SENSOR\""
                 }
             }
         ]

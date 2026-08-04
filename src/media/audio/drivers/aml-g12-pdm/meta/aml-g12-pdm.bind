@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 composite aml_pdm;
+using fuchsia;
 
 using fuchsia.hardware.pin;
 using fuchsia.platform;
@@ -36,12 +37,12 @@ parent "clock-init" {
 
 optional parent "clock-gate" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_GATE;
+  fuchsia.NAME == "AUDIO_GATE";
 }
 
 optional parent "clock-pll" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_PLL;
+  fuchsia.NAME == "AUDIO_PLL";
 }
 
 optional parent "pin-states-0" {

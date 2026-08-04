@@ -63,7 +63,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.DOS_GCLK_VDEC"
+                    "fuchsia.NAME": "\"DOS_GCLK_VDEC\""
                 }
             }
         ]
@@ -76,7 +76,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
-                    "fuchsia.clock.FUNCTION": "fuchsia.clock.FUNCTION.DOS"
+                    "fuchsia.NAME": "\"DOS\""
                 }
             }
         ]
