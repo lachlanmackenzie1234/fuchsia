@@ -18,6 +18,7 @@ from .models import (
     InitializeArguments,
     LaunchArguments,
     MessageType,
+    NextArguments,
     PauseArguments,
     Response,
     ScopesArguments,
@@ -441,6 +442,18 @@ class DapClient:
             The response model.
         """
         resp = await self._send_request("stepOut", args)
+        return Response.model_validate(resp)
+
+    async def next(self, args: NextArguments) -> Response:
+        """Sends a next (step over) request.
+
+        Args:
+            args: Arguments for the next request.
+
+        Returns:
+            The response model.
+        """
+        resp = await self._send_request("next", args)
         return Response.model_validate(resp)
 
     async def threads(self) -> ThreadsResponse:

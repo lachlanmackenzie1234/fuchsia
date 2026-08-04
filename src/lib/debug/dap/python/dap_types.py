@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Any
+from typing import Any, Literal
+
+SteppingGranularity = Literal["statement", "line", "instruction"]
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel

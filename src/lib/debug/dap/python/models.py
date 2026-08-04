@@ -14,6 +14,7 @@ from .dap_types import (
     Source,
     SourceBreakpoint,
     StackFrame,
+    SteppingGranularity,
     Thread,
     Variable,
 )
@@ -222,7 +223,21 @@ class StepOutArguments(DapBaseModel):
 
     thread_id: int
     single_thread: bool | None = None
-    granularity: str | None = None
+    granularity: SteppingGranularity | None = None
+
+
+class NextArguments(DapBaseModel):
+    """Arguments for `next` request.
+
+    Attributes:
+        thread_id: Specifies the thread for which to step over.
+        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
+        granularity: Stepping granularity ('statement' | 'line' | 'instruction').
+    """
+
+    thread_id: int
+    single_thread: bool | None = None
+    granularity: SteppingGranularity | None = None
 
 
 class LaunchArguments(DapBaseModel):
