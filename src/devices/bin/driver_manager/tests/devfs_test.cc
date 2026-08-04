@@ -240,4 +240,51 @@ TEST(Devfs, PassthroughTarget) {
   }
 }
 
+TEST(Devfs, DeviceTopologyUseAfterFree) {
+  async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+  std::optional<Devnode> root_slot;
+  Devfs devfs(root_slot, loop.dispatcher());
+  ASSERT_TRUE(root_slot.has_value());
+  Devnode& root_node = root_slot.value();
+
+  Devnode::PassThrough passthrough(
+      [](zx::channel server) { return ZX_OK; },
+      [](fidl::ServerEnd<fuchsia_device::Controller> server_end) { return ZX_OK; });
+
+  DevfsDevice child;
+  ASSERT_OK(root_node.add_child("test-network", "network", passthrough, child));
+
+  auto network_class_dir = devfs.get_class_entry("network");
+  ASSERT_NE(network_class_dir, nullptr);
+  ASSERT_EQ(1u, network_class_dir->unpublished.size());
+  std::string instance_name(network_class_dir->unpublished.begin()->first);
+  ASSERT_FALSE(instance_name.empty());
+
+  child.publish();
+
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  ASSERT_OK(devfs.outgoing().Serve(std::move(server_end)));
+
+  // Unpublish the device. This destroys the Devnode.
+  child.unpublish();
+
+  // Try to connect to the device_topology protocol of the destroyed node.
+  std::string topo_path = "svc/fuchsia.hardware.network.Service/" + instance_name + "/" +
+                          fuchsia_device_fs::wire::kDeviceTopologyName;
+  auto [topo_client, topo_server] = fidl::Endpoints<fuchsia_device_fs::TopologicalPath>::Create();
+
+  ASSERT_OK(fidl::WireCall(client_end)
+                ->Open(fidl::StringView::FromExternal(topo_path),
+                       fuchsia_io::wire::Flags::kProtocolService, {}, topo_server.TakeChannel())
+                .status());
+
+  // Run the loop. If the handler was not removed, this will call the handler
+  // which accesses the destroyed Devnode's path_server_, causing a UAF.
+  loop.RunUntilIdle();
+
+  // Check if the channel was closed.
+  ASSERT_OK(
+      topo_client.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), nullptr));
+}
+
 }  // namespace

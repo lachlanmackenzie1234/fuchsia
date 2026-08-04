@@ -196,7 +196,9 @@ Devnode::~Devnode() {
   children().RemoveAllEntries();
 
   if (service_path_.has_value() && service_name_.has_value()) {
-    [[maybe_unused]] auto res = devfs_.outgoing().RemoveProtocolAt(*service_path_, *service_name_);
+    (void)devfs_.outgoing().RemoveProtocolAt(*service_path_, *service_name_);
+    (void)devfs_.outgoing().RemoveProtocolAt(*service_path_,
+                                             fuchsia_device_fs::wire::kDeviceTopologyName);
     service_path_.reset();
     service_name_.reset();
   }
