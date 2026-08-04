@@ -2745,11 +2745,32 @@ impl ObjectStore {
         }
     }
 
+    /// Fail if any keys in the root store are not basic Fxfs keys. Fscrypt keys shouldn't be
+    /// there and use a weaker key derivation function. Prevent accidentally using it on a volume's
+    /// root key.
+    fn fail_on_illegal_keys(&self, keys: &EncryptionKeys) -> Result<(), Error> {
+        if !self.is_root() {
+            return Ok(());
+        }
+
+        for key in keys.iter() {
+            if !matches!(key.1, EncryptionKey::Fxfs(_) | EncryptionKey::LegacyFxfs(_)) {
+                return Err(
+                    anyhow!(FxfsError::IntegrityError).context("Illegal key type in root store")
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Retrieves the wrapped keys for the given object.  The keys *should* be known to exist and it
     /// will be considered an inconsistency if they don't.
     pub async fn get_keys(&self, object_id: u64) -> Result<EncryptionKeys, Error> {
         match self.tree.find(&ObjectKey::keys(object_id)).await?.ok_or(FxfsError::Inconsistent)? {
-            Item { value: ObjectValue::Keys(keys), .. } => Ok(keys),
+            Item { value: ObjectValue::Keys(keys), .. } => {
+                self.fail_on_illegal_keys(&keys)?;
+                Ok(keys)
+            }
             _ => Err(anyhow!(FxfsError::Inconsistent).context("open_object: Expected keys")),
         }
     }
@@ -3235,7 +3256,7 @@ mod tests {
     use super::{
         AttributeId, FsverityMetadata, HandleOptions, LastObjectId, LastObjectIdInfo, LockKey,
         MAX_STORE_INFO_SERIALIZED_SIZE, Mutation, NewChildStoreOptions, OBJECT_ID_HI_MASK,
-        ObjectStore, RootDigest, StoreInfo, StoreOptions,
+        ObjectEncryptionOptions, ObjectStore, RootDigest, StoreInfo, StoreOptions,
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{
@@ -5877,5 +5898,87 @@ mod tests {
         fsck(fs.clone()).await.expect("fsck failed");
 
         fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_open_object_with_illegal_key_in_root_store() {
+        let fs = test_filesystem().await;
+        let crypt = Arc::new(new_insecure_crypt());
+        let object_id = {
+            let store = fs.root_store();
+            let mut transaction = store
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+
+            let reserved_id = store.get_next_object_id().await.expect("get_next_object_id failed");
+            let object_id = reserved_id.get();
+
+            let (fxfs_key, unwrapped_key) =
+                crypt.create_key(object_id, KeyPurpose::Data).await.expect("create_key failed");
+
+            let handle = ObjectStore::create_object_with_id(
+                &store,
+                &mut transaction,
+                reserved_id,
+                HandleOptions::default(),
+                Some(ObjectEncryptionOptions {
+                    permanent: false,
+                    key_id: 0,
+                    key: EncryptionKey::Fxfs(fxfs_key),
+                    unwrapped_key,
+                }),
+            )
+            .expect("create_object_with_id failed");
+            transaction.commit().await.expect("commit failed");
+
+            let buf = handle.allocate_buffer(fs.block_size() as usize).await;
+            handle.write_or_append(None, buf.as_ref()).await.expect("Write some data");
+
+            // Manually overwrite keys to be appended with an illegal key type. It won't even
+            // attempt to use the key since nothing references it, but it will still cause the
+            // failure.
+            let old_keys = store.get_keys(object_id).await.expect("Old keys should work fine");
+            let mut new_keys =
+                vec![(1, EncryptionKey::FscryptInoLblk32File { key_identifier: [0; 16] })];
+            for key in old_keys.iter() {
+                new_keys.push(key.clone());
+            }
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::Object {
+                        store_object_id: store.store_object_id,
+                        object_id
+                    }],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            transaction.add(
+                store.store_object_id(),
+                Mutation::replace_or_insert_object(
+                    ObjectKey::keys(object_id),
+                    ObjectValue::keys(new_keys.into()),
+                ),
+            );
+            transaction.commit().await.expect("commit failed");
+
+            object_id
+        };
+
+        fs.close().await.expect("close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystem::open(device).await.expect("open failed");
+
+        let store = fs.root_store();
+        assert!(
+            ObjectStore::open_object(&store, object_id, HandleOptions::default(), Some(crypt))
+                .await
+                .is_err()
+        );
+
+        let res = store.get_keys(object_id).await;
+        assert!(matches!(res, Err(e) if FxfsError::IntegrityError.matches(&e)));
     }
 }

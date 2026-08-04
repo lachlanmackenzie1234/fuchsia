@@ -387,6 +387,14 @@ impl<'a> ScannedStore<'a> {
                                     *key_id,
                                 ))?;
                             }
+                            if self.is_root_store
+                                && !matches!(key_type, KeyType::Fxfs | KeyType::LegacyFxfs)
+                            {
+                                self.fsck.error(FsckError::IllegalKeyInRootStore(
+                                    self.store_id,
+                                    key.object_id,
+                                ))?;
+                            }
                             match key_type {
                                 KeyType::FscryptInoLblk32File => {
                                     if matches!(

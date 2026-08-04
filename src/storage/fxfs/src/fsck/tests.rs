@@ -4932,3 +4932,68 @@ async fn test_concurrent_fsck_volume_and_flush() {
 
     fsck_task.await.expect("fsck_volume_with_options failed");
 }
+
+#[fuchsia::test]
+async fn test_illegal_key_in_root_store() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, object_id) = {
+        let fs = test.filesystem();
+        let root_store = fs.root_store();
+        let store_id = root_store.store_object_id();
+
+        let root_directory = Directory::open(&root_store, root_store.root_directory_object_id())
+            .await
+            .expect("open failed");
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, root_store.root_directory_object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let handle = root_directory
+            .create_child_file(&mut transaction, "foo")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        let mut keys = EncryptionKeys::default();
+        keys.insert(0, EncryptionKey::FscryptInoLblk32File { key_identifier: [0u8; 16] });
+
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, handle.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        transaction.add(
+            store_id,
+            Mutation::replace_or_insert_object(
+                ObjectKey::keys(handle.object_id()),
+                ObjectValue::Keys(keys),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        (store_id, handle.object_id())
+    };
+
+    test.remount().await.expect("remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("fsck should fail");
+
+    assert!(
+        test.errors().iter().any(|e| matches!(
+            e,
+            FsckIssue::Error(FsckError::IllegalKeyInRootStore(err_store_id, err_object_id))
+                if *err_store_id == store_id && *err_object_id == object_id
+        )),
+        "errors: {:?}",
+        test.errors()
+    );
+}

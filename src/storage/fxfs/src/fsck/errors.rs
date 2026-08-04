@@ -234,6 +234,7 @@ pub enum FsckError {
     EncryptedDirectoryHasUnencryptedChild(u64, u64, u64),
     ExtentExceedsLength(u64, u64, AttributeId, u64, Value),
     ExtraAllocations(Vec<Allocation>),
+    IllegalKeyInRootStore(u64, u64),
     IncorrectMerkleTreeSize(u64, u64, u64, u64),
     LinkCycle(u64, u64),
     MalformedAllocation(Allocation),
@@ -325,6 +326,9 @@ impl FsckError {
             }
             FsckError::ExtraAllocations(allocations) => {
                 format!("Unexpected allocations {:?}", allocations)
+            }
+            FsckError::IllegalKeyInRootStore(store_id, object_id) => {
+                format!("Object {object_id} in root store {store_id} uses an illegal key type")
             }
             FsckError::ObjectHasChildren(store_id, object_id) => {
                 format!("Object {} in store {} has unexpected children", object_id, store_id)
@@ -583,6 +587,9 @@ impl FsckError {
             }
             FsckError::ExtraAllocations(allocations) => {
                 error!(allocations:?; "Unexpected allocations");
+            }
+            FsckError::IllegalKeyInRootStore(store_id, oid) => {
+                error!(store_id, oid; "Illegal key in root store");
             }
             FsckError::ObjectHasChildren(store_id, oid) => {
                 error!(store_id, oid; "Object has unexpected children");
