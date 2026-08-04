@@ -204,7 +204,10 @@ class IdlePowerThread final {
   static zx_duration_mono_t TakeProcessorIdleTime();
 
   // See |TransitionLock|.
-  ktl::atomic<StateMachine> state_;
+  // TODO(https://fxbug.dev/542143859): Explicit initialization of state_ is a workaround for a
+  // compiler front-end issue regarding nested structures
+  // (https://github.com/llvm/llvm-project/issues/60321).
+  ktl::atomic<StateMachine> state_{kActive};
   AutounsignalMpUnplugEvent complete_;
 
   Thread thread_;
