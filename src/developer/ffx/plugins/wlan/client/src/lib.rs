@@ -75,15 +75,11 @@ async fn handle_client_command(
         arg_types::ClientSubCommand::Status(arg_types::Status {}) => {
             donut_lib_fdomain::handle_listen(listener_stream, true).await
         }
-        arg_types::ClientSubCommand::RemoveNetwork(remove_args) => {
-            let donut_args = donut_lib_fdomain::opts::RemoveArgs::from(remove_args);
-            let security = donut_args.parse_security();
-            let credential = donut_args.try_parse_credential()?;
-            donut_lib_fdomain::handle_remove_network(
+        arg_types::ClientSubCommand::ForgetNetwork(forget_args) => {
+            donut_lib_fdomain::handle_forget_network(
                 client_controller,
-                donut_args.ssid.into_bytes(),
-                security,
-                credential,
+                forget_args.ssid.into_bytes(),
+                forget_args.security_type.map(|s| s.into()),
             )
             .await
         }

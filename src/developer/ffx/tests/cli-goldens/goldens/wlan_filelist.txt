@@ -10,9 +10,9 @@ ffx/wlan/client/batch-config.golden
 ffx/wlan/client/batch-config/dump.golden
 ffx/wlan/client/batch-config/restore.golden
 ffx/wlan/client/connect.golden
+ffx/wlan/client/forget-network.golden
 ffx/wlan/client/list-saved-networks.golden
 ffx/wlan/client/listen.golden
-ffx/wlan/client/remove-network.golden
 ffx/wlan/client/save-network.golden
 ffx/wlan/client/scan.golden
 ffx/wlan/client/start.golden

@@ -22,7 +22,6 @@ ffx_plugin("ffx_wlan_client") {
   ]
   args_deps = [
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_fdomain",
-    "//src/connectivity/wlan/wlancfg/tool/policy:donut-lib-fdomain",
     "//src/developer/ffx/core:lib",
     "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common",
     "//third_party/rust_crates:argh",

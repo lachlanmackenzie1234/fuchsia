@@ -22,7 +22,7 @@ pub enum ClientSubCommand {
     Connect(Connect),
     Listen(Listen),
     List(ListSavedNetworks),
-    RemoveNetwork(RemoveNetwork),
+    ForgetNetwork(ForgetNetwork),
     SaveNetwork(SaveNetwork),
     Scan(Scan),
     Start(StartClientConnections),
@@ -150,82 +150,23 @@ pub struct Restore {
     pub serialized_config: String,
 }
 
-// RemoveNetwork and SaveNetwork both require a NetworkConfig.  There currently is no clean way to
-// share that struct argument between them in argh though.  Some failed experiments:
-// (1) If the shared struct is passed directly to the top-level argument enum, then both
-//     SaveNetwork and RemoveNetwork will have the same command name which is not desirable.
-// (2) argh does not support tuple structs so these commands cannot simply inherit a struct's
-//     fields.
-// (3) Nesting the network config as a subcommand requires the manual implementation of FromStr
-//     which for a command that requires this number of flags would be cumbersome.
-//
-// The main feature that needs to be shared between these structs is the ability to quickly convert
-// them into WLAN policy structs.  While it is possible to create a macro to do all of this code
-// generation, the macro ends up requiring several dependencies which makes including the shared
-// definitions in other modules a confusing battle against the compiler until the dependencies are
-// all found.
-//
-// Until a better solution exists, the arguments module provides a helper to enable construction of
-// a NetworkConfig from the argument struct fields.
-
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
     subcommand,
-    name = "remove-network",
+    name = "forget-network",
     description = "WLAN policy network storage container",
     note = "Only one application at a time can interact with the WLAN policy layer.",
-    example = "To remove a WLAN network
+    example = "To forget a WLAN network
 
-    $ffx wlan client remove-network\n
+    $ffx wlan client forget-network\n
         --ssid TestNetwork\n
-        --security-type wpa2\n
-        --credential-type password\n
-        --credential \"Your very secure password here\""
+        --security-type wpa2"
 )]
-pub struct RemoveNetwork {
+pub struct ForgetNetwork {
     #[argh(option, default = "String::from(\"\")", description = "WLAN network name")]
     pub ssid: String,
     #[argh(option, description = "one of None, WEP, WPA, WPA2, WPA3")]
     pub security_type: Option<SecurityType>,
-    #[argh(option, description = "one of None, PSK, Password")]
-    pub credential_type: Option<CredentialType>,
-    #[argh(option, description = "WLAN Password or PSK")]
-    pub credential: Option<String>,
-}
-
-/// A conversion function is provided to get donut lib type args since it is the easiest way to
-/// keep the logic for constructing the credential in one place and reuse it here.
-impl From<RemoveNetwork> for donut_lib_fdomain::opts::RemoveArgs {
-    fn from(arg: RemoveNetwork) -> Self {
-        Self {
-            ssid: arg.ssid,
-            security_type: arg.security_type.map(|s| donut_security_from_security(s)),
-            credential_type: arg.credential_type.map(|c| donut_credential_from_credential(c)),
-            credential: arg.credential,
-        }
-    }
-}
-
-fn donut_security_from_security(
-    security_type: SecurityType,
-) -> donut_lib_fdomain::opts::SecurityTypeArg {
-    match security_type {
-        SecurityType::None => donut_lib_fdomain::opts::SecurityTypeArg::None,
-        SecurityType::Wep => donut_lib_fdomain::opts::SecurityTypeArg::Wep,
-        SecurityType::Wpa => donut_lib_fdomain::opts::SecurityTypeArg::Wpa,
-        SecurityType::Wpa2 => donut_lib_fdomain::opts::SecurityTypeArg::Wpa2,
-        SecurityType::Wpa3 => donut_lib_fdomain::opts::SecurityTypeArg::Wpa3,
-    }
-}
-
-fn donut_credential_from_credential(
-    credential_type: CredentialType,
-) -> donut_lib_fdomain::opts::CredentialTypeArg {
-    match credential_type {
-        CredentialType::None => donut_lib_fdomain::opts::CredentialTypeArg::None,
-        CredentialType::Psk => donut_lib_fdomain::opts::CredentialTypeArg::Psk,
-        CredentialType::Password => donut_lib_fdomain::opts::CredentialTypeArg::Password,
-    }
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]

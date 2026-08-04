@@ -6,11 +6,10 @@ use anyhow::Error;
 use clap::Parser;
 use donut_lib::*;
 use fidl::endpoints::{create_endpoints, create_proxy};
+use fidl_fuchsia_wlan_policy as wlan_policy;
+use fidl_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
-use {
-    fidl_fuchsia_wlan_policy as wlan_policy,
-    fidl_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated, fuchsia_async as fasync,
-};
 
 /// Communicates with the client policy provider to get the components required to get a client
 /// controller.
@@ -105,17 +104,11 @@ async fn do_policy_client_cmd(cmd: opts::PolicyClientCmd) -> Result<(), Error> {
             let update_stream = get_listener_stream()?;
             handle_listen(update_stream, true).await?;
         }
-        opts::PolicyClientCmd::RemoveNetwork(remove_args) => {
+        opts::PolicyClientCmd::ForgetNetwork(forget_args) => {
             let (client_controller, _) = get_client_controller().await?;
-            let security = remove_args.parse_security();
-            let credential = remove_args.try_parse_credential()?;
-            handle_remove_network(
-                client_controller,
-                remove_args.ssid.into_bytes(),
-                security,
-                credential,
-            )
-            .await?;
+            let security = forget_args.parse_security();
+            handle_forget_network(client_controller, forget_args.ssid.into_bytes(), security)
+                .await?;
         }
         opts::PolicyClientCmd::SaveNetwork(network_config) => {
             let (client_controller, _) = get_client_controller().await?;
