@@ -328,7 +328,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// Verifies contents of `buffer` against the corresponding hashes in the stored merkle tree.
     /// `offset` is the logical offset in the file that `buffer` starts at. `offset` must be
     /// block-aligned. Fails on non fsverity-enabled files.
-    fn verify_data(&self, mut offset: usize, buffer: &[u8]) -> Result<(), Error> {
+    fn verify_data(&self, mut offset: usize, buffer: PtrByteSlice<'_>) -> Result<(), Error> {
         let block_size = self.block_size() as usize;
         assert!(offset % block_size == 0);
         let fsverity_state = self.fsverity_state.lock();
@@ -346,7 +346,12 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     metadata.merkle_tree.chunks(hasher.hash_size()).collect();
                 fxfs_trace::duration!("fsverity-verify", "len" => buffer.len());
                 // TODO(b/318880297): Consider parallelizing computation.
-                for b in buffer.chunks(block_size) {
+                for chunk in buffer.chunks(block_size) {
+                    // SAFETY: Ideally we wouldn't be creating references here as technically this is
+                    // Rust undefined behaviour, but it's difficult for us to fix and mitigated
+                    // because these pointers end up being passed directly to non-Rust code (Mundane).
+                    let b = unsafe { &*chunk.as_raw_slice_ptr() };
+
                     ensure!(
                         hasher.hash_block(b) == leaf_nodes[offset / block_size],
                         anyhow!(FxfsError::Inconsistent).context("Hash mismatch")
@@ -532,7 +537,14 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             // TODO(b/314842875): Consider optimizations for sparse files.
             let read = self.read(offset, buf.as_mut()).await? as u64;
             assert!(offset + read <= size);
-            builder.write(&buf.as_slice()[0..read as usize]);
+            let slice = buf.as_ptr_slice().subslice(0..read as usize);
+
+            // SAFETY: Ideally we wouldn't be creating references here as technically this is
+            // Rust undefined behaviour, but it's difficult for us to fix and mitigated
+            // because these pointers end up being passed directly to non-Rust code (Mundane).
+            let chunk = unsafe { &*slice.as_raw_slice_ptr() };
+
+            builder.write(chunk);
             offset += read;
         }
         let tree = builder.finish();
@@ -1380,7 +1392,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     // check and blindly do it to keep it simpler here.
                     self.read_and_decrypt(device_offset, aligned_old_size, buf.as_mut(), *key_id)
                         .await?;
-                    buf.as_mut_slice()[(old_size % block_size) as usize..].fill(0);
+                    buf.subslice_mut((old_size % block_size) as usize..buf.len()).fill(0);
                     self.multi_write(
                         transaction,
                         *attribute_id,
@@ -1709,7 +1721,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         }
         let mut buf = self.allocate_buffer(size as usize).await;
         self.read(0u64, buf.as_mut()).await?;
-        Ok(buf.as_slice().into())
+        Ok(buf.to_vec().into_boxed_slice())
     }
 
     /// Returns the set of file_offset->extent mappings for this file. The extents will be sorted by
@@ -1807,7 +1819,7 @@ impl<S: HandleOwner> ReadObjectHandle for DataObjectHandle<S> {
         buf = buf.subslice_mut(0..length);
         self.handle.read_unchecked(self.attribute_id(), offset, buf.reborrow(), &guard).await?;
         if self.is_verified_file() {
-            self.verify_data(offset as usize, buf.as_slice())?;
+            self.verify_data(offset as usize, buf.as_ptr_slice())?;
         }
         Ok(length)
     }
@@ -1873,7 +1885,7 @@ impl<'a, S: HandleOwner> DirectWriter<'a, S> {
     async fn flush(&mut self) -> Result<(), Error> {
         let mut transaction = self.handle.new_transaction_with_options(self.options).await?;
         self.handle
-            .txn_write(&mut transaction, self.offset, self.buffer.subslice(..self.buf_offset))
+            .txn_write(&mut transaction, self.offset, self.buffer.subslice(0..self.buf_offset))
             .await?;
         transaction.commit().await?;
         self.offset += self.buf_offset as u64;
@@ -1892,7 +1904,6 @@ impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
             let to_do = std::cmp::min(buf.len(), BUFFER_SIZE - self.buf_offset);
             self.buffer
                 .subslice_mut(self.buf_offset..self.buf_offset + to_do)
-                .as_mut_slice()
                 .copy_from_slice(&buf[..to_do]);
             self.buf_offset += to_do;
             if self.buf_offset == BUFFER_SIZE {
@@ -1910,10 +1921,7 @@ impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
 
     async fn skip(&mut self, amount: u64) -> Result<(), Error> {
         if (BUFFER_SIZE - self.buf_offset) as u64 > amount {
-            self.buffer
-                .subslice_mut(self.buf_offset..self.buf_offset + amount as usize)
-                .as_mut_slice()
-                .fill(0);
+            self.buffer.subslice_mut(self.buf_offset..self.buf_offset + amount as usize).fill(0);
             self.buf_offset += amount as usize;
         } else {
             self.flush().await?;
@@ -2031,9 +2039,9 @@ mod tests {
         if write_object_test_data {
             let align = TEST_DATA_OFFSET as usize % TEST_DEVICE_BLOCK_SIZE as usize;
             let mut buf = object.allocate_buffer(align + TEST_DATA.len()).await;
-            buf.as_mut_slice()[align..].copy_from_slice(TEST_DATA);
+            buf.subslice_mut(align..buf.len()).copy_from_slice(TEST_DATA);
             object
-                .txn_write(&mut transaction, TEST_DATA_OFFSET, buf.subslice(align..))
+                .txn_write(&mut transaction, TEST_DATA_OFFSET, buf.subslice(align..buf.len()))
                 .await
                 .expect("write failed");
         }
@@ -2075,13 +2083,16 @@ mod tests {
         let align = offset % fs.block_size() as usize;
         let len: usize = 2;
         let mut buf = object.allocate_buffer(align + len + 1).await;
-        buf.as_mut_slice().fill(123u8);
+        buf.fill(123u8);
         assert_eq!(
             object.read((offset - align) as u64, buf.as_mut()).await.expect("read failed"),
             align + len
         );
-        assert_eq!(&buf.as_slice()[align..align + len], &vec![0u8; len]);
-        assert_eq!(&buf.as_slice()[align + len..], &vec![123u8; buf.len() - align - len]);
+        assert_eq!(&buf.as_ptr_slice().subslice(align..align + len).to_vec()[..], &vec![0u8; len]);
+        assert_eq!(
+            &buf.as_ptr_slice().subslice(align + len..buf.len()).to_vec()[..],
+            &vec![123u8; buf.len() - align - len]
+        );
         fs.close().await.expect("Close failed");
     }
 
@@ -2093,7 +2104,7 @@ mod tests {
         let align = offset % fs.block_size() as usize;
         let len: usize = 2;
         let mut buf = object.allocate_buffer(align + len + 1).await;
-        buf.as_mut_slice().fill(123u8);
+        buf.fill(123u8);
         assert_eq!(
             handle
                 .read(AttributeId::DATA, (offset - align) as u64, buf.as_mut())
@@ -2101,8 +2112,11 @@ mod tests {
                 .expect("read failed"),
             align + len
         );
-        assert_eq!(&buf.as_slice()[align..align + len], &vec![0u8; len]);
-        assert_eq!(&buf.as_slice()[align + len..], &vec![123u8; buf.len() - align - len]);
+        assert_eq!(&buf.as_ptr_slice().subslice(align..align + len).to_vec()[..], &vec![0u8; len]);
+        assert_eq!(
+            &buf.as_ptr_slice().subslice(align + len..buf.len()).to_vec()[..],
+            &vec![123u8; buf.len() - align - len]
+        );
         fs.close().await.expect("Close failed");
     }
 
@@ -2113,7 +2127,7 @@ mod tests {
         let align = offset % fs.block_size() as usize;
         let len: usize = 2;
         let mut buf = object.allocate_buffer(align + len + 1).await;
-        buf.as_mut_slice().fill(123u8);
+        buf.fill(123u8);
         let guard = fs
             .lock_manager()
             .read_lock(lock_keys![LockKey::object_attribute(
@@ -2126,7 +2140,10 @@ mod tests {
             .read_unchecked(AttributeId::DATA, (offset - align) as u64, buf.as_mut(), &guard)
             .await
             .expect("read failed");
-        assert_eq!(&buf.as_slice()[align..], &vec![0u8; len + 1]);
+        assert_eq!(
+            &buf.as_ptr_slice().subslice(align..buf.len()).to_vec()[..],
+            &vec![0u8; len + 1]
+        );
         fs.close().await.expect("Close failed");
     }
 
@@ -2136,12 +2153,12 @@ mod tests {
         // Deliberately read not right to eof.
         let len = TEST_OBJECT_SIZE as usize - 1;
         let mut buf = object.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(123u8);
+        buf.fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), len);
         let mut expected = vec![0; len];
         let offset = TEST_DATA_OFFSET as usize;
         expected[offset..offset + TEST_DATA.len()].copy_from_slice(TEST_DATA);
-        assert_eq!(buf.as_slice()[..len], expected[..]);
+        assert_eq!(&buf.as_ptr_slice().subslice(0..len).to_vec()[..], &expected[..]);
         fs.close().await.expect("Close failed");
     }
 
@@ -2153,19 +2170,19 @@ mod tests {
 
         // Write more test data to the first block fo the file.
         let mut buf = object.allocate_buffer(TEST_DATA.len()).await;
-        buf.as_mut_slice().copy_from_slice(TEST_DATA);
+        buf.copy_from_slice(TEST_DATA);
         object.write_or_append(Some(0u64), buf.as_ref()).await.expect("write failed");
 
         let len = TEST_OBJECT_SIZE as usize - 1;
         let mut buf = object.allocate_buffer(len).await;
-        buf.as_mut_slice().fill(123u8);
+        buf.fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), len);
 
         let mut expected = vec![0u8; len];
         let offset = TEST_DATA_OFFSET as usize;
         expected[offset..offset + TEST_DATA.len()].copy_from_slice(TEST_DATA);
         expected[..TEST_DATA.len()].copy_from_slice(TEST_DATA);
-        assert_eq!(buf.as_slice(), &expected);
+        assert_eq!(&buf.to_vec(), &expected);
         fs.close().await.expect("Close failed");
     }
 
@@ -2175,7 +2192,7 @@ mod tests {
 
         // Arrange for there to be <extent><deleted-extent><extent>.
         let mut buf = object.allocate_buffer(TEST_DATA.len()).await;
-        buf.as_mut_slice().copy_from_slice(TEST_DATA);
+        buf.copy_from_slice(TEST_DATA);
         // This adds an extent at 0..512.
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         // This deletes 512..1024.
@@ -2184,25 +2201,28 @@ mod tests {
         let offset = 1500u64;
         let align = (offset % fs.block_size() as u64) as usize;
         let mut buf = object.allocate_buffer(align + data.len()).await;
-        buf.as_mut_slice()[align..].copy_from_slice(data);
+        buf.subslice_mut(align..buf.len()).copy_from_slice(data);
         // This adds 1024..1536.
-        object.write_or_append(Some(1500), buf.subslice(align..)).await.expect("write failed");
+        object
+            .write_or_append(Some(1500), buf.subslice(align..buf.len()))
+            .await
+            .expect("write failed");
 
         const LEN1: usize = 1503;
         let mut buf = object.allocate_buffer(LEN1).await;
-        buf.as_mut_slice().fill(123u8);
+        buf.fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), LEN1);
         let mut expected = [0; LEN1];
         expected[..3].copy_from_slice(&TEST_DATA[..3]);
         expected[1500..].copy_from_slice(b"foo");
-        assert_eq!(buf.as_slice(), &expected);
+        assert_eq!(&buf.to_vec(), &expected);
 
         // Also test a read that ends midway through the deleted extent.
         const LEN2: usize = 601;
         let mut buf = object.allocate_buffer(LEN2).await;
-        buf.as_mut_slice().fill(123u8);
+        buf.fill(123u8);
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), LEN2);
-        assert_eq!(buf.as_slice(), &expected[..LEN2]);
+        assert_eq!(buf.to_vec(), &expected[..LEN2]);
         fs.close().await.expect("Close failed");
     }
 
@@ -2211,7 +2231,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_object().await;
         let block_size = object.block_size() as usize;
         let mut buffer = object.allocate_buffer(block_size).await;
-        buffer.as_mut_slice().fill(0xaf);
+        buffer.fill(0xaf);
         object.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
 
         let store = object.owner();
@@ -2226,11 +2246,11 @@ mod tests {
                 .expect("create_object failed");
         transaction.commit().await.expect("commit failed");
         let mut ef_buffer = object.allocate_buffer(block_size).await;
-        ef_buffer.as_mut_slice().fill(0xef);
+        ef_buffer.fill(0xef);
         object2.write_or_append(Some(0), ef_buffer.as_ref()).await.expect("write failed");
 
         let mut buffer = object.allocate_buffer(block_size).await;
-        buffer.as_mut_slice().fill(0xaf);
+        buffer.fill(0xaf);
         object
             .write_or_append(Some(block_size as u64), buffer.as_ref())
             .await
@@ -2242,12 +2262,21 @@ mod tests {
             .expect("write failed");
 
         let mut buffer = object.allocate_buffer(4 * block_size).await;
-        buffer.as_mut_slice().fill(123);
+        buffer.fill(123);
         assert_eq!(object.read(0, buffer.as_mut()).await.expect("read failed"), 3 * block_size);
-        assert_eq!(&buffer.as_slice()[..2 * block_size], &vec![0xaf; 2 * block_size]);
-        assert_eq!(&buffer.as_slice()[2 * block_size..3 * block_size], &vec![0; block_size]);
+        assert_eq!(
+            &buffer.as_ptr_slice().subslice(0..2 * block_size).to_vec()[..],
+            &vec![0xaf; 2 * block_size]
+        );
+        assert_eq!(
+            &buffer.as_ptr_slice().subslice(2 * block_size..3 * block_size).to_vec()[..],
+            &vec![0; block_size]
+        );
         assert_eq!(object2.read(0, buffer.as_mut()).await.expect("read failed"), 2 * block_size);
-        assert_eq!(&buffer.as_slice()[..2 * block_size], &vec![0xef; 2 * block_size]);
+        assert_eq!(
+            &buffer.as_ptr_slice().subslice(0..2 * block_size).to_vec()[..],
+            &vec![0xef; 2 * block_size]
+        );
         fs.close().await.expect("Close failed");
     }
 
@@ -2266,7 +2295,7 @@ mod tests {
                 let mirror = {
                     let mut buf = object.allocate_buffer(object.get_size() as usize).await;
                     assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), buf.len());
-                    buf.as_slice().to_vec()
+                    buf.to_vec()
                 };
                 Self { fill: 0, object, mirror }
             }
@@ -2278,7 +2307,7 @@ mod tests {
             async fn test(&mut self, range: Range<u64>) {
                 let mut buf = self.object.allocate_buffer((range.end - range.start) as usize).await;
                 self.fill += 1;
-                buf.as_mut_slice().fill(self.fill);
+                buf.fill(self.fill);
                 self.object
                     .write_or_append(Some(range.start), buf.as_ref())
                     .await
@@ -2292,7 +2321,10 @@ mod tests {
                     self.object.read(0, buf.as_mut()).await.expect("read failed"),
                     self.mirror.len()
                 );
-                assert_eq!(&buf.as_slice()[..self.mirror.len()], self.mirror.as_slice());
+                assert_eq!(
+                    &buf.as_ptr_slice().subslice(0..self.mirror.len()).to_vec()[..],
+                    self.mirror.as_slice()
+                );
             }
         }
 
@@ -2341,12 +2373,12 @@ mod tests {
         let mut buf = object
             .allocate_buffer(round_up(TEST_DATA_OFFSET, fs.block_size()).unwrap() as usize)
             .await;
-        buf.as_mut_slice().fill(47);
+        buf.fill(47);
         object
-            .write_or_append(Some(0), buf.subslice(..TEST_DATA_OFFSET as usize))
+            .write_or_append(Some(0), buf.subslice(0..TEST_DATA_OFFSET as usize))
             .await
             .expect("write failed");
-        buf.as_mut_slice().fill(95);
+        buf.fill(95);
         let offset = round_up(TEST_OBJECT_SIZE, fs.block_size()).unwrap();
         object
             .overwrite(offset, buf.as_mut(), OverwriteOptions::default())
@@ -2359,12 +2391,20 @@ mod tests {
         // Read back the data and make sure it is what we expect.
         let mut buf = object.allocate_buffer(104876).await;
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), buf.len());
-        assert_eq!(&buf.as_slice()[..TEST_DATA_OFFSET as usize], &[47; TEST_DATA_OFFSET as usize]);
         assert_eq!(
-            &buf.as_slice()[TEST_DATA_OFFSET as usize..TEST_DATA_OFFSET as usize + TEST_DATA.len()],
+            &buf.as_ptr_slice().subslice(0..TEST_DATA_OFFSET as usize).to_vec()[..],
+            &[47; TEST_DATA_OFFSET as usize]
+        );
+        assert_eq!(
+            &buf.as_ptr_slice()
+                .subslice(TEST_DATA_OFFSET as usize..TEST_DATA_OFFSET as usize + TEST_DATA.len())
+                .to_vec()[..],
             TEST_DATA
         );
-        assert_eq!(&buf.as_slice()[offset as usize..offset as usize + 2048], &[95; 2048]);
+        assert_eq!(
+            &buf.as_ptr_slice().subslice(offset as usize..offset as usize + 2048).to_vec()[..],
+            &[95; 2048]
+        );
     }
 
     #[fuchsia::test]
@@ -2455,7 +2495,7 @@ mod tests {
         assert_eq!(fs.block_size(), 4096);
 
         let mut write_buf = object.allocate_buffer(4096).await;
-        write_buf.as_mut_slice().fill(95);
+        write_buf.fill(95);
 
         // First try to overwrite without allowing allocations
         // We expect this to fail, since nothing is allocated yet
@@ -2477,7 +2517,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[0; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[0; 4096]);
         }
         object
             .overwrite(0, write_buf.as_mut(), OverwriteOptions::default())
@@ -2486,7 +2526,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
 
         // Now try to overwrite at offset 4096. We expect this to fail, since we only preallocated
@@ -2509,7 +2549,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
 
         // Check that the overwrites haven't messed up the filesystem state
@@ -2565,7 +2605,7 @@ mod tests {
         assert_eq!(object.get_size(), 524288);
 
         let mut write_buf = object.allocate_buffer(4096).await;
-        write_buf.as_mut_slice().fill(95);
+        write_buf.fill(95);
 
         // We shouldn't be able to overwrite in the holes if new allocations aren't enabled
         object
@@ -2589,7 +2629,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[0; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[0; 4096]);
         }
         object
             .overwrite(4096, write_buf.as_mut(), OverwriteOptions::default())
@@ -2598,12 +2638,12 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(16384, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[0; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[0; 4096]);
         }
         object
             .overwrite(16384, write_buf.as_mut(), OverwriteOptions::default())
@@ -2612,12 +2652,12 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(16384, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(65536, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[0; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[0; 4096]);
         }
         object
             .overwrite(65536, write_buf.as_mut(), OverwriteOptions::default())
@@ -2626,12 +2666,12 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(65536, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(262144, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[0; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[0; 4096]);
         }
         object
             .overwrite(262144, write_buf.as_mut(), OverwriteOptions::default())
@@ -2640,12 +2680,12 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(262144, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
 
         // Now let's try to do a huge overwrite, that spans over many holes and non-holes
         let mut huge_write_buf = object.allocate_buffer(524288).await;
-        huge_write_buf.as_mut_slice().fill(96);
+        huge_write_buf.fill(96);
 
         // With allocations disabled, the big overwrite should fail...
         object
@@ -2664,7 +2704,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(524288).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[96; 524288]);
+            assert_eq!(&read_buf.to_vec()[..], &[96; 524288]);
         }
 
         // Check that the overwrites haven't messed up the filesystem state
@@ -2697,7 +2737,7 @@ mod tests {
         assert_eq!(fs.block_size(), 4096);
 
         let mut write_buf = object.allocate_buffer(4096).await;
-        write_buf.as_mut_slice().fill(95);
+        write_buf.fill(95);
 
         // First try to overwrite without allowing allocations
         // We expect this to fail, since nothing is allocated yet
@@ -2718,7 +2758,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(0, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
 
         // Now try to overwrite at the next block. This should fail if allocations are disabled
@@ -2739,7 +2779,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(4096, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
 
         // Check that the overwrites haven't messed up the filesystem state
@@ -2773,7 +2813,7 @@ mod tests {
         assert_eq!(object.get_size(), TEST_OBJECT_SIZE);
 
         let mut write_buf = object.allocate_buffer(4096).await;
-        write_buf.as_mut_slice().fill(95);
+        write_buf.fill(95);
 
         // Let's try to fill up the last block, and increase the file size in doing so
         let last_block_offset = round_down(TEST_OBJECT_SIZE, 4096 as u32);
@@ -2795,7 +2835,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(last_block_offset, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
 
         assert_eq!(object.get_size(), 8192);
@@ -2820,7 +2860,7 @@ mod tests {
         {
             let mut read_buf = object.allocate_buffer(4096).await;
             object.read(next_block_offset, read_buf.as_mut()).await.expect("read failed");
-            assert_eq!(&read_buf.as_slice(), &[95; 4096]);
+            assert_eq!(&read_buf.to_vec()[..], &[95; 4096]);
         }
 
         assert_eq!(object.get_size(), 12288);
@@ -2898,7 +2938,7 @@ mod tests {
 
         // Write a file big enough to trigger multiple transactions on enable_verity().
         let mut buf = handle.allocate_buffer(WRITE_ATTR_BATCH_SIZE).await;
-        buf.as_mut_slice().fill(1);
+        buf.fill(1);
         for _ in 0..130 {
             handle.write_or_append(Some(offset), buf.as_ref()).await.expect("write failed");
             offset += WRITE_ATTR_BATCH_SIZE as u64;
@@ -2917,7 +2957,7 @@ mod tests {
         offset = 0;
         for _ in 0..130 {
             handle.read(offset, buf.as_mut()).await.expect("verification during read should fail");
-            assert_eq!(buf.as_slice(), &[1; WRITE_ATTR_BATCH_SIZE]);
+            assert_eq!(buf.to_vec(), &[1; WRITE_ATTR_BATCH_SIZE]);
             offset += WRITE_ATTR_BATCH_SIZE as u64;
         }
 
@@ -3037,7 +3077,7 @@ mod tests {
         transaction.commit().await.unwrap();
 
         let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
-        buf.as_mut_slice().fill(123);
+        buf.fill(123);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
         object
@@ -3050,7 +3090,7 @@ mod tests {
             .expect("set verified file metadata failed");
 
         // Change file contents and ensure verification fails
-        buf.as_mut_slice().fill(234);
+        buf.fill(234);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         object.read(0, buf.as_mut()).await.expect_err("verification during read should fail");
 
@@ -3080,7 +3120,7 @@ mod tests {
         // Write over one block to make there be leaf hashes.
         {
             let mut buf = object.allocate_buffer(file_size as usize).await;
-            buf.as_mut_slice().fill(64);
+            buf.fill(64);
             assert_eq!(
                 object.write_or_append(None, buf.as_ref()).await.expect("Writing to file."),
                 file_size
@@ -3147,7 +3187,9 @@ mod tests {
             )
             .expect("Creating descriptor");
             let mut buf = object.allocate_buffer(fs.block_size() as usize).await;
-            descriptor.write_to_slice(buf.as_mut_slice()).expect("Writing descriptor to buf");
+            let mut temp = vec![0u8; fs.block_size() as usize];
+            descriptor.write_to_slice(&mut temp).expect("Writing descriptor to buf");
+            buf.copy_from_slice(&temp);
             object
                 .multi_write(
                     &mut transaction,
@@ -3201,7 +3243,7 @@ mod tests {
             transaction.commit().await.unwrap();
 
             let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
-            buf.as_mut_slice().fill(123);
+            buf.fill(123);
             object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
             object
@@ -3263,11 +3305,11 @@ mod tests {
             .expect("extend failed");
         transaction.commit().await.expect("commit failed");
         let mut buf = handle.allocate_buffer(5 * fs.block_size() as usize).await;
-        buf.as_mut_slice().fill(123);
+        buf.fill(123);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
-        buf.as_mut_slice().fill(67);
+        buf.fill(67);
         handle.read(0, buf.as_mut()).await.expect("read failed");
-        assert_eq!(buf.as_slice(), &vec![123; 5 * fs.block_size() as usize]);
+        assert_eq!(buf.to_vec(), vec![123; 5 * fs.block_size() as usize]);
         fs.close().await.expect("Close failed");
     }
 
@@ -3275,7 +3317,7 @@ mod tests {
     async fn test_truncate_deallocates_old_extents() {
         let (fs, object) = test_filesystem_and_object().await;
         let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
-        buf.as_mut_slice().fill(0xaa);
+        buf.fill(0xaa);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
         let allocator = fs.allocator();
@@ -3306,7 +3348,10 @@ mod tests {
 
         let mut expected = TEST_DATA.to_vec();
         expected[3..].fill(0);
-        assert_eq!(&buf.as_slice()[offset..offset + expected.len()], &expected);
+        assert_eq!(
+            &buf.as_ptr_slice().subslice(offset..offset + expected.len()).to_vec()[..],
+            &expected
+        );
     }
 
     #[fuchsia::test]
@@ -3426,7 +3471,7 @@ mod tests {
                         .read(object_size - block_size * 2, buf.as_mut())
                         .await
                         .expect("read failed");
-                    assert_eq!(buf.as_slice(), &vec![0; block_size as usize]);
+                    assert_eq!(buf.to_vec(), vec![0; block_size as usize]);
 
                     // Remount, this time with the graveyard performing an initial reap and the
                     // object should get trimmed.
@@ -3512,7 +3557,7 @@ mod tests {
             // Create enough extents in it such that when we truncate the object it will require
             // more than one transaction.
             let mut buf = object.allocate_buffer(5).await;
-            buf.as_mut_slice().fill(1);
+            buf.fill(1);
             // Write every other block.
             for offset in (0..object_size).into_iter().step_by(2 * block_size as usize) {
                 object
@@ -3663,7 +3708,7 @@ mod tests {
                 send3.send(()).unwrap(); // Tell the last future to continue.
                 recv2.await.unwrap();
                 let mut buf = object.allocate_buffer(5).await;
-                buf.as_mut_slice().copy_from_slice(b"hello");
+                buf.copy_from_slice(b"hello");
                 object.txn_write(&mut t, 0, buf.as_ref()).await.expect("write failed");
                 // This is a halting problem so all we can do is sleep.
                 fasync::Timer::new(Duration::from_millis(100)).await;
@@ -3684,7 +3729,7 @@ mod tests {
                     object.read((offset - align) as u64, buf.as_mut()).await.expect("read failed"),
                     align + TEST_DATA.len()
                 );
-                assert_eq!(&buf.as_slice()[align..], TEST_DATA);
+                assert_eq!(&buf.as_ptr_slice().subslice(align..buf.len()).to_vec()[..], TEST_DATA);
                 // Tell the first future to continue.
                 send2.send(()).unwrap();
             }
@@ -3697,7 +3742,7 @@ mod tests {
                 let _t = object.new_transaction().await.expect("new_transaction failed");
                 let mut buf = object.allocate_buffer(5).await;
                 assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed"), 5);
-                assert_eq!(buf.as_slice(), b"hello");
+                assert_eq!(buf.to_vec(), b"hello");
             }
             .boxed(),
         );
@@ -3725,7 +3770,7 @@ mod tests {
             let cloned_object = object.clone();
             let writer = fasync::Task::spawn(async move {
                 let mut buf = cloned_object.allocate_buffer(10).await;
-                buf.as_mut_slice().fill(123);
+                buf.fill(123);
                 cloned_object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
             });
             let cloned_object = object.clone();
@@ -3733,7 +3778,7 @@ mod tests {
                 let wait_time = rand::random_range(0..5);
                 fasync::Timer::new(Duration::from_millis(wait_time)).await;
                 let mut buf = cloned_object.allocate_buffer(10).await;
-                buf.as_mut_slice().fill(23);
+                buf.fill(23);
                 let amount = cloned_object.read(0, buf.as_mut()).await.expect("write failed");
                 // If we succeed in reading data, it must include the write; i.e. if we see the size
                 // change, we should see the data too.  For this to succeed it requires locking on
@@ -3741,7 +3786,7 @@ mod tests {
                 // that same transaction.
                 if amount != 0 {
                     assert_eq!(amount, 10);
-                    assert_eq!(buf.as_slice(), &[123; 10]);
+                    assert_eq!(buf.to_vec(), &[123; 10]);
                 }
             });
             writer.await;
@@ -3757,7 +3802,7 @@ mod tests {
 
         let before = object.get_properties().await.expect("get_properties failed").allocated_size;
         let mut buf = object.allocate_buffer(5).await;
-        buf.as_mut_slice().copy_from_slice(b"hello");
+        buf.copy_from_slice(b"hello");
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let after = object.get_properties().await.expect("get_properties failed").allocated_size;
         assert_eq!(after, before + fs.block_size() as u64);
@@ -3810,7 +3855,7 @@ mod tests {
         let mut buf = object.allocate_buffer(fs.block_size() as usize * 10).await;
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed") as u64, expected_size);
         assert_eq!(
-            &buf.as_slice()[0..expected_size as usize],
+            &buf.as_ptr_slice().subslice(0..expected_size as usize).to_vec()[..],
             vec![0u8; expected_size as usize].as_slice()
         );
         fs.close().await.expect("Close failed");
@@ -3914,7 +3959,7 @@ mod tests {
         //      [ unallocated ][ `buf` ][ `buf` ]
         let buf_length = 5 * fs.block_size();
         let mut buf = object.allocate_buffer(buf_length as usize).await;
-        buf.as_mut_slice().fill(123);
+        buf.fill(123);
         let new_offset = end + 20 * fs.block_size() as u64;
         object.write_or_append(Some(new_offset), buf.as_ref()).await.expect("write failed");
         object
@@ -3944,7 +3989,7 @@ mod tests {
         //      [ unallocated ][ `other_buf` ][ (part of) `buf` ][ `buf` ]
         let other_buf_length = 3 * fs.block_size();
         let mut other_buf = object.allocate_buffer(other_buf_length as usize).await;
-        other_buf.as_mut_slice().fill(231);
+        other_buf.fill(231);
         object.write_or_append(Some(new_offset), other_buf.as_ref()).await.expect("write failed");
 
         // We still expect that `is_allocated(..)` will return that  there are 2*`buf_length bytes`
@@ -4039,14 +4084,14 @@ mod tests {
         let mut large_buf = object.allocate_buffer(large_buf_size).await;
 
         assert_eq!(object.read(0, small_buf.as_mut()).await.unwrap(), small_buf_size);
-        assert_eq!(small_buf.as_slice(), &vec![0; small_buf_size]);
+        assert_eq!(small_buf.to_vec(), vec![0; small_buf_size]);
         assert_eq!(object.read(0, large_buf.as_mut()).await.unwrap(), large_buf_size);
-        assert_eq!(large_buf.as_slice(), &vec![0; large_buf_size]);
+        assert_eq!(large_buf.to_vec(), vec![0; large_buf_size]);
         assert_eq!(
             object.read(0, large_buf_aligned.as_mut()).await.unwrap(),
             large_buf_aligned_size
         );
-        assert_eq!(large_buf_aligned.as_slice(), &vec![0; large_buf_aligned_size]);
+        assert_eq!(large_buf_aligned.to_vec(), vec![0; large_buf_aligned_size]);
 
         // Allocation succeeds, and without any writes to the location it shows up as zero.
         object.allocate(block_size..block_size * 3).await.unwrap();
@@ -4062,7 +4107,7 @@ mod tests {
                     offset,
                 );
                 assert_eq!(
-                    buf.as_slice(),
+                    &buf.to_vec(),
                     &vec![0; buf.len()],
                     "buf_index: {}, read offset: {}",
                     buf_index,
@@ -4082,17 +4127,17 @@ mod tests {
         let block_size = fs.block_size();
 
         assert_eq!(object.read(0, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
 
         assert!(TEST_OBJECT_SIZE < block_size * 4);
         // Allocation succeeds, and without any writes to the location it shows up as zero.
         object.allocate(0..block_size * 4).await.unwrap();
         assert_eq!(object.read(0, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
         assert_eq!(object.read(block_size, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
         assert_eq!(object.read(block_size * 3, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
 
         fs.close().await.expect("close failed");
     }
@@ -4105,17 +4150,17 @@ mod tests {
         let block_size = fs.block_size();
 
         assert_eq!(object.read(0, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
 
         assert!(TEST_OBJECT_SIZE < block_size * 4);
         // Allocation succeeds, and without any writes to the location it shows up as zero.
         object.allocate(block_size * 4..block_size * 6).await.unwrap();
         assert_eq!(object.read(0, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
         assert_eq!(object.read(block_size * 4, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
         assert_eq!(object.read(block_size * 5, buf.as_mut()).await.unwrap(), buf.len());
-        assert_eq!(buf.as_slice(), &[0; BUF_SIZE]);
+        assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
 
         fs.close().await.expect("close failed");
     }
@@ -4171,7 +4216,7 @@ mod tests {
             for write in &case.written_ranges {
                 let write_len = (write.end - write.start) * block_size as usize;
                 let mut write_buf = object.allocate_buffer(write_len).await;
-                write_buf.as_mut_slice().fill(0xff);
+                write_buf.fill(0xff);
                 assert_eq!(
                     object
                         .write_or_append(Some(block_size * write.start as u64), write_buf.as_ref())
@@ -4193,7 +4238,7 @@ mod tests {
 
             let mut read_buf = object.allocate_buffer(file_size as usize).await;
             assert_eq!(object.read(0, read_buf.as_mut()).await.unwrap(), read_buf.len());
-            assert_eq!(read_buf.as_slice(), expected_buf.as_slice());
+            assert_eq!(read_buf.to_vec(), expected_buf.to_vec());
 
             fs.close().await.expect("close failed");
         }
@@ -4428,7 +4473,7 @@ mod tests {
             for write in case.pre_writes {
                 let write_len = (write.end - write.start) * block_size as usize;
                 let mut write_buf = object.allocate_buffer(write_len).await;
-                write_buf.as_mut_slice().fill(0xff);
+                write_buf.fill(0xff);
                 assert_eq!(
                     object
                         .write_or_append(Some(block_size * write.start as u64), write_buf.as_ref())
@@ -4464,19 +4509,20 @@ mod tests {
                     .collect::<Vec<_>>();
                 let mut write_buf = object.allocate_buffer(write_len as usize).await;
                 let data = (0..20).cycle().take(write_len as usize).collect::<Vec<_>>();
-                write_buf.as_mut_slice().copy_from_slice(&data);
+                write_buf.copy_from_slice(&data);
 
                 let mut expected_buf = object.allocate_buffer(file_size as usize).await;
                 assert_eq!(
                     object.read(0, expected_buf.as_mut()).await.unwrap(),
                     expected_buf.len()
                 );
-                let expected_buf_slice = expected_buf.as_mut_slice();
+                let mut expected_buf_slice = expected_buf.as_mut_ptr_slice();
                 let mut data_slice = data.as_slice();
                 for r in &overwrite {
                     let len = r.length().unwrap() as usize;
                     let (copy_from, rest) = data_slice.split_at(len);
-                    expected_buf_slice[r.start as usize..r.end as usize]
+                    expected_buf_slice
+                        .subslice_mut(r.start as usize..r.end as usize)
                         .copy_from_slice(&copy_from);
                     data_slice = rest;
                 }
@@ -4513,7 +4559,7 @@ mod tests {
                     "failed length check on case {}",
                     i,
                 );
-                assert_eq!(buf.as_slice(), expected_buf.as_slice(), "failed on case {}", i);
+                assert_eq!(buf.to_vec(), expected_buf.to_vec(), "failed on case {}", i);
             }
 
             fsck_volume(&fs, object.store().store_object_id(), None).await.expect("fsck failed");
@@ -4538,7 +4584,7 @@ mod tests {
 
         let mut write_buf = object.allocate_buffer(2 * block_size as usize).await;
         let data = (0..20).cycle().take(write_buf.len()).collect::<Vec<_>>();
-        write_buf.as_mut_slice().copy_from_slice(&data);
+        write_buf.copy_from_slice(&data);
         let mut transaction = object.new_transaction().await.unwrap();
         object
             .multi_overwrite(
@@ -4560,7 +4606,7 @@ mod tests {
 
         let mut write_buf = object.allocate_buffer(3 * block_size as usize).await;
         let data = (0..20).cycle().take(write_buf.len()).collect::<Vec<_>>();
-        write_buf.as_mut_slice().copy_from_slice(&data);
+        write_buf.copy_from_slice(&data);
         let mut transaction = object.new_transaction().await.unwrap();
         object
             .multi_overwrite(
@@ -4582,7 +4628,7 @@ mod tests {
 
         let mut write_buf = object.allocate_buffer(6 * block_size as usize).await;
         let data = (0..20).cycle().take(write_buf.len()).collect::<Vec<_>>();
-        write_buf.as_mut_slice().copy_from_slice(&data);
+        write_buf.copy_from_slice(&data);
         let mut transaction = object.new_transaction().await.unwrap();
         object
             .multi_overwrite(
@@ -4621,7 +4667,7 @@ mod tests {
         assert!(object.check_unwritten_zero(0..file_size).await.unwrap());
 
         let mut buffer = object.allocate_buffer(block_size as usize).await;
-        buffer.as_mut_slice().fill(1);
+        buffer.fill(1);
         object.write_or_append(Some(block_size), buffer.as_ref()).await.expect("write failed");
         object.write_or_append(Some(block_size * 2), buffer.as_ref()).await.expect("write failed");
 

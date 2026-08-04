@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::checksum::{Checksum, Checksums, fletcher64};
+use crate::checksum::{Checksum, Checksums};
 use crate::errors::FxfsError;
 use crate::log::*;
 use crate::lsm_tree::Query;
@@ -63,12 +63,12 @@ fn apply_bitmap_zeroing(
     bitmap: &bit_vec::BitVec,
     mut buffer: MutableBufferRef<'_>,
 ) {
-    let buf = buffer.as_mut_slice();
+    let mut buf = buffer.as_mut_ptr_slice();
     debug_assert_eq!(bitmap.len() * block_size, buf.len());
     for (i, block) in bitmap.iter().enumerate() {
         if !block {
             let start = i * block_size;
-            buf[start..start + block_size].fill(0);
+            buf.subslice_mut(start..start + block_size).fill(0);
         }
     }
 }
@@ -537,9 +537,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     Ok(MaybeChecksums::None)
                 } else {
                     try_join!(store.device.write(device_offset, buf), async {
-                        let block_size = self.block_size();
-                        for chunk in buf.as_slice().chunks_exact(block_size as usize) {
-                            checksums.push(fletcher64(chunk, 0));
+                        let block_size = self.block_size() as usize;
+                        for chunk in buf.as_ptr_slice().chunks(block_size) {
+                            checksums.push(crate::checksum::fletcher64_ptr(chunk, 0));
                         }
                         Ok(())
                     })?;
@@ -669,9 +669,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         // Deal with head alignment.
         if aligned.start < offset {
-            let mut head_block = aligned_buf.subslice_mut(..block_size as usize);
+            let mut head_block = aligned_buf.subslice_mut(0..block_size as usize);
             let read = self.read(attribute_id, aligned.start, head_block.reborrow()).await?;
-            head_block.as_mut_slice()[read..].fill(0);
+            let len = head_block.len();
+            head_block.subslice_mut(read..len).fill(0);
         }
 
         // Deal with tail alignment.
@@ -682,13 +683,14 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 let mut tail_block =
                     aligned_buf.subslice_mut(aligned_buf.len() - block_size as usize..);
                 let read = self.read(attribute_id, end_block_offset, tail_block.reborrow()).await?;
-                tail_block.as_mut_slice()[read..].fill(0);
+                let len = tail_block.len();
+                tail_block.subslice_mut(read..len).fill(0);
             }
         }
 
-        aligned_buf.as_mut_slice()
-            [(offset - aligned.start) as usize..(end - aligned.start) as usize]
-            .copy_from_slice(buf.as_slice());
+        aligned_buf
+            .subslice_mut((offset - aligned.start) as usize..(end - aligned.start) as usize)
+            .copy_from_buffer(buf);
 
         Ok((aligned, aligned_buf))
     }
@@ -1098,8 +1100,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             if extent_key.start > offset {
                 // Zero everything up to the start of the extent.
                 let to_zero = min(extent_key.start - offset, buf.len() as u64) as usize;
-                buf.as_mut_slice()[..to_zero].fill(0);
-                buf = buf.subslice_mut(to_zero..);
+                let len = buf.len();
+                buf.reborrow().subslice_mut(0..to_zero).fill(0);
+                buf = buf.subslice_mut(to_zero..len);
                 if buf.is_empty() {
                     break;
                 }
@@ -1184,7 +1187,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         key_id,
                     )
                     .await?;
-                    buf.as_mut_slice().copy_from_slice(&align_buf.as_slice()[..end_align]);
+                    buf.copy_from_buffer(align_buf.as_ref().subslice(0..end_align));
                     buf = buf.subslice_mut(0..0);
                     break;
                 }
@@ -1196,7 +1199,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             iter.advance().await?;
         }
         reads.try_collect::<()>().await?;
-        buf.as_mut_slice().fill(0);
+        buf.fill(0);
         Ok(())
     }
 
@@ -1265,7 +1268,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 }) if *object_id == self.object_id() && *attr_id == attribute_id => {
                     if let ExtentValue::Some { device_offset, key_id, mode } = extent_value {
                         let offset = extent_key.start as usize;
-                        buffer.as_mut_slice()[last_offset..offset].fill(0);
+                        buffer.subslice_mut(last_offset..offset).fill(0);
                         let end = std::cmp::min(extent_key.end as usize, buffer.len());
                         let maybe_bitmap = match mode {
                             ExtentMode::OverwritePartial(bitmap) => {
@@ -1303,8 +1306,8 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 _ => break,
             }
         }
-        buffer.as_mut_slice()[std::cmp::min(last_offset, size)..].fill(0);
-        Ok(buffer.as_slice()[..size].into())
+        buffer.subslice_mut(std::cmp::min(last_offset, size)..buffer.len()).fill(0);
+        Ok(buffer.as_ref().subslice(0..size).to_vec().into_boxed_slice())
     }
 
     /// Writes potentially unaligned data at `device_offset` and returns checksums if requested.
@@ -1406,7 +1409,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         };
         if let Some(key) = &key {
             if !key.supports_inline_encryption() {
-                let mut slice = buf.as_mut_slice();
+                let mut slice = buf.as_mut_ptr_slice();
                 for r in ranges {
                     let l = r.end - r.start;
                     let (head, tail) = slice.split_at_mut(l as usize);
@@ -1592,7 +1595,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let (key_id, key) = self.get_key(None).await?;
         if let Some(key) = &key {
             if !key.supports_inline_encryption() {
-                let mut slice = buf.as_mut_slice();
+                let mut slice = buf.as_mut_ptr_slice();
                 for r in ranges {
                     let l = r.end - r.start;
                     let (head, tail) = slice.split_at_mut(l as usize);
@@ -1823,9 +1826,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         for (i, chunk) in chunks.enumerate() {
             let rounded_len = round_up(chunk.len() as u64, self.block_size()).unwrap();
             let mut buffer = self.store().device.allocate_buffer(rounded_len as usize).await;
-            let slice = buffer.as_mut_slice();
-            slice[..chunk.len()].copy_from_slice(chunk);
-            slice[chunk.len()..].fill(0);
+            let mut slice = buffer.as_mut_ptr_slice();
+            slice.subslice_mut(0..chunk.len()).copy_from_slice(chunk);
+            slice.subslice_mut(chunk.len()..slice.len()).fill(0);
             self.multi_write(
                 transaction,
                 attribute_id,
@@ -1876,9 +1879,9 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             false
         };
         let mut buffer = self.store().device.allocate_buffer(rounded_len as usize).await;
-        let slice = buffer.as_mut_slice();
-        slice[..data.len()].copy_from_slice(data);
-        slice[data.len()..].fill(0);
+        let mut slice = buffer.as_mut_ptr_slice();
+        slice.subslice_mut(0..data.len()).copy_from_slice(data);
+        slice.subslice_mut(data.len()..slice.len()).fill(0);
         self.multi_write(
             transaction,
             attribute_id,
@@ -2923,7 +2926,7 @@ mod tests {
 
         let mut transaction = (*object).new_transaction(attribute_id).await.unwrap();
         let mut buffer = object.allocate_buffer(buf_size as usize).await;
-        buffer.as_mut_slice().fill(3);
+        buffer.fill(3);
         // Writing two separate ranges, even if they are contiguous, forces them to be separate
         // extent records.
         object
