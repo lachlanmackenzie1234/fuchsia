@@ -26,6 +26,7 @@ if (is_host) {
       "commands/evaluate.py",
       "commands/finish.py",
       "commands/get_state.py",
+      "commands/next_cmd.py",
       "commands/pause.py",
       "commands/schema.py",
       "commands/stack_trace.py",

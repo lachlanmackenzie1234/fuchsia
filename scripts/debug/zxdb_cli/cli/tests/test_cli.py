@@ -21,6 +21,7 @@ from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest
 from shared.protocol.finish import FinishRequest
+from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.stop import StopRequest
@@ -141,6 +142,47 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             FinishRequest(command="finish", thread_id=1, single_thread=True)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_next_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            ["next", "1", "--single-thread", "--granularity", "line"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            NextRequest(
+                command="next",
+                thread_id=1,
+                single_thread=True,
+                granularity="line",
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_next_command_aliases(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        for alias in ["n", "step-over", "step_over", "stepover"]:
+            mock_send.reset_mock()
+            exit_code = await main([alias, "1"])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                NextRequest(command="next", thread_id=1)
+            )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_next(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "next", "thread_id": 1, "single_thread": true, "granularity": "line"}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            NextRequest(thread_id=1, single_thread=True, granularity="line")
         )
 
     @patch("cli.cli.send_command")

@@ -26,6 +26,7 @@ from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
 from shared.protocol.hello import HelloRequest
+from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
 from shared.protocol.start import StartRequest
@@ -43,6 +44,7 @@ RequestType = Annotated[
     | FinishRequest
     | GetStateRequest
     | HelloRequest
+    | NextRequest
     | PauseRequest
     | StackTraceRequest
     | StartRequest
@@ -73,6 +75,7 @@ __all__ = [
     "FinishRequest",
     "GetStateRequest",
     "HelloRequest",
+    "NextRequest",
     "PauseRequest",
     "StackTraceRequest",
     "StartRequest",

@@ -31,6 +31,7 @@ if (is_host) {
       "handlers/finish.py",
       "handlers/get_state.py",
       "handlers/hello.py",
+      "handlers/next_req.py",
       "handlers/pause.py",
       "handlers/stack_trace.py",
       "handlers/start.py",

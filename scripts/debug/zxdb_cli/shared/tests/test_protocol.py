@@ -10,6 +10,7 @@ from shared.protocol.attach import AttachRequest
 from shared.protocol.detach import DetachRequest
 from shared.protocol.finish import FinishRequest
 from shared.protocol.hello import HelloRequest
+from shared.protocol.next_request import NextRequest
 from shared.protocol.start import StartRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
@@ -103,6 +104,28 @@ class TestPolymorphicParsing(unittest.TestCase):
         self.assertTrue(isinstance(req, FinishRequest))
         self.assertEqual(req.thread_id, 1)
         self.assertTrue(req.single_thread)
+
+    def test_parse_next(self) -> None:
+        data = {
+            "command": "next",
+            "thread_id": 1,
+            "single_thread": True,
+            "granularity": "line",
+        }
+        req = make_request(data)
+        self.assertTrue(isinstance(req, NextRequest))
+        self.assertEqual(req.thread_id, 1)
+        self.assertTrue(req.single_thread)
+        self.assertEqual(req.granularity, "line")
+
+    def test_parse_next_invalid_granularity(self) -> None:
+        data = {
+            "command": "next",
+            "thread_id": 1,
+            "granularity": "invalid_granularity",
+        }
+        with self.assertRaises(ValidationError):
+            make_request(data)
 
     def test_parse_unknown_command(self) -> None:
         data = {"command": "unknown-cmd"}

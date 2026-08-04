@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import CommandHandlerRegistry, Daemon
+from pydap.client import DapError
 from shared.protocol import (
     BaseRequest,
     BreakRequest,
@@ -18,6 +19,7 @@ from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
+from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
@@ -131,6 +133,50 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(resp.success, resp.message)
         mock_dap_client.step_out.assert_called_once()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_next(self, mock_dap_client_class: Mock) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_next_resp = Mock()
+        mock_next_resp.success = True
+        mock_next_resp.dump_dap.return_value = {"success": True}
+        mock_dap_client.next = AsyncMock(return_value=mock_next_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "next",
+            NextRequest(
+                command="next",
+                thread_id=1,
+                single_thread=True,
+                granularity="line",
+            ),
+        )
+        self.assertTrue(resp.success, resp.message)
+        mock_dap_client.next.assert_called_once()
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_next_dap_error(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.next = AsyncMock(
+            side_effect=DapError("Thread not stopped")
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.registry.handle(
+            "next", NextRequest(command="next", thread_id=1)
+        )
+        self.assertFalse(resp.success)
+        self.assertEqual(
+            resp.message, "Failed to step over: Thread not stopped"
+        )
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_pause_sync(self, mock_dap_client_class: Mock) -> None:
