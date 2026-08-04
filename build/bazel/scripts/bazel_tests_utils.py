@@ -60,6 +60,13 @@ def generate_tests_json(
             bazel_paths.execroot / path, bazel_paths.ninja_build_dir
         )
 
+    target_cpu = "x64"
+    args_json_path = bazel_paths.ninja_build_dir / "args.json"
+    if args_json_path.exists():
+        args_json = json.loads(args_json_path.read_text())
+        if "target_cpu" in args_json:
+            target_cpu = args_json["target_cpu"]
+
     tests_json: list[dict[str, T.Any]] = []
     targets_missing_test_info: list[str] = []
 
@@ -89,15 +96,8 @@ def generate_tests_json(
             cquery_test["os"].capitalize() if cquery_test["os"] else "Linux"
         )
 
-        test_spec = {
-            "environments": [
-                {
-                    "dimensions": {
-                        "os": os_val,
-                        "cpu": cpu,
-                    }
-                }
-            ],
+        test_spec: dict[str, T.Any] = {
+            "environments": [],
             "expects_ssh": False,
             "test": {
                 "name": _normalize_label(label),
@@ -116,6 +116,17 @@ def generate_tests_json(
                 "cpu": cquery_test["cpu"],
             },
         }
+
+        # Only run host tests in infra on x64, because most host tests are for
+        # host tools that never need to run on arm64, so it would be wasteful to
+        # run them on arm64.
+        # TODO(https://fxbug.dev/542710387): Make this more flexible to support
+        # running host tests on arm64 on an opt-in basis.
+        if target_cpu == "x64":
+            test_spec["environments"].append(
+                {"dimensions": {"os": os_val, "cpu": cpu}}
+            )
+
         if cquery_test["list_cases_argument"]:
             assert isinstance(test_spec["test"], dict)  # make mypy happy
             test_spec["test"]["list_cases_argument"] = cquery_test[
