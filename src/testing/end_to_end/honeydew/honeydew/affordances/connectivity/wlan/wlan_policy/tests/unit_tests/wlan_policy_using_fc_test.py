@@ -574,10 +574,10 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             wraps=get_saved_networks
         )
 
-        # Mock remove_network, which should be called once for each saved
+        # Mock forget_network, which should be called once for each saved
         # network.
-        res = f_wlan_policy.ClientControllerRemoveNetworkResult(response=None)
-        client_controller.remove_network.side_effect = [
+        res = f_wlan_policy.ClientControllerForgetNetworkResult(response=None)
+        client_controller.forget_network.side_effect = [
             _async_response(res),
             _async_response(res),
             _async_response(res),
@@ -585,11 +585,11 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
 
         # Remove all networks
         await self.wlan_policy_obj.remove_all_networks()
-        client_controller.remove_network.assert_has_calls(
+        client_controller.forget_network.assert_has_calls(
             [
-                mock.call(config=_TEST_NETWORK_CONFIG_NONE_FIDL),
-                mock.call(config=_TEST_NETWORK_CONFIG_PASSWORD_FIDL),
-                mock.call(config=_TEST_NETWORK_CONFIG_PSK_FIDL),
+                mock.call(id_=_TEST_NETWORK_CONFIG_NONE_FIDL.id_),
+                mock.call(id_=_TEST_NETWORK_CONFIG_PASSWORD_FIDL.id_),
+                mock.call(id_=_TEST_NETWORK_CONFIG_PSK_FIDL.id_),
             ]
         )
 
@@ -597,52 +597,52 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         assert self.network_config_iterator is not None
         self.network_config_iterator.cancel()
 
-    async def test_remove_network_passes(self) -> None:
-        """Test if remove_network works."""
+    async def test_forget_network_passes(self) -> None:
+        """Test if forget_network works."""
         client_controller = self.client_controller_proxy
-        res = f_wlan_policy.ClientControllerRemoveNetworkResult(response=None)
-        client_controller.remove_network.return_value = _async_response(res)
+        res = f_wlan_policy.ClientControllerForgetNetworkResult(response=None)
+        client_controller.forget_network.return_value = _async_response(res)
 
-        await self.wlan_policy_obj.remove_network(
-            _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
+        await self.wlan_policy_obj.forget_network(
+            _TEST_SSID, f_wlan_policy.SecurityType.NONE
         )
-        client_controller.remove_network.assert_called_with(
-            config=_TEST_NETWORK_CONFIG_NONE_FIDL
+        client_controller.forget_network.assert_called_with(
+            id_=_TEST_NETWORK_CONFIG_NONE_FIDL.id_
         )
 
-    async def test_remove_network_fails(self) -> None:
-        """Test if remove_network throws HoneydewWlanError as expected."""
+    async def test_forget_network_fails(self) -> None:
+        """Test if forget_network throws HoneydewWlanError as expected."""
         client_controller = self.client_controller_proxy
         with self.subTest(msg="NetworkConfigChangeError"):
-            res = f_wlan_policy.ClientControllerRemoveNetworkResult(
+            res = f_wlan_policy.ClientControllerForgetNetworkResult(
                 err=int(
                     f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
                 )
             )
-            client_controller.remove_network.return_value = _async_response(res)
+            client_controller.forget_network.return_value = _async_response(res)
 
             with self.assertRaises(HoneydewWlanError):
-                await self.wlan_policy_obj.remove_network(
-                    _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
+                await self.wlan_policy_obj.forget_network(
+                    _TEST_SSID, f_wlan_policy.SecurityType.NONE
                 )
-            client_controller.remove_network.assert_called_once()
+            client_controller.forget_network.assert_called_once()
 
         with self.subTest(msg="FcTransportStatus"):
-            res = f_wlan_policy.ClientControllerRemoveNetworkResult(
+            res = f_wlan_policy.ClientControllerForgetNetworkResult(
                 err=int(
                     f_wlan_policy.NetworkConfigChangeError.CREDENTIAL_LEN_ERROR
                 )
             )
-            client_controller.remove_network.reset_mock()
-            client_controller.remove_network.return_value = _async_error(
+            client_controller.forget_network.reset_mock()
+            client_controller.forget_network.return_value = _async_error(
                 FcTransportStatus(FcTransportStatus.FC_ERR_INTERNAL)
             )
 
             with self.assertRaises(HoneydewWlanError):
-                await self.wlan_policy_obj.remove_network(
-                    _TEST_SSID, f_wlan_policy.SecurityType.NONE, None
+                await self.wlan_policy_obj.forget_network(
+                    _TEST_SSID, f_wlan_policy.SecurityType.NONE
                 )
-            client_controller.remove_network.assert_called_once()
+            client_controller.forget_network.assert_called_once()
 
     async def test_save_network_passes(self) -> None:
         """Test if save_network works."""

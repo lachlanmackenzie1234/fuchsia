@@ -363,10 +363,9 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_network.ssid, f_wlan_policy.ConnectionState.CONNECTED
         )
         # Remove network and verify we disconnect
-        await self.dut.wlan_policy.remove_network(
+        await self.dut.wlan_policy.forget_network(
             test_network.ssid,
             test_network.security_type,
-            test_network.credential_value,
         )
         try:
             await self.dut.wlan_policy.wait_for_no_connections()

@@ -144,11 +144,10 @@ class AsyncWlanPolicy(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def remove_network(
+    async def forget_network(
         self,
         target_ssid: str,
         security_type: f_wlan_policy.SecurityType,
-        target_pwd: str | None = None,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -157,8 +156,6 @@ class AsyncWlanPolicy(abc.ABC):
         Args:
             target_ssid: The network to remove.
             security_type: The security protocol of the network.
-            target_pwd: The credential being saved with the network. No password
-                is equivalent to an empty string.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
@@ -412,11 +409,10 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def remove_network(
+    def forget_network(
         self,
         target_ssid: str,
         security_type: f_wlan_policy.SecurityType,
-        target_pwd: str | None = None,
         *,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -425,8 +421,6 @@ class WlanPolicy(affordance.Affordance):
         Args:
             target_ssid: The network to remove.
             security_type: The security protocol of the network.
-            target_pwd: The credential being saved with the network. No password
-                is equivalent to an empty string.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.

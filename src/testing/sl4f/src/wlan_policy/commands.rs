@@ -33,10 +33,8 @@ impl Facade for WlanPolicyFacade {
             "remove_network" => {
                 let target_ssid = parse_target_ssid(&args)?;
                 let security_type = parse_security_type(&args)?;
-                let target_pwd = parse_target_pwd(&args)?;
-
                 info!(tag = "WlanPolicyFacade"; "removing network with SSID: {:?}", target_ssid);
-                let result = self.remove_network(target_ssid, security_type, target_pwd).await?;
+                let result = self.remove_network(target_ssid, security_type).await?;
                 to_value(result)
                     .map_err(|e| format_err!("error parsing remove network result: {}", e))
             }

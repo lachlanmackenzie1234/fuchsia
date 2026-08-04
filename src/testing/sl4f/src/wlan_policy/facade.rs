@@ -202,7 +202,6 @@ impl WlanPolicyFacade {
         &self,
         target_ssid: Vec<u8>,
         type_: fidl_policy::SecurityType,
-        credential: fidl_policy::Credential,
     ) -> Result<(), Error> {
         let controller_guard = self.controller.read();
         let controller = controller_guard
@@ -216,13 +215,9 @@ impl WlanPolicyFacade {
             type_
         );
 
-        let config = fidl_policy::NetworkConfig {
-            id: Some(fidl_policy::NetworkIdentifier { ssid: target_ssid, type_ }),
-            credential: Some(credential),
-            ..Default::default()
-        };
+        let id = fidl_policy::NetworkIdentifier { ssid: target_ssid, type_ };
         controller
-            .remove_network(&config)
+            .forget_network(&id)
             .await
             .map_err(|err| format_err!("{:?}", err))? // FIDL error
             .map_err(|err| format_err!("{:?}", err)) // network config change error
@@ -239,8 +234,9 @@ impl WlanPolicyFacade {
         // Remove each saved network individually.
         let saved_networks = self.get_saved_networks().await?;
         for network_config in saved_networks {
+            let id = network_config.id.as_ref().ok_or_else(|| format_err!("missing network ID"))?;
             controller
-                .remove_network(&network_config)
+                .forget_network(id)
                 .await
                 .map_err(|err| format_err!("{:?}", err))? // FIDL error
                 .map_err(|err| format_err!("{:?}", err))?; // network config change error
