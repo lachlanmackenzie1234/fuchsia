@@ -22,6 +22,8 @@ const USB_CLASS_VENDOR: u8 = 0xff;
 const USB_INTERFACE_DESC_SIZE: u8 = 9;
 const USB_ENDPOINT_DESC_SIZE: u8 = 7;
 
+const DEFAULT_VMO_SIZE: u64 = 4096;
+
 const USB_SETUP_REQ_GET_STATUS: u8 = 0x00;
 const USB_SETUP_REQ_CLEAR_FEATURE: u8 = 0x01;
 const USB_SETUP_REQ_SET_FEATURE: u8 = 0x03;
@@ -39,6 +41,9 @@ const USB_ZERO_DEFAULT_MAX_PACKET_SIZE: u16 = USB_MAX_PACKET_SIZE_HIGH_SPEED;
 const USB_ZERO_OUT_VMO_ID: u64 = 1;
 const USB_ZERO_IN_VMO_ID: u64 = 2;
 
+const USB_ZERO_WRITE_PAYLOAD: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF];
+const USB_ZERO_READ_PAYLOAD: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, enumn::N)]
 #[repr(u8)]
 enum VendorRequest {
@@ -50,6 +55,7 @@ enum VendorRequest {
     Deconfigure = 0x55,
     WritePayload = 0x56,
     ReadPayload = 0x57,
+    SetTestMode = 0x58,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -68,6 +74,21 @@ impl ControlRequest {
     }
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, enumn::N)]
+#[repr(u8)]
+pub enum TestMode {
+    SourceSink = 1,
+    #[default]
+    Loopback = 2,
+}
+
+impl TryFrom<u8> for TestMode {
+    type Error = Status;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        TestMode::n(value).ok_or(Status::INVALID_ARGS)
+    }
+}
 struct UsbZeroFunction {
     // Stored to keep the driver node handle alive per Fuchsia component driver lifecycle rules.
     _node: Node,
@@ -83,7 +104,8 @@ struct UsbZeroFunctionDevice {
     ep_out_addr: u8,
     is_configured: bool,
     vmos_registered: bool,
-    loopback_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
+    endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
+    mode: TestMode,
 }
 
 driver_register!(UsbZeroFunction);
@@ -262,7 +284,8 @@ impl UsbZeroFunctionDevice {
             ep_out_addr,
             is_configured: false,
             vmos_registered: false,
-            loopback_tasks: None,
+            endpoint_tasks: None,
+            mode: TestMode::default(),
         }
     }
 
@@ -317,9 +340,23 @@ impl UsbZeroFunctionDevice {
                 return Err(e);
             }
 
-            match run_loopback(self.ep_in.clone(), self.ep_out.clone(), &mut self.vmos_registered)
-                .await
-            {
+            let transfer_size = w_max_packet_size as u64;
+            let res = match self.mode {
+                TestMode::SourceSink => {
+                    run_source_sink(
+                        self.ep_in.clone(),
+                        self.ep_out.clone(),
+                        &mut self.vmos_registered,
+                        transfer_size,
+                    )
+                    .await
+                }
+                TestMode::Loopback => {
+                    run_loopback(self.ep_in.clone(), self.ep_out.clone(), &mut self.vmos_registered)
+                        .await
+                }
+            };
+            match res {
                 Ok((r_task, w_task)) => Ok(Some((r_task, w_task))),
                 Err(e) => {
                     self.cleanup_endpoints().await;
@@ -336,6 +373,7 @@ impl UsbZeroFunctionDevice {
         setup: &fusb_descriptor::UsbSetup,
         write: &[u8],
     ) -> Result<Vec<u8>, Status> {
+        // Vendor control requests must have Vendor type (0x40 in bm_request_type)
         if (setup.bm_request_type & 0x60) != 0x40 {
             return Err(Status::INVALID_ARGS);
         }
@@ -408,7 +446,7 @@ impl UsbZeroFunctionDevice {
                 if (setup.bm_request_type & 0x80) != 0 || setup.w_length != 0 || !write.is_empty() {
                     return Err(Status::INVALID_ARGS);
                 }
-                let _ = self.loopback_tasks.take();
+                self.endpoint_tasks = None;
                 self.cleanup_endpoints().await;
                 self.is_configured = false;
                 self.function_client
@@ -424,17 +462,25 @@ impl UsbZeroFunctionDevice {
             VendorRequest::WritePayload => {
                 if (setup.bm_request_type & 0x80) != 0
                     || setup.w_length as usize != write.len()
-                    || write != [0xDE, 0xAD, 0xBE, 0xEF]
+                    || write != USB_ZERO_WRITE_PAYLOAD
                 {
                     return Err(Status::INVALID_ARGS);
                 }
                 Ok(Vec::new())
             }
             VendorRequest::ReadPayload => {
-                if (setup.bm_request_type & 0x80) == 0 || setup.w_length < 4 || !write.is_empty() {
+                if (setup.bm_request_type & 0x80) == 0
+                    || (setup.w_length as usize) < USB_ZERO_READ_PAYLOAD.len()
+                    || !write.is_empty()
+                {
                     return Err(Status::INVALID_ARGS);
                 }
-                Ok(vec![0x12, 0x34, 0x56, 0x78])
+                Ok(USB_ZERO_READ_PAYLOAD.to_vec())
+            }
+            VendorRequest::SetTestMode => {
+                let mode_val = validate_vendor_out_request(setup, write)?;
+                self.mode = mode_val.try_into()?;
+                Ok(Vec::new())
             }
         }
     }
@@ -477,13 +523,13 @@ impl UsbZeroFunctionDevice {
                     responder,
                 } => {
                     info!("Set configured: {}", configured);
-                    self.loopback_tasks = None;
+                    self.endpoint_tasks = None;
 
                     let status = self.handle_set_configured(configured, speed).await;
 
                     match status {
                         Ok(tasks) => {
-                            self.loopback_tasks = tasks;
+                            self.endpoint_tasks = tasks;
                             self.is_configured = configured;
                             let _ = responder.send(Ok(()));
                         }
@@ -511,7 +557,7 @@ impl UsbZeroFunctionDevice {
             }
         }
         if self.is_configured {
-            self.loopback_tasks = None;
+            self.endpoint_tasks = None;
             self.cleanup_endpoints().await;
         }
         info!("handle_requests exiting");
@@ -611,6 +657,63 @@ fn handle_write_completion(
     let _ = ack_tx.unbounded_send(send_data);
 }
 
+fn spawn_endpoint_pump(
+    ep: fusb_endpoint::EndpointProxy,
+    vmo_id: u64,
+    transfer_size: u64,
+) -> fasync::Task<()> {
+    fasync::Task::spawn(async move {
+        let mut event_stream = ep.take_event_stream();
+        queue_request(&ep, vmo_id, transfer_size);
+
+        while let Ok(Some(event)) = event_stream.try_next().await {
+            match event {
+                fusb_endpoint::EndpointEvent::OnCompletion { completion } => {
+                    let ok = completion.iter().all(|c| c.status == Some(Status::OK.into_raw()));
+                    if !ok {
+                        warn!("Endpoint transfer completed with non-OK status");
+                    }
+                    queue_request(&ep, vmo_id, transfer_size);
+                }
+            }
+        }
+    })
+}
+
+/// Runs the driver in uncoupled Source/Sink testing mode.
+///
+/// In this mode, the IN endpoint continuously sources fixed test data payloads
+/// while the OUT endpoint continuously receives and sinks host data. Unlike loopback
+/// mode, the endpoints operate independently without lockstep synchronization.
+async fn run_source_sink(
+    ep_in: fusb_endpoint::EndpointProxy,
+    ep_out: fusb_endpoint::EndpointProxy,
+    vmos_registered: &mut bool,
+    transfer_size: u64,
+) -> Result<(fasync::Task<()>, fasync::Task<()>), Status> {
+    info!("Starting source/sink loop");
+
+    // Register VMOs
+    let _vmo_out = register_vmo(&ep_out, USB_ZERO_OUT_VMO_ID, DEFAULT_VMO_SIZE).await?;
+    let vmo_in = match register_vmo(&ep_in, USB_ZERO_IN_VMO_ID, DEFAULT_VMO_SIZE).await {
+        Ok(vmo) => vmo,
+        Err(e) => {
+            let _ = ep_out.unregister_vmos(&[USB_ZERO_OUT_VMO_ID]).await;
+            return Err(e);
+        }
+    };
+    *vmos_registered = true;
+
+    if let Err(e) = vmo_in.op_range(zx::VmoOp::CACHE_CLEAN, 0, DEFAULT_VMO_SIZE) {
+        warn!("VMO cache op failed: {:?}", e);
+    }
+
+    let sink_task = spawn_endpoint_pump(ep_out, USB_ZERO_OUT_VMO_ID, DEFAULT_VMO_SIZE);
+    let source_task = spawn_endpoint_pump(ep_in, USB_ZERO_IN_VMO_ID, transfer_size);
+
+    Ok((sink_task, source_task))
+}
+
 // Note on Loopback Synchronization:
 // By waiting for ack_rx before calling queue_request, the driver ensures it doesn't
 // overwrite the single buffer in the VMO during processing. However, this lockstep execution
@@ -705,11 +808,14 @@ async fn run_loopback(
 mod tests {
     use super::*;
     use fidl::endpoints::{RequestStream, create_endpoints};
+
+    const TEST_EP_IN_ADDR: u8 = 1;
+    const TEST_EP_OUT_ADDR: u8 = 2;
     use futures::channel::mpsc;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq)]
     enum MockEvent {
         VmoRegistered,
         RequestQueued,
@@ -925,8 +1031,13 @@ mod tests {
         let ep_in_proxy = ep_in_client.into_proxy();
         let ep_out_proxy = ep_out_client.into_proxy();
         scope.spawn_local(async move {
-            let mut zero_function =
-                UsbZeroFunctionDevice::new(func_client_proxy, ep_in_proxy, 1, ep_out_proxy, 2);
+            let mut zero_function = UsbZeroFunctionDevice::new(
+                func_client_proxy,
+                ep_in_proxy,
+                TEST_EP_IN_ADDR,
+                ep_out_proxy,
+                TEST_EP_OUT_ADDR,
+            );
             zero_function.handle_requests(iface_server.into_stream()).await;
         });
 
@@ -936,7 +1047,7 @@ mod tests {
         let setup_set_stall = fusb_descriptor::UsbSetup {
             bm_request_type: 0x40,
             b_request: VendorRequest::SetStall as u8,
-            w_value: 1,
+            w_value: TEST_EP_IN_ADDR as u16,
             w_index: 0,
             w_length: 0,
         };
@@ -958,7 +1069,7 @@ mod tests {
         let setup_invalid_dir = fusb_descriptor::UsbSetup {
             bm_request_type: 0xC0,
             b_request: VendorRequest::SetStall as u8,
-            w_value: 1,
+            w_value: TEST_EP_IN_ADDR as u16,
             w_index: 0,
             w_length: 0,
         };
@@ -969,7 +1080,7 @@ mod tests {
         let setup_clear_stall = fusb_descriptor::UsbSetup {
             bm_request_type: 0x40,
             b_request: VendorRequest::ClearStall as u8,
-            w_value: 1,
+            w_value: TEST_EP_IN_ADDR as u16,
             w_index: 0,
             w_length: 0,
         };
@@ -980,7 +1091,7 @@ mod tests {
         let setup_config_ep = fusb_descriptor::UsbSetup {
             bm_request_type: 0x40,
             b_request: VendorRequest::ConfigureEndpoint as u8,
-            w_value: 1,
+            w_value: TEST_EP_IN_ADDR as u16,
             w_index: 0,
             w_length: 0,
         };
@@ -991,7 +1102,7 @@ mod tests {
         let setup_disable_ep = fusb_descriptor::UsbSetup {
             bm_request_type: 0x40,
             b_request: VendorRequest::DisableEndpoint as u8,
-            w_value: 1,
+            w_value: TEST_EP_IN_ADDR as u16,
             w_index: 0,
             w_length: 0,
         };
@@ -1002,7 +1113,7 @@ mod tests {
         let setup_connect_ep = fusb_descriptor::UsbSetup {
             bm_request_type: 0x40,
             b_request: VendorRequest::ConnectEndpoint as u8,
-            w_value: 1,
+            w_value: TEST_EP_IN_ADDR as u16,
             w_index: 0,
             w_length: 0,
         };
@@ -1026,13 +1137,14 @@ mod tests {
             b_request: VendorRequest::WritePayload as u8,
             w_value: 0,
             w_index: 0,
-            w_length: 4,
+            w_length: USB_ZERO_WRITE_PAYLOAD.len() as u16,
         };
-        let res_out = proxy.control(&setup_write, &[0xDE, 0xAD, 0xBE, 0xEF]).await.unwrap();
+        let res_out = proxy.control(&setup_write, USB_ZERO_WRITE_PAYLOAD).await.unwrap();
         assert_eq!(res_out, Ok(vec![]));
 
         // Test VendorRequest::WritePayload (0x56 - invalid payload content)
-        let res_err = proxy.control(&setup_write, &[0x00, 0x00, 0x00, 0x00]).await.unwrap();
+        let res_err =
+            proxy.control(&setup_write, &vec![0; USB_ZERO_WRITE_PAYLOAD.len()]).await.unwrap();
         assert_eq!(res_err, Err(Status::INVALID_ARGS.into_raw()));
 
         // Test VendorRequest::WritePayload (0x56 - w_length mismatch)
@@ -1041,10 +1153,10 @@ mod tests {
             b_request: VendorRequest::WritePayload as u8,
             w_value: 0,
             w_index: 0,
-            w_length: 5,
+            w_length: (USB_ZERO_WRITE_PAYLOAD.len() + 1) as u16,
         };
         let res_mismatch =
-            proxy.control(&setup_write_mismatch, &[0xDE, 0xAD, 0xBE, 0xEF]).await.unwrap();
+            proxy.control(&setup_write_mismatch, USB_ZERO_WRITE_PAYLOAD).await.unwrap();
         assert_eq!(res_mismatch, Err(Status::INVALID_ARGS.into_raw()));
 
         // Test VendorRequest::ReadPayload (0x57 - valid)
@@ -1053,24 +1165,145 @@ mod tests {
             b_request: VendorRequest::ReadPayload as u8,
             w_value: 0,
             w_index: 0,
-            w_length: 4,
+            w_length: USB_ZERO_READ_PAYLOAD.len() as u16,
         };
         let res = proxy.control(&setup_read, &[]).await.unwrap();
-        assert_eq!(res, Ok(vec![0x12, 0x34, 0x56, 0x78]));
+        assert_eq!(res, Ok(USB_ZERO_READ_PAYLOAD.to_vec()));
 
         // Test VendorRequest::ReadPayload (0x57 - invalid non-empty write payload)
         let res_read_nonempty = proxy.control(&setup_read, &[0x01]).await.unwrap();
         assert_eq!(res_read_nonempty, Err(Status::INVALID_ARGS.into_raw()));
 
-        // Test 0x58 (unsupported request)
+        // Test VendorRequest::SetTestMode (0x58 - set Loopback mode)
+        let setup_set_mode_loopback = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::SetTestMode as u8,
+            w_value: TestMode::Loopback as u16,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res_set_mode = proxy.control(&setup_set_mode_loopback, &[]).await.unwrap();
+        assert_eq!(res_set_mode, Ok(vec![]));
+
+        // Test VendorRequest::SetTestMode (0x58 - invalid mode 99)
+        let setup_set_mode_invalid = fusb_descriptor::UsbSetup {
+            bm_request_type: 0x40,
+            b_request: VendorRequest::SetTestMode as u8,
+            w_value: 99,
+            w_index: 0,
+            w_length: 0,
+        };
+        let res_mode_invalid = proxy.control(&setup_set_mode_invalid, &[]).await.unwrap();
+        assert_eq!(res_mode_invalid, Err(Status::INVALID_ARGS.into_raw()));
+
+        // Test unsupported request
         let setup_unsupported = fusb_descriptor::UsbSetup {
             bm_request_type: 0x40,
-            b_request: 0x58,
+            b_request: VendorRequest::SetTestMode as u8 + 1,
             w_value: 0,
             w_index: 0,
             w_length: 0,
         };
         let res_unsupported = proxy.control(&setup_unsupported, &[]).await.unwrap();
         assert_eq!(res_unsupported, Err(Status::NOT_SUPPORTED.into_raw()));
+    }
+
+    #[fuchsia::test]
+    async fn test_source_sink() {
+        let (ep_in_client, ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+        let (ep_out_client, ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+        let state_in =
+            Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+        let state_out =
+            Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+
+        let (comp_in_tx, comp_in_rx) = mpsc::unbounded();
+        let (comp_out_tx, comp_out_rx) = mpsc::unbounded();
+        let (event_tx, mut event_rx) = mpsc::unbounded();
+
+        let scope = Arc::new(fasync::Scope::new_with_name("test_ss"));
+
+        scope.spawn_local(run_mock_endpoint(
+            ep_in_server.into_stream(),
+            state_in.clone(),
+            comp_in_rx,
+            event_tx.clone(),
+            scope.clone(),
+        ));
+        scope.spawn_local(run_mock_endpoint(
+            ep_out_server.into_stream(),
+            state_out.clone(),
+            comp_out_rx,
+            event_tx,
+            scope.clone(),
+        ));
+
+        let ep_in_proxy = ep_in_client.into_proxy();
+        let ep_out_proxy = ep_out_client.into_proxy();
+
+        let mut vmos_registered = false;
+        let _tasks = run_source_sink(
+            ep_in_proxy,
+            ep_out_proxy,
+            &mut vmos_registered,
+            USB_MAX_PACKET_SIZE_HIGH_SPEED.into(),
+        )
+        .await
+        .unwrap();
+
+        // Await setup events: ep_out registered (1), ep_in registered (1),
+        // ep_out queued initial request (1), ep_in queued initial request (1)
+        for _ in 0..4 {
+            let _ = event_rx.next().await;
+        }
+
+        // Verify OUT VMO was registered
+        let read_req = {
+            let mut state = state_out.lock().unwrap();
+            assert!(state.vmos.contains_key(&USB_ZERO_OUT_VMO_ID));
+            state.requests.pop().unwrap()
+        };
+
+        // Verify IN VMO was registered
+        let write_req = {
+            let mut state = state_in.lock().unwrap();
+            assert!(state.vmos.contains_key(&USB_ZERO_IN_VMO_ID));
+            state.requests.pop().unwrap()
+        };
+
+        // Send mock completion on OUT to assert read loop re-queues
+        comp_out_tx
+            .unbounded_send(vec![fusb_endpoint::Completion {
+                request: Some(read_req),
+                status: Some(Status::OK.into_raw()),
+                transfer_size: Some(0),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        let event = event_rx.next().await;
+        assert_eq!(event, Some(MockEvent::RequestQueued));
+        {
+            let state = state_out.lock().unwrap();
+            assert_eq!(state.requests.len(), 1);
+        }
+
+        // Send mock completion on IN to assert write loop re-queues
+        comp_in_tx
+            .unbounded_send(vec![fusb_endpoint::Completion {
+                request: Some(write_req),
+                status: Some(Status::OK.into_raw()),
+                transfer_size: Some(512),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        let event = event_rx.next().await;
+        assert_eq!(event, Some(MockEvent::RequestQueued));
+        {
+            let state = state_in.lock().unwrap();
+            assert_eq!(state.requests.len(), 1);
+        }
     }
 }
