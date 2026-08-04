@@ -7,6 +7,8 @@ Converter), and trippoint devices in Fuchsia.
 
 ```
 temperature-cli [device] <command> [args...] [<command2> [args2...] ...]
+temperature-cli list
+temperature-cli read-all
 temperature-cli --help
 ```
 
@@ -52,6 +54,18 @@ Note that _only one device_ can be targeted with each `temperature-cli` invocati
     Found 2 temperature devices:
       soc-thermal          (/svc/fuchsia.hardware.temperature.Service/default)
       pmic-thermal         (/dev/class/temperature/001)
+    ```
+*   **`read-all`**: List all temperature devices found and read their temperatures.
+    ```bash
+    $ temperature-cli read-all
+    Found 2 temperature devices:
+      soc-thermal          (/svc/fuchsia.hardware.temperature.Service/default)
+      pmic-thermal         (/dev/class/temperature/001)
+
+    Reading soc-thermal ...
+    temperature = 42.500000
+    Reading pmic-thermal ...
+    temperature = 38.200000
     ```
 
 #### Temperature Device Commands
@@ -100,9 +114,9 @@ These commands operate on `fuchsia.hardware.adc` devices.
     $ temperature-cli /dev/class/adc/000 read
     Value = 2048
     ```
-*   **`readnorm`**: Read a normalized ADC sample (range 0.0 to 1.0).
+*   **`read-norm`**: Read a normalized ADC sample (range 0.0 to 1.0).
     ```bash
-    $ temperature-cli /dev/class/adc/000 readnorm
+    $ temperature-cli /dev/class/adc/000 read-norm
     Value  = 0.500000
     ```
 

@@ -21,7 +21,7 @@ constexpr char kUsageMessage[] =
 
     Usage: temperature-cli [device_path_or_name] <command> [args...] [<command2> [args2...] ...]
            temperature-cli list
-           temperature-cli readall
+           temperature-cli read-all
            temperature-cli --help
 
     [device_path_or_name] can be:
@@ -44,12 +44,12 @@ constexpr char kUsageMessage[] =
         (For temperature class devices)
         name             - Get sensor name
         read             - Read temperature in Celsius
-        readall          - Read all temperature devices found
+        read-all         - List all devices, then read them all
 
         (For ADC class devices)
         resolution       - Get ADC resolution
         read             - Read ADC sample
-        readnorm         - Read normalized ADC sample [0.0-1.0]
+        read-norm        - Read normalized ADC sample [0.0-1.0]
 
         (For trippoint class devices)
         trippoint        - Get/set trippoint. Follow with multiple sets of index:type,configuration.
@@ -61,7 +61,7 @@ constexpr char kUsageMessage[] =
 
     Examples:
         temperature-cli list
-        temperature-cli readall
+        temperature-cli read-all
         temperature-cli LITTLE             (equivalent to 'temperature-cli LITTLE read')
         temperature-cli soc-thermal read
         temperature-cli /dev/class/temperature/000 name read
