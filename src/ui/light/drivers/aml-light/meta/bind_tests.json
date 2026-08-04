@@ -42,7 +42,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport",
-                    "fuchsia.pwm.PWM_ID_FUNCTION": "fuchsia.pwm.PWM_ID_FUNCTION.AMBER_LED"
+                    "fuchsia.NAME": "\"AMBER_LED\""
                 }
             }
         ]
@@ -68,7 +68,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport",
-                    "fuchsia.pwm.PWM_ID_FUNCTION": "fuchsia.pwm.PWM_ID_FUNCTION.GREEN_LED"
+                    "fuchsia.NAME": "\"GREEN_LED\""
                 }
             }
         ]

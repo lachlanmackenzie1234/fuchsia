@@ -206,6 +206,7 @@ const std::vector<fdf::NodeProperty2> kPwmProperties = std::vector{
                        bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
                        bind_fuchsia_pwm::PWM_ID_FUNCTION_CORE_POWER_BIG_CLUSTER),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "CORE_POWER_BIG_CLUSTER"),
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{

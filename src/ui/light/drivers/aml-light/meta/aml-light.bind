@@ -32,7 +32,7 @@ parent "gpio-amber-led" {
 
 parent "pwm-amber-led" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
-  fuchsia.pwm.PWM_ID_FUNCTION == fuchsia.pwm.PWM_ID_FUNCTION.AMBER_LED;
+  fuchsia.NAME == "AMBER_LED";
 }
 
 optional parent "gpio-green-led" {
@@ -42,7 +42,7 @@ optional parent "gpio-green-led" {
 
 optional parent "pwm-green-led" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
-  fuchsia.pwm.PWM_ID_FUNCTION == fuchsia.pwm.PWM_ID_FUNCTION.GREEN_LED;
+  fuchsia.NAME == "GREEN_LED";
 }
 
 optional parent "gpio-init" {
