@@ -51,7 +51,7 @@ struct PilotTestParams {
     /// Glob patterns specifying which test cases to execute. A case is selected if it matches
     /// any of the specified patterns.
     #[serde(default)]
-    pub test_case_filter: Option<Vec<String>>,
+    pub test_case_filters: Option<Vec<String>>,
 
     /// Whether to run otherwise disabled cases. By default, disabled cases are not run.
     #[serde(default)]
@@ -119,7 +119,7 @@ pub async fn combined_params_from_pilot_reader<R: Read>(
         test_args: pilot_test_params.target_test_args,
         realm: provided_realm.into(),
         timeout_seconds: pilot_test_params.timeout,
-        test_filters: pilot_test_params.test_case_filter,
+        test_filters: pilot_test_params.test_case_filters,
         also_run_disabled_tests: pilot_test_params.run_disabled_cases,
         parallel: pilot_test_params.max_concurrent_test_case_runs,
         max_severity_logs: pilot_test_params.max_severity_logs,
@@ -353,7 +353,7 @@ mod test {
         "min_severity_logs": "warn",
         "tags": [ { "key": "test", "value": "tags" } ],
         "target": "test_target",
-        "test_case_filter": [ "test", "case", "filters" ],
+        "test_case_filters": [ "test", "case", "filters" ],
         "run_disabled_cases": true,
         "break_on_failure": true,
         "no_exception_channel": true,
@@ -372,7 +372,7 @@ mod test {
         "min_severity_logs": "warn",
         "tags": [ { "key": "test", "value": "tags" } ],
         "target": "test_target",
-        "test_case_filter": [ "test", "case", "filters" ],
+        "test_case_filters": [ "test", "case", "filters" ],
         "run_disabled_cases": true,
         "break_on_failure": true,
         "no_exception_channel": true,

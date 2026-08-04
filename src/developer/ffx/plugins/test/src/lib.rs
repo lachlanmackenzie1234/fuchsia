@@ -1247,7 +1247,7 @@ mod test {
                     "target_test_args": [ "--", "arg" ],
                     "sdk_tool_path": "test_sdk_tool_path",
                     "target": "test_target",
-                    "test_case_filter": [ "filter" ],
+                    "test_case_filters": [ "filter" ],
                     "timeout": 10,
                     "max_concurrent_test_case_runs": 20,
                     "run_disabled_cases": true

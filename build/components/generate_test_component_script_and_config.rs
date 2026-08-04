@@ -49,8 +49,15 @@ struct TestConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     realm: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // This field copied to `test_case_filters` by `read_partial_config`. `test_case_filters` is
+    // the correct spelling according to the test config schema, and `test_filters` should not
+    // appear in the final config.
+    // TODO(512203119): Remove this when other components are converted to use 'test_case_filters'.
+    #[serde(default, skip_serializing)]
     test_filters: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    test_case_filters: Vec<String>,
 
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
@@ -89,7 +96,7 @@ fn read_partial_config(file: &Path) -> Result<TestConfig, Error> {
     // Oops, some of our test fixtures use `test_filters`, some others use
     // `test_case_filters`.
     // See: //build/sdk/test_config_schema.json5
-    t.extra.insert("test_case_filters".into(), t.test_filters.clone().into());
+    t.test_case_filters.extend(std::mem::take(&mut t.test_filters));
     Ok(t)
 }
 
