@@ -16,7 +16,6 @@ import("//build/product.gni")
 import("//build/product_bundles_json.gni")
 import("//build/rust/config.gni")
 import("//build/testing/platforms.gni")
-import("//build/testing/validated_test_types_group.gni")
 import("//build/tests_json.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/zircon/clang.gni")
@@ -1308,13 +1307,11 @@ generated_file("tests_from_metadata") {
     # in //:host_tests instead.
     "//:host",
 
-    # Pull in tests present in the assembled product image.  This is deprecated,
-    # and tests should be in the various type-specific test groups below.
+    # Pull in tests present in the assembled product image. This is deprecated,
+    # only the `bringup_with_tests` product configurations provide tests via
+    # this path, and they need to be migrated to another way of specifying the
+    # tests.
     "//build/images:main_assembly",
-
-    # Pull in tests from the various type-specific on-device test groups
-    "//:e2e_tests",
-    "//:hermetic_test_packages",
 
     # Pull in tests from the non-device type-specific test groups.
     "//:host_tests",
@@ -1360,9 +1357,6 @@ build_api_module("test_components") {
     # Pull in tests present in the assembled product image.  This is deprecated,
     # and tests should be in the various type-specific test groups below.
     "//build/images:main_assembly",
-
-    # Pull in tests from the various type-specific on-device test groups
-    "//:hermetic_test_packages",
 
     # Pull in tests from the developer
     "//:developer_specified_tests",
@@ -2440,54 +2434,17 @@ group("developer_universe_packages") {
   # the buildbot host tests should only be added via `--with-host`, to the
   # `host_labels` GN arg.
   assert_no_deps = [ "//bundles/buildbot/host/*" ]
-
-  # During validation of the test types, ignore any tests that are found via
-  # a path from the test groups back to this group, as it's likely due to e2e
-  # tests having a dependency on the main assembly, which has a dependency on
-  # this group while tests are being transitioned out of the universe set and
-  # to the test groups.
-  metadata = {
-    test_type_validation_barrier = []
-  }
 }
 
 ###
 # GN-Argument configured groups for adding tests to a build.
 #
 
-# Fully hermetic tests (both by packaging and at runtime)
-validated_test_types_group("hermetic_test_packages") {
-  visibility = [ ":*" ]
-  allowed_test_types = [ "hermetic" ]
-  deps = hermetic_test_package_labels
-}
-
-# These are all tests that are to be published in the 'discoverable' package
-# set.
-group("discoverable_tests") {
-  testonly = true
-  visibility = [
-    ":*",
-    "//build/images/*",
-  ]
-  public_deps = [ "//:hermetic_test_packages" ]
-}
-
-# Host-driven, "end-to-end" tests that run on a Fuchsia image (either real
-# hardware or emulated).
-validated_test_types_group("e2e_tests") {
-  testonly = true
-  visibility = [ ":*" ]
-  allowed_test_types = [ "end_to_end" ]
-  deps = e2e_test_labels
-}
-
 # Host-only tests.  These cannot have any dependency on an assembled platform
 # image, or the compiled OS itself, not even for their host_test_data().
-validated_test_types_group("host_tests") {
+group("host_tests") {
   testonly = true
   visibility = [ ":*" ]
-  allowed_test_types = [ "host_only" ]
 
   deps = []
   foreach(label, host_test_labels) {
@@ -2505,7 +2462,8 @@ group("developer_specified_tests") {
     ":*",
     "//build/images/updates:*",
   ]
-  public_deps = developer_test_labels
+  public_deps =
+      developer_test_labels + e2e_test_labels + hermetic_test_package_labels
 }
 
 ###
@@ -2517,12 +2475,11 @@ group("developer_specified_tests") {
 group("discoverable_packages") {
   testonly = true
   visibility = [ "//build/images/updates:*" ]
-  public_deps = discoverable_package_labels + [ ":discoverable_tests" ]
+  public_deps = discoverable_package_labels
 
-  # For all configurations other than bringup, add //bundles/tools to
-  # the discoverable package set, as generally-available platform tools,
-  # as all products were including them in discoverable_package_labels
-  # anyway.
+  # Add //bundles/tools to the discoverable package set, as generally-available
+  # platform tools, as all products were including them in
+  # discoverable_package_labels anyway.
   public_deps += [ "//bundles/tools" ]
   assert_no_deps = [
     "//build/validate:config_data_tag",

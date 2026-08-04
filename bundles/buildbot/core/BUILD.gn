@@ -3,15 +3,13 @@
 # found in the LICENSE file.
 
 import("//build/board.gni")
-import("//build/testing/validated_test_types_group.gni")
 
 assert(is_fuchsia, "These can only be defined in the default toolchain")
 
 # For use with the 'hermetic_test_package_labels' GN build argument.
 # WARNING: Known to infrastructure
-validated_test_types_group("hermetic_tests") {
+group("hermetic_tests") {
   testonly = true
-  allowed_test_types = [ "hermetic" ]
   deps = [
     "//examples:hermetic_tests",
     "//src/sys/pkg:hermetic_tests",

@@ -45,7 +45,6 @@ if (is_host) {
       "//tools/test_list_tool:install",
       "//tools/testgen:host",
       "//tools/update_crates",
-      "//tools/validate_test_type:install",
       "//tools/zedmon/client:zedmon_client",
     ]
   }
@@ -139,7 +138,6 @@ group("tests_no_e2e") {
     "//tools/testing:tests($host_toolchain)",
     "//tools/testing_metadata:tests($host_toolchain)",
     "//tools/update_crates:tests($host_toolchain)",
-    "//tools/validate_test_type:tests",
     "//tools/virtual_device:tests($host_toolchain)",
     "//tools/zedmon:tests",
   ]
