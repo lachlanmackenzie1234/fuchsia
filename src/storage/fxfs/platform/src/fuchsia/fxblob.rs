@@ -7,6 +7,7 @@
 mod atomic_vec;
 pub mod blob;
 mod directory;
+pub mod mapping_server;
 pub mod reader;
 mod writer;
 

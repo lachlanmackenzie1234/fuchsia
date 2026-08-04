@@ -538,6 +538,10 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> AsyncSender<T> {
         self.0.is_full()
     }
 
+    pub fn vmo(&self) -> &zx::Vmo {
+        self.0.vmo()
+    }
+
     /// Pushes a standalone message onto the queue, yielding to the executor if the queue is full.
     pub async fn push(&mut self, msg: T) -> Result<u64, zx::Status> {
         // `Ordering::Relaxed`: this function is called by the writer which owns the write index, no

@@ -20,7 +20,7 @@ use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer as MemBuffer;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_merkle::{Hash, MerkleVerifier, ReadSizedMerkleVerifier};
-use futures::{TryStreamExt, try_join};
+use futures::{StreamExt, TryStreamExt, try_join};
 use fxfs::blob_metadata::{BlobFormat, BlobMetadata};
 use fxfs::errors::FxfsError;
 use fxfs::lock_keys;
@@ -36,6 +36,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, MutableBufferRef};
 use zx::Status;
+
+/// The extent mappings for a blob's data and merkle attributes.
+///
+/// Each `MappingExtent` maps a logical byte range to a physical device offset.
+/// Extents are sorted by logical offset and non-overlapping.
+pub struct BlobExtents {
+    pub data: Vec<MappingExtent>,
+    pub merkle: Vec<MappingExtent>,
+}
 
 // When the top bit of the open count is set, it means the file has been deleted and when the count
 // drops to zero, it will be tombstoned.  Once it has dropped to zero, it cannot be opened again
@@ -169,21 +178,21 @@ impl FxBlob {
     }
 
     /// Returns the extents mapping logical offsets to device offsets for both merkle and data
-    /// attributes. Returns `(merkle_extents, data_extents)`, where each `MappingExtent` maps a
-    /// logical byte range to a physical device offset. Extents are sorted by logical offset and
-    /// non-overlapping.
-    pub async fn get_mapping_extents(
-        &self,
-    ) -> Result<(Vec<MappingExtent>, Vec<MappingExtent>), Error> {
+    /// attributes. Each `MappingExtent` maps a logical byte range to a physical device offset.
+    /// Extents are sorted by logical offset and non-overlapping.
+    pub async fn get_mapping_extents(&self) -> Result<BlobExtents, Error> {
         let tree = &self.handle.store().tree();
         let layer_set = tree.layer_set();
 
         // Query data extents
         let mut merger = layer_set.merger();
         let stream = self.handle.extent_stream(&mut merger, AttributeId::DATA).await?;
-        let data_extents = stream
-            .map_ok(|extent| {
-                MappingExtent::new(extent.logical_range(), Some(extent.device_range().start))
+        // TODO(https://fxbug.dev/535489428): Remove use of vec here.
+        let data = stream
+            .map(|res| {
+                let extent = res?;
+                MappingExtent::try_new(extent.logical_range(), Some(extent.device_range().start))
+                    .map_err(|_| anyhow!(FxfsError::Inconsistent))
             })
             .try_collect()
             .await?;
@@ -191,14 +200,16 @@ impl FxBlob {
         // Query Merkle extents
         let mut merger = layer_set.merger();
         let stream = self.handle.extent_stream(&mut merger, AttributeId::BLOB_METADATA).await?;
-        let merkle_extents = stream
-            .map_ok(|extent| {
-                MappingExtent::new(extent.logical_range(), Some(extent.device_range().start))
+        let merkle = stream
+            .map(|res| {
+                let extent = res?;
+                MappingExtent::try_new(extent.logical_range(), Some(extent.device_range().start))
+                    .map_err(|_| anyhow!(FxfsError::Inconsistent))
             })
             .try_collect()
             .await?;
 
-        Ok((merkle_extents, data_extents))
+        Ok(BlobExtents { data, merkle })
     }
 
     fn record_page_fault_metric(&self, range: &Range<u64>) {
@@ -605,31 +616,32 @@ mod tests {
             transaction.commit().await.expect("failed to commit transaction");
 
             let blob = fixture.get_blob(hash).await.expect("getting blob failed");
-            let (merkle_extents, data_extents) =
-                blob.get_mapping_extents().await.expect("get_mapping_extents failed");
+            let extents = blob.get_mapping_extents().await.expect("get_mapping_extents failed");
 
-            assert!(!merkle_extents.is_empty(), "Expected at least one merkle extent");
+            assert!(!extents.merkle.is_empty(), "Expected at least one merkle extent");
             assert!(
-                data_extents.len() > 1,
+                extents.data.len() > 1,
                 "Expected multiple data extents, got {}",
-                data_extents.len()
+                extents.data.len()
             );
 
             // The overwritten extents should each be exactly 8192 bytes.
-            let overwrite_extent = data_extents
+            let overwrite_extent = extents
+                .data
                 .iter()
-                .find(|e| e.logical_range.start == 0)
+                .find(|e| e.logical_range().start == 0)
                 .expect("extent at offset 0");
             assert_eq!(
-                overwrite_extent.logical_range.end - overwrite_extent.logical_range.start,
+                overwrite_extent.logical_range().end - overwrite_extent.logical_range().start,
                 8192
             );
-            let overwrite_extent = data_extents
+            let overwrite_extent = extents
+                .data
                 .iter()
-                .find(|e| e.logical_range.start == 16384)
+                .find(|e| e.logical_range().start == 16384)
                 .expect("extent at offset 16384");
             assert_eq!(
-                overwrite_extent.logical_range.end - overwrite_extent.logical_range.start,
+                overwrite_extent.logical_range().end - overwrite_extent.logical_range().start,
                 8192
             );
         }

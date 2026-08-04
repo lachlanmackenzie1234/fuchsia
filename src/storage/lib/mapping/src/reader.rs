@@ -223,16 +223,16 @@ pub fn read_aligned_range<F>(
         let (mut splittable, handle) = SplittableBuffer::new(buffer);
 
         for extent in extents.iter_extents(offset) {
-            if extent.logical_range.start >= actual_end {
+            if extent.logical_range().start >= actual_end {
                 break;
             }
-            let slice_start = max(extent.logical_range.start, offset);
-            let slice_end = min(extent.logical_range.end, actual_end);
+            let slice_start = max(extent.logical_range().start, offset);
+            let slice_end = min(extent.logical_range().end, actual_end);
             let len_in_buf = (slice_end - slice_start) as usize;
             let mut child_buf = splittable.take_prefix(len_in_buf);
 
-            if let Some(dev_offset) = extent.device_offset {
-                let extent_dev_offset = dev_offset + (slice_start - extent.logical_range.start);
+            if let Some(dev_offset) = extent.device_offset() {
+                let extent_dev_offset = dev_offset + (slice_start - extent.logical_range().start);
                 let handle_clone = handle.clone();
                 let context_clone = context.clone();
                 if let Err(e) = service.read_blocks(

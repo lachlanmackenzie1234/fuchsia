@@ -3,22 +3,43 @@
 // found in the LICENSE file.
 
 use crate::BLOCK_SIZE;
+use anyhow::{Error, anyhow};
 use std::ops::Range;
 
 const TYPE_MASK: u64 = 0xc0000000_00000000;
 const REGULAR: u64 = 0x00000000_00000000;
 const SPARSE: u64 = 0x80000000_00000000;
 
+// Regular extents are densely bit-packed into a single 64-bit hardware command (LSB 0):
+//   Bits 62-63 (2 most significant bits): Type identifier (`REGULAR`)
+//   Bits 32-61 (30 bits): Extent length in blocks
+//   Bits 0-31  (32 least significant bits): Target physical device offset block address
+// Therefore, the maximum contiguous chunk that can fit into a single regular command is 30 bits.
+const MAX_REGULAR_EXTENT_BLOCKS: u64 = 0x3fff_ffff;
+
+// Sparse extents pack their length into the remaining 62 bits not occupied by the type header.
+const MAX_SPARSE_EXTENT_BLOCKS: u64 = !TYPE_MASK;
+
 /// Represents a logical extent and its optional physical device starting offset.
 /// Both `logical_range` boundaries and `device_offset` must always be a multiple of
 /// `BLOCK_SIZE` (4096 bytes). The physical device range length is identical to `logical_range`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Extent {
-    pub logical_range: Range<u64>,
-    pub device_offset: Option<u64>,
+    logical_range: Range<u64>,
+    device_offset: Option<u64>,
 }
 
 impl Extent {
+    /// Returns the logical range of this extent.
+    pub fn logical_range(&self) -> Range<u64> {
+        self.logical_range.clone()
+    }
+
+    /// Returns the optional physical device offset of this extent. If None, this extent is sparse.
+    pub fn device_offset(&self) -> Option<u64> {
+        self.device_offset
+    }
+
     /// Returns true if this extent is sparse (unbacked by physical storage).
     pub fn is_sparse(&self) -> bool {
         self.device_offset.is_none()
@@ -37,22 +58,49 @@ impl Extent {
     /// (when `Some`) is not a multiple of `BLOCK_SIZE` (4096 bytes), or if
     /// `logical_range.start > logical_range.end`.
     pub fn new(logical_range: Range<u64>, device_offset: Option<u64>) -> Self {
-        assert!(
-            logical_range.start % BLOCK_SIZE == 0 && logical_range.end % BLOCK_SIZE == 0,
-            "logical_range boundaries must be a multiple of BLOCK_SIZE (4096 bytes), \
-             got {logical_range:?}"
-        );
-        assert!(
-            logical_range.start <= logical_range.end,
-            "logical_range.start must be <= logical_range.end, got {logical_range:?}"
-        );
-        if let Some(dev_offset) = device_offset {
-            assert!(
-                dev_offset % BLOCK_SIZE == 0,
-                "device_offset must be a multiple of BLOCK_SIZE (4096 bytes), got {dev_offset}"
-            );
+        Self::try_new(logical_range, device_offset).unwrap()
+    }
+
+    /// Creates a new `Extent`, returning an `Error` if the alignment is invalid.
+    pub fn try_new(logical_range: Range<u64>, device_offset: Option<u64>) -> Result<Self, Error> {
+        if logical_range.start % BLOCK_SIZE != 0 || logical_range.end % BLOCK_SIZE != 0 {
+            return Err(anyhow!(
+                "logical_range boundaries must be a multiple of BLOCK_SIZE (4096 bytes), got {:?}",
+                logical_range
+            ));
         }
-        Self { logical_range, device_offset }
+        if logical_range.start > logical_range.end {
+            return Err(anyhow!(
+                "logical_range.start must be <= logical_range.end, got {:?}",
+                logical_range
+            ));
+        }
+
+        let length_blocks = (logical_range.end - logical_range.start) / BLOCK_SIZE;
+        if let Some(dev_offset) = device_offset {
+            if dev_offset % BLOCK_SIZE != 0 {
+                return Err(anyhow!(
+                    "device_offset must be a multiple of BLOCK_SIZE (4096 bytes), got {}",
+                    dev_offset
+                ));
+            }
+
+            if length_blocks > MAX_REGULAR_EXTENT_BLOCKS {
+                // TODO(https://fxbug.dev/535489428): Handle large extents if needed.
+                return Err(anyhow!("Extent length bounds exceed maximum encodeable length"));
+            }
+
+            let target_block = dev_offset / BLOCK_SIZE;
+            if u32::try_from(target_block).is_err() {
+                return Err(anyhow!("Extent device_offset block index exceeds u32::MAX"));
+            }
+        } else {
+            if length_blocks > MAX_SPARSE_EXTENT_BLOCKS {
+                // TODO(https://fxbug.dev/535489428): Handle large extents if needed.
+                return Err(anyhow!("Extent length bounds exceed maximum encodeable length"));
+            }
+        }
+        Ok(Self { logical_range, device_offset })
     }
 }
 
@@ -74,7 +122,7 @@ impl ExtentEntry {
 }
 
 fn encode_regular(length_blocks: u32, target_block: u32) -> u64 {
-    REGULAR | ((length_blocks as u64 & 0x3fff_ffff) << 32) | (target_block as u64)
+    REGULAR | ((length_blocks as u64 & MAX_REGULAR_EXTENT_BLOCKS) << 32) | (target_block as u64)
 }
 
 fn encode_sparse(length_blocks: u64) -> u64 {
@@ -112,52 +160,22 @@ pub struct Extents {
 
 impl Extents {
     /// Encodes a slice of `Extent`s into 64-bit mapping descriptors.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any `Extent` in `extents` has a `logical_range` or `device_offset`
-    /// that is not a multiple of `BLOCK_SIZE` (4096 bytes).
     pub fn encode_extents(extents: &[Extent]) -> Vec<u64> {
-        extents
-            .iter()
-            .map(|extent| {
-                assert!(
-                    extent.logical_range.start % BLOCK_SIZE == 0
-                        && extent.logical_range.end % BLOCK_SIZE == 0,
-                    "Extent logical_range must be a multiple of BLOCK_SIZE (4096 bytes), \
-                     got {:?}",
-                    extent.logical_range
-                );
-                match extent.device_offset {
-                    Some(dev_offset) => {
-                        assert!(
-                            dev_offset % BLOCK_SIZE == 0,
-                            "Extent device_offset must be a multiple of BLOCK_SIZE (4096 bytes), \
-                             got {dev_offset}"
-                        );
-                        let length_blocks: u32 = (extent.len() / BLOCK_SIZE)
-                            .try_into()
-                            .expect("Extent length in blocks exceeds u32::MAX");
-                        assert!(
-                            length_blocks <= 0x3fff_ffff,
-                            "Extent block count {length_blocks} exceeds 30-bit regular extent limit"
-                        );
-                        let target_block: u32 = (dev_offset / BLOCK_SIZE)
-                            .try_into()
-                            .expect("Extent device_offset block index exceeds u32::MAX");
-                        encode_regular(length_blocks, target_block)
-                    }
-                    None => {
-                        let length_blocks = extent.len() / BLOCK_SIZE;
-                        assert!(
-                            length_blocks <= !TYPE_MASK,
-                            "Sparse extent block count {length_blocks} exceeds 62-bit limit"
-                        );
-                        encode_sparse(length_blocks)
-                    }
+        Self::encode_extents_iter(extents).collect()
+    }
+
+    /// Returns an iterator of 64-bit mapping descriptors from a slice of `Extent`s.
+    pub fn encode_extents_iter<'a>(extents: &'a [Extent]) -> impl Iterator<Item = u64> + 'a {
+        extents.iter().map(|extent| {
+            let length_blocks = extent.len() / BLOCK_SIZE;
+            match extent.device_offset() {
+                Some(dev_offset) => {
+                    let target_block = dev_offset / BLOCK_SIZE;
+                    encode_regular(length_blocks as u32, target_block as u32)
                 }
-            })
-            .collect()
+                None => encode_sparse(length_blocks),
+            }
+        })
     }
 
     /// Decodes a sequence of 64-bit mapping descriptors into a compact `Extents` container.
@@ -258,7 +276,7 @@ mod tests {
         let encoded = Extents::encode_extents(&extents);
         assert_eq!(encoded.len(), 2);
 
-        let extents_container = Extents::from_encoded(&encoded).unwrap();
+        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 2);
@@ -279,7 +297,7 @@ mod tests {
         ];
         let encoded = Extents::encode_extents(&extents);
 
-        let extents_container = Extents::from_encoded(&encoded).unwrap();
+        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 3);
@@ -302,7 +320,7 @@ mod tests {
             Extent::new((20 * BLOCK_SIZE)..(30 * BLOCK_SIZE), Some(300 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).unwrap();
+        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
 
         let mapped = extents_container.map(0).expect("should map at offset 0");
         assert_eq!(mapped.logical_range, 0..(10 * BLOCK_SIZE));
@@ -319,7 +337,7 @@ mod tests {
     fn test_map_out_of_bounds() {
         let extents = vec![Extent::new(0..(2 * BLOCK_SIZE), Some(10 * BLOCK_SIZE))];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).unwrap();
+        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
 
         assert!(extents_container.map(2 * BLOCK_SIZE).is_none());
         assert!(extents_container.map(100 * BLOCK_SIZE).is_none());
@@ -333,7 +351,7 @@ mod tests {
             Extent::new((4 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(30 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).unwrap();
+        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
 
         let results: Vec<_> = extents_container.iter_extents(3 * BLOCK_SIZE).collect();
         assert_eq!(results.len(), 2);
@@ -348,7 +366,7 @@ mod tests {
             Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).unwrap();
+        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
 
         let mapped = extents_container.map(10 * BLOCK_SIZE).expect("should map at exact boundary");
         assert_eq!(mapped.logical_range, (10 * BLOCK_SIZE)..(20 * BLOCK_SIZE));
@@ -390,25 +408,33 @@ mod tests {
             Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
         ];
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(&encoded).unwrap();
+        let extents_container = Extents::from_encoded(&encoded).expect("from_encoded failed");
         let results: Vec<_> = extents_container.iter_extents(500).collect();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].logical_range, 0..(10 * BLOCK_SIZE));
     }
 
     #[test]
-    #[should_panic(expected = "exceeds u32::MAX")]
-    fn test_encode_extents_device_offset_overflow_panics() {
-        let extents = vec![Extent::new(0..BLOCK_SIZE, Some((u32::MAX as u64 + 1) * BLOCK_SIZE))];
-        Extents::encode_extents(&extents);
+    fn test_encode_extents_device_offset_overflow_errors() {
+        let result = Extent::try_new(0..BLOCK_SIZE, Some((u32::MAX as u64 + 1) * BLOCK_SIZE));
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Extent device_offset block index exceeds u32::MAX"
+        );
     }
 
     #[test]
-    #[should_panic(expected = "exceeds 30-bit regular extent limit")]
-    fn test_encode_extents_regular_length_overflow_panics() {
-        let extents =
-            vec![Extent::new(0..((0x3fff_ffff_u64 + 1) * BLOCK_SIZE), Some(10 * BLOCK_SIZE))];
-        Extents::encode_extents(&extents);
+    fn test_encode_extents_regular_length_overflow_errors() {
+        let result = Extent::try_new(
+            0..((MAX_REGULAR_EXTENT_BLOCKS + 1) * BLOCK_SIZE),
+            Some(10 * BLOCK_SIZE),
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Extent length bounds exceed maximum encodeable length"
+        );
     }
 
     #[test]
