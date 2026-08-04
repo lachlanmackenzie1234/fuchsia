@@ -5,13 +5,20 @@
 import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
+import("//build/drivers/dml.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("dwc2-dml") {
+  dml = "meta/dwc2.dml"
+  driver_name = "dwc2"
+}
+
 driver_bind_rules("dwc2_bind") {
-  rules = "meta/dwc2.bind"
+  dml_label = ":dwc2-dml"
   bind_output = "dwc2.bindbc"
   tests = "meta/tests.json"
   deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_bindlib",
     "//src/devices/bind/fuchsia.designware.platform",
     "//src/devices/bind/fuchsia.devicetree",
@@ -68,14 +75,9 @@ fuchsia_cc_driver("dwc2-driver") {
   ]
 }
 
-fuchsia_component_manifest("dwc2-manifest") {
-  component_name = "dwc2"
-  manifest = "meta/dwc2.cml"
-}
-
 fuchsia_driver_component("dwc2") {
   info = "meta/dwc2-info.json"
-  cm_label = ":dwc2-manifest"
+  cm_label = ":dwc2-dml_manifest"
   deps = [
     ":dwc2-driver",
     ":dwc2_bind",
@@ -83,11 +85,11 @@ fuchsia_driver_component("dwc2") {
 }
 
 fuchsia_structured_config_cpp_elf_lib("dwc2-config") {
-  cm_label = ":dwc2-manifest"
+  cm_label = ":dwc2-dml_manifest"
 }
 
 fuchsia_structured_config_values("dwc2-values") {
-  cm_label = ":dwc2-manifest"
+  cm_label = ":dwc2-dml_manifest"
   values = {
     enable_suspend = false
   }
