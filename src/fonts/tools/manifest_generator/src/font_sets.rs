@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! Deserialization for pairs of `.all_fonts.json` and `.local_fonts.json` files.
+//! Deserialization for `.local_fonts.json` files.
 //!
-//! A pair of these files is generated per target product using the `generated_file` GN rule (see
+//! Generated per target product using the `generated_file` GN rule (see
 //! "//src/fonts/build/fonts.gni").
 
 use crate::serde_ext::{self, LoadError};
@@ -29,18 +29,10 @@ pub struct FontSets {
 }
 
 impl FontSets {
-    pub fn load_from_all_and_local_paths<T: AsRef<Path>>(
-        all_path: T,
-        local_path: T,
-    ) -> Result<Self, LoadError> {
-        let all_file_names: BTreeSet<String> = serde_ext::load_from_path(all_path)?;
+    pub fn load_from_local_paths<T: AsRef<Path>>(local_path: T) -> Result<Self, LoadError> {
         let local_file_names: BTreeSet<String> = serde_ext::load_from_path(local_path)?;
 
         let mut map = BTreeMap::new();
-        for file_name in all_file_names {
-            map.insert(file_name, FontSet::Download);
-        }
-        // The Local set takes precedence.
         for file_name in local_file_names {
             map.insert(file_name, FontSet::Local);
         }
@@ -49,7 +41,7 @@ impl FontSets {
     }
 
     /// Creates a new `FontSets` collection from a map of font file names to [`FontSet`] values,
-    /// as generated in [`FontSets::load_from_all_and_local_paths`].
+    /// as generated in [`FontSets::load_from_local_paths`].
     ///
     /// _Visible for tests only._
     pub(crate) fn new(map: BTreeMap<String, FontSet>) -> Self {
@@ -84,27 +76,16 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_load_from_all_and_local_paths() -> Result<(), Error> {
-        let all_fonts_contents =
-            json!(["a.ttf", "b.ttf", "c.ttf", "d.ttf", "e.ttf", "f.ttf"]).to_string();
-        let mut all_fonts_file = NamedTempFile::new()?;
-        all_fonts_file.write_all(all_fonts_contents.as_bytes())?;
-
+    fn test_load_local_paths() -> Result<(), Error> {
         let local_fonts_contents = json!(["a.ttf", "b.ttf", "c.ttf"]).to_string();
         let mut local_fonts_file = NamedTempFile::new()?;
         local_fonts_file.write_all(local_fonts_contents.as_bytes())?;
 
-        let font_sets = FontSets::load_from_all_and_local_paths(
-            all_fonts_file.path(),
-            local_fonts_file.path(),
-        )?;
+        let font_sets = FontSets::load_from_local_paths(local_fonts_file.path())?;
 
         assert_eq!(font_sets.get_font_set("a.ttf"), Some(&FontSet::Local));
         assert_eq!(font_sets.get_font_set("b.ttf"), Some(&FontSet::Local));
         assert_eq!(font_sets.get_font_set("c.ttf"), Some(&FontSet::Local));
-        assert_eq!(font_sets.get_font_set("d.ttf"), Some(&FontSet::Download));
-        assert_eq!(font_sets.get_font_set("e.ttf"), Some(&FontSet::Download));
-        assert_eq!(font_sets.get_font_set("f.ttf"), Some(&FontSet::Download));
         assert_eq!(font_sets.get_font_set("404.ttf"), None);
 
         Ok(())

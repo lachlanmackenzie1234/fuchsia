@@ -14,11 +14,6 @@ import("//src/fonts/build/font_args.gni")
 #     configuration, including a fallback chain.
 #     Type: file
 #
-#   all_fonts_path
-#     Required: Path to a JSON file containing an array of all the font file
-#     names in the target product.
-#     Type: file
-#
 #   local_fonts_path
 #     Required: Path to a JSON file containing an array of the local font file
 #     names in the target product. This should be a subset of the array in
@@ -70,14 +65,12 @@ template("font_manifest") {
   forward_variables_from(invoker,
                          [
                            "product_config_path",
-                           "all_fonts_path",
                            "local_fonts_path",
                            "font_files",
                            "pretty_print",
                            "output",
                          ])
 
-  assert(defined(all_fonts_path))
   assert(defined(local_fonts_path))
   assert(defined(font_pkgs_paths))
   assert(defined(font_catalog_paths))
@@ -95,10 +88,8 @@ template("font_manifest") {
                              "testonly",
                            ])
     tool = "//src/fonts/tools/manifest_generator:font_manifest_generator"
-    sources = [
-                all_fonts_path,
-                local_fonts_path,
-              ] + font_pkgs_paths + font_catalog_paths + font_files
+    sources =
+        [ local_fonts_path ] + font_pkgs_paths + font_catalog_paths + font_files
     if (defined(product_config_path)) {
       sources += [ product_config_path ]
     }
@@ -110,11 +101,6 @@ template("font_manifest") {
     # Most of the unit test builds are based on the "core" product and therefore
     # don't include fonts. That case is handled further down.
     if (font_pkgs_paths != [] && font_catalog_paths != [] && font_files != []) {
-      args += [
-        "--all-fonts",
-        rebase_path(all_fonts_path, root_build_dir),
-      ]
-
       args += [
         "--local-fonts",
         rebase_path(local_fonts_path, root_build_dir),

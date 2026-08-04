@@ -4,7 +4,7 @@
 
 #![cfg(test)]
 
-use anyhow::{ensure, format_err, Error};
+use anyhow::{Error, ensure, format_err};
 use pretty_assertions::assert_eq;
 use std::env;
 use std::fs::File;
@@ -35,7 +35,6 @@ fn run_golden_test(
     font_catalog_paths: Vec<String>,
     font_pkgs_paths: Vec<String>,
     product_config_path: String,
-    all_fonts_path: String,
     local_fonts_path: String,
     font_dir: String,
     fake_code_points: bool,
@@ -57,7 +56,6 @@ fn run_golden_test(
 
     cmd.arg("--product-config").arg(resolve_path(product_config_path)?);
 
-    cmd.arg("--all-fonts").arg(resolve_path(all_fonts_path)?);
     cmd.arg("--local-fonts").arg(resolve_path(local_fonts_path)?);
     cmd.arg("--font-dir").arg(resolve_path(font_dir)?);
 
@@ -100,7 +98,6 @@ fn test_manifest_generator_goldens() -> Result<(), Error> {
             "test_data/font_manifest_generator/b.font_pkgs.json".to_string(),
         ],
         "test_data/font_manifest_generator/product_ab.fontcfg.json".to_string(),
-        "test_data/font_manifest_generator/product_ab.all_fonts.json".to_string(),
         "test_data/font_manifest_generator/product_ab.local_fonts.json".to_string(),
         "test_data".to_string(),
         true,

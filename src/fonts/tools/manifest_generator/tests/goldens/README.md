@@ -11,7 +11,6 @@ fx build src/fonts/tools/manifest_generator && \
 --font-catalog src/fonts/tools/manifest_generator/tests/data/*.font_catalog.json \
 --font-pkgs src/fonts/tools/manifest_generator/tests/data/*.font_pkgs.json \
 --product-config src/fonts/tools/manifest_generator/tests/data/product_ab.fontcfg.json \
---all-fonts src/fonts/tools/manifest_generator/tests/data/product_ab.all_fonts.json \
 --local-fonts src/fonts/tools/manifest_generator/tests/data/product_ab.local_fonts.json \
 --output src/fonts/tools/manifest_generator/tests/goldens/product_ab.font_manifest.json
 ```

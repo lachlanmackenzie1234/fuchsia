@@ -76,7 +76,6 @@ if (is_host) {
       "tests/data/a.font_pkgs.json",
       "tests/data/b.font_catalog.json",
       "tests/data/b.font_pkgs.json",
-      "tests/data/product_ab.all_fonts.json",
       "tests/data/product_ab.fontcfg.json",
       "tests/data/product_ab.local_fonts.json",
       "tests/goldens/product_ab.font_manifest.json",
