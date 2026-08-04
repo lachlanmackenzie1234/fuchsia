@@ -200,7 +200,8 @@ zx_status_t BlockDevice::Init() {
 
   auto buffer_factory = dma_buffer::CreateBufferFactory();
   const size_t buffer_size = fbl::round_up(size, zx_system_get_page_size());
-  zx_status_t status = buffer_factory->CreateContiguous(bti_, buffer_size, 0, true, &blk_req_buf_);
+  zx_status_t status = buffer_factory->CreateContiguous(
+      bti_, buffer_size, 0, dma_buffer::CacheOptions::kEnabled, &blk_req_buf_);
   if (status != ZX_OK) {
     fdf::error("cannot alloc blk_req buffers: {}", zx_status_get_string(status));
     return status;

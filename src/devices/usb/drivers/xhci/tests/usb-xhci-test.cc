@@ -650,7 +650,8 @@ zx_status_t EventRingSegmentTable::Init(size_t page_size, const zx::bti& bti, bo
   page_size_ = page_size;
   is_32bit_ = is_32bit;
   mmio_.emplace(mmio->View(0));
-  zx_status_t status = factory.CreatePaged(bti, zx_system_get_page_size(), false, &erst_);
+  zx_status_t status = factory.CreatePaged(bti, zx_system_get_page_size(),
+                                           dma_buffer::CacheOptions::kDisabled, &erst_);
   if (status != ZX_OK) {
     return status;
   }

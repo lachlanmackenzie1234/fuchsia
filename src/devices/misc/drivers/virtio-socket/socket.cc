@@ -627,7 +627,7 @@ zx_status_t SocketDevice::IoBufferRing::Init(uint16_t index, const zx::bti& bti)
   auto factory = dma_buffer::CreateBufferFactory();
   size_t size = buf_size() * count_;
   size = fbl::round_up(size, static_cast<size_t>(zx_system_get_page_size()));
-  rc = factory->CreateContiguous(bti, size, 0, true, &io_buffer_);
+  rc = factory->CreateContiguous(bti, size, 0, dma_buffer::CacheOptions::kEnabled, &io_buffer_);
   if (rc != ZX_OK) {
     return rc;
   }

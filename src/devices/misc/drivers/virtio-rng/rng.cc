@@ -50,7 +50,8 @@ zx_status_t RngDevice::Init() {
   // allocate the entropy buffer
   assert(kBufferSize <= zx_system_get_page_size());
   auto factory = dma_buffer::CreateBufferFactory();
-  status = factory->CreateContiguous(bti(), zx_system_get_page_size(), 0, true, &buf_);
+  status = factory->CreateContiguous(bti(), zx_system_get_page_size(), 0,
+                                     dma_buffer::CacheOptions::kEnabled, &buf_);
   if (status != ZX_OK) {
     fdf::error("{}: cannot allocate entropy buffer: {}", tag(), status);
     return status;

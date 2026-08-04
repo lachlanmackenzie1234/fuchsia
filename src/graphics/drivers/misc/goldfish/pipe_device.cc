@@ -143,8 +143,9 @@ zx::result<> PipeDevice::Initialize() {
 
   const size_t page_size = zx_system_get_page_size();
   ZX_DEBUG_ASSERT_MSG(sizeof(CommandBuffers) <= page_size, "cmds size");
-  zx_status_t status = buffer_factory->CreateContiguous(
-      bti_, /*size=*/page_size, /*alignment_log2=*/0, /*enable_cache=*/true, &io_buffer_);
+  zx_status_t status =
+      buffer_factory->CreateContiguous(bti_, /*size=*/page_size, /*alignment_log2=*/0,
+                                       dma_buffer::CacheOptions::kEnabled, &io_buffer_);
   if (status != ZX_OK) {
     fdf::error("Failed to create contiguous IO buffer: {}", zx_status_get_string(status));
     return zx::error(status);

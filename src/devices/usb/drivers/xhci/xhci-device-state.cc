@@ -38,8 +38,8 @@ zx_status_t DeviceState::InitializeSlotBuffer(const UsbXhci& hci, uint8_t slot_i
   // Section 4.3.3
   // 6.2.5 (Input Context initialization)
   std::unique_ptr<dma_buffer::PagedBuffer> buffer;
-  zx_status_t status =
-      hci.buffer_factory().CreatePaged(hci.bti(), zx_system_get_page_size(), false, &buffer);
+  zx_status_t status = hci.buffer_factory().CreatePaged(
+      hci.bti(), zx_system_get_page_size(), dma_buffer::CacheOptions::kDisabled, &buffer);
   if (status != ZX_OK) {
     return status;
   }
@@ -122,8 +122,9 @@ zx_status_t DeviceState::InitializeOutputContextBuffer(
   // Allocate an output device context data structure (6.2.1)
   // Update the DCBAA entry for this slot.
   std::unique_ptr<dma_buffer::PagedBuffer> output_context_buffer;
-  zx_status_t status = hci.buffer_factory().CreatePaged(hci.bti(), zx_system_get_page_size(), false,
-                                                        &output_context_buffer);
+  zx_status_t status =
+      hci.buffer_factory().CreatePaged(hci.bti(), zx_system_get_page_size(),
+                                       dma_buffer::CacheOptions::kDisabled, &output_context_buffer);
   if (status != ZX_OK) {
     return status;
   }

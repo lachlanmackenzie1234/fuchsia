@@ -29,6 +29,9 @@ struct VmoMetadata {
 };
 
 bool unpinned = false;
+uint32_t last_cache_flush_options = 0;
+size_t last_cache_flush_len = 0;
+int cache_flush_call_count = 0;
 
 class VmoWrapper : public fake_object::Object {
  public:
@@ -147,6 +150,13 @@ zx_status_t zx_pmt_unpin(zx_handle_t handle) {
   return ZX_OK;
 }
 
+zx_status_t zx_cache_flush(const void* addr, size_t len, uint32_t options) {
+  last_cache_flush_options = options;
+  last_cache_flush_len = len;
+  cache_flush_call_count++;
+  return ZX_OK;
+}
+
 }  // extern "C"
 
 }  // namespace
@@ -159,7 +169,8 @@ TEST(DmaBufferTests, InitWithCacheEnabled) {
     const size_t size = zx_system_get_page_size() * 4;
     const size_t alignment = 2;
     auto factory = CreateBufferFactory();
-    ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, alignment, true, &buffer));
+    ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, alignment, CacheOptions::kEnabled,
+                                               &buffer));
     auto test_f = [&buffer, size](fake_object::Object* obj) -> bool {
       auto vmo = static_cast<VmoWrapper*>(obj);
       ZX_ASSERT(vmo->metadata().alignment_log2 == alignment);
@@ -183,7 +194,8 @@ TEST(DmaBufferTests, InitContiguousWithCacheDisabled) {
     const size_t size = zx_system_get_page_size() * 4;
     const size_t alignment = 2;
     auto factory = CreateBufferFactory();
-    ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, alignment, false, &buffer));
+    ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, alignment, CacheOptions::kDisabled,
+                                               &buffer));
     auto test_f = [&buffer, size](fake_object::Object* obj) -> bool {
       auto vmo = static_cast<VmoWrapper*>(obj);
       ZX_ASSERT(vmo->metadata().alignment_log2 == alignment);
@@ -205,7 +217,8 @@ TEST(DmaBufferTests, InitWithCacheDisabled) {
   {
     std::unique_ptr<PagedBuffer> buffer;
     auto factory = CreateBufferFactory();
-    ASSERT_EQ(ZX_OK, factory->CreatePaged(kFakeBti, zx_system_get_page_size(), false, &buffer));
+    ASSERT_EQ(ZX_OK, factory->CreatePaged(kFakeBti, zx_system_get_page_size(),
+                                          CacheOptions::kDisabled, &buffer));
     auto test_f = [&buffer](fake_object::Object* object) -> bool {
       auto vmo = static_cast<VmoWrapper*>(object);
       ZX_ASSERT(vmo->metadata().alignment_log2 == 0);
@@ -226,8 +239,8 @@ TEST(DmaBufferTests, InitCachedMultiPageBuffer) {
   {
     std::unique_ptr<ContiguousBuffer> buffer;
     auto factory = CreateBufferFactory();
-    ASSERT_EQ(ZX_OK,
-              factory->CreateContiguous(kFakeBti, zx_system_get_page_size() * 4, 0, true, &buffer));
+    ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, zx_system_get_page_size() * 4, 0,
+                                               CacheOptions::kEnabled, &buffer));
     auto test_f = [&buffer](fake_object::Object* object) -> bool {
       auto vmo = static_cast<VmoWrapper*>(object);
       ZX_ASSERT(vmo->metadata().alignment_log2 == 0);
@@ -249,8 +262,8 @@ TEST(DmaBufferTests, InitUncachedMultiPageBuffer) {
   {
     std::unique_ptr<ContiguousBuffer> buffer;
     auto factory = CreateBufferFactory();
-    ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, zx_system_get_page_size() * 4, 0, false,
-                                               &buffer));
+    ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, zx_system_get_page_size() * 4, 0,
+                                               CacheOptions::kDisabled, &buffer));
     auto test_f = [&buffer](fake_object::Object* object) -> bool {
       auto vmo = static_cast<VmoWrapper*>(object);
       ZX_ASSERT(vmo->metadata().alignment_log2 == 0);
@@ -429,5 +442,188 @@ INSTANTIATE_TEST_SUITE_P(PhysIterTest, Parameterized, kCases,
                            test_name << info.index << "_" << info.param.test_desc;
                            return test_name.str();
                          });
+
+TEST(DmaBufferTests, ReadWriteAndCacheOperations) {
+  std::unique_ptr<ContiguousBuffer> buffer;
+  const size_t size = zx_system_get_page_size();
+  auto factory = CreateBufferFactory();
+  ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, 0, CacheOptions::kEnabled, &buffer));
+
+  // Reset cache flush counter.
+  cache_flush_call_count = 0;
+
+  // Test Write and Read raw memory.
+  const uint8_t write_data[] = {0xDE, 0xAD, 0xBE, 0xEF};
+  uint8_t read_data[4] = {0};
+  EXPECT_TRUE(buffer->Write(write_data, 16, sizeof(write_data)).is_ok());
+  EXPECT_EQ(1, cache_flush_call_count);
+  EXPECT_EQ(ZX_CACHE_FLUSH_DATA, last_cache_flush_options);
+
+  cache_flush_call_count = 0;
+  EXPECT_TRUE(buffer->Read(16, sizeof(read_data), read_data).is_ok());
+  EXPECT_EQ(1, cache_flush_call_count);
+  EXPECT_EQ(static_cast<uint32_t>(ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE),
+            last_cache_flush_options);
+  EXPECT_EQ(0, std::memcmp(write_data, read_data, sizeof(write_data)));
+
+  // Test WriteStruct and ReadStruct.
+  struct TestPacket {
+    uint32_t magic;
+    uint16_t length;
+    uint8_t flags;
+  };
+  TestPacket out_pkt{.magic = 0x12345678, .length = 64, .flags = 0xFF};
+  EXPECT_TRUE(buffer->WriteStruct(out_pkt, 64).is_ok());
+
+  zx::result<TestPacket> in_pkt_res = buffer->ReadStruct<TestPacket>(64);
+  ASSERT_TRUE(in_pkt_res.is_ok());
+  EXPECT_EQ(out_pkt.magic, in_pkt_res->magic);
+  EXPECT_EQ(out_pkt.length, in_pkt_res->length);
+  EXPECT_EQ(out_pkt.flags, in_pkt_res->flags);
+
+  // Test Out-Of-Bounds handling.
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
+            buffer->Write(write_data, size - 2, sizeof(write_data)).error_value());
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
+            buffer->Read(size - 2, sizeof(read_data), read_data).error_value());
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, buffer->Write(nullptr, 0, 4).error_value());
+
+  // Test Cache operations directly.
+  EXPECT_TRUE(buffer->enable_cache());
+  cache_flush_call_count = 0;
+  EXPECT_TRUE(buffer->CacheFlush(0, 0).is_ok());
+  EXPECT_EQ(0, cache_flush_call_count);
+  EXPECT_TRUE(buffer->CacheFlush(0, 32).is_ok());
+  EXPECT_EQ(1, cache_flush_call_count);
+  EXPECT_EQ(ZX_CACHE_FLUSH_DATA, last_cache_flush_options);
+
+  cache_flush_call_count = 0;
+  EXPECT_TRUE(buffer->CacheFlushInvalidate(0, 0).is_ok());
+  EXPECT_EQ(0, cache_flush_call_count);
+  EXPECT_TRUE(buffer->CacheFlushInvalidate(0, 32).is_ok());
+  EXPECT_EQ(1, cache_flush_call_count);
+  EXPECT_EQ(static_cast<uint32_t>(ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE),
+            last_cache_flush_options);
+
+  // Test that cache flush operations are NOT called when enable_cache is false.
+  std::unique_ptr<ContiguousBuffer> uncached_buffer;
+  ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, 0, CacheOptions::kDisabled,
+                                             &uncached_buffer));
+  EXPECT_FALSE(uncached_buffer->enable_cache());
+
+  cache_flush_call_count = 0;
+  EXPECT_TRUE(uncached_buffer->Write(write_data, 16, sizeof(write_data)).is_ok());
+  EXPECT_TRUE(uncached_buffer->Read(16, sizeof(read_data), read_data).is_ok());
+  EXPECT_TRUE(uncached_buffer->CacheFlush(0, 32).is_ok());
+  EXPECT_TRUE(uncached_buffer->CacheFlushInvalidate(0, 32).is_ok());
+  EXPECT_EQ(0, cache_flush_call_count);
+}
+
+TEST(DmaBufferTests, UncachedMemoryHelperAllCases) {
+  std::unique_ptr<ContiguousBuffer> buffer;
+  const size_t size = zx_system_get_page_size();
+  auto factory = CreateBufferFactory();
+  ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, 0, CacheOptions::kDisabled, &buffer));
+  EXPECT_FALSE(buffer->enable_cache());
+
+  // 1. Zero length transfer.
+  uint8_t test_byte = 0x55;
+  EXPECT_TRUE(buffer->Write(&test_byte, 0, 0).is_ok());
+  EXPECT_TRUE(buffer->Read(0, 0, &test_byte).is_ok());
+  EXPECT_EQ(0x55, test_byte);
+
+  // 2. Setup pattern integrity verification.
+  std::vector<uint8_t> bg_pattern(size, 0xAA);
+  EXPECT_TRUE(buffer->Write(bg_pattern.data(), 0, size).is_ok());
+
+  auto verify_slice = [&](size_t offset, size_t length, uint8_t val) {
+    std::vector<uint8_t> read_back(size, 0);
+    EXPECT_TRUE(buffer->Read(0, size, read_back.data()).is_ok());
+    for (size_t i = 0; i < size; i++) {
+      if (i >= offset && i < offset + length) {
+        EXPECT_EQ(val, read_back[i]) << "Mismatch at modified index " << i;
+      } else {
+        EXPECT_EQ(0xAA, read_back[i]) << "Corruption at background index " << i;
+      }
+    }
+  };
+
+  // 3. Small unaligned transfer (< WordType size, e.g., 3 bytes at offset 1).
+  std::vector<uint8_t> small_data(3, 0x11);
+  EXPECT_TRUE(buffer->Write(small_data.data(), 1, 3).is_ok());
+  verify_slice(1, 3, 0x11);
+  // Restore background
+  EXPECT_TRUE(buffer->Write(bg_pattern.data(), 0, size).is_ok());
+
+  // 4. Unaligned head alignment (offset 3, length 24 - crossing word boundaries).
+  std::vector<uint8_t> head_data(24, 0x22);
+  EXPECT_TRUE(buffer->Write(head_data.data(), 3, 24).is_ok());
+  verify_slice(3, 24, 0x22);
+  EXPECT_TRUE(buffer->Write(bg_pattern.data(), 0, size).is_ok());
+
+  // 5. Unaligned tail alignment (offset 8, length 13 - starting aligned, ending unaligned).
+  std::vector<uint8_t> tail_data(13, 0x33);
+  EXPECT_TRUE(buffer->Write(tail_data.data(), 8, 13).is_ok());
+  verify_slice(8, 13, 0x33);
+  EXPECT_TRUE(buffer->Write(bg_pattern.data(), 0, size).is_ok());
+
+  // 6. Both unaligned head and unaligned tail (offset 5, length 19).
+  std::vector<uint8_t> mid_data(19, 0x44);
+  EXPECT_TRUE(buffer->Write(mid_data.data(), 5, 19).is_ok());
+  verify_slice(5, 19, 0x44);
+  EXPECT_TRUE(buffer->Write(bg_pattern.data(), 0, size).is_ok());
+
+  // 7. Exact word boundary transfer (offset 16, length 32).
+  std::vector<uint8_t> exact_data(32, 0x66);
+  EXPECT_TRUE(buffer->Write(exact_data.data(), 16, 32).is_ok());
+  verify_slice(16, 32, 0x66);
+  EXPECT_TRUE(buffer->Write(bg_pattern.data(), 0, size).is_ok());
+
+  // 8. Large transfer spanning multiple words across the entire buffer.
+  std::vector<uint8_t> large_data(size);
+  for (size_t i = 0; i < size; i++) {
+    large_data[i] = static_cast<uint8_t>((i * 7) & 0xFF);
+  }
+  EXPECT_TRUE(buffer->Write(large_data.data(), 0, size).is_ok());
+  std::vector<uint8_t> large_read(size, 0);
+  EXPECT_TRUE(buffer->Read(0, size, large_read.data()).is_ok());
+  EXPECT_EQ(0, std::memcmp(large_data.data(), large_read.data(), size));
+}
+
+TEST(DmaBufferTests, ExecuteOpsLambdaTests) {
+  std::unique_ptr<ContiguousBuffer> buffer;
+  const size_t size = zx_system_get_page_size();
+  auto factory = CreateBufferFactory();
+  ASSERT_EQ(ZX_OK, factory->CreateContiguous(kFakeBti, size, 0, CacheOptions::kEnabled, &buffer));
+
+  struct TestStruct {
+    uint32_t a;
+    uint32_t b;
+  };
+
+  // Test ExecuteWriteOps & ExecuteReadOps
+  cache_flush_call_count = 0;
+  zx::result<> status = buffer->ExecuteWriteOps(16, 64, [](void* ptr) {
+    std::memset(ptr, 0xAB, 64);
+  });
+  EXPECT_TRUE(status.is_ok());
+  EXPECT_EQ(1, cache_flush_call_count);
+  EXPECT_EQ(static_cast<uint32_t>(ZX_CACHE_FLUSH_DATA), last_cache_flush_options);
+
+  cache_flush_call_count = 0;
+  bool read_verified = false;
+  status = buffer->ExecuteReadOps(16, 64, [&read_verified](const void* ptr) {
+    const uint8_t* bytes = static_cast<const uint8_t*>(ptr);
+    read_verified = (bytes[0] == 0xAB && bytes[63] == 0xAB);
+  });
+  EXPECT_TRUE(status.is_ok());
+  EXPECT_TRUE(read_verified);
+  EXPECT_EQ(1, cache_flush_call_count);
+  EXPECT_EQ(static_cast<uint32_t>(ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE), last_cache_flush_options);
+
+  // Error case: Out of bounds
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, buffer->ExecuteWriteOps(size - 10, 20, [](void*) {}).status_value());
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, buffer->ExecuteReadOps(size - 10, 20, [](const void*) {}).status_value());
+}
 
 }  // namespace dma_buffer

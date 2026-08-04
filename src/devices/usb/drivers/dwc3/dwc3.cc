@@ -833,8 +833,8 @@ zx_status_t Dwc3::Init() {
   // unpinning the memory during shutdown.
   has_pinned_memory_ = true;
 
-  zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12,
-                                                                           true, &ep0_.buffer);
+  zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(
+      bti_, kEp0BufferSize, 12, dma_buffer::CacheOptions::kEnabled, &ep0_.buffer);
   if (status != ZX_OK) {
     fdf::error("ep0_buffer init failed: {}", zx_status_get_string(status));
     return status;

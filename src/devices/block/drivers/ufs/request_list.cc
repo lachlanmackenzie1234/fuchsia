@@ -55,8 +55,8 @@ zx::result<> RequestList::IoBufferInit(zx::unowned_bti &bti,
   auto buffer_factory = dma_buffer::CreateBufferFactory();
   // TODO(https://fxbug.dev/517989310): Detect CPU architecture and set enable_cache below
   // accordingly. Also use std::memset, std::memcpy or custom implementations as appropriate.
-  if (zx_status_t status =
-          buffer_factory->CreateContiguous(*bti, buffer_size, 0, /*enable_cache=*/false, io);
+  if (zx_status_t status = buffer_factory->CreateContiguous(
+          *bti, buffer_size, 0, dma_buffer::CacheOptions::kDisabled, io);
       status != ZX_OK) {
     return zx::error(status);
   }

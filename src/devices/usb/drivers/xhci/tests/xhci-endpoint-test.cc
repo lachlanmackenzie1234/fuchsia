@@ -169,8 +169,8 @@ TRBPromise DeviceState::AddressDeviceCommand(UsbXhci* hci, uint8_t slot_id, uint
                                              uint16_t interrupter_target, CommandRing* command_ring,
                                              fdf::MmioBuffer* mmio, bool bsr) {
   interrupter_target_ = interrupter_target;
-  EXPECT_OK(hci->buffer_factory().CreatePaged(hci->bti(), zx_system_get_page_size(), false,
-                                              &input_context_));
+  EXPECT_OK(hci->buffer_factory().CreatePaged(
+      hci->bti(), zx_system_get_page_size(), dma_buffer::CacheOptions::kDisabled, &input_context_));
   return fpromise::make_result_promise(fpromise::result<TRB*, zx_status_t>(fpromise::ok(nullptr)))
       .box();
 }

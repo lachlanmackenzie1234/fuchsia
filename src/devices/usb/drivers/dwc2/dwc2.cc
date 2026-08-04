@@ -1231,8 +1231,8 @@ zx_status_t Dwc2::Init(fdf::DriverContext& context, const dwc2_config::Config& c
   }
   irq_ = std::move(interrupt.value());
 
-  zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12,
-                                                                           true, &ep0_buffer_);
+  zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(
+      bti_, kEp0BufferSize, 12, dma_buffer::CacheOptions::kEnabled, &ep0_buffer_);
   if (status != ZX_OK) {
     fdf::error("dma_buffer::CreateBufferFactory()->CreateContiguous(): {}",
                zx_status_get_string(status));

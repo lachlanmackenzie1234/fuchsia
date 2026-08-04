@@ -31,8 +31,10 @@ class Fifo {
   virtual zx::result<> Init(zx::bti& bti, bool cached) {
     if (!buffer_) {
       cached_ = cached;
-      zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti, kBufferSize, 12,
-                                                                               cached, &buffer_);
+      zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(
+          bti, kBufferSize, 12,
+          cached ? dma_buffer::CacheOptions::kEnabled : dma_buffer::CacheOptions::kDisabled,
+          &buffer_);
       if (status != ZX_OK) {
         fdf::error("dma_buffer init fails: {}", zx_status_get_string(status));
         return zx::error(status);

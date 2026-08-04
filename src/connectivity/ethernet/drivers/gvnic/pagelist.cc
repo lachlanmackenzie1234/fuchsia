@@ -17,10 +17,10 @@ PageList::PageList(std::unique_ptr<dma_buffer::BufferFactory>& buffer_factory, z
   length_ = static_cast<uint32_t>(scratch_page->size()) /
             sizeof(uint64_t);  // Make it as large as we can.
   status = buffer_factory->CreatePaged(bti, zx_system_get_page_size() * length_,
-                                       /*enable_cache*/ true, &pages_);
+                                       dma_buffer::CacheOptions::kEnabled, &pages_);
   ZX_ASSERT_MSG(status == ZX_OK,
-                "buffer_factory->CreatePaged(bti, zx_system_get_page_size() * length_, true, "
-                "&pages_): FAILED (%s)",
+                "buffer_factory->CreatePaged(bti, zx_system_get_page_size() * length_, "
+                "dma_buffer::CacheOptions::kEnabled, &pages_): FAILED (%s)",
                 zx_status_get_string(status));
   // Can't just memcpy. Need to assign individually to get the BigEndian goodness.
   auto const pl_addrs_tgt = reinterpret_cast<BigEndian<uint64_t>*>(scratch_page->virt());

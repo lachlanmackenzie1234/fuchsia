@@ -26,7 +26,8 @@ TEST(PagelistTest, BasicUsage) {
   EXPECT_TRUE(factory);
 
   std::unique_ptr<dma_buffer::ContiguousBuffer> scratch;
-  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0, true, &scratch));
+  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0,
+                                      dma_buffer::CacheOptions::kEnabled, &scratch));
 
   // Just create the pagelist, and verify that it has pages with addresses.
   PageList page_list(factory, bti, scratch);
@@ -41,7 +42,8 @@ TEST(PagelistTest, ScratchIsPopulated) {
 
   std::unique_ptr<dma_buffer::BufferFactory> factory(ddk_fake::CreateBufferFactory());
   std::unique_ptr<dma_buffer::ContiguousBuffer> scratch;
-  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0, true, &scratch));
+  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0,
+                                      dma_buffer::CacheOptions::kEnabled, &scratch));
 
   // Zero out the scratch page. (Set all entries to 0)
   memset(scratch->virt(), 0, scratch->size());
@@ -62,7 +64,8 @@ TEST(PagelistTest, IdsIncrement) {
 
   std::unique_ptr<dma_buffer::BufferFactory> factory(ddk_fake::CreateBufferFactory());
   std::unique_ptr<dma_buffer::ContiguousBuffer> scratch;
-  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0, true, &scratch));
+  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0,
+                                      dma_buffer::CacheOptions::kEnabled, &scratch));
 
   // The ids wont nesecarily start at 0 (since IDs are allocated by other tests), but consecutively
   // created pagelists should have ids that are contiguous.
@@ -81,7 +84,8 @@ TEST(PagelistTest, CheckLengths) {
 
   std::unique_ptr<dma_buffer::BufferFactory> factory(ddk_fake::CreateBufferFactory());
   std::unique_ptr<dma_buffer::ContiguousBuffer> scratch;
-  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0, true, &scratch));
+  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0,
+                                      dma_buffer::CacheOptions::kEnabled, &scratch));
 
   PageList page_list(factory, bti, scratch);
 
@@ -97,7 +101,8 @@ TEST(PagelistTest, AddrsAreUnique) {
 
   std::unique_ptr<dma_buffer::BufferFactory> factory(ddk_fake::CreateBufferFactory());
   std::unique_ptr<dma_buffer::ContiguousBuffer> scratch;
-  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0, true, &scratch));
+  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0,
+                                      dma_buffer::CacheOptions::kEnabled, &scratch));
 
   PageList page_list(factory, bti, scratch);
 
@@ -114,7 +119,8 @@ TEST(PagelistTest, ScratchMatchesPagesButBigEndian) {
 
   std::unique_ptr<dma_buffer::BufferFactory> factory(ddk_fake::CreateBufferFactory());
   std::unique_ptr<dma_buffer::ContiguousBuffer> scratch;
-  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0, true, &scratch));
+  EXPECT_OK(factory->CreateContiguous(bti, zx_system_get_page_size(), 0,
+                                      dma_buffer::CacheOptions::kEnabled, &scratch));
 
   PageList page_list(factory, bti, scratch);
 
