@@ -17,6 +17,7 @@
 use fuchsia_sync::Mutex;
 use hyper::{Body, Request};
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 #[derive(Debug)]
 struct HttpsClientEvent {
@@ -24,9 +25,9 @@ struct HttpsClientEvent {
     res: http::Result<http::Response<Body>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HttpsClient {
-    expected: Mutex<VecDeque<HttpsClientEvent>>,
+    expected: Arc<Mutex<VecDeque<HttpsClientEvent>>>,
 }
 
 impl HttpsClient {
@@ -34,7 +35,7 @@ impl HttpsClient {
     ///
     /// Consider adding expected events with `.expect(req, res)`.
     pub fn mock() -> Self {
-        Self { expected: Mutex::new(VecDeque::new()) }
+        Self { expected: Arc::new(Mutex::new(VecDeque::new())) }
     }
 
     /// Append an expected request and response.

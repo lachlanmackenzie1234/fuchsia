@@ -6,9 +6,12 @@
 
 use crate::error::GcsError;
 use crate::exponential_backoff::default_backoff_strategy;
+#[cfg(test)]
+use crate::mock_https_client::{HttpsClient, new_https_client};
 use anyhow::{Context, Result, bail};
 use async_lock::Mutex;
 use fuchsia_backoff::retry_or_last_error;
+#[cfg(not(test))]
 use fuchsia_hyper::HttpsClient;
 use http::{StatusCode, request};
 use hyper::{Body, Method, Request, Response};
@@ -190,6 +193,13 @@ impl TokenStore {
                 log::debug!("send_request status {} (UNAUTHORIZED)", res.status());
                 bail!(GcsError::NeedNewAccessToken);
             }
+            // Retry on http errors 408 | 429 | 500..=599.
+            s if matches!(s, StatusCode::REQUEST_TIMEOUT | StatusCode::TOO_MANY_REQUESTS)
+                || s.is_server_error() =>
+            {
+                log::debug!("send_request transient status {}", s);
+                bail!(GcsError::HttpTransientError(s));
+            }
             // For any other client or server error, read the body for more details.
             s if s.is_client_error() || s.is_server_error() => {
                 let status = res.status();
@@ -215,18 +225,9 @@ impl TokenStore {
         let (parts, body) = req.into_parts();
         let body = hyper::body::to_bytes(body).await?.to_vec();
         retry_or_last_error(default_backoff_strategy(), || async {
-            let result = self
-                .execute_request(https_client, &parts, Body::from(body.clone()))
+            self.execute_request(https_client, &parts, Body::from(body.clone()))
                 .await
-                .context("send_request")?;
-            let status = result.status();
-            // Retry on http errors 408 | 429 | 500..=599.
-            if matches!(status, StatusCode::REQUEST_TIMEOUT | StatusCode::TOO_MANY_REQUESTS)
-                || status.is_server_error()
-            {
-                bail!(GcsError::HttpTransientError(result.status()))
-            }
-            Ok(result)
+                .context("send_request")
         })
         .await
         .context("send_request with retries")
@@ -442,7 +443,6 @@ impl fmt::Debug for TokenStore {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fuchsia_hyper::new_https_client;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -452,7 +452,7 @@ mod test {
         Ok(file)
     }
 
-    #[should_panic(expected = "Connection refused")]
+    #[should_panic(expected = "received more https requests than expected")]
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_fake_download() {
         let token_store = TokenStore::local_fake();
@@ -461,7 +461,7 @@ mod test {
         token_store.download(&new_https_client(), bucket, object).await.expect("client download");
     }
 
-    #[should_panic(expected = "Connection refused")]
+    #[should_panic(expected = "received more https requests than expected")]
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_fake_upload() {
         let token_store = TokenStore::local_fake();
@@ -520,6 +520,38 @@ mod test {
             .download(&new_https_client(), bucket, object)
             .await
             .expect("client download");
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_gcs_retry_503() {
+        use crate::mock_https_client::HttpsClient;
+
+        let store = TokenStore::local_fake();
+        let mut https_client = HttpsClient::mock();
+        let url = "http://localhost:9001/fake_bucket/fake/object/path.txt";
+        let req1 = Request::builder()
+            .method(Method::GET)
+            .uri(url)
+            .body(Body::empty())
+            .expect("Request::builder");
+        let req2 = Request::builder()
+            .method(Method::GET)
+            .uri(url)
+            .body(Body::empty())
+            .expect("Request::builder");
+        let res503 = http::Response::builder()
+            .status(http::StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("Service Unavailable"));
+        let res_ok =
+            http::Response::builder().status(http::StatusCode::OK).body(Body::from("success"));
+        https_client.expect(req1, res503);
+        https_client.expect(req2, res_ok);
+
+        let res = store
+            .download(&https_client, "fake_bucket", "fake/object/path.txt")
+            .await
+            .expect("client download after retry");
         assert_eq!(res.status(), StatusCode::OK);
     }
 }

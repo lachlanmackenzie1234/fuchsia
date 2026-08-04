@@ -5,9 +5,12 @@
 //! Download blob data from Google Cloud Storage (GCS).
 
 use crate::exponential_backoff::default_backoff_strategy;
+#[cfg(test)]
+use crate::mock_https_client::{HttpsClient, new_https_client};
 use crate::token_store::TokenStore;
 use anyhow::{Context, Result, bail};
 use fuchsia_backoff::retry_or_last_error;
+#[cfg(not(test))]
 use fuchsia_hyper::{HttpsClient, new_https_client};
 use hyper::body::HttpBody as _;
 use hyper::header::CONTENT_LENGTH;
@@ -339,11 +342,21 @@ impl Client {
 #[cfg(test)]
 mod test {
     use super::*;
+    use hyper::Method;
     use std::fs::read_to_string;
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_client_factory_no_auth() {
-        let client = Client::initial().expect("creating client");
+        let mut client = Client::initial().expect("creating client");
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("https://storage.googleapis.com/for_testing_does_not_exist/face_test_object")
+            .body(Body::empty())
+            .expect("Request::builder");
+        let res404 = http::Response::builder()
+            .status(http::StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found"));
+        client.https.expect(req, res404);
         let res = client
             .stream("for_testing_does_not_exist", "face_test_object")
             .await
