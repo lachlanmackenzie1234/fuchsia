@@ -23,7 +23,7 @@ mod tests {
         ConnectorMarker, ConnectorProxy, ListenerMarker,
     };
     use fuchsia_async as fasync;
-    use futures::{channel, future, FutureExt, StreamExt, TryFutureExt};
+    use futures::{FutureExt, StreamExt, TryFutureExt, channel, future};
     struct MockDriver {
         client: DeviceRequestStream,
         callbacks: CallbacksProxy,
@@ -92,7 +92,7 @@ mod tests {
         Ok(app_client)
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn basic_listen() -> Result<(), anyhow::Error> {
         let (mut driver, service) = common_setup().await?;
 
@@ -139,7 +139,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn basic_bind_and_listen() -> Result<(), anyhow::Error> {
         let (mut driver, service) = common_setup().await?;
         let app_client = make_client(&service)?;
@@ -181,7 +181,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn reject_connection() -> Result<(), anyhow::Error> {
         let (mut driver, service) = common_setup().await?;
 
@@ -205,7 +205,7 @@ mod tests {
         Ok(())
     }
 
-    #[fasync::run_until_stalled(test)]
+    #[fuchsia::test(allow_stalls = false)]
     async fn transport_reset() -> Result<(), anyhow::Error> {
         let (mut driver, service) = common_setup().await?;
 
