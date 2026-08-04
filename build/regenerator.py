@@ -721,7 +721,7 @@ def main() -> int:
         ninja_worker_script_path = build_dir / ninja_worker_script_name
 
         enable_delayed_bazel_actions = args_json.get(
-            "enable_delayed_bazel_actions", True
+            "enable_delayed_bazel_actions", False
         )
         if enable_delayed_bazel_actions:
             # Symlink the ninja_bazel_action_worker script into the build outdir
