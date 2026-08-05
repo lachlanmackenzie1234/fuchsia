@@ -233,11 +233,12 @@ pub unsafe extern "C" fn block_server_new(
 ) -> *mut BlockServer {
     let start_thread = callbacks.start_thread;
     let context = callbacks.context;
+    let block_size = partition_info.block_size;
 
-    let session_manager = callback_interface::SessionManager::new(Arc::new(InterfaceAdapter {
-        callbacks,
-        info: unsafe { partition_info.to_rust() },
-    }));
+    let session_manager = callback_interface::SessionManager::new(
+        Arc::new(InterfaceAdapter { callbacks, info: unsafe { partition_info.to_rust() } }),
+        block_size,
+    );
 
     let orchestrator = Arc::new(Orchestrator { session_manager, mbox: ExecutorMailbox::new() });
 
@@ -252,7 +253,6 @@ pub unsafe extern "C" fn block_server_new(
         std::mem::replace(&mut *mail, Mail::None)
     };
 
-    let block_size = partition_info.block_size;
     match mail {
         Mail::Initialized(scope, abort_handle) => Box::into_raw(Box::new(BlockServer {
             server: super::BlockServer::new(block_size, orchestrator.clone()),

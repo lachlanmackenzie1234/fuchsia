@@ -98,11 +98,10 @@ impl PartitionServer {
         Self {
             server: BlockServer::new(
                 block_info.block_size,
-                Arc::new(SessionManager::new(Arc::new(EmmcPartition::new(
-                    partition,
-                    command_queue,
-                    block_info,
-                )))),
+                Arc::new(SessionManager::new(
+                    Arc::new(EmmcPartition::new(partition, command_queue, block_info)),
+                    block_info.block_size,
+                )),
             ),
         }
     }

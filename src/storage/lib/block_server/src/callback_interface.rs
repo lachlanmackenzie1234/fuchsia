@@ -12,10 +12,14 @@ use fidl_fuchsia_storage_block as fblock;
 use fuchsia_sync::{Condvar, Mutex};
 use futures::TryStreamExt as _;
 use futures::stream::{AbortHandle, Abortable};
+use mapping::reader::BlockService;
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, VecDeque};
 use std::mem::MaybeUninit;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
+
+pub mod block_service;
+pub use block_service::DefaultCallbackBlockService;
 
 /// An in-flight request.
 #[derive(Clone, Debug)]
@@ -48,6 +52,32 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     /// Implementations are responsible for checking that request block ranges fall within valid
     /// device/partition bounds, and completing with `zx::Status::OUT_OF_RANGE` if out of bounds.
     fn on_requests(&self, requests: &[Request]);
+
+    /// Returns the BlockService implementation for this interface.
+    ///
+    /// By default, returns the fallback [`DefaultCallbackBlockService`].
+    fn into_block_service(
+        self: Arc<Self>,
+        orchestrator: &Arc<Self::Orchestrator>,
+    ) -> Arc<dyn BlockService> {
+        Arc::new(DefaultCallbackBlockService::<Self>::new(orchestrator))
+    }
+}
+
+/// A bit flag set on [`RequestId`] values for internal requests issued by the server (such as
+/// [`DefaultCallbackBlockService`] reads) rather than external client sessions. This allows
+/// [`SessionManager::complete_request`] to distinguish internal requests and route completions
+/// to internal callback handlers instead of client session FIFOs.
+const INTERNAL_REQUEST_FLAG: usize = 1 << 63;
+
+#[derive(Default)]
+struct InflightRequests {
+    /// Total number of in-flight requests submitted to `Interface::on_requests`.
+    count: usize,
+    /// Completion callbacks for internal requests (e.g. from `DefaultCallbackBlockService`).
+    callbacks: HashMap<RequestId, Box<dyn FnOnce(zx::Status) + Send>>,
+    /// Monotonically increasing counter for allocating internal request IDs.
+    next_internal_id: usize,
 }
 
 struct SessionManagerInner<I: Interface + ?Sized> {
@@ -64,12 +94,14 @@ const SHUTDOWN_SIGNAL: zx::Signals = zx::Signals::USER_1;
 
 pub struct SessionManager<I: Interface + ?Sized> {
     interface: Arc<I>,
+    block_size: u32,
     // These represent active *client* requests, which correspond to one or more in-flight requests.
     active_requests: ActiveRequests<Arc<Session<I>>>,
-    inflight_requests: Mutex<usize>,
+    inflight_requests: Mutex<InflightRequests>,
     no_inflight_requests_condvar: Condvar,
     inner: Mutex<SessionManagerInner<I>>,
     no_open_sessions_condvar: Condvar,
+    block_service: OnceLock<Arc<dyn BlockService>>,
 }
 
 impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
@@ -152,32 +184,76 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
 }
 
 impl<I: Interface + ?Sized> SessionManager<I> {
-    pub fn new(interface: Arc<I>) -> Self {
+    /// Returns the memoized [`BlockService`] for this session manager.
+    pub fn into_block_service(&self, orchestrator: &Arc<I::Orchestrator>) -> Arc<dyn BlockService> {
+        self.block_service
+            .get_or_init(|| self.interface.clone().into_block_service(orchestrator))
+            .clone()
+    }
+}
+
+impl<I: Interface + ?Sized> SessionManager<I> {
+    pub fn new(interface: Arc<I>, block_size: u32) -> Self
+    where
+        I: Sized,
+    {
         Self {
             interface,
+            block_size,
             active_requests: ActiveRequests::default(),
-            inflight_requests: Mutex::new(0),
+            inflight_requests: Mutex::new(InflightRequests::default()),
             no_inflight_requests_condvar: Condvar::new(),
             inner: Mutex::new(SessionManagerInner { open_sessions: HashMap::new() }),
             no_open_sessions_condvar: Condvar::new(),
+            block_service: OnceLock::new(),
         }
+    }
+
+    pub fn block_size(&self) -> u32 {
+        self.block_size
     }
 
     /// Reports the given task as complete with a given status.
     pub fn complete_request(&self, request_id: RequestId, status: zx::Status) {
-        let notify = {
-            let mut inflight_requests = self.inflight_requests.lock();
-            *inflight_requests -= 1;
-            *inflight_requests == 0
+        let (callback, notify) = {
+            let mut inflight = self.inflight_requests.lock();
+            let callback = if request_id.0 & INTERNAL_REQUEST_FLAG != 0 {
+                inflight.callbacks.remove(&request_id)
+            } else {
+                None
+            };
+            inflight.count -= 1;
+            let notify = inflight.count == 0;
+            (callback, notify)
         };
-        self.complete_unsubmitted_request(request_id, status);
+        if let Some(callback) = callback {
+            callback(status);
+        } else {
+            self.complete_unsubmitted_request(request_id, status);
+        }
         if notify {
             self.no_inflight_requests_condvar.notify_all();
         }
     }
 
+    fn submit_internal_request(
+        &self,
+        make_request: impl FnOnce(RequestId) -> Request,
+        callback: Box<dyn FnOnce(zx::Status) + Send>,
+    ) {
+        let req = {
+            let mut inflight = self.inflight_requests.lock();
+            let req_id = RequestId(inflight.next_internal_id | INTERNAL_REQUEST_FLAG);
+            inflight.next_internal_id += 1;
+            inflight.callbacks.insert(req_id, callback);
+            inflight.count += 1;
+            make_request(req_id)
+        };
+        self.interface.on_requests(&[req]);
+    }
+
     fn submit_requests(&self, requests: &[Request]) {
-        *self.inflight_requests.lock() += requests.len();
+        self.inflight_requests.lock().count += requests.len();
         self.interface.on_requests(requests);
     }
 
@@ -187,7 +263,7 @@ impl<I: Interface + ?Sized> SessionManager<I> {
     /// [`Self::submit_requests`].
     fn wait_for_no_inflight_requests(&self) {
         let mut guard = self.inflight_requests.lock();
-        self.no_inflight_requests_condvar.wait_while(&mut guard, |count| *count > 0);
+        self.no_inflight_requests_condvar.wait_while(&mut guard, |inflight| inflight.count > 0);
     }
 
     /// Called instead of `[Self::complete_request]` when a request is completed before it was
@@ -565,6 +641,8 @@ mod tests {
     use fidl_fuchsia_storage_block as fblock;
     use fuchsia_async as fasync;
 
+    const BLOCK_SIZE: u32 = 512;
+
     struct MockInterface {
         request_sender: std::sync::mpsc::Sender<Request>,
     }
@@ -593,12 +671,12 @@ mod tests {
     async fn test_basic_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let _server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         })
         .detach();
@@ -654,12 +732,12 @@ mod tests {
     async fn test_write_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let _server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         })
         .detach();
@@ -714,12 +792,12 @@ mod tests {
     async fn test_flush_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let _server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         })
         .detach();
@@ -767,12 +845,12 @@ mod tests {
     async fn test_trim_request() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let _server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         })
         .detach();
@@ -820,12 +898,12 @@ mod tests {
     async fn test_close_vmo() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let _server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         })
         .detach();
@@ -877,12 +955,12 @@ mod tests {
     async fn test_error() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let _server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         })
         .detach();
@@ -927,12 +1005,12 @@ mod tests {
     async fn test_teardown_with_active_requests() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         });
 
@@ -984,12 +1062,12 @@ mod tests {
     async fn test_teardown_with_active_grouped_requests() {
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         });
 
@@ -1062,12 +1140,12 @@ mod tests {
 
         let (tx, rx) = std::sync::mpsc::channel();
         let interface = Arc::new(MockInterface { request_sender: tx });
-        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), BLOCK_SIZE));
 
         let sm_clone = session_manager.clone();
         let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
         let server_task = fasync::Task::spawn(async move {
-            let server = crate::BlockServer::new(512, sm_clone);
+            let server = crate::BlockServer::new(BLOCK_SIZE, sm_clone);
             server.handle_requests(stream).await.unwrap();
         });
 
