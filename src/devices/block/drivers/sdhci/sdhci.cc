@@ -823,11 +823,10 @@ zx_status_t Sdhci::SetUpDma(const fuchsia_hardware_sdmmc::wire::SdmmcReq& reques
     return status;
   }
 
-  status = zx_cache_flush(iobuf_->virt(), builder.descriptor_count() * descriptor_size,
-                          ZX_CACHE_FLUSH_DATA);
-  if (status != ZX_OK) {
-    fdf::error("Failed to clean cache: {}", zx_status_get_string(status));
-    return status;
+  if (auto res = iobuf_->CacheFlush(0, builder.descriptor_count() * descriptor_size);
+      res.is_error()) {
+    fdf::error("Failed to clean cache: {}", res.status_string());
+    return res.error_value();
   }
 
   AdmaSystemAddress::Get(0).FromValue(Lo32(iobuf_->phys())).WriteTo(&*regs_mmio_buffer_);
