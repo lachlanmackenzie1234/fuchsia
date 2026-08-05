@@ -429,6 +429,10 @@ const char* StateToString(ProcessDispatcher::State state);
 extern "C" {
 ProcessDispatcher* cpp_process_dispatcher_current();
 bool cpp_process_dispatcher_is_current(const ProcessDispatcher* process);
+zx_status_t cpp_process_dispatcher_start(ProcessDispatcher* process, ThreadDispatcher* thread,
+                                         zx_vaddr_t pc, zx_vaddr_t sp, Handle* arg_handle,
+                                         uintptr_t arg2);
+void cpp_process_dispatcher_kill(ProcessDispatcher* process, int64_t retcode);
 zx_status_t cpp_process_dispatcher_suspend(ProcessDispatcher* process);
 void cpp_process_dispatcher_resume(ProcessDispatcher* process);
 zx_status_t cpp_process_dispatcher_make_and_add_handle(ProcessDispatcher* process,
@@ -443,6 +447,7 @@ zx_status_t cpp_handle_table_get_dispatcher(zx_handle_t handle, fbl::RefPtr<Disp
 zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher* process,
                                                         uint32_t policy);
 int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process);
+zx_info_process_t cpp_process_dispatcher_get_info(const ProcessDispatcher* process);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROCESS_DISPATCHER_H_

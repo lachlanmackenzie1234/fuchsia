@@ -5,14 +5,16 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher::DispatcherOps;
-use super::handle::{HandleValue, KernelHandle};
+use super::handle::{HandleOwner, HandleValue, KernelHandle};
 use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_current, cpp_process_dispatcher_enforce_basic_policy,
-    cpp_process_dispatcher_is_current, cpp_process_dispatcher_make_and_add_handle,
-    cpp_process_dispatcher_resume, cpp_process_dispatcher_suspend,
+    cpp_process_dispatcher_get_info, cpp_process_dispatcher_is_current,
+    cpp_process_dispatcher_kill, cpp_process_dispatcher_make_and_add_handle,
+    cpp_process_dispatcher_resume, cpp_process_dispatcher_start, cpp_process_dispatcher_suspend,
 };
+use super::thread_dispatcher::ThreadDispatcher;
 use zx_status::Status;
-use zx_types::zx_rights_t;
+use zx_types::{zx_info_process_t, zx_rights_t, zx_vaddr_t};
 
 crate::object::dispatcher::impl_dispatcher_facade!(
     pub struct ProcessDispatcher,
@@ -31,6 +33,35 @@ impl ProcessDispatcher {
     pub fn is_current(&self) -> bool {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
         unsafe { cpp_process_dispatcher_is_current(self as *const _) }
+    }
+
+    /// Starts execution of this process.
+    pub fn start(
+        &self,
+        thread: &ThreadDispatcher,
+        pc: zx_vaddr_t,
+        sp: zx_vaddr_t,
+        arg_handle: HandleOwner,
+        arg2: usize,
+    ) -> Result<(), Status> {
+        // SAFETY: `self` and `thread` are valid references, and `arg_handle` ownership is transferred to C++.
+        let status = unsafe {
+            cpp_process_dispatcher_start(
+                self as *const _,
+                thread as *const _,
+                pc,
+                sp,
+                arg_handle.release(),
+                arg2,
+            )
+        };
+        Status::ok(status)
+    }
+
+    /// Kills this process with the given return code.
+    pub fn kill(&self, retcode: i64) {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_kill(self as *const _, retcode) }
     }
 
     /// Suspends execution of this process.
@@ -118,5 +149,11 @@ impl ProcessDispatcher {
                 self as *const _,
             )
         }
+    }
+
+    /// Returns information about this process.
+    pub fn get_info(&self) -> zx_info_process_t {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_get_info(self as *const _) }
     }
 }

@@ -6,6 +6,7 @@
 
 #include <object/handle.h>
 #include <object/process_dispatcher.h>
+#include <object/thread_dispatcher.h>
 
 extern "C" {
 
@@ -13,6 +14,17 @@ ProcessDispatcher* cpp_process_dispatcher_current() { return ProcessDispatcher::
 
 bool cpp_process_dispatcher_is_current(const ProcessDispatcher* process) {
   return process == ProcessDispatcher::GetCurrent();
+}
+
+zx_status_t cpp_process_dispatcher_start(ProcessDispatcher* process, ThreadDispatcher* thread,
+                                         zx_vaddr_t pc, zx_vaddr_t sp, Handle* arg_handle,
+                                         uintptr_t arg2) {
+  return process->Start(fbl::RefPtr<ThreadDispatcher>(thread), pc, sp, HandleOwner(arg_handle),
+                        arg2);
+}
+
+void cpp_process_dispatcher_kill(ProcessDispatcher* process, int64_t retcode) {
+  process->Kill(retcode);
 }
 
 zx_status_t cpp_process_dispatcher_suspend(ProcessDispatcher* process) {
@@ -48,6 +60,10 @@ zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher*
 
 int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process) {
   return process->GetTimerSlackPolicy().amount();
+}
+
+zx_info_process_t cpp_process_dispatcher_get_info(const ProcessDispatcher* process) {
+  return process->GetInfo();
 }
 
 }  // extern "C"

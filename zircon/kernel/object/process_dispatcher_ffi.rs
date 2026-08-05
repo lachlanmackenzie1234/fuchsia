@@ -7,7 +7,8 @@
 use super::dispatcher::Dispatcher;
 use super::handle::{HandleValue, KernelHandle};
 use super::process_dispatcher::ProcessDispatcher;
-use zx_types::{zx_rights_t, zx_status_t};
+use super::thread_dispatcher::ThreadDispatcher;
+use zx_types::{zx_info_process_t, zx_rights_t, zx_status_t, zx_vaddr_t};
 
 unsafe extern "C" {
     /// Returns a raw pointer to the current process dispatcher.
@@ -23,6 +24,29 @@ unsafe extern "C" {
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_is_current(process: *const ProcessDispatcher) -> bool;
+
+    /// Calls into C++ implementation to start a process.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    /// `thread` must point to a valid `ThreadDispatcher`.
+    /// `arg_handle` must point to a valid raw handle or be null.
+    pub(crate) fn cpp_process_dispatcher_start(
+        process: *const ProcessDispatcher,
+        thread: *const ThreadDispatcher,
+        pc: zx_vaddr_t,
+        sp: zx_vaddr_t,
+        arg_handle: *mut core::ffi::c_void,
+        arg2: usize,
+    ) -> zx_status_t;
+
+    /// Calls into C++ implementation to kill a process.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_kill(process: *const ProcessDispatcher, retcode: i64);
 
     /// Calls into C++ implementation to suspend a process.
     ///
@@ -99,4 +123,13 @@ unsafe extern "C" {
     pub(crate) fn cpp_process_dispatcher_get_timer_slack_policy_amount(
         process: *const ProcessDispatcher,
     ) -> i64;
+
+    /// Retrieves process info from C++.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_get_info(
+        process: *const ProcessDispatcher,
+    ) -> zx_info_process_t;
 }
