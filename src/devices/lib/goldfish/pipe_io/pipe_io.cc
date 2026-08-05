@@ -295,7 +295,10 @@ zx::result<size_t> PipeIo::ReadOnceLocked(void* buf, size_t size) {
   });
 
   if (status.is_ok()) {
-    memcpy(buf, io_buffer_->virt(), status.value());
+    if (auto read_status = io_buffer_->Read(0, status.value(), buf); read_status.is_error()) {
+      zxlogf(ERROR, "Failed to read from io_buffer: %s", read_status.status_string());
+      return read_status.take_error();
+    }
   }
   return status;
 }
@@ -440,7 +443,12 @@ zx_status_t PipeIo::CallTo(cpp20::span<const WriteSrc> sources, void* read_dst, 
     }
   }
 
-  memcpy(read_dst, io_buffer_->virt(), read_size);
+  if (read_size > 0) {
+    if (auto status = io_buffer_->Read(0, read_size, read_dst); status.is_error()) {
+      zxlogf(ERROR, "Failed to read from io_buffer: %s", status.status_string());
+      return status.error_value();
+    }
+  }
 
   return ZX_OK;
 }
