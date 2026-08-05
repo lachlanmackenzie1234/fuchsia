@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_build_info//:args.bzl", "build_info_version")
+load("@fuchsia_build_info//:args.bzl", "build_info_version", "delegated_network_provisioning")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
     "ARCH",
+    "BUILD_TYPES",
     "fuchsia_elf_sizes",
     "fuchsia_prebuilt_package",
     "fuchsia_product",
@@ -14,7 +15,6 @@ load(
     "fuchsia_virtual_device",
 )
 load("//build/info:info.bzl", "DEFAULT_PRODUCT_BUILD_INFO")
-load("//products/workbench:platform_config.bzl", "workbench_platform_config")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -124,7 +124,85 @@ fuchsia_product_configuration(
         ":workbench_session",
     ],
     product_config_json = {
-        "platform": workbench_platform_config,
+        "platform": {
+            "build_type": BUILD_TYPES.ENG,
+            "battery": {
+                "enabled": True,
+            },
+            "connectivity": {
+                "network": {
+                    "networking": "standard",
+                    "netcfg_config_path": "LABEL(//src/connectivity/policy/netcfg/config:%s.json5)" % ("delegated_network_provisioning" if delegated_network_provisioning else "netcfg_default"),
+                    "include_tun": True,
+                },
+            },
+            "development_support": {
+                "tools": {
+                    "audio": {
+                        "driver_tools": True,
+                    },
+                    "display": {
+                        "driver_tools": True,
+                    },
+                    "connectivity": {
+                        "enable_networking": True,
+                        "enable_wlan": True,
+                        "enable_thread": True,
+                    },
+                },
+            },
+            "timekeeper": {
+                "first_sampling_delay_sec": 86400,
+                "back_off_time_between_pull_samples_sec": 86400,
+            },
+            "media": {
+                "audio": {
+                    "device_registry": {},
+                },
+            },
+            "starnix": {
+                "enabled": True,
+            },
+            "usb": {
+                "peripheral": {
+                    "functions": [
+                        "cdc",
+                        "vsock_bridge",
+                    ],
+                },
+            },
+            "session": {
+                "enabled": True,
+            },
+            "ui": {
+                "display_composition": True,
+                "use_flatland2_uberstruct_schema": True,
+                "enabled": True,
+                "supported_input_devices": [
+                    "button",
+                    "keyboard",
+                    "mouse",
+                    "touchscreen",
+                ],
+                "with_synthetic_device_support": True,
+            },
+            "power": {
+                "suspend_enabled": True,
+            },
+            "kernel": {
+                "oom": {
+                    "behavior": {
+                        "reboot": {
+                            "timeout": "low",
+                        },
+                    },
+                },
+                "scheduler_enable_new_wakeup_accounting": True,
+            },
+            "memory_monitor": {
+                "memory_monitor_versions": ["v2"],
+            },
+        },
         "product": {
             "session": {
                 "url": "fuchsia-pkg://fuchsia.com/workbench_session#meta/workbench_session.cm",
