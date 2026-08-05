@@ -712,6 +712,9 @@ config("suppress_iterator_warnings") {
 
 # LINT.IfChange(default_warnings)
 config("default_warnings") {
+  # TODO(https://fxbug.dev/542707525): Suppress unused variable warnings in libc++ containers.
+  defines = [ "_LIBCPP_DISABLE_UNUSED_STRUCT_WARNINGS" ]
+
   cflags = [
     "-Wall",
     "-Wextra",

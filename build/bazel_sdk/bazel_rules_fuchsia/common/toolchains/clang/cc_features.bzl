@@ -204,6 +204,8 @@ _flag_configs = struct(
     # LINT.IfChange(default_warnings)
     default_warnings = _make_flag_config(
         cflags = [
+            # TODO(https://fxbug.dev/542707525): Suppress unused variable warnings in libc++ containers.
+            "-D_LIBCPP_DISABLE_UNUSED_STRUCT_WARNINGS",
             "-Wall",
             "-Wextra",
             "-Wextra-semi",
