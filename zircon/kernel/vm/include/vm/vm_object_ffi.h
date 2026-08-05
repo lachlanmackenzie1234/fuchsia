@@ -11,6 +11,7 @@
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
+#include <vm/fault.h>
 
 #include "vm/vm_object.h"
 
@@ -39,6 +40,13 @@ zx_status_t cpp_vm_object_commit_range_pinned(VmObject* vmo, uint64_t offset, ui
                                               bool write);
 void cpp_vm_object_unpin(VmObject* vmo, uint64_t offset, uint64_t len);
 uint8_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo);
+VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,
+                                     SnapshotType snapshot_type, uint64_t offset, uint64_t size,
+                                     bool copy_name, zx_status_t* out_status);
+zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset, uint32_t pf_flags);
+void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id);
+uint64_t cpp_vm_object_user_id(const VmObject* vmo);
+uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);
 
 __END_CDECLS
 

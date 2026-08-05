@@ -80,4 +80,25 @@ uint8_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo) {
   return vmo->GetMappingCachePolicy();
 }
 
+VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,
+                                     SnapshotType snapshot_type, uint64_t offset, uint64_t size,
+                                     bool copy_name, zx_status_t* out_status) {
+  fbl::RefPtr<VmObject> child;
+  zx_status_t status = vmo->CreateClone(resizable, snapshot_type, offset, size, copy_name, &child);
+  if (out_status) {
+    *out_status = status;
+  }
+  return fbl::ExportToRawPtr(&child);
+}
+
+zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset, uint32_t pf_flags) {
+  return vmo->GetPageBlocking(offset, pf_flags, nullptr, nullptr, nullptr);
+}
+
+void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id) { vmo->set_user_id(user_id); }
+
+uint64_t cpp_vm_object_user_id(const VmObject* vmo) { return vmo->user_id(); }
+
+uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo) { return vmo->parent_user_id(); }
+
 }  // extern "C"

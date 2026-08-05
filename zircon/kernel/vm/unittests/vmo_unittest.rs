@@ -1,17 +1,20 @@
-// Copyright 2026 The Fuchsia Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2026 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
 
 /// VMO tests duplicated from vmo_unittest.cc.
 #[cfg(ktest)]
 #[unittest::suite]
 mod vmo_rs {
     use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_UNCACHED;
+    use crate::vm::fault;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pinned_vm_object::PinnedVmObject;
     use crate::vm::pmm::{self, ALLOC_FLAG_ANY};
     use crate::vm::scanner::AutoVmScannerDisable;
-    use crate::vm::vm_object::{EvictionHint, VmObject};
+    use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm_unittests::test_helper::make_committed_pager_vmo;
@@ -98,6 +101,111 @@ mod vmo_rs {
         drop(vmo);
         // SAFETY: vm_page was allocated via alloc_page above and is no longer referenced by vmo.
         unsafe { pmm::free_page(vm_page) };
+    }
+
+    /// Tests parent merging and user ID updates when VMO hierarchies collapse.
+    #[test]
+    fn vmo_parent_merge_test() {
+        // Test that a VmObjectPaged that is only referenced by its children gets removed by effectively
+        // merging into its parent and re-homing all the children. This should also drop any VmCowPages
+        // being held open.
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        // Set a user ID for testing.
+        vmo.set_user_id(42);
+
+        let child = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            false
+        ));
+        child.set_user_id(43);
+
+        expect_eq!(vmo.parent_user_id(), 0);
+        expect_eq!(vmo.user_id(), 42);
+        expect_eq!(child.user_id(), 43);
+        expect_eq!(child.parent_user_id(), 42);
+
+        // Dropping the parent should re-home the child to an empty parent.
+        drop(vmo);
+        expect_eq!(child.user_id(), 43);
+        expect_eq!(child.parent_user_id(), 0);
+
+        drop(child);
+
+        // Recreate a more interesting 3 level hierarchy with vmo->child->(child2,child3)
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        vmo.set_user_id(42);
+        let child = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            false
+        ));
+        child.set_user_id(43);
+        let child2 = unwrap_ok!(child.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            false
+        ));
+        child2.set_user_id(44);
+        let child3 = unwrap_ok!(child.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            false
+        ));
+        child3.set_user_id(45);
+
+        expect_eq!(vmo.parent_user_id(), 0);
+        expect_eq!(child.parent_user_id(), 42);
+        expect_eq!(child2.parent_user_id(), 43);
+        expect_eq!(child3.parent_user_id(), 43);
+
+        // Drop the intermediate child, child2+3 should get re-homed to vmo
+        drop(child);
+        expect_eq!(child2.parent_user_id(), 42);
+        expect_eq!(child3.parent_user_id(), 42);
+    }
+
+    /// Tests that writing to a VMO does not commit pages in its clone.
+    #[test]
+    fn vmo_write_does_not_commit_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a vmo and commit a page to it.
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+
+        let val: u64 = 42;
+        expect_ok!(vmo.write(0, &val.to_le_bytes()));
+
+        // Create a CoW clone of the vmo.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            PAGE_SIZE,
+            false
+        ));
+
+        // Querying the page for read in the clone should return it.
+        expect_ok!(clone.get_page_blocking(0, 0));
+
+        // Querying for write, without any fault flags, should not work as the page is not committed in
+        // the clone.
+        expect_eq!(
+            Status::result_into_raw(clone.get_page_blocking(0, fault::flag::WRITE)),
+            Status::NOT_FOUND.into_raw()
+        );
+
+        // Adding a fault flag should cause the lookup to succeed.
+        expect_ok!(clone.get_page_blocking(0, fault::flag::WRITE | fault::flag::SW_FAULT));
     }
 
     /// Tests that decommitting from a contiguous VMO fails when loaning is disabled.

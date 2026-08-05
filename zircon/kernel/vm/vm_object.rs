@@ -12,7 +12,7 @@ use kalloc::AllocError;
 use vm_object_bindings as bindings;
 use zx_status::Status;
 
-pub use bindings::VmObject_EvictionHint as EvictionHint;
+pub use bindings::{Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint};
 
 /// The base vm object that holds a range of bytes of data
 ///
@@ -136,6 +136,60 @@ impl VmObject {
     pub fn get_mapping_cache_policy(&self) -> ArchMmuFlags {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
         unsafe { bindings::cpp_vm_object_get_mapping_cache_policy(self.as_raw()) }
+    }
+
+    /// Create a copy-on-write clone VMO at the page-aligned offset and length.
+    pub fn create_clone(
+        &self,
+        resizable: Resizability,
+        snapshot_type: SnapshotType,
+        offset: u64,
+        size: u64,
+        copy_name: bool,
+    ) -> Result<RefPtr<VmObject>, Status> {
+        let mut status = 0;
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let raw = unsafe {
+            bindings::cpp_vm_object_create_clone(
+                self.as_raw(),
+                resizable,
+                snapshot_type,
+                offset,
+                size,
+                copy_name,
+                &mut status,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: cpp_vm_object_create_clone returns valid VmObject pointers, or null.
+        let clone = unsafe { VmObject::from_raw(raw) };
+        Ok(clone.expect("clone returned ZX_OK; must be non-null"))
+    }
+
+    /// Helper variant of get_page that will retry the operation after waiting on a PageRequest if required.
+    pub fn get_page_blocking(&self, offset: u64, pf_flags: u32) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status =
+            unsafe { bindings::cpp_vm_object_get_page_blocking(self.as_raw(), offset, pf_flags) };
+        Status::ok(status)
+    }
+
+    /// Sets the user ID of the VMO.
+    pub fn set_user_id(&self, user_id: u64) {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_set_user_id(self.as_raw(), user_id) }
+    }
+
+    /// Returns the user ID of the VMO.
+    pub fn user_id(&self) -> u64 {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_user_id(self.as_raw()) }
+    }
+
+    /// Returns the user ID of the parent VMO, if any.
+    pub fn parent_user_id(&self) -> u64 {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_parent_user_id(self.as_raw()) }
     }
 }
 

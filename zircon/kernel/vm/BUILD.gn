@@ -266,6 +266,21 @@ kernel_bindgen_crate("pmm-bindings") {
   expect_lints = []
 }
 
+kernel_bindgen_crate("vm-fault-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/fault.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "vm_fault_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  var_allowlist = [ "VMM_PF_FLAG_.*" ]
+
+  edition = "2024"
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = [ "non_camel_case_types" ]
+}
+
 kernel_bindgen_crate("vm-object-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_object_ffi.h" ]
@@ -289,9 +304,16 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_write",
     "cpp_vm_object_hint_range",
     "cpp_vm_object_get_mapping_cache_policy",
+    "cpp_vm_object_create_clone",
+    "cpp_vm_object_get_page_blocking",
+    "cpp_vm_object_set_user_id",
+    "cpp_vm_object_user_id",
+    "cpp_vm_object_parent_user_id",
   ]
   type_allowlist = [
     "EvictionHint",
+    "Resizability",
+    "SnapshotType",
     "VmObject",
   ]
   type_blocklist = [
@@ -311,6 +333,8 @@ kernel_bindgen_crate("vm-object-bindings") {
   additional_bindgen_flags = [
     "--opaque-type=VmObject",
     "--rustified-enum=VmObject_EvictionHint",
+    "--rustified-enum=Resizability",
+    "--rustified-enum=SnapshotType",
     "--no-recursive-allowlist",
     "--blocklist-function=VmObject_.*",
   ]
@@ -415,6 +439,7 @@ kernel_rust_mod("vm-rs") {
   source_root = "mod.rs"
   sources = [
     "arch_vm_aspace.rs",
+    "fault.rs",
     "mod.rs",
     "page.rs",
     "page_state.rs",
@@ -438,6 +463,7 @@ kernel_rust_mod("vm-rs") {
     ":scanner-bindings",
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",
+    ":vm-fault-bindings",
     ":vm-object-bindings",
     ":vm-object-paged-bindings",
     "//sdk/rust/zx-status",
