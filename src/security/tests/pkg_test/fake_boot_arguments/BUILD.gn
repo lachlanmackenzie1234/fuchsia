@@ -16,6 +16,7 @@ rustc_binary("fake_boot_arguments-binary") {
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
+    "//sdk/rust/zbi",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",

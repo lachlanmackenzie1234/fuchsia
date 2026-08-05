@@ -4,11 +4,12 @@
 
 use anyhow::Result;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runtime as fruntime;
 use fuchsia_component::runtime::{Data, DataValue, Dictionary, DictionaryRouterReceiver};
 use futures::{FutureExt as _, StreamExt as _};
 use log::info;
 use std::sync::Arc;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_runtime as fruntime};
 
 static PKGFS_BOOT_ARG_VALUE_PREFIX: &'static str = "bin/pkgsvr+";
 
@@ -81,9 +82,6 @@ async fn main() {
     .await;
 }
 
-/// Identifier for ramdisk storage. Defined in sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
-const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
-
 // Mocks for fshost, from https://cs.opensource.google/fuchsia/fuchsia/+/main:src/storage/fshost/integration/src/mocks.rs
 // fshost uses exactly one boot item - it checks to see if there is an item of type
 // ZBI_TYPE_STORAGE_RAMDISK. If it's there, it's a vmo that represents a ramdisk version of the
@@ -95,7 +93,7 @@ async fn run_boot_items(
     while let Some(request) = stream.next().await {
         match request.unwrap() {
             fidl_fuchsia_boot::ItemsRequest::Get { type_, extra, responder } => {
-                assert_eq!(type_, ZBI_TYPE_STORAGE_RAMDISK);
+                assert_eq!(type_, zbi::Type::StorageRamdisk as u32);
                 assert_eq!(extra, 0);
                 let response_vmo = vmo.as_ref().map(|vmo| {
                     vmo.create_child(zx::VmoChildOptions::SLICE, 0, vmo.get_size().unwrap())
@@ -104,7 +102,7 @@ async fn run_boot_items(
                 responder.send(response_vmo, 0).unwrap();
             }
             fidl_fuchsia_boot::ItemsRequest::Get2 { type_, extra, responder } => {
-                assert_eq!(type_, ZBI_TYPE_STORAGE_RAMDISK);
+                assert_eq!(type_, zbi::Type::StorageRamdisk as u32);
                 assert_eq!((*extra.unwrap()).n, 0);
                 responder.send(Ok(Vec::new())).unwrap();
             }
