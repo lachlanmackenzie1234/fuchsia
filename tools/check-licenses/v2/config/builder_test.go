@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -92,6 +93,18 @@ func TestBuilder_Assemble(t *testing.T) {
 	// Test the "default.json" exception allows missing bug field
 	os.WriteFile(filepath.Join(vendorConfigs, "projects", "default.json"), vendorAllowBytes, 0644)
 
+	v2ConfigDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "v2")
+	if err := os.MkdirAll(v2ConfigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	rootConfigBytes, _ := json.Marshal(ConfigFile{
+		Includes: []string{
+			"tools/check-licenses/assets",
+			"vendor/google/tools/check-licenses/assets",
+		},
+	})
+	os.WriteFile(filepath.Join(v2ConfigDir, "config.json"), rootConfigBytes, 0644)
+
 	// 3. Run the Builder
 	builder := NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
@@ -107,18 +120,18 @@ func TestBuilder_Assemble(t *testing.T) {
 	}
 
 	expectedExts := map[string]bool{".cc": true, ".rs": true}
-	if !reflect.DeepEqual(config.TargetExtensions, expectedExts) {
-		t.Errorf("Expected extensions %v, got %v", expectedExts, config.TargetExtensions)
+	if !reflect.DeepEqual(config.Classify.TargetExtensions, expectedExts) {
+		t.Errorf("Expected extensions %v, got %v", expectedExts, config.Classify.TargetExtensions)
 	}
 
 	expectedCopyExts := map[string]bool{".cc": true, ".py": true}
-	if !reflect.DeepEqual(config.CopyrightExtensions, expectedCopyExts) {
-		t.Errorf("Expected copyright extensions %v, got %v", expectedCopyExts, config.CopyrightExtensions)
+	if !reflect.DeepEqual(config.Validate.CopyrightExtensions, expectedCopyExts) {
+		t.Errorf("Expected copyright extensions %v, got %v", expectedCopyExts, config.Validate.CopyrightExtensions)
 	}
 
 	logicalPath := filepath.Join("third_party", "foo")
-	if config.OutOfTreeReadmes[logicalPath] != readmePath {
-		t.Errorf("Expected OutOfTreeReadmes[%q] = %q, got %q", logicalPath, readmePath, config.OutOfTreeReadmes[logicalPath])
+	if config.Boundary.OutOfTreeReadmes[logicalPath] != readmePath {
+		t.Errorf("Expected OutOfTreeReadmes[%q] = %q, got %q", logicalPath, readmePath, config.Boundary.OutOfTreeReadmes[logicalPath])
 	}
 
 	if cat := config.CategoryForLicense("GPL-2.0"); cat != "Restricted" {
@@ -128,7 +141,7 @@ func TestBuilder_Assemble(t *testing.T) {
 		t.Errorf("Expected CategoryForLicense('Nonexistent') = 'Uncategorized', got %q", cat)
 	}
 
-	if _, ok := config.PolicyExceptions["AllProjectsMustHaveALicense"]["vendor/google/secret_project"]; !ok {
+	if _, ok := config.Validate.PolicyExceptions["AllProjectsMustHaveALicense"]["vendor/google/secret_project"]; !ok {
 		t.Errorf("Expected vendor project to be in the policy exceptions list")
 	}
 
@@ -203,7 +216,7 @@ func TestBuilder_LoadManifests(t *testing.T) {
 	}
 
 	for path, expectedName := range expectedMappings {
-		if name, ok := config.ManifestProjectNames[path]; !ok || name != expectedName {
+		if name, ok := config.Boundary.ManifestProjectNames[path]; !ok || name != expectedName {
 			t.Errorf("Expected ManifestProjectNames[%q] = %q, got %q", path, expectedName, name)
 		}
 	}
@@ -228,5 +241,42 @@ func TestBuilder_LoadManifests(t *testing.T) {
 		if got := config.IsPrivateProject(tc.path); got != tc.isPrivate {
 			t.Errorf("IsPrivateProject(%q) = %v, want %v", tc.path, got, tc.isPrivate)
 		}
+		expectedAssetRoot := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets")
+		if tc.isPrivate {
+			expectedAssetRoot = filepath.Join(fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets")
+		}
+		if gotRoot := config.AssetRootFor(tc.path); gotRoot != expectedAssetRoot {
+			t.Errorf("AssetRootFor(%q) = %q, want %q", tc.path, gotRoot, expectedAssetRoot)
+		}
+		expectedConfigRoot := filepath.Join(expectedAssetRoot, "configs")
+		if gotRoot := config.ConfigRootFor(tc.path); gotRoot != expectedConfigRoot {
+			t.Errorf("ConfigRootFor(%q) = %q, want %q", tc.path, gotRoot, expectedConfigRoot)
+		}
+		expectedReadmeRoot := filepath.Join(expectedAssetRoot, "readmes")
+		if gotRoot := config.ReadmeRootFor(tc.path); gotRoot != expectedReadmeRoot {
+			t.Errorf("ReadmeRootFor(%q) = %q, want %q", tc.path, gotRoot, expectedReadmeRoot)
+		}
+	}
+
+	expectedRootReadme := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "readmes", "README.fuchsia")
+	if gotPath := config.RootReadmePath(); gotPath != expectedRootReadme {
+		t.Errorf("RootReadmePath() = %q, want %q", gotPath, expectedRootReadme)
+	}
+}
+
+// TestMasterConfig_ResolveReadmeWritePath tests redirection of prebuilt README.fuchsia writes to virtual asset paths.
+func TestMasterConfig_ResolveReadmeWritePath(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := NewMasterConfig(tempDir)
+	projRoot := filepath.Join(tempDir, "prebuilt", "third_party", "testproj")
+	readmePath := filepath.Join(projRoot, "README.fuchsia")
+
+	writePath, err := cfg.ResolveReadmeWritePath(projRoot, readmePath)
+	if err != nil {
+		t.Fatalf("ResolveReadmeWritePath() error = %v", err)
+	}
+	expectedSuffix := filepath.Join("tools", "check-licenses", "assets", "readmes", "prebuilt", "third_party", "testproj", "README.fuchsia")
+	if !strings.HasSuffix(writePath, expectedSuffix) {
+		t.Errorf("Expected writePath to have suffix %q, got %q", expectedSuffix, writePath)
 	}
 }

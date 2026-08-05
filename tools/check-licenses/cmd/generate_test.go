@@ -24,7 +24,11 @@ func TestCustomClassifier_Run(t *testing.T) {
 	os.MkdirAll(copyrightPatternDir, 0755)
 	os.WriteFile(filepath.Join(copyrightPatternDir, "fuchsia.txt"), []byte("// Copyright 2026 The Fuchsia Authors. All rights reserved.\n"), 0644)
 
-	baseClassifier, err := classify.NewClassifier(0.8, []string{patternsDir}, map[string]bool{".cc": true})
+	baseClassifier, err := classify.NewClassifier(classify.Config{
+		Threshold:        0.8,
+		PatternDirs:      []string{patternsDir},
+		TargetExtensions: map[string]bool{".cc": true},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,7 @@ import (
 
 func TestReadmeCommand_Format(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
 	// Messy unformatted content
@@ -67,6 +68,7 @@ Description:
 
 func TestReadmeCommand_Check(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
 	// Clean, canonical content
@@ -131,6 +133,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 
 func TestReadmeCommand_Stdout(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
 	// Messy content

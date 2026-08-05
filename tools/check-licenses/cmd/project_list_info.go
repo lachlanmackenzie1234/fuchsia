@@ -61,7 +61,7 @@ func (c *ProjectListCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	}
 
 	// Also add out-of-tree readmes!
-	for logicalPath, physicalPath := range config.OutOfTreeReadmes {
+	for logicalPath, physicalPath := range config.Boundary.OutOfTreeReadmes {
 		absLogicalPath := filepath.Join(fuchsiaDir, logicalPath)
 		if strings.HasPrefix(absLogicalPath, absDir) || absLogicalPath == absDir {
 			readmes, _ := readme.ParseFile(physicalPath)
@@ -131,7 +131,7 @@ func (c *ProjectInfoCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	}
 	config := builder.Config
 
-	r, readmePath, err := readme.FindProjectReadme(absTarget, fuchsiaDir, config.OutOfTreeReadmes)
+	r, readmePath, err := readme.FindProjectReadme(absTarget, fuchsiaDir, config.Boundary.OutOfTreeReadmes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to find project README: %v\n", err)
 		return subcommands.ExitFailure
@@ -143,7 +143,7 @@ func (c *ProjectInfoCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 
 	var logicalRoot string
 	isVirtual := false
-	for logPath, physPath := range config.OutOfTreeReadmes {
+	for logPath, physPath := range config.Boundary.OutOfTreeReadmes {
 		if physPath == readmePath {
 			logicalRoot = filepath.Join(fuchsiaDir, logPath)
 			isVirtual = true
@@ -174,10 +174,10 @@ func (c *ProjectInfoCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	readmeCache := make(map[string]*readmeResult)
 	activePolicies := make(map[string]v2config.RuleMetadata)
 	var activePolicyNames []string
-	for policyName, paths := range config.PolicyExceptions {
+	for policyName, paths := range config.Validate.PolicyExceptions {
 		for p, meta := range paths {
 			cleanP := strings.TrimPrefix(p, "//")
-			if belongsToProject(cleanP, relRoot, fuchsiaDir, config.OutOfTreeReadmes, readmeCache) {
+			if belongsToProject(cleanP, relRoot, fuchsiaDir, config.Boundary.OutOfTreeReadmes, readmeCache) {
 				activePolicies[policyName] = meta
 				activePolicyNames = append(activePolicyNames, policyName)
 				break
@@ -188,10 +188,10 @@ func (c *ProjectInfoCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 
 	allowedLicenses := make(map[string]v2config.RuleMetadata)
 	var allowedLicenseNames []string
-	for licenseID, paths := range config.AllowedLicenses {
+	for licenseID, paths := range config.Validate.AllowedLicenses {
 		for p, meta := range paths {
 			cleanP := strings.TrimPrefix(p, "//")
-			if belongsToProject(cleanP, relRoot, fuchsiaDir, config.OutOfTreeReadmes, readmeCache) {
+			if belongsToProject(cleanP, relRoot, fuchsiaDir, config.Boundary.OutOfTreeReadmes, readmeCache) {
 				allowedLicenses[licenseID] = meta
 				allowedLicenseNames = append(allowedLicenseNames, licenseID)
 				break

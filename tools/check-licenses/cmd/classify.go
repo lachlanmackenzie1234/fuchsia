@@ -53,7 +53,10 @@ func (c *ClassifyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	// Initialize classifier
 	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
 	// We don't filter extensions here since the user explicitly asked to classify this file.
-	classifier, err := classify.NewClassifier(0.8, []string{patternsDir}, nil)
+	classifier, err := classify.NewClassifier(classify.Config{
+		Threshold:   0.8,
+		PatternDirs: []string{patternsDir},
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure

@@ -53,8 +53,7 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	}
 	config := builder.Config
 
-	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
-	classifier, err := classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	classifier, err := classify.NewClassifier(config.Classify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure
@@ -80,10 +79,10 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 		if info.IsDir() {
 			projectRoot = absPath
 		} else {
-			r, bestReadmePath, err := readme.FindProjectReadme(absPath, fuchsiaDir, config.OutOfTreeReadmes)
+			r, bestReadmePath, err := readme.FindProjectReadme(absPath, fuchsiaDir, config.Boundary.OutOfTreeReadmes)
 			if err == nil && bestReadmePath != "" && r != nil {
 				logicalDir := filepath.Dir(bestReadmePath)
-				for logPath, physPath := range config.OutOfTreeReadmes {
+				for logPath, physPath := range config.Boundary.OutOfTreeReadmes {
 					if physPath == bestReadmePath {
 						logicalDir = filepath.Join(fuchsiaDir, logPath)
 						break

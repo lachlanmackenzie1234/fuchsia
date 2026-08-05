@@ -114,7 +114,7 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 	if err := builder.Assemble(); err != nil {
 		return "", fmt.Errorf("failed to assemble config: %w", err)
 	}
-	if list, ok := builder.Config.AllowedLicenses[licenseName]; ok {
+	if list, ok := builder.Config.Validate.AllowedLicenses[licenseName]; ok {
 		if _, exists := list[projectPath]; exists {
 			fmt.Printf("Project '%s' already has an allowlist entry for '%s'. Nothing to do.\n", projectPath, licenseName)
 			return "", nil

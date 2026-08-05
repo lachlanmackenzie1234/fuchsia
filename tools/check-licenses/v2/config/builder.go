@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -27,7 +28,6 @@ func NewBuilder(fuchsiaDir string) *Builder {
 		Config: NewMasterConfig(fuchsiaDir),
 		seen:   make(map[string]bool),
 	}
-	b.Config.PatternsDir = filepath.Join(b.Config.FuchsiaDir, "tools", "check-licenses", "assets", "patterns")
 	return b
 }
 
@@ -40,14 +40,22 @@ func (b *Builder) Assemble() error {
 
 	rootConfig := filepath.Join(b.Config.FuchsiaDir, "tools", "check-licenses", "v2", "config.json")
 	if _, err := os.Stat(rootConfig); os.IsNotExist(err) {
-		// If the root config file is not present, return cleanly.
-		b.Config.Validate.OutOfTreeReadmes = b.Config.Discover.OutOfTreeReadmes
-		return nil
+		return fmt.Errorf("root config file not found: %s", rootConfig)
 	}
 	err := b.parseConfigFile(rootConfig)
 	filepath.WalkDir(b.Config.FuchsiaDir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
+		}
+		slashPath := filepath.ToSlash(path)
+		if idx := strings.Index(slashPath, "/allowed_licenses/"); idx != -1 {
+			subParts := strings.Split(slashPath[idx+len("/allowed_licenses/"):], "/")
+			if len(subParts) >= 2 {
+				if b.Config.Classify.LicenseCategories == nil {
+					b.Config.Classify.LicenseCategories = make(map[string]string)
+				}
+				b.Config.Classify.LicenseCategories[subParts[1]] = subParts[0]
+			}
 		}
 		if b.Config.IsSkipped(path) {
 			if d.IsDir() {
@@ -58,17 +66,25 @@ func (b *Builder) Assemble() error {
 		if d.Name() == "README.fuchsia" {
 			rel, relErr := filepath.Rel(b.Config.FuchsiaDir, filepath.Dir(path))
 			if relErr == nil {
-				if b.Config.Discover.OutOfTreeReadmes == nil {
-					b.Config.Discover.OutOfTreeReadmes = make(map[string]string)
+				rel = filepath.ToSlash(rel)
+				logical := rel
+				logical = strings.TrimPrefix(logical, "vendor/google/tools/check-licenses/assets/readmes")
+				logical = strings.TrimPrefix(logical, "tools/check-licenses/assets/readmes")
+				logical = strings.TrimPrefix(logical, "/")
+				if logical == "" {
+					logical = "."
 				}
-				if _, exists := b.Config.Discover.OutOfTreeReadmes[rel]; !exists {
-					b.Config.Discover.OutOfTreeReadmes[rel] = path
+				if _, exists := b.Config.Boundary.OutOfTreeReadmes[logical]; !exists {
+					b.Config.Boundary.OutOfTreeReadmes[logical] = path
 				}
 			}
 		}
 		return nil
 	})
-	b.Config.Validate.OutOfTreeReadmes = b.Config.Discover.OutOfTreeReadmes
+	if err == nil {
+		b.Config.Report.OutOfTreeReadmes = b.Config.Boundary.OutOfTreeReadmes
+		b.Config.Report.MissingLicenseExceptions = b.Config.Validate.PolicyExceptions[validate.PolicyNoLicense]
+	}
 	return err
 }
 
@@ -96,7 +112,7 @@ func (b *Builder) walkDir(baseDir string) error {
 			if len(parts) > 1 {
 				logicalParts := parts[1 : len(parts)-1]
 				logicalPath := filepath.Clean(filepath.Join(logicalParts...))
-				b.Config.OutOfTreeReadmes[logicalPath] = path
+				b.Config.Boundary.OutOfTreeReadmes[logicalPath] = path
 			}
 			return nil
 		}
@@ -175,7 +191,6 @@ func (b *Builder) parseConfigFile(path string) error {
 			if !strings.HasPrefix(ext, ".") {
 				ext = "." + ext
 			}
-			b.Config.TargetExtensions[ext] = true
 			b.Config.Classify.TargetExtensions[ext] = true
 		}
 	}
@@ -186,7 +201,6 @@ func (b *Builder) parseConfigFile(path string) error {
 			if !strings.HasPrefix(ext, ".") {
 				ext = "." + ext
 			}
-			b.Config.CopyrightExtensions[ext] = true
 			b.Config.Validate.CopyrightExtensions[ext] = true
 		}
 	}
@@ -197,32 +211,40 @@ func (b *Builder) parseConfigFile(path string) error {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
 		for _, p := range barrier.Paths {
-			b.Config.Discover.BarrierPaths[p] = true
+			b.Config.Boundary.BarrierPaths[p] = true
 		}
 	}
 
 	// 4. Process PolicyExceptions
 	for checkName, entries := range f.PolicyExceptions {
-		if err := b.addRuleException(b.Config.PolicyExceptions, b.Config.Validate.PolicyExceptions, checkName, entries, path); err != nil {
+		if _, exists := b.Config.Validate.PolicyExceptions[checkName]; !exists {
+			b.Config.Validate.PolicyExceptions[checkName] = make(map[string]validate.RuleMetadata)
+		}
+
+		if err := b.addRuleException(b.Config.Validate.PolicyExceptions, checkName, entries, path); err != nil {
 			return err
 		}
 	}
 
 	// 5. Process AllowedLicenses
-	if b.Config.LicenseCategories == nil {
-		b.Config.LicenseCategories = make(map[string]string)
+	if b.Config.Classify.LicenseCategories == nil {
+		b.Config.Classify.LicenseCategories = make(map[string]string)
 	}
 	for licenseName, entries := range f.AllowedLicenses {
-		if _, known := b.Config.LicenseCategories[licenseName]; !known {
+		if _, exists := b.Config.Validate.AllowedLicenses[licenseName]; !exists {
+			b.Config.Validate.AllowedLicenses[licenseName] = make(map[string]validate.RuleMetadata)
+		}
+
+		if _, known := b.Config.Classify.LicenseCategories[licenseName]; !known {
 			slashPath := filepath.ToSlash(path)
 			if idx := strings.Index(slashPath, "/allowed_licenses/"); idx != -1 {
 				subParts := strings.Split(slashPath[idx+len("/allowed_licenses/"):], "/")
 				if len(subParts) >= 2 {
-					b.Config.LicenseCategories[licenseName] = subParts[0]
+					b.Config.Classify.LicenseCategories[licenseName] = subParts[0]
 				}
 			}
 		}
-		if err := b.addRuleException(b.Config.AllowedLicenses, b.Config.Validate.AllowedLicenses, licenseName, entries, path); err != nil {
+		if err := b.addRuleException(b.Config.Validate.AllowedLicenses, licenseName, entries, path); err != nil {
 			return err
 		}
 	}
@@ -239,11 +261,9 @@ func isBugRequired(configPath string) bool {
 	}
 }
 
-func (b *Builder) addRuleException(targetMap map[string]map[string]RuleMetadata, validateMap map[string]map[string]RuleMetadata, key string, entries []AllowlistEntry, path string) error {
-	for _, m := range []map[string]map[string]RuleMetadata{targetMap, validateMap} {
-		if _, exists := m[key]; !exists {
-			m[key] = make(map[string]RuleMetadata)
-		}
+func (b *Builder) addRuleException(targetMap map[string]map[string]RuleMetadata, key string, entries []AllowlistEntry, path string) error {
+	if _, exists := targetMap[key]; !exists {
+		targetMap[key] = make(map[string]RuleMetadata)
 	}
 	for _, entry := range entries {
 		if entry.Bug == "" && isBugRequired(path) {
@@ -257,7 +277,6 @@ func (b *Builder) addRuleException(targetMap map[string]map[string]RuleMetadata,
 				ConfigPath:  path,
 			}
 			targetMap[key][cleanPath] = meta
-			validateMap[key][cleanPath] = meta
 		}
 	}
 	return nil
@@ -322,9 +341,9 @@ func (b *Builder) LoadManifests() error {
 			addEntry := func(path, name string) {
 				if path != "" && name != "" {
 					cleanPath := filepath.Clean(path)
-					b.Config.ManifestProjectNames[cleanPath] = name
+					b.Config.Boundary.ManifestProjectNames[cleanPath] = name
 					if isPrivate {
-						b.Config.ManifestPrivateProjects[cleanPath] = true
+						b.Config.Boundary.ManifestPrivateProjects[cleanPath] = true
 					}
 				}
 			}

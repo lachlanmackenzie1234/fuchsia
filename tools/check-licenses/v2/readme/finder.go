@@ -8,8 +8,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sort"
-
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 )
 
 // ProjectInfo contains basic information about a discovered project.
@@ -20,7 +18,7 @@ type ProjectInfo struct {
 
 // DiscoverProjects walks down the directory tree from rootDir and returns
 // all projects found, respecting skip configs and all boundary file types.
-func DiscoverProjects(rootDir, fuchsiaDir string, config *v2config.MasterConfig) ([]ProjectInfo, error) {
+func DiscoverProjects(rootDir, fuchsiaDir string, config Config) ([]ProjectInfo, error) {
 	var projects []ProjectInfo
 
 	absRoot, err := filepath.Abs(rootDir)
@@ -33,7 +31,7 @@ func DiscoverProjects(rootDir, fuchsiaDir string, config *v2config.MasterConfig)
 			return nil // Continue on error
 		}
 
-		if config.IsSkipped(path) {
+		if config != nil && config.IsSkipped(path) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -41,8 +39,12 @@ func DiscoverProjects(rootDir, fuchsiaDir string, config *v2config.MasterConfig)
 		}
 
 		if d.IsDir() {
+			var outOfTree map[string]string
+			if config != nil {
+				outOfTree = config.OutOfTreeReadmes()
+			}
 			// Check if this directory is a project boundary!
-			isBoundary, bestPath, allReadmes, err := IsProjectBoundary(path, fuchsiaDir, config.OutOfTreeReadmes)
+			isBoundary, bestPath, allReadmes, err := IsProjectBoundary(path, fuchsiaDir, outOfTree)
 			if err != nil {
 				// Log or ignore? Let's ignore for now to match other commands.
 				return nil
@@ -52,7 +54,7 @@ func DiscoverProjects(rootDir, fuchsiaDir string, config *v2config.MasterConfig)
 				// We found a project!
 				// Compute logical path relative to fuchsiaDir
 				logicalDir := filepath.Dir(bestPath)
-				for logPath, physPath := range config.OutOfTreeReadmes {
+				for logPath, physPath := range outOfTree {
 					if physPath == bestPath {
 						logicalDir = filepath.Join(fuchsiaDir, logPath)
 						break

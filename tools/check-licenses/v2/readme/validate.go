@@ -8,23 +8,23 @@ import (
 	"path/filepath"
 	"strings"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
 )
 
 // Validate checks if the README.fuchsia file structures contain all required fields
 // and no unknown fields. It also verifies that referenced paths exist on disk.
 // Returns a slice of all encountered errors.
-func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config *v2config.MasterConfig) []error {
+func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config Config) []error {
 	readmeDir := filepath.Dir(readmeFilePath)
-	if config != nil && config.OutOfTreeReadmes != nil {
-		for logicalPath, physicalPath := range config.OutOfTreeReadmes {
+	if config != nil && config.OutOfTreeReadmes() != nil {
+		outOfTree := config.OutOfTreeReadmes()
+		for logicalPath, physicalPath := range outOfTree {
 			if filepath.Clean(physicalPath) == filepath.Clean(readmeFilePath) {
 				readmeDir = filepath.Join(fuchsiaDir, logicalPath)
 				break
 			}
 		}
-		IsProjectBoundary(readmeDir, fuchsiaDir, config.OutOfTreeReadmes)
+		IsProjectBoundary(readmeDir, fuchsiaDir, outOfTree)
 	}
 
 	relBaseDir, err := filepath.Rel(fuchsiaDir, readmeDir)
@@ -36,17 +36,13 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config *v2co
 	}
 
 	allowMissingLicense := false
-	if config != nil && config.PolicyExceptions != nil {
-		if list, ok := config.PolicyExceptions[v2config.PolicyCheckAllProjectsMustHaveALicense]; ok {
-			_, allowMissingLicense = list[relBaseDir]
-		}
+	if config != nil {
+		allowMissingLicense = config.HasPolicyException("AllProjectsMustHaveALicense", relBaseDir)
 	}
 
 	allowReadmeNeedsUpdate := false
-	if config != nil && config.PolicyExceptions != nil {
-		if list, ok := config.PolicyExceptions[v2config.CheckNameReadmeFuchsiaNeedsUpdate]; ok {
-			_, allowReadmeNeedsUpdate = list[relBaseDir]
-		}
+	if config != nil {
+		allowReadmeNeedsUpdate = config.HasPolicyException("ReadmeFuchsiaNeedsUpdate", relBaseDir)
 	}
 
 	if allowReadmeNeedsUpdate {

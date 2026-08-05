@@ -18,19 +18,15 @@ import (
 // buffers them, identifies project boundaries (via READMEs or Barriers),
 // and emits grouped Project structs.
 type Grouper struct {
-	FuchsiaDir        string
-	BarrierPaths      map[string]bool
-	OutOfTreeReadmes  map[string]string
-	FilesInReadmeOnly bool
+	FuchsiaDir string
+	Config     Config
 }
 
 // NewGrouper creates a new stateless boundary grouper.
-func NewGrouper(fuchsiaDir string, barrierPaths map[string]bool, outOfTreeReadmes map[string]string, filesInReadmeOnly bool) *Grouper {
+func NewGrouper(fuchsiaDir string, config Config) *Grouper {
 	return &Grouper{
-		FuchsiaDir:        fuchsiaDir,
-		BarrierPaths:      barrierPaths,
-		OutOfTreeReadmes:  outOfTreeReadmes,
-		FilesInReadmeOnly: filesInReadmeOnly,
+		FuchsiaDir: fuchsiaDir,
+		Config:     config,
 	}
 }
 
@@ -65,7 +61,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 		}
 
 		// Incorporate Virtual (Out-Of-Tree) READMEs from Config
-		for logicalPath, physicalPath := range g.OutOfTreeReadmes {
+		for logicalPath, physicalPath := range g.Config.OutOfTreeReadmes {
 			absLogicalDir := filepath.Join(g.FuchsiaDir, logicalPath)
 			physicalReadmes[absLogicalDir] = append(physicalReadmes[absLogicalDir], physicalPath)
 		}
@@ -116,9 +112,12 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			root := g.findProjectRoot(file, projectRoots)
 
 			if _, exists := projects[root]; !exists {
+				relRoot, _ := filepath.Rel(g.FuchsiaDir, root)
 				projects[root] = &pipeline.Project{
-					RootPath: root,
-					Files:    []pipeline.FileInfo{},
+					RootPath:     root,
+					Files:        []pipeline.FileInfo{},
+					ManifestName: g.Config.ManifestNameFor(relRoot),
+					IsPrivate:    g.Config.IsPrivateProject(relRoot),
 				}
 			}
 
@@ -165,7 +164,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 				}
 			}
 
-			if g.FilesInReadmeOnly && !listedInReadme {
+			if g.Config.FilesInReadmeOnly && !listedInReadme {
 				continue
 			}
 
@@ -225,11 +224,11 @@ func (g *Grouper) isBarrier(absDir string) bool {
 	}
 
 	slashRel := filepath.ToSlash(relPath)
-	if g.BarrierPaths[slashRel] || g.BarrierPaths[filepath.Base(slashRel)] {
+	if g.Config.BarrierPaths[slashRel] || g.Config.BarrierPaths[filepath.Base(slashRel)] {
 		return true
 	}
 
-	for barrier := range g.BarrierPaths {
+	for barrier := range g.Config.BarrierPaths {
 		if strings.HasSuffix(slashRel, "/"+barrier) {
 			return true
 		}

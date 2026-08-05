@@ -70,6 +70,7 @@ go_library(
 go_library(
     name = "v2_stages_report",
     srcs = [
+        "v2/stages/report/config.go",
         "v2/stages/report/report.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report",
@@ -117,7 +118,6 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_config",
         ":v2_pipeline",
         "//third_party/golibs:github.com/BurntSushi/toml",
         "//third_party/golibs:gopkg.in/yaml.v2",
@@ -135,8 +135,10 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
+        ":v2_stages_boundary",
         ":v2_stages_classify",
         ":v2_stages_discover",
+        ":v2_stages_report",
         ":v2_stages_validate",
     ],
 )
@@ -145,6 +147,7 @@ go_library(
     name = "v2_stages_boundary",
     srcs = [
         "v2/stages/boundary/boundary.go",
+        "v2/stages/boundary/config.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary",
     target_compatible_with = HOST_CONSTRAINTS,

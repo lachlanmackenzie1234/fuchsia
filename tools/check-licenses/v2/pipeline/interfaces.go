@@ -22,9 +22,10 @@ type FileInfo struct {
 
 // Project represents the output of the Project Boundary Stage (Grouper).
 type Project struct {
-	RootPath string
-	Files    []FileInfo
-	// Metadata...
+	RootPath     string
+	Files        []FileInfo
+	ManifestName string // Package name in repository manifest, if known
+	IsPrivate    bool   // True if project originates from a proprietary/private repository
 }
 
 // FilteredProject represents the output of the Build Graph Filtering Stage (Pruner).

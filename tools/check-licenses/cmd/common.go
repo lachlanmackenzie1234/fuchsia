@@ -106,8 +106,8 @@ func findProjectBasename(fuchsiaDir, targetPath string, config *v2config.MasterC
 	}
 
 	// Priority 1.5: Check Virtual Out-Of-Tree READMEs from MasterConfig
-	if config != nil && config.OutOfTreeReadmes != nil {
-		if virtualReadmePath, ok := config.OutOfTreeReadmes[cleanTargetPath]; ok {
+	if config != nil && config.Boundary.OutOfTreeReadmes != nil {
+		if virtualReadmePath, ok := config.Boundary.OutOfTreeReadmes[cleanTargetPath]; ok {
 			absVirtualPath := virtualReadmePath
 			if !filepath.IsAbs(absVirtualPath) {
 				absVirtualPath = filepath.Join(fuchsiaDir, virtualReadmePath)
@@ -121,11 +121,9 @@ func findProjectBasename(fuchsiaDir, targetPath string, config *v2config.MasterC
 	}
 
 	// Priority 2: Check Jiri Manifest mapping
-	if config != nil && config.ManifestProjectNames != nil {
-		for p := cleanTargetPath; p != "." && p != "/"; p = filepath.Dir(p) {
-			if name, ok := config.ManifestProjectNames[p]; ok {
-				return filepath.Base(name)
-			}
+	if config != nil {
+		if name := config.ManifestNameFor(cleanTargetPath); name != "" {
+			return filepath.Base(name)
 		}
 	}
 

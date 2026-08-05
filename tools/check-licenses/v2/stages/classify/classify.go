@@ -32,19 +32,21 @@ type Classifier struct {
 }
 
 // NewClassifier creates a new, state-free classifier worker.
-func NewClassifier(threshold float64, customPatternPaths []string, targetExtensions map[string]bool) (*Classifier, error) {
+func NewClassifier(config Config) (*Classifier, error) {
+	threshold := config.Threshold
 	if threshold == 0.0 {
 		threshold = 0.8 // default
 	}
 
 	engine := classifierLib.NewClassifier(threshold)
 
-	for _, path := range customPatternPaths {
+	for _, path := range config.PatternDirs {
 		if err := engine.LoadLicenses(path); err != nil {
 			return nil, fmt.Errorf("failed to load custom license patterns from %s: %w", path, err)
 		}
 	}
 
+	targetExtensions := config.TargetExtensions
 	if targetExtensions == nil {
 		targetExtensions = make(map[string]bool)
 	}

@@ -31,7 +31,10 @@ func TestCrawler_Run(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	crawler := NewCrawler(absTempDir, map[string]bool{"subdir_skipped": true}, map[string]bool{"skip_me": true})
+	crawler := NewCrawler(absTempDir, Config{
+		SkipPaths:    map[string]bool{"subdir_skipped": true},
+		SkipAnywhere: map[string]bool{"skip_me": true},
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

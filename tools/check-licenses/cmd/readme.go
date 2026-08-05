@@ -245,14 +245,14 @@ func (c *ReadmeListCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...i
 
 	var allReadmes []string
 
-	for _, physPath := range config.OutOfTreeReadmes {
+	for _, physPath := range config.Boundary.OutOfTreeReadmes {
 		rel, err := filepath.Rel(fuchsiaDir, physPath)
 		if err == nil {
 			allReadmes = append(allReadmes, rel)
 		}
 	}
 
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover)
 	rawPaths, err := discoverer.Run(ctx, []string{fuchsiaDir})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to crawl repository: %v\n", err)

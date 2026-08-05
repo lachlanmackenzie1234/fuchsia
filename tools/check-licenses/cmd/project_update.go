@@ -59,8 +59,7 @@ func (c *ProjectUpdateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ .
 	}
 	config := builder.Config
 
-	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
-	classifier, err := classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	classifier, err := classify.NewClassifier(config.Classify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure

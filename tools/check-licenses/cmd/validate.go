@@ -80,28 +80,28 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	log.Printf("Assembled configuration in %v", time.Since(startTime))
 
 	// 2. Instantiate Stages
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover)
 
-	grouper := v2boundary.NewGrouper(
-		fuchsiaDir,
-		config.Discover.BarrierPaths,
-		config.OutOfTreeReadmes,
-		p.filesInReadmeOnly,
-	)
+	boundaryCfg := config.Boundary
+	boundaryCfg.FilesInReadmeOnly = p.filesInReadmeOnly
+	grouper := v2boundary.NewGrouper(fuchsiaDir, boundaryCfg)
 
 	// Validate checks the entire tree, so we don't prune any targets based on the build graph.
 	// Passing nil to NewPruner makes it a no-op.
 	pruner := v2prune.NewPruner(nil)
 
-	classifier, err := v2classify.NewClassifier(0.8, []string{config.PatternsDir}, config.TargetExtensions)
+	classifier, err := v2classify.NewClassifier(config.Classify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
 	validator := v2validate.NewValidator(fuchsiaDir, config.Validate)
-	// Validate checks readmes but does not overwrite them, nor does it generate SPDX/NOTICE.
-	reporter := v2report.NewReporter(fuchsiaDir, p.outDir, true, false, false, config.OutOfTreeReadmes, config.Validate.PolicyExceptions[v2validate.PolicyNoLicense])
+	reportCfg := config.Report
+	reportCfg.VerifyReadmes = true
+	reportCfg.WriteReadmes = false
+	reportCfg.GenerateArtifacts = false
+	reporter := v2report.NewReporter(fuchsiaDir, p.outDir, reportCfg)
 
 	orchestrator := v2pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, reporter)
 
@@ -111,10 +111,10 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	}
 
 	var checkNames []string
-	for k := range config.PolicyExceptions {
+	for k := range config.Validate.PolicyExceptions {
 		checkNames = append(checkNames, k)
 	}
-	for k := range config.AllowedLicenses {
+	for k := range config.Validate.AllowedLicenses {
 		checkNames = append(checkNames, "AllowedLicenses_"+k)
 	}
 

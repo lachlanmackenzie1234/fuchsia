@@ -75,12 +75,13 @@ func (c *FixCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 	config := builder.Config
 
 	// 2. Instantiate Stages
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
-	grouper := v2boundary.NewGrouper(fuchsiaDir, config.Discover.BarrierPaths, config.OutOfTreeReadmes, false)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover)
+	boundaryCfg := config.Boundary
+	boundaryCfg.FilesInReadmeOnly = false
+	grouper := v2boundary.NewGrouper(fuchsiaDir, boundaryCfg)
 	pruner := v2prune.NewPruner(nil) // No build graph pruning during fix
 
-	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
-	classifier, err := v2classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	classifier, err := v2classify.NewClassifier(config.Classify)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure
@@ -118,7 +119,11 @@ type FixerRenderer struct {
 func (r *FixerRenderer) Run(ctx context.Context, files <-chan v2pipeline.ClassifiedFile, errors <-chan v2pipeline.ComplianceError) error {
 	// We need to run the standard Reporter logic to update READMEs
 	// but we'll wrap it so we can capture what it does.
-	reporter := v2report.NewReporter(r.FuchsiaDir, "", true, true, false, r.Config.OutOfTreeReadmes, r.Config.PolicyExceptions[v2config.PolicyCheckAllProjectsMustHaveALicense])
+	reportCfg := r.Config.Report
+	reportCfg.VerifyReadmes = true
+	reportCfg.WriteReadmes = true
+	reportCfg.GenerateArtifacts = false
+	reporter := v2report.NewReporter(r.FuchsiaDir, "", reportCfg)
 
 	// We'll collect all errors first
 	var errs []v2pipeline.ComplianceError

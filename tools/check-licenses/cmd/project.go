@@ -62,7 +62,7 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 	var updatedReadmes []*readme.Readme
 	var readmePath string
 
-	r, foundPath, err := readme.FindProjectReadme(absDir, fuchsiaDir, config.OutOfTreeReadmes)
+	r, foundPath, err := readme.FindProjectReadme(absDir, fuchsiaDir, config.Boundary.OutOfTreeReadmes)
 	if err == nil && foundPath != "" && r != nil {
 		readmePath = foundPath
 		originalReadmes, _ = readme.ParseFile(readmePath)
@@ -86,13 +86,15 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 		updatedReadmes = append(updatedReadmes, &clone)
 	}
 
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover)
 	rawPaths, err := discoverer.Run(ctx, []string{absDir})
 	if err != nil {
 		return nil, nil, "", nil, nil, nil, fmt.Errorf("failed to crawl directory: %w", err)
 	}
 
-	grouper := v2boundary.NewGrouper(fuchsiaDir, config.Discover.BarrierPaths, config.OutOfTreeReadmes, false)
+	boundaryCfg := config.Boundary
+	boundaryCfg.FilesInReadmeOnly = false
+	grouper := v2boundary.NewGrouper(fuchsiaDir, boundaryCfg)
 	projectsChan, err := grouper.Run(ctx, rawPaths)
 	if err != nil {
 		return nil, nil, "", nil, nil, nil, fmt.Errorf("failed to group projects: %w", err)
@@ -113,7 +115,7 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 	var filesToClassify []pipeline.FileInfo
 	for _, f := range targetProject.Files {
 		ext := filepath.Ext(f.Path)
-		if len(config.TargetExtensions) > 0 && !config.TargetExtensions[ext] && !classify.IsLicenseFilename(f.Path) {
+		if len(config.Classify.TargetExtensions) > 0 && !config.Classify.TargetExtensions[ext] && !classify.IsLicenseFilename(f.Path) {
 			continue
 		}
 		filesToClassify = append(filesToClassify, pipeline.FileInfo{

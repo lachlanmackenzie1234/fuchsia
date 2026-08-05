@@ -50,7 +50,11 @@ int main() { return 0; }`)
 		t.Fatal(err)
 	}
 
-	classifier, err := NewClassifier(0.8, []string{tempDir}, map[string]bool{".cc": true})
+	classifier, err := NewClassifier(Config{
+		Threshold:        0.8,
+		PatternDirs:      []string{tempDir},
+		TargetExtensions: map[string]bool{".cc": true},
+	})
 	if err != nil {
 		t.Fatalf("Failed to create classifier: %v", err)
 	}

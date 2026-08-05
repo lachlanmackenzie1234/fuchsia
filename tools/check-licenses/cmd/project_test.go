@@ -24,8 +24,20 @@ const mockBSDLicenseText = `Redistribution and use in source and binary forms, w
 	3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
 	THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.`
 
+func scaffoldV2Config(t *testing.T, tempDir string) {
+	t.Helper()
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	if err := os.MkdirAll(filepath.Dir(seedConfig), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(seedConfig, []byte(`{"includes":["tools/check-licenses/assets","vendor/google/tools/check-licenses/assets"]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProjectCommand_Check(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 
 	// 1. Scaffold the fake assets/patterns directory so the v2 Classifier can load it
 	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
@@ -99,6 +111,7 @@ func TestProjectCommand_Check(t *testing.T) {
 
 func TestProjectCommand_Update(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 
 	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
 	if err := os.MkdirAll(mitPatternDir, 0755); err != nil {
@@ -164,6 +177,7 @@ func TestProjectCommand_Update(t *testing.T) {
 
 func TestProjectCommand_ListAndInfo(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 
 	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
 
@@ -287,6 +301,7 @@ func TestBelongsToProject(t *testing.T) {
 
 func TestProjectCommand_Update_UnclassifiedLicense(t *testing.T) {
 	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
 
 	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
 

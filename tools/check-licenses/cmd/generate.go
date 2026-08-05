@@ -74,15 +74,16 @@ func (p *GenerateCommand) executeV2Pipeline(target string) error {
 	}
 
 	// 3. Instantiate Stages
-	discoverer := v2discover.NewCrawler(p.fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(p.fuchsiaDir, config.Discover)
 
 	// Pass true for filesInReadmeOnly to match current behavior!
-	grouper := v2boundary.NewGrouper(p.fuchsiaDir, config.Discover.BarrierPaths, config.OutOfTreeReadmes, true)
+	boundaryCfg := config.Boundary
+	boundaryCfg.FilesInReadmeOnly = true
+	grouper := v2boundary.NewGrouper(p.fuchsiaDir, boundaryCfg)
 
 	pruner := v2prune.NewPruner(validFiles)
 
-	patternsDir := filepath.Join(p.fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
-	baseClassifier, err := v2classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	baseClassifier, err := v2classify.NewClassifier(config.Classify)
 	if err != nil {
 		return fmt.Errorf("failed to initialize classifier: %w", err)
 	}
@@ -95,8 +96,11 @@ func (p *GenerateCommand) executeV2Pipeline(target string) error {
 
 	validator := v2validate.NewValidator(p.fuchsiaDir, config.Validate)
 
-	// Reporter: p.overwriteReadmeFiles is passed!
-	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, p.overwriteReadmeFiles, true, config.OutOfTreeReadmes, config.Validate.PolicyExceptions[v2validate.PolicyNoLicense])
+	reportCfg := config.Report
+	reportCfg.VerifyReadmes = false
+	reportCfg.WriteReadmes = p.overwriteReadmeFiles
+	reportCfg.GenerateArtifacts = true
+	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, reportCfg)
 
 	orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, reporter)
 

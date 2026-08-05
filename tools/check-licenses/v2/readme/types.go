@@ -10,3 +10,10 @@ import (
 
 type Readme = readme_fuchsia.Readme
 type UnknownField = readme_fuchsia.UnknownField
+
+// Config defines the configuration methods needed by the readme package.
+type Config interface {
+	IsSkipped(absPath string) bool
+	OutOfTreeReadmes() map[string]string
+	HasPolicyException(policyName string, relPath string) bool
+}

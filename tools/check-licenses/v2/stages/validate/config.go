@@ -28,7 +28,6 @@ type Config struct {
 	PolicyExceptions    map[string]map[string]RuleMetadata
 	AllowedLicenses     map[string]map[string]RuleMetadata
 	CopyrightExtensions map[string]bool
-	OutOfTreeReadmes    map[string]string
 }
 
 var validPolicyChecks = map[string]bool{

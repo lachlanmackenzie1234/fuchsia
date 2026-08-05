@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
@@ -23,37 +25,20 @@ type MasterConfig struct {
 	// FuchsiaDir is the authoritative absolute root path of the workspace.
 	FuchsiaDir string
 
-	// --- LEGACY FIELDS FOR INCREMENTAL MIGRATION ---
-	TargetExtensions    map[string]bool
-	CopyrightExtensions map[string]bool
-	OutOfTreeReadmes    map[string]string
-	PatternsDir         string
-	PolicyExceptions    map[string]map[string]validate.RuleMetadata
-	AllowedLicenses     map[string]map[string]validate.RuleMetadata
-
 	// --- Injected into Discoverer (Stage 1) ---
-
 	Discover discover.Config
 
-	// --- Injected into Classifier (Stage 4) ---
+	// --- Injected into Grouper (Stage 2) ---
+	Boundary boundary.Config
 
+	// --- Injected into Classifier (Stage 4) ---
 	Classify classify.Config
 
 	// --- Injected into Validator (Stage 5) ---
-
-	// Validate holds the configuration for the validator stage.
 	Validate validate.Config
 
-	// ManifestProjectNames maps a project's filesystem path to its name in the manifest.
-	// Key: Project path (e.g., "prebuilt/media/firmware/amlogic-decoder")
-	// Value: Package name (e.g., "fuchsia_internal/firmware/amlogic-video")
-	ManifestProjectNames map[string]string
-
-	// ManifestPrivateProjects tracks if a project path was found in a private manifest.
-	ManifestPrivateProjects map[string]bool
-
-	// LicenseCategories maps a license name (e.g., "GPL-2.0") to its policy category ("Restricted").
-	LicenseCategories map[string]string
+	// --- Injected into Reporter (Stage 6) ---
+	Report report.Config
 }
 
 func resolveFuchsiaDir(dir string) string {
@@ -72,28 +57,34 @@ func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
 	if c == nil {
 		return false
 	}
-	projectPath = filepath.Clean(projectPath)
-	slashPath := filepath.ToSlash(projectPath)
+	return c.Boundary.IsPrivateProject(projectPath)
+}
 
-	parts := strings.Split(strings.TrimPrefix(slashPath, "/"), "/")
-	if len(parts) > 0 && parts[0] == "vendor" {
-		return true
+// ManifestNameFor returns the manifest package name for a given project path.
+func (c *MasterConfig) ManifestNameFor(projectPath string) string {
+	if c == nil {
+		return ""
 	}
+	return c.Boundary.ManifestNameFor(projectPath)
+}
 
-	for p := projectPath; p != "." && p != "/" && p != filepath.Dir(p); p = filepath.Dir(p) {
-		// 1. Check if marked private from integration folder
-		if c.ManifestPrivateProjects[p] {
-			return true
-		}
-
-		// 2. Check manifest name prefix
-		if name, ok := c.ManifestProjectNames[p]; ok {
-			if strings.HasPrefix(name, "fuchsia_internal/") || strings.HasPrefix(name, "vendor/") {
-				return true
-			}
-		}
+// OutOfTreeReadmes returns the boundary stage out-of-tree readmes map.
+func (c *MasterConfig) OutOfTreeReadmes() map[string]string {
+	if c == nil {
+		return nil
 	}
+	return c.Boundary.OutOfTreeReadmes
+}
 
+// HasPolicyException returns true if relPath is listed in the given policy exceptions map.
+func (c *MasterConfig) HasPolicyException(policyName string, relPath string) bool {
+	if c == nil || c.Validate.PolicyExceptions == nil {
+		return false
+	}
+	if list, ok := c.Validate.PolicyExceptions[policyName]; ok {
+		_, exists := list[relPath]
+		return exists
+	}
 	return false
 }
 
@@ -169,7 +160,7 @@ func (c *MasterConfig) ResolveReadmeWritePath(projectRoot, currentReadmePath str
 		}
 		return writePath, nil
 	}
-	if physPath := c.Discover.OutOfTreeReadmes[relRoot]; physPath != "" {
+	if physPath := c.Boundary.OutOfTreeReadmes[relRoot]; physPath != "" {
 		absPhys := physPath
 		if !filepath.IsAbs(absPhys) {
 			absPhys = filepath.Join(c.FuchsiaDir, absPhys)
@@ -215,9 +206,7 @@ func (c *MasterConfig) ResolveAndValidatePath(inputPath string) (string, error) 
 // for the given license name, or "Uncategorized" if the license is unapproved or unknown.
 func (c *MasterConfig) CategoryForLicense(licenseName string) string {
 	if c != nil {
-		if cat := c.LicenseCategories[licenseName]; cat != "" && cat != "allowed_licenses" {
-			return cat
-		}
+		return c.Classify.CategoryForLicense(licenseName)
 	}
 	return "Uncategorized"
 }
@@ -233,26 +222,16 @@ func NewMasterConfig(fuchsiaDir string) *MasterConfig {
 		Discover: discover.Config{
 			SkipPaths:    make(map[string]bool),
 			SkipAnywhere: make(map[string]bool),
-			BarrierPaths: make(map[string]bool),
 		},
+		Boundary: boundary.NewConfig(),
 
-		Classify: classify.Config{
-			TargetExtensions: make(map[string]bool),
-		},
+		Classify: classify.NewConfig(),
 		Validate: validate.Config{
 			PolicyExceptions:    make(map[string]map[string]validate.RuleMetadata),
 			AllowedLicenses:     make(map[string]map[string]validate.RuleMetadata),
 			CopyrightExtensions: make(map[string]bool),
-			OutOfTreeReadmes:    make(map[string]string),
 		},
-		PolicyExceptions:        make(map[string]map[string]validate.RuleMetadata),
-		AllowedLicenses:         make(map[string]map[string]validate.RuleMetadata),
-		ManifestProjectNames:    make(map[string]string),
-		ManifestPrivateProjects: make(map[string]bool),
-		LicenseCategories:       make(map[string]string),
-		TargetExtensions:        make(map[string]bool),
-		CopyrightExtensions:     make(map[string]bool),
-		OutOfTreeReadmes:        make(map[string]string),
+		Report: report.NewConfig(),
 	}
 	c.Classify.PatternDirs = []string{
 		filepath.Join(c.AssetRootFor(""), "patterns"),

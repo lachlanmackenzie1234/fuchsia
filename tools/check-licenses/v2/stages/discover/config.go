@@ -10,7 +10,5 @@ type Config struct {
 	SkipPaths map[string]bool
 
 	// SkipAnywhere are basename patterns to ignore anywhere (e.g., ".git").
-	SkipAnywhere     map[string]bool
-	BarrierPaths     map[string]bool
-	OutOfTreeReadmes map[string]string
+	SkipAnywhere map[string]bool
 }

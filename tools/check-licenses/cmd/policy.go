@@ -122,7 +122,7 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description stri
 	if err := builder.Assemble(); err != nil {
 		return "", fmt.Errorf("failed to assemble config: %w", err)
 	}
-	if list, ok := builder.Config.PolicyExceptions[checkName]; ok {
+	if list, ok := builder.Config.Validate.PolicyExceptions[checkName]; ok {
 		if _, exists := list[targetPath]; exists {
 			fmt.Printf("Path '%s' already has a policy exception for '%s'. Nothing to do.\n", targetPath, checkName)
 			return "", nil

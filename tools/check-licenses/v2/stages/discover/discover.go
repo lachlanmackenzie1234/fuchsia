@@ -25,7 +25,7 @@ type Crawler struct {
 }
 
 // NewCrawler creates a new stateless crawler.
-func NewCrawler(fuchsiaDir string, skipPaths map[string]bool, skipAnywhere map[string]bool) *Crawler {
+func NewCrawler(fuchsiaDir string, config Config) *Crawler {
 	absFuchsiaDir, err := filepath.Abs(fuchsiaDir)
 	if err == nil {
 		fuchsiaDir = absFuchsiaDir
@@ -33,8 +33,8 @@ func NewCrawler(fuchsiaDir string, skipPaths map[string]bool, skipAnywhere map[s
 
 	return &Crawler{
 		FuchsiaDir:   fuchsiaDir,
-		SkipPaths:    skipPaths,
-		SkipAnywhere: skipAnywhere,
+		SkipPaths:    config.SkipPaths,
+		SkipAnywhere: config.SkipAnywhere,
 	}
 }
 
@@ -57,7 +57,6 @@ func (c *Crawler) isSkipped(absPath string) bool {
 			return true
 		}
 	}
-
 	return false
 }
 

@@ -26,25 +26,17 @@ import (
 // errors are encountered, otherwise it deduplicates licenses and generates the final
 // artifacts (NOTICE.txt, SPDX.json).
 type Reporter struct {
-	FuchsiaDir               string
-	OutDir                   string
-	VerifyReadmes            bool
-	WriteReadmes             bool
-	GenerateArtifacts        bool
-	OutOfTreeReadmes         map[string]string
-	MissingLicenseExceptions map[string]validate.RuleMetadata
+	FuchsiaDir string
+	OutDir     string
+	Config     Config
 }
 
 // NewReporter creates a new stateful Reporter that writes to the given outDir.
-func NewReporter(fuchsiaDir, outDir string, verifyReadmes, writeReadmes, generateArtifacts bool, outOfTreeReadmes map[string]string, missingLicenseExceptions map[string]validate.RuleMetadata) *Reporter {
+func NewReporter(fuchsiaDir, outDir string, config Config) *Reporter {
 	return &Reporter{
-		FuchsiaDir:               fuchsiaDir,
-		OutDir:                   outDir,
-		VerifyReadmes:            verifyReadmes,
-		WriteReadmes:             writeReadmes,
-		GenerateArtifacts:        generateArtifacts,
-		OutOfTreeReadmes:         outOfTreeReadmes,
-		MissingLicenseExceptions: missingLicenseExceptions,
+		FuchsiaDir: fuchsiaDir,
+		OutDir:     outDir,
+		Config:     config,
 	}
 }
 
@@ -100,7 +92,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 		if !hasLicense {
 			// Check if allowed
 			relProjRoot, _ := filepath.Rel(r.FuchsiaDir, proj)
-			_, allowed := r.MissingLicenseExceptions[relProjRoot]
+			_, allowed := r.Config.MissingLicenseExceptions[relProjRoot]
 			if allowed {
 				metrics.AllowlistHits.Inc(validate.PolicyNoLicense)
 				continue
@@ -127,7 +119,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 
 		relRoot, err := filepath.Rel(r.FuchsiaDir, projRoot)
 		if err == nil {
-			if overridePath, ok := r.OutOfTreeReadmes[relRoot]; ok {
+			if overridePath, ok := r.Config.OutOfTreeReadmes[relRoot]; ok {
 				readmePath = overridePath
 			}
 		}
@@ -165,7 +157,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 		}
 
 		if string(rawBytes) != newFormatted {
-			if r.WriteReadmes {
+			if r.Config.WriteReadmes {
 				if err := os.WriteFile(readmePath, []byte(newFormatted), 0644); err != nil {
 					errs = append(errs, pipeline.ComplianceError{
 						CheckName: validate.CheckReadmeNeedsUpdate,
@@ -242,7 +234,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 	}
 
 	// 2. Generate Reports
-	if r.GenerateArtifacts {
+	if r.Config.GenerateArtifacts {
 		return r.generateReports(cFiles)
 	}
 	return nil

@@ -21,11 +21,13 @@ func TestGrouper_Run(t *testing.T) {
 
 	grouper := NewGrouper(
 		fuchsiaDir,
-		map[string]bool{"third_party": true, filepath.Join("prebuilt", "foo"): true},
-		map[string]string{
-			filepath.Join("prebuilt", "virtual"): "/fake/path/to/README.fuchsia",
+		Config{
+			BarrierPaths: map[string]bool{"third_party": true, filepath.Join("prebuilt", "foo"): true},
+			OutOfTreeReadmes: map[string]string{
+				filepath.Join("prebuilt", "virtual"): "/fake/path/to/README.fuchsia",
+			},
+			FilesInReadmeOnly: false,
 		},
-		false,
 	)
 
 	inChan := make(chan pipeline.RawPath, 10)
