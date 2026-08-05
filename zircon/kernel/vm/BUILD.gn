@@ -370,6 +370,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   function_allowlist = [
     "cpp_vm_cow_pages_free",
     "cpp_vm_cow_pages_get_ref_counted",
+    "cpp_vm_cow_pages_initialize_page_cache",
     "cpp_vm_cow_pages_replace_page_with_loaned",
   ]
   type_allowlist = [ "VmCowPages" ]
@@ -429,6 +430,7 @@ kernel_rust_mod("vm-rs") {
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/kernel/switch:allow_dead_code",
     "//zircon/system/ulib/fbl/rust:fbl",

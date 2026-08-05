@@ -19,6 +19,7 @@ zx_status_t cpp_vm_cow_pages_replace_page_with_loaned(VmCowPages* cow, void* bef
                                                       uint64_t offset);
 void* cpp_vm_cow_pages_get_ref_counted(const VmCowPages* cow);
 void cpp_vm_cow_pages_free(VmCowPages* cow);
+void cpp_vm_cow_pages_initialize_page_cache(uint32_t level);
 
 __END_CDECLS
 

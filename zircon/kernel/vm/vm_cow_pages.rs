@@ -69,3 +69,12 @@ impl VmCowPages {
         Status::ok(status)
     }
 }
+
+fn initialize_page_cache(level: init::LkInitLevel) {
+    unsafe {
+        bindings::cpp_vm_cow_pages_initialize_page_cache(level.0);
+    }
+}
+
+// Initialize the cache after the percpu data structures are initialized.
+init::lk_init_hook!(vm_cow_pages_cache_init, initialize_page_cache, init::LK_INIT_LEVEL_KERNEL);

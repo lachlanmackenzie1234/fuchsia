@@ -30,4 +30,8 @@ void* cpp_vm_cow_pages_get_ref_counted(const VmCowPages* cow) {
 
 void cpp_vm_cow_pages_free(VmCowPages* cow) { delete cow; }
 
+void cpp_vm_cow_pages_initialize_page_cache(uint32_t level) {
+  VmCowPages::InitializePageCache(level);
+}
+
 }  // extern "C"
