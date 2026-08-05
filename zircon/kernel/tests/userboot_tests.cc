@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/unittest/unittest.h>
-#include <lib/userabi/userboot_internal.h>
+#include <lib/userabi/userboot.h>
 
 #include <object/dispatcher.h>
 #include <object/handle.h>

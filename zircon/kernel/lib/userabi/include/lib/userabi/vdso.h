@@ -9,7 +9,6 @@
 
 #include <lib/fasttime/internal/abi.h>
 #include <lib/instrumentation/kernel-mapped-vmo.h>
-#include <lib/userabi/userboot.h>
 
 #include <object/vm_object_dispatcher.h>
 #include <vm/handoff-end.h>
@@ -19,6 +18,9 @@ class VmMapping;
 
 class VDso {
  public:
+  enum class Variant { STABLE, NEXT, TEST1, TEST2, COUNT };
+  static constexpr size_t kNumVdsoVariants = static_cast<size_t>(Variant::COUNT);
+
   // This is called only once, at boot time.
   //
   // The created VDso will retain RefPtrs to the created VmObjectDispatchers,
@@ -28,7 +30,7 @@ class VDso {
   // with the VDso variants in the other slots.
   static const VDso* Create(
       const HandoffEnd::Elf& elf_image,
-      ktl::span<KernelHandle<VmObjectDispatcher>, userboot::kNumVdsoVariants> vmo_kernel_handles,
+      ktl::span<KernelHandle<VmObjectDispatcher>, kNumVdsoVariants> vmo_kernel_handles,
       KernelHandle<VmObjectDispatcher>* time_values_handle);
 
   static bool vmo_is_vdso(const fbl::RefPtr<VmObject>& vmo) {
@@ -68,8 +70,6 @@ class VDso {
   const fbl::RefPtr<VmObject>& vmo() const { return vmo_; }
 
  private:
-  using Variant = userboot::VdsoVariant;
-
   VDso() = default;
 
   void CreateVariant(Variant, KernelHandle<VmObjectDispatcher>* vmo_kernel_handle);

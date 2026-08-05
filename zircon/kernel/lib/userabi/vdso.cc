@@ -369,7 +369,7 @@ const VDso* VDso::instance_ = nullptr;
 // This is called exactly once, at boot time.
 const VDso* VDso::Create(
     const HandoffEnd::Elf& elf_image,
-    ktl::span<KernelHandle<VmObjectDispatcher>, userboot::kNumVdsoVariants> vmo_kernel_handles,
+    ktl::span<KernelHandle<VmObjectDispatcher>, VDso::kNumVdsoVariants> vmo_kernel_handles,
     KernelHandle<VmObjectDispatcher>* time_values_handle) {
   ASSERT(!instance_);
 
