@@ -194,4 +194,7 @@ message Static {
 
   // If true, disable the use of xattrs for RBE actions.
   bool disable_xattr_for_rbe = 39;
+
+  // Fuchsia targets and packages to add to the build.
+  repeated string target_labels = 40;
 }
