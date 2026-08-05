@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//boards/vim3/args.gni")
 import("//build/components.gni")
 import("//build/test.gni")
 import("//build/testing/bootfs_test.gni")
@@ -152,6 +153,13 @@ foreach(board_info, _boards) {
     sources = [ "boards/${board}.cc" ]
 
     deps = [ ":common" ]
+    if (board == "vim3") {
+      if (use_vim3_dml) {
+        defines = [ "USE_VIM3_DML=1" ]
+      } else {
+        defines = [ "USE_VIM3_DML=0" ]
+      }
+    }
   }
 
   fuchsia_unittest_package("device-enumeration-test-${board}") {

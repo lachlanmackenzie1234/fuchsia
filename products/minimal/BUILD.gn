@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//boards/vim3/args.gni")
 import("//build/bazel/assembly/bazel_product_bundle.gni")
 
 assert(
@@ -81,8 +82,12 @@ if (current_cpu == "arm64") {
     bazel_product_bundle_target = ":product_bundle.emac"
     bazel_product_image_target = ":image.emac"
     bazel_elf_sizes_target = ":elf_sizes.emac"
-    bazel_inputs_from_gn =
-        [ "//src/devices/board/drivers/vim3-devicetree:vim3-dtb" ]
+    if (use_vim3_dml) {
+      bazel_inputs_from_gn = []
+    } else {
+      bazel_inputs_from_gn =
+          [ "//src/devices/board/drivers/vim3-devicetree:vim3-dtb" ]
+    }
   }
 }
 
@@ -105,9 +110,9 @@ if (current_cpu == "riscv64") {
 group("devicetree") {
   deps = []
   if (current_cpu == "arm64") {
-    deps += [
-      # Include the vim3 devicetree blob. This is used in RTC driver repo.
-      "//src/devices/board/drivers/vim3-devicetree:vim3.assembly_inputs",
-    ]
+    if (!use_vim3_dml) {
+      deps +=
+          [ "//src/devices/board/drivers/vim3-devicetree:vim3.assembly_inputs" ]
+    }
   }
 }

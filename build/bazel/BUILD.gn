@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//boards/vim3/args.gni")
 import("//build/assembly/developer_overrides.gni")
 import("//build/bazel/bazel_action.gni")
 import("//build/bazel/bazel_content_hashes.gni")
@@ -212,6 +213,20 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//src/connectivity/policy/netcfg/delegated_network_provisioning.gni)
+
+  # LINT.IfChange
+  declaration = "//boards/vim3/args.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "use_vim3_dml"
+      value = use_vim3_dml
+      type = "bool"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//boards/vim3/args.gni)
 
   # LINT.IfChange
   declaration = "//src/lib/fuchsia-sync/build/args.gni"

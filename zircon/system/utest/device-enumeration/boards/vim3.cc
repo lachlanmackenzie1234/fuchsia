@@ -26,7 +26,9 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       "display-ff900000",
       "ethernet-phy-ff634000.aml-ethernet.dwmac-ff3f0000.dwmac.Designware-MAC.network-device",
       "ethernet-phy-ff634000.aml-ethernet.dwmac-ff3f0000.dwmac.eth_phy.phy_null_device",
+#if !USE_VIM3_DML
       "fuchsia-sysmem",
+#endif
       "gpio-buttons.buttons",
       "gpio-controller-ff634400.aml-gpio.gpio-init",
       "gpio-controller-ff634400.aml-gpio.gpio",

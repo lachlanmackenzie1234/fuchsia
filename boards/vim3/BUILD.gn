@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//boards/vim3/args.gni")
 import("//build/assembly/board_input_bundle.gni")
 import("//build/bazel/assembly/bazel_board_configuration.gni")
 import("//build/bazel/assembly/bazel_board_input_bundle.gni")
@@ -18,8 +19,12 @@ group("bazel_inputs") {
     ":devicetree_board_driver.bazel_inputs",
     ":main_bundle.bazel_inputs",
     ":vulkan_arm_mali.bazel_inputs",
-    "//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
   ]
+  if (use_vim3_dml) {
+    deps += [ "//src/devices/tools/dmlc:bazel_input" ]
+  } else {
+    deps += [ "//src/devices/board/drivers/vim3-devicetree:vim3-dtb" ]
+  }
 }
 
 board_input_bundle("main_bundle") {
@@ -172,6 +177,15 @@ board_input_bundle("devicetree_board_driver") {
     ]
   }
   drivers = []
+  if (use_vim3_dml) {
+    drivers += [
+      {
+        package_target = "//src/devices/board/drivers/vim3-dml:package"
+        package_set = "bootfs"
+        driver_components = [ "meta/vim3-dml.cm" ]
+      },
+    ]
+  }
   version = build_info_version
 }
 
@@ -217,7 +231,6 @@ group("vim3-release") {
     "//src/connectivity/ethernet/drivers/realtek-8211f:package-archive",
     "//src/devices/adc/drivers/aml-saradc:package-archive",
     "//src/devices/block/drivers/aml-sdmmc:package-archive",
-    "//src/devices/board/drivers/vim3-devicetree:bazel_package-archive",
     "//src/devices/clock/drivers/vim3-clk:bazel_package-archive",
     "//src/devices/cpu/drivers/aml-cpu:package-archive",
     "//src/devices/gpio/drivers/aml-gpio:bazel_package-archive",
@@ -248,4 +261,8 @@ group("vim3-release") {
     "//src/ui/input/drivers/adc-buttons:bazel_package-archive",
     "//src/ui/input/drivers/focaltech:package-archive",
   ]
+  if (!use_vim3_dml) {
+    deps +=
+        [ "//src/devices/board/drivers/vim3-devicetree:bazel_package-archive" ]
+  }
 }

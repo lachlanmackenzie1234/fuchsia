@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_build_info//:args.bzl", "build_info_version")
+load("@fuchsia_build_info//:args.bzl", "build_info_version", "use_vim3_dml")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
     "fuchsia_board_configuration",
@@ -44,12 +44,11 @@ fuchsia_board_input_bundle(
         "//src/devices/rtc/drivers/nxp/pcf8563:pkg",
     ],
     bootfs_driver_packages = [
-        "//src/devices/board/drivers/vim3-devicetree",
         "//src/devices/clock/drivers/vim3-clk",
         "//src/devices/gpio/drivers/aml-gpio",
         "//src/devices/i2c/drivers/aml-i2c",
         "//src/devices/usb/drivers/aml-usb-phy",
-    ],
+    ] + ([] if use_vim3_dml else ["//src/devices/board/drivers/vim3-devicetree"]),
     version = build_info_version,
 )
 
@@ -118,7 +117,7 @@ fuchsia_board_configuration(
     ],
     board_input_bundles = _COMMON_BOARD_INPUT_BUNDLES,
     board_name = "vim3",
-    devicetree = "@gn_targets//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
+    devicetree = None if use_vim3_dml else "@gn_targets//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
     filesystems = COMMON_FILESYSTEMS,
     kernel = {
         "contiguous_physical_pages": True,
@@ -136,7 +135,7 @@ fuchsia_board_configuration(
     ],
     board_input_bundles = _COMMON_BOARD_INPUT_BUNDLES,
     board_name = "vim3",
-    devicetree = "@gn_targets//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
+    devicetree = None if use_vim3_dml else "@gn_targets//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
     filesystems = COMMON_FILESYSTEMS,
     kernel = {
         "contiguous_physical_pages": True,
@@ -160,7 +159,7 @@ fuchsia_board_configuration(
     ],
     board_input_bundles = _COMMON_BOARD_INPUT_BUNDLES,
     board_name = "vim3",
-    devicetree = "@gn_targets//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
+    devicetree = None if use_vim3_dml else "@gn_targets//src/devices/board/drivers/vim3-devicetree:vim3-dtb",
     filesystems = COMMON_FILESYSTEMS,
     kernel = {
         "contiguous_physical_pages": True,
