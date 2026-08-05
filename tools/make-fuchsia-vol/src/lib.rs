@@ -22,22 +22,35 @@ use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::process::Command;
-use std::str::FromStr;
 use zerocopy::{Immutable, IntoBytes};
 
 pub mod args;
 use args::{Arch, BootPart, TopLevel};
 
-const fn part_type(guid: &'static str) -> PartType {
-    PartType { guid, os: OperatingSystem::None }
-}
-
-const GUID_BOOTLOADER_STRING: PartType = part_type("5ECE94FE-4C86-11E8-A15B-480FCF35F8E6");
-const GPT_ZIRCON_ABR_TYPE_GUID: PartType = part_type("9B37FFF6-2E58-466A-983A-F7926D0B04E0");
-const GPT_VBMETA_ABR_TYPE_GUID: PartType = part_type("421A8BFC-85D9-4D85-ACDA-B64EEC0133E9");
-const GPT_DURABLE_BOOT_TYPE_GUID: PartType = part_type("A409E16B-78AA-4ACC-995C-302352621A41");
-const INSTALLER_GUID: PartType = part_type("4DCE98CE-E77E-45C1-A863-CAF92F1330C1");
-const GPT_FVM_TYPE_GUID: PartType = part_type("49FD7CB8-DF15-4E73-B9D9-992070127F0F");
+const GUID_BOOTLOADER_STRING: PartType = PartType {
+    guid: uuid::uuid!("5ECE94FE-4C86-11E8-A15B-480FCF35F8E6"),
+    os: OperatingSystem::None,
+};
+const GPT_ZIRCON_ABR_TYPE_GUID: PartType = PartType {
+    guid: uuid::uuid!("9B37FFF6-2E58-466A-983A-F7926D0B04E0"),
+    os: OperatingSystem::None,
+};
+const GPT_VBMETA_ABR_TYPE_GUID: PartType = PartType {
+    guid: uuid::uuid!("421A8BFC-85D9-4D85-ACDA-B64EEC0133E9"),
+    os: OperatingSystem::None,
+};
+const GPT_DURABLE_BOOT_TYPE_GUID: PartType = PartType {
+    guid: uuid::uuid!("A409E16B-78AA-4ACC-995C-302352621A41"),
+    os: OperatingSystem::None,
+};
+const INSTALLER_GUID: PartType = PartType {
+    guid: uuid::uuid!("4DCE98CE-E77E-45C1-A863-CAF92F1330C1"),
+    os: OperatingSystem::None,
+};
+const GPT_FVM_TYPE_GUID: PartType = PartType {
+    guid: uuid::uuid!("49FD7CB8-DF15-4E73-B9D9-992070127F0F"),
+    os: OperatingSystem::None,
+};
 
 /// On QEMU, the bootloader will look for an EFI application commandline in this partition, to
 /// allow tests to control the boot mode.
@@ -45,7 +58,10 @@ const GPT_FVM_TYPE_GUID: PartType = part_type("49FD7CB8-DF15-4E73-B9D9-992070127
 /// The bootloader will match against the partition name; the type GUID doesn't matter.
 const QEMU_COMMANDLINE_PARTITION_NAME: &str = "qemu-commandline";
 const QEMU_COMMANDLINE_PARTITION_SIZE: u64 = 1024;
-const QEMU_COMMANDLINE_PARTITION_GUID: PartType = part_type("F5F38420-F848-423C-9945-3D845492A05A");
+const QEMU_COMMANDLINE_PARTITION_GUID: PartType = PartType {
+    guid: uuid::uuid!("F5F38420-F848-423C-9945-3D845492A05A"),
+    os: OperatingSystem::None,
+};
 
 // The relevant part of the product bundle metadata schema, as realized by
 // entries in the product_bundles.json build API module.
@@ -211,7 +227,7 @@ pub fn run(mut args: TopLevel) -> Result<(), Error> {
         disk.seek(SeekFrom::End(0))?
     };
 
-    let mut config = gpt::GptConfig::new().writable(true).initialized(false);
+    let mut config = gpt::GptConfig::new().writable(true);
     if let Some(block_size) = args.block_size {
         config = config.logical_block_size(block_size.try_into()?);
     }
@@ -336,9 +352,7 @@ pub fn run(mut args: TopLevel) -> Result<(), Error> {
             .with_version(uuid::Version::Random)
             .into_uuid();
 
-        // Unfortunately, the at time o writing, the GPT crate is using a different version of
-        // the uuid crate than we have access to.
-        gpt_disk.update_guid(Some(FromStr::from_str(&uuid.to_string()).unwrap()))?;
+        gpt_disk.update_guid(Some(uuid));
 
         let mut partitions = gpt_disk.partitions().clone();
         for (_id, partition) in &mut partitions {
@@ -347,7 +361,7 @@ pub fn run(mut args: TopLevel) -> Result<(), Error> {
                 .with_variant(uuid::Variant::RFC4122)
                 .with_version(uuid::Version::Random)
                 .into_uuid();
-            partition.part_guid = FromStr::from_str(&uuid.to_string()).unwrap();
+            partition.part_guid = uuid;
         }
         gpt_disk.update_partitions(partitions)?;
     }
@@ -709,8 +723,8 @@ fn read_file(path: impl AsRef<std::path::Path>) -> Result<Vec<u8>, Error> {
 }
 
 // Adds a partition and returns the partition byte range.
-fn add_partition(
-    disk: &mut GptDisk<'_>,
+fn add_partition<D: DiskDevice>(
+    disk: &mut GptDisk<D>,
     name: &str,
     size: u64,
     part_type: PartType,
@@ -796,7 +810,7 @@ fn copy_partition(disk: &mut File, range: Range<u64>, source: &Utf8Path) -> Resu
 }
 
 // Returns the partition range given a partition ID.
-fn part_range(disk: &GptDisk<'_>, part_id: u32) -> Range<u64> {
+fn part_range<D: DiskDevice>(disk: &GptDisk<D>, part_id: u32) -> Range<u64> {
     let lbs = u64::from(disk.logical_block_size().clone());
     let part = &disk.partitions()[&part_id];
     part.first_lba * lbs..(part.last_lba + 1) * lbs
@@ -883,7 +897,7 @@ pub fn make_empty_disk_with_uefi(disk_path: &Path, efi_data: &[u8]) -> anyhow::R
 
     disk.set_len(DISK_SIZE)?;
 
-    let config = gpt::GptConfig::new().writable(true).initialized(false);
+    let config = gpt::GptConfig::new().writable(true);
     let mut gpt_disk = config.create_from_device(Box::new(&mut disk), None)?;
     gpt_disk.update_partitions(std::collections::BTreeMap::new())?;
 

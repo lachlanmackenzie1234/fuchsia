@@ -776,11 +776,11 @@ group("googletest-0.14.2") {
 }
 
 group("gpt") {
-  public_deps = [ ":gpt-v3_1_0" ]
+  public_deps = [ ":gpt-v4_1_0" ]
 }
 
-group("gpt-3.1.0") {
-  public_deps = [ ":gpt-v3_1_0" ]
+group("gpt-4.1.0") {
+  public_deps = [ ":gpt-v4_1_0" ]
 }
 
 group("half") {
@@ -10396,15 +10396,15 @@ rustc_macro("googletest_macro-v0_14_2") {
   applicable_licenses = [ ":googletest_macro-v0_14_2.license" ]
 }
 
-license("gpt-v3_1_0.license") {
+license("gpt-v4_1_0.license") {
   public_package_name = "gpt"
-  license_files = [ "//third_party/rust_crates/vendor/gpt-3.1.0/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/gpt-4.1.0/LICENSE" ]
 }
 
-rustc_library("gpt-v3_1_0") {
+rustc_library("gpt-v4_1_0") {
   crate_name = "gpt"
-  source_root = "//third_party/rust_crates/vendor/gpt-3.1.0/src/lib.rs"
-  output_name = "gpt-ea7d9869031bef6c"
+  source_root = "//third_party/rust_crates/vendor/gpt-4.1.0/src/lib.rs"
+  output_name = "gpt-97012ba5e6114740"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10413,20 +10413,20 @@ rustc_library("gpt-v3_1_0") {
   deps = []
   deps += [ ":bitflags-v2_13_0" ]
   deps += [ ":crc-v3_4_0" ]
-  deps += [ ":log-v0_4_29" ]
+  deps += [ ":simple-bytes-v0_2_14" ]
   deps += [ ":uuid-v1_23_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ea7d9869031bef6c",
-    "-Cextra-filename=-ea7d9869031bef6c",
+    "-Cmetadata=97012ba5e6114740",
+    "-Cextra-filename=-97012ba5e6114740",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":gpt-v3_1_0.license" ]
+  applicable_licenses = [ ":gpt-v4_1_0.license" ]
 }
 
 license("group-v0_12_1.license") {
@@ -20783,6 +20783,39 @@ rustc_library("simdutf8-v0_1_5") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":simdutf8-v0_1_5.license" ]
+}
+
+license("simple-bytes-v0_2_14.license") {
+  public_package_name = "simple_bytes"
+  license_files = [
+    "//third_party/rust_crates/vendor/simple-bytes-0.2.14/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/simple-bytes-0.2.14/LICENSE-MIT",
+  ]
+}
+
+rustc_library("simple-bytes-v0_2_14") {
+  crate_name = "simple_bytes"
+  source_root =
+      "//third_party/rust_crates/vendor/simple-bytes-0.2.14/src/lib.rs"
+  output_name = "simple_bytes-dcdb1ee4939dcbcc"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=dcdb1ee4939dcbcc",
+    "-Cextra-filename=-dcdb1ee4939dcbcc",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":simple-bytes-v0_2_14.license" ]
 }
 
 license("simplelog-v0_10_2.license") {
