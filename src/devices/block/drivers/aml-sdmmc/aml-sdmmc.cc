@@ -1605,7 +1605,10 @@ zx_status_t AmlSdmmc::RequestImpl(const fuchsia_hardware_sdmmc::wire::SdmmcReq& 
 
   auto start_reg = AmlSdmmcStart::Get().ReadFrom(&*mmio_);
   desc_phys = descs_buffer_->phys();
-  zx_cache_flush(descs_buffer_->virt(), descs_buffer_->size(), ZX_CACHE_FLUSH_DATA);
+  if (auto status = descs_buffer_->CacheFlush(0, descs_buffer_->size()); status.is_error()) {
+    fdf::error("Failed to flush cache: {}", status.status_string());
+    return status.error_value();
+  }
   // Read desc from external DDR
   start_reg.set_desc_int(0);
 
