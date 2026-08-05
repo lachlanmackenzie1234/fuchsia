@@ -172,11 +172,15 @@ void FileConnection::DeprecatedGetAttr(DeprecatedGetAttrCompleter::Sync& complet
 #else
 void FileConnection::GetAttr(GetAttrCompleter::Sync& completer) {
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(28)
+  if (!(rights() & fio::Rights::kGetAttributes)) {
+    completer.Reply(ZX_ERR_BAD_HANDLE, {});
+    return;
+  }
   zx::result attrs = vnode()->GetAttributes();
   if (attrs.is_ok()) {
     completer.Reply(ZX_OK, attrs->ToIoV1NodeAttributes(*vnode()));
   } else {
-    completer.Reply(attrs.error_value(), fio::wire::NodeAttributes());
+    completer.Reply(attrs.error_value(), {});
   }
 }
 
