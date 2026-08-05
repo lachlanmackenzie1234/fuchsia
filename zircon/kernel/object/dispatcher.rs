@@ -192,6 +192,12 @@ impl Dispatcher {
         unsafe { cpp_dispatcher_get_type(self) }
     }
 
+    /// Returns the kernel object ID (KOID) of this Dispatcher.
+    pub fn get_koid(&self) -> zx_types::zx_koid_t {
+        // SAFETY: self is a valid reference to an initialized Dispatcher.
+        unsafe { super::dispatcher_ffi::cpp_dispatcher_get_koid(self) }
+    }
+
     /// Safely downcasts a `&Dispatcher` reference to a specific facade reference `&T` if the
     /// dispatcher types match.
     pub fn downcast<T: DispatcherOps>(&self) -> Option<&T> {

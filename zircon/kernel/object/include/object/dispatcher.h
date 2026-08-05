@@ -40,6 +40,7 @@ void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mas
                                         zx_signals_t set_mask);
 void* cpp_dispatcher_get_ref_counted(const Dispatcher* disp);
 zx_obj_type_t cpp_dispatcher_get_type(const Dispatcher* disp);
+zx_koid_t cpp_dispatcher_get_koid(const Dispatcher* disp);
 void cpp_dispatcher_recycle(Dispatcher* disp);
 }
 
