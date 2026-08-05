@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use scrutiny_utils::zbi::*;
 use serde_json::json;
 use serde_json::value::Value;
@@ -21,12 +21,14 @@ impl ZbiExtractCmdlineController {
         let zbi_sections = reader.parse()?;
 
         for section in zbi_sections.iter() {
-            if section.section_type == ZbiType::Cmdline {
+            if section.section_type == zbi::Type::Cmdline {
                 // The cmdline.blk contains a trailing 0.
                 let mut cmdline_buffer = section.buffer.clone();
                 cmdline_buffer.truncate(cmdline_buffer.len() - 1);
-                return Ok(json!(std::str::from_utf8(&cmdline_buffer)
-                    .context("Failed to convert kernel arguments to utf-8")?));
+                return Ok(json!(
+                    std::str::from_utf8(&cmdline_buffer)
+                        .context("Failed to convert kernel arguments to utf-8")?
+                ));
             }
         }
         Err(anyhow!("Failed to find a cmdline section in the provided ZBI"))

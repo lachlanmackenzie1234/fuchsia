@@ -18,6 +18,7 @@ if (is_host) {
       "//src/security/lib/scrutiny/*",
     ]
     deps = [
+      "//sdk/rust/zbi",
       "//src/lib/buf-read-ext",
       "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-hyper",

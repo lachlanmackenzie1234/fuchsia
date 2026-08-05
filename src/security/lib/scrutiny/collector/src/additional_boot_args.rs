@@ -10,7 +10,6 @@ use scrutiny_collection::additional_boot_args::{
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::zbi::Zbi;
 use scrutiny_utils::bootfs::BootfsReader;
-use scrutiny_utils::zbi::ZbiType;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::from_utf8;
@@ -40,7 +39,7 @@ fn load_additional_boot_args<P1: AsRef<Path>, P2: AsRef<Path>>(
     let update_package_path_ref = update_package_path.as_ref();
     let zbi = model.get::<Zbi>().unwrap();
     for section in zbi.sections.iter() {
-        if section.section_type == ZbiType::StorageBootfs {
+        if section.section_type == zbi::Type::StorageBootfs {
             let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
             let bootfs_data = bootfs_reader.parse().map_err(|bootfs_error| {
                 AdditionalBootConfigError::FailedToParseBootfs {
@@ -184,11 +183,13 @@ b=a"
 
     #[test]
     fn test_duplicate_keys() {
-        assert!(parse_additional_boot_args_contents(
-            "a=a
+        assert!(
+            parse_additional_boot_args_contents(
+                "a=a
 a=a"
-        )
-        .is_err());
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -317,10 +318,12 @@ a=a
         collector.collect(data_model.clone()).unwrap();
 
         let collection = data_model.get::<AdditionalBootConfigCollection>().unwrap();
-        assert!(collection
-            .additional_boot_args
-            .as_ref()
-            .unwrap()
-            .contains_key("zircon.system.pkgfs.cmd"));
+        assert!(
+            collection
+                .additional_boot_args
+                .as_ref()
+                .unwrap()
+                .contains_key("zircon.system.pkgfs.cmd")
+        );
     }
 }

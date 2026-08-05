@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Context, Result};
+use anyhow::{Context, Result, anyhow, format_err};
 use fuchsia_hash::Hash;
 use fuchsia_url::{PackageName, PackageVariant};
 use scrutiny_utils::bootfs::*;
@@ -30,7 +30,7 @@ impl ZbiListBootfsController {
         let zbi_sections = reader.parse()?;
 
         for section in zbi_sections.iter() {
-            if section.section_type == ZbiType::StorageBootfs {
+            if section.section_type == zbi::Type::StorageBootfs {
                 let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
                 let bootfs_data = bootfs_reader.parse().context("failed to parse bootfs")?;
                 let bootfs_files: Vec<String> =
@@ -53,7 +53,7 @@ impl ZbiExtractBootfsPackageIndex {
         let zbi_sections = reader.parse()?;
 
         for section in zbi_sections.iter() {
-            if section.section_type == ZbiType::StorageBootfs {
+            if section.section_type == zbi::Type::StorageBootfs {
                 let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
                 let bootfs_files = bootfs_reader.parse()?;
                 for (file_name, data) in bootfs_files.iter() {

@@ -40,6 +40,7 @@ if (is_host) {
     deps = [
       "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
       "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
+      "//sdk/rust/zbi",
       "//src/lib/directed_graph",
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia-url",

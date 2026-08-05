@@ -6,26 +6,16 @@ use crate::zstd;
 use anyhow::{Error, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::info;
-use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use thiserror::Error;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-
-/// ZBIs must start with a container type that contains all of the sections in
-/// the ZBI. It is largely there to verify the binary blob is actually a ZBI and
-/// to inform the reader how far to read into the blob.
-const ZBI_TYPE_CONTAINER: u32 = 0x544f4f42;
-
-/// LSW of sha256("bootitem")
-const ZBI_ITEM_MAGIC: u32 = 0xb5781729;
 
 /// ZBI header size in bytes.
-const ZBI_HEADER_SIZE: u64 = 32;
+const ZBI_HEADER_SIZE: u64 = size_of::<zbi::Header>() as u64;
 
 /// Set in the flags if the section is compressed. We assume all compression
 /// is ZSTD. If this flag is set ZbiHeader.extra will be the uncompressed
 /// size of the image.
-const ZBI_FLAGS_STORAGE_COMPRESSED: u32 = 0x00000001;
+const ZBI_FLAGS_STORAGE_COMPRESSED: zbi::Flags = zbi::Flags::from_bits_retain(1);
 
 /// Magic number for the vboot structure which can encase a ZBI.
 const VBOOT_MAGIC: u64 = 0x534f454d4f524843;
@@ -33,90 +23,42 @@ const VBOOT_MAGIC: u64 = 0x534f454d4f524843;
 /// Magic number for the Android Boot Image which can encase a ZBI.
 const ANDROID_BOOT_IMAGE_MAGIC: u64 = 0x2144494f52444e41;
 
-/// Defines all of the known ZBI section types. These are used to partition
-/// the Zircon boot image into sections.
-#[repr(u32)]
-#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ZbiType {
-    AcpiRsdp = 0x50445352,
-    BootVersion = 0x53525642,
-    BootloaderFile = 0x4C465442,
-    Cmdline = 0x4c444d43,
-    CpuConfig = 0x43555043,
-    CpuTopology = 0x544F504F,
-    Crashlog = 0x4d4f4f42,
-    Discard = 0x50494b53,
-    DriverBoardInfo = 0x4953426D,
-    DriverBoardPrivate = 0x524F426D,
-    DriverMacAddress = 0x43414D6D,
-    DriverPartitionMap = 0x5452506D,
-    E820MemoryTable = 0x30323845,
-    EfiMemoryMap = 0x4d494645,
-    EfiSystemTable = 0x53494645,
-    FrameBuffer = 0x42465753,
-    ImageArgs = 0x47524149,
-    KernelDriver = 0x5652444B,
-    MemoryConfig = 0x434D454D,
-    Nvram = 0x4c4c564e,
-    NvramDeprecated = 0x4c4c5643,
-    PlatformId = 0x44494C50,
-    RebootReason = 0x42525748,
-    SerialNumber = 0x4e4c5253,
-    Smbios = 0x49424d53,
-    StorageBootfs = 0x42534642,
-    StorageBootfsFactory = 0x46534642,
-    StorageRamdisk = 0x4b534452,
-    KernelArm64 = 0x384e524b,
-    KernelX64 = 0x4C4E524B,
-    Unknown,
-}
-
 /// ZbiSection holder that contains the type and an uncompressed buffer
 /// containing the data.
-#[allow(dead_code)]
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZbiSection {
-    pub section_type: ZbiType,
+    pub section_type: zbi::Type,
     pub buffer: Vec<u8>,
 }
 
-/// Rust clone of sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
-#[repr(C)]
-struct ZbiHeader {
-    zbi_type: u32,
-    length: u32,
-    extra: u32,
-    flags: u32,
-    reserved_0: u32,
-    reserved_1: u32,
-    magic: u32,
-    crc32: u32,
+fn read_header(cursor: &mut Cursor<Vec<u8>>) -> Result<zbi::Header> {
+    let mut buf = [0u8; ZBI_HEADER_SIZE as usize];
+    cursor.read_exact(&mut buf)?;
+    Ok(unsafe { std::mem::transmute(buf) })
 }
 
-impl ZbiHeader {
-    pub fn parse(cursor: &mut Cursor<Vec<u8>>) -> Result<Self> {
-        Ok(Self {
-            zbi_type: cursor.read_u32::<LittleEndian>()?,
-            length: cursor.read_u32::<LittleEndian>()?,
-            extra: cursor.read_u32::<LittleEndian>()?,
-            flags: cursor.read_u32::<LittleEndian>()?,
-            reserved_0: cursor.read_u32::<LittleEndian>()?,
-            reserved_1: cursor.read_u32::<LittleEndian>()?,
-            magic: cursor.read_u32::<LittleEndian>()?,
-            crc32: cursor.read_u32::<LittleEndian>()?,
-        })
-    }
+fn header_bytes(ty: zbi::Type, length: u32, extra: u32, flags: zbi::Flags) -> Vec<u8> {
+    let header = zbi::Header {
+        r#type: ty,
+        length,
+        extra,
+        flags,
+        reserved0: 0,
+        reserved1: 0,
+        magic: zbi::ITEM_MAGIC,
+        crc32: 0,
+    };
+    let bytes: [u8; 32] = unsafe { std::mem::transmute(header) };
+    bytes.to_vec()
 }
 
 #[derive(Error, Debug)]
 pub enum ZbiError {
-    #[error("Zbi container header type does not match expected value {0}")]
-    InvalidContainerHeader(u32),
-    #[error("Zbi container header magic value doesn't match expected value {0}")]
+    #[error("Invalid ZBI container header type: {0:?}")]
+    InvalidContainerHeader(zbi::Type),
+    #[error("ZBI container header magic value {0} doesn't match expected value")]
     InvalidContainerMagic(u32),
-    #[error("Zbi item header magic value doesn't match expected value")]
+    #[error("ZBI item header magic value doesn't match expected value")]
     InvalidItemMagic,
 }
 
@@ -142,11 +84,11 @@ impl ZbiReader {
         }
 
         // Parse the header and validate it is a ZBI.
-        let container_header = ZbiHeader::parse(&mut self.cursor)?;
-        if container_header.zbi_type != ZBI_TYPE_CONTAINER {
-            return Err(Error::new(ZbiError::InvalidContainerHeader(container_header.zbi_type)));
+        let container_header = read_header(&mut self.cursor)?;
+        if container_header.r#type != zbi::Type::Container {
+            return Err(Error::new(ZbiError::InvalidContainerHeader(container_header.r#type)));
         }
-        if container_header.magic != ZBI_ITEM_MAGIC {
+        if container_header.magic != zbi::ITEM_MAGIC {
             return Err(Error::new(ZbiError::InvalidContainerMagic(container_header.magic)));
         }
         let container_end = self.cursor.position() + (container_header.length as u64);
@@ -159,22 +101,18 @@ impl ZbiReader {
 
         // Iterate until we cannot parse section headers anymore or reach
         // the end.
-        while let Ok(section_header) = ZbiHeader::parse(&mut self.cursor) {
-            if section_header.magic != ZBI_ITEM_MAGIC {
+        while let Ok(section_header) = read_header(&mut self.cursor) {
+            if section_header.magic != zbi::ITEM_MAGIC {
                 return Err(Error::new(ZbiError::InvalidItemMagic {}));
             }
 
-            let section_type = ZbiReader::section_type(section_header.zbi_type);
-            if section_type == ZbiType::Unknown {
-                info!("Unknown zbi section: {}", section_header.zbi_type);
-            }
+            let section_type = section_header.r#type;
             let data_len = usize::try_from(section_header.length)?;
             let mut section_data = vec![0; data_len];
             self.cursor.read_exact(&mut section_data)?;
 
             // Decompress the block.
-            if (section_header.flags & ZBI_FLAGS_STORAGE_COMPRESSED) == ZBI_FLAGS_STORAGE_COMPRESSED
-            {
+            if section_header.flags.contains(ZBI_FLAGS_STORAGE_COMPRESSED) {
                 let decompressed_data = zstd::decompress(&section_data, section_header.extra)?;
                 zbi_sections.push(ZbiSection { section_type, buffer: decompressed_data });
             } else {
@@ -195,48 +133,6 @@ impl ZbiReader {
         }
         Ok(zbi_sections)
     }
-
-    fn section_type(zbi_type: u32) -> ZbiType {
-        match zbi_type {
-            zbi_type if zbi_type == ZbiType::Discard as u32 => ZbiType::Discard,
-            zbi_type if zbi_type == ZbiType::StorageRamdisk as u32 => ZbiType::StorageRamdisk,
-            zbi_type if zbi_type == ZbiType::StorageBootfs as u32 => ZbiType::StorageBootfs,
-            zbi_type if zbi_type == ZbiType::StorageBootfsFactory as u32 => {
-                ZbiType::StorageBootfsFactory
-            }
-            zbi_type if zbi_type == ZbiType::Cmdline as u32 => ZbiType::Cmdline,
-            zbi_type if zbi_type == ZbiType::Crashlog as u32 => ZbiType::Crashlog,
-            zbi_type if zbi_type == ZbiType::Nvram as u32 => ZbiType::Nvram,
-            zbi_type if zbi_type == ZbiType::NvramDeprecated as u32 => ZbiType::NvramDeprecated,
-            zbi_type if zbi_type == ZbiType::PlatformId as u32 => ZbiType::PlatformId,
-            zbi_type if zbi_type == ZbiType::DriverBoardInfo as u32 => ZbiType::DriverBoardInfo,
-            zbi_type if zbi_type == ZbiType::CpuConfig as u32 => ZbiType::CpuConfig,
-            zbi_type if zbi_type == ZbiType::CpuTopology as u32 => ZbiType::CpuTopology,
-            zbi_type if zbi_type == ZbiType::MemoryConfig as u32 => ZbiType::MemoryConfig,
-            zbi_type if zbi_type == ZbiType::KernelDriver as u32 => ZbiType::KernelDriver,
-            zbi_type if zbi_type == ZbiType::AcpiRsdp as u32 => ZbiType::AcpiRsdp,
-            zbi_type if zbi_type == ZbiType::Smbios as u32 => ZbiType::Smbios,
-            zbi_type if zbi_type == ZbiType::EfiMemoryMap as u32 => ZbiType::EfiMemoryMap,
-            zbi_type if zbi_type == ZbiType::EfiSystemTable as u32 => ZbiType::EfiSystemTable,
-            zbi_type if zbi_type == ZbiType::E820MemoryTable as u32 => ZbiType::E820MemoryTable,
-            zbi_type if zbi_type == ZbiType::FrameBuffer as u32 => ZbiType::FrameBuffer,
-            zbi_type if zbi_type == ZbiType::ImageArgs as u32 => ZbiType::ImageArgs,
-            zbi_type if zbi_type == ZbiType::BootVersion as u32 => ZbiType::BootVersion,
-            zbi_type if zbi_type == ZbiType::DriverMacAddress as u32 => ZbiType::DriverMacAddress,
-            zbi_type if zbi_type == ZbiType::DriverPartitionMap as u32 => {
-                ZbiType::DriverPartitionMap
-            }
-            zbi_type if zbi_type == ZbiType::DriverBoardPrivate as u32 => {
-                ZbiType::DriverBoardPrivate
-            }
-            zbi_type if zbi_type == ZbiType::RebootReason as u32 => ZbiType::RebootReason,
-            zbi_type if zbi_type == ZbiType::SerialNumber as u32 => ZbiType::SerialNumber,
-            zbi_type if zbi_type == ZbiType::BootloaderFile as u32 => ZbiType::BootloaderFile,
-            zbi_type if zbi_type == ZbiType::KernelArm64 as u32 => ZbiType::KernelArm64,
-            zbi_type if zbi_type == ZbiType::KernelX64 as u32 => ZbiType::KernelX64,
-            _ => ZbiType::Unknown,
-        }
-    }
 }
 
 struct ZbiSeeker {}
@@ -247,12 +143,12 @@ impl ZbiSeeker {
     /// format it just attempts to find the inner ZBI partition.
     pub fn seek_to_partition(cursor: &mut Cursor<Vec<u8>>) -> Result<()> {
         const SEEK_ALIGNMENT: u64 = 4;
-        let mut header = ZbiHeader::parse(cursor)?;
+        let mut header = read_header(cursor)?;
         let mut cur_pos = cursor.position();
-        while header.zbi_type != ZBI_TYPE_CONTAINER || header.magic != ZBI_ITEM_MAGIC {
+        while header.r#type != zbi::Type::Container || header.magic != zbi::ITEM_MAGIC {
             cur_pos += SEEK_ALIGNMENT;
             cursor.set_position(cur_pos);
-            header = ZbiHeader::parse(cursor)?;
+            header = read_header(cursor)?;
         }
         cursor.set_position(cursor.position() - ZBI_HEADER_SIZE);
         info!(position:% = cursor.position(); "Found ZBI inside another container");
@@ -267,52 +163,23 @@ pub mod test {
 
     /// Returns raw bytes for a zbi container that has no sections.
     pub fn empty_zbi_bytes() -> Vec<u8> {
-        let container_header = ZbiHeader {
-            zbi_type: ZBI_TYPE_CONTAINER,
-            length: 0,
-            extra: 0,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
-
-        container_header.as_bytes().to_vec()
+        header_bytes(zbi::Type::Container, 0, 0, zbi::Flags::empty())
     }
 
     /// Returns raw bytes for a zbi container has exactly one section: a bootfs section containing no file entries.
     pub fn zbi_with_empty_bootfs_bytes() -> Vec<u8> {
         let section_data = empty_bootfs_bytes();
-
-        let section_header = ZbiHeader {
-            zbi_type: ZbiType::StorageBootfs as u32,
-            length: section_data.len() as u32,
-            extra: 0,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
-
-        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
+        let mut section_bytes = header_bytes(
+            zbi::Type::StorageBootfs,
+            section_data.len() as u32,
+            0,
+            zbi::Flags::empty(),
+        );
         section_bytes.extend(&section_data);
 
-        let container_header = ZbiHeader {
-            zbi_type: ZBI_TYPE_CONTAINER,
-            length: section_bytes.len() as u32,
-            extra: 0,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
-
-        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
+        let mut zbi_bytes =
+            header_bytes(zbi::Type::Container, section_bytes.len() as u32, 0, zbi::Flags::empty());
         zbi_bytes.extend(&section_bytes);
-
         zbi_bytes
     }
 }
@@ -337,38 +204,22 @@ mod tests {
         let mut reader = ZbiReader::new(zbi_bytes);
         let sections = reader.parse().unwrap();
         assert_eq!(sections.len(), 1);
-        assert_eq!(sections[0].section_type, ZbiType::StorageBootfs);
+        assert_eq!(sections[0].section_type, zbi::Type::StorageBootfs);
         assert_eq!(sections[0].buffer, empty_bootfs_bytes());
     }
 
     #[test]
     fn test_zbi_sections() {
-        let mut container_header = ZbiHeader {
-            zbi_type: ZBI_TYPE_CONTAINER,
-            length: 0,
-            extra: 0,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
-        let section_header = ZbiHeader {
-            zbi_type: ZbiType::Discard as u32,
-            length: 10,
-            extra: 10,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
         let section_data: Vec<u8> = vec![0; 10];
-
-        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
+        let mut section_bytes = header_bytes(zbi::Type::Discard, 10, 10, zbi::Flags::empty());
         section_bytes.extend(&section_data);
-        container_header.length = u32::try_from(section_bytes.len()).unwrap();
-        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
+
+        let mut zbi_bytes = header_bytes(
+            zbi::Type::Container,
+            u32::try_from(section_bytes.len()).unwrap(),
+            0,
+            zbi::Flags::empty(),
+        );
         zbi_bytes.extend(&section_bytes);
 
         let mut reader = ZbiReader::new(zbi_bytes);
@@ -379,35 +230,24 @@ mod tests {
 
     #[test]
     fn test_zbi_compressed_sections() {
-        let mut container_header = ZbiHeader {
-            zbi_type: ZBI_TYPE_CONTAINER,
-            length: 0,
-            extra: 0,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
         let uncompressed_len: u32 = 4096;
         let uncompressed_data: Vec<u8> = vec![0; uncompressed_len.try_into().unwrap()];
         let section_data = zstd::compress(&uncompressed_data, uncompressed_len, 3).unwrap();
 
-        let section_header = ZbiHeader {
-            zbi_type: ZbiType::Discard as u32,
-            length: u32::try_from(section_data.len()).unwrap(),
-            extra: 4096,
-            flags: ZBI_FLAGS_STORAGE_COMPRESSED,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
-
-        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
+        let mut section_bytes = header_bytes(
+            zbi::Type::Discard,
+            u32::try_from(section_data.len()).unwrap(),
+            4096,
+            ZBI_FLAGS_STORAGE_COMPRESSED,
+        );
         section_bytes.extend(&section_data);
-        container_header.length = u32::try_from(section_bytes.len()).unwrap();
-        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
+
+        let mut zbi_bytes = header_bytes(
+            zbi::Type::Container,
+            u32::try_from(section_bytes.len()).unwrap(),
+            0,
+            zbi::Flags::empty(),
+        );
         zbi_bytes.extend(&section_bytes);
 
         let mut reader = ZbiReader::new(zbi_bytes);
@@ -418,50 +258,23 @@ mod tests {
 
     #[test]
     fn test_zbi_sections_unaligned() {
-        let mut container_header = ZbiHeader {
-            zbi_type: ZBI_TYPE_CONTAINER,
-            length: 0,
-            extra: 0,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
-        let section_header = ZbiHeader {
-            zbi_type: ZbiType::Discard as u32,
-            length: 7,
-            extra: 7,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
         let section_data: Vec<u8> = vec![0; 7];
-
-        let section_header_two = ZbiHeader {
-            zbi_type: ZbiType::Discard as u32,
-            length: 10,
-            extra: 10,
-            flags: 0,
-            reserved_0: 0,
-            reserved_1: 0,
-            magic: ZBI_ITEM_MAGIC,
-            crc32: 0,
-        };
         let section_data_two: Vec<u8> = vec![0; 10];
 
-        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
+        let mut section_bytes = header_bytes(zbi::Type::Discard, 7, 7, zbi::Flags::empty());
         section_bytes.extend(&section_data);
         let padding_len = 8 - (section_bytes.len() % 8);
         let padding = vec![0; padding_len];
         section_bytes.extend(&padding);
-        section_bytes.extend(section_header_two.as_bytes());
+        section_bytes.extend(header_bytes(zbi::Type::Discard, 10, 10, zbi::Flags::empty()));
         section_bytes.extend(&section_data_two);
 
-        container_header.length = u32::try_from(section_bytes.len()).unwrap();
-        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
+        let mut zbi_bytes = header_bytes(
+            zbi::Type::Container,
+            u32::try_from(section_bytes.len()).unwrap(),
+            0,
+            zbi::Flags::empty(),
+        );
         zbi_bytes.extend(&section_bytes);
 
         let mut reader = ZbiReader::new(zbi_bytes);

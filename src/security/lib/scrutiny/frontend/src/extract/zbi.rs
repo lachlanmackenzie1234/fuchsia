@@ -46,7 +46,7 @@ impl ZbiExtractController {
             file.write_all(&section.buffer)?;
 
             // Expand bootfs into its own folder as well.
-            if section.section_type == ZbiType::StorageBootfs {
+            if section.section_type == zbi::Type::StorageBootfs {
                 let mut bootfs_dir = output.clone();
                 bootfs_dir.push("bootfs");
                 fs::create_dir_all(bootfs_dir.clone())?;
@@ -61,7 +61,7 @@ impl ZbiExtractController {
                     let mut bootfs_file = File::create(bootfs_file_path)?;
                     bootfs_file.write_all(&data)?;
                 }
-            } else if section.section_type == ZbiType::StorageRamdisk {
+            } else if section.section_type == zbi::Type::StorageRamdisk {
                 info!("Attempting to load FvmPartitions");
                 let mut fvm_reader = FvmReader::new(section.buffer.clone());
                 if let Ok(fvm_partitions) = fvm_reader.parse() {

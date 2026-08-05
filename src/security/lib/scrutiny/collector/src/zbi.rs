@@ -16,7 +16,7 @@ use scrutiny_utils::bootfs::{BootfsFileIndex, BootfsPackageIndex, BootfsReader};
 use scrutiny_utils::key_value::parse_key_value;
 use scrutiny_utils::package::PackageIndexContents;
 use scrutiny_utils::url::from_package_name_variant_path;
-use scrutiny_utils::zbi::{ZbiReader, ZbiType};
+use scrutiny_utils::zbi::ZbiReader;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -84,7 +84,7 @@ fn extract_zbi_from_update_package(
     info!(total = sections.len(); "Extracted sections from the ZBI");
     for section in sections.iter() {
         info!(section_type:? = section.section_type; "Extracted sections");
-        if section.section_type == ZbiType::StorageBootfs {
+        if section.section_type == zbi::Type::StorageBootfs {
             let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
             let bootfs_result = bootfs_reader.parse();
             if let Err(err) = bootfs_result {
@@ -93,7 +93,7 @@ fn extract_zbi_from_update_package(
                 bootfs_files = bootfs_result.unwrap();
                 info!(total = bootfs_files.len(); "Bootfs found files");
             }
-        } else if section.section_type == ZbiType::Cmdline {
+        } else if section.section_type == zbi::Type::Cmdline {
             let mut cmd_buffer = section.buffer.clone();
             // The cmdline.blk contains a trailing 0.
             cmd_buffer.truncate(cmd_buffer.len() - 1);
