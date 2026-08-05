@@ -12,9 +12,9 @@ group("top") {
   deps = [
     ":debug",
     ":handoff",
-    ":init",
     ":main",
     ":rust_panic",
+    ":top_rust",
     ":version",
     "//zircon/kernel/arch:arch-rs",
     "//zircon/kernel/arch:ffi",
@@ -55,11 +55,6 @@ source_set("handoff") {
   ]
 }
 
-source_set("init") {
-  sources = [ "init.cc" ]
-  deps = [ "//zircon/kernel/lib/init" ]
-}
-
 source_set("main") {
   sources = [ "main.cc" ]
   deps = [
@@ -86,6 +81,16 @@ source_set("main") {
 
 kernel_rust_mod("rust_panic") {
   sources = []
+}
+
+kernel_rust_mod("top_rust") {
+  output_name = "top"
+  source_root = "mod.rs"
+  sources = [
+    "init.rs",
+    "mod.rs",
+  ]
+  deps = [ "//zircon/kernel/lib/init:init_rust" ]
 }
 
 source_set("version") {

@@ -76,7 +76,7 @@ enum lk_init_flags {
   LK_INIT_FLAG_ALL_CPUS = LK_INIT_FLAG_PRIMARY_CPU | LK_INIT_FLAG_SECONDARY_CPUS,
 };
 
-void lk_init_level(lk_init_flags required_flag, uint start_level, uint stop_level);
+extern "C" void lk_init_level(lk_init_flags required_flag, uint start_level, uint stop_level);
 
 inline void lk_primary_cpu_init_level(uint start_level, uint stop_level) {
   lk_init_level(LK_INIT_FLAG_PRIMARY_CPU, start_level, stop_level);

@@ -6,9 +6,20 @@
 
 import("//build/cpp/library_headers.gni")
 import("//build/zircon/migrated_targets.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 
 group("init") {
   public_deps = [ ":headers" ]
+}
+
+kernel_rust_crate("init_rust") {
+  crate_name = "init"
+  sources = [ "src/lib.rs" ]
+  source_root = "src/lib.rs"
+  deps = [
+    "//src/lib/zr",
+    "//third_party/rust_crates:paste",
+  ]
 }
 
 library_headers("headers") {
