@@ -291,7 +291,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         test_ssid = AccessPointConfig.random_string()
 
         # Removing a network that doesn't exist shouldn't error.
-        await self.dut.wlan_policy.remove_network(
+        await self.dut.wlan_policy.forget_network(
             test_ssid, f_wlan_policy.SecurityType.NONE
         )
         asserts.assert_equal(
@@ -311,7 +311,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ],
         )
 
-        await self.dut.wlan_policy.remove_network(
+        await self.dut.wlan_policy.forget_network(
             test_ssid, f_wlan_policy.SecurityType.NONE
         )
         asserts.assert_equal(
