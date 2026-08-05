@@ -56,6 +56,7 @@ MAC_Fidl: MacAddress { octets: [1, 2, 3, 255, FF, FF] }
 SSID: <ssid-666F6F>,
 HTTP: http://fuchsia.dev/fuchsia/testing?q=Test,
 HTTPS: https://fuchsia.dev/fuchsia/testing?q=Test,
+URL_IPv4: https://8.8.8.8/fuchsia/testing?q=Test,
 HEX: 1234567890abcdef,
 HEX: 1234567890abcdefABCDEF0123456789,
 v4Current: 0.1.2.3,
@@ -95,6 +96,7 @@ MAC_Fidl: MacAddress { <REDACTED-MAC: 16> }
 SSID: <REDACTED-SSID: 17>,
 HTTP: <REDACTED-URL>,
 HTTPS: <REDACTED-URL>,
+URL_IPv4: <REDACTED-URL>,
 HEX: <REDACTED-HEX: 18>,
 HEX: <REDACTED-HEX: 19>,
 v4Current: 0.1.2.3,
@@ -119,7 +121,13 @@ RedactorBase::RedactorBase(inspect::BoolProperty redaction_enabled)
 Redactor::Redactor(const int starting_id, inspect::UintProperty cache_size,
                    inspect::BoolProperty redaction_enabled)
     : RedactorBase(std::move(redaction_enabled)), cache_(std::move(cache_size), starting_id) {
-  Add(ReplaceIPv4())
+  // The URL replacer must run before IP/MAC/SSID replacers. The IP replacers
+  // inject '<' and space characters (e.g. "<REDACTED-IPV4: 1>") which fall in
+  // the URL regex stop-character set [^"',!<> ]. If IP redaction runs first on
+  // a URL with an IP-literal host, the URL regex terminates early and the
+  // path/query (which may contain secrets) survives redaction.
+  AddTextReplacer(kUrlPattern, "<REDACTED-URL>")
+      .Add(ReplaceIPv4())
       .Add(ReplaceFidlIPv4())
       .Add(ReplaceIPv6())
       .Add(ReplaceFidlIPv6())
@@ -130,7 +138,6 @@ Redactor::Redactor(const int starting_id, inspect::UintProperty cache_size,
       .AddJsonReplacer(ReplaceIPv6())
       .AddJsonReplacer(ReplaceMac())
       .AddJsonReplacer(ReplaceSsid())
-      .AddTextReplacer(kUrlPattern, "<REDACTED-URL>")
       .AddTextReplacer(kEmailPattern, "<REDACTED-EMAIL>")
       .AddTextReplacer(kUuidPattern, "<REDACTED-UUID>")
       .AddIdReplacer(k16HexPattern, "<REDACTED-HEX: %d>", *kHexIgnorePrefixes)

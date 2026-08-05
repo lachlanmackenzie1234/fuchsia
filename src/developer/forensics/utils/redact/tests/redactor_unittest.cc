@@ -100,6 +100,18 @@ TEST_F(RedactorTest, RedactsUrlWithUuid) {
       "URL with UUID: <REDACTED-URL>");
 }
 
+TEST_F(RedactorTest, RedactsUrlWithIpv4Host) {
+  EXPECT_EQ(Redact("GET https://8.8.8.8/v1/fetch?token=SECRET"), "GET <REDACTED-URL>");
+}
+
+TEST_F(RedactorTest, RedactsUrlWithIpv6Host) {
+  EXPECT_EQ(Redact("request https://[2001:db8::1]/v1?auth=SecretKey"), "request <REDACTED-URL>");
+}
+
+TEST_F(RedactorTest, RedactsUrlWithIpv4HostAndPort) {
+  EXPECT_EQ(Redact("fetch https://203.0.113.42:8080/media?sig=QWxhZGRpbg"), "fetch <REDACTED-URL>");
+}
+
 TEST_F(RedactorTest, RedactsCombined) {
   EXPECT_EQ(Redact("Combined: Email alice@website.tld, IPv4 8.8.8.8"),
             "Combined: Email <REDACTED-EMAIL>, IPv4 <REDACTED-IPV4: 1>");
