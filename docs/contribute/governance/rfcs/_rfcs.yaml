@@ -3743,3 +3743,16 @@
   reviewers: ['alizhang@google.com', 'awolter@google.com', 'etryzelaar@google.com', 'gtsai@google.com']
   submitted: '2026-04-28'
   reviewed: '2026-06-23'
+
+- name: 'RFC-0285'
+  title: 'The Magma GPU open-source project'
+  short_description: 'A proposal to advance Magma as an open standard with a common shared reference implementation.'
+  authors: ['gurchetansingh@google.com']
+  file: '0285_magma_gpu_open_source_project.md'
+  area: ['Graphics']
+  issue: ['527073597']
+  gerrit_change_id: ['1674978']
+  status: 'Accepted'
+  reviewers: ['cstout@google.com', 'msandy@google.com', 'dgilhooley@google.com']
+  submitted: '2026-06-23'
+  reviewed: '2026-07-24'
