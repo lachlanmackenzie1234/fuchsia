@@ -13,7 +13,7 @@ use mmio::Register;
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
 use std::time::Duration;
-mod registers;
+pub(crate) mod registers;
 use registers::DwSpiRegsBlock;
 use zx::Status;
 
@@ -259,6 +259,23 @@ impl DwSpiDevice {
         Ok(rxdata)
     }
 
+    async fn set_cs_state(&self, chip_select: u32, assert: bool) -> Result<(), Status> {
+        if chip_select == 0 {
+            if let Some(cs_gpio) = &self.cs_gpio {
+                let mode = if assert {
+                    fgpio::natural::BufferMode::OutputLow
+                } else {
+                    fgpio::natural::BufferMode::OutputHigh
+                };
+                cs_gpio.set_buffer_mode(mode).wire().await.map_err(|e| {
+                    error!("Failed to toggle CS: {e}");
+                    Status::IO
+                })?;
+            }
+        }
+        Ok(())
+    }
+
     async fn exchange_pio(
         &mut self,
         chip_select: u32,
@@ -273,19 +290,33 @@ impl DwSpiDevice {
         assert!(txdata.len() > 0 || rx); // If there is no TX data then we must be receiving.
         assert!(txdata.len() == 0 || txdata.len() == size); // TX size must match RX size.
 
+        let enable_loopback =
+            chip_select == fidl_next_fuchsia_hardware_spiimpl::LOOPBACK_CHIP_SELECT;
+
         // Only one chip select is supported for now.
-        if chip_select != 0 {
+        if chip_select != 0 && !enable_loopback {
             return Err(Status::NOT_FOUND);
         }
 
-        if let Some(cs_gpio) = &self.cs_gpio {
-            cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputLow).wire().await.map_err(
-                |e| {
-                    error!("Failed to assert CS: {e}");
-                    Status::IO
-                },
-            )?;
+        if self.mmio.ctrlr0().read().srl() != enable_loopback {
+            self.mmio.ssi_enr_mut().write({
+                let mut ssi_enr = registers::SsiEnr::from_raw(0);
+                ssi_enr.set_ssi_en(false);
+                ssi_enr
+            });
+
+            self.mmio.ctrlr0_mut().update(|ctrlr0| {
+                ctrlr0.set_srl(enable_loopback);
+            });
+
+            self.mmio.ssi_enr_mut().write({
+                let mut ssi_enr = registers::SsiEnr::from_raw(0);
+                ssi_enr.set_ssi_en(true);
+                ssi_enr
+            });
         }
+
+        self.set_cs_state(chip_select, true).await?;
 
         // TODO(https://fxbug.dev/529838127): Support DMA transfers for larger sizes.
         // This is a placeholder indicating where DMA support would be added.
@@ -302,14 +333,7 @@ impl DwSpiDevice {
 
         self.mmio.ser_mut().write(registers::Ser::from_raw(0));
 
-        if let Some(cs_gpio) = &self.cs_gpio {
-            cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputHigh).wire().await.map_err(
-                |e| {
-                    error!("Failed to deassert CS: {e}");
-                    Status::IO
-                },
-            )?;
-        }
+        self.set_cs_state(chip_select, false).await?;
 
         rxdata
     }

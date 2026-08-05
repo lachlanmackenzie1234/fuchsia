@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::DwSpiDriver;
+use super::spi_device::registers;
 use fake_clock::FakeClock;
 use fake_gpio::FakeGpio;
 use fake_pdev::FakePDev;
@@ -13,6 +14,7 @@ use fdf_fidl;
 use fidl::Serializable;
 use fidl_fuchsia_driver_metadata as fmetadata;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
+use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_platform_device as fdevice;
 use fidl_next_fuchsia_hardware_sharedmemory as fsharedmemory;
 use fidl_next_fuchsia_hardware_sharedmemory::natural::SharedVmoRight;
@@ -21,6 +23,7 @@ use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::future::{self, Either};
+use mmio::Register;
 use zx::Vmo;
 
 #[fuchsia::test]
@@ -816,4 +819,135 @@ async fn test_vmo_validation() {
     assert_eq!(res.unwrap_err(), zx::Status::OUT_OF_RANGE);
 
     started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_loopback_mode() {
+    let mut service_fs = ServiceFs::new();
+    let scope = fasync::Scope::new_with_name("test");
+
+    let pdev = FakePDev::new();
+
+    let vmo = Vmo::create(0x100).expect("Failed to create VMO");
+    vmo.set_cache_policy(zx::CachePolicy::UnCachedDevice).expect("Failed to set cache policy");
+    let mapping = mapped_vmo::Mapping::create_from_vmo(
+        &vmo,
+        0x100,
+        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+    )
+    .expect("Failed to map VMO");
+
+    let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
+    let irq = zx::VirtualInterrupt::create_virtual().expect("Failed to create virtual interrupt");
+    let irq_dup =
+        irq.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate interrupt");
+
+    let mut pdev_config: fake_pdev::Config = Default::default();
+    let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
+    pdev_config.mmios.insert(0, mmio);
+    pdev_config.irqs.insert(0, zx::Interrupt::from(irq.into_handle()));
+    pdev.set_config(pdev_config);
+
+    let powerdomain = FakePowerDomain::new();
+    let clock_bus = FakeClock::new();
+    let clock_regs = FakeClock::new();
+    let reset = FakeReset::new();
+
+    let gpio = FakeGpio::default();
+
+    let mut harness = TestHarness::<DwSpiDriver>::new()
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
+        .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
+        .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
+        .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
+        .add_offer(reset.serve(&mut service_fs, scope.to_handle(), "reset"))
+        .add_offer(gpio.serve(&mut service_fs, scope.to_handle(), "gpio-cs-0"))
+        .set_driver_incoming(service_fs);
+
+    let dispatcher = fdf_fidl::FidlExecutor::from(harness.dispatcher().clone());
+    let started_driver = harness.start_driver().await.expect("Failed to start driver");
+
+    let spi_service: fdf_component::ServiceInstance<fspiimpl::Service> =
+        started_driver.driver_outgoing().service().connect_next().unwrap();
+
+    let (client_end, server_end) = fdf_fidl::create_channel();
+    spi_service.device(server_end).unwrap();
+    let client = client_end.spawn_on(&dispatcher);
+
+    // 1. Normal transfer (CS 0)
+    perform_transfer(&client, &irq_dup, &gpio, &mapping, 0).await;
+
+    // 2. Loopback transfer (CS LOOPBACK_CHIP_SELECT)
+    perform_transfer(&client, &irq_dup, &gpio, &mapping, fspiimpl::LOOPBACK_CHIP_SELECT).await;
+
+    // 3. Normal transfer (CS 0)
+    perform_transfer(&client, &irq_dup, &gpio, &mapping, 0).await;
+
+    started_driver.stop_driver().await;
+}
+
+async fn perform_transfer(
+    client: &fidl_next::Client<fspiimpl::SpiImpl, fdf_fidl::DriverChannel>,
+    irq_dup: &zx::VirtualInterrupt,
+    gpio: &FakeGpio,
+    mapping: &mapped_vmo::Mapping,
+    cs: u32,
+) {
+    let write_u32 = |offset: usize, value: u32| {
+        mapping.write_at(offset, &value.to_le_bytes());
+    };
+    let read_u32 = |offset: usize| -> u32 {
+        let mut bytes = [0u8; 4];
+        mapping.read_at(offset, &mut bytes);
+        u32::from_le_bytes(bytes)
+    };
+
+    write_u32(0x24, 0x0);
+    write_u32(0x20, 0x0);
+    write_u32(0x30, 0x01);
+    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
+
+    let exchange_future = client.exchange_vector(cs, vec![1u8, 2, 3, 4, 5]);
+    let exchange_future = std::pin::pin!(exchange_future);
+
+    let untriggered_future =
+        fasync::OnSignals::new(irq_dup, zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED);
+    let untriggered_future = std::pin::pin!(untriggered_future);
+
+    let exchange_future = match future::select(exchange_future, untriggered_future).await {
+        Either::Left((res, _)) => {
+            panic!("exchange_vector completed prematurely: {:?}", res);
+        }
+        Either::Right((res, remaining_exchange_future)) => {
+            res.expect("Failed to wait for untriggered signal");
+            remaining_exchange_future
+        }
+    };
+
+    // During transfer:
+    // - SRL should be 1 if loopback, 0 otherwise
+    // - CS should be High (deasserted) if loopback, Low (asserted) otherwise
+    let ctrlr0 = read_u32(0x0);
+    let expected_srl = cs == fspiimpl::LOOPBACK_CHIP_SELECT;
+    assert_eq!(registers::CtrlR0::from_raw(ctrlr0).srl(), expected_srl);
+
+    let expected_buffer_mode = if cs == fspiimpl::LOOPBACK_CHIP_SELECT {
+        fgpio::BufferMode::OutputHigh
+    } else {
+        fgpio::BufferMode::OutputLow
+    };
+    assert_eq!(gpio.buffer_mode(), expected_buffer_mode);
+
+    write_u32(0x24, 0x5);
+    write_u32(0x30, 0x10);
+    irq_dup.trigger(zx::BootInstant::from_nanos(1)).expect("Failed to trigger interrupt");
+
+    let _ = exchange_future.await.expect("exchange_vector failed");
+
+    // After transfer:
+    // - SRL should be the same as before
+    // - CS should be High (deasserted)
+    let ctrlr0 = read_u32(0x0);
+    assert_eq!(registers::CtrlR0::from_raw(ctrlr0).srl(), expected_srl);
+    assert_eq!(gpio.buffer_mode(), fgpio::BufferMode::OutputHigh);
 }
