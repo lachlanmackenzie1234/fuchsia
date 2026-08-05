@@ -208,9 +208,11 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             ))
             .directory("config");
         let mut saw_feedback = false;
+        let mut saw_previous_boot = false;
         for pipeline in archivist_pipelines {
             let ArchivistPipeline { name, files } = pipeline;
             saw_feedback |= matches!(name, PipelineType::Feedback);
+            saw_previous_boot |= matches!(name, PipelineType::PreviousBoot);
             // TODO(https://fxbug.dev/342194194): improve how we handle disabling pipelines. This
             // could probably be part of the structured configuration instead of a magic file.
             if files.is_empty() {
@@ -234,6 +236,9 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
         // isn't filtered. That configuration should be moved here instead of Archivist.
         if !saw_feedback {
             insert_disabled(pipelines, &PipelineType::Feedback)?;
+        }
+        if !saw_previous_boot {
+            insert_disabled(pipelines, &PipelineType::PreviousBoot)?;
         }
 
         let exception_handler_available = matches!(

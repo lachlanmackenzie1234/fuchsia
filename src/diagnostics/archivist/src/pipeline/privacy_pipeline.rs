@@ -7,7 +7,13 @@ use crate::diagnostics::AccessorStats;
 use crate::error::Error;
 use crate::pipeline::StaticHierarchyAllowlist;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServerEnd};
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_diagnostics_host as fdiagnostics_host;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_fs::directory;
+use fuchsia_inspect as inspect;
 use fuchsia_sync::RwLock;
 use futures::TryStreamExt;
 use log::{debug, warn};
@@ -16,11 +22,6 @@ use std::borrow::Cow;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
-use {
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_diagnostics as fdiagnostics,
-    fidl_fuchsia_diagnostics_host as fdiagnostics_host, fidl_fuchsia_io as fio,
-    fuchsia_async as fasync, fuchsia_inspect as inspect,
-};
 
 const ALL_PIPELINE_NAME: &str = "all";
 
@@ -159,7 +160,7 @@ impl PipelineManager {
                 if !matches!(entry.kind, directory::DirentKind::Directory) {
                     continue;
                 }
-                let empty_behavior = if entry.name == "feedback" {
+                let empty_behavior = if entry.name == "feedback" || entry.name == "previous_boot" {
                     configs::EmptyBehavior::DoNotFilter
                 } else {
                     configs::EmptyBehavior::Disable

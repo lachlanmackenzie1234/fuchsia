@@ -85,6 +85,8 @@ pub struct ArchivistPipeline {
 pub enum PipelineType {
     /// A pipeline for feedback data.
     Feedback,
+    /// A pipeline for previous boot data.
+    PreviousBoot,
     /// A custom pipeline.
     Custom(String),
 }
@@ -96,6 +98,7 @@ impl Serialize for PipelineType {
     {
         match self {
             Self::Feedback => serializer.serialize_str("feedback"),
+            Self::PreviousBoot => serializer.serialize_str("previous_boot"),
             Self::Custom(s) => serializer.serialize_str(s),
         }
     }
@@ -109,11 +112,13 @@ impl<'de> Deserialize<'de> for PipelineType {
         let variant = String::deserialize(de)?.to_lowercase();
         match variant.as_str() {
             "feedback" => Ok(PipelineType::Feedback),
+            "previous_boot" => Ok(PipelineType::PreviousBoot),
             "lowpan" => Ok(PipelineType::Custom("lowpan".into())),
             "legacy_metrics" => Ok(PipelineType::Custom("legacy_metrics".into())),
-            other => {
-                Err(D::Error::unknown_variant(other, &["feedback", "lowpan", "legacy_metrics"]))
-            }
+            other => Err(D::Error::unknown_variant(
+                other,
+                &["feedback", "previous_boot", "lowpan", "legacy_metrics"],
+            )),
         }
     }
 }
@@ -125,6 +130,7 @@ impl std::fmt::Display for PipelineType {
             "{}",
             match self {
                 Self::Feedback => "feedback",
+                Self::PreviousBoot => "previous_boot",
                 Self::Custom(name) => &name,
             }
         )
