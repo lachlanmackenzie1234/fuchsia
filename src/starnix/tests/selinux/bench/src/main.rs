@@ -8,7 +8,7 @@ use criterion::Criterion;
 use fuchsia_criterion::FuchsiaCriterion;
 use security::PermissionFlags;
 use selinux::policy::{AccessVector, KernelAccessDecision};
-use selinux::{AccessQueryArgs, ConcurrentAccessCache, KernelClass, SecurityId};
+use selinux::{AccessQueryArgs, ConcurrentAccessCache, FileClass, KernelClass, SecurityId};
 use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::testing::{PanickingFile, spawn_kernel_with_selinux_and_run};
@@ -105,6 +105,88 @@ fn compute_access_decision_bench(
         b.iter(|| {
             let _ =
                 std::hint::black_box(server_clone.compute_access_decision_raw(sid, sid, class_id));
+        })
+    });
+}
+
+fn compute_create_sid_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    name_suffix: &'static str,
+    source_context: &'static [u8],
+    target_context: &'static [u8],
+) {
+    let server = selinux::SecurityServer::new_default();
+    let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+    let source_sid = server.security_context_to_sid(source_context.into()).unwrap();
+    let target_sid = server.security_context_to_sid(target_context.into()).unwrap();
+    let class_id = server.class_id_by_name("process").unwrap();
+
+    let server_clone = server.clone();
+    let _ = group.bench_function(format!("compute_create_sid_{}", name_suffix), move |b| {
+        b.iter(|| {
+            let _ = std::hint::black_box(
+                server_clone.compute_create_sid_raw(source_sid, target_sid, class_id),
+            );
+        })
+    });
+}
+
+fn cached_create_sid_filename_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    bench_name: &'static str,
+    source_context: &'static [u8],
+    target_context: &'static [u8],
+    filename: &'static [u8],
+) {
+    let server = selinux::SecurityServer::new_default();
+    let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+    let source_sid = server.security_context_to_sid(source_context.into()).unwrap();
+    let target_sid = server.security_context_to_sid(target_context.into()).unwrap();
+
+    let server_clone = server.clone();
+    let local_cache = Default::default();
+    let permission_check = server_clone.as_permission_check(&local_cache);
+    let _ = group.bench_function(format!("cached_create_sid_filename_{}", bench_name), move |b| {
+        b.iter(|| {
+            let _ = std::hint::black_box(
+                permission_check
+                    .compute_new_fs_node_sid(
+                        source_sid,
+                        target_sid,
+                        FileClass::File.into(),
+                        filename.into(),
+                    )
+                    .unwrap(),
+            );
+        })
+    });
+}
+
+fn compute_create_sid_filename_bench(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    bench_name: &'static str,
+    source_context: &'static [u8],
+    target_context: &'static [u8],
+    filename: &'static [u8],
+) {
+    let server = selinux::SecurityServer::new_default();
+    let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+    let source_sid = server.security_context_to_sid(source_context.into()).unwrap();
+    let target_sid = server.security_context_to_sid(target_context.into()).unwrap();
+
+    let server_clone = server.clone();
+    let _ = group.bench_function(format!("compute_create_sid_filename_{}", bench_name), move |b| {
+        b.iter(|| {
+            let _ = std::hint::black_box(
+                server_clone
+                    .compute_new_fs_node_sid_raw(
+                        source_sid,
+                        target_sid,
+                        FileClass::File.into(),
+                        filename.into(),
+                    )
+                    .unwrap(),
+            );
         })
     });
 }
@@ -234,6 +316,23 @@ fn main() {
         sid_to_security_context_bench(&mut group, "c0_c255", b"u:r:kernel:s0:c0.c255");
         compute_access_decision_bench(&mut group, "simple", b"u:r:kernel:s0");
         compute_access_decision_bench(&mut group, "c0_c255", b"u:r:kernel:s0:c0.c255");
+        compute_create_sid_bench(&mut group, "simple", b"u:r:kernel:s0", b"u:r:kernel:s0");
+        compute_create_sid_bench(
+            &mut group,
+            "c0_c255",
+            b"u:r:kernel:s0:c0.c255",
+            b"u:r:kernel:s0:c0.c255",
+        );
+        let filename_transition_cases: &[(&str, &[u8], &[u8], &[u8])] = &[
+            ("match", b"u:r:init:s0", b"u:object_r:tmpfs:s0", b"shm"),
+            ("no_match", b"u:r:init:s0", b"u:object_r:tmpfs:s0", b"unlikely_filename_1234"),
+            ("no_target_rules", b"u:r:init:s0", b"u:r:kernel:s0", b"unlikely_filename_1234"),
+            ("nameless", b"u:r:init:s0", b"u:object_r:tmpfs:s0", b""),
+        ];
+        for &(bench_name, source, target, filename) in filename_transition_cases {
+            compute_create_sid_filename_bench(&mut group, bench_name, source, target, filename);
+            cached_create_sid_filename_bench(&mut group, bench_name, source, target, filename);
+        }
         concurrent_access_cache_get_bench(&mut group);
         file_permission_bench(&mut group, current_task);
         fs_node_permission_bench(&mut group, current_task);

@@ -550,6 +550,25 @@ impl SecurityServer {
         self.backend.compute_create_sid_raw(source_sid, target_sid, target_class.into())
     }
 
+    /// Returns the security identifier ([`SecurityId`]) with which to label a new filesystem node of
+    /// [`FsNodeClass`] with the given name, based on the specified source and target security SIDs.
+    /// Evaluates filename transition rules uncached, falling back to default create SID computation
+    /// if no filename transition rule matches.
+    pub fn compute_new_fs_node_sid_raw(
+        &self,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+        fs_node_class: FsNodeClass,
+        fs_node_name: NullessByteStr<'_>,
+    ) -> Result<SecurityId, anyhow::Error> {
+        self.backend.compute_new_fs_node_sid_raw(
+            source_sid,
+            target_sid,
+            fs_node_class,
+            fs_node_name,
+        )
+    }
+
     /// Returns the raw `AccessDecision` for a specified source, target and class.
     // TODO: APIs should not mix SecurityId and (raw) ClassId.
     pub fn compute_access_decision_raw(
@@ -580,6 +599,26 @@ impl SecurityServerBackend {
             ))
         })
         .context("computing new security context from policy")
+    }
+
+    fn compute_new_fs_node_sid_raw(
+        &self,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+        fs_node_class: FsNodeClass,
+        fs_node_name: NullessByteStr<'_>,
+    ) -> Result<SecurityId, anyhow::Error> {
+        if !fs_node_name.as_bytes().is_empty() {
+            if let Some(sid) = self.compute_new_fs_node_sid_with_name(
+                source_sid,
+                target_sid,
+                fs_node_class,
+                fs_node_name,
+            ) {
+                return Ok(sid);
+            }
+        }
+        self.compute_create_sid_raw(source_sid, target_sid, fs_node_class.into())
     }
 
     /// Helper for call-sites that need to compute a `SecurityContext` and assign a SID to it.
