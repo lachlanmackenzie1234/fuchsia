@@ -42,14 +42,14 @@ static const std::vector<fuchsia_hardware_platform_bus::Irq> saradc_irqs{
 // ADC Channels to expose from generic ADC driver.
 static const fidl_metadata::adc::Channel kAdcChannels[] = {
     DECL_ADC_CHANNEL(0),
-    DECL_ADC_CHANNEL(SHERLOCK_THERMISTOR_BASE),
-    DECL_ADC_CHANNEL(SHERLOCK_THERMISTOR_AUDIO),
-    DECL_ADC_CHANNEL(SHERLOCK_THERMISTOR_AMBIENT),
+    DECL_ADC_CHANNEL_WITH_NAME(SHERLOCK_THERMISTOR_BASE, "adc-1"),
+    DECL_ADC_CHANNEL_WITH_NAME(SHERLOCK_THERMISTOR_AUDIO, "adc-2"),
+    DECL_ADC_CHANNEL_WITH_NAME(SHERLOCK_THERMISTOR_AMBIENT, "adc-3"),
 };
 
 zx::result<> Sherlock::AdcInit() {
   fuchsia_hardware_platform_bus::Node node;
-  node.name() = "adc";
+  node.name() = "adc-9000";
   node.vid() = PDEV_VID_AMLOGIC;
   node.pid() = PDEV_PID_GENERIC;
   node.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_ADC;
@@ -72,7 +72,7 @@ zx::result<> Sherlock::AdcInit() {
   fdf::Arena arena('ADC_');
 
   auto composite_spec =
-      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("aml_saradc").Build();
+      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("adc-9000").Build();
 
   auto result =
       pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, node), composite_spec);

@@ -9,6 +9,7 @@
 #include <lib/ddk/binding.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
+#include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
@@ -54,7 +55,7 @@ zx_status_t Sherlock::LightInit() {
   }
 
   const fpbus::Node tcs3400_light_node({
-      .name = "tcs3400_light",
+      .name = "tcs3400-light-39",
       .vid = PDEV_VID_GENERIC,
       .pid = PDEV_PID_GENERIC,
       .did = PDEV_DID_TCS3400_LIGHT,
@@ -121,7 +122,7 @@ zx_status_t Sherlock::LightInit() {
   fdf::Arena tcs3400_light_arena('TCS3');
 
   auto tcs3400_light_spec = fuchsia_driver_framework::CompositeNodeSpec{
-      {.name = "tcs3400_light", .parents2 = kTcs3400LightParents}};
+      {.name = "tcs3400-light-39", .parents2 = kTcs3400LightParents}};
   fdf::WireUnownedResult tsc3400_light_result =
       pbus_.buffer(tcs3400_light_arena)
           ->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, tcs3400_light_node),
@@ -156,7 +157,7 @@ zx_status_t Sherlock::LightInit() {
   }
 
   fpbus::Node light_node;
-  light_node.name() = "gpio-light";
+  light_node.name() = "aml-light";
   light_node.vid() = PDEV_VID_AMLOGIC;
   light_node.pid() = PDEV_PID_GENERIC;
   light_node.did() = PDEV_DID_GPIO_LIGHT;
@@ -258,7 +259,7 @@ zx_status_t Sherlock::LightInit() {
 
   fdf::Arena arena('LIGH');
   auto aml_light_spec =
-      fuchsia_driver_framework::CompositeNodeSpec{{.name = "aml_light", .parents2 = parents}};
+      fuchsia_driver_framework::CompositeNodeSpec{{.name = "aml-light", .parents2 = parents}};
 
   fdf::WireUnownedResult result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, light_node), fidl::ToWire(fidl_arena, aml_light_spec));

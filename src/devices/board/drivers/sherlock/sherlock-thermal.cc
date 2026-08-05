@@ -262,7 +262,7 @@ zx::result<> CreateThermalPllNode(
   };
 
   const fpbus::Node node{{
-      .name = "aml-thermal-pll",
+      .name = "temperature-sensor-ff634800",
       .vid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC,
       .pid = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931,
       .did = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_THERMAL_PLL,
@@ -298,7 +298,8 @@ zx::result<> CreateThermalPllNode(
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                            bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION, "fuchsia.pwm.PWM_ID_FUNCTION." + function),
+        fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
+                           "fuchsia.pwm.PWM_ID_FUNCTION." + function),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});
@@ -322,7 +323,7 @@ zx::result<> CreateThermalPllNode(
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_thermal_pll", .parents2 = parents}}));
+                                   {.name = "temperature-sensor-ff634800", .parents2 = parents}}));
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send NodeAdd request: %s", result.FormatDescription().data());
     return zx::error(result.status());
@@ -362,7 +363,7 @@ zx::result<> CreateThermalDdrNode(
   };
 
   fpbus::Node node{{
-      .name = "aml-thermal-ddr",
+      .name = "temperature-sensor-ff634c00",
       .vid = PDEV_VID_AMLOGIC,
       .pid = PDEV_PID_AMLOGIC_T931,
       .did = PDEV_DID_AMLOGIC_THERMAL_DDR,
@@ -377,8 +378,8 @@ zx::result<> CreateThermalDdrNode(
   // The DDR sensor is controlled by a non-legacy thermal device, which only reads temperature.
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
-      fidl::ToWire(fidl_arena,
-                   fdf::CompositeNodeSpec{{.name = "aml_thermal_ddr", .parents2 = {}}}));
+      fidl::ToWire(fidl_arena, fdf::CompositeNodeSpec{
+                                   {.name = "temperature-sensor-ff634c00", .parents2 = {}}}));
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
            result.FormatDescription().data());

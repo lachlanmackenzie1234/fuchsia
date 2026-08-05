@@ -144,7 +144,7 @@ zx_status_t Sherlock::EmmcInit() {
   };
 
   fpbus::Node emmc_dev;
-  emmc_dev.name() = "sherlock-emmc";
+  emmc_dev.name() = "mmc-ffe07000";
   emmc_dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   emmc_dev.pid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC;
   emmc_dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_SDMMC_C;
@@ -162,7 +162,7 @@ zx_status_t Sherlock::EmmcInit() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, emmc_dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "sherlock_emmc", .parents2 = kEmmcParents}}));
+                                   {.name = "mmc-ffe07000", .parents2 = kEmmcParents}}));
   if (!result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec Emmc(emmc_dev) request failed: %s",
            result.FormatDescription().data());

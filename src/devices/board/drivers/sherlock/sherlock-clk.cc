@@ -90,7 +90,7 @@ zx_status_t Sherlock::ClkInit() {
 
   const fpbus::Node clk_dev = [&clock_metadata]() {
     fpbus::Node dev = {};
-    dev.name() = "sherlock-clk";
+    dev.name() = "clock-controller-ff63c000";
     dev.vid() = PDEV_VID_AMLOGIC;
     dev.did() = PDEV_DID_AMLOGIC_G12B_CLK;
     dev.mmio() = clk_mmios;
@@ -102,7 +102,7 @@ zx_status_t Sherlock::ClkInit() {
   fdf::Arena arena('CLK_');
 
   auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
-                            .name("amlogic_clock")
+                            .name("clock-controller-ff63c000")
                             .Build();
 
   auto result =

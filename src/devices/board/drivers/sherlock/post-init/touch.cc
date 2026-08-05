@@ -87,7 +87,7 @@ zx::result<> PostInit::InitTouch() {
   }
 
   fpbus::Node node(
-      {.name = "focaltech_touch",
+      {.name = "focaltech-touch-38",
        .vid = PDEV_VID_GENERIC,
        .pid = PDEV_PID_GENERIC,
        .did = PDEV_DID_FOCALTOUCH,
@@ -123,8 +123,8 @@ zx::result<> PostInit::InitTouch() {
       }},
   };
 
-  auto composite_node_spec =
-      fuchsia_driver_framework::CompositeNodeSpec{{.name = "focaltech_touch", .parents2 = parents}};
+  auto composite_node_spec = fuchsia_driver_framework::CompositeNodeSpec{
+      {.name = "focaltech-touch-38", .parents2 = parents}};
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('FOCL');

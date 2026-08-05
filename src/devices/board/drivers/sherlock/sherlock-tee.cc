@@ -97,7 +97,7 @@ zx_status_t Sherlock::TeeInit() {
   };
 
   fpbus::Node node{{
-      .name = "tee",
+      .name = "tee-5300000",
       .vid = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC,
       .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
       .did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_OPTEE,
@@ -112,7 +112,7 @@ zx_status_t Sherlock::TeeInit() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "tee", .parents2 = kTeeCompositeParents}}));
+                                   {.name = "tee-5300000", .parents2 = kTeeCompositeParents}}));
   if (!result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec Tee(tee_dev) request failed: %s",
            result.FormatDescription().data());

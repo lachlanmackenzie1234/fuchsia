@@ -33,6 +33,7 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 using i2c_channel_t = fidl_metadata::i2c::Channel;
 
 struct I2cBus {
+  const char* name;
   uint32_t bus_id;
   zx_paddr_t mmio;
   uint32_t irq;
@@ -106,18 +107,21 @@ constexpr i2c_channel_t i2c_3_channels[]{
 
 constexpr I2cBus buses[]{
     {
+        .name = "i2c-5000",
         .bus_id = SHERLOCK_I2C_A0_0,
         .mmio = T931_I2C_AOBUS_BASE,
         .irq = T931_I2C_AO_0_IRQ,
         .channels{i2c_ao_channels, std::size(i2c_ao_channels)},
     },
     {
+        .name = "i2c-1d000",
         .bus_id = SHERLOCK_I2C_2,
         .mmio = T931_I2C2_BASE,
         .irq = T931_I2C2_IRQ,
         .channels{i2c_2_channels, std::size(i2c_2_channels)},
     },
     {
+        .name = "i2c-1c000",
         .bus_id = SHERLOCK_I2C_3,
         .mmio = T931_I2C3_BASE,
         .irq = T931_I2C3_IRQ,
@@ -154,11 +158,8 @@ zx_status_t AddI2cBus(const I2cBus& bus,
       }},
   };
 
-  char name[32];
-  snprintf(name, sizeof(name), "i2c-%u", bus.bus_id);
-
   fpbus::Node dev;
-  dev.name() = name;
+  dev.name() = bus.name;
   dev.vid() = PDEV_VID_AMLOGIC;
   dev.pid() = PDEV_PID_GENERIC;
   dev.did() = PDEV_DID_AMLOGIC_I2C;
@@ -179,7 +180,7 @@ zx_status_t AddI2cBus(const I2cBus& bus,
       fdf::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
   };
 
-  const fdf::CompositeNodeSpec i2c_spec{{.name = name, .parents2 = kI2cParents}};
+  const fdf::CompositeNodeSpec i2c_spec{{.name = bus.name, .parents2 = kI2cParents}};
   const auto result = pbus.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, dev),
                                                                fidl::ToWire(fidl_arena, i2c_spec));
   if (!result.ok()) {

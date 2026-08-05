@@ -90,7 +90,7 @@ zx_status_t Sherlock::ButtonsInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena buttons_arena('BTTN');
 
-  fpbus::Node dev({.name = "sherlock-buttons",
+  fpbus::Node dev({.name = "gpio-buttons",
                    .vid = PDEV_VID_GENERIC,
                    .pid = PDEV_PID_GENERIC,
                    .did = PDEV_DID_BUTTONS,
@@ -177,7 +177,7 @@ zx_status_t Sherlock::ButtonsInit() {
       }}};
 
   fuchsia_driver_framework::CompositeNodeSpec buttonComposite = {
-      {.name = "sherlock-buttons", .parents2 = std::move(parents)}};
+      {.name = "gpio-buttons", .parents2 = std::move(parents)}};
 
   fdf::WireUnownedResult result =
       pbus_.buffer(buttons_arena)

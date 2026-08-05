@@ -51,7 +51,7 @@ const std::vector<fpbus::Metadata> cpu_metadata{
 
 const fpbus::Node cpu_dev = []() {
   fpbus::Node result = {};
-  result.name() = "aml-cpu";
+  result.name() = "cpu-controller-0";
   result.vid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE;
   result.pid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_SHERLOCK;
   result.did() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_DID_GOOGLE_AMLOGIC_CPU;
@@ -87,7 +87,7 @@ zx_status_t Sherlock::CpuInit() {
   }};
 
   auto composite_spec = fuchsia_driver_framework::CompositeNodeSpec{{
-      .name = "aml_cpu_legacy",
+      .name = "cpu-controller-0",
       .parents2 = {{aml_cpu_legacy_thermal_node}},
   }};
 

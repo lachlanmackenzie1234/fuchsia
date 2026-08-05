@@ -96,7 +96,7 @@ const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
 
 static const fpbus::Node video_enc_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml-video-enc";
+  dev.name() = "video-encoder-ffd00000";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_VIDEO_ENC;
@@ -134,7 +134,7 @@ zx_status_t Sherlock::VideoEncInit() {
   auto composite_result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, video_enc_dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml-video-enc", .parents2 = kVideoEncParents}}));
+                                   {.name = "aml_he264_encoder", .parents2 = kVideoEncParents}}));
   if (!composite_result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec VideoEnc(video_enc_dev) request failed: %s",
            composite_result.FormatDescription().data());

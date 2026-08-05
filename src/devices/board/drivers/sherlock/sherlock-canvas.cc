@@ -34,7 +34,7 @@ static const std::vector<fpbus::Bti> sherlock_canvas_btis{
 
 static const fpbus::Node canvas_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "canvas";
+  dev.name() = "canvas-ff638000";
   dev.vid() = PDEV_VID_AMLOGIC;
   dev.pid() = PDEV_PID_GENERIC;
   dev.did() = PDEV_DID_AMLOGIC_CANVAS;
@@ -47,7 +47,7 @@ zx_status_t Sherlock::CanvasInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('CANV');
   auto composite_spec =
-      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("aml_canvas").Build();
+      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("aml-canvas").Build();
 
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, canvas_dev),
                                                           composite_spec);

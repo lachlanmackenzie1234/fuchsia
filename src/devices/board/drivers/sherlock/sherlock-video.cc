@@ -86,7 +86,7 @@ static const std::vector<fpbus::Smc> sherlock_video_smcs{
 
 static const fpbus::Node video_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml_video";
+  dev.name() = "video-decoder-ffd00000";
   dev.vid() = PDEV_VID_AMLOGIC;
   dev.pid() = PDEV_PID_AMLOGIC_T931;
   dev.did() = PDEV_DID_AMLOGIC_VIDEO;

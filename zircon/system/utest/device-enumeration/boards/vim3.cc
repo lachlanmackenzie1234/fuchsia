@@ -37,7 +37,7 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       "i2c-5000.aml-i2c.i2c.i2c-0-24.khadas-mcu-18.vim3-mcu",
       "i2c-5000.aml-i2c.i2c.i2c-0-32.gpio-controller-20.ti-tca6408a.gpio",
       "interrupt-controller-ffc01000",
-      "nna-ff100000.aml-nna",
+      "nna-ff100000.aml-nna-child",
 
       // SDIO
       "mmc-ffe03000.aml-sd-emmc.sdmmc",

@@ -58,7 +58,7 @@ class AmlNnaDriver : public fdf::DriverBase2,
   };
 
   static constexpr std::string_view kDriverName = "aml_nna";
-  static constexpr std::string_view kChildNodeName = "aml-nna";
+  static constexpr std::string_view kChildNodeName = "aml-nna-child";
   static constexpr std::string_view kPlatformDeviceParentName = "pdev";
   static constexpr std::string_view kResetRegisterParentName = "register-reset";
   static constexpr uint32_t kHiuMmioIndex = 1;

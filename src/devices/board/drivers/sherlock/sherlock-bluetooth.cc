@@ -100,7 +100,7 @@ zx_status_t Sherlock::BluetoothInit() {
 
   auto builder =
       fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
-          .name("bluetooth-composite-spec")
+          .name("bt-uart-ffd24000")
           .parents2(fidl::VectorView<fuchsia_driver_framework::wire::ParentSpec2>(arena, parents));
 
   fit::result encoded = fidl::Persist(bt_uart_serial_info);
@@ -119,7 +119,7 @@ zx_status_t Sherlock::BluetoothInit() {
 
   const fpbus::Node bt_uart_dev = [&]() {
     fpbus::Node dev = {};
-    dev.name() = "bt-uart";
+    dev.name() = "bt-uart-ffd24000";
     dev.vid() = PDEV_VID_AMLOGIC;
     dev.pid() = PDEV_PID_GENERIC;
     dev.did() = PDEV_DID_AMLOGIC_UART;

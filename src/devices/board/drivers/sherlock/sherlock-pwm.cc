@@ -51,7 +51,7 @@ static const std::vector<fpbus::Mmio> pwm_mmios{
 
 static fpbus::Node pwm_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "pwm";
+  dev.name() = "pwm-ffd1b000";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_PWM;
@@ -126,8 +126,9 @@ zx_status_t Sherlock::PwmInit() {
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('PWM_');
-  auto composite_spec =
-      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("amlogic_pwm").Build();
+  auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
+                            .name("pwm-ffd1b000")
+                            .Build();
 
   auto result =
       pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, pwm_dev), composite_spec);
@@ -143,7 +144,7 @@ zx_status_t Sherlock::PwmInit() {
   }
 
   zx_status_t status =
-      DdkAddCompositeNodeSpec("pwm_init", ddk::CompositeNodeSpec(kPwmRules, kPwmProperties)
+      DdkAddCompositeNodeSpec("pwm-init", ddk::CompositeNodeSpec(kPwmRules, kPwmProperties)
                                               .AddParentSpec(kGpioInitRules, kGpioInitProperties)
                                               .AddParentSpec(kGpioBtRules, kGpioBtProperties));
   if (status != ZX_OK) {

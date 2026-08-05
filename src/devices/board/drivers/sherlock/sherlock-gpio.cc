@@ -226,7 +226,7 @@ zx_status_t CreateGpioCPlatformDevice(
   };
 
   fpbus::Node gpio_c_dev{{
-      .name = "gpio-c",
+      .name = "gpio-controller-c-ff634400",
       .vid = PDEV_VID_AMLOGIC,
       .pid = PDEV_PID_AMLOGIC_T931,
       .did = PDEV_DID_AMLOGIC_GPIO,
@@ -240,7 +240,7 @@ zx_status_t CreateGpioCPlatformDevice(
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('GPIO');
   auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(fidl_arena)
-                            .name("aml_gpio_c")
+                            .name("gpio-controller-c-ff634400")
                             .Build();
 
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, gpio_c_dev),
@@ -335,7 +335,7 @@ zx_status_t Sherlock::CreateGpioPlatformDevice() {
   };
 
   fpbus::Node gpio_dev{{
-      .name = "gpio",
+      .name = "gpio-controller-ff634400",
       .vid = PDEV_VID_AMLOGIC,
       .pid = PDEV_PID_AMLOGIC_T931,
       .did = PDEV_DID_AMLOGIC_GPIO,
@@ -348,7 +348,7 @@ zx_status_t Sherlock::CreateGpioPlatformDevice() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('GPIO');
   auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(fidl_arena)
-                            .name("aml_gpio")
+                            .name("gpio-controller-ff634400")
                             .Build();
 
   auto result =

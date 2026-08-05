@@ -244,16 +244,16 @@ zx_status_t Sherlock::AudioInit() {
     gpio_init_steps_.push_back(GpioOutput(T931_GPIOH(7), true));  // SOC_AUDIO_EN.
 
     constexpr uint32_t woofer_instance_count = 1;
-    zx_status_t status = AddTas5720Device(pbus_, "audio-tas5720-woofer", woofer_instance_count,
-                                          0x6f, &woofer_instance_count);
+    zx_status_t status = AddTas5720Device(pbus_, "audio-codec-6f", woofer_instance_count, 0x6f,
+                                          &woofer_instance_count);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Failed to add woofer composite device: %s", zx_status_get_string(status));
       return status;
     }
 
     constexpr uint32_t left_tweeter_instance_count = 2;
-    status = AddTas5720Device(pbus_, "audio-tas5720-left-tweeter", left_tweeter_instance_count,
-                              0x6c, &left_tweeter_instance_count);
+    status = AddTas5720Device(pbus_, "audio-codec-6c", left_tweeter_instance_count, 0x6c,
+                              &left_tweeter_instance_count);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Failed to add left tweeter composite device: %s",
              zx_status_get_string(status));
@@ -261,8 +261,8 @@ zx_status_t Sherlock::AudioInit() {
     }
 
     constexpr uint32_t right_tweeter_instance_count = 3;
-    status = AddTas5720Device(pbus_, "audio-tas5720-right-tweeter", right_tweeter_instance_count,
-                              0x6d, &right_tweeter_instance_count);
+    status = AddTas5720Device(pbus_, "audio-codec-6d", right_tweeter_instance_count, 0x6d,
+                              &right_tweeter_instance_count);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Failed to add right tweeter composite device: %s",
              zx_status_get_string(status));
@@ -333,7 +333,7 @@ zx_status_t Sherlock::AudioInit() {
 
   fpbus::Node tdm_dev;
   char name[device_name_max_length];
-  snprintf(name, sizeof(name), "%s-i2s-audio-out", product_name);
+  snprintf(name, sizeof(name), "audio-tdm-ff642000");
   tdm_dev.name() = name;
   tdm_dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   tdm_dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931;
@@ -474,7 +474,7 @@ zx_status_t Sherlock::AudioInit() {
 
     fpbus::Node dev_in;
     char pdm_name[device_name_max_length];
-    snprintf(pdm_name, sizeof(pdm_name), "%s-pdm-audio-in", product_name);
+    snprintf(pdm_name, sizeof(pdm_name), "audio-pdm-ff640000");
     dev_in.name() = pdm_name;
     dev_in.vid() = PDEV_VID_AMLOGIC;
     dev_in.pid() = PDEV_PID_AMLOGIC_T931;

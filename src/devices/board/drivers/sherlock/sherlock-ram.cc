@@ -35,7 +35,7 @@ static const std::vector<fpbus::Irq> sherlock_ram_ctl_irqs{
 
 static const fpbus::Node ramctl_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml-ram-ctl";
+  dev.name() = "ram-controller-ff638000";
   dev.vid() = PDEV_VID_AMLOGIC;
   dev.pid() = PDEV_PID_AMLOGIC_T931;
   dev.did() = PDEV_DID_AMLOGIC_RAM_CTL;
@@ -50,7 +50,7 @@ zx_status_t Sherlock::RamCtlInit() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, ramctl_dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml_ram", .parents2 = {}}}));
+                                   {.name = "ram-controller-ff638000", .parents2 = {}}}));
   if (!result.ok()) {
     zxlogf(ERROR, "%s: AddCompositeNodeSpec RamCtl(ramctl_dev) request failed: %s", __func__,
            result.FormatDescription().data());

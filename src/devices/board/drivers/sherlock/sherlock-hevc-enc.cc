@@ -78,7 +78,7 @@ const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
 
 static const fpbus::Node hevc_enc_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml-hevc-enc";
+  dev.name() = "hevc-encoder-ffd00000";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_HEVC_ENC;
@@ -98,7 +98,7 @@ zx_status_t Sherlock::HevcEncInit() {
   auto composite_result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, hevc_enc_dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "aml-hevc-enc", .parents2 = kHevcEncParents}}));
+                                   {.name = "aml_hevc_encoder", .parents2 = kHevcEncParents}}));
   if (!composite_result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec HevcEnc(hevc_enc_dev) request failed: %s",
            composite_result.FormatDescription().data());

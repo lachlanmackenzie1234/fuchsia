@@ -104,7 +104,7 @@ zx_status_t Sherlock::OtRadioInit() {
   fdf::WireUnownedResult result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
-                                   {.name = "nrf52840_radio", .parents2 = parents}}));
+                                   {.name = "ot-radio-0", .parents2 = parents}}));
 
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request to platform bus: %s",

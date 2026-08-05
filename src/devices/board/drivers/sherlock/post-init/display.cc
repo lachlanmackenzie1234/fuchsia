@@ -114,7 +114,7 @@ zx::result<> PostInit::InitDisplay() {
 
   static const fpbus::Node display_dev = [&]() {
     fpbus::Node dev = {};
-    dev.name() = "display";
+    dev.name() = "display-ff900000";
     dev.vid() = PDEV_VID_AMLOGIC;
     dev.pid() = PDEV_PID_AMLOGIC_T931;
     dev.did() = PDEV_DID_AMLOGIC_DISPLAY;
@@ -160,7 +160,8 @@ zx::result<> PostInit::InitDisplay() {
       }},
   };
 
-  auto spec = fuchsia_driver_framework::CompositeNodeSpec{{.name = "display", .parents2 = parents}};
+  auto spec = fuchsia_driver_framework::CompositeNodeSpec{
+      {.name = "display-ff900000", .parents2 = parents}};
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('DISP');

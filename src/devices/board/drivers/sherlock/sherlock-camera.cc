@@ -205,7 +205,7 @@ static const std::vector<fpbus::Irq> mipi_irqs{
 static const fpbus::Node mipi_dev = []() {
   // MIPI CSI PHY ADAPTER
   fpbus::Node dev = {};
-  dev.name() = "mipi-csi2";
+  dev.name() = "mipi-csi-ff650000";
   dev.vid() = PDEV_VID_AMLOGIC;
   dev.pid() = PDEV_PID_AMLOGIC_T931;
   dev.did() = PDEV_DID_AMLOGIC_MIPI_CSI;
@@ -243,7 +243,7 @@ zx_status_t Sherlock::CameraInit() {
   fdf::Arena arena('CAME');
   {
     auto composite_spec = fuchsia_driver_framework::CompositeNodeSpec{{
-        .name = "mipi-csi2",
+        .name = "mipi-csi-ff650000",
         .parents2 = {},
     }};
 
@@ -371,7 +371,7 @@ zx_status_t Sherlock::CameraInit() {
   }};
 
   auto composite_spec = fuchsia_driver_framework::CompositeNodeSpec{{
-      .name = "imx227_sensor",
+      .name = "imx227",
       .parents2 = {{
           imx227_sensor_mipicsi_spec,
           imx227_sensor_i2c_spec,

@@ -68,7 +68,7 @@ static const std::vector<fpbus::Bti> mali_btis{
 zx_status_t Sherlock::MaliInit() {
   {
     fpbus::Node aml_gpu_dev;
-    aml_gpu_dev.name() = "aml_gpu";
+    aml_gpu_dev.name() = "gpu-ffe40000";
     aml_gpu_dev.vid() = PDEV_VID_AMLOGIC;
     aml_gpu_dev.pid() = PDEV_PID_AMLOGIC_T931;
     aml_gpu_dev.did() = PDEV_DID_AMLOGIC_MALI_INIT;
@@ -115,8 +115,8 @@ zx_status_t Sherlock::MaliInit() {
 
     auto parents = std::vector<fuchsia_driver_framework::ParentSpec2>{aml_gpu_register_reset_node};
 
-    auto composite_node_spec = fuchsia_driver_framework::CompositeNodeSpec(
-        {.name = "aml-gpu-composite", .parents2 = parents});
+    auto composite_node_spec =
+        fuchsia_driver_framework::CompositeNodeSpec({.name = "gpu-ffe40000", .parents2 = parents});
 
     auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
         fidl::ToWire(fidl_arena, aml_gpu_dev), fidl::ToWire(fidl_arena, composite_node_spec));

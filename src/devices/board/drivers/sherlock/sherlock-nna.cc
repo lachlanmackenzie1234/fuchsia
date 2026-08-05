@@ -71,7 +71,7 @@ static const std::vector<fpbus::Metadata> nna_metadata{
 
 static const fpbus::Node nna_dev = []() {
   fpbus::Node dev = {};
-  dev.name() = "aml-nna";
+  dev.name() = "nna-ff100000";
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_NNA;
@@ -105,7 +105,7 @@ zx_status_t Sherlock::NnaInit() {
   }};
 
   auto aml_nna_composite_spec = fuchsia_driver_framework::CompositeNodeSpec{{
-      .name = "aml_nna",
+      .name = "aml-nna",
       .parents2 = {{aml_nna_register_reset_node}},
   }};
 
