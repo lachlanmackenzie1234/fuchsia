@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/component/cpp/fidl.h>
-#include <fuchsia/component/decl/cpp/fidl.h>
+#include <fidl/fuchsia.component.decl/cpp/fidl.h>
+#include <fidl/fuchsia.component/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/diagnostics/reader/cpp/archive_reader.h>
-#include <lib/fdio/directory.h>
-#include <lib/fdio/fd.h>
-#include <lib/fdio/fdio.h>
-#include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
-#include <stdlib.h>
 
 #include <filesystem>
 
@@ -48,9 +45,7 @@ constexpr char kTestChildUrl[] = "#meta/memory_monitor_test_app.cm";
 // collecting its inspect data.
 class InspectTest : public gtest::RealLoopFixture {
  protected:
-  InspectTest()
-      : context_(sys::ComponentContext::Create()),
-        child_name_(::testing::UnitTest::GetInstance()->current_test_info()->name()) {
+  InspectTest() : child_name_(::testing::UnitTest::GetInstance()->current_test_info()->name()) {
     // Clear the persistent storage provided to the memory_monitor between tests so the
     // `*_previous_boot` information is not returned.
     for (std::filesystem::recursive_directory_iterator i("/cache"), end; i != end; ++i) {
@@ -59,7 +54,10 @@ class InspectTest : public gtest::RealLoopFixture {
       }
     }
 
-    context_->svc()->Connect(realm_proxy_.NewRequest());
+    zx::result realm_client_end = component::Connect<fuchsia_component::Realm>();
+    ZX_ASSERT(realm_client_end.is_ok());
+    realm_proxy_ =
+        fidl::Client<fuchsia_component::Realm>(std::move(*realm_client_end), dispatcher());
     StartChild();
   }
 
@@ -71,56 +69,55 @@ class InspectTest : public gtest::RealLoopFixture {
     return diagnostics::reader::SanitizeMonikerForSelectors(ChildName()) + ":root";
   }
 
-  fuchsia::component::decl::ChildRef ChildRef() {
-    return {
+  fuchsia_component_decl::ChildRef ChildRef() {
+    return {{
         .name = child_name_,
         .collection = kTestCollectionName,
-    };
+    }};
   }
 
   void StartChild() {
-    fuchsia::component::decl::CollectionRef collection_ref = {
+    fuchsia_component_decl::CollectionRef collection_ref{{
         .name = kTestCollectionName,
-    };
-    fuchsia::component::decl::Child child_decl;
-    child_decl.set_name(child_name_);
-    child_decl.set_url(kTestChildUrl);
-    child_decl.set_startup(fuchsia::component::decl::StartupMode::LAZY);
+    }};
+    fuchsia_component_decl::Child child_decl{{
+        .name = child_name_,
+        .url = kTestChildUrl,
+        .startup = fuchsia_component_decl::StartupMode::kLazy,
+    }};
 
-    realm_proxy_->CreateChild(std::move(collection_ref), std::move(child_decl),
-                              fuchsia::component::CreateChildArgs(),
-                              [&](fuchsia::component::Realm_CreateChild_Result result) {
-                                ZX_ASSERT(!result.is_err());
-                                ConnectChildBinder();
-                              });
+    realm_proxy_->CreateChild({{.collection = collection_ref, .decl = child_decl, .args = {}}})
+        .Then([this](fidl::Result<fuchsia_component::Realm::CreateChild>& result) {
+          ZX_ASSERT_MSG(result.is_ok(), "CreateChild failed: %s",
+                        result.error_value().FormatDescription().c_str());
+          ConnectChildBinder();
+        });
   }
 
   void ConnectChildBinder() {
-    fidl::InterfaceHandle<fuchsia::io::Directory> exposed_dir;
-    realm_proxy_->OpenExposedDir(
-        ChildRef(), exposed_dir.NewRequest(),
-        [exposed_dir = std::move(exposed_dir)](
-            fuchsia::component::Realm_OpenExposedDir_Result result) mutable {
-          ZX_ASSERT(!result.is_err());
-          std::shared_ptr<sys::ServiceDirectory> svc = std::make_shared<sys::ServiceDirectory>(
-              sys::ServiceDirectory(std::move(exposed_dir)));
-
-          fuchsia::component::BinderPtr binder;
-          svc->Connect(binder.NewRequest());
+    auto [exposed_dir_client, exposed_dir_server] =
+        fidl::Endpoints<fuchsia_io::Directory>::Create();
+    realm_proxy_
+        ->OpenExposedDir({{.child = ChildRef(), .exposed_dir = std::move(exposed_dir_server)}})
+        .Then([exposed_dir_client = std::move(exposed_dir_client)](
+                  fidl::Result<fuchsia_component::Realm::OpenExposedDir>& result) mutable {
+          ZX_ASSERT(result.is_ok());
+          zx::result binder = component::ConnectAt<fuchsia_component::Binder>(exposed_dir_client);
+          ZX_ASSERT(binder.is_ok());
         });
   }
 
   void DestroyChild() {
     auto destroyed = false;
-    realm_proxy_->DestroyChild(ChildRef(),
-                               [&](fuchsia::component::Realm_DestroyChild_Result result) {
-                                 ZX_ASSERT(!result.is_err());
-                                 destroyed = true;
-                               });
+    realm_proxy_->DestroyChild({{.child = ChildRef()}})
+        .Then([&](fidl::Result<fuchsia_component::Realm::DestroyChild>& result) {
+          ZX_ASSERT(result.is_ok());
+          destroyed = true;
+        });
     RunLoopUntil([&destroyed] { return destroyed; });
 
     // make the child name unique so we don't snapshot inspect from the first instance accidentally
-    child_name_ += "1";
+    child_name_ += '1';
   }
 
   fpromise::result<InspectData> GetInspect() {
@@ -148,9 +145,8 @@ class InspectTest : public gtest::RealLoopFixture {
   }
 
  private:
-  std::unique_ptr<sys::ComponentContext> context_;
   std::string child_name_;
-  fuchsia::component::RealmPtr realm_proxy_;
+  fidl::Client<fuchsia_component::Realm> realm_proxy_;
 };
 
 MATCHER_P(EqJson, json_text, "") {

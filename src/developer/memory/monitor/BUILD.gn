@@ -59,7 +59,6 @@ _common_deps = [
   "//sdk/lib/async-loop:async-loop-cpp",
   "//sdk/lib/async-loop:async-loop-default",
   "//sdk/lib/scheduler/cpp",
-  "//sdk/lib/sys/cpp",
   "//src/lib/fsl",
   "//src/lib/fxl:fxl_cli",
   "//zircon/system/ulib/trace-provider",

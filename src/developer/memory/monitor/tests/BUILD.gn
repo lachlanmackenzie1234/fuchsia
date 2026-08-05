@@ -51,7 +51,6 @@ executable("bin-monitor") {
   deps = [
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/sys/cpp",
     "//src/developer/memory/metrics/tests:utils",
     "//src/developer/memory/monitor:lib",
   ]
@@ -64,9 +63,9 @@ cc_test_executable("test-inspect") {
   sources = [ "monitor_inspect_test.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/diagnostics/reader/cpp:archive_reader",
-    "//sdk/lib/sys/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//third_party/googletest:gmock",

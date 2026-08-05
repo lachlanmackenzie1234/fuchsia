@@ -136,7 +136,6 @@ hlcpp_visibility = [
   "//src/developer/forensics/snapshot/*",
   "//src/developer/forensics/testing/*",
   "//src/developer/forensics/utils/*",
-  "//src/developer/memory/monitor/*",
   "//src/developer/process_explorer/*",
   "//src/devices/bin/driver_host:*",
   "//src/devices/bin/driver_manager:*",
