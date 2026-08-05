@@ -300,7 +300,9 @@ impl IpSockSendError {
     /// Errors that are not bubbled up to applications are dropped.
     fn from_send_frame(e: SendFrameErrorReason) -> Result<(), Self> {
         match e {
-            SendFrameErrorReason::Alloc | SendFrameErrorReason::QueueFull => Ok(()),
+            SendFrameErrorReason::Alloc
+            | SendFrameErrorReason::QueueFull
+            | SendFrameErrorReason::AddressResolutionFailed => Ok(()),
             SendFrameErrorReason::SizeConstraintsViolation => Err(Self::Mtu),
         }
     }

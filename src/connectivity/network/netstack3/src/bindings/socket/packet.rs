@@ -891,7 +891,9 @@ impl RecvMsgParams {
 impl IntoErrno for SendFrameErrorReason {
     fn to_errno(&self) -> fposix::Errno {
         match self {
-            SendFrameErrorReason::Alloc | SendFrameErrorReason::QueueFull => fposix::Errno::Enobufs,
+            SendFrameErrorReason::AddressResolutionFailed
+            | SendFrameErrorReason::Alloc
+            | SendFrameErrorReason::QueueFull => fposix::Errno::Enobufs,
             SendFrameErrorReason::SizeConstraintsViolation => fposix::Errno::Einval,
         }
     }

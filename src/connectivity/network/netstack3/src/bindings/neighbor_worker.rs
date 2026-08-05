@@ -569,6 +569,7 @@ where
         .insert_static_entry(&device_id, neighbor, mac)
         .map_err(|e| match e {
             StaticNeighborInsertionError::IpAddressInvalid => ControllerError::InvalidIpAddress,
+            StaticNeighborInsertionError::TableFull => ControllerError::TooManyEntries,
         })
 }
 

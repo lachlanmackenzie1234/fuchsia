@@ -463,6 +463,9 @@ pub(crate) enum RequestError {
     /// Operation not supported.
     #[error("unsupported operation")]
     UnsupportedOperation,
+    /// Table is full.
+    #[error("table full")]
+    TableFull,
 }
 
 impl From<RequestError> for Errno {
@@ -485,6 +488,7 @@ impl From<RequestError> for Errno {
             RequestError::InterfaceUnsupported => Errno::ENOTSUP,
             RequestError::LinkAddressUnknown => Errno::EINVAL,
             RequestError::UnsupportedOperation => Errno::ENOTSUP,
+            RequestError::TableFull => Errno::ENOBUFS,
         }
     }
 }
@@ -499,6 +503,7 @@ impl From<fnet_neighbor::ControllerError> for RequestError {
             ControllerError::MacAddressNotUnicast => RequestError::InvalidMacAddress,
             ControllerError::NeighborNotFound => RequestError::NeighborNotFound,
             ControllerError::LinkAddressUnknown => RequestError::LinkAddressUnknown,
+            ControllerError::TooManyEntries => RequestError::TableFull,
             ControllerError::__SourceBreaking { unknown_ordinal: e } => {
                 panic!("encountered unknown controller error: {e:?}")
             }

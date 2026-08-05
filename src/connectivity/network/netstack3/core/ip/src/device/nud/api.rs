@@ -7,6 +7,7 @@
 use core::fmt::Display;
 use core::marker::PhantomData;
 
+use log::warn;
 use net_types::ip::{Ip, IpAddress, IpVersionMarker, Ipv4, Ipv6};
 use net_types::{SpecifiedAddr, UnicastAddr, UnicastAddress as _, Witness as _};
 use netstack3_base::{
@@ -18,7 +19,7 @@ use thiserror::Error;
 use crate::internal::device::nud::{
     Delay, DynamicNeighborState, EnterProbeError, Entry, Event, Incomplete, LinkResolutionContext,
     LinkResolutionNotifier, LinkResolutionResult, NeighborState, NudBindingsContext, NudContext,
-    NudHandler, NudState, Probe, Reachable, Stale, Unreachable,
+    NudHandler, NudState, Probe, Reachable, Stale, TableFullError, Unreachable,
 };
 
 /// Error when a static neighbor entry cannot be inserted.
@@ -33,6 +34,10 @@ pub enum StaticNeighborInsertionError {
     /// - not the limited broadcast address of `255.255.255.255`.
     #[error("IP address is invalid")]
     IpAddressInvalid,
+
+    /// The neighbor table is full and the entry cannot be added.
+    #[error("The neighbor table is full")]
+    TableFull,
 }
 
 /// Error when a probe cannot be triggered on a neighbor.
@@ -127,38 +132,48 @@ where
         let (core_ctx, bindings_ctx) = self.contexts();
         let (result, do_multicast_solicit) = core_ctx.with_nud_state_mut(
             device_id,
-            |NudState { neighbors, timer_heap, .. }, core_ctx| {
-                match neighbors.entry(*dst) {
-                    Entry::Vacant(entry) => {
-                        // Initiate link resolution.
-                        let (notifier, observer) =
-                            <C::BindingsContext as LinkResolutionContext<D>>::Notifier::new();
-                        let state = entry.insert(NeighborState::Dynamic(
-                            DynamicNeighborState::Incomplete(Incomplete::new_with_notifier(
-                                core_ctx,
-                                bindings_ctx,
-                                timer_heap,
-                                *dst,
-                                notifier,
-                            )),
-                        ));
-                        bindings_ctx.on_event(Event::added(
-                            device_id,
-                            state.to_event_state(),
+            |NudState { neighbors, gc_state, timer_heap }, core_ctx| match neighbors.get_mut(dst) {
+                None => {
+                    // Initiate link resolution.
+                    let (notifier, observer) =
+                        <C::BindingsContext as LinkResolutionContext<D>>::Notifier::new();
+                    let neighbor = NeighborState::Dynamic(DynamicNeighborState::Incomplete(
+                        Incomplete::new_with_notifier(
+                            core_ctx,
+                            bindings_ctx,
+                            timer_heap,
                             *dst,
-                            bindings_ctx.now(),
-                        ));
-                        (LinkResolutionResult::Pending(observer), true)
+                            notifier,
+                        ),
+                    ));
+                    let result = crate::internal::device::nud::insert_new_entry(
+                        neighbors,
+                        gc_state,
+                        timer_heap,
+                        bindings_ctx,
+                        device_id,
+                        *dst,
+                        neighbor,
+                    );
+                    match result {
+                        Ok(_entry) => (LinkResolutionResult::Pending(observer), true),
+                        Err(TableFullError { entry }) => {
+                            warn!("Neighbor table full; failed to insert {entry:?}");
+                            let (notifier, observer) =
+                                <C::BindingsContext as LinkResolutionContext<D>>::Notifier::new();
+                            notifier.notify(Err(netstack3_base::AddressResolutionFailed));
+                            (LinkResolutionResult::Pending(observer), false)
+                        }
                     }
-                    Entry::Occupied(e) => match e.into_mut() {
-                        NeighborState::Static(link_address) => {
-                            (LinkResolutionResult::Resolved(*link_address), false)
-                        }
-                        NeighborState::Dynamic(e) => {
-                            e.resolve_link_addr(core_ctx, bindings_ctx, timer_heap, device_id, *dst)
-                        }
-                    },
                 }
+                Some(entry) => match entry {
+                    NeighborState::Static(link_address) => {
+                        (LinkResolutionResult::Resolved(*link_address), false)
+                    }
+                    NeighborState::Dynamic(e) => {
+                        e.resolve_link_addr(core_ctx, bindings_ctx, timer_heap, device_id, *dst)
+                    }
+                },
             },
         );
 
@@ -203,13 +218,12 @@ where
 
         core_ctx.with_nud_state_mut_and_sender_ctx(
             device_id,
-            |NudState { neighbors, last_gc: _, timer_heap }, core_ctx| match neighbors
-                .entry(neighbor)
+            |NudState { neighbors, gc_state, timer_heap }, core_ctx| match neighbors
+                .get_mut(&neighbor)
             {
-                Entry::Occupied(mut occupied) => {
-                    let previous =
-                        core::mem::replace(occupied.get_mut(), NeighborState::Static(link_address));
-                    let event_state = occupied.get().to_event_state();
+                Some(entry) => {
+                    let previous = core::mem::replace(entry, NeighborState::Static(link_address));
+                    let event_state = entry.to_event_state();
                     if event_state != previous.to_event_state() {
                         bindings_ctx.on_event(Event::changed(
                             device_id,
@@ -230,20 +244,29 @@ where
                         }
                         NeighborState::Static(_) => {}
                     }
+                    Ok(())
                 }
-                Entry::Vacant(vacant) => {
-                    let state = vacant.insert(NeighborState::Static(link_address));
-                    let event = Event::added(
+                None => {
+                    let neighbor_state = NeighborState::Static(link_address);
+                    let result = crate::internal::device::nud::insert_new_entry(
+                        neighbors,
+                        gc_state,
+                        timer_heap,
+                        bindings_ctx,
                         device_id,
-                        state.to_event_state(),
                         neighbor,
-                        bindings_ctx.now(),
+                        neighbor_state,
                     );
-                    bindings_ctx.on_event(event);
+                    match result {
+                        Ok(_entry) => Ok(()),
+                        Err(TableFullError { entry }) => {
+                            warn!("Neighbor table full; failed to insert {entry:?}");
+                            Err(StaticNeighborInsertionError::TableFull)
+                        }
+                    }
                 }
             },
-        );
-        Ok(())
+        )
     }
 
     /// Immediately triggers a unicast probe to be sent to `neighbor`.
@@ -311,7 +334,7 @@ where
 
         core_ctx.with_nud_state_mut(
             device_id,
-            |NudState { neighbors, last_gc: _, timer_heap }, _config| {
+            |NudState { neighbors, gc_state: _, timer_heap }, _config| {
                 match neighbors.remove(&neighbor).ok_or(NotFoundError)? {
                     NeighborState::Dynamic(mut entry) => {
                         entry.cancel_timer(bindings_ctx, timer_heap, neighbor);

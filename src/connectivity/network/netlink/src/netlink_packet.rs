@@ -86,6 +86,7 @@ pub(crate) mod errno {
         pub(crate) const ENOTSUP: Errno = Errno::new(libc::ENOTSUP).unwrap();
         pub(crate) const ESRCH: Errno = Errno::new(libc::ESRCH).unwrap();
         pub(crate) const ETOOMANYREFS: Errno = Errno::new(libc::ETOOMANYREFS).unwrap();
+        pub(crate) const ENOBUFS: Errno = Errno::new(libc::ENOBUFS).unwrap();
 
         /// Construct a new [`Errno`] from the given positive integer.
         ///

@@ -2929,6 +2929,9 @@ where
                     }
                     IpSendFrameErrorReason::Device(SendFrameErrorReason::QueueFull)
                     | IpSendFrameErrorReason::Device(SendFrameErrorReason::Alloc)
+                    | IpSendFrameErrorReason::Device(
+                        SendFrameErrorReason::AddressResolutionFailed,
+                    )
                     | IpSendFrameErrorReason::IllegalLoopbackAddress => (),
                 }
                 debug!("failed to forward {} packet: {error:?}", I::NAME);

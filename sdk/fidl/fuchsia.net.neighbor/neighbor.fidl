@@ -135,6 +135,8 @@ type ControllerError = flexible enum {
     /// A probe cannot be manually triggered against the specified neighbor
     /// because its link address is not known.
     LINK_ADDRESS_UNKNOWN = 6;
+    /// The neighbor table is full.
+    TOO_MANY_ENTRIES = 7;
 };
 
 /// Modify the neighbor table.

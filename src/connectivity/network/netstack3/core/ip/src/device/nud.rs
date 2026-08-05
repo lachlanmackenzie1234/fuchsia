@@ -21,12 +21,12 @@ use net_types::{SpecifiedAddr, UnicastAddr};
 use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AddressResolutionFailed, AnyDevice, CoreTimerContext, Counter, CounterContext, DeviceIdContext,
-    DeviceIdentifier, ErrorAndSerializer, EventContext, HandleableTimer, Instant,
-    InstantBindingsTypes, LinkDevice, LinkDeviceAddress, LocalTimerHeap,
-    NetworkSerializationContext, NetworkSerializer, SendFrameError, StrongDeviceIdentifier,
-    TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
+    ErrorAndSerializer, EventContext, HandleableTimer, Instant, InstantBindingsTypes, LinkDevice,
+    LinkDeviceAddress, LocalTimerHeap, NetworkSerializationContext, NetworkSerializer,
+    SendFrameError, SendFrameErrorReason, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
+    TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
-use netstack3_hashmap::hash_map::{self, Entry, HashMap};
+use netstack3_hashmap::hash_map::{Entry, HashMap, OccupiedEntry};
 use packet::{
     Buf, BufferMut, GrowBuffer as _, ParsablePacket as _, ParseBufferMut as _, SerializeError,
 };
@@ -34,6 +34,7 @@ use packet_formats::ip::IpPacket as _;
 use packet_formats::ipv4::{Ipv4FragmentType, Ipv4Header as _, Ipv4Packet};
 use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::utils::NonZeroDuration;
+use static_assertions::const_assert;
 use thiserror::Error;
 use zerocopy::SplitByteSlice;
 
@@ -85,14 +86,20 @@ const DEFAULT_BASE_REACHABLE_TIME: NonZeroDuration = NonZeroDuration::from_secs(
 /// [RFC 4861 section 10]: https://tools.ietf.org/html/rfc4861#section-10
 const DELAY_FIRST_PROBE_TIME: NonZeroDuration = NonZeroDuration::from_secs(5).unwrap();
 
+/// The garbage collection threshold for the neighbor table for a given device.
+/// When the number of entries is above this number and an entry transitions
+/// into a discardable state, a garbage collection task will be scheduled to
+/// remove any entries that are not in use.
+pub const GC_THRESHOLD: usize = 512;
+
 /// The maximum number of neighbor entries in the neighbor table for a given
-/// device. When the number of entries is above this number and an entry
-/// transitions into a discardable state, a garbage collection task will be
-/// scheduled to remove any entries that are not in use.
-pub const MAX_ENTRIES: usize = 512;
+/// device. When the number of entries reaches this number, new entries can no
+/// longer be inserted.
+pub const MAX_ENTRIES: usize = 1024;
+const_assert!(MAX_ENTRIES > GC_THRESHOLD);
 
 /// The minimum amount of time between garbage collection passes when the
-/// neighbor table grows beyond `MAX_SIZE`.
+/// neighbor table grows beyond `GC_THRESHOLD`.
 const MIN_GARBAGE_COLLECTION_INTERVAL: NonZeroDuration = NonZeroDuration::from_secs(30).unwrap();
 
 /// NUD counters.
@@ -421,35 +428,22 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
         }
     }
 
-    fn new_with_packet<I, CC, BC, DeviceId, B, S>(
+    fn new<I, CC, BC, DeviceId>(
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
         timers: &mut TimerHeap<I, BC>,
         neighbor: SpecifiedAddr<I::Addr>,
-        packet: S,
-        meta: M,
-    ) -> Result<Self, ErrorAndSerializer<SerializeError<Never>, S>>
+    ) -> Self
     where
         I: Ip,
         D: LinkDevice,
         BC: NudBindingsContext<I, D, DeviceId>,
         CC: NudConfigContext<I>,
         DeviceId: StrongDeviceIdentifier,
-        B: BufferMut,
-        S: NetworkSerializer<Buffer = B>,
     {
-        // NB: it's important that we attempt to serialize the packet *before*
-        // scheduling a retransmission timer, so that if serialization fails and we
-        // propagate an error, we're not leaving a dangling timer.
-        let packet = packet
-            .serialize_vec_outer(&mut NetworkSerializationContext::default())
-            .map_err(|(error, serializer)| ErrorAndSerializer { error, serializer })?
-            .map_a(|b| Buf::new(b.as_ref().to_vec(), ..))
-            .into_inner();
-
         let mut this = Incomplete {
             transmit_counter: Some(core_ctx.max_multicast_solicit()),
-            pending_frames: VecDeque::from([(packet, meta)]),
+            pending_frames: VecDeque::new(),
             notifiers: Vec::new(),
             _marker: PhantomData,
         };
@@ -458,7 +452,7 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
         // neighbor table lock held.
         assert!(this.schedule_timer_if_should_retransmit(core_ctx, bindings_ctx, timers, neighbor));
 
-        Ok(this)
+        this
     }
 
     fn new_with_notifier<I, CC, BC, DeviceId>(
@@ -704,7 +698,7 @@ impl<D: LinkDevice> Probe<D> {
         bindings_ctx: &mut BC,
         timers: &mut TimerHeap<I, BC>,
         num_entries: usize,
-        last_gc: &mut Option<BC::Instant>,
+        gc_state: &mut GarbageCollectionState<BC::Instant>,
     ) -> Unreachable<D>
     where
         I: Ip,
@@ -714,7 +708,7 @@ impl<D: LinkDevice> Probe<D> {
         // This entry is deemed discardable now that it is not in active use; schedule
         // garbage collection for the neighbor table if we are currently over the
         // maximum amount of entries.
-        timers.maybe_schedule_gc(bindings_ctx, num_entries, last_gc);
+        timers.maybe_schedule_gc(bindings_ctx, num_entries, gc_state);
 
         let Self { link_address, transmit_counter: _ } = self;
         Unreachable { link_address: *link_address, mode: UnreachableMode::WaitingForPacketSend }
@@ -1141,7 +1135,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         neighbor: SpecifiedAddr<I::Addr>,
         link_address: UnicastAddr<D::Address>,
         num_entries: usize,
-        last_gc: &mut Option<BC::Instant>,
+        gc_state: &mut GarbageCollectionState<BC::Instant>,
     ) where
         I: Ip,
         BC: NudBindingsContext<I, D, CC::DeviceId>,
@@ -1166,7 +1160,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         // This entry is deemed discardable now that it is not in active use; schedule
         // garbage collection for the neighbor table if we are currently over the
         // maximum amount of entries.
-        timers.maybe_schedule_gc(bindings_ctx, num_entries, last_gc);
+        timers.maybe_schedule_gc(bindings_ctx, num_entries, gc_state);
 
         // Stale entries don't do anything until an outgoing packet is queued for
         // transmission.
@@ -1353,7 +1347,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         neighbor: SpecifiedAddr<I::Addr>,
         link_address: UnicastAddr<D::Address>,
         num_entries: usize,
-        last_gc: &mut Option<BC::Instant>,
+        gc_state: &mut GarbageCollectionState<BC::Instant>,
     ) where
         I: Ip,
         BC: NudBindingsContext<I, D, CC::DeviceId>,
@@ -1389,7 +1383,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 neighbor,
                 link_address,
                 num_entries,
-                last_gc,
+                gc_state,
             );
         }
     }
@@ -1404,7 +1398,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         link_address: Option<UnicastAddr<D::Address>>,
         flags: ConfirmationFlags,
         num_entries: usize,
-        last_gc: &mut Option<BC::Instant>,
+        gc_state: &mut GarbageCollectionState<BC::Instant>,
     ) where
         I: Ip,
         BC: NudBindingsContext<I, D, CC::DeviceId>,
@@ -1556,7 +1550,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
                 neighbor,
                 link_address,
                 num_entries,
-                last_gc,
+                gc_state,
             ),
             None => {}
         }
@@ -1781,10 +1775,12 @@ impl<I: Ip, BC: TimerContext> TimerHeap<I, BC> {
         &mut self,
         bindings_ctx: &mut BC,
         num_entries: usize,
-        last_gc: &Option<BC::Instant>,
+        gc_state: &mut GarbageCollectionState<BC::Instant>,
     ) {
+        let GarbageCollectionState { is_dirty, last_gc } = gc_state;
+        *is_dirty = true;
         let Self { gc, neighbor: _ } = self;
-        if num_entries > MAX_ENTRIES && bindings_ctx.scheduled_instant(gc).is_none() {
+        if num_entries > GC_THRESHOLD && bindings_ctx.scheduled_instant(gc).is_none() {
             let instant = if let Some(last_gc) = last_gc {
                 last_gc.panicking_add(MIN_GARBAGE_COLLECTION_INTERVAL.get())
             } else {
@@ -1796,6 +1792,21 @@ impl<I: Ip, BC: TimerContext> TimerHeap<I, BC> {
             assert_eq!(bindings_ctx.schedule_timer_instant(instant, gc), None);
         }
     }
+
+    fn cancel_gc(&mut self, bindings_ctx: &mut BC) {
+        let Self { gc, neighbor: _ } = self;
+        let _: Option<BC::Instant> = bindings_ctx.cancel_timer(gc);
+    }
+}
+
+/// State related to neighbor table garbage collection.
+#[derive(Debug)]
+pub struct GarbageCollectionState<Instant> {
+    /// The last time garbage collection was run.
+    last_gc: Option<Instant>,
+    /// Whether the table contains potentially discardable entries (e.g. STALE
+    /// or UNREACHABLE).
+    is_dirty: bool,
 }
 
 /// NUD module per-device state.
@@ -1803,7 +1814,7 @@ impl<I: Ip, BC: TimerContext> TimerHeap<I, BC> {
 pub struct NudState<I: Ip, D: LinkDevice, BT: NudBindingsTypes<D>> {
     // TODO(https://fxbug.dev/42076887): Key neighbors by `UnicastAddr`.
     neighbors: HashMap<SpecifiedAddr<I::Addr>, NeighborState<D, BT>>,
-    last_gc: Option<BT::Instant>,
+    gc_state: GarbageCollectionState<BT::Instant>,
     timer_heap: TimerHeap<I, BT>,
 }
 
@@ -1812,14 +1823,6 @@ impl<I: Ip, D: LinkDevice, BT: NudBindingsTypes<D>> NudState<I, D, BT> {
     #[cfg(any(test, feature = "testutils"))]
     pub fn neighbors(&self) -> &HashMap<SpecifiedAddr<I::Addr>, NeighborState<D, BT>> {
         &self.neighbors
-    }
-
-    fn entry_and_timer_heap(
-        &mut self,
-        addr: SpecifiedAddr<I::Addr>,
-    ) -> (Entry<'_, SpecifiedAddr<I::Addr>, NeighborState<D, BT>>, &mut TimerHeap<I, BT>) {
-        let Self { neighbors, timer_heap, .. } = self;
-        (neighbors.entry(addr), timer_heap)
     }
 }
 
@@ -1834,7 +1837,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsTypes<D> + TimerContext> NudState<I, D
     ) -> Self {
         Self {
             neighbors: Default::default(),
-            last_gc: None,
+            gc_state: GarbageCollectionState { last_gc: None, is_dirty: false },
             timer_heap: TimerHeap::new::<_, _, CC>(bindings_ctx, device_id),
         }
     }
@@ -2311,7 +2314,7 @@ fn handle_neighbor_timer<I, D, CC, BC>(
     }
     let action = core_ctx.with_nud_state_mut(
         &device_id,
-        |NudState { neighbors, last_gc, timer_heap }, core_ctx| {
+        |NudState { neighbors, gc_state, timer_heap }, core_ctx| {
             let (lookup_addr, event) = timer_heap.pop_neighbor(bindings_ctx)?;
             let num_entries = neighbors.len();
             let mut entry = match neighbors.entry(lookup_addr) {
@@ -2377,8 +2380,12 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                             to: lookup_addr,
                         })
                     } else {
-                        let unreachable =
-                            probe.enter_unreachable(bindings_ctx, timer_heap, num_entries, last_gc);
+                        let unreachable = probe.enter_unreachable(
+                            bindings_ctx,
+                            timer_heap,
+                            num_entries,
+                            gc_state,
+                        );
                         *entry.get_mut() =
                             NeighborState::Dynamic(DynamicNeighborState::Unreachable(unreachable));
                         let event_state = entry.get_mut().to_event_state();
@@ -2438,7 +2445,7 @@ fn handle_neighbor_timer<I, D, CC, BC>(
                         // This entry is deemed discardable now that it is not in active use;
                         // schedule garbage collection for the neighbor table if we are currently
                         // over the maximum amount of entries.
-                        timer_heap.maybe_schedule_gc(bindings_ctx, num_entries, last_gc);
+                        timer_heap.maybe_schedule_gc(bindings_ctx, num_entries, gc_state);
                     }
 
                     None
@@ -2557,10 +2564,10 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
         debug!("received neighbor {:?} from {}", source, neighbor);
         self.with_nud_state_mut_and_sender_ctx(
             device_id,
-            |NudState { neighbors, last_gc, timer_heap }, core_ctx| {
+            |NudState { neighbors, gc_state, timer_heap }, core_ctx| {
                 let num_entries = neighbors.len();
-                match neighbors.entry(neighbor) {
-                    Entry::Vacant(e) => match source {
+                match neighbors.get_mut(&neighbor) {
+                    None => match source {
                         DynamicNeighborUpdateSource::Probe { link_address } => {
                             // Per [RFC 4861 section 7.2.3] ("Receipt of Neighbor Solicitations"):
                             //
@@ -2569,18 +2576,28 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
                             //   7.3.3.
                             //
                             // [RFC 4861 section 7.2.3]: https://tools.ietf.org/html/rfc4861#section-7.2.3
-                            insert_new_entry(
+                            let result = insert_new_entry(
+                                neighbors,
+                                gc_state,
+                                timer_heap,
                                 bindings_ctx,
                                 device_id,
-                                e,
+                                neighbor,
                                 NeighborState::Dynamic(DynamicNeighborState::Stale(Stale {
                                     link_address,
                                 })),
                             );
+                            match result {
+                                Ok(_entry) => {}
+                                Err(TableFullError { entry }) => {
+                                    debug!("Neighbor table full; failed to insert {entry:?}");
+                                    return;
+                                }
+                            }
 
                             // This entry is not currently in active use; if we are currently over
                             // the maximum amount of entries, schedule garbage collection.
-                            timer_heap.maybe_schedule_gc(bindings_ctx, neighbors.len(), last_gc);
+                            timer_heap.maybe_schedule_gc(bindings_ctx, neighbors.len(), gc_state);
                         }
                         // Per [RFC 4861 section 7.2.5] ("Receipt of Neighbor Advertisements"):
                         //
@@ -2592,7 +2609,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
                         // [RFC 4861 section 7.2.5]: https://tools.ietf.org/html/rfc4861#section-7.2.5
                         DynamicNeighborUpdateSource::Confirmation { .. } => {}
                     },
-                    Entry::Occupied(e) => match e.into_mut() {
+                    Some(entry) => match entry {
                         NeighborState::Dynamic(e) => match source {
                             DynamicNeighborUpdateSource::Probe { link_address } => e.handle_probe(
                                 core_ctx,
@@ -2602,7 +2619,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
                                 neighbor,
                                 link_address,
                                 num_entries,
-                                last_gc,
+                                gc_state,
                             ),
                             DynamicNeighborUpdateSource::Confirmation { link_address, flags } => e
                                 .handle_confirmation(
@@ -2614,7 +2631,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
                                     link_address,
                                     flags,
                                     num_entries,
-                                    last_gc,
+                                    gc_state,
                                 ),
                         },
                         NeighborState::Static(_) => {}
@@ -2627,7 +2644,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
     fn flush(&mut self, bindings_ctx: &mut BC, device_id: &Self::DeviceId) {
         self.with_nud_state_mut(
             device_id,
-            |NudState { neighbors, last_gc: _, timer_heap }, _config| {
+            |NudState { neighbors, gc_state: _, timer_heap }, _config| {
                 neighbors.drain().for_each(|(neighbor, state)| {
                     match state {
                         NeighborState::Dynamic(mut entry) => {
@@ -2655,29 +2672,55 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
     {
         let do_multicast_solicit = self.with_nud_state_mut_and_sender_ctx(
             device_id,
-            |state, core_ctx| -> Result<_, SendFrameError<S>> {
-                let (entry, timer_heap) = state.entry_and_timer_heap(lookup_addr);
-                match entry {
-                    Entry::Vacant(e) => {
-                        let incomplete = Incomplete::new_with_packet(
-                            core_ctx,
-                            bindings_ctx,
+            |NudState { neighbors, gc_state, timer_heap },
+             core_ctx|
+             -> Result<_, SendFrameError<S>> {
+                match neighbors.get_mut(&lookup_addr) {
+                    None => {
+                        let incomplete =
+                            Incomplete::new(core_ctx, bindings_ctx, timer_heap, lookup_addr);
+                        let result = insert_new_entry(
+                            neighbors,
+                            gc_state,
                             timer_heap,
-                            lookup_addr,
-                            body,
-                            meta,
-                        )
-                        .map_err(|e| e.err_into())?;
-                        insert_new_entry(
                             bindings_ctx,
                             device_id,
-                            e,
+                            lookup_addr,
                             NeighborState::Dynamic(DynamicNeighborState::Incomplete(incomplete)),
                         );
-                        Ok(true)
+                        match result {
+                            Err(TableFullError { entry }) => {
+                                debug!("Neighbor table full; failed to insert {entry:?}");
+                                return Err(ErrorAndSerializer {
+                                    serializer: body,
+                                    error: SendFrameErrorReason::AddressResolutionFailed,
+                                });
+                            }
+                            Ok(mut entry) => {
+                                let dynamic = assert_matches!(
+                                    entry.get_mut(),
+                                    NeighborState::Dynamic(d) => d,
+                                    "newly inserted entry must still be dynamic"
+                                );
+                                let incomplete = assert_matches!(
+                                    dynamic,
+                                    DynamicNeighborState::Incomplete(i) => i,
+                                    "newly inserted entry must still be incomplete"
+                                );
+                                // Queue the packet and unwind on failure.
+                                match incomplete.queue_packet(body, meta) {
+                                    Ok(()) => Ok(true),
+                                    Err(e) => {
+                                        dynamic.cancel_timer(bindings_ctx, timer_heap, lookup_addr);
+                                        let _entry = entry.remove();
+                                        Err(e.err_into())
+                                    }
+                                }
+                            }
+                        }
                     }
-                    Entry::Occupied(e) => {
-                        match e.into_mut() {
+                    Some(entry) => {
+                        match entry {
                             NeighborState::Static(link_address) => {
                                 // Send the IP packet while holding the NUD lock to prevent a
                                 // potential ordering violation.
@@ -2727,21 +2770,64 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
     }
 }
 
-fn insert_new_entry<
+pub(crate) struct TableFullError<E> {
+    entry: E,
+}
+
+/// Attempts to insert a new entry into the neighbor table.
+///
+/// If the table is full, the garbage collector will be run synchronously in
+/// an attempt to free up space. If space becomes available, the entry will be
+/// inserted, otherwise a `TableFullError` is returned.
+///
+/// Upon successful insertion, the `Added` event is emitted to bindings and a
+/// the newly inserted entry is returned.
+///
+/// # Panics
+///
+/// May panic if the entry already exists (depending on whether the garbage
+/// collector needs to run, and whether the existing entry can be discarded).
+pub(crate) fn insert_new_entry<
+    'a,
     I: Ip,
     D: LinkDevice,
-    DeviceId: DeviceIdentifier,
+    DeviceId: StrongDeviceIdentifier,
     BC: NudBindingsContext<I, D, DeviceId>,
 >(
+    neighbors: &'a mut HashMap<SpecifiedAddr<I::Addr>, NeighborState<D, BC>>,
+    gc_state: &mut GarbageCollectionState<BC::Instant>,
+    timer_heap: &mut TimerHeap<I, BC>,
     bindings_ctx: &mut BC,
     device_id: &DeviceId,
-    vacant: hash_map::VacantEntry<'_, SpecifiedAddr<I::Addr>, NeighborState<D, BC>>,
+    ip: SpecifiedAddr<I::Addr>,
     entry: NeighborState<D, BC>,
-) {
-    let lookup_addr = *vacant.key();
-    let state = vacant.insert(entry);
-    let event = Event::added(device_id, state.to_event_state(), lookup_addr, bindings_ctx.now());
-    bindings_ctx.on_event(event);
+) -> Result<
+    OccupiedEntry<'a, SpecifiedAddr<I::Addr>, NeighborState<D, BC>>,
+    TableFullError<NeighborState<D, BC>>,
+> {
+    if neighbors.len() >= MAX_ENTRIES {
+        // If the garbage collector is already scheduled, cancel it on a best
+        // effort basis. This may race with the timer firing, but there's no
+        // real harm of that happening (e.g. it would result in a single
+        // spurious GC run).
+        timer_heap.cancel_gc(bindings_ctx);
+        collect_garbage_inner(neighbors, gc_state, timer_heap, bindings_ctx, device_id);
+    }
+
+    if neighbors.len() >= MAX_ENTRIES {
+        return Err(TableFullError { entry });
+    }
+
+    match neighbors.entry(ip) {
+        Entry::Occupied(_) => panic!("neighbor entry unexpectedly existed"),
+        Entry::Vacant(e) => {
+            let event_state = entry.to_event_state();
+            let entry = e.insert_entry(entry);
+            let event = Event::added(device_id, event_state, ip, bindings_ctx.now());
+            bindings_ctx.on_event(event);
+            Ok(entry)
+        }
+    }
 }
 
 /// Confirm upper-layer forward reachability to the specified neighbor through
@@ -2759,7 +2845,7 @@ pub fn confirm_reachable<I, D, CC, BC>(
 {
     core_ctx.with_nud_state_mut_and_sender_ctx(
         device_id,
-        |NudState { neighbors, last_gc: _, timer_heap }, core_ctx| {
+        |NudState { neighbors, timer_heap, .. }, core_ctx| {
             match neighbors.entry(neighbor) {
                 Entry::Vacant(_) => {
                     debug!(
@@ -2812,7 +2898,7 @@ pub fn confirm_reachable<I, D, CC, BC>(
 }
 
 /// Performs a linear scan of the neighbor table, discarding enough entries to
-/// bring the total size under `MAX_ENTRIES` if possible.
+/// bring the total size under `GC_THRESHOLD` if possible.
 ///
 /// Static neighbor entries are never discarded, nor are any entries that are
 /// considered to be in use, which is defined as an entry in REACHABLE,
@@ -2821,6 +2907,145 @@ pub fn confirm_reachable<I, D, CC, BC>(
 /// other states represent entries to which we have either recently sent packets
 /// (REACHABLE, DELAY, PROBE), or which we are actively trying to resolve and
 /// for which we have recently queued outgoing packets (INCOMPLETE).
+fn collect_garbage_inner<I, D, DeviceId, BC>(
+    neighbors: &mut HashMap<SpecifiedAddr<I::Addr>, NeighborState<D, BC>>,
+    gc_state: &mut GarbageCollectionState<BC::Instant>,
+    timer_heap: &mut TimerHeap<I, BC>,
+    bindings_ctx: &mut BC,
+    device_id: &DeviceId,
+) where
+    I: Ip,
+    D: LinkDevice,
+    DeviceId: StrongDeviceIdentifier,
+    BC: NudBindingsContext<I, D, DeviceId>,
+{
+    let GarbageCollectionState { last_gc, is_dirty } = gc_state;
+    // Short circuit if we know there are no discardable entries in the table.
+    if !*is_dirty {
+        return;
+    }
+
+    let max_to_remove = neighbors.len().saturating_sub(GC_THRESHOLD);
+    if max_to_remove == 0 {
+        return;
+    }
+
+    let mut is_still_dirty = false;
+
+    // Define an ordering by priority for garbage collection, such that lower
+    // numbers correspond to higher usefulness and therefore lower likelihood of
+    // being discarded.
+    //
+    // TODO(https://fxbug.dev/42075782): once neighbor entries hold a timestamp
+    // tracking when they were last updated, consider using this timestamp to break
+    // ties between entries in the same state, so that we discard less recently
+    // updated entries before more recently updated ones.
+    fn gc_priority<D: LinkDevice, BT: NudBindingsTypes<D>>(
+        state: &DynamicNeighborState<D, BT>,
+    ) -> usize {
+        match state {
+            DynamicNeighborState::Incomplete(_)
+            | DynamicNeighborState::Reachable(_)
+            | DynamicNeighborState::Delay(_)
+            | DynamicNeighborState::Probe(_) => unreachable!(
+                "the netstack should only ever discard STALE or UNREACHABLE entries; \
+                    found {:?}",
+                state,
+            ),
+            DynamicNeighborState::Stale(_) => 0,
+            DynamicNeighborState::Unreachable(Unreachable {
+                link_address: _,
+                mode: UnreachableMode::Backoff { probes_sent: _, packet_sent: _ },
+            }) => 1,
+            DynamicNeighborState::Unreachable(Unreachable {
+                link_address: _,
+                mode: UnreachableMode::WaitingForPacketSend,
+            }) => 2,
+        }
+    }
+
+    struct SortEntry<'a, K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> {
+        key: K,
+        state: &'a mut DynamicNeighborState<D, BT>,
+    }
+
+    impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> PartialEq for SortEntry<'_, K, D, BT> {
+        fn eq(&self, other: &Self) -> bool {
+            self.key == other.key && gc_priority(self.state) == gc_priority(other.state)
+        }
+    }
+    impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> Eq for SortEntry<'_, K, D, BT> {}
+    impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> Ord for SortEntry<'_, K, D, BT> {
+        fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+            // Sort in reverse order so `BinaryHeap` will function as a min-heap rather than
+            // a max-heap. This means it will maintain the minimum (i.e. most useful) entry
+            // at the top of the heap.
+            gc_priority(self.state).cmp(&gc_priority(other.state)).reverse()
+        }
+    }
+    impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> PartialOrd for SortEntry<'_, K, D, BT> {
+        fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+            Some(self.cmp(&other))
+        }
+    }
+
+    let mut entries_to_remove = BinaryHeap::with_capacity(max_to_remove);
+    for (ip, neighbor) in neighbors.iter_mut() {
+        match neighbor {
+            NeighborState::Static(_) => {
+                // Don't discard static entries.
+                continue;
+            }
+            NeighborState::Dynamic(state) => {
+                match state {
+                    DynamicNeighborState::Incomplete(_)
+                    | DynamicNeighborState::Reachable(_)
+                    | DynamicNeighborState::Delay(_)
+                    | DynamicNeighborState::Probe(_) => {
+                        // Don't discard in-use entries.
+                        continue;
+                    }
+                    DynamicNeighborState::Stale(_) | DynamicNeighborState::Unreachable(_) => {
+                        // Unconditionally insert the first `max_to_remove` entries.
+                        if entries_to_remove.len() < max_to_remove {
+                            entries_to_remove.push(SortEntry { key: ip, state });
+                            continue;
+                        }
+                        // If we exceed `max_to_remove`, the table will still
+                        // have discardable entries after this run. Prioritize
+                        // the removal of neighbors that are less useful (based
+                        // on their ordering).
+                        is_still_dirty = true;
+                        let minimum =
+                            entries_to_remove.peek().expect("heap should have at least 1 entry");
+                        let candidate = SortEntry { key: ip, state };
+                        if &candidate > minimum {
+                            let _: SortEntry<'_, _, _, _> = entries_to_remove.pop().unwrap();
+                            entries_to_remove.push(candidate);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let entries_to_remove = entries_to_remove
+        .into_iter()
+        .map(|SortEntry { key: neighbor, state }| {
+            state.cancel_timer(bindings_ctx, timer_heap, *neighbor);
+            *neighbor
+        })
+        .collect::<Vec<_>>();
+
+    for neighbor in entries_to_remove {
+        assert_matches!(neighbors.remove(&neighbor), Some(_));
+        bindings_ctx.on_event(Event::removed(device_id, neighbor, bindings_ctx.now()));
+    }
+
+    *last_gc = Some(bindings_ctx.now());
+    *is_dirty = is_still_dirty;
+}
+
 fn collect_garbage<I, D, CC, BC>(core_ctx: &mut CC, bindings_ctx: &mut BC, device_id: CC::DeviceId)
 where
     I: Ip,
@@ -2828,122 +3053,8 @@ where
     BC: NudBindingsContext<I, D, CC::DeviceId>,
     CC: NudContext<I, D, BC>,
 {
-    core_ctx.with_nud_state_mut(&device_id, |NudState { neighbors, last_gc, timer_heap }, _| {
-        let max_to_remove = neighbors.len().saturating_sub(MAX_ENTRIES);
-        if max_to_remove == 0 {
-            return;
-        }
-
-        *last_gc = Some(bindings_ctx.now());
-
-        // Define an ordering by priority for garbage collection, such that lower
-        // numbers correspond to higher usefulness and therefore lower likelihood of
-        // being discarded.
-        //
-        // TODO(https://fxbug.dev/42075782): once neighbor entries hold a timestamp
-        // tracking when they were last updated, consider using this timestamp to break
-        // ties between entries in the same state, so that we discard less recently
-        // updated entries before more recently updated ones.
-        fn gc_priority<D: LinkDevice, BT: NudBindingsTypes<D>>(
-            state: &DynamicNeighborState<D, BT>,
-        ) -> usize {
-            match state {
-                DynamicNeighborState::Incomplete(_)
-                | DynamicNeighborState::Reachable(_)
-                | DynamicNeighborState::Delay(_)
-                | DynamicNeighborState::Probe(_) => unreachable!(
-                    "the netstack should only ever discard STALE or UNREACHABLE entries; \
-                        found {:?}",
-                    state,
-                ),
-                DynamicNeighborState::Stale(_) => 0,
-                DynamicNeighborState::Unreachable(Unreachable {
-                    link_address: _,
-                    mode: UnreachableMode::Backoff { probes_sent: _, packet_sent: _ },
-                }) => 1,
-                DynamicNeighborState::Unreachable(Unreachable {
-                    link_address: _,
-                    mode: UnreachableMode::WaitingForPacketSend,
-                }) => 2,
-            }
-        }
-
-        struct SortEntry<'a, K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> {
-            key: K,
-            state: &'a mut DynamicNeighborState<D, BT>,
-        }
-
-        impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> PartialEq for SortEntry<'_, K, D, BT> {
-            fn eq(&self, other: &Self) -> bool {
-                self.key == other.key && gc_priority(self.state) == gc_priority(other.state)
-            }
-        }
-        impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> Eq for SortEntry<'_, K, D, BT> {}
-        impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> Ord for SortEntry<'_, K, D, BT> {
-            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                // Sort in reverse order so `BinaryHeap` will function as a min-heap rather than
-                // a max-heap. This means it will maintain the minimum (i.e. most useful) entry
-                // at the top of the heap.
-                gc_priority(self.state).cmp(&gc_priority(other.state)).reverse()
-            }
-        }
-        impl<K: Eq, D: LinkDevice, BT: NudBindingsTypes<D>> PartialOrd for SortEntry<'_, K, D, BT> {
-            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                Some(self.cmp(&other))
-            }
-        }
-
-        let mut entries_to_remove = BinaryHeap::with_capacity(max_to_remove);
-        for (ip, neighbor) in neighbors.iter_mut() {
-            match neighbor {
-                NeighborState::Static(_) => {
-                    // Don't discard static entries.
-                    continue;
-                }
-                NeighborState::Dynamic(state) => {
-                    match state {
-                        DynamicNeighborState::Incomplete(_)
-                        | DynamicNeighborState::Reachable(_)
-                        | DynamicNeighborState::Delay(_)
-                        | DynamicNeighborState::Probe(_) => {
-                            // Don't discard in-use entries.
-                            continue;
-                        }
-                        DynamicNeighborState::Stale(_) | DynamicNeighborState::Unreachable(_) => {
-                            // Unconditionally insert the first `max_to_remove` entries.
-                            if entries_to_remove.len() < max_to_remove {
-                                entries_to_remove.push(SortEntry { key: ip, state });
-                                continue;
-                            }
-                            // Check if this neighbor is greater than (i.e. less useful than) the
-                            // minimum (i.e. most useful) entry that is currently set to be removed.
-                            // If it is, replace that entry with this one.
-                            let minimum = entries_to_remove
-                                .peek()
-                                .expect("heap should have at least 1 entry");
-                            let candidate = SortEntry { key: ip, state };
-                            if &candidate > minimum {
-                                let _: SortEntry<'_, _, _, _> = entries_to_remove.pop().unwrap();
-                                entries_to_remove.push(candidate);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let entries_to_remove = entries_to_remove
-            .into_iter()
-            .map(|SortEntry { key: neighbor, state }| {
-                state.cancel_timer(bindings_ctx, timer_heap, *neighbor);
-                *neighbor
-            })
-            .collect::<Vec<_>>();
-
-        for neighbor in entries_to_remove {
-            assert_matches!(neighbors.remove(&neighbor), Some(_));
-            bindings_ctx.on_event(Event::removed(&device_id, neighbor, bindings_ctx.now()));
-        }
+    core_ctx.with_nud_state_mut(&device_id, |NudState { neighbors, gc_state, timer_heap }, _| {
+        collect_garbage_inner(neighbors, gc_state, timer_heap, bindings_ctx, &device_id);
     })
 }
 
@@ -2966,7 +3077,7 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
-    use crate::internal::device::nud::api::NeighborApi;
+    use crate::internal::device::nud::api::{NeighborApi, StaticNeighborInsertionError};
     use packet::NestableSerializer as _;
 
     struct FakeNudContext<I: Ip, D: LinkDevice> {
@@ -5149,10 +5260,10 @@ mod tests {
     fn garbage_collection_retains_static_entries<I: TestIpExt>() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
 
-        // Add `MAX_ENTRIES` STALE dynamic neighbors and `MAX_ENTRIES` static
+        // Add `GC_THRESHOLD` STALE dynamic neighbors and `GC_THRESHOLD` static
         // neighbors to the neighbor table, interleaved to avoid accidental
         // behavior re: insertion order.
-        for i in 0..MAX_ENTRIES * 2 {
+        for i in 0..GC_THRESHOLD * 2 {
             if i % 2 == 0 {
                 init_stale_neighbor_with_ip(
                     &mut core_ctx,
@@ -5170,10 +5281,12 @@ mod tests {
                 );
             }
         }
-        assert_eq!(core_ctx.nud.state.neighbors.len(), MAX_ENTRIES * 2);
+        assert_eq!(core_ctx.nud.state.neighbors.len(), GC_THRESHOLD * 2);
 
         // Perform GC, and ensure that only the dynamic entries are discarded.
+        assert_eq!(core_ctx.nud.state.gc_state.is_dirty, true);
         collect_garbage(&mut core_ctx, &mut bindings_ctx, FakeLinkDeviceId);
+        assert_eq!(core_ctx.nud.state.gc_state.is_dirty, false);
         for event in bindings_ctx.take_events() {
             assert_matches!(event, Event {
                 device,
@@ -5186,7 +5299,7 @@ mod tests {
                 assert_eq!(at, bindings_ctx.now());
             });
         }
-        assert_eq!(core_ctx.nud.state.neighbors.len(), MAX_ENTRIES);
+        assert_eq!(core_ctx.nud.state.neighbors.len(), GC_THRESHOLD);
         for (_, neighbor) in core_ctx.nud.state.neighbors {
             assert_matches!(neighbor, NeighborState::Static(_));
         }
@@ -5197,7 +5310,7 @@ mod tests {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
 
         // Add enough static entries that the NUD table is near maximum capacity.
-        for i in 0..MAX_ENTRIES - 1 {
+        for i in 0..GC_THRESHOLD - 1 {
             init_static_neighbor_with_ip(
                 &mut core_ctx,
                 &mut bindings_ctx,
@@ -5208,10 +5321,10 @@ mod tests {
         }
 
         // Add a STALE entry...
-        let stale_entry = generate_ip_addr::<I>(MAX_ENTRIES - 1);
+        let stale_entry = generate_ip_addr::<I>(GC_THRESHOLD - 1);
         init_stale_neighbor_with_ip(&mut core_ctx, &mut bindings_ctx, stale_entry, LINK_ADDR1);
         // ...and a REACHABLE entry.
-        let reachable_entry = generate_ip_addr::<I>(MAX_ENTRIES);
+        let reachable_entry = generate_ip_addr::<I>(GC_THRESHOLD);
         init_reachable_neighbor_with_ip(
             &mut core_ctx,
             &mut bindings_ctx,
@@ -5220,7 +5333,9 @@ mod tests {
         );
 
         // Perform GC, and ensure that the REACHABLE entry was retained.
+        assert_eq!(core_ctx.nud.state.gc_state.is_dirty, true);
         collect_garbage(&mut core_ctx, &mut bindings_ctx, FakeLinkDeviceId);
+        assert_eq!(core_ctx.nud.state.gc_state.is_dirty, false);
         super::testutil::assert_dynamic_neighbor_state(
             &mut core_ctx,
             FakeLinkDeviceId,
@@ -5234,13 +5349,38 @@ mod tests {
     }
 
     #[ip_test(I)]
+    fn is_still_dirty_after_garbage_collection<I: TestIpExt>() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+
+        // Add enough STALE entries to trigger garbage collection.
+        for i in 0..GC_THRESHOLD + 1 {
+            init_stale_neighbor_with_ip(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                generate_ip_addr::<I>(i),
+                LINK_ADDR1,
+            );
+        }
+
+        // Perform GC, and ensure that the `is_dirty` is still set (because not
+        // all STALE entries were removed).
+        assert_eq!(core_ctx.nud.state.gc_state.is_dirty, true);
+        collect_garbage(&mut core_ctx, &mut bindings_ctx, FakeLinkDeviceId);
+        assert_eq!(core_ctx.nud.state.gc_state.is_dirty, true);
+        assert_eq!(core_ctx.nud.state.neighbors.len(), GC_THRESHOLD);
+        let events = bindings_ctx.take_events();
+        let removed_event = assert_matches!(&events[..], [event] => event);
+        assert_eq!(removed_event.kind, EventKind::Removed);
+    }
+
+    #[ip_test(I)]
     fn garbage_collection_triggered_on_new_stale_entry<I: TestIpExt>() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
         // Pretend we just ran GC so the next pass will be scheduled after a delay.
-        core_ctx.nud.state.last_gc = Some(bindings_ctx.now());
+        core_ctx.nud.state.gc_state.last_gc = Some(bindings_ctx.now());
 
         // Fill the neighbor table to maximum capacity with static entries.
-        for i in 0..MAX_ENTRIES {
+        for i in 0..GC_THRESHOLD {
             init_static_neighbor_with_ip(
                 &mut core_ctx,
                 &mut bindings_ctx,
@@ -5255,7 +5395,7 @@ mod tests {
         init_stale_neighbor_with_ip(
             &mut core_ctx,
             &mut bindings_ctx,
-            generate_ip_addr::<I>(MAX_ENTRIES + 1),
+            generate_ip_addr::<I>(GC_THRESHOLD + 1),
             LINK_ADDR1,
         );
         let expected_gc_time = bindings_ctx.now() + MIN_GARBAGE_COLLECTION_INTERVAL.get();
@@ -5270,7 +5410,7 @@ mod tests {
         init_stale_neighbor_with_ip(
             &mut core_ctx,
             &mut bindings_ctx,
-            generate_ip_addr::<I>(MAX_ENTRIES + 2),
+            generate_ip_addr::<I>(GC_THRESHOLD + 2),
             LINK_ADDR1,
         );
         bindings_ctx
@@ -5282,10 +5422,10 @@ mod tests {
     fn garbage_collection_triggered_on_transition_to_unreachable<I: TestIpExt>() {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
         // Pretend we just ran GC so the next pass will be scheduled after a delay.
-        core_ctx.nud.state.last_gc = Some(bindings_ctx.now());
+        core_ctx.nud.state.gc_state.last_gc = Some(bindings_ctx.now());
 
         // Fill the neighbor table to maximum capacity.
-        for i in 0..MAX_ENTRIES {
+        for i in 0..GC_THRESHOLD {
             init_static_neighbor_with_ip(
                 &mut core_ctx,
                 &mut bindings_ctx,
@@ -5294,18 +5434,18 @@ mod tests {
                 ExpectedEvent::Added,
             );
         }
-        assert_eq!(core_ctx.nud.state.neighbors.len(), MAX_ENTRIES);
+        assert_eq!(core_ctx.nud.state.neighbors.len(), GC_THRESHOLD);
 
         // Add a dynamic neighbor entry to the table and transition it to the
         // UNREACHABLE state. This should trigger a GC run.
         init_unreachable_neighbor_with_ip(
             &mut core_ctx,
             &mut bindings_ctx,
-            generate_ip_addr::<I>(MAX_ENTRIES),
+            generate_ip_addr::<I>(GC_THRESHOLD),
             LINK_ADDR1,
         );
         let expected_gc_time =
-            core_ctx.nud.state.last_gc.unwrap() + MIN_GARBAGE_COLLECTION_INTERVAL.get();
+            core_ctx.nud.state.gc_state.last_gc.unwrap() + MIN_GARBAGE_COLLECTION_INTERVAL.get();
         bindings_ctx
             .timers
             .assert_some_timers_installed([(NudTimerId::garbage_collection(), expected_gc_time)]);
@@ -5315,7 +5455,7 @@ mod tests {
         init_unreachable_neighbor_with_ip(
             &mut core_ctx,
             &mut bindings_ctx,
-            generate_ip_addr::<I>(MAX_ENTRIES + 1),
+            generate_ip_addr::<I>(GC_THRESHOLD + 1),
             LINK_ADDR1,
         );
         bindings_ctx
@@ -5328,7 +5468,7 @@ mod tests {
         let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
 
         // Fill the neighbor table to maximum capacity with static entries.
-        for i in 0..MAX_ENTRIES {
+        for i in 0..GC_THRESHOLD {
             init_static_neighbor_with_ip(
                 &mut core_ctx,
                 &mut bindings_ctx,
@@ -5337,12 +5477,12 @@ mod tests {
                 ExpectedEvent::Added,
             );
         }
-        assert_eq!(core_ctx.nud.state.neighbors.len(), MAX_ENTRIES);
+        assert_eq!(core_ctx.nud.state.neighbors.len(), GC_THRESHOLD);
 
         let _: VecDeque<Buf<Vec<u8>>> = init_incomplete_neighbor_with_ip(
             &mut core_ctx,
             &mut bindings_ctx,
-            generate_ip_addr::<I>(MAX_ENTRIES),
+            generate_ip_addr::<I>(GC_THRESHOLD),
             true,
         );
         assert_eq!(
@@ -5503,5 +5643,159 @@ mod tests {
             }),
             None, // No event should be generated.
         );
+    }
+
+    /// Various ways a neighbor entry could be inserted to exercise table full
+    /// conditions.
+    enum InsertMethod {
+        ResolveLinkAddr,
+        InsertStaticEntry,
+        NeighborUpdate,
+        SendIpPacket,
+    }
+
+    impl InsertMethod {
+        fn insert<I: TestIpExt>(
+            &self,
+            context: &mut CtxPair<&mut FakeCoreCtxImpl<I>, &mut FakeBindingsCtxImpl<I>>,
+            link_address: UnicastAddr<FakeLinkAddress>,
+            ip: SpecifiedAddr<I::Addr>,
+            expect_err: bool,
+        ) {
+            match self {
+                Self::ResolveLinkAddr => {
+                    let result =
+                        NeighborApi::new(context).resolve_link_addr(&FakeLinkDeviceId, &ip);
+                    let pending = assert_matches!(
+                        result, LinkResolutionResult::Pending(pending) => pending
+                    );
+                    if expect_err {
+                        assert_matches!(
+                            pending.lock().as_ref(),
+                            Some(Err(AddressResolutionFailed))
+                        );
+                    } else {
+                        assert_matches!(pending.lock().as_ref(), None, "should not be notified");
+                    }
+                }
+                Self::InsertStaticEntry => {
+                    let result = NeighborApi::new(context).insert_static_entry(
+                        &FakeLinkDeviceId,
+                        *ip,
+                        link_address,
+                    );
+                    if expect_err {
+                        assert_eq!(result, Err(StaticNeighborInsertionError::TableFull))
+                    } else {
+                        assert_eq!(result, Ok(()))
+                    }
+                }
+                Self::NeighborUpdate => {
+                    let CtxPair { core_ctx, bindings_ctx } = context;
+                    NudHandler::handle_neighbor_update(
+                        *core_ctx,
+                        *bindings_ctx,
+                        &FakeLinkDeviceId,
+                        ip,
+                        DynamicNeighborUpdateSource::Probe { link_address },
+                    );
+                    // NB: ignore `expect_err` because errors aren't observable
+                    // on `handle_neighbor_update`.
+                }
+                Self::SendIpPacket => {
+                    let CtxPair { core_ctx, bindings_ctx } = context;
+                    let packet = Buf::new([0; 10], ..);
+                    let result = NudHandler::send_ip_packet_to_neighbor(
+                        *core_ctx,
+                        *bindings_ctx,
+                        &FakeLinkDeviceId,
+                        ip,
+                        packet,
+                        FakeTxMetadata::default(),
+                    );
+                    if expect_err {
+                        assert_matches!(
+                            result,
+                            Err(ErrorAndSerializer {error, ..})
+                            if error == SendFrameErrorReason::AddressResolutionFailed
+                        );
+                    } else {
+                        assert_matches!(result, Ok(()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Verify that a full neighbor table does not allow adding new neighbors.
+    #[ip_test(I)]
+    #[test_case(InsertMethod::ResolveLinkAddr; "resolve_link_addr")]
+    #[test_case(InsertMethod::InsertStaticEntry; "insert_static_entry")]
+    #[test_case(InsertMethod::NeighborUpdate; "neighbor_update")]
+    #[test_case(InsertMethod::SendIpPacket; "send_ip_packet")]
+    fn neighbor_table_max_entries_enforced<I: TestIpExt>(insert_method: InsertMethod) {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+        for i in 0..MAX_ENTRIES {
+            // NB: Static entries will not be discardable.
+            init_static_neighbor_with_ip(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                generate_ip_addr::<I>(i),
+                LINK_ADDR1,
+                ExpectedEvent::Added,
+            );
+            assert_eq!(core_ctx.nud.state.neighbors.len(), i + 1);
+        }
+
+        // Attempting to insert an entry beyond the limit should fail.
+        insert_method.insert(
+            &mut CtxPair { core_ctx: &mut core_ctx, bindings_ctx: &mut bindings_ctx },
+            LINK_ADDR1,
+            generate_ip_addr::<I>(MAX_ENTRIES),
+            true, /* expect_err */
+        );
+        assert_eq!(bindings_ctx.take_events(), []);
+        assert_eq!(core_ctx.nud.state.neighbors.len(), MAX_ENTRIES);
+    }
+
+    // Verify that a full neighbor table will run the garbage collector to free
+    // discardable entries.
+    #[ip_test(I)]
+    #[test_case(InsertMethod::ResolveLinkAddr; "resolve_link_addr")]
+    #[test_case(InsertMethod::InsertStaticEntry; "insert_static_entry")]
+    #[test_case(InsertMethod::NeighborUpdate; "neighbor_update")]
+    #[test_case(InsertMethod::SendIpPacket; "send_ip_packet")]
+    fn insert_new_entry_may_collect_garbage<I: TestIpExt>(insert_method: InsertMethod) {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+
+        for i in 0..MAX_ENTRIES {
+            // NB: STALE entries will be discardable.
+            init_stale_neighbor_with_ip(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                generate_ip_addr::<I>(i),
+                LINK_ADDR1,
+            );
+            assert_eq!(core_ctx.nud.state.neighbors.len(), i + 1);
+        }
+
+        // Attempting to insert an entry beyond the limit should trigger
+        // garbage collection.
+        insert_method.insert(
+            &mut CtxPair { core_ctx: &mut core_ctx, bindings_ctx: &mut bindings_ctx },
+            LINK_ADDR1,
+            generate_ip_addr::<I>(MAX_ENTRIES),
+            false, /* expect_err */
+        );
+        assert_eq!(core_ctx.nud.state.neighbors.len(), GC_THRESHOLD + 1);
+        let mut events = bindings_ctx.take_events();
+        // Expect 1 `Added` event and several `Removed` events.
+        let add_event = events.pop().expect("should have added event");
+        assert_eq!(add_event.addr, generate_ip_addr::<I>(MAX_ENTRIES));
+        assert_matches!(add_event.kind, EventKind::Added(_));
+        for _ in 0..(MAX_ENTRIES - GC_THRESHOLD) {
+            assert_matches!(events.pop(), Some(Event{kind, ..}) if kind == EventKind::Removed);
+        }
+        assert_matches!(&events[..], []);
     }
 }

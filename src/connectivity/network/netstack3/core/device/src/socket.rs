@@ -571,6 +571,9 @@ where
                 .increment_both(id, |counters: &DeviceSocketCounters| {
                     &counters.tx_err_size_constraint
                 }),
+            Err(SendFrameErrorReason::AddressResolutionFailed) => {
+                unreachable!("device socket send should not perform link-layer address resolution");
+            }
         }
         result
     }

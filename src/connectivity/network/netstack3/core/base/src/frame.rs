@@ -83,6 +83,9 @@ pub enum SendFrameErrorReason {
     /// The transmit queue is full.
     #[error("transmit queue is full")]
     QueueFull,
+    /// The link layer address for the frame could not be resolved.
+    #[error("address resolution failed")]
+    AddressResolutionFailed,
 }
 
 impl<A> From<SerializeError<A>> for SendFrameErrorReason {
