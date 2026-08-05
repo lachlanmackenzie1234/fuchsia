@@ -5,6 +5,7 @@
 #include "poisson_sampler.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <random>
 
@@ -28,7 +29,7 @@ class NonDeterministicSampleIntervalGenerator final
     // correct it to avoid a possible floating point exception from
     // taking the log of 0.
     double uniform = UniformRandomDouble();
-    double value = -log(1 - uniform) * static_cast<double>(mean_interval);
+    double value = -std::log(1 - uniform) * static_cast<double>(mean_interval);
     double min_value = sizeof(intptr_t);
     // We limit the upper bound of a sample interval to make sure we don't have
     // huge gaps in the sampling stream. Probability of the upper bound gets hit
