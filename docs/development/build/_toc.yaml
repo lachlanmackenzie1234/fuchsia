@@ -29,6 +29,8 @@ toc:
   section:
   - title: "Bazel migration guidelines"
     path: /docs/development/build/bazel_migration_guidelines.md
+  - title: "Bazel disk cache"
+    path: /docs/development/build/bazel_disk_cache.md
   - title: "Build Clang toolchain"
     path: /docs/development/build/toolchain.md
   - title: "Build Rust for Fuchsia"
