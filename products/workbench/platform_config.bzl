@@ -58,7 +58,6 @@ workbench_platform_config = {
         "peripheral": {
             "functions": [
                 "cdc",
-                "adb",
                 "vsock_bridge",
             ],
         },
