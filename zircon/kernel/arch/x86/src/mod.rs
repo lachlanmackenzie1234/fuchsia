@@ -4,6 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+pub mod apic;
+pub mod interrupts;
+pub mod ioapic;
+
 /// Architecture-specific saved normal mode state for x86_64.
 ///
 /// Saves the normal mode `fs_base` and `gs_base` MSR values across restricted mode entry.
