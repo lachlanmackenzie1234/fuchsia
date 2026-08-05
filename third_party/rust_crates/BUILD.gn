@@ -16323,7 +16323,7 @@ rustc_library("proptest-v1_11_0") {
   deps += [ ":rand_chacha-v0_9_0" ]
   deps += [ ":rand_xorshift-v0_4_0" ]
   deps += [ ":regex-syntax-v0_8_10" ]
-  deps += [ ":rusty-fork-v0_3_0" ]
+  deps += [ ":rusty-fork-v0_3_1" ]
   deps += [ ":tempfile-v3_27_0" ]
   deps += [ ":unarray-v0_1_4" ]
 
@@ -18839,18 +18839,18 @@ rustc_macro("rustversion-v1_0_22") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("rusty-fork-v0_3_0.license") {
+license("rusty-fork-v0_3_1.license") {
   public_package_name = "rusty_fork"
   license_files = [
-    "//third_party/rust_crates/vendor/rusty-fork-0.3.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rusty-fork-0.3.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rusty-fork-0.3.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rusty-fork-0.3.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("rusty-fork-v0_3_0") {
+rustc_library("rusty-fork-v0_3_1") {
   crate_name = "rusty_fork"
-  source_root = "//third_party/rust_crates/vendor/rusty-fork-0.3.0/src/lib.rs"
-  output_name = "rusty_fork-ace06252817d912e"
+  source_root = "//third_party/rust_crates/vendor/rusty-fork-0.3.1/src/lib.rs"
+  output_name = "rusty_fork-24b7132158c5085b"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -18866,15 +18866,15 @@ rustc_library("rusty-fork-v0_3_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ace06252817d912e",
-    "-Cextra-filename=-ace06252817d912e",
+    "-Cmetadata=24b7132158c5085b",
+    "-Cextra-filename=-24b7132158c5085b",
     "--cfg=feature=\"timeout\"",
     "--cfg=feature=\"wait-timeout\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rusty-fork-v0_3_0.license" ]
+  applicable_licenses = [ ":rusty-fork-v0_3_1.license" ]
 }
 
 license("rustyline-v18_0_1.license") {

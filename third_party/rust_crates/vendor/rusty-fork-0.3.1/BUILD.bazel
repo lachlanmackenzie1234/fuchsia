@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "rusty-fork",
     package_url = "https://github.com/altsysrq/rusty-fork",
-    package_version = "0.3.0",
+    package_version = "0.3.1",
 )
 
 license(
@@ -75,7 +75,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.3.0",
+    version = "0.3.1",
     deps = [
         "//third_party/rust_crates/vendor/fnv-1.0.7:fnv",
         "//third_party/rust_crates/vendor/quick-error-1.2.3:quick_error",
