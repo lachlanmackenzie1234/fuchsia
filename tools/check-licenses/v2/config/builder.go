@@ -83,7 +83,6 @@ func (b *Builder) Assemble() error {
 	})
 	if err == nil {
 		b.Config.Report.OutOfTreeReadmes = b.Config.Boundary.OutOfTreeReadmes
-		b.Config.Report.MissingLicenseExceptions = b.Config.Validate.PolicyExceptions[validate.PolicyNoLicense]
 	}
 	return err
 }
@@ -186,28 +185,17 @@ func (b *Builder) parseConfigFile(path string) error {
 
 	// 2. Process TargetExtensions
 	if f.TargetExtensions != nil {
-		for _, ext := range f.TargetExtensions.Extensions {
-			// Ensure consistent dot formatting (e.g., "cc" -> ".cc")
-			if !strings.HasPrefix(ext, ".") {
-				ext = "." + ext
-			}
-			b.Config.Classify.TargetExtensions[ext] = true
-		}
+		b.Config.Classify.AddExtensions(f.TargetExtensions.Extensions)
 	}
 
 	// 2.5 Process CopyrightExtensions
 	if f.CopyrightExtensions != nil {
-		for _, ext := range f.CopyrightExtensions.Extensions {
-			if !strings.HasPrefix(ext, ".") {
-				ext = "." + ext
-			}
-			b.Config.Validate.CopyrightExtensions[ext] = true
-		}
+		b.Config.Validate.AddCopyrightExtensions(f.CopyrightExtensions.Extensions)
 	}
 
 	// 3. Process Barriers
 	for _, barrier := range f.Barriers {
-		if barrier.Bug == "" && isBugRequired(path) {
+		if barrier.Bug == "" && f.IsBugRequired(path) {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
 		for _, p := range barrier.Paths {
@@ -221,7 +209,7 @@ func (b *Builder) parseConfigFile(path string) error {
 			b.Config.Validate.PolicyExceptions[checkName] = make(map[string]validate.RuleMetadata)
 		}
 
-		if err := b.addRuleException(b.Config.Validate.PolicyExceptions, checkName, entries, path); err != nil {
+		if err := b.addRuleException(b.Config.Validate.PolicyExceptions, checkName, entries, path, &f); err != nil {
 			return err
 		}
 	}
@@ -244,7 +232,7 @@ func (b *Builder) parseConfigFile(path string) error {
 				}
 			}
 		}
-		if err := b.addRuleException(b.Config.Validate.AllowedLicenses, licenseName, entries, path); err != nil {
+		if err := b.addRuleException(b.Config.Validate.AllowedLicenses, licenseName, entries, path, &f); err != nil {
 			return err
 		}
 	}
@@ -252,22 +240,18 @@ func (b *Builder) parseConfigFile(path string) error {
 	return nil
 }
 
-func isBugRequired(configPath string) bool {
-	switch filepath.Base(configPath) {
-	case "default.json", "hidden_dirs.json", "test_dirs.json", "bazel_vendor.json":
-		return false
-	default:
-		return true
-	}
-}
-
-func (b *Builder) addRuleException(targetMap map[string]map[string]RuleMetadata, key string, entries []AllowlistEntry, path string) error {
+func (b *Builder) addRuleException(targetMap map[string]map[string]RuleMetadata, key string, entries []AllowlistEntry, path string, f *ConfigFile) error {
 	if _, exists := targetMap[key]; !exists {
 		targetMap[key] = make(map[string]RuleMetadata)
 	}
+	bugRequired := f.IsBugRequired(path)
+	descRequired := f.IsDescriptionRequired()
 	for _, entry := range entries {
-		if entry.Bug == "" && isBugRequired(path) {
+		if entry.Bug == "" && bugRequired {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
+		}
+		if entry.Description == "" && descRequired {
+			return fmt.Errorf("validation error in %s: a 'description' field is required to describe this exception", path)
 		}
 		for _, allowedPath := range entry.Paths {
 			cleanPath := normalizeProjectPath(allowedPath)

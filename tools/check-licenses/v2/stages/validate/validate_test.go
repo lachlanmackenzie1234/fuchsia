@@ -24,6 +24,10 @@ func TestValidator_Run(t *testing.T) {
 		"AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders": {
 			"src/legacy/old.cc": RuleMetadata{Bug: "test", Description: "test"},
 		},
+		"AllProjectsMustHaveALicense": {
+			"third_party/foo": RuleMetadata{Bug: "test", Description: "test"},
+			"third_party/bar": RuleMetadata{Bug: "test", Description: "test"},
+		},
 	}
 
 	allowedLicenses := map[string]map[string]RuleMetadata{
@@ -201,5 +205,43 @@ func TestValidator_Run(t *testing.T) {
 	}
 	if !hasUnapprovedPatternErr {
 		t.Error("Expected unapproved pattern error, but it was not emitted")
+	}
+}
+
+func TestValidator_RunFailure_MissingLicense(t *testing.T) {
+	validator := NewValidator(t.TempDir(), Config{})
+
+	inChan := make(chan pipeline.ClassifiedFile, 1)
+
+	inChan <- pipeline.ClassifiedFile{
+		Path:          "third_party/foo/main.cc",
+		ProjectRoot:   "third_party/foo",
+		IsLicenseFile: false,
+		Matches:       []pipeline.LicenseMatch{},
+	}
+	close(inChan)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	outChan, err := validator.Run(ctx, inChan)
+	if err != nil {
+		t.Fatalf("Failed to run validator: %v", err)
+	}
+
+	var errors []pipeline.ComplianceError
+	for err := range outChan {
+		errors = append(errors, err)
+	}
+
+	if len(errors) != 1 {
+		t.Fatalf("Expected 1 error due to missing license file, got %d: %v", len(errors), errors)
+	}
+
+	if errors[0].CheckName != PolicyNoLicense {
+		t.Errorf("Expected check name %s, got: %s", PolicyNoLicense, errors[0].CheckName)
+	}
+	if !strings.Contains(errors[0].Issue, "Project has no recognized license files") {
+		t.Errorf("Expected error to contain missing license issue description, got: %v", errors[0].Issue)
 	}
 }

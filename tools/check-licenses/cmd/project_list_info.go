@@ -17,6 +17,7 @@ import (
 
 	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
 )
 
 type ProjectListCommand struct {
@@ -171,13 +172,13 @@ func (c *ProjectInfoCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	relReadme, _ := filepath.Rel(fuchsiaDir, readmePath)
 	fmt.Printf("Readme Path:  %s%s\n", relReadme, virtualStr)
 
-	readmeCache := make(map[string]*readmeResult)
+	grouper := v2boundary.NewGrouper(fuchsiaDir, config.Boundary)
 	activePolicies := make(map[string]v2config.RuleMetadata)
 	var activePolicyNames []string
 	for policyName, paths := range config.Validate.PolicyExceptions {
 		for p, meta := range paths {
 			cleanP := strings.TrimPrefix(p, "//")
-			if belongsToProject(cleanP, relRoot, fuchsiaDir, config.Boundary.OutOfTreeReadmes, readmeCache) {
+			if belongsToProject(cleanP, relRoot, fuchsiaDir, grouper) {
 				activePolicies[policyName] = meta
 				activePolicyNames = append(activePolicyNames, policyName)
 				break
@@ -191,7 +192,7 @@ func (c *ProjectInfoCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	for licenseID, paths := range config.Validate.AllowedLicenses {
 		for p, meta := range paths {
 			cleanP := strings.TrimPrefix(p, "//")
-			if belongsToProject(cleanP, relRoot, fuchsiaDir, config.Boundary.OutOfTreeReadmes, readmeCache) {
+			if belongsToProject(cleanP, relRoot, fuchsiaDir, grouper) {
 				allowedLicenses[licenseID] = meta
 				allowedLicenseNames = append(allowedLicenseNames, licenseID)
 				break
@@ -243,13 +244,7 @@ func (c *ProjectInfoCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	return subcommands.ExitSuccess
 }
 
-type readmeResult struct {
-	r    *readme.Readme
-	path string
-	err  error
-}
-
-func belongsToProject(policyPath string, projectRoot string, fuchsiaDir string, outOfTreeReadmes map[string]string, cache map[string]*readmeResult) bool {
+func belongsToProject(policyPath string, projectRoot string, fuchsiaDir string, grouper *v2boundary.Grouper) bool {
 	// If the policy applies to a broader root that contains this project, we inherit it.
 	// E.g. Policy on "third_party" applies to "third_party/foo".
 	if strings.HasPrefix(projectRoot, policyPath+string(filepath.Separator)) {
@@ -268,38 +263,5 @@ func belongsToProject(policyPath string, projectRoot string, fuchsiaDir string, 
 
 	// The policy path is SUBORDINATE to our project root (e.g. policy on "src/foo/bar" and we are querying "src/foo").
 	// We only claim this policy if "src/foo/bar" is actually part of our project, NOT a separate sub-project.
-	absPolicyPath := filepath.Join(fuchsiaDir, policyPath)
-
-	var res *readmeResult
-	var ok bool
-	if res, ok = cache[absPolicyPath]; !ok {
-		r, readmePath, err := readme.FindProjectReadme(absPolicyPath, fuchsiaDir, outOfTreeReadmes)
-		res = &readmeResult{r: r, path: readmePath, err: err}
-		cache[absPolicyPath] = res
-	}
-
-	if res.err != nil || res.r == nil {
-		// If we can't find a boundary, default to naive prefix matching (it belongs to us)
-		return true
-	}
-
-	var pLogicalRoot string
-	for logPath, physPath := range outOfTreeReadmes {
-		if physPath == res.path {
-			pLogicalRoot = filepath.Join(fuchsiaDir, logPath)
-			break
-		}
-	}
-	if pLogicalRoot == "" {
-		pLogicalRoot = filepath.Dir(res.path)
-	}
-
-	if res.r.Location != "" {
-		pLogicalRoot = filepath.Join(pLogicalRoot, res.r.Location)
-	}
-
-	pRelRoot, _ := filepath.Rel(fuchsiaDir, pLogicalRoot)
-
-	// It belongs to us only if the closest project boundary to the policy file is US.
-	return pRelRoot == projectRoot
+	return grouper.BelongsToProject(policyPath, projectRoot)
 }

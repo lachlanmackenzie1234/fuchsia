@@ -4,6 +4,8 @@
 
 package validate
 
+import "strings"
+
 // Policy checks that are validated against the configuration.
 const (
 	PolicyUnrecognizedLicense = "AllLicenseTextsMustBeRecognized"
@@ -28,6 +30,27 @@ type Config struct {
 	PolicyExceptions    map[string]map[string]RuleMetadata
 	AllowedLicenses     map[string]map[string]RuleMetadata
 	CopyrightExtensions map[string]bool
+}
+
+// AddCopyrightExtension normalizes and adds a single file extension to CopyrightExtensions.
+func (c *Config) AddCopyrightExtension(ext string) {
+	if c == nil {
+		return
+	}
+	if c.CopyrightExtensions == nil {
+		c.CopyrightExtensions = make(map[string]bool)
+	}
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	c.CopyrightExtensions[ext] = true
+}
+
+// AddCopyrightExtensions normalizes and adds multiple file extensions to CopyrightExtensions.
+func (c *Config) AddCopyrightExtensions(exts []string) {
+	for _, ext := range exts {
+		c.AddCopyrightExtension(ext)
+	}
 }
 
 var validPolicyChecks = map[string]bool{

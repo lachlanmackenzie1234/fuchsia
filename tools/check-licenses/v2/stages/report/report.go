@@ -76,39 +76,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 		return ctx.Err()
 	}
 
-	// 1. Check: AllProjectsMustHaveALicense
-	// Verify that every project emitted downstream had at least one valid license file.
-	projectHasLicense := make(map[string]bool)
-	for _, cf := range cFiles {
-		if _, exists := projectHasLicense[cf.ProjectRoot]; !exists {
-			projectHasLicense[cf.ProjectRoot] = false
-		}
-		if cf.IsLicenseFile && len(cf.Matches) > 0 {
-			projectHasLicense[cf.ProjectRoot] = true
-		}
-	}
-
-	for proj, hasLicense := range projectHasLicense {
-		if !hasLicense {
-			// Check if allowed
-			relProjRoot, _ := filepath.Rel(r.FuchsiaDir, proj)
-			_, allowed := r.Config.MissingLicenseExceptions[relProjRoot]
-			if allowed {
-				metrics.AllowlistHits.Inc(validate.PolicyNoLicense)
-				continue
-			}
-
-			// We emit this directly into the error slice so it fails the build
-			errs = append(errs, pipeline.ComplianceError{
-				CheckName: validate.PolicyNoLicense,
-				Project:   proj,
-				FilePath:  "",
-				Issue:     fmt.Sprintf("Project has no recognized license files. Every third-party project must contain a license file. If this project is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllProjectsMustHaveALicense %s", relProjRoot),
-			})
-		}
-	}
-
-	// 1.5 Virtual Diff: Ensure READMEs accurately reflect classified licenses
+	// 1. Virtual Diff: Ensure READMEs accurately reflect classified licenses
 	filesByProject := make(map[string][]pipeline.ClassifiedFile)
 	for _, cf := range cFiles {
 		filesByProject[cf.ProjectRoot] = append(filesByProject[cf.ProjectRoot], cf)

@@ -108,34 +108,3 @@ func TestReporter_RunFailure(t *testing.T) {
 		t.Errorf("Expected error to contain issue description, got: %v", err)
 	}
 }
-
-func TestReporter_RunFailure_MissingLicense(t *testing.T) {
-	reporter := NewReporter(t.TempDir(), "", Config{VerifyReadmes: true}) // dry run
-
-	filesChan := make(chan pipeline.ClassifiedFile, 1)
-	errorsChan := make(chan pipeline.ComplianceError, 1)
-
-	filesChan <- pipeline.ClassifiedFile{
-		Path:          "third_party/foo/main.cc",
-		ProjectRoot:   "third_party/foo",
-		IsLicenseFile: false,
-		Matches:       []pipeline.LicenseMatch{},
-	}
-	close(filesChan)
-	close(errorsChan)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	err := reporter.Run(ctx, filesChan, errorsChan)
-	if err == nil {
-		t.Fatal("Expected error due to missing license file, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "1 compliance error") {
-		t.Errorf("Expected error to contain error count, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "Project has no recognized license files") {
-		t.Errorf("Expected error to contain missing license issue description, got: %v", err)
-	}
-}

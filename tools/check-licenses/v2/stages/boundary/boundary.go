@@ -236,3 +236,33 @@ func (g *Grouper) isBarrier(absDir string) bool {
 
 	return false
 }
+
+// BelongsToProject returns true if targetPath belongs to projectRoot rather than a nested subproject.
+func (g *Grouper) BelongsToProject(targetPath, projectRoot string) bool {
+	if g == nil {
+		return true
+	}
+	absTarget := targetPath
+	if !filepath.IsAbs(absTarget) {
+		absTarget = filepath.Join(g.FuchsiaDir, strings.TrimPrefix(targetPath, "//"))
+	}
+	r, readmePath, err := readme.FindProjectReadme(absTarget, g.FuchsiaDir, g.Config.OutOfTreeReadmes)
+	if err != nil || r == nil {
+		return true
+	}
+	var pLogicalRoot string
+	for logPath, physPath := range g.Config.OutOfTreeReadmes {
+		if physPath == readmePath {
+			pLogicalRoot = filepath.Join(g.FuchsiaDir, logPath)
+			break
+		}
+	}
+	if pLogicalRoot == "" {
+		pLogicalRoot = filepath.Dir(readmePath)
+	}
+	if r.Location != "" {
+		pLogicalRoot = filepath.Join(pLogicalRoot, r.Location)
+	}
+	pRelRoot, _ := filepath.Rel(g.FuchsiaDir, pLogicalRoot)
+	return pRelRoot == projectRoot
+}

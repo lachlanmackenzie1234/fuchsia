@@ -4,6 +4,8 @@
 
 package classify
 
+import "strings"
+
 // Config holds the configuration for the classify stage.
 type Config struct {
 	// Threshold is the confidence threshold for license classification (default 0.8).
@@ -26,6 +28,27 @@ func NewConfig() Config {
 		Threshold:         0.8,
 		TargetExtensions:  make(map[string]bool),
 		LicenseCategories: make(map[string]string),
+	}
+}
+
+// AddExtension normalizes and adds a single file extension to TargetExtensions.
+func (c *Config) AddExtension(ext string) {
+	if c == nil {
+		return
+	}
+	if c.TargetExtensions == nil {
+		c.TargetExtensions = make(map[string]bool)
+	}
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	c.TargetExtensions[ext] = true
+}
+
+// AddExtensions normalizes and adds multiple file extensions to TargetExtensions.
+func (c *Config) AddExtensions(exts []string) {
+	for _, ext := range exts {
+		c.AddExtension(ext)
 	}
 }
 

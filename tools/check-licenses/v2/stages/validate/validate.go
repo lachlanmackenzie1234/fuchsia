@@ -53,9 +53,18 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 		defer close(out)
 		defer metrics.ChecksDuration.Track()()
 
+		projectHasLicense := make(map[string]bool)
+
 		for cf := range in {
 			if ctx.Err() != nil {
 				return
+			}
+
+			if _, exists := projectHasLicense[cf.ProjectRoot]; !exists {
+				projectHasLicense[cf.ProjectRoot] = false
+			}
+			if cf.IsLicenseFile && len(cf.Matches) > 0 {
+				projectHasLicense[cf.ProjectRoot] = true
 			}
 
 			// We need a consistent relative path for allowlist lookups
@@ -167,6 +176,31 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 							}
 						}
 					}
+				}
+			}
+		}
+
+		for proj, hasLicense := range projectHasLicense {
+			if proj == v.FuchsiaDir || proj == "." || proj == "" {
+				continue
+			}
+			if !hasLicense {
+				relProjRoot, _ := filepath.Rel(v.FuchsiaDir, proj)
+				if !v.isPolicyExceptionAllowed(PolicyNoLicense, relProjRoot) {
+					metrics.ValidationErrors.Inc(PolicyNoLicense)
+					err := pipeline.ComplianceError{
+						CheckName: PolicyNoLicense,
+						Project:   proj,
+						FilePath:  "",
+						Issue:     fmt.Sprintf("Project has no recognized license files. Every third-party project must contain a license file. If this project is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllProjectsMustHaveALicense %s", relProjRoot),
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case out <- err:
+					}
+				} else {
+					metrics.AllowlistHits.Inc(PolicyNoLicense)
 				}
 			}
 		}

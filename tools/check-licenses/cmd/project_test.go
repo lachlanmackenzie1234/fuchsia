@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
+
+	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
 )
 
 const mockMITLicenseText = `Permission is hereby granted, free of charge, to any person obtaining a copy`
@@ -242,8 +244,7 @@ func TestBelongsToProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// This is equivalent to outOfTreeReadmes
-	outOfTree := map[string]string{}
+	grouper := v2boundary.NewGrouper(fuchsiaDir, v2boundary.Config{})
 
 	tests := []struct {
 		name        string
@@ -291,7 +292,7 @@ func TestBelongsToProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := belongsToProject(tt.policyPath, tt.projectRoot, fuchsiaDir, outOfTree, make(map[string]*readmeResult))
+			result := belongsToProject(tt.policyPath, tt.projectRoot, fuchsiaDir, grouper)
 			if result != tt.expected {
 				t.Errorf("belongsToProject(%q, %q) = %v, want %v", tt.policyPath, tt.projectRoot, result, tt.expected)
 			}

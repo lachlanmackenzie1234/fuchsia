@@ -4,23 +4,17 @@
 
 package report
 
-import (
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
-)
-
 // Config holds the configuration for the report stage.
 type Config struct {
-	VerifyReadmes            bool
-	WriteReadmes             bool
-	GenerateArtifacts        bool
-	OutOfTreeReadmes         map[string]string
-	MissingLicenseExceptions map[string]validate.RuleMetadata
+	VerifyReadmes     bool
+	WriteReadmes      bool
+	GenerateArtifacts bool
+	OutOfTreeReadmes  map[string]string
 }
 
 // NewConfig initializes an empty report configuration.
 func NewConfig() Config {
 	return Config{
-		OutOfTreeReadmes:         make(map[string]string),
-		MissingLicenseExceptions: make(map[string]validate.RuleMetadata),
+		OutOfTreeReadmes: make(map[string]string),
 	}
 }

@@ -246,6 +246,10 @@ func NewMasterConfig(fuchsiaDir string) *MasterConfig {
 // of these fields, allowing configuration to be organized by project or by theme.
 
 type ConfigFile struct {
+	RequireBug         *bool `json:"require_bug,omitempty"`
+	RequireDescription *bool `json:"require_description,omitempty"`
+	IsBaseline         *bool `json:"is_baseline,omitempty"`
+
 	Includes            []string                    `json:"includes,omitempty"`
 	Skips               []SkipEntry                 `json:"skips,omitempty"`
 	TargetExtensions    *ExtensionEntry             `json:"target_extensions,omitempty"`
@@ -253,6 +257,32 @@ type ConfigFile struct {
 	Barriers            []BarrierEntry              `json:"barriers,omitempty"`
 	PolicyExceptions    map[string][]AllowlistEntry `json:"policy_exceptions,omitempty"`
 	AllowedLicenses     map[string][]AllowlistEntry `json:"allowed_licenses,omitempty"`
+}
+
+// IsBugRequired returns true if exceptions in this file must include a Bug link.
+func (f *ConfigFile) IsBugRequired(configPath string) bool {
+	if f != nil {
+		if f.RequireBug != nil {
+			return *f.RequireBug
+		}
+		if f.IsBaseline != nil && *f.IsBaseline {
+			return false
+		}
+	}
+	switch filepath.Base(configPath) {
+	case "default.json", "hidden_dirs.json", "test_dirs.json", "bazel_vendor.json":
+		return false
+	default:
+		return true
+	}
+}
+
+// IsDescriptionRequired returns true if exceptions in this file must include a Description.
+func (f *ConfigFile) IsDescriptionRequired() bool {
+	if f != nil && f.RequireDescription != nil {
+		return *f.RequireDescription
+	}
+	return false
 }
 
 type SkipEntry struct {
