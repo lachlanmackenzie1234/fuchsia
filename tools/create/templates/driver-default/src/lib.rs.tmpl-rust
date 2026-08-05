@@ -1,11 +1,10 @@
 {{>copyright comment="//"}}
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
-use zx::Status;
 
 struct {{pascal_case PROJECT_NAME}} {
-    node: Node,
+    _node: Node,
 }
 
 driver_register!({{pascal_case PROJECT_NAME}});
@@ -13,12 +12,12 @@ driver_register!({{pascal_case PROJECT_NAME}});
 impl Driver for {{pascal_case PROJECT_NAME}} {
     const NAME: &str = "{{snake_case PROJECT_NAME}}";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!("{{pascal_case PROJECT_NAME}}::start()");
 
         let node = context.take_node()?;
 
-        Ok(Self { node })
+        Ok(Self { _node: node })
     }
 
     async fn stop(&self) {

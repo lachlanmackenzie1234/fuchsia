@@ -28,10 +28,7 @@ group("tests") {
     ":my-component-v2-rust($host_toolchain)",
     ":my-devicetree-visitor($host_toolchain)",
     ":my-driver-cpp($host_toolchain)",
-
-    # TODO(b/512567245): Enable this test once we are able to compile it without
-    # a dead-code warning.
-    #":my-driver-rust($host_toolchain)",
+    ":my-driver-rust($host_toolchain)",
   ]
   if (is_fuchsia) {
     deps += [
@@ -41,10 +38,7 @@ group("tests") {
       "my-component-v2-rust:tests",
       "my-devicetree-visitor:tests",
       "my-driver-cpp:tests",
-
-      # TODO(b/512567245): Enable this test once we are able to compile it
-      # without a dead-code warning.
-      #"my-driver-rust:tests",
+      "my-driver-rust:tests",
     ]
   }
 }

@@ -4,6 +4,14 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 
+group("{{PROJECT_NAME}}") {
+  testonly = true
+  deps = [
+    ":pkg",
+    ":tests",
+  ]
+}
+
 driver_bind_rules("bind") {
   rules = "meta/{{snake_case PROJECT_NAME}}.bind"
   bind_output = "{{snake_case PROJECT_NAME}}.bindbc"
@@ -22,9 +30,7 @@ fuchsia_rust_driver("driver") {
     "//sdk/rust/zx",
     "//third_party/rust_crates:log",
   ]
-  test_deps = [
-    "//src/lib/fuchsia",
-  ]
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 fuchsia_driver_component("component") {
@@ -50,7 +56,5 @@ fuchsia_unittest_package("{{snake_case PROJECT_NAME}}-unit-test-pkg") {
 
 group("tests") {
   testonly = true
-  deps = [
-    ":{{snake_case PROJECT_NAME}}-unit-test-pkg",
-  ]
+  deps = [ ":{{snake_case PROJECT_NAME}}-unit-test-pkg" ]
 }

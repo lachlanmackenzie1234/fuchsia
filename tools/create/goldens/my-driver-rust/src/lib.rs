@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
-use zx::Status;
 
 struct MyDriverRust {
-    node: Node,
+    _node: Node,
 }
 
 driver_register!(MyDriverRust);
@@ -15,12 +14,12 @@ driver_register!(MyDriverRust);
 impl Driver for MyDriverRust {
     const NAME: &str = "my_driver_rust";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!("MyDriverRust::start()");
 
         let node = context.take_node()?;
 
-        Ok(Self { node })
+        Ok(Self { _node: node })
     }
 
     async fn stop(&self) {
