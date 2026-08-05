@@ -397,6 +397,38 @@ TEST_P(BlobTest, GetVmoForBlobReaderOnNullBlobIsSupported) {
   ASSERT_EQ(GetVmoStreamSize(*vmo), 0ul);
 }
 
+TEST_P(BlobTest, CheckerboardFragmentationExhaustsJournalOnBlobWrite) {
+  // Create 200 small 1-block blobs to fill contiguous block map space, then
+  // unlink every other one to create a checkboard pattern of holes in the data
+  // area.
+  constexpr size_t kSmallBlobSize = 1 * kBlobfsBlockSize;
+  std::vector<fbl::RefPtr<Blob>> blobs;
+  blobs.reserve(200);
+
+  for (size_t i = 0; i < 200; i++) {
+    auto delivery_blob =
+        TestDeliveryBlob::CreateUncompressed(TestBlobData::CreatePrefixed(kSmallBlobSize, i));
+    zx::result<fbl::RefPtr<Blob>> blob = CreateBlob(delivery_blob);
+    ASSERT_OK(blob);
+    blobs.push_back(std::move(*blob));
+  }
+  for (size_t i = 0; i < 200; i += 2) {
+    ASSERT_OK(blobs[i]->QueueUnlink());
+    blobs[i].reset();
+  }
+
+  // Attempt to write a single large 100-block blob to be fragmented into the holes.
+  constexpr size_t kLargeBlobSize = 100 * kBlobfsBlockSize;
+  auto large_delivery_blob = TestDeliveryBlob::CreateUncompressed(
+      TestBlobData::CreatePrefixed(kLargeBlobSize, /*prefix=*/999999));
+
+  // Each write to an extent container will write to the superblock. With a
+  // highly fragmented blob, if the superblock writes aren't deduplicated the
+  // number of writes will exceed the journal size.
+  zx::result<fbl::RefPtr<Blob>> large_blob = CreateBlob(large_delivery_blob);
+  ASSERT_OK(large_blob);
+}
+
 std::string GetTestParamName(
     const ::testing::TestParamInfo<std::tuple<BlobLayoutFormat, CompressionAlgorithm>>& param) {
   const auto& [layout, compression_algorithm] = param.param;
