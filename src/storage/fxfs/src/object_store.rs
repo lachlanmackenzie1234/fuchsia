@@ -25,7 +25,7 @@ mod tree_cache;
 pub mod volume;
 
 pub use data_object_handle::{
-    DataObjectHandle, DirectWriter, FileExtent, FsverityState, FsverityStateInner, RangeType,
+    DataObjectHandle, DataObjectState, DirectWriter, FileExtent, FsverityStateInner, RangeType,
 };
 pub use directory::Directory;
 pub use object_record::{ChildValue, DirType, ObjectDescriptor, PosixAttributes, Timestamp};
@@ -1309,7 +1309,6 @@ impl ObjectStore {
             permanent,
             AttributeId::DATA,
             size,
-            FsverityState::None,
             options,
             false,
             &overwrite_ranges,
@@ -1388,7 +1387,6 @@ impl ObjectStore {
             permanent_keys,
             AttributeId::DATA,
             0,
-            FsverityState::None,
             options,
             false,
             &[],

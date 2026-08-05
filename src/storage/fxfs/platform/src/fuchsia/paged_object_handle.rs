@@ -597,7 +597,7 @@ impl PagedObjectHandle {
         // cached data is metadata we won't save memory anyways, so don't bother. Only looking for
         // dirty pages, or if there are overwrite pages we'll have to take the slow path since those
         // dirty pages don't record any information internally.
-        if self.handle.overwrite_ranges().is_empty() && self.inner.lock().reservation() == 0 {
+        if self.handle.overwrite_ranges_is_empty() && self.inner.lock().reservation() == 0 {
             return Ok(());
         }
         self.flush(FlushType::Sync).await
@@ -621,19 +621,23 @@ impl PagedObjectHandle {
             return Err(zx::Status::BAD_STATE);
         }
         let mut new_dirty_pages = DirtyPages::default();
-        for subrange in self.handle.overwrite_ranges().overlap(page_range.range()) {
-            // Check the overwrite ranges we have recorded for this file. We only add to the
-            // reservation if the range is not one of our overwrite ranges, since overwrite ranges
-            // are already allocated.
-            match subrange {
-                RangeType::Cow(range) => {
-                    new_dirty_pages.reserved += page_count(range);
-                }
-                RangeType::Overwrite(range) => {
-                    new_dirty_pages.unreserved += page_count(range);
+        self.handle.with_overwrite_ranges(|ranges| {
+            if let Some(ranges) = ranges {
+                for subrange in ranges.overlap(page_range.range()) {
+                    // Check the overwrite ranges we have recorded for this file. We only add to the
+                    // reservation if the range is not one of our overwrite ranges, since overwrite
+                    // ranges are already allocated.
+                    match subrange {
+                        RangeType::Cow(range) => {
+                            new_dirty_pages.reserved += page_count(range);
+                        }
+                        RangeType::Overwrite(range) => {
+                            new_dirty_pages.unreserved += page_count(range);
+                        }
+                    }
                 }
             }
-        }
+        });
         let mut new_inner = Inner {
             spare: if new_dirty_pages.reserved == 0 { inner.spare } else { SPARE_SIZE },
             ..*inner
@@ -758,27 +762,31 @@ impl PagedObjectHandle {
                 // Ranges must be returned in order.
                 assert!(range.start >= last_end);
                 last_end = range.end;
-                for range_chunk in self.uncached_handle().overwrite_ranges().overlap(range) {
-                    let (range, mode) = match range_chunk {
-                        RangeType::Cow(range) => (
-                            range,
-                            if modified_range.is_zero_range() {
-                                BatchMode::Zero
-                            } else {
-                                BatchMode::Cow
-                            },
-                        ),
-                        RangeType::Overwrite(range) => (
-                            range,
-                            if modified_range.is_zero_range() {
-                                BatchMode::Zero
-                            } else {
-                                BatchMode::Overwrite
-                            },
-                        ),
-                    };
-                    flush_batches.add_range(range, mode);
-                }
+                self.uncached_handle().with_overwrite_ranges(|ranges| {
+                    if let Some(ranges) = ranges {
+                        for range_chunk in ranges.overlap(range) {
+                            let (range, mode) = match range_chunk {
+                                RangeType::Cow(range) => (
+                                    range,
+                                    if modified_range.is_zero_range() {
+                                        BatchMode::Zero
+                                    } else {
+                                        BatchMode::Cow
+                                    },
+                                ),
+                                RangeType::Overwrite(range) => (
+                                    range,
+                                    if modified_range.is_zero_range() {
+                                        BatchMode::Zero
+                                    } else {
+                                        BatchMode::Overwrite
+                                    },
+                                ),
+                            };
+                            flush_batches.add_range(range, mode);
+                        }
+                    }
+                });
             }
         }
 

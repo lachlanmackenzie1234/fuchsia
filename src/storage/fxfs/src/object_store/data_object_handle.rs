@@ -38,7 +38,7 @@ use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use fxfs_trace::trace;
 use std::cmp::min;
-use std::ops::{Deref, DerefMut, Range};
+use std::ops::{Deref, Range};
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU64, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
@@ -63,8 +63,7 @@ pub struct DataObjectHandle<S: HandleOwner> {
     handle: StoreObjectHandle<S>,
     attribute_id: AttributeId,
     content_size: AtomicU64,
-    fsverity_state: Mutex<FsverityState>,
-    overwrite_ranges: AllocatedRanges,
+    state: Mutex<DataObjectState>,
 }
 
 /// Represents the mapping of a file's contents to the physical storage backing it.
@@ -105,11 +104,11 @@ impl FileExtent {
 }
 
 #[derive(Debug)]
-pub enum FsverityState {
-    None,
-    Started,
-    Pending(FsverityStateInner),
-    Some(FsverityStateInner),
+pub enum DataObjectState {
+    Standard(AllocatedRanges),
+    VerityStarted,
+    VerityPending(FsverityStateInner),
+    Verity(FsverityStateInner),
 }
 
 #[derive(Debug)]
@@ -181,7 +180,6 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         permanent_keys: bool,
         attribute_id: AttributeId,
         size: u64,
-        fsverity_state: FsverityState,
         options: HandleOptions,
         trace: bool,
         overwrite_ranges: &[Range<u64>],
@@ -190,8 +188,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             handle: StoreObjectHandle::new(owner, object_id, permanent_keys, options, trace),
             attribute_id,
             content_size: AtomicU64::new(size),
-            fsverity_state: Mutex::new(fsverity_state),
-            overwrite_ranges: AllocatedRanges::new(overwrite_ranges),
+            state: Mutex::new(DataObjectState::Standard(AllocatedRanges::new(overwrite_ranges))),
         }
     }
 
@@ -204,62 +201,92 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         self.handle
     }
 
-    pub fn overwrite_ranges(&self) -> &AllocatedRanges {
-        &self.overwrite_ranges
+    pub fn overwrite_ranges_is_empty(&self) -> bool {
+        match &*self.state.lock() {
+            DataObjectState::Standard(ranges) => ranges.is_empty(),
+            _ => true,
+        }
+    }
+
+    pub fn with_overwrite_ranges<R>(&self, f: impl FnOnce(Option<&AllocatedRanges>) -> R) -> R {
+        let state = self.state.lock();
+        match &*state {
+            DataObjectState::Standard(ranges) => f(Some(ranges)),
+            _ => f(None),
+        }
+    }
+
+    pub fn with_overwrite_ranges_mut<R>(
+        &self,
+        f: impl FnOnce(Option<&mut AllocatedRanges>) -> R,
+    ) -> R {
+        let mut state = self.state.lock();
+        match &mut *state {
+            DataObjectState::Standard(ranges) => f(Some(ranges)),
+            _ => f(None),
+        }
     }
 
     pub fn is_verified_file(&self) -> bool {
-        matches!(*self.fsverity_state.lock(), FsverityState::Some(_))
+        matches!(*self.state.lock(), DataObjectState::Verity(_))
     }
 
-    /// Sets `self.fsverity_state` to FsverityState::Started. Called at the top of `enable_verity`.
-    /// If another caller has already started but not completed `enabled_verity`, returns
+    /// Sets `self.state` to DataObjectState::VerityStarted. Called at the top of `enable_verity`.
+    /// If another caller has already started but not completed `enable_verity`, returns
     /// FxfsError::AlreadyBound. If another caller has already completed `enable_verity`, returns
     /// FxfsError::AlreadyExists.
+    ///
+    /// Note: This is called before `enable_verity` acquires its object transaction lock. Any
+    /// ongoing transaction holding the object lock (such as `allocate`) will proceed to commit
+    /// its mutations to disk while `enable_verity` waits for the lock, and `will_apply_mutation`
+    /// will gracefully discard in-memory range updates for the discarded `AllocatedRanges`.
     pub fn set_fsverity_state_started(&self) -> Result<(), Error> {
-        let mut fsverity_guard = self.fsverity_state.lock();
-        match *fsverity_guard {
-            FsverityState::None => {
-                *fsverity_guard = FsverityState::Started;
+        let mut state = self.state.lock();
+        match *state {
+            DataObjectState::Standard(_) => {
+                *state = DataObjectState::VerityStarted;
                 Ok(())
             }
-            FsverityState::Started | FsverityState::Pending(_) => {
+            DataObjectState::VerityStarted | DataObjectState::VerityPending(_) => {
                 Err(anyhow!(FxfsError::Unavailable))
             }
-            FsverityState::Some(_) => Err(anyhow!(FxfsError::AlreadyExists)),
+            DataObjectState::Verity(_) => Err(anyhow!(FxfsError::AlreadyExists)),
         }
     }
 
-    /// Sets `self.fsverity_state` to Pending. Must be called before `finalize_fsverity_state()`.
-    /// Asserts that the prior state of `self.fsverity_state` was `FsverityState::Started`.
+    /// Sets `self.state` to VerityPending. Must be called before `finalize_fsverity_state()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the prior state was not `DataObjectState::VerityStarted`.
     pub fn set_fsverity_state_pending(&self, descriptor: FsverityStateInner) {
-        let mut fsverity_guard = self.fsverity_state.lock();
-        assert!(matches!(*fsverity_guard, FsverityState::Started));
-        *fsverity_guard = FsverityState::Pending(descriptor);
+        let mut state = self.state.lock();
+        assert!(matches!(*state, DataObjectState::VerityStarted));
+        *state = DataObjectState::VerityPending(descriptor);
     }
 
-    /// Sets `self.fsverity_state` to Some. Panics if the prior state of `self.fsverity_state` was
-    /// not `FsverityState::Pending(_)`.
+    /// Sets `self.state` to Verity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the prior state was not `DataObjectState::VerityPending(_)`.
     pub fn finalize_fsverity_state(&self) {
-        let mut fsverity_state_guard = self.fsverity_state.lock();
-        let mut_fsverity_state = fsverity_state_guard.deref_mut();
-        let fsverity_state = std::mem::replace(mut_fsverity_state, FsverityState::None);
-        match fsverity_state {
-            FsverityState::None => panic!("Cannot go from FsverityState::None to Some"),
-            FsverityState::Started => panic!("Cannot go from FsverityState::Started to Some"),
-            FsverityState::Pending(inner) => *mut_fsverity_state = FsverityState::Some(inner),
-            FsverityState::Some(_) => panic!("Fsverity state was already set to Some"),
+        let mut state = self.state.lock();
+        let old_state =
+            std::mem::replace(&mut *state, DataObjectState::Standard(AllocatedRanges::empty()));
+        match old_state {
+            DataObjectState::VerityPending(inner) => *state = DataObjectState::Verity(inner),
+            _ => panic!("Cannot finalize verity state from {old_state:?}"),
         }
-        // Once we finalize the fsverity state, the file is permanently read-only. The in-memory
-        // overwrite ranges tracking is only used for writing, so we don't need them anymore. This
-        // leaves any uninitialized, but allocated, overwrite regions if there are any, rather than
-        // converting them back to sparse regions.
-        self.overwrite_ranges.clear();
     }
 
-    /// Sets `self.fsverity_state` directly to Some without going through the entire state machine.
-    /// Used to set `self.fsverity_state` on open of a verified file. The merkle tree data is
+    /// Sets `self.state` directly to Verity without going through the entire state machine.
+    /// Used to set `self.state` on open of a verified file. The merkle tree data is
     /// verified against the root digest here, and will return an error if the tree is not correct.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the prior state was not `DataObjectState::Standard(_)`.
     pub async fn set_fsverity_state_some(&self, descriptor: FsverityMetadata) -> Result<(), Error> {
         let (metadata, hasher) = match descriptor {
             FsverityMetadata::Internal(root_digest, salt) => {
@@ -318,29 +345,32 @@ impl<S: HandleOwner> DataObjectHandle<S> {
 
         ensure!(root_hash == tree.root(), FxfsError::IntegrityError);
 
-        let mut fsverity_guard = self.fsverity_state.lock();
-        assert!(matches!(*fsverity_guard, FsverityState::None));
-        *fsverity_guard = FsverityState::Some(metadata);
+        let mut state = self.state.lock();
+        assert!(matches!(*state, DataObjectState::Standard(_)));
+        *state = DataObjectState::Verity(metadata);
 
         Ok(())
     }
 
     /// Verifies contents of `buffer` against the corresponding hashes in the stored merkle tree.
-    /// `offset` is the logical offset in the file that `buffer` starts at. `offset` must be
-    /// block-aligned. Fails on non fsverity-enabled files.
+    /// `offset` is the logical offset in the file that `buffer` starts at. Fails on non
+    /// fsverity-enabled files.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `offset` is not block-aligned.
     fn verify_data(&self, mut offset: usize, buffer: PtrByteSlice<'_>) -> Result<(), Error> {
         let block_size = self.block_size() as usize;
         assert!(offset % block_size == 0);
-        let fsverity_state = self.fsverity_state.lock();
-        match &*fsverity_state {
-            FsverityState::None => {
+        let state = self.state.lock();
+        match &*state {
+            DataObjectState::Standard(_) => {
                 Err(anyhow!("Tried to verify read on a non verity-enabled file"))
             }
-            FsverityState::Started | FsverityState::Pending(_) => Err(anyhow!(
-                "Enable verity has not yet completed, fsverity state: {:?}",
-                *fsverity_state
-            )),
-            FsverityState::Some(metadata) => {
+            DataObjectState::VerityStarted | DataObjectState::VerityPending(_) => {
+                Err(anyhow!("Enable verity has not yet completed, state: {state:?}"))
+            }
+            DataObjectState::Verity(metadata) => {
                 let hasher = metadata.get_hasher_for_block_size(block_size);
                 let leaf_nodes: Vec<&[u8]> =
                     metadata.merkle_tree.chunks(hasher.hash_size()).collect();
@@ -477,9 +507,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     /// `enable_verity`. If set, translates `self.fsverity_state.descriptor` into an
     /// fio::VerificationOptions instance and a root hash. Otherwise, returns None.
     pub fn get_descriptor(&self) -> Option<(fio::VerificationOptions, Vec<u8>)> {
-        let fsverity_state = self.fsverity_state.lock();
-        match &*fsverity_state {
-            FsverityState::Some(metadata) => {
+        let state = self.state.lock();
+        match &*state {
+            DataObjectState::Verity(metadata) => {
                 let (options, root_hash) = match &metadata.root_digest {
                     RootDigest::Sha256(root_hash) => (
                         fio::VerificationOptions {
@@ -694,6 +724,21 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         new_range.end = round_up(new_range.end, self.block_size()).ok_or(FxfsError::TooBig)?;
 
         let mut transaction = self.new_transaction().await?;
+        // It's safe to check state after acquiring the transaction lock. Note that `enable_verity`
+        // calls `set_fsverity_state_started` before creating its own transaction, which could
+        // transition `self.state` to `VerityStarted` concurrently while this transaction is held.
+        // If that happens, `enable_verity`'s subsequent `new_transaction` call will block until
+        // this allocation transaction finishes, and `will_apply_mutation` will gracefully discard
+        // updates to the in-memory allocated ranges.
+        {
+            let state = self.state.lock();
+            match &*state {
+                DataObjectState::Standard(_) => {}
+                _ => bail!(
+                    anyhow!(FxfsError::AccessDenied).context("Cannot allocate on verity file")
+                ),
+            }
+        }
         let mut to_allocate = Vec::new();
         let mut to_switch = Vec::new();
         let key_id = self.get_key(None).await?.0;
@@ -1311,10 +1356,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     }
 
     pub fn truncate_overwrite_ranges(&self, size: u64) -> Result<Option<bool>, Error> {
-        if self
-            .overwrite_ranges
-            .truncate(round_up(size, self.block_size()).ok_or(FxfsError::TooBig)?)
-        {
+        let cutoff = round_up(size, self.block_size()).ok_or(FxfsError::TooBig)?;
+        if self.with_overwrite_ranges_mut(|ranges| ranges.map_or(false, |r| r.truncate(cutoff))) {
             // This returns true if there were ranges, but this truncate removed them all, which
             // indicates that we need to flip the has_overwrite_extents metadata flag to false.
             Ok(Some(false))
@@ -1771,7 +1814,15 @@ impl<S: HandleOwner> AssociatedObject for DataObjectHandle<S> {
                 ..
             }) if self.object_id() == *object_id && self.attribute_id() == *attr_id => match mode {
                 ExtentMode::Overwrite | ExtentMode::OverwritePartial(_) => {
-                    self.overwrite_ranges.apply_range(extent.clone().into())
+                    // If `enable_verity` transitioned state to `VerityStarted` concurrently while a
+                    // transaction was in progress, `with_overwrite_ranges_mut` will return `None`
+                    // and safely discard in-memory range updates, since verity files do not track
+                    // overwrite ranges.
+                    self.with_overwrite_ranges_mut(|ranges| {
+                        if let Some(ranges) = ranges {
+                            ranges.apply_range(extent.clone().into());
+                        }
+                    });
                 }
                 ExtentMode::Raw | ExtentMode::Cow(_) => (),
             },
@@ -3277,6 +3328,50 @@ mod tests {
                 .await
                 .is_err()
         );
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_allocate_verity_file() {
+        let fs: OpenFxFilesystem = test_filesystem().await;
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        let store = fs.root_store();
+        let object = Arc::new(
+            ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
+                .await
+                .expect("create_object failed"),
+        );
+        transaction.commit().await.unwrap();
+
+        let mut buf = object.allocate_buffer(8192).await;
+        buf.fill(0xAA);
+        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+
+        object
+            .enable_verity(fio::VerificationOptions {
+                hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+                salt: Some(vec![]),
+                ..Default::default()
+            })
+            .await
+            .expect("enable_verity failed");
+
+        assert!(object.is_verified_file());
+
+        // Calling allocate on a verity-enabled file should return an error.
+        assert!(object.allocate(0..8192).await.is_err());
+
+        // Even after opening the object again (simulating cache eviction), it must remain verified.
+        let reopened =
+            ObjectStore::open_object(&store, object.object_id(), HandleOptions::default(), None)
+                .await
+                .expect("open_object failed");
+        assert!(reopened.is_verified_file());
+
         fs.close().await.expect("Close failed");
     }
 
