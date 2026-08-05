@@ -466,8 +466,10 @@
                 // mount_test
                 "MountTest.BindSlaveToShared",
                 "MountTest.BindSlaveToSlave",
+                "MountTest.ChangeMountFlagsOfLockedMount",
                 "MountTest.DetachedMountBindFails",
                 "MountTest.LargeTreePropagationEvent",
+                "MountTest.LockedMountFlagsAreInheritedByBind",
                 "MountTest.LockedMountStopsNonRecBind",
                 "MountTest.MaxRecursiveBind",
                 "MountTest.MountInfo",
