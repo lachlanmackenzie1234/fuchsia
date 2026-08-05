@@ -1992,6 +1992,7 @@ dependencies = [
  "rutabaga_gfx",
  "sapphire-async",
  "sapphire-collections",
+ "sapphire-emboss",
  "sapphire-gatt",
  "sapphire-hci",
  "sapphire-host",
@@ -4685,6 +4686,10 @@ dependencies = [
 
 [[package]]
 name = "sapphire-collections"
+version = "0.1.0"
+
+[[package]]
+name = "sapphire-emboss"
 version = "0.1.0"
 
 [[package]]

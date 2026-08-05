@@ -5,6 +5,7 @@
 members = [
   "sapphire-async",
   "sapphire-collections",
+  "sapphire-emboss",
   "sapphire-gatt",
   "sapphire-hci",
   "sapphire-host",
@@ -14,3 +15,4 @@ members = [
   "sapphire-uuid",
 ]
 resolver = "3"
+
