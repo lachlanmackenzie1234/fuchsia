@@ -148,7 +148,7 @@ promise<void> DeviceImpl::SetConfiguration(uint32_t index) {
 promise<void> DeviceImpl::ConnectToStream(
     uint32_t index, fidl::InterfaceRequest<fuchsia::camera3::Stream> request) {
   return make_promise([this, index, request = std::move(request)]() mutable {
-    if (index > streams_.size()) {
+    if (index >= streams_.size()) {
       request.Close(ZX_ERR_INVALID_ARGS);
       return;
     }

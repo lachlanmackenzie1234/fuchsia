@@ -264,7 +264,7 @@ void DeviceImpl::UpdateControllerStreamingState() {
 
 void DeviceImpl::ConnectToStream(uint32_t index,
                                  fidl::InterfaceRequest<fuchsia::camera3::Stream> request) {
-  if (index > streams_.size()) {
+  if (index >= streams_.size()) {
     request.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
