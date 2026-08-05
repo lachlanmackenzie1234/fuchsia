@@ -18,6 +18,7 @@ use registers::DwSpiRegsBlock;
 use zx::Status;
 
 use fidl_next_fuchsia_hardware_sharedmemory as fsharedmemory;
+use fidl_next_fuchsia_hardware_sharedmemory::natural::SharedVmoRight;
 use fidl_next_fuchsia_mem as fmem;
 use std::collections::HashMap;
 
@@ -25,7 +26,7 @@ const FIFO_SIZE: usize = 256;
 
 pub struct RegisteredVmo {
     pub vmo: fmem::natural::Range,
-    pub rights: fsharedmemory::natural::SharedVmoRight,
+    pub rights: SharedVmoRight,
 }
 
 pub struct DwSpiDevice {
@@ -33,6 +34,7 @@ pub struct DwSpiDevice {
     cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
     interrupt: zx::Interrupt,
     registered_vmos: HashMap<u32, RegisteredVmo>,
+    loopback_registered_vmos: HashMap<u32, RegisteredVmo>,
 }
 
 impl DwSpiDevice {
@@ -46,6 +48,7 @@ impl DwSpiDevice {
             cs_gpio,
             interrupt,
             registered_vmos: HashMap::new(),
+            loopback_registered_vmos: HashMap::new(),
         }
     }
 
@@ -311,17 +314,38 @@ impl DwSpiDevice {
         rxdata
     }
 
+    fn get_vmos(&self, chip_select: u32) -> Result<&HashMap<u32, RegisteredVmo>, Status> {
+        match chip_select {
+            0 => Ok(&self.registered_vmos),
+            fidl_next_fuchsia_hardware_spiimpl::LOOPBACK_CHIP_SELECT => {
+                Ok(&self.loopback_registered_vmos)
+            }
+            _ => Err(Status::NOT_FOUND),
+        }
+    }
+
+    fn get_vmos_mut(
+        &mut self,
+        chip_select: u32,
+    ) -> Result<&mut HashMap<u32, RegisteredVmo>, Status> {
+        match chip_select {
+            0 => Ok(&mut self.registered_vmos),
+            fidl_next_fuchsia_hardware_spiimpl::LOOPBACK_CHIP_SELECT => {
+                Ok(&mut self.loopback_registered_vmos)
+            }
+            _ => Err(Status::NOT_FOUND),
+        }
+    }
+
     pub fn register_vmo_impl(
         &mut self,
         chip_select: u32,
         vmo_id: u32,
         vmo: fmem::natural::Range,
-        rights: fsharedmemory::natural::SharedVmoRight,
+        rights: SharedVmoRight,
     ) -> Result<(), Status> {
-        if chip_select != 0 {
-            return Err(Status::NOT_FOUND);
-        }
-        if self.registered_vmos.contains_key(&vmo_id) {
+        let vmos = self.get_vmos_mut(chip_select)?;
+        if vmos.contains_key(&vmo_id) {
             return Err(Status::ALREADY_EXISTS);
         }
 
@@ -336,7 +360,7 @@ impl DwSpiDevice {
             return Err(Status::INVALID_ARGS);
         }
 
-        self.registered_vmos.insert(vmo_id, RegisteredVmo { vmo, rights });
+        vmos.insert(vmo_id, RegisteredVmo { vmo, rights });
         Ok(())
     }
 
@@ -345,10 +369,8 @@ impl DwSpiDevice {
         chip_select: u32,
         vmo_id: u32,
     ) -> Result<zx::Vmo, Status> {
-        if chip_select != 0 {
-            return Err(Status::NOT_FOUND);
-        }
-        if let Some(registered) = self.registered_vmos.remove(&vmo_id) {
+        let vmos = self.get_vmos_mut(chip_select)?;
+        if let Some(registered) = vmos.remove(&vmo_id) {
             Ok(registered.vmo.vmo)
         } else {
             Err(Status::NOT_FOUND)
@@ -356,17 +378,19 @@ impl DwSpiDevice {
     }
 
     pub fn release_registered_vmos_impl(&mut self, chip_select: u32) {
-        if chip_select == 0 {
-            self.registered_vmos.clear();
+        if let Ok(vmos) = self.get_vmos_mut(chip_select) {
+            vmos.clear();
         }
     }
 
     fn get_validated_vmo(
         &self,
+        chip_select: u32,
         buffer: &fsharedmemory::natural::SharedVmoBuffer,
-        required_right: fsharedmemory::natural::SharedVmoRight,
+        required_right: SharedVmoRight,
     ) -> Result<(&zx::Vmo, u64), Status> {
-        let registered = self.registered_vmos.get(&buffer.vmo_id).ok_or(Status::NOT_FOUND)?;
+        let vmos = self.get_vmos(chip_select)?;
+        let registered = vmos.get(&buffer.vmo_id).ok_or(Status::NOT_FOUND)?;
 
         if !registered.rights.contains(required_right) {
             return Err(Status::ACCESS_DENIED);
@@ -391,7 +415,7 @@ impl DwSpiDevice {
         let mut tx_data = vec![0u8; buffer.size as usize];
         {
             let (vmo, offset) =
-                self.get_validated_vmo(buffer, fsharedmemory::natural::SharedVmoRight::READ)?;
+                self.get_validated_vmo(chip_select, buffer, SharedVmoRight::READ)?;
             vmo.read(&mut tx_data, offset)?;
         }
 
@@ -407,8 +431,7 @@ impl DwSpiDevice {
         let rx_data = self.exchange_pio(chip_select, &[], true, buffer.size as usize).await?;
 
         // TODO(https://fxbug.dev/529838127): Use DMA instead of copying into/out of vectors.
-        let (vmo, offset) =
-            self.get_validated_vmo(buffer, fsharedmemory::natural::SharedVmoRight::WRITE)?;
+        let (vmo, offset) = self.get_validated_vmo(chip_select, buffer, SharedVmoRight::WRITE)?;
         vmo.write(&rx_data, offset)?;
         Ok(())
     }
@@ -427,14 +450,14 @@ impl DwSpiDevice {
         let mut tx_data = vec![0u8; tx_buffer.size as usize];
         {
             let (tx_vmo, tx_offset) =
-                self.get_validated_vmo(tx_buffer, fsharedmemory::natural::SharedVmoRight::READ)?;
+                self.get_validated_vmo(chip_select, tx_buffer, SharedVmoRight::READ)?;
             tx_vmo.read(&mut tx_data, tx_offset)?;
         }
 
         let rx_data = self.exchange_pio(chip_select, &tx_data, true, tx_data.len()).await?;
 
         let (rx_vmo, rx_offset) =
-            self.get_validated_vmo(rx_buffer, fsharedmemory::natural::SharedVmoRight::WRITE)?;
+            self.get_validated_vmo(chip_select, rx_buffer, SharedVmoRight::WRITE)?;
         rx_vmo.write(&rx_data, rx_offset)?;
         Ok(())
     }
