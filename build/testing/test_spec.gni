@@ -378,6 +378,15 @@ template("test_spec") {
     _create_no_exception_channel = invoker.create_no_exception_channel
   }
 
+  _expects_ssh = true
+  if (defined(invoker.expects_ssh)) {
+    _expects_ssh = invoker.expects_ssh
+  } else if (is_linux && environments == [ host_env ]) {
+    # If the test is a pure host test, expects_ssh should be false
+    # because there is no target to run against.
+    _expects_ssh = false
+  }
+
   target_envs = []
   foreach(env, environments) {
     dims = []  # Clear from previous iteration.
@@ -551,25 +560,14 @@ template("test_spec") {
     }
   }
 
-  if (is_linux) {
-    # If the test is a pure host test, expects_ssh should be false
-    # because there is no target to run against.
-    if (!defined(invoker.expects_ssh) && _environments == [ host_env ]) {
-      invoker.expects_ssh = false
-    }
-  }
-
   test_spec = {
     forward_variables_from(invoker,
                            [
                              "product_bundle",
                              "bootup_timeout_secs",
-                             "expects_ssh",
                              "is_boot_test",
                            ])
-    if (!defined(expects_ssh)) {
-      expects_ssh = true
-    }
+    expects_ssh = _expects_ssh
     if (defined(is_boot_test) && is_boot_test) {
       assert(defined(product_bundle),
              "product bundle must be provided for boot tests.")
