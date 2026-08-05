@@ -3,14 +3,8 @@
 # found in the LICENSE file.
 
 # End to end (E2E) product test runtime dependencies. This bundle can be added
-# to a product build spec that also contains end to end product tests, so they
-# can be executed against an instance of the product.
-#
-# If the end to end product test is meant to run in an environment without a
-# package server - specifically, on a luci bot -, then the end_to_end_deps
-# bundle must be added to base_package_labels or cache_package_labels of the
-# product, but it cannot be, unlike the end to end tests themselves, in the
-# universe_package_labels.
+# to a build spec that also contains end to end product tests, so they can be
+# executed against an instance of the product.
 group("end_to_end_deps") {
   testonly = true
   public_deps = [

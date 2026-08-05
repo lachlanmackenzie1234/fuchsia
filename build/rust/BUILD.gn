@@ -83,11 +83,11 @@ group("edition_legacy_allowlist") {
 #   4) Developers _may_ have added `//build/rust:cargo_toml_gen` to either of
 #      following:
 #        - `cache_package_labels` (`//:developer_cache_packages`)
-#        - `universe_package_labels` (`//:developer_universe_packages`)
+#        - `discoverable_package_labels` (`//:developer_discoverable_packages`)
 #      and those are being split as well, and so the following groups will need
 #      to be added to visibility:
 #        - `//:developer_cache_packages`
-#        - `//:developer_universe_packages`
+#        - `//:developer_discoverable_packages`
 #
 if (current_toolchain != default_toolchain) {
   # This is a redirect from the host toolchain to the default toolchain, as it
@@ -124,7 +124,7 @@ if (current_toolchain != default_toolchain) {
       # Developers may have used these as well (also deprecated for this
       # target).
       "//:developer_cache_packages",
-      "//:developer_universe_packages",
+      "//:developer_discoverable_packages",
 
       # via --with-host or `host_labels`, and specifying the fuchsia toolchain:
       "//:host",

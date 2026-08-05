@@ -103,9 +103,12 @@ fuchsia_test_package("starnix-input-integration-tests") {
     ":starnix-mouse-test-component",
   ]
 
-  # Must be visible to universe, since `fx test` will suggest adding this target
-  # to universe, if not already present.
-  visibility += [ "//:developer_universe_packages" ]
+  # Must be visible to developer_specified_tests group, since `fx test` will
+  # suggest adding this target to, if not already present.
+  visibility += [
+    "//:developer_specified_tests",
+    "//:discoverable_packages",
+  ]
   deps = [
     "//src/cobalt/bin/testing/fake_cobalt",
     "//src/connectivity/network:netstack-for-tests",

@@ -2,8 +2,4 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-base_package_labels = []
-
-cache_package_labels = []
-
-universe_package_labels = []
+discoverable_package_labels = []

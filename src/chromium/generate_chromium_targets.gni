@@ -36,11 +36,8 @@ template("generate_fuchsia_web_targets") {
   # below.
   group("web_engine") {
     visibility += [
-      # Allow developers to include it using `--with-cache` or `--with`.
-      # This has a side effect of allowing in-tree //products to include it due
-      # to the way they are currently assembled.
-      "//:developer_cache_packages",
-      "//:developer_universe_packages",
+      # Allow developers to include it using `--with`.
+      "//:discoverable_packages",
 
       # Allow buildbot bundles to include it so that tests can be run.
       "//bundles/buildbot/*",

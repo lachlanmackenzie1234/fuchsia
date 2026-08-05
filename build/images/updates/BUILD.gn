@@ -18,10 +18,10 @@ import("//src/sys/pkg/repositories/devhost/devhost.gni")
 #
 # The general flow is:
 #
-#  +----------------+    +----------------+
-#  |   The "main"   |    | The "universe" |
-#  | Product Bundle |    |  Package Set   |
-#  +----------------+    +----------------+
+#  +----------------+    +--------------------+
+#  |   The "main"   |    | The "discoverable" |
+#  | Product Bundle |    |    Package Set     |
+#  +----------------+    +--------------------+
 #           |                     |
 #           +----------+----------+
 #                      |
@@ -52,12 +52,9 @@ import("//src/sys/pkg/repositories/devhost/devhost.gni")
 #  //build/images/updates:publish -> publish everything
 #
 #
-# The "universe" package set is constructed in the same manner:  A GN metadata
-# walk is done over the the following:
-#   - //:developer_universe_packages (created from the 'universe_package_labels'
-#                                     GN build argument, in 'args.gn')
-#
-#   - //:discoverable_packages (created from the 'discoverable_package_lables'
+# The "discoverable" package set is constructed in the same manner: A GN
+# metadata walk is done over the the following:
+#   - //:discoverable_packages (created from the 'discoverable_package_labels'
 #                               GN build arg, and all "discoverable" tests)
 #
 # The `package_manifests_from_metadata.list` target creates a file of the same
@@ -78,7 +75,7 @@ import("//src/sys/pkg/repositories/devhost/devhost.gni")
 #  all_package_manifests.list is then created by merging the following files
 #  from above:
 #    - bundle_package_manifests.list
-#    - universe_package_manifests.list
+#    - discoverable_package_manifests.list
 #
 # Publishing in fx build
 #
@@ -135,8 +132,8 @@ group("updates") {
 group("packages") {
   testonly = true
   deps = [
-    # The universe package set
-    ":universe_packages",
+    # The discoverable package set
+    ":discoverable_packages",
   ]
 
   if (defined(labels.images)) {
@@ -158,7 +155,7 @@ group("packages") {
 }
 
 # Back to actually gathering packages from the product bundle and from
-# universe, and then publishing them.
+# the discoverable set, and then publishing them.
 
 all_package_manifests_list = root_build_dir + "/all_package_manifests.list"
 all_package_manifests_deps = []
@@ -287,13 +284,12 @@ if (bazel_product_bundle_target != "") {
   }
 }
 
-# Now gather the universe packages' data
+# Now gather the discoverable packages' data
 
-group("universe_packages") {
+group("discoverable_packages") {
   testonly = true
   deps = [
     # The runtime "universe" of packages that's set by the developer.
-    "//:developer_universe_packages",
     "//:discoverable_packages",
 
     # The tests that are added by a developer, and are not verified for their
@@ -303,29 +299,29 @@ group("universe_packages") {
 }
 
 # These groups exist regardless of if there's a product bundle set or not, and
-# packages could be published from them, so always create the universe packages
-# list.
-generate_package_metadata("universe_packages.list") {
+# packages could be published from them, so always create the discoverable
+# packages list.
+generate_package_metadata("discoverable_packages.list") {
   testonly = true
   visibility = [ ":*" ]
   data_keys = [ "package_names" ]
-  outputs = [ "${root_build_dir}/universe_packages.list" ]
-  deps = [ ":universe_packages" ]
+  outputs = [ "${root_build_dir}/discoverable_packages.list" ]
+  deps = [ ":discoverable_packages" ]
 }
 
-# This is an intermediate output file used to construct the universe
+# This is an intermediate output file used to construct the discoverable
 # package manifests list.
 #
 # fx test currently uses this to synthesize a new set of package lists to
 # publish after building a test package.
-universe_manifests_from_metadata =
+discoverable_manifests_from_metadata =
     "$root_build_dir/package_manifests_from_metadata.list"
-generate_package_metadata("universe_manifests_from_metadata.list") {
+generate_package_metadata("discoverable_manifests_from_metadata.list") {
   testonly = true
-  outputs = [ universe_manifests_from_metadata ]
+  outputs = [ discoverable_manifests_from_metadata ]
   data_keys = [ "package_output_manifests" ]
   rebase = root_build_dir
-  deps = [ ":universe_packages" ]
+  deps = [ ":discoverable_packages" ]
 }
 
 ###
@@ -351,12 +347,12 @@ action("all_package_manifests.list") {
     ]
   }
 
-  # GN legacy-defined universe packages
-  deps += [ ":universe_manifests_from_metadata.list" ]
-  inputs += [ universe_manifests_from_metadata ]
+  # GN legacy-defined discoverable packages
+  deps += [ ":discoverable_manifests_from_metadata.list" ]
+  inputs += [ discoverable_manifests_from_metadata ]
   args += [
     "--paths",
-    rebase_path(universe_manifests_from_metadata, root_build_dir),
+    rebase_path(discoverable_manifests_from_metadata, root_build_dir),
   ]
 }
 

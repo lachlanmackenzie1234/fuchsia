@@ -26,8 +26,8 @@ group("all_bazel_inputs") {
   deps -= _excluded_bazel_inputs
 
   metadata = {
-    # Prevent packages from leaking into the universe packages list in
-    # //build/images/updates:universe_packages.list which uses
+    # Prevent packages from leaking into the discoverable packages list in
+    # //build/images/updates:discoverable_packages.list which uses
     # generate_package_metadata()
     package_names_barrier = []
   }

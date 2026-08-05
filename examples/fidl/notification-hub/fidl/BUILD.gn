@@ -14,5 +14,5 @@ import("//build/fidl/fidl.gni")
 #
 fidl("fuchsia.examples.notificationhub") {
   sources = [ "notification-hub.test.fidl" ]
-  visibility = [ "//:developer_universe_packages" ]
+  visibility = [ "//:developer_discoverable_packages" ]
 }

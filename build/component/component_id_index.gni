@@ -55,7 +55,6 @@ template("component_id_index") {
 #
 #   deps (optional)
 #     A list of deps to traverse to collect component_id_index()s.
-#     //build/images:universe_packages is a good candidate to include as a dep.
 #
 #   public_deps (optional)
 #   testonly (optional)

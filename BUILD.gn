@@ -1319,9 +1319,8 @@ generated_file("tests_from_metadata") {
     # Pull in tests from the developer
     "//:developer_specified_tests",
 
-    # This is deprecated, and the above type-specific groups should be used
-    # instead.
-    ":developer_universe_packages",
+    # And from discoverable, so that --with continues to work
+    "//:discoverable_packages",
   ]
 }
 
@@ -1361,9 +1360,8 @@ build_api_module("test_components") {
     # Pull in tests from the developer
     "//:developer_specified_tests",
 
-    # This is deprecated, and the above type-specific groups should be used
-    # instead.
-    ":developer_universe_packages",
+    # And from discoverable, so that --with continues to work
+    "//:discoverable_packages",
   ]
 }
 
@@ -1473,9 +1471,8 @@ generated_file("bazel_host_test_suites") {
     # Pull in tests from the developer
     "//:developer_specified_tests",
 
-    # This is deprecated, and the above type-specific groups should be used
-    # instead.
-    ":developer_universe_packages",
+    # And from discoverable, so that --with continues to work
+    "//:discoverable_packages",
   ]
 }
 
@@ -2405,37 +2402,6 @@ group("build_only") {
   deps = build_only_labels
 }
 
-##
-# "Developer-Added" package groups
-#
-# These groups exist at the root of the build so relative labels specified
-# through GN args are interpreted as if they were absolute.  e.g.
-#
-# public_deps = [ "build/images/fuchsia:fuchsia" ]
-#
-# is the same as
-#
-# public_deps = [ "//build/images/fuchsia:fuchsia" ]
-#
-# For any target in this file, but only in this file.
-#
-
-# Universe packages added by the developer, using `fx set` or `fx args`
-group("developer_universe_packages") {
-  testonly = true
-  visibility = [
-    ":bazel_host_test_suites",
-    ":test_components",
-    ":tests_from_metadata",
-    "//build/images/updates:*",
-  ]
-  public_deps = universe_package_labels
-
-  # the buildbot host tests should only be added via `--with-host`, to the
-  # `host_labels` GN arg.
-  assert_no_deps = [ "//bundles/buildbot/host/*" ]
-}
-
 ###
 # GN-Argument configured groups for adding tests to a build.
 #
@@ -2474,8 +2440,13 @@ group("developer_specified_tests") {
 # product in any way.
 group("discoverable_packages") {
   testonly = true
-  visibility = [ "//build/images/updates:*" ]
-  public_deps = discoverable_package_labels
+  visibility = [
+    "//:bazel_host_test_suites",
+    "//:test_components",
+    "//:tests_from_metadata",
+    "//build/images/updates:*",
+  ]
+  public_deps = discoverable_package_labels + universe_package_labels
 
   # Add //bundles/tools to the discoverable package set, as generally-available
   # platform tools, as all products were including them in
