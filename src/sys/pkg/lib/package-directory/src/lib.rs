@@ -538,7 +538,9 @@ mod tests {
     #[fuchsia::test]
     async fn bootfs_get_vmo_blob() {
         let directory = vfs::directory::immutable::simple();
-        directory.add_entry(blob_contents_hash(), vfs::file::read_only(BLOB_CONTENTS)).unwrap();
+        directory
+            .add_entry(blob_contents_hash().to_string(), vfs::file::read_only(BLOB_CONTENTS))
+            .unwrap();
         let proxy = vfs::directory::serve_read_only(directory, ExecutionScope::new());
 
         let vmo = proxy.get_blob_vmo(&blob_contents_hash()).await.unwrap();
@@ -548,7 +550,9 @@ mod tests {
     #[fuchsia::test]
     async fn bootfs_read_blob() {
         let directory = vfs::directory::immutable::simple();
-        directory.add_entry(blob_contents_hash(), vfs::file::read_only(BLOB_CONTENTS)).unwrap();
+        directory
+            .add_entry(blob_contents_hash().to_string(), vfs::file::read_only(BLOB_CONTENTS))
+            .unwrap();
         let proxy = vfs::directory::serve_read_only(directory, ExecutionScope::new());
 
         assert_eq!(proxy.read_blob(&blob_contents_hash()).await.unwrap(), BLOB_CONTENTS);

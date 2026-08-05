@@ -5,6 +5,7 @@
 use crate::directory::entry::DirectoryEntry;
 use crate::directory::entry_container::Directory;
 use crate::name::Name;
+use name::ParseNameError;
 use std::sync::Arc;
 use thiserror::Error;
 use zx_status::Status;
@@ -40,11 +41,11 @@ pub trait DirectlyMutable: Directory + Send + Sync {
     ///   * `ZX_ERR_INVALID_ARGS` or `ZX_ERR_BAD_PATH` if `name` is not a valid [`Name`].
     ///   * `ZX_ERR_ALREADY_EXISTS` if an entry with the same name is already present in the
     ///     directory.
-    fn add_entry<NameT>(&self, name: NameT, entry: Arc<dyn DirectoryEntry>) -> Result<(), Status>
-    where
-        NameT: Into<String>,
-        Self: Sized,
-    {
+    fn add_entry(
+        &self,
+        name: impl TryInto<Name, Error: Into<ParseNameError>>,
+        entry: Arc<dyn DirectoryEntry>,
+    ) -> Result<(), Status> {
         self.add_entry_may_overwrite(name, entry, false)
     }
 
@@ -55,18 +56,13 @@ pub trait DirectlyMutable: Directory + Send + Sync {
     ///   * `ZX_ERR_INVALID_ARGS` or `ZX_ERR_BAD_PATH` if `name` is not a valid [`Name`].
     ///   * `ZX_ERR_ALREADY_EXISTS` if an entry with the same name is already present in the
     ///     directory and `overwrite` is false.
-    fn add_entry_may_overwrite<NameT>(
+    fn add_entry_may_overwrite(
         &self,
-        name: NameT,
+        name: impl TryInto<Name, Error: Into<ParseNameError>>,
         entry: Arc<dyn DirectoryEntry>,
         overwrite: bool,
-    ) -> Result<(), Status>
-    where
-        NameT: Into<String>,
-        Self: Sized,
-    {
-        let name: String = name.into();
-        let name: Name = name.try_into()?;
+    ) -> Result<(), Status> {
+        let name: Name = name.try_into().map_err(Into::into)?;
         self.add_entry_impl(name, entry, overwrite)
             .map_err(|_: AlreadyExists| Status::ALREADY_EXISTS)
     }

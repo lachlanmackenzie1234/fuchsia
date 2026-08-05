@@ -143,8 +143,8 @@ impl<P: DiscoverableProtocolMarker, O> Service for ProxyTo<P, O> {
     }
 }
 
-// Not part of a trait so that clients won't have to import a trait
-// in order to call these functions.
+// Not part of a trait so that clients won't have to import a trait in order to call these
+// functions.
 macro_rules! add_functions {
     () => {
         /// Adds a service connector to the directory.
@@ -165,32 +165,40 @@ macro_rules! add_functions {
         ///     .take_and_serve_directory_handle()?;
         /// ```
         ///
-        /// The FIDL service will be hosted at the name provided by the
-        /// `[Discoverable]` annotation in the FIDL source.
+        /// The FIDL service will be hosted at the name provided by the `[Discoverable]` annotation
+        /// in the FIDL source.
+        ///
+        /// # Panics
+        ///
+        /// Panics if any node has already been added with the discoverable protocol name.
         pub fn add_service_connector<F, P>(&mut self, service: F) -> &mut Self
         where
             F: FnMut(ServerEnd<P>) -> ServiceObjTy::Output,
             P: DiscoverableProtocolMarker,
             FidlServiceServerConnector<F, P, ServiceObjTy::Output>: Into<ServiceObjTy>,
         {
-            self.add_service_at(P::PROTOCOL_NAME, FidlServiceServerConnector::from(service))
+            self.add_service_at(
+                Name::from_static(P::PROTOCOL_NAME),
+                FidlServiceServerConnector::from(service),
+            )
         }
 
-        /// Adds a service to the directory at the given path.
+        /// Adds a service to the directory with the given name.
         ///
-        /// The path must be a single component containing no `/` characters.
+        /// # Panics
         ///
-        /// Panics if any node has already been added at the given path.
+        /// Panics if `name` is not a valid `fuchsia.io` [`Name`], or if any node has already been
+        /// added with the given name.
         pub fn add_service_at(
             &mut self,
-            path: impl Into<String>,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
             service: impl Into<ServiceObjTy>,
         ) -> &mut Self {
             let index = self.fs().services.len();
             self.fs().services.push(service.into());
             let sender = self.fs().new_connection_sender.clone();
             self.add_entry_at(
-                path,
+                name,
                 endpoint(move |_, channel| {
                     // It's possible for this send to fail in the case where ServiceFs has been
                     // dropped.  When that happens, ServiceFs will drop ExecutionScope which
@@ -244,6 +252,10 @@ macro_rules! add_functions {
         ///
         /// The FIDL service will be hosted at the name provided by the
         /// `[Discoverable]` annotation in the FIDL source.
+        ///
+        /// # Panics
+        ///
+        /// Panics if any node has already been added with the discoverable protocol name.
         pub fn add_fidl_service<F, RS>(&mut self, service: F) -> &mut Self
         where
             F: FnMut(RS) -> ServiceObjTy::Output,
@@ -251,17 +263,20 @@ macro_rules! add_functions {
             RS::Protocol: DiscoverableProtocolMarker,
             FidlService<F, RS, ServiceObjTy::Output>: Into<ServiceObjTy>,
         {
-            self.add_fidl_service_at(RS::Protocol::PROTOCOL_NAME, service)
+            self.add_fidl_service_at(Name::from_static(RS::Protocol::PROTOCOL_NAME), service)
         }
 
-        /// Adds a FIDL service to the directory at the given path.
-        ///
-        /// The path must be a single component containing no `/` characters.
+        /// Adds a FIDL service to the directory with the given name.
         ///
         /// See [`add_fidl_service`](#method.add_fidl_service) for details.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `name` is not a valid `fuchsia.io` [`Name`], or if any node has already
+        /// been added with the given name.
         pub fn add_fidl_service_at<F, RS>(
             &mut self,
-            path: impl Into<String>,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
             service: F,
         ) -> &mut Self
         where
@@ -270,15 +285,13 @@ macro_rules! add_functions {
             RS::Protocol: DiscoverableProtocolMarker,
             FidlService<F, RS, ServiceObjTy::Output>: Into<ServiceObjTy>,
         {
-            self.add_service_at(path, FidlService::from(service))
+            self.add_service_at(name, FidlService::from(service))
         }
 
         /// Adds a named instance of a FIDL service to the directory.
         ///
         /// The FIDL service will be hosted at `[SERVICE_NAME]/[instance]/` where `SERVICE_NAME` is
         /// constructed from the FIDL library path and the name of the FIDL service.
-        ///
-        /// The `instance` must be a single component containing no `/` characters.
         ///
         /// # Example
         ///
@@ -292,9 +305,14 @@ macro_rules! add_functions {
         /// ```
         ///
         /// The `SERVICE_NAME` of FIDL Service `Bar` would be `lib.foo.Bar`.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `instance` is not a valid `fuchsia.io` [`Name`], or if an entry has already
+        /// been added that conflicts with the service or instance directory structure.
         pub fn add_fidl_service_instance<F, SR>(
             &mut self,
-            instance: impl Into<String>,
+            instance: impl TryInto<Name, Error: std::fmt::Debug>,
             service: F,
         ) -> &mut Self
         where
@@ -303,18 +321,25 @@ macro_rules! add_functions {
             SR: ServiceRequest,
             FidlServiceMember<F, SR, ServiceObjTy::Output>: Into<ServiceObjTy>,
         {
-            self.add_fidl_service_instance_at(SR::Service::SERVICE_NAME, instance, service)
+            self.add_fidl_service_instance_at(
+                Name::from_static(SR::Service::SERVICE_NAME),
+                instance,
+                service,
+            )
         }
 
-        /// Adds a named instance of a FIDL service to the directory at the given path.
+        /// Adds a named instance of a FIDL service to the directory with the given name.
         ///
-        /// The FIDL service will be hosted at `[path]/[instance]/`.
+        /// The FIDL service will be hosted at `[name]/[instance]/`.
         ///
-        /// The `path` and `instance` must be single components containing no `/` characters.
+        /// # Panics
+        ///
+        /// Panics if `name` or `instance` is not a valid `fuchsia.io` [`Name`], or if an entry has
+        /// already been added that conflicts with the service or instance directory structure.
         pub fn add_fidl_service_instance_at<F, SR>(
             &mut self,
-            path: impl Into<String>,
-            instance: impl Into<String>,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
+            instance: impl TryInto<Name, Error: std::fmt::Debug>,
             service: F,
         ) -> &mut Self
         where
@@ -324,7 +349,7 @@ macro_rules! add_functions {
             FidlServiceMember<F, SR, ServiceObjTy::Output>: Into<ServiceObjTy>,
         {
             // Create the service directory, with an instance subdirectory.
-            let mut dir = self.dir(path);
+            let mut dir = self.dir(name);
             let mut dir = dir.dir(instance);
 
             // Attach member protocols under the instance directory.
@@ -335,6 +360,13 @@ macro_rules! add_functions {
         }
 
         /// Adds a service that proxies requests to the current environment.
+        ///
+        /// The FIDL service will be hosted at the name provided by the `[Discoverable]` annotation
+        /// in the FIDL source.
+        ///
+        /// # Panics
+        ///
+        /// Panics if any node has already been added with the discoverable protocol name.
         // NOTE: we'd like to be able to remove the type parameter `O` here,
         //  but unfortunately the bound `ServiceObjTy: From<Proxy<P, ServiceObjTy::Output>>`
         //  makes type checking angry.
@@ -343,10 +375,20 @@ macro_rules! add_functions {
             ServiceObjTy: From<Proxy<P, O>>,
             ServiceObjTy: ServiceObjTrait<Output = O>,
         {
-            self.add_service_at(P::PROTOCOL_NAME, Proxy::<P, ServiceObjTy::Output>(PhantomData))
+            self.add_service_at(
+                Name::from_static(P::PROTOCOL_NAME),
+                Proxy::<P, ServiceObjTy::Output>(PhantomData),
+            )
         }
 
         /// Adds a service that proxies requests to the given component.
+        ///
+        /// The FIDL service will be hosted at the name provided by the `[Discoverable]` annotation
+        /// in the FIDL source.
+        ///
+        /// # Panics
+        ///
+        /// Panics if any node has already been added with the discoverable protocol name.
         // NOTE: we'd like to be able to remove the type parameter `O` here,
         //  but unfortunately the bound `ServiceObjTy: From<Proxy<P, ServiceObjTy::Output>>`
         //  makes type checking angry.
@@ -359,49 +401,55 @@ macro_rules! add_functions {
             ServiceObjTy: ServiceObjTrait<Output = O>,
         {
             self.add_service_at(
-                P::PROTOCOL_NAME,
+                Name::from_static(P::PROTOCOL_NAME),
                 ProxyTo::<P, ServiceObjTy::Output> { directory_request, _phantom: PhantomData },
             )
         }
 
-        /// Adds a VMO file to the directory at the given path.
+        /// Adds a VMO file to the directory with the given name.
         ///
-        /// The path must be a single component containing no `/` characters. The vmo should have
-        /// content size set as required.
+        /// The vmo should have content size set as required.
         ///
-        /// Panics if any node has already been added at the given path.
-        pub fn add_vmo_file_at(&mut self, path: impl Into<String>, vmo: zx::Vmo) -> &mut Self {
-            self.add_entry_at(path, VmoFile::new(vmo))
+        /// # Panics
+        ///
+        /// Panics if `name` is not a valid `fuchsia.io` [`Name`], or if any node has already
+        /// been added with the given name.
+        pub fn add_vmo_file_at(
+            &mut self,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
+            vmo: zx::Vmo,
+        ) -> &mut Self {
+            self.add_entry_at(name, VmoFile::new(vmo))
         }
 
-        /// Adds an entry to the directory at the given path.
+        /// Adds an entry to the directory with the given name.
         ///
-        /// The path must be a single component.
-        /// The path must be a valid `fuchsia.io` [`Name`].
+        /// # Panics
         ///
-        /// Panics if any node has already been added at the given path.
+        /// Panics if `name` is not a valid `fuchsia.io` [`Name`], or if any node has already
+        /// been added with the given name.
         pub fn add_entry_at(
             &mut self,
-            path: impl Into<String>,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
             entry: Arc<dyn DirectoryEntry>,
         ) -> &mut Self {
-            let path: String = path.into();
-            let name: Name = path.try_into().expect("Invalid path");
+            let name: Name = name.try_into().expect("Invalid name");
             // This will fail if the name is invalid or already exists.
             self.dir.add_entry_impl(name, entry, false).expect("Unable to add entry");
             self
         }
 
-        /// Returns a reference to the subdirectory at the given path,
-        /// creating one if none exists.
+        /// Returns a reference to the subdirectory with the given name, creating one if none exists.
         ///
-        /// The path must be a single component.
-        /// The path must be a valid `fuchsia.io` [`Name`].
+        /// # Panics
         ///
-        /// Panics if a service has already been added at the given path.
-        pub fn dir(&mut self, path: impl Into<String>) -> ServiceFsDir<'_, ServiceObjTy> {
-            let path: String = path.into();
-            let name: Name = path.try_into().expect("Invalid path");
+        /// Panics if `name` is not a valid `fuchsia.io` [`Name`], or if an entry has already
+        /// been added with the given name and it is not a directory.
+        pub fn dir(
+            &mut self,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
+        ) -> ServiceFsDir<'_, ServiceObjTy> {
+            let name: Name = name.try_into().expect("Invalid name");
             let dir = Arc::downcast(self.dir.get_or_insert(name, new_simple_dir).into_any())
                 .unwrap_or_else(|_| panic!("Not a directory"));
             ServiceFsDir { fs: self.fs(), dir }
@@ -409,22 +457,28 @@ macro_rules! add_functions {
 
         /// Adds a new remote directory served over the given DirectoryProxy.
         ///
-        /// The name must be a valid `fuchsia.io` [`Name`].
+        /// # Panics
+        ///
+        /// Panics if `name` is not a valid `fuchsia.io` [`Name`], or if any node has already
+        /// been added with the given name.
         pub fn add_remote(
             &mut self,
-            name: impl Into<String>,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
             proxy: fio::DirectoryProxy,
         ) -> &mut Self {
-            let name: String = name.into();
-            let name: Name = name.try_into().expect("Invalid path");
+            let name: Name = name.try_into().expect("Invalid name");
             self.dir.add_entry_impl(name, remote_dir(proxy), false).expect("Unable to add entry");
             self
         }
 
         /// Adds a FIDL protocol to the directory.
         ///
-        /// The FIDL protocol will be hosted at the name provided by the
-        /// `Discoverable` annotation in the FIDL source.
+        /// The FIDL protocol will be hosted at the name provided by the `Discoverable` annotation
+        /// in the FIDL source.
+        ///
+        /// # Panics
+        ///
+        /// Panics if any node has already been added with the discoverable protocol name.
         pub fn add_fidl_next_protocol<P, H>(
             &mut self,
             create_handler: impl Fn(::fidl_next::Server<P, zx::Channel>) -> H
@@ -439,7 +493,7 @@ macro_rules! add_functions {
         {
             self.dir
                 .add_entry_impl(
-                    String::from(P::PROTOCOL_NAME).try_into().expect("Invalid path"),
+                    Name::from_static(P::PROTOCOL_NAME),
                     endpoint(move |_, channel| {
                         let create_handler = create_handler.clone();
                         fasync::Task::spawn(async move {
@@ -464,11 +518,16 @@ macro_rules! add_functions {
 
         /// Adds a FIDL service to the directory.
         ///
-        /// The FIDL service will be hosted at the name provided by the
-        /// `Discoverable` annotation in the FIDL source.
+        /// The FIDL service will be hosted at the name provided by the `Discoverable` annotation in
+        /// the FIDL source under `[instance_name]`.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `instance_name` is not a valid `fuchsia.io` [`Name`], or if an entry has
+        /// already been added that conflicts with the service or instance directory structure.
         pub fn add_fidl_next_service_instance<S, H>(
             &mut self,
-            instance_name: impl Into<String>,
+            instance_name: impl TryInto<Name, Error: std::fmt::Debug>,
             handler: H,
         ) -> &mut Self
         where
@@ -477,14 +536,25 @@ macro_rules! add_functions {
                 + 'static,
             H: Send + Sync + 'static,
         {
-            self.add_fidl_next_service_instance_at::<S, H>(S::SERVICE_NAME, instance_name, handler)
+            self.add_fidl_next_service_instance_at::<S, H>(
+                Name::from_static(S::SERVICE_NAME),
+                instance_name,
+                handler,
+            )
         }
 
         /// Adds a FIDL service to the directory with a custom service name.
+        ///
+        /// The FIDL service will be hosted at `[name]/[instance_name]/`.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `name` or `instance_name` is not a valid `fuchsia.io` [`Name`], or if an entry
+        /// has already been added that conflicts with the service or instance directory structure.
         pub fn add_fidl_next_service_instance_at<S, H>(
             &mut self,
-            path: impl Into<String>,
-            instance_name: impl Into<String>,
+            name: impl TryInto<Name, Error: std::fmt::Debug>,
+            instance_name: impl TryInto<Name, Error: std::fmt::Debug>,
             handler: H,
         ) -> &mut Self
         where
@@ -494,7 +564,7 @@ macro_rules! add_functions {
             H: Send + Sync + 'static,
         {
             // Create the service directory, with an instance subdirectory
-            let mut dir = self.dir(path);
+            let mut dir = self.dir(name);
             let mut dir = dir.dir(instance_name);
 
             let handler = std::sync::Arc::new(
@@ -505,7 +575,7 @@ macro_rules! add_functions {
             for member_name in S::MEMBER_NAMES {
                 let handler = handler.clone();
                 dir.add_entry_at(
-                    *member_name,
+                    Name::from_static(member_name),
                     endpoint(move |_, channel| {
                         ::fidl_next::protocol::ServiceHandler::on_connection(
                             &*handler,
@@ -594,10 +664,10 @@ impl<ServiceObjTy: ServiceObjTrait> ServiceFs<ServiceObjTy> {
 }
 
 fn new_simple_dir() -> Arc<PseudoDir> {
-    PseudoDir::new_with_not_found_handler(move |path| {
+    PseudoDir::new_with_not_found_handler(move |name| {
         warn!(
-            "ServiceFs received request to `{}` but has not been configured to serve this path.",
-            path
+            "ServiceFs received request for `{}` but has not been configured to serve this entry.",
+            name
         );
     })
 }
@@ -650,11 +720,11 @@ impl ProtocolConnector {
 pub struct MissingStartupHandle;
 
 impl<ServiceObjTy: ServiceObjTrait> ServiceFs<ServiceObjTy> {
-    /// Removes the `DirectoryRequest` startup handle for the current
-    /// component and adds connects it to this `ServiceFs` as a client.
+    /// Removes the `DirectoryRequest` startup handle for the current component and connects it to
+    /// this `ServiceFs` as a client.
     ///
-    /// Multiple calls to this function from the same component will
-    /// result in `Err(MissingStartupHandle)`.
+    /// Multiple calls to this function from the same component will result in
+    /// `Err(MissingStartupHandle)`.
     pub fn take_and_serve_directory_handle(&mut self) -> Result<&mut Self, Error> {
         let startup_handle = fuchsia_runtime::take_startup_handle(
             fuchsia_runtime::HandleType::DirectoryRequest.into(),
@@ -707,7 +777,7 @@ impl<ServiceObjTy: ServiceObjTrait> Stream for ServiceFs<ServiceObjTy> {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // NOTE: Normally, it isn't safe to poll a stream after it returns None, but we support this
-        // and StallabkeServiceFs depends on this.
+        // and StallableServiceFs depends on this.
         if let Some(channels) = self.channel_queue.take() {
             for chan in channels {
                 self.serve_connection_impl(chan);
