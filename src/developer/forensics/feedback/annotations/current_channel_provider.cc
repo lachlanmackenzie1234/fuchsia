@@ -8,9 +8,16 @@
 
 namespace forensics::feedback {
 
-Annotations CurrentChannelToAnnotations::operator()(const std::string& current_channel) {
+Annotations CurrentChannelToAnnotations::operator()(
+    const fuchsia_update_channel::ProviderGetCurrentResponse& response) {
   return Annotations{
-      {kSystemUpdateChannelCurrentKey, ErrorOrString(current_channel)},
+      {kSystemUpdateChannelCurrentKey, ErrorOrString(response.channel())},
+  };
+}
+
+Annotations CurrentChannelToAnnotations::operator()(const Error error) {
+  return Annotations{
+      {kSystemUpdateChannelCurrentKey, ErrorOrString(error)},
   };
 }
 

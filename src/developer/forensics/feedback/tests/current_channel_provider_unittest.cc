@@ -4,11 +4,12 @@
 
 #include "src/developer/forensics/feedback/annotations/current_channel_provider.h"
 
+#include <fidl/fuchsia.update.channel/cpp/fidl.h>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
-#include "src/developer/forensics/feedback/annotations/types.h"
 
 namespace forensics::feedback {
 namespace {
@@ -16,15 +17,25 @@ namespace {
 using ::testing::Pair;
 using ::testing::UnorderedElementsAreArray;
 
-TEST(CurrentChannelToAnnotationsTest, Convert) {
+TEST(CurrentChannelToAnnotationsTest, ConvertSuccess) {
   CurrentChannelToAnnotations convert;
 
-  EXPECT_THAT(convert(""), UnorderedElementsAreArray({
-                               Pair(kSystemUpdateChannelCurrentKey, ErrorOrString("")),
-                           }));
-  EXPECT_THAT(convert("channel"),
+  fuchsia_update_channel::ProviderGetCurrentResponse response{{.channel = ""}};
+  EXPECT_THAT(convert(response), UnorderedElementsAreArray({
+                                     Pair(kSystemUpdateChannelCurrentKey, ErrorOrString("")),
+                                 }));
+
+  response.channel("channel");
+  EXPECT_THAT(convert(response), UnorderedElementsAreArray({
+                                     Pair(kSystemUpdateChannelCurrentKey, ErrorOrString("channel")),
+                                 }));
+}
+
+TEST(CurrentChannelToAnnotationsTest, ConvertError) {
+  CurrentChannelToAnnotations convert;
+  EXPECT_THAT(convert(Error::kConnectionError),
               UnorderedElementsAreArray({
-                  Pair(kSystemUpdateChannelCurrentKey, ErrorOrString("channel")),
+                  Pair(kSystemUpdateChannelCurrentKey, Error::kConnectionError),
               }));
 }
 

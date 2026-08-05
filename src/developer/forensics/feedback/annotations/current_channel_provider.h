@@ -5,26 +5,33 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_CURRENT_CHANNEL_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_CURRENT_CHANNEL_PROVIDER_H_
 
-#include <fuchsia/update/channel/cpp/fidl.h>
+#include <fidl/fuchsia.update.channel/cpp/fidl.h>
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
+#include "src/developer/forensics/feedback/annotations/fidl_provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
 
 namespace forensics::feedback {
 
+namespace internal {
+
+inline auto GetCurrent(fidl::Client<fuchsia_update_channel::Provider>& client) {
+  return client->GetCurrent();
+}
+
+}  // namespace internal
+
 struct CurrentChannelToAnnotations {
-  Annotations operator()(const std::string& current_channel);
+  Annotations operator()(const fuchsia_update_channel::ProviderGetCurrentResponse& response);
+  Annotations operator()(Error error);
 };
 
 // Responsible for collecting annotations for
 // fuchsia.update.channel/Provider::GetCurrent.
 class CurrentChannelProvider
-    : public StaticSingleHlcppFidlMethodAnnotationProvider<
-          fuchsia::update::channel::Provider, &fuchsia::update::channel::Provider::GetCurrent,
-          CurrentChannelToAnnotations> {
+    : public StaticSingleFidlMethodAnnotationProvider<
+          fuchsia_update_channel::Provider, &internal::GetCurrent, CurrentChannelToAnnotations> {
  public:
-  using StaticSingleHlcppFidlMethodAnnotationProvider::
-      StaticSingleHlcppFidlMethodAnnotationProvider;
+  using StaticSingleFidlMethodAnnotationProvider::StaticSingleFidlMethodAnnotationProvider;
 
   virtual ~CurrentChannelProvider() = default;
 

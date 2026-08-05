@@ -149,7 +149,7 @@ cc_test_executable("current_channel_provider_unittest_exe") {
   sources = [ "current_channel_provider_unittest.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_hlcpp",
+    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_cpp",
     "//src/developer/forensics/feedback/annotations:current_channel_provider",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//third_party/googletest:gmock",

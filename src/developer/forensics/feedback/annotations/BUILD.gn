@@ -86,8 +86,8 @@ source_set("current_channel_provider") {
   ]
 
   public_deps = [
-    ":fidl_provider_hlcpp",
-    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_hlcpp",
+    ":fidl_provider",
+    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_cpp",
     "//src/developer/forensics/feedback/annotations",
   ]
 }
