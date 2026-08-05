@@ -198,6 +198,7 @@ source_set("x86") {
     "idle_states.cc",
     "idt.cc",
     "intel.cc",
+    "ioapic.cc",
     "ioport.cc",
     "lapic.cc",
     "mexec.S",
@@ -307,22 +308,11 @@ source_set("syscall") {
 kernel_rust_mod("arch-x86-rs") {
   output_name = "arch_x86"
   source_root = "src/mod.rs"
-  sources = [
-    "src/apic.rs",
-    "src/interrupts.rs",
-    "src/ioapic.rs",
-    "src/mod.rs",
-  ]
+  sources = [ "src/mod.rs" ]
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
-    "//src/lib/kalloc",
-    "//src/lib/ksync",
-    "//src/lib/regio",
-    "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/debug",
-    "//zircon/kernel/lib/page:page-rs",
-    "//zircon/system/ulib/fbl/rust:fbl",
   ]
 }
 
