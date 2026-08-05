@@ -7,6 +7,7 @@ import abc
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from honeydew.affordances import affordance
+from honeydew.affordances.connectivity.wlan.utils.types import AccessPointState
 
 
 class AsyncWlanPolicyAp(abc.ABC):
@@ -80,7 +81,7 @@ class AsyncWlanPolicyAp(abc.ABC):
     async def get_update(
         self,
         timeout: float | None = None,
-    ) -> list[f_wlan_policy.AccessPointState]:
+    ) -> list[AccessPointState]:
         """Get a list of AP state listener updates.
 
         This call will return with an update immediately the
@@ -175,7 +176,7 @@ class WlanPolicyAp(affordance.Affordance):
     def get_update(
         self,
         timeout: float | None = None,
-    ) -> list[f_wlan_policy.AccessPointState]:
+    ) -> list[AccessPointState]:
         """Get a list of AP state listener updates.
 
         This call will return with an update immediately the

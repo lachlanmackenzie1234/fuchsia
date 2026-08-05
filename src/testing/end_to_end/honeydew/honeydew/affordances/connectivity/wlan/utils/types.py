@@ -390,3 +390,48 @@ class CountryCode(enum.StrEnum):
             raise ValueError(f"Bytes {data!r} are not valid UTF-8") from e
 
         return cls(code_str)
+
+
+@dataclass(frozen=True)
+class AccessPointState:
+    """Information about the individual operating access points.
+
+    This includes limited information about any connected clients.
+    """
+
+    state: f_wlan_policy.OperatingState
+    """Current access point operating state."""
+
+    mode: f_wlan_policy.ConnectivityMode
+    """Requested operating connectivity mode."""
+
+    band: f_wlan_policy.OperatingBand
+    """Access point operating band."""
+
+    frequency: int | None
+    """Access point operating frequency (in MHz)."""
+
+    clients: f_wlan_policy.ConnectedClientInformation | None
+    """Information about connected clients."""
+
+    id_: NetworkIdentifier
+    """Identifying information of the access point whose state has changed."""
+
+    @staticmethod
+    def from_fidl(
+        fidl: f_wlan_policy.AccessPointState,
+    ) -> "AccessPointState":
+        """Parse from a fuchsia.wlan.policy/AccessPointState."""
+        assert fidl.state is not None, f"{fidl!r} missing state"
+        assert fidl.mode is not None, f"{fidl!r} missing mode"
+        assert fidl.band is not None, f"{fidl!r} missing band"
+        assert fidl.id_ is not None, f"{fidl!r} missing id"
+
+        return AccessPointState(
+            state=f_wlan_policy.OperatingState(fidl.state),
+            mode=f_wlan_policy.ConnectivityMode(fidl.mode),
+            band=f_wlan_policy.OperatingBand(fidl.band),
+            frequency=fidl.frequency,
+            clients=fidl.clients,
+            id_=NetworkIdentifier.from_fidl(fidl.id_),
+        )
