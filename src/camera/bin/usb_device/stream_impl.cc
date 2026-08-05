@@ -330,14 +330,17 @@ promise<void> StreamImpl::Cleanup(zx_status_t status, const std::string& message
     clients_.clear();
 
     // Unmap VMOs and close the VMO handles.
-    auto vmo_size = client_buffer_collection_info_.settings().buffer_settings().size_bytes();
-    for (uint32_t buffer_id = 0; buffer_id < client_buffer_collection_info_.buffers().size();
-         buffer_id++) {
-      uintptr_t vmo_virt_addr = client_buffer_id_to_virt_addr_[buffer_id];
-      auto status = zx::vmar::root_self()->unmap(vmo_virt_addr, vmo_size);
-      ZX_ASSERT(status == ZX_OK);
-      zx::vmo& vmo = *client_buffer_collection_info_.mutable_buffers()->at(buffer_id).mutable_vmo();
-      vmo.reset();
+    if (client_buffer_collection_info_.has_settings()) {
+      auto vmo_size = client_buffer_collection_info_.settings().buffer_settings().size_bytes();
+      for (uint32_t buffer_id = 0; buffer_id < client_buffer_collection_info_.buffers().size();
+           buffer_id++) {
+        uintptr_t vmo_virt_addr = client_buffer_id_to_virt_addr_[buffer_id];
+        auto status = zx::vmar::root_self()->unmap(vmo_virt_addr, vmo_size);
+        ZX_ASSERT(status == ZX_OK);
+        zx::vmo& vmo =
+            *client_buffer_collection_info_.mutable_buffers()->at(buffer_id).mutable_vmo();
+        vmo.reset();
+      }
     }
     client_buffer_id_to_virt_addr_.clear();
     if (client_buffer_collection_) {

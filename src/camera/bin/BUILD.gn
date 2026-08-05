@@ -19,6 +19,7 @@ group("tests") {
     "camera-gym:tests",
     "device:tests",
     "device_watcher:tests",
+    "usb_device:tests",
     "virtual_camera:tests",
   ]
 }

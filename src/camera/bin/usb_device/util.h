@@ -6,6 +6,7 @@
 #define SRC_CAMERA_BIN_USB_DEVICE_UTIL_H_
 
 #include <fuchsia/camera/cpp/fidl.h>
+#include <fuchsia/camera2/hal/cpp/fidl.h>
 #include <fuchsia/camera3/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/cpp/wait.h>

@@ -683,6 +683,77 @@ TEST_F(DeviceImplTest, StreamClientDisconnect) {
   }
 }
 
+TEST_F(DeviceImplTest, ConnectToStreamInvalidIndex) {
+  fuchsia::camera3::DevicePtr device;
+  SetFailOnError(device, "Device");
+  device_->GetHandler()(device.NewRequest());
+
+  // Dynamically fetch all configurations from the device.
+  std::vector<fuchsia::camera3::Configuration2> configurations;
+  bool configurations_returned = false;
+  device->GetConfigurations2([&](std::vector<fuchsia::camera3::Configuration2> configs) {
+    configurations = std::move(configs);
+    configurations_returned = true;
+  });
+  RunLoopUntilFailureOr(configurations_returned);
+  ASSERT_FALSE(configurations.empty());
+
+  for (uint32_t config_index = 0; config_index < configurations.size(); ++config_index) {
+    device->SetCurrentConfiguration(config_index);
+
+    const auto& config = configurations[config_index];
+    uint32_t num_streams = static_cast<uint32_t>(config.streams().size());
+    ASSERT_GT(num_streams, 0u);
+
+    // Test index equal to streams_.size() (exact boundary condition).
+    {
+      fuchsia::camera3::StreamPtr stream;
+      bool error_received = false;
+      stream.set_error_handler([&](zx_status_t status) {
+        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+        error_received = true;
+      });
+      device->ConnectToStream(num_streams, stream.NewRequest());
+      RunLoopUntilFailureOr(error_received);
+    }
+
+    // Test index greater than streams_.size().
+    {
+      fuchsia::camera3::StreamPtr stream;
+      bool error_received = false;
+      stream.set_error_handler([&](zx_status_t status) {
+        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+        error_received = true;
+      });
+      device->ConnectToStream(num_streams + 1, stream.NewRequest());
+      RunLoopUntilFailureOr(error_received);
+    }
+
+    // Test max uint32 index.
+    {
+      fuchsia::camera3::StreamPtr stream;
+      bool error_received = false;
+      stream.set_error_handler([&](zx_status_t status) {
+        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+        error_received = true;
+      });
+      device->ConnectToStream(std::numeric_limits<uint32_t>::max(), stream.NewRequest());
+      RunLoopUntilFailureOr(error_received);
+    }
+
+    // Verify all valid stream indices [0, num_streams) connect successfully.
+    for (uint32_t stream_index = 0; stream_index < num_streams; ++stream_index) {
+      fuchsia::camera3::StreamPtr stream;
+      SetFailOnError(stream, "Stream");
+      device->ConnectToStream(stream_index, stream.NewRequest());
+      bool properties_received = false;
+      stream->GetProperties2(
+          [&](fuchsia::camera3::StreamProperties2 properties) { properties_received = true; });
+      RunLoopUntilFailureOr(properties_received);
+    }
+  }
+}
+
 TEST_F(DeviceImplTest, SetResolution) {
   fuchsia::camera3::DevicePtr device;
   SetFailOnError(device, "Device");
