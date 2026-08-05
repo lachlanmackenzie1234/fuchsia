@@ -18,10 +18,6 @@ from honeydew import affordances_capable
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    AccessPointState,
-    NetworkIdentifier,
-)
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
     wlan_policy_ap_using_fc,
 )
@@ -34,16 +30,6 @@ from honeydew.transports.fuchsia_controller import (
 _TEST_SSID = "ThepromisedLAN"
 _TEST_SSID_BYTES = list(str.encode(_TEST_SSID))
 
-_ACCESS_POINT_STATE = AccessPointState(
-    state=f_wlan_policy.OperatingState.STARTING,
-    mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-    band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
-    frequency=None,
-    clients=None,
-    id_=NetworkIdentifier(
-        ssid=_TEST_SSID, security_type=f_wlan_policy.SecurityType.WPA2
-    ),
-)
 _ACCESS_POINT_STATE_FIDL = f_wlan_policy.AccessPointState(
     state=f_wlan_policy.OperatingState.STARTING,
     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
@@ -320,7 +306,8 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(
-            await self.wlan_policy_ap_obj.get_update(), [_ACCESS_POINT_STATE]
+            await self.wlan_policy_ap_obj.get_update(),
+            [_ACCESS_POINT_STATE_FIDL],
         )
 
     async def test_get_update_queuing(self) -> None:
@@ -340,7 +327,8 @@ class WlanPolicyApFCTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(await self.wlan_policy_ap_obj.get_update(), [])
         self.assertEqual(
-            await self.wlan_policy_ap_obj.get_update(), [_ACCESS_POINT_STATE]
+            await self.wlan_policy_ap_obj.get_update(),
+            [_ACCESS_POINT_STATE_FIDL],
         )
 
     @mock.patch(
