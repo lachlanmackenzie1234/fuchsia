@@ -232,4 +232,9 @@ class KernelHandle {
   fbl::RefPtr<T> dispatcher_;
 };
 
+extern "C" {
+Handle* cpp_handle_dup(const Handle* handle, zx_rights_t rights);
+void cpp_handle_destroy(Handle* handle);
+}
+
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_HANDLE_H_

@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::DispatcherOps;
+use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use zx_status::Status;
 use zx_types::{zx_handle_t, zx_rights_t};
@@ -90,4 +91,54 @@ where
             ref_ptr.on_zero_handles();
         }
     }
+}
+
+/// Safe RAII wrapper for an owned handle (`HandleOwner`).
+pub struct HandleOwner {
+    ptr: NonNull<core::ffi::c_void>,
+}
+
+impl HandleOwner {
+    /// Creates a new `HandleOwner` from a non-null raw handle pointer.
+    ///
+    /// # Safety
+    /// `ptr` must be a valid, owned `Handle*` created by C++ `Handle::Make` or `Handle::Dup`.
+    pub unsafe fn from_raw(ptr: *mut core::ffi::c_void) -> Option<Self> {
+        NonNull::new(ptr).map(|ptr| Self { ptr })
+    }
+
+    /// Releases the raw pointer from `HandleOwner` without running its destructor.
+    pub fn release(self) -> *mut core::ffi::c_void {
+        let ptr = self.ptr.as_ptr();
+        core::mem::forget(self);
+        ptr
+    }
+
+    /// Duplicates this handle with the given rights.
+    pub fn dup(&self, rights: zx_rights_t) -> Result<Self, Status> {
+        // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
+        let raw = unsafe { cpp_handle_dup(self.ptr.as_ptr(), rights) };
+        // SAFETY: `cpp_handle_dup` returns a valid new raw handle or null.
+        unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
+    }
+
+    /// Returns the raw pointer backing this handle owner.
+    pub fn as_raw(&self) -> *mut core::ffi::c_void {
+        self.ptr.as_ptr()
+    }
+}
+
+impl Drop for HandleOwner {
+    fn drop(&mut self) {
+        // SAFETY: `self.ptr` is valid and owned.
+        unsafe { cpp_handle_destroy(self.ptr.as_ptr()) };
+    }
+}
+
+unsafe extern "C" {
+    fn cpp_handle_dup(
+        handle: *const core::ffi::c_void,
+        rights: zx_rights_t,
+    ) -> *mut core::ffi::c_void;
+    fn cpp_handle_destroy(handle: *mut core::ffi::c_void);
 }

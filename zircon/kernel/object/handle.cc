@@ -8,6 +8,7 @@
 
 #include <lib/counters.h>
 #include <pow2.h>
+#include <zircon/rights.h>
 
 #include <fbl/conditional_select_nospec.h>
 #include <object/dispatcher.h>
@@ -235,3 +236,19 @@ uint32_t HandleTableArena::HandleToIndex(Handle* handle) {
 int64_t HandleTableArena::get_alloc_failed_count() {
   return handle_count_alloc_failed.SumAcrossAllCpus();
 }
+
+extern "C" {
+
+Handle* cpp_handle_dup(const Handle* handle, zx_rights_t rights) {
+  if (!handle) {
+    return nullptr;
+  }
+  if (rights == ZX_RIGHT_SAME_RIGHTS) {
+    rights = handle->rights();
+  }
+  return Handle::Dup(*handle, rights).release();
+}
+
+void cpp_handle_destroy(Handle* handle) { HandleOwner ho(handle); }
+
+}  // extern "C"
