@@ -29,22 +29,22 @@ All writers also implement `item`, which will either print the object
 given in machine mode, or use its `Display` implementation to output it in
 non-machine mode as text.
 
-The different implementations implement the [ToolIO][toolio] trait.
+The different implementations implement the [`ToolIO`][toolio] trait.
 Depending on the how the subtool will be used, subtool authors should
 use the appropriate implementation.
 
 ## SimpleWriter
 
-The [SimpleWriter][simplewriter] struct is the most basic of the Writers.
+The [`SimpleWriter`][simplewriter] struct is the most basic of the Writers.
 It should be used when there is no need to support structured output and has
 no restrictions or guidelines on how to use it. The advantage of a SimpleWriter
 versus directly using stdio is that the SimpleWriter can be instantiated using
 buffers which allows easier testing of output. To create the buffer backed
-SimpleWriter see [new_with_buffers()][simple-new-with-buffers].
+SimpleWriter see [`new_with_buffers()`][simple-new-with-buffers].
 
 ## MachineWriter
 
-The [MachineWriter][machinewriter] struct builds on the SimpleWriter by
+The [`MachineWriter`][machinewriter] struct builds on the SimpleWriter by
 adding the implementations of methods to support structured output:
 
 * `machine`: Only print the given object in machine mode.
@@ -65,11 +65,11 @@ errors that are encountered in a structured way, rather than falling back to
 unstructured data on stderr.
 
 To use MachineWriter, the declaration of the Writer attribute in FfxMain
-requires an object type that implements the [serde::Serialize][serialize] trait.
+requires an object type that implements the [`serde::Serialize`][serialize] trait.
 
 ## VerifiedMachineWriter
 
-The [VerifiedMachineWriter][verifiedwriter] struct builds on the MachineWriter
+The [`VerifiedMachineWriter`][verifiedwriter] struct builds on the MachineWriter
 behavior and adds JSON schema support. This schema is intended to describe the
 structure of the output so it can be deserialized. The schema is also used to
 detect changes over time to promote backwards compatibility with integrations
@@ -78,7 +78,7 @@ updating the ffx tools, or at least they are known and can be accommodated.
 
 To use VerifiedMachineWriter, the declaration of the Writer attribute
 in FfxMain requiresan object type that implements the
-[serde::Serialize][serialize] trait and [schemars::JsonSchema][jsonschema].
+[`serde::Serialize`][serialize] trait and [`schemars::JsonSchema`][jsonschema].
 
 
 ## How to specify your `Writer` type
@@ -91,10 +91,10 @@ output, it should use `SimpleWriter` instead of something like
 output.
 
 <!-- refs -->
-[simplewriter]: https://fuchsia-docs.firebaseapp.com/rust/ffx_writer/struct.SimpleWriter.html
-[simple-new-with-buffers]: https://fuchsia-docs.firebaseapp.com/rust/ffx_writer/struct.SimpleWriter.html#method.new_buffers
-[machinewriter]: https://fuchsia-docs.firebaseapp.com/rust/ffx_writer/struct.MachineWriter.html
-[verifiedwriter]: https://fuchsia-docs.firebaseapp.com/rust/ffx_writer/struct.VerifiedMachineWriter.html
-[toolio]: https://fuchsia-docs.firebaseapp.com/rust/ffx_writer/trait.ToolIO.html
+[simplewriter]: /src/developer/ffx/lib/writer/src/simple_writer.rs
+[simple-new-with-buffers]: /src/developer/ffx/lib/writer/src/simple_writer.rs
+[machinewriter]: /src/developer/ffx/lib/writer/src/machine_writer.rs
+[verifiedwriter]: /src/developer/ffx/lib/writer/src/verified_machine_writer.rs
+[toolio]: /src/developer/ffx/lib/writer/src/lib.rs
 [serialize]: https://docs.rs/serde/latest/serde/trait.Serialize.html
 [jsonschema]: https://graham.cool/schemars/
