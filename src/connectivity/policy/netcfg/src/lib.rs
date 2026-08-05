@@ -198,11 +198,6 @@ pub(crate) struct DnsServerUpdate {
 type DnsServerWatchers<'a> =
     async_utils::stream::StreamMap<DnsServersUpdateSource, BoxStream<'a, DnsServerUpdate>>;
 
-type DelegatedNetworksStream = futures::future::Either<
-    fnp_socketproxy::NetworkRegistryRequestStream,
-    futures::stream::Empty<Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>>,
->;
-
 /// Defines log levels.
 #[derive(Debug, Copy, Clone)]
 pub struct LogLevel(diagnostics_log::Severity);
@@ -1335,14 +1330,6 @@ impl<'a> NetCfg<'a> {
         let mut dns_server_watcher_incoming_requests =
             dns::DnsServerWatcherRequestStreams::default();
 
-        let mut networks_request_streams =
-            network::ConnectionTagged::<fnp_properties::NetworksRequestStream>::default();
-        let mut network_token_resolver_request_streams =
-            futures::stream::SelectAll::<fnp_properties::NetworkTokenResolverRequestStream>::new();
-
-        let mut delegated_networks_stream =
-            DelegatedNetworksStream::Right(futures_util::stream::empty());
-
         let inspector = self.inspector.clone();
         let (telemetry_sender, telemetry_fut) = crate::telemetry::serve_telemetry(&inspector);
         let telemetry_fut = telemetry_fut.fuse();
@@ -1369,13 +1356,7 @@ impl<'a> NetCfg<'a> {
             LifecycleRequest(
                 Result<Option<fidl_fuchsia_process_lifecycle::LifecycleRequest>, fidl::Error>,
             ),
-            NetworkAttributesRequest(
-                (network::ConnectionId, Result<fnp_properties::NetworksRequest, fidl::Error>),
-            ),
-            NetworkTokenResolverRequest(
-                Result<fnp_properties::NetworkTokenResolverRequest, fidl::Error>,
-            ),
-            DelegatedNetworksUpdate(Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>),
+            NetpolNetworksServiceEvent(network::NetworkRequest),
             ProvisioningEvent(ProvisioningEvent),
         }
 
@@ -1473,14 +1454,8 @@ impl<'a> NetCfg<'a> {
                             masq_event.context("error while receiving MasqueradeEvent")?)
                         )
                 }
-                net_attr_req = networks_request_streams.select_next_some() => {
-                    Event::NetworkAttributesRequest(net_attr_req)
-                }
-                net_tok_admin_req = network_token_resolver_request_streams.select_next_some() => {
-                    Event::NetworkTokenResolverRequest(net_tok_admin_req)
-                }
-                delegated_networks_update = delegated_networks_stream.select_next_some() => {
-                    Event::DelegatedNetworksUpdate(delegated_networks_update)
+                netcfg_event = self.netpol_networks_service.select_next_some() => {
+                    Event::NetpolNetworksServiceEvent(netcfg_event)
                 }
                 _telemetry_res = telemetry_fut => {
                     error!("unexpectedly stopped serving telemetry");
@@ -1535,28 +1510,8 @@ impl<'a> NetCfg<'a> {
                         }
                     }
                 }
-                Event::NetworkAttributesRequest((id, req)) => {
-                    self.netpol_networks_service
-                        .handle_network_attributes_request(id, req)
-                        .await
-                        .unwrap_or_else(|e| {
-                            error!("Could not handle network attributes request: {e:?}")
-                        });
-                }
-                Event::NetworkTokenResolverRequest(req) => {
-                    self.netpol_networks_service
-                        .handle_network_token_resolver_request(req)
-                        .await
-                        .unwrap_or_else(|e| {
-                            error!("Could not handle network token resolver request: {e:?}")
-                        });
-                }
-                Event::DelegatedNetworksUpdate(update) => {
-                    match self
-                        .netpol_networks_service
-                        .handle_delegated_networks_update(update)
-                        .await
-                    {
+                Event::NetpolNetworksServiceEvent(event) => {
+                    match self.netpol_networks_service.handle_event(event).await {
                         Ok(network::DelegatedNetworkUpdateResult {
                             dns_servers: Some(dns_servers),
                         }) => {
@@ -1568,7 +1523,7 @@ impl<'a> NetCfg<'a> {
                         }
                         Ok(network::DelegatedNetworkUpdateResult { dns_servers: None }) => {}
                         Err(e) => {
-                            error!("Could not handle delegated network update: {e:?}");
+                            error!("Could not handle netpol networks service event: {e:?}");
                         }
                     }
                 }
@@ -1582,9 +1537,6 @@ impl<'a> NetCfg<'a> {
                         &mut virtualization_events,
                         &mut masquerade_handler,
                         &mut masquerade_events,
-                        &mut networks_request_streams,
-                        &mut delegated_networks_stream,
-                        &mut network_token_resolver_request_streams,
                     )
                     .await?
                 }
@@ -1604,13 +1556,6 @@ impl<'a> NetCfg<'a> {
         virtualization_events: &mut futures::stream::SelectAll<virtualization::EventStream>,
         masquerade_handler: &mut MasqueradeHandler,
         masquerade_events: &mut futures::stream::SelectAll<masquerade::EventStream>,
-        networks_request_streams: &mut network::ConnectionTagged<
-            fnp_properties::NetworksRequestStream,
-        >,
-        delegated_networks_stream: &mut DelegatedNetworksStream,
-        network_token_resolver_request_streams: &mut futures::stream::SelectAll<
-            fnp_properties::NetworkTokenResolverRequestStream,
-        >,
     ) -> Result<(), anyhow::Error> {
         match event {
             ProvisioningEvent::InterfaceWatcherResult(if_watcher_res) => {
@@ -1744,20 +1689,13 @@ impl<'a> NetCfg<'a> {
                         dns_server_watcher_incoming_requests.handle_request_stream(req_stream);
                     }
                     RequestStream::NetworkAttributes(req_stream) => {
-                        networks_request_streams.push(req_stream)
+                        self.netpol_networks_service.add_stream(req_stream);
                     }
                     RequestStream::DelegatedNetworks(req_stream) => {
-                        if let futures::future::Either::Right(_) = delegated_networks_stream {
-                            *delegated_networks_stream = futures::future::Either::Left(req_stream);
-                        } else {
-                            error!(
-                                "Only one instance of fidl.net.policy.socketproxy/NetworkRegistry \
-                                 may be active at a time"
-                            );
-                        }
+                        self.netpol_networks_service.add_stream(req_stream);
                     }
                     RequestStream::NetworkTokenResolver(req_stream) => {
-                        network_token_resolver_request_streams.push(req_stream)
+                        self.netpol_networks_service.add_stream(req_stream);
                     }
                 };
             }

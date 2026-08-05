@@ -9,6 +9,7 @@ use anyhow::Context as _;
 use async_utils::stream::{Tagged, WithTag as _};
 use dns_server_watcher::DnsServers;
 use fidl::endpoints::Responder as _;
+use futures::StreamExt as _;
 use log::{error, info, warn};
 use policy_properties::NetworkTokenExt as _;
 use std::collections::HashMap;
@@ -74,6 +75,12 @@ pub(crate) struct NetworkTokenContents {
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectionId(usize);
+
+impl ConnectionId {
+    fn increment(&mut self) {
+        self.0 += 1;
+    }
+}
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UpdateGeneration {
@@ -587,6 +594,100 @@ pub struct DelegatedNetworkUpdateResult {
     pub dns_servers: Option<Vec<fnet_name::DnsServer_>>,
 }
 
+pub enum NetworkRequestStream {
+    Networks(fnp_properties::NetworksRequestStream),
+    NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
+    DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+}
+
+impl From<fnp_properties::NetworksRequestStream> for NetworkRequestStream {
+    fn from(s: fnp_properties::NetworksRequestStream) -> Self {
+        Self::Networks(s)
+    }
+}
+impl From<fnp_properties::NetworkTokenResolverRequestStream> for NetworkRequestStream {
+    fn from(s: fnp_properties::NetworkTokenResolverRequestStream) -> Self {
+        Self::NetworkTokenResolver(s)
+    }
+}
+impl From<fnp_socketproxy::NetworkRegistryRequestStream> for NetworkRequestStream {
+    fn from(s: fnp_socketproxy::NetworkRegistryRequestStream) -> Self {
+        Self::DelegatedNetworks(s)
+    }
+}
+
+pub struct NetworkAttributesRequest {
+    pub id: ConnectionId,
+    pub request: Result<fnp_properties::NetworksRequest, fidl::Error>,
+}
+
+pub struct NetworkTokenResolverRequest {
+    pub request: Result<fnp_properties::NetworkTokenResolverRequest, fidl::Error>,
+}
+
+pub struct DelegatedNetworksRequest {
+    pub request: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
+}
+
+pub enum NetworkRequest {
+    NetworkAttributes(NetworkAttributesRequest),
+    NetworkTokenResolver(NetworkTokenResolverRequest),
+    DelegatedNetworks(DelegatedNetworksRequest),
+}
+
+enum NetworkRequestStreamInner {
+    Networks(Tagged<ConnectionId, fnp_properties::NetworksRequestStream>),
+    NetworkTokenResolver(fnp_properties::NetworkTokenResolverRequestStream),
+    DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+}
+
+impl futures::Stream for NetworkRequestStreamInner {
+    type Item = NetworkRequest;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        match *self {
+            NetworkRequestStreamInner::Networks(ref mut stream) => {
+                stream.poll_next_unpin(cx).map(|o| {
+                    o.map(|(id, request)| NetworkAttributesRequest { id, request })
+                        .map(NetworkRequest::NetworkAttributes)
+                })
+            }
+            NetworkRequestStreamInner::NetworkTokenResolver(ref mut stream) => {
+                stream.poll_next_unpin(cx).map(|o| {
+                    o.map(|request| NetworkTokenResolverRequest { request })
+                        .map(NetworkRequest::NetworkTokenResolver)
+                })
+            }
+            NetworkRequestStreamInner::DelegatedNetworks(ref mut stream) => {
+                stream.poll_next_unpin(cx).map(|o| {
+                    o.map(|request| DelegatedNetworksRequest { request })
+                        .map(NetworkRequest::DelegatedNetworks)
+                })
+            }
+        }
+    }
+}
+
+impl futures::Stream for NetpolNetworksService {
+    type Item = NetworkRequest;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.streams.poll_next_unpin(cx)
+    }
+}
+
+impl futures::stream::FusedStream for NetpolNetworksService {
+    fn is_terminated(&self) -> bool {
+        self.streams.is_terminated()
+    }
+}
+
 #[derive(Default)]
 pub struct NetpolNetworksService {
     // The current generation
@@ -602,11 +703,49 @@ pub struct NetpolNetworksService {
     // The networks known to the system
     network_registry: RegisteredNetworks,
     telemetry: Option<TelemetrySender>,
+    next_networks_id: ConnectionId,
+    streams: futures::stream::SelectAll<NetworkRequestStreamInner>,
 }
 
 impl NetpolNetworksService {
     pub fn set_telemetry(&mut self, telemetry: TelemetrySender) {
         self.telemetry = Some(telemetry);
+    }
+
+    pub fn add_stream<S: Into<NetworkRequestStream>>(&mut self, s: S) {
+        match s.into() {
+            NetworkRequestStream::Networks(stream) => {
+                self.streams.push(NetworkRequestStreamInner::Networks(
+                    stream.tagged(self.next_networks_id),
+                ));
+                self.next_networks_id.increment();
+            }
+            NetworkRequestStream::NetworkTokenResolver(stream) => {
+                self.streams.push(NetworkRequestStreamInner::NetworkTokenResolver(stream));
+            }
+            NetworkRequestStream::DelegatedNetworks(stream) => {
+                self.streams.push(NetworkRequestStreamInner::DelegatedNetworks(stream));
+            }
+        }
+    }
+
+    pub async fn handle_event(
+        &mut self,
+        event: NetworkRequest,
+    ) -> Result<DelegatedNetworkUpdateResult, anyhow::Error> {
+        match event {
+            NetworkRequest::NetworkAttributes(NetworkAttributesRequest { id, request }) => {
+                self.handle_network_attributes_request(id, request).await?;
+                Ok(DelegatedNetworkUpdateResult { dns_servers: None })
+            }
+            NetworkRequest::NetworkTokenResolver(NetworkTokenResolverRequest { request }) => {
+                self.handle_network_token_resolver_request(request).await?;
+                Ok(DelegatedNetworkUpdateResult { dns_servers: None })
+            }
+            NetworkRequest::DelegatedNetworks(DelegatedNetworksRequest { request }) => {
+                self.handle_delegated_networks_update(request).await
+            }
+        }
     }
 
     /// Returns the consolidated DNS servers from the Network Registry.
