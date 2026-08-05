@@ -68,7 +68,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
 
     let container = get_zbi_container(&handles.zbi_vmo, &root_vmar)?;
     let options = get_options(&container, log)?;
-    let bootfs_vmo = get_bootfs_vmo(&container, &root_vmar)?;
+    let bootfs_vmo = get_bootfs_vmo(&container, &root_vmar, options.bootfs_crc_check, log)?;
 
     let (program_name, target_path) = options.boot.filename();
 

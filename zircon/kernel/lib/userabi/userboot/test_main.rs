@@ -111,7 +111,7 @@ async fn run(log: &mut Log) -> Result<(), Error> {
 
     let container = get_zbi_container(&handles.zbi_vmo, &root_vmar)?;
     let options = get_options(&container, log)?;
-    let bootfs_vmo = get_bootfs_vmo(&container, &root_vmar)?;
+    let bootfs_vmo = get_bootfs_vmo(&container, &root_vmar, false, log)?;
 
     let (userboot_client, userboot_server) = create_endpoints::<fuchsia_boot::Userboot>();
     let (userboot_client, userboot_task) = userboot_client.spawn_full();

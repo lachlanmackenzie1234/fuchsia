@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow};
+use std::fmt::Write as _;
 use std::slice;
-use zbi::zbi_format::ZBI_FLAGS_STORAGE_COMPRESSED;
+use zbi::zbi_format::{ZBI_FLAGS_CRC32, ZBI_FLAGS_STORAGE_COMPRESSED};
 use zbi::{ZbiContainer, ZbiType};
 use zerocopy::IntoBytes as _;
 use zx::{Name, VmarFlags, Vmo};
+use zx_libc::sanitizer::Log;
 
 /// Maps the ZBI VMO into a VMAR and parses the ZBI container.
 pub fn get_zbi_container(
@@ -25,11 +27,30 @@ pub fn get_zbi_container(
 }
 
 /// Extracts the BOOTFS VMO from the ZBI container, decompressing it if needed.
-pub fn get_bootfs_vmo(container: &ZbiContainer<&[u8]>, vmar: &zx::Vmar) -> Result<Vmo, Error> {
+pub fn get_bootfs_vmo(
+    container: &ZbiContainer<&[u8]>,
+    vmar: &zx::Vmar,
+    check_crc: bool,
+    log: &mut Log,
+) -> Result<Vmo, Error> {
     let bootfs_item = container
         .iter()
         .find(|item| item.header.type_ == ZbiType::StorageBootFs as u32)
         .ok_or_else(|| anyhow!("StorageBootFs item not found in ZBI"))?;
+
+    if check_crc && (bootfs_item.header.flags & ZBI_FLAGS_CRC32) != 0 {
+        writeln!(log, "Checking BOOTFS item CRC32 {:#x}...", bootfs_item.header.crc32)?;
+        let mut header_without_crc = *bootfs_item.header;
+        header_without_crc.crc32 = 0;
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(header_without_crc.as_bytes());
+        hasher.update(bootfs_item.payload.as_bytes());
+        if hasher.finalize() == bootfs_item.header.crc32 {
+            writeln!(log, "BOOTFS payload matches item CRC32.")?;
+        } else {
+            writeln!(log, "*** BOOTFS payload DOES NOT MATCH item CRC32! ***")?;
+        }
+    }
 
     let is_compressed = (bootfs_item.header.flags & ZBI_FLAGS_STORAGE_COMPRESSED) != 0;
     let bootfs_vmo = if is_compressed {
