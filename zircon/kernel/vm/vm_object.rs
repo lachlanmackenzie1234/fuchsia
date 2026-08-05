@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::arch_vm_aspace::ArchMmuFlags;
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
@@ -67,6 +68,12 @@ impl VmObject {
         unsafe { bindings::cpp_vm_object_is_resizable(self.as_raw()) }
     }
 
+    /// Returns whether the VMO is contiguous.
+    pub fn is_contiguous(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_is_contiguous(self.as_raw()) }
+    }
+
     /// Resizes the VMO to the given size.
     pub fn resize(&self, size: u64) -> Result<(), Status> {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
@@ -123,6 +130,12 @@ impl VmObject {
         let status =
             unsafe { bindings::cpp_vm_object_hint_range(self.as_raw(), offset, len, hint) };
         Status::ok(status)
+    }
+
+    /// Returns the mapping cache policy of the VMO.
+    pub fn get_mapping_cache_policy(&self) -> ArchMmuFlags {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_get_mapping_cache_policy(self.as_raw()) }
     }
 }
 

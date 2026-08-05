@@ -8,9 +8,37 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PAddr(pub usize);
 
+impl From<PAddr> for u64 {
+    #[inline]
+    fn from(paddr: PAddr) -> u64 {
+        paddr.0 as u64
+    }
+}
+
+impl From<u64> for PAddr {
+    #[inline]
+    fn from(addr: u64) -> PAddr {
+        PAddr(addr as usize)
+    }
+}
+
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VAddr(pub usize);
+
+impl From<VAddr> for u64 {
+    #[inline]
+    fn from(vaddr: VAddr) -> u64 {
+        vaddr.0 as u64
+    }
+}
+
+impl From<u64> for VAddr {
+    #[inline]
+    fn from(addr: u64) -> VAddr {
+        VAddr(addr as usize)
+    }
+}
 
 #[allow(non_camel_case_types)]
 pub type cpu_mask_t = u32;

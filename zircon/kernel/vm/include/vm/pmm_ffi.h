@@ -7,6 +7,16 @@
 #ifndef ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_FFI_H_
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_FFI_H_
 
+#include <zircon/compiler.h>
+#include <zircon/types.h>
+
 #include "vm/pmm.h"
+
+__BEGIN_CDECLS
+
+zx_status_t cpp_pmm_alloc_page(uint32_t flags, void** out_page, zx_paddr_t* out_paddr);
+void cpp_pmm_free_page(void* page);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_FFI_H_

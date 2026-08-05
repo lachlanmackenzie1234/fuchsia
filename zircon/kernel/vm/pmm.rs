@@ -4,8 +4,33 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::kernel::types::PAddr;
+use crate::vm::page::VmPagePtr;
 use pmm_bindings as bindings;
+use zx_status::Status;
 
 // Flags for PMM allocation routines.
 pub const ALLOC_FLAG_ANY: u32 = bindings::PMM_ALLOC_FLAG_ANY;
 pub const ALLOC_FLAG_CAN_WAIT: u32 = bindings::PMM_ALLOC_FLAG_CAN_WAIT;
+
+/// Allocates a single physical page from the PMM.
+pub fn alloc_page(flags: u32) -> Result<(VmPagePtr, PAddr), Status> {
+    let mut page: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut paddr: bindings::zx_paddr_t = 0;
+    // SAFETY: FFI call passing valid stack addresses to store the page pointer and physical address.
+    let status = unsafe { bindings::cpp_pmm_alloc_page(flags, &mut page, &mut paddr) };
+    Status::ok(status)?;
+    // SAFETY: `page` is a valid page pointer returned by the PMM on success.
+    let page_ptr = unsafe { VmPagePtr::from_raw(page) }.ok_or(Status::NO_MEMORY)?;
+    Ok((page_ptr, PAddr(paddr)))
+}
+
+/// Frees a single physical page back to the PMM.
+///
+/// # Safety
+///
+/// Caller must ensure `page` is a valid allocated PMM page that has not already been freed.
+pub unsafe fn free_page(page: VmPagePtr) {
+    // SAFETY: Caller guarantees `page` is a valid allocated PMM page.
+    unsafe { bindings::cpp_pmm_free_page(page.as_raw()) };
+}

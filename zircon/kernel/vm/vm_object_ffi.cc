@@ -28,6 +28,11 @@ FFI_ALWAYS_INLINE bool cpp_vm_object_is_resizable(const VmObject* vmo) {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_contiguous(const VmObject* vmo) {
+  return vmo->is_contiguous();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_resize(VmObject* vmo, uint64_t size) {
   return vmo->Resize(size);
 }
@@ -69,6 +74,10 @@ zx_status_t cpp_vm_object_hint_range(VmObject* vmo, uint64_t offset, uint64_t le
     return ZX_ERR_INVALID_ARGS;
   }
   return vmo->HintRange(offset, len, hint);
+}
+
+uint8_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo) {
+  return vmo->GetMappingCachePolicy();
 }
 
 }  // extern "C"

@@ -6,18 +6,34 @@
 #[cfg(ktest)]
 #[unittest::suite]
 mod vmo_rs {
+    use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_UNCACHED;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pinned_vm_object::PinnedVmObject;
-    use crate::vm::pmm::ALLOC_FLAG_ANY;
+    use crate::vm::pmm::{self, ALLOC_FLAG_ANY};
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_object::{EvictionHint, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
+    use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm_unittests::test_helper::make_committed_pager_vmo;
     use page::SIZE as PAGE_SIZE_USIZE;
-    use unittest::{assert_eq, assert_false, assert_ok, expect_eq, expect_ok, unwrap_ok};
+    use unittest::{
+        assert_eq, assert_false, assert_ok, expect_eq, expect_false, expect_ok, expect_true,
+        unwrap_ok,
+    };
     use zx_status::Status;
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
+
+    /// Creates a vm object.
+    #[test]
+    fn vmo_create_test() {
+        // Creates a vm object.
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        // vmo is not contig
+        expect_false!(vmo.is_contiguous());
+        // vmo is not resizable
+        expect_false!(vmo.is_resizable());
+    }
 
     /// Tests creating a VMO with maximum size and larger than maximum size.
     #[test]
@@ -39,6 +55,49 @@ mod vmo_rs {
         let alloc_size = 15;
         let result = VmObjectPaged::create(ALLOC_FLAG_ANY, 0, alloc_size);
         assert_eq!(Status::result_into_raw(result.map(|_| ())), Status::INVALID_ARGS.into_raw());
+    }
+
+    /// Tests creating a physical VMO and checking its initial properties.
+    #[test]
+    fn vmo_create_physical_test() {
+        // vm page allocation
+        let (vm_page, pa) = unwrap_ok!(pmm::alloc_page(0));
+
+        // vmobject creation
+        let vmo = unwrap_ok!(VmObjectPhysical::create(pa, PAGE_SIZE_USIZE));
+        let cache_policy = vmo.get_mapping_cache_policy();
+        // check initial cache policy
+        expect_eq!(ARCH_MMU_FLAG_UNCACHED, cache_policy);
+        // check contiguous
+        expect_true!(vmo.is_contiguous());
+
+        drop(vmo);
+        // SAFETY: vm_page was allocated via alloc_page above and is no longer referenced by vmo.
+        unsafe { pmm::free_page(vm_page) };
+    }
+
+    /// Tests pinning ranges in a physical VMO.
+    #[test]
+    fn vmo_physical_pin_test() {
+        let (vm_page, pa) = unwrap_ok!(pmm::alloc_page(0));
+
+        let vmo = unwrap_ok!(VmObjectPhysical::create(pa, PAGE_SIZE_USIZE));
+
+        // Validate we can pin the range.
+        expect_ok!(vmo.commit_range_pinned(0, PAGE_SIZE, false));
+
+        // Pinning out side should fail.
+        expect_eq!(
+            Status::result_into_raw(vmo.commit_range_pinned(PAGE_SIZE, PAGE_SIZE, false)),
+            Status::OUT_OF_RANGE.into_raw()
+        );
+
+        // Unpin for physical VMOs does not currently do anything, but still call it to be API correct.
+        vmo.unpin(0, PAGE_SIZE);
+
+        drop(vmo);
+        // SAFETY: vm_page was allocated via alloc_page above and is no longer referenced by vmo.
+        unsafe { pmm::free_page(vm_page) };
     }
 
     /// Tests that decommitting from a contiguous VMO fails when loaning is disabled.
