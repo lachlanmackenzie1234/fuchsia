@@ -34,6 +34,7 @@ source_set("pc") {
     "//zircon/kernel/dev/hw_rng/intel_rng",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/lib/acpi_lite",
+    "//zircon/kernel/lib/acpi_lite/rust/zircon",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/cbuf",

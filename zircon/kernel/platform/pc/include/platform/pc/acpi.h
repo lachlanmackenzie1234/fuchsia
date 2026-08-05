@@ -8,7 +8,38 @@
 #define ZIRCON_KERNEL_PLATFORM_PC_INCLUDE_PLATFORM_PC_ACPI_H_
 
 #include <lib/acpi_lite.h>
+#include <lib/acpi_lite/numa.h>
+#include <lib/acpi_lite/structures.h>
+#include <lib/fit/function.h>
 #include <zircon/types.h>
+
+#include <ktl/byte.h>
+
+// This is defined to allow us to allocate the memory here in C++ for the Rust object.
+struct alignas(8) RustAcpiLite {
+  ktl::byte opaque_[56];
+};
+
+class AcpiLiteParser final : public acpi_lite::AcpiParserInterface {
+ public:
+  AcpiLiteParser() = default;
+  ~AcpiLiteParser() override = default;
+  explicit AcpiLiteParser(const RustAcpiLite& state) : state_(state) {}
+
+  // Get the number of tables.
+  size_t num_tables() const override;
+
+  // Return the i'th table. Return nullptr if the index is out of range.
+  //
+  // If the return value is non-null, it is guaranteed that the returned
+  // pointer |p| points to memory at least |p->length| bytes long.
+  const acpi_lite::AcpiSdtHeader* GetTableAtIndex(size_t index) const override;
+
+  void DumpTables();
+
+ private:
+  RustAcpiLite state_;
+};
 
 // Set up an ACPI for the platform.
 //
@@ -16,7 +47,7 @@
 void PlatformInitAcpi(zx_paddr_t acpi_rsdp);
 
 // Get global acpi_lite instance.
-acpi_lite::AcpiParser& GlobalAcpiLiteParser();
+AcpiLiteParser& GlobalAcpiLiteParser();
 
 // Suspend the platform to the |target_s_state| sleep state.
 //

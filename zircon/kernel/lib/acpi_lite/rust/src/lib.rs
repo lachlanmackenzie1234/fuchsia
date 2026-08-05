@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 #![no_std]
-#![no_builtins]
 
 #[cfg(any(test, fuzz))]
 extern crate std;
