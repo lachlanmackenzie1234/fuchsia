@@ -200,6 +200,13 @@ mod tests {
             assert_eq!(buffer, expected_payload);
             receiver.pop_commit().expect("Failed pop_commit");
 
+            let cmd2_raw = pop_cmd(&mut receiver);
+            let cmd2 =
+                MappingCommand::try_from(cmd2_raw).expect("Failed to convert raw mapping command");
+            match cmd2 {
+                MappingCommand::CloseBlob { key } => assert_eq!(key, 1),
+                _ => panic!("Expected CloseBlob command"),
+            };
             receiver.pop_commit().expect("Failed pop_commit");
         });
 
