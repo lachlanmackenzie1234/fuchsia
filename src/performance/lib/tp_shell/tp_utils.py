@@ -4,10 +4,12 @@
 
 """Trace Processor wrapper utilities for Perfetto trace analysis."""
 
+import hashlib
 import importlib.resources
 import logging
 import os
 import ssl
+import tempfile
 import urllib.request
 import weakref
 from types import TracebackType
@@ -118,6 +120,7 @@ class PerfettoTraceProcessor:
         trace_path: str,
         tp_shell_path: str | None = None,
         debug: bool = False,
+        cache: bool = True,
     ) -> None:
         """Initializes PerfettoTraceProcessor.
 
@@ -125,13 +128,8 @@ class PerfettoTraceProcessor:
             trace_path: Path to the trace file to ingest.
             tp_shell_path: Optional path to the trace_processor_shell binary.
             debug: If True, prints SQL queries.
+            cache: If True and trace_path is a URL, caches trace locally (default: True).
         """
-        if trace_path.startswith("http://") or trace_path.startswith(
-            "https://"
-        ):
-            self.trace_path = trace_path
-        else:
-            self.trace_path = os.path.abspath(trace_path)
         self._tp_shell_context = None
 
         if tp_shell_path is None:
@@ -163,22 +161,33 @@ class PerfettoTraceProcessor:
                 ) from e
 
         self.tp_shell_path = os.path.abspath(tp_shell_path)
-        self.debug = debug
-
-        if not (
-            self.trace_path.startswith("http://")
-            or self.trace_path.startswith("https://")
-        ) and not os.path.exists(self.trace_path):
-            raise FileNotFoundError(f"Trace file not found: {self.trace_path}")
         if not os.path.exists(self.tp_shell_path):
             raise FileNotFoundError(
                 f"Trace processor shell not found: {self.tp_shell_path}"
             )
+        self.debug = debug
+
+        delegate = FuchsiaPlatformDelegate(self.tp_shell_path)
+
+        if trace_path.startswith("http://") or trace_path.startswith(
+            "https://"
+        ):
+            if cache:
+                registry = delegate.default_resolver_registry()
+                self.trace_path = os.path.abspath(
+                    self._resolve_and_cache_url(trace_path, registry)
+                )
+            else:
+                self.trace_path = trace_path
+        else:
+            self.trace_path = os.path.abspath(trace_path)
+            if not os.path.exists(self.trace_path):
+                raise FileNotFoundError(
+                    f"Trace file not found: {self.trace_path}"
+                )
 
         # Override Perfetto's PlatformDelegate to point directly to our prebuilt shell binary
-        perfetto.trace_processor.api.PLATFORM_DELEGATE = (
-            lambda: FuchsiaPlatformDelegate(self.tp_shell_path)
-        )
+        perfetto.trace_processor.api.PLATFORM_DELEGATE = lambda: delegate
 
         # Configure TraceProcessor to use a unique port to avoid conflicts
         config = TraceProcessorConfig(unique_port=True)
@@ -259,3 +268,33 @@ class PerfettoTraceProcessor:
         """Tears down the trace processor shell process."""
         if hasattr(self, "_finalizer") and self._finalizer.alive:
             self._finalizer()
+
+    @staticmethod
+    def _resolve_and_cache_url(url: str, registry: ResolverRegistry) -> str:
+        cache_key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        cache_dir = os.path.join(tempfile.gettempdir(), "perf_analyze_cache")
+        cached_file = os.path.join(cache_dir, f"{cache_key}.fxt")
+
+        if os.path.exists(cached_file) and os.path.getsize(cached_file) > 0:
+            _LOGGER.info("Using cached trace: %s", cached_file)
+            return cached_file
+
+        results = registry.resolve(url)
+        if not results:
+            raise ValueError(f"Could not resolve URL: {url}")
+
+        os.makedirs(cache_dir, exist_ok=True)
+        _LOGGER.info(
+            "Downloading trace URL %s to cache %s...", url, cached_file
+        )
+        temp_file = f"{cached_file}.tmp.{os.getpid()}"
+        try:
+            with open(temp_file, "wb") as out:
+                for chunk in results[0].generator:
+                    out.write(chunk)
+            os.replace(temp_file, cached_file)
+        except Exception:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            raise
+        return cached_file

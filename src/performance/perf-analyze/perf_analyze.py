@@ -40,6 +40,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Enable verbose debug logging",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_false",
+        dest="cache",
+        help="Disable local caching of permalink URL traces",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     # 'query' subcommand
@@ -83,6 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 trace_path=args.trace,
                 sql=args.sql,
                 batch=args.batch,
+                cache=args.cache,
             )
             # Format and print results
             print(formatter.format_results(results))

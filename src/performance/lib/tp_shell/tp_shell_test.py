@@ -3,11 +3,12 @@
 # found in the LICENSE file.
 
 import importlib.resources
+import os
 import time
 import unittest
 import unittest.mock
 
-from tp_shell import PerfettoTraceProcessor
+from tp_shell import FuchsiaPlatformDelegate, PerfettoTraceProcessor
 
 
 class TpShellTest(unittest.TestCase):
@@ -123,6 +124,44 @@ class TpShellTest(unittest.TestCase):
             context=unittest.mock.ANY,
             timeout=120,
         )
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    @unittest.mock.patch("tp_shell.tp_utils.resolve_trace_url")
+    def test_trace_caching_and_reuse(
+        self,
+        mock_resolve_trace_url: unittest.mock.MagicMock,
+        mock_urlopen: unittest.mock.MagicMock,
+    ) -> None:
+        """Tests downloading, caching, and cache-hit reuse of trace URLs."""
+        mock_resolve_trace_url.return_value = (
+            "http://example.com/resolved_permalink.fxt"
+        )
+        mock_response = unittest.mock.MagicMock()
+        mock_response.__enter__.return_value = mock_response
+        mock_response.read.side_effect = [b"test_trace_data", b""]
+        mock_urlopen.return_value = mock_response
+
+        url = "https://ui.perfetto.dev/#!/?s=cache_test_permalink_123"
+        registry = FuchsiaPlatformDelegate("").default_resolver_registry()
+        cached_path = PerfettoTraceProcessor._resolve_and_cache_url(
+            url, registry
+        )
+
+        try:
+            self.assertTrue(os.path.exists(cached_path))
+            with open(cached_path, "rb") as f:
+                self.assertEqual(f.read(), b"test_trace_data")
+            self.assertEqual(mock_urlopen.call_count, 1)
+
+            # Second call should hit the cache and not invoke urlopen again
+            cached_path_2 = PerfettoTraceProcessor._resolve_and_cache_url(
+                url, registry
+            )
+            self.assertEqual(cached_path, cached_path_2)
+            self.assertEqual(mock_urlopen.call_count, 1)
+        finally:
+            if os.path.exists(cached_path):
+                os.remove(cached_path)
 
 
 if __name__ == "__main__":

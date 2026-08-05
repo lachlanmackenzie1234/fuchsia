@@ -15,13 +15,27 @@ class TpShell:
     """Runs raw SQL queries via Perfetto TraceProcessor."""
 
     def query(
-        self, trace_path: str, sql: str | None = None, batch: str | None = None
+        self,
+        trace_path: str,
+        sql: str | None = None,
+        batch: str | None = None,
+        cache: bool = True,
     ) -> list[dict[str, Any]]:
-        """Executes the query specified by args on the given trace."""
+        """Executes the query specified by args on the given trace.
+
+        Args:
+            trace_path: Path to the trace file to ingest.
+            sql: Optional raw SQL query string to execute.
+            batch: Optional JSON string or @filepath of batch queries to execute.
+            cache: If True, caches trace locally when downloading (default: True).
+
+        Returns:
+            A list of dictionary results representing the query output.
+        """
         if not sql and not batch:
             raise ValueError("Either sql or batch must be provided")
 
-        with PerfettoTraceProcessor(trace_path) as tp:
+        with PerfettoTraceProcessor(trace_path, cache=cache) as tp:
             if sql:
                 return tp.run_query(sql)
             elif batch:
