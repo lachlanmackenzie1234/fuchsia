@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -23,11 +24,8 @@ type MasterConfig struct {
 	FuchsiaDir string
 
 	// --- LEGACY FIELDS FOR INCREMENTAL MIGRATION ---
-	SkipPaths           []string
-	SkipAnywhere        []string
 	TargetExtensions    map[string]bool
 	CopyrightExtensions map[string]bool
-	BarrierPaths        []string
 	OutOfTreeReadmes    map[string]string
 	PatternsDir         string
 	PolicyExceptions    map[string]map[string]validate.RuleMetadata
@@ -93,6 +91,33 @@ func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
 			if strings.HasPrefix(name, "fuchsia_internal/") || strings.HasPrefix(name, "vendor/") {
 				return true
 			}
+		}
+	}
+
+	return false
+}
+
+// IsSkipped checks if the given absolute path matches any skip rules in the configuration.
+func (c *MasterConfig) IsSkipped(absPath string) bool {
+	if c == nil {
+		return false
+	}
+
+	relPath, err := filepath.Rel(c.FuchsiaDir, absPath)
+	if err != nil {
+		return c.Discover.SkipAnywhere[filepath.Base(absPath)]
+	}
+
+	slashRel := filepath.ToSlash(relPath)
+	for _, part := range strings.Split(slashRel, "/") {
+		if c.Discover.SkipAnywhere[part] {
+			return true
+		}
+	}
+
+	for p := slashRel; p != "." && p != "" && p != "/"; p = path.Dir(p) {
+		if c.Discover.SkipPaths[p] {
+			return true
 		}
 	}
 
@@ -206,8 +231,9 @@ func NewMasterConfig(fuchsiaDir string) *MasterConfig {
 	c := &MasterConfig{
 		FuchsiaDir: fuchsiaDir,
 		Discover: discover.Config{
-			SkipPaths:    make([]string, 0),
-			SkipAnywhere: make([]string, 0),
+			SkipPaths:    make(map[string]bool),
+			SkipAnywhere: make(map[string]bool),
+			BarrierPaths: make(map[string]bool),
 		},
 
 		Classify: classify.Config{

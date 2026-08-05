@@ -21,7 +21,7 @@ func TestGrouper_Run(t *testing.T) {
 
 	grouper := NewGrouper(
 		fuchsiaDir,
-		[]string{"third_party", filepath.Join("prebuilt", "foo")},
+		map[string]bool{"third_party": true, filepath.Join("prebuilt", "foo"): true},
 		map[string]string{
 			filepath.Join("prebuilt", "virtual"): "/fake/path/to/README.fuchsia",
 		},

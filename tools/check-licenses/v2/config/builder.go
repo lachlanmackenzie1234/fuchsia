@@ -38,12 +38,38 @@ func (b *Builder) Assemble() error {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to load manifests: %v\n", err)
 	}
 
-	seedFile := filepath.Join(b.Config.FuchsiaDir, "tools", "check-licenses", "v2", "config.json")
-	if _, err := os.Stat(seedFile); os.IsNotExist(err) {
-		// Fallback for tests or environments where the seed file doesn't exist
+	rootConfig := filepath.Join(b.Config.FuchsiaDir, "tools", "check-licenses", "v2", "config.json")
+	if _, err := os.Stat(rootConfig); os.IsNotExist(err) {
+		// If the root config file is not present, return cleanly.
+		b.Config.Validate.OutOfTreeReadmes = b.Config.Discover.OutOfTreeReadmes
 		return nil
 	}
-	return b.parseConfigFile(seedFile)
+	err := b.parseConfigFile(rootConfig)
+	filepath.WalkDir(b.Config.FuchsiaDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if b.Config.IsSkipped(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == "README.fuchsia" {
+			rel, relErr := filepath.Rel(b.Config.FuchsiaDir, filepath.Dir(path))
+			if relErr == nil {
+				if b.Config.Discover.OutOfTreeReadmes == nil {
+					b.Config.Discover.OutOfTreeReadmes = make(map[string]string)
+				}
+				if _, exists := b.Config.Discover.OutOfTreeReadmes[rel]; !exists {
+					b.Config.Discover.OutOfTreeReadmes[rel] = path
+				}
+			}
+		}
+		return nil
+	})
+	b.Config.Validate.OutOfTreeReadmes = b.Config.Discover.OutOfTreeReadmes
+	return err
 }
 
 func (b *Builder) walkDir(baseDir string) error {
@@ -133,12 +159,12 @@ func (b *Builder) parseConfigFile(path string) error {
 		if skip.Bug == "" && filepath.Base(path) != "default.json" && filepath.Base(path) != "hidden_dirs.json" && filepath.Base(path) != "test_dirs.json" && filepath.Base(path) != "bazel_vendor.json" {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
-		if skip.SkipAnywhere {
-			b.Config.SkipAnywhere = append(b.Config.SkipAnywhere, skip.Paths...)
-			b.Config.Discover.SkipAnywhere = append(b.Config.Discover.SkipAnywhere, skip.Paths...)
-		} else {
-			b.Config.SkipPaths = append(b.Config.SkipPaths, skip.Paths...)
-			b.Config.Discover.SkipPaths = append(b.Config.Discover.SkipPaths, skip.Paths...)
+		for _, p := range skip.Paths {
+			if skip.SkipAnywhere {
+				b.Config.Discover.SkipAnywhere[p] = true
+			} else {
+				b.Config.Discover.SkipPaths[p] = true
+			}
 		}
 	}
 
@@ -170,8 +196,9 @@ func (b *Builder) parseConfigFile(path string) error {
 		if barrier.Bug == "" && isBugRequired(path) {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
-		b.Config.BarrierPaths = append(b.Config.BarrierPaths, barrier.Paths...)
-		b.Config.Discover.BarrierPaths = append(b.Config.Discover.BarrierPaths, barrier.Paths...)
+		for _, p := range barrier.Paths {
+			b.Config.Discover.BarrierPaths[p] = true
+		}
 	}
 
 	// 4. Process PolicyExceptions

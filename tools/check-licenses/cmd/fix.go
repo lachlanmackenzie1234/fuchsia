@@ -75,8 +75,8 @@ func (c *FixCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 	config := builder.Config
 
 	// 2. Instantiate Stages
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
-	grouper := v2boundary.NewGrouper(fuchsiaDir, config.BarrierPaths, config.OutOfTreeReadmes, false)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
+	grouper := v2boundary.NewGrouper(fuchsiaDir, config.Discover.BarrierPaths, config.OutOfTreeReadmes, false)
 	pruner := v2prune.NewPruner(nil) // No build graph pruning during fix
 
 	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")

@@ -19,13 +19,13 @@ import (
 // and emits grouped Project structs.
 type Grouper struct {
 	FuchsiaDir        string
-	BarrierPaths      []string
+	BarrierPaths      map[string]bool
 	OutOfTreeReadmes  map[string]string
 	FilesInReadmeOnly bool
 }
 
 // NewGrouper creates a new stateless boundary grouper.
-func NewGrouper(fuchsiaDir string, barrierPaths []string, outOfTreeReadmes map[string]string, filesInReadmeOnly bool) *Grouper {
+func NewGrouper(fuchsiaDir string, barrierPaths map[string]bool, outOfTreeReadmes map[string]string, filesInReadmeOnly bool) *Grouper {
 	return &Grouper{
 		FuchsiaDir:        fuchsiaDir,
 		BarrierPaths:      barrierPaths,
@@ -224,8 +224,13 @@ func (g *Grouper) isBarrier(absDir string) bool {
 		return false
 	}
 
-	for _, barrier := range g.BarrierPaths {
-		if relPath == barrier || strings.HasSuffix(relPath, string(filepath.Separator)+barrier) {
+	slashRel := filepath.ToSlash(relPath)
+	if g.BarrierPaths[slashRel] || g.BarrierPaths[filepath.Base(slashRel)] {
+		return true
+	}
+
+	for barrier := range g.BarrierPaths {
+		if strings.HasSuffix(slashRel, "/"+barrier) {
 			return true
 		}
 	}

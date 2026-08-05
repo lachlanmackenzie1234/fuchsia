@@ -86,13 +86,13 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 		updatedReadmes = append(updatedReadmes, &clone)
 	}
 
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
 	rawPaths, err := discoverer.Run(ctx, []string{absDir})
 	if err != nil {
 		return nil, nil, "", nil, nil, nil, fmt.Errorf("failed to crawl directory: %w", err)
 	}
 
-	grouper := v2boundary.NewGrouper(fuchsiaDir, config.BarrierPaths, config.OutOfTreeReadmes, false)
+	grouper := v2boundary.NewGrouper(fuchsiaDir, config.Discover.BarrierPaths, config.OutOfTreeReadmes, false)
 	projectsChan, err := grouper.Run(ctx, rawPaths)
 	if err != nil {
 		return nil, nil, "", nil, nil, nil, fmt.Errorf("failed to group projects: %w", err)

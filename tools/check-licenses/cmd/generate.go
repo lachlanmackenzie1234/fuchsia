@@ -74,10 +74,10 @@ func (p *GenerateCommand) executeV2Pipeline(target string) error {
 	}
 
 	// 3. Instantiate Stages
-	discoverer := v2discover.NewCrawler(p.fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(p.fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
 
 	// Pass true for filesInReadmeOnly to match current behavior!
-	grouper := v2boundary.NewGrouper(p.fuchsiaDir, config.BarrierPaths, config.OutOfTreeReadmes, true)
+	grouper := v2boundary.NewGrouper(p.fuchsiaDir, config.Discover.BarrierPaths, config.OutOfTreeReadmes, true)
 
 	pruner := v2prune.NewPruner(validFiles)
 

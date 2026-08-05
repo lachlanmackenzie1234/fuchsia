@@ -151,7 +151,8 @@
         },
         {
             "paths": [
-                "tools/check-licenses/assets"
+                "tools/check-licenses/assets",
+                "vendor/google/tools/check-licenses/assets"
             ],
             "description": "Skip assets directory."
         },
@@ -236,7 +237,8 @@
                 "tools/check-licenses/result/templates",
                 "tools/check-licenses/golden",
                 "tools/check-licenses/license/patterns",
-                "tools/check-licenses/assets"
+                "tools/check-licenses/assets",
+                "vendor/google/tools/check-licenses/assets"
             ],
             "description": "Don't check the check-licenses test directories for licenses."
         },

@@ -80,11 +80,11 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	log.Printf("Assembled configuration in %v", time.Since(startTime))
 
 	// 2. Instantiate Stages
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
 
 	grouper := v2boundary.NewGrouper(
 		fuchsiaDir,
-		config.BarrierPaths,
+		config.Discover.BarrierPaths,
 		config.OutOfTreeReadmes,
 		p.filesInReadmeOnly,
 	)

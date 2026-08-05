@@ -37,6 +37,11 @@ func TestBuilder_Assemble(t *testing.T) {
 				Bug:   "https://fxbug.dev/12345",
 				Paths: []string{"out", "prebuilt"},
 			},
+			{
+				Bug:          "https://fxbug.dev/12345",
+				Paths:        []string{".git"},
+				SkipAnywhere: true,
+			},
 		},
 	})
 	os.WriteFile(filepath.Join(osConfigs, "skips", "test_skip.json"), osSkipBytes, 0644)
@@ -96,9 +101,9 @@ func TestBuilder_Assemble(t *testing.T) {
 	config := builder.Config
 
 	// 4. Verify results
-	expectedSkips := []string{"out", "prebuilt"}
-	if !reflect.DeepEqual(config.SkipPaths, expectedSkips) {
-		t.Errorf("Expected skips %v, got %v", expectedSkips, config.SkipPaths)
+	expectedSkips := map[string]bool{"out": true, "prebuilt": true}
+	if !reflect.DeepEqual(config.Discover.SkipPaths, expectedSkips) {
+		t.Errorf("Expected skips %v, got %v", expectedSkips, config.Discover.SkipPaths)
 	}
 
 	expectedExts := map[string]bool{".cc": true, ".rs": true}
@@ -125,6 +130,25 @@ func TestBuilder_Assemble(t *testing.T) {
 
 	if _, ok := config.PolicyExceptions["AllProjectsMustHaveALicense"]["vendor/google/secret_project"]; !ok {
 		t.Errorf("Expected vendor project to be in the policy exceptions list")
+	}
+
+	if !config.IsSkipped(filepath.Join(fuchsiaDir, "out")) {
+		t.Errorf("Expected out directory to be skipped")
+	}
+	if !config.IsSkipped(filepath.Join(fuchsiaDir, "prebuilt")) {
+		t.Errorf("Expected prebuilt directory to be skipped")
+	}
+	if !config.IsSkipped(filepath.Join(fuchsiaDir, ".git")) {
+		t.Errorf("Expected .git directory to be skipped")
+	}
+	if !config.IsSkipped(filepath.Join(fuchsiaDir, ".git", "config")) {
+		t.Errorf("Expected nested file inside .git directory to be skipped")
+	}
+	if !config.Discover.SkipAnywhere[".git"] {
+		t.Errorf("Expected .git to be in Discover.SkipAnywhere")
+	}
+	if config.IsSkipped(filepath.Join(fuchsiaDir, "src")) {
+		t.Errorf("Expected src directory not to be skipped")
 	}
 }
 

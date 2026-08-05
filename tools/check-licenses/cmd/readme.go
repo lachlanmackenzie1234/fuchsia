@@ -252,7 +252,7 @@ func (c *ReadmeListCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...i
 		}
 	}
 
-	discoverer := v2discover.NewCrawler(fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.Discover.SkipPaths, config.Discover.SkipAnywhere)
 	rawPaths, err := discoverer.Run(ctx, []string{fuchsiaDir})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to crawl repository: %v\n", err)

@@ -8,6 +8,7 @@ import (
 	"context"
 	"io/fs"
 	"log"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -16,15 +17,15 @@ import (
 )
 
 // Crawler implements pipeline.Discoverer using standard Go filesystem traversal.
-// It filters paths based on FuchsiaDir, SkipPaths, and SkipAnywhere arrays.
+// It filters paths based on FuchsiaDir, SkipPaths, and SkipAnywhere maps.
 type Crawler struct {
 	FuchsiaDir   string
-	SkipPaths    []string
-	SkipAnywhere []string
+	SkipPaths    map[string]bool
+	SkipAnywhere map[string]bool
 }
 
 // NewCrawler creates a new stateless crawler.
-func NewCrawler(fuchsiaDir string, skipPaths []string, skipAnywhere []string) *Crawler {
+func NewCrawler(fuchsiaDir string, skipPaths map[string]bool, skipAnywhere map[string]bool) *Crawler {
 	absFuchsiaDir, err := filepath.Abs(fuchsiaDir)
 	if err == nil {
 		fuchsiaDir = absFuchsiaDir
@@ -39,23 +40,20 @@ func NewCrawler(fuchsiaDir string, skipPaths []string, skipAnywhere []string) *C
 
 // isSkipped checks if the given absolute path matches any skip rules.
 func (c *Crawler) isSkipped(absPath string) bool {
-	// Skip Anywhere (e.g. .git)
-	base := filepath.Base(absPath)
-	for _, skip := range c.SkipAnywhere {
-		if base == skip {
+	relPath, err := filepath.Rel(c.FuchsiaDir, absPath)
+	if err != nil {
+		return c.SkipAnywhere[filepath.Base(absPath)]
+	}
+
+	slashRel := filepath.ToSlash(relPath)
+	for _, part := range strings.Split(slashRel, "/") {
+		if c.SkipAnywhere[part] {
 			return true
 		}
 	}
 
-	// Skip Paths (e.g. out, prebuilt) - These are evaluated relative to FuchsiaDir
-	relPath, err := filepath.Rel(c.FuchsiaDir, absPath)
-	if err != nil {
-		return false
-	}
-
-	// We want to skip if relPath is exactly the skip rule, OR if it starts with the skip rule + "/"
-	for _, skip := range c.SkipPaths {
-		if relPath == skip || strings.HasPrefix(relPath, skip+string(filepath.Separator)) {
+	for p := slashRel; p != "." && p != "" && p != "/"; p = path.Dir(p) {
+		if c.SkipPaths[p] {
 			return true
 		}
 	}

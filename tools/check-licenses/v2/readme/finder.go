@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 )
@@ -34,28 +33,11 @@ func DiscoverProjects(rootDir, fuchsiaDir string, config *v2config.MasterConfig)
 			return nil // Continue on error
 		}
 
-		// Skip Anywhere (e.g. .git, .cipd)
-		base := filepath.Base(path)
-		for _, skip := range config.SkipAnywhere {
-			if base == skip {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
+		if config.IsSkipped(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
 			}
-		}
-
-		// Skip Paths (e.g. out, prebuilt)
-		relPath, err := filepath.Rel(fuchsiaDir, path)
-		if err == nil {
-			for _, skip := range config.SkipPaths {
-				if relPath == skip || strings.HasPrefix(relPath, skip+string(filepath.Separator)) {
-					if d.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-			}
+			return nil
 		}
 
 		if d.IsDir() {

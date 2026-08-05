@@ -7,10 +7,10 @@ package discover
 // Config holds the configuration for the discover stage.
 type Config struct {
 	// SkipPaths are exact repository paths (relative to fuchsia dir) to ignore.
-	SkipPaths []string
+	SkipPaths map[string]bool
 
 	// SkipAnywhere are basename patterns to ignore anywhere (e.g., ".git").
-	SkipAnywhere     []string
-	BarrierPaths     []string
+	SkipAnywhere     map[string]bool
+	BarrierPaths     map[string]bool
 	OutOfTreeReadmes map[string]string
 }
