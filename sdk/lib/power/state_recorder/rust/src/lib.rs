@@ -728,18 +728,18 @@ impl<T: Copy + FromStr + Display> PersistenceHandler<T> {
 
         // Move content by reading then writing it for moves from /data to /tmp.
         let Ok(content) = std::fs::read_to_string(curr_path).map_err(|e| {
-            log::info!("Could not read current history, not moving: {}", e);
+            log::info!("Could not read current history from {}, not moving: {}", curr_path, e);
         }) else {
             return;
         };
 
         if let Err(e) = std::fs::write(prev_path, &content) {
-            log::warn!("Could not write previous boot history: {}", e);
+            log::warn!("Could not write previous boot history to {}: {}", prev_path, e);
             return;
         }
 
         if let Err(e) = std::fs::File::create(curr_path) {
-            log::warn!("Could not clear current boot history: {}", e);
+            log::warn!("Could not clear current boot history at {}: {}", curr_path, e);
         }
     }
 
