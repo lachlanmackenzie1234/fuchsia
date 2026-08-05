@@ -249,6 +249,85 @@
         "name": "fuchsia.ui.brightness/Control_GetMaxAbsoluteBrightness_Response"
     },
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.brightness/Reader.GetMaxAbsoluteBrightness",
+        "strictness": "flexible",
+        "ordinal": "2812217967645647908",
+        "direction": "two_way",
+        "response": "fuchsia.ui.brightness/Reader_GetMaxAbsoluteBrightness_Response",
+        "error": "int32"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.brightness/Reader.WatchAutoBrightness",
+        "strictness": "flexible",
+        "ordinal": "2540221187364562942",
+        "direction": "two_way",
+        "response": "fuchsia.ui.brightness/Reader_WatchAutoBrightness_Response"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.brightness/Reader.WatchAutoBrightnessAdjustment",
+        "strictness": "flexible",
+        "ordinal": "7170914891186573121",
+        "direction": "two_way",
+        "response": "fuchsia.ui.brightness/Reader_WatchAutoBrightnessAdjustment_Response"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.brightness/Reader.WatchCurrentBrightness",
+        "strictness": "flexible",
+        "ordinal": "2745304331843584344",
+        "direction": "two_way",
+        "response": "fuchsia.ui.brightness/Reader_WatchCurrentBrightness_Response"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.ui.brightness/Reader",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.brightness/Reader_GetMaxAbsoluteBrightness_Response.max_brightness",
+        "ordinal": "1",
+        "type": "float64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.brightness/Reader_GetMaxAbsoluteBrightness_Response"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.brightness/Reader_WatchAutoBrightnessAdjustment_Response.adjustment",
+        "ordinal": "1",
+        "type": "float32"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.brightness/Reader_WatchAutoBrightnessAdjustment_Response"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.brightness/Reader_WatchAutoBrightness_Response.enabled",
+        "ordinal": "1",
+        "type": "bool"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.brightness/Reader_WatchAutoBrightness_Response"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.brightness/Reader_WatchCurrentBrightness_Response.value",
+        "ordinal": "1",
+        "type": "float32"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.brightness/Reader_WatchCurrentBrightness_Response"
+    },
+    {
         "kind": "alias",
         "name": "fuchsia.ui.brightness/brightness",
         "type": "float32"
