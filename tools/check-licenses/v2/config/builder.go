@@ -182,7 +182,19 @@ func (b *Builder) parseConfigFile(path string) error {
 	}
 
 	// 5. Process AllowedLicenses
+	if b.Config.LicenseCategories == nil {
+		b.Config.LicenseCategories = make(map[string]string)
+	}
 	for licenseName, entries := range f.AllowedLicenses {
+		if _, known := b.Config.LicenseCategories[licenseName]; !known {
+			slashPath := filepath.ToSlash(path)
+			if idx := strings.Index(slashPath, "/allowed_licenses/"); idx != -1 {
+				subParts := strings.Split(slashPath[idx+len("/allowed_licenses/"):], "/")
+				if len(subParts) >= 2 {
+					b.Config.LicenseCategories[licenseName] = subParts[0]
+				}
+			}
+		}
 		if err := b.addRuleException(b.Config.AllowedLicenses, b.Config.Validate.AllowedLicenses, licenseName, entries, path); err != nil {
 			return err
 		}

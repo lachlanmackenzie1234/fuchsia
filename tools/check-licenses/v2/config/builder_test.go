@@ -58,6 +58,11 @@ func TestBuilder_Assemble(t *testing.T) {
 	})
 	os.WriteFile(filepath.Join(osConfigs, "copyright_extensions", "test_copy_ext.json"), osCopyExtBytes, 0644)
 
+	if err := os.MkdirAll(filepath.Join(osConfigs, "allowed_licenses", "Restricted", "GPL-2.0"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(osConfigs, "allowed_licenses", "Restricted", "GPL-2.0", "foo.json"), []byte(`{"allowed_licenses": {"GPL-2.0": []}}`), 0644)
+
 	if err := os.MkdirAll(filepath.Join(osAssets, "readmes", "third_party", "foo", "src"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +114,13 @@ func TestBuilder_Assemble(t *testing.T) {
 	logicalPath := filepath.Join("third_party", "foo")
 	if config.OutOfTreeReadmes[logicalPath] != readmePath {
 		t.Errorf("Expected OutOfTreeReadmes[%q] = %q, got %q", logicalPath, readmePath, config.OutOfTreeReadmes[logicalPath])
+	}
+
+	if cat := config.CategoryForLicense("GPL-2.0"); cat != "Restricted" {
+		t.Errorf("Expected CategoryForLicense('GPL-2.0') = 'Restricted', got %q", cat)
+	}
+	if cat := config.CategoryForLicense("Nonexistent"); cat != "Uncategorized" {
+		t.Errorf("Expected CategoryForLicense('Nonexistent') = 'Uncategorized', got %q", cat)
 	}
 
 	if _, ok := config.PolicyExceptions["AllProjectsMustHaveALicense"]["vendor/google/secret_project"]; !ok {
