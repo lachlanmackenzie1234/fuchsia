@@ -74,8 +74,12 @@ def collect_directory_files(src_root: str | Path) -> T.List[str]:
     """
     src_root = os.path.normpath(src_root)
     result = []
-    for rootpath, _dirs, dir_files in os.walk(src_root):
+    for rootpath, dirs, dir_files in os.walk(src_root):
+        if ".cipd" in dirs:
+            dirs.remove(".cipd")
         for file in dir_files:
+            if file == ".jiri_cache_hash":
+                continue
             src_path = os.path.join(rootpath, file)
             result.append(os.path.relpath(src_path, src_root))
     return result

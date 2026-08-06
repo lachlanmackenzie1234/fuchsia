@@ -103,6 +103,11 @@
       "type": "companion_host_tool"
     },
     {
+      "meta": "tools/x64/fake_tool.json",
+      "stable": true,
+      "type": "companion_host_tool"
+    },
+    {
       "meta": "tools/x64/ffx_tools/ffx-emu-meta.json",
       "stable": true,
       "type": "ffx_tool"

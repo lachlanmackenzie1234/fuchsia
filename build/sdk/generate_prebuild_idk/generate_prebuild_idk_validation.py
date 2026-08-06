@@ -7,7 +7,6 @@
 
 import argparse
 import difflib
-import filecmp
 import os
 import subprocess
 import sys
@@ -77,7 +76,11 @@ def compare_directories(
                 different_files.add(file)
             continue
 
-        if not filecmp.cmp(left, right, shallow=False):
+        # Strip any trailing newline characters because below when doing
+        # unified_diff we do splitlines() which also strips trailing newlines.
+        left_text = left.read_text().rstrip("\r\n")
+        right_text = right.read_text().rstrip("\r\n")
+        if left_text != right_text:
             different_files.add(file)
             continue
 

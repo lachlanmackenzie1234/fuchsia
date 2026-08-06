@@ -755,6 +755,23 @@
     }
   },
   {
+    "atom_files": [
+
+    ],
+    "atom_id": "sdk://tools/x64/fake_tool",
+    "atom_label": "//tools/non_existent:fake_tool",
+    "meta_dest": "tools/x64/fake_tool.json",
+    "is_stable": true,
+    "atom_type": "companion_host_tool",
+    "category": "partner",
+    "prebuild_info": {
+      "binary": "../../prebuilt/fake_tool/x64/fake_tool",
+      "dest_root": "tools/x64/fake_tool",
+      "name": "fake_tool",
+      "src_root": "../../prebuilt/fake_tool/x64"
+    }
+  },
+  {
     "api_area": "Driver SDK",
     "atom_files": [
       {
