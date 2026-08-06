@@ -77,6 +77,7 @@ template("fxfs_platform_library") {
       "//src/lib/fuchsia-sync",
       "//src/performance/memory/attribution/refaults_vmo",
       "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+      "//src/storage/fidl/fuchsia.storage.mapping:fuchsia.storage.mapping_rust",
       "//src/storage/fxfs:fxfs_macros",
       "//src/storage/fxfs:lib",
       "//src/storage/fxfs/crypto",

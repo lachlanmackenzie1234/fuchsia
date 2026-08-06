@@ -9,6 +9,7 @@ use crate::fuchsia::component::map_to_raw_status;
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::dirent_cache::DirentCacheKey;
 use crate::fuchsia::fxblob::blob::FxBlob;
+use crate::fuchsia::fxblob::mapping_server::BlobMappingServer;
 use crate::fuchsia::fxblob::writer::DeliveryBlobWriter;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::volume::{FxVolume, RootDir};
@@ -19,6 +20,7 @@ use fidl_fuchsia_fxfs::{
     BlobReaderRequest, BlobReaderRequestStream, BlobWriterMarker, CreateBlobError,
 };
 use fidl_fuchsia_io::{self as fio, FilesystemInfo, NodeMarker, WatchMask};
+use fidl_fuchsia_storage_mapping::MappingProviderMarker;
 use fuchsia_hash::Hash;
 use futures::TryStreamExt;
 use fxfs::errors::FxfsError;
@@ -93,6 +95,14 @@ impl RootDir for BlobDirectory {
         svc_dir.add_entry(
             BlobCreatorMarker::PROTOCOL_NAME,
             vfs::service::host(move |r| this.clone().handle_blob_creator_requests(r)),
+        )?;
+
+        let mapping_server = Arc::new(
+            BlobMappingServer::new(self.clone()).expect("Failed to create BlobMappingServer"),
+        );
+        svc_dir.add_entry(
+            MappingProviderMarker::PROTOCOL_NAME,
+            vfs::service::host(move |r| mapping_server.clone().handle_mapping_provider_requests(r)),
         )?;
 
         svc_dir.add_entry(
