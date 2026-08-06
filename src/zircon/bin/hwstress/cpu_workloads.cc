@@ -8,6 +8,7 @@
 #include <zircon/compiler.h>
 
 #include <cfloat>
+#include <cmath>
 #include <random>
 #include <vector>
 
@@ -110,8 +111,8 @@ class SinCosWorkload final : public Workload {
       // the input from the compiler to prevent it pre-calculating
       // anything.
       double input = HideFromCompiler(i);
-      double a = sin(input);
-      double b = cos(input);
+      double a = std::sin(input);
+      double b = std::cos(input);
       result += a * a + b * b;
     }
 
