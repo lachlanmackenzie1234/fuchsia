@@ -110,6 +110,8 @@ struct io_apic_isa_override {
 #define IO_APIC_IRQ_UNMASK  false
 // clang-format on
 
+extern "C" {
+
 void apic_io_init(struct io_apic_descriptor* io_apics_descs, size_t num_io_apics,
                   struct io_apic_isa_override* overrides, size_t num_overrides);
 bool apic_io_is_valid_irq(uint32_t global_irq);
@@ -147,5 +149,6 @@ void apic_io_debug();
 
 // Accessor for the internal flag indicating whether or not we have enabled the X2APIC.
 bool is_x2apic_enabled();
+}
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_APIC_H_
