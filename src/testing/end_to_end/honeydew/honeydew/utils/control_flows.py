@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import TypeVar
 
+from honeydew import errors
 from honeydew.utils.deadline import Deadline
 from mobly import signals
 
@@ -75,6 +76,7 @@ async def retry_until_deadline(
             signals.TestError,
             signals.TestFailure,
             signals.TestAbortSignal,
+            errors.FatalDeviceError,
         ):
             raise
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -127,6 +129,7 @@ async def retry(
             signals.TestError,
             signals.TestFailure,
             signals.TestAbortSignal,
+            errors.FatalDeviceError,
         ):
             raise
         except Exception as e:  # pylint: disable=broad-exception-caught

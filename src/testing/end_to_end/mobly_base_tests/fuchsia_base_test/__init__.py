@@ -305,11 +305,26 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         """on_fail is called once when a test case fails.
 
         It does the following things:
+            * Aborts all remaining tests if the failure was caused by a
+              FatalDeviceError.
             * Takes snapshot of all the fuchsia devices and stores it under
               test case directory if `snapshot_on` test param is set to
               "on_fail"
         """
         self._any_test_failed = True
+
+        if record.termination_signal is not None and isinstance(
+            record.termination_signal.exception, errors.FatalDeviceError
+        ):
+            _LOGGER.error(
+                "Aborting all remaining tests due to fatal device error: %s",
+                record.termination_signal.exception,
+            )
+            raise signals.TestAbortAll(
+                "Aborting all remaining tests due to fatal device error: "
+                f"{record.termination_signal.exception}"
+            )
+
         if self.snapshot_on == SnapshotOn.TEARDOWN_TEST_ON_FAIL:
             await self._collect_snapshot(directory=self.test_case_path)
 
@@ -446,21 +461,19 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             await fx_device.power_cycle(power_switch=switch, outlet=outlet)
         except power_switch_using_dmc.PowerSwitchDmcError as err:
             _LOGGER.warning(
-                "Unable to power cycle %s as test does not have access to DMC. "
-                "Aborting the test class...",
+                "Unable to power cycle %s as test does not have access to DMC.",
                 fx_device.device_name,
             )
-            raise signals.TestAbortClass(
+            raise errors.FatalDeviceError(
                 f"{fx_device.device_name} is unhealthy and unable to recover it"
             ) from err
         except power_switch.PowerSwitchError as err:
             _LOGGER.warning(
-                "Power cycling %s failed with error '%s'. "
-                "Aborting the test class...",
+                "Power cycling %s failed with error '%s'.",
                 fx_device.device_name,
                 err,
             )
-            raise signals.TestAbortClass(
+            raise errors.FatalDeviceError(
                 f"{fx_device.device_name} is unhealthy and failed to recover it"
             ) from err
 

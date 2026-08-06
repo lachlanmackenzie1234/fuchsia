@@ -7,6 +7,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
+from honeydew import errors
 from honeydew.utils.control_flows import (
     RetryAbortingError,
     repeat_until_deadline,
@@ -46,6 +47,7 @@ class RetryTest(unittest.TestCase):
             param(expected_exception=signals.TestFailure),
             param(expected_exception=signals.TestAbortClass),
             param(expected_exception=signals.TestAbortAll),
+            param(expected_exception=errors.FatalDeviceError),
         ]
     )
     @mock.patch("honeydew.utils.control_flows.sleep_for_duration")

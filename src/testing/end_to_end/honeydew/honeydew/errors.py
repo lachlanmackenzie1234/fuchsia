@@ -72,6 +72,10 @@ class FuchsiaDeviceError(HoneydewError):
     """Base exception for errors raised by fuchsia device."""
 
 
+class FatalDeviceError(HoneydewError):
+    """Exception to be raised when the device is in an unrecoverable state."""
+
+
 class DeviceNotConnectedError(HoneydewError):
     """Exception to be raised when device is not connected to host."""
 
