@@ -306,6 +306,48 @@ async fn do_phy(cmd: opts::PhyCmd, monitor_proxy: DeviceMonitor) -> Result<(), E
                 .context("error setting power save mode")?;
             println!("response: {:?}", zx_status::Status::from_raw(response));
         }
+        opts::PhyCmd::SetTxPowerScenario { phy_id, mode } => {
+            let response = monitor_proxy
+                .set_tx_power_scenario(phy_id, mode.into())
+                .await
+                .context("error setting tx power scenario")?;
+            match response {
+                Ok(_) => {
+                    println!("response: OK");
+                }
+                Err(status) => {
+                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                }
+            }
+        }
+        opts::PhyCmd::GetTxPowerScenario { phy_id } => {
+            let result = monitor_proxy
+                .get_tx_power_scenario(phy_id)
+                .await
+                .context("error getting tx power scenario")?;
+            match result {
+                Ok(scenario) => {
+                    println!("response: {:?}", scenario);
+                }
+                Err(status) => {
+                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                }
+            }
+        }
+        opts::PhyCmd::ResetTxPowerScenario { phy_id } => {
+            let response = monitor_proxy
+                .reset_tx_power_scenario(phy_id)
+                .await
+                .context("error resetting tx power scenario")?;
+            match response {
+                Ok(_) => {
+                    println!("response: OK");
+                }
+                Err(status) => {
+                    println!("response: Failed {:?}", zx_status::Status::from_raw(status));
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -1286,5 +1328,66 @@ mod tests {
              ac_vi: aifsn=9 acm=true ecw_min=10 ecw_max=11 txop_limit=12\n\
              ac_vo: aifsn=13 acm=true ecw_min=14 ecw_max=15 txop_limit=16\n"
         );
+    }
+
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario() {
+        let mut exec = fasync::TestExecutor::new();
+        let (monitor_svc_local, monitor_svc_remote) = create_proxy::<DeviceMonitorMarker>();
+        let mut monitor_svc_stream = monitor_svc_remote.into_stream();
+        let fut = do_phy(
+            PhyCmd::SetTxPowerScenario { phy_id: 45, mode: opts::TxPowerScenarioArg::BodyCellOff },
+            monitor_svc_local,
+        );
+        let mut fut = pin!(fut);
+
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_svc_stream.next()),
+            Poll::Ready(Some(Ok(wlan_service::DeviceMonitorRequest::SetTxPowerScenario {
+                phy_id: 45,
+                scenario: fidl_internal::TxPowerScenario::BodyCellOff,
+                responder,
+            }))) => responder.send(Ok(())).expect("failed to send response")
+        );
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+    }
+
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario() {
+        let mut exec = fasync::TestExecutor::new();
+        let (monitor_svc_local, monitor_svc_remote) = create_proxy::<DeviceMonitorMarker>();
+        let mut monitor_svc_stream = monitor_svc_remote.into_stream();
+        let fut = do_phy(PhyCmd::GetTxPowerScenario { phy_id: 45 }, monitor_svc_local);
+        let mut fut = pin!(fut);
+
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_svc_stream.next()),
+            Poll::Ready(Some(Ok(wlan_service::DeviceMonitorRequest::GetTxPowerScenario {
+                phy_id: 45,
+                responder,
+            }))) => responder.send(Ok(fidl_internal::TxPowerScenario::BodyCellOff)).expect("failed to send response")
+        );
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+    }
+
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario() {
+        let mut exec = fasync::TestExecutor::new();
+        let (monitor_svc_local, monitor_svc_remote) = create_proxy::<DeviceMonitorMarker>();
+        let mut monitor_svc_stream = monitor_svc_remote.into_stream();
+        let fut = do_phy(PhyCmd::ResetTxPowerScenario { phy_id: 45 }, monitor_svc_local);
+        let mut fut = pin!(fut);
+
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_svc_stream.next()),
+            Poll::Ready(Some(Ok(wlan_service::DeviceMonitorRequest::ResetTxPowerScenario {
+                phy_id: 45,
+                responder,
+            }))) => responder.send(Ok(())).expect("failed to send response")
+        );
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
     }
 }

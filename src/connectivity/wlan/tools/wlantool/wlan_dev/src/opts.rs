@@ -106,6 +106,41 @@ impl ::std::convert::From<OnOffArg> for bool {
 }
 
 #[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum TxPowerScenarioArg {
+    Default,
+    VoiceCall,
+    HeadCellOff,
+    HeadCellOn,
+    BodyCellOff,
+    BodyCellOn,
+    BodyBtActive,
+}
+
+impl ::std::convert::From<TxPowerScenarioArg> for fidl_fuchsia_wlan_internal::TxPowerScenario {
+    fn from(arg: TxPowerScenarioArg) -> Self {
+        match arg {
+            TxPowerScenarioArg::Default => fidl_fuchsia_wlan_internal::TxPowerScenario::Default,
+            TxPowerScenarioArg::VoiceCall => fidl_fuchsia_wlan_internal::TxPowerScenario::VoiceCall,
+            TxPowerScenarioArg::HeadCellOff => {
+                fidl_fuchsia_wlan_internal::TxPowerScenario::HeadCellOff
+            }
+            TxPowerScenarioArg::HeadCellOn => {
+                fidl_fuchsia_wlan_internal::TxPowerScenario::HeadCellOn
+            }
+            TxPowerScenarioArg::BodyCellOff => {
+                fidl_fuchsia_wlan_internal::TxPowerScenario::BodyCellOff
+            }
+            TxPowerScenarioArg::BodyCellOn => {
+                fidl_fuchsia_wlan_internal::TxPowerScenario::BodyCellOn
+            }
+            TxPowerScenarioArg::BodyBtActive => {
+                fidl_fuchsia_wlan_internal::TxPowerScenario::BodyBtActive
+            }
+        }
+    }
+}
+
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
 pub enum BandArg {
     #[value(name = "2g")]
     TwoGhz,
@@ -219,6 +254,27 @@ pub enum PhyCmd {
         #[arg(value_enum, ignore_case = true)]
         /// desired power save mode of the phy
         mode: PsModeArg,
+    },
+    #[command(name = "set-tx-power-scenario")]
+    /// sets the tx power scenario of the phy
+    SetTxPowerScenario {
+        /// id of the phy
+        phy_id: u16,
+        #[arg(value_enum, ignore_case = true)]
+        /// desired tx power scenario of the phy
+        mode: TxPowerScenarioArg,
+    },
+    #[command(name = "get-tx-power-scenario")]
+    /// gets the tx power scenario of the phy
+    GetTxPowerScenario {
+        /// id of the phy to query
+        phy_id: u16,
+    },
+
+    #[command(name = "reset-tx-power-scenario")]
+    ResetTxPowerScenario {
+        // id of phy to reset tx power scenario
+        phy_id: u16,
     },
 }
 
