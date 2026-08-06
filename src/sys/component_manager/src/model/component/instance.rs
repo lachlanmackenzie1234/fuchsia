@@ -50,9 +50,9 @@ use cm_graph::DependencyNode;
 use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
     Availability, CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl,
-    DeliveryType, FidlIntoNative, NativeIntoFidl, UseDecl,
+    DeliveryType, FidlIntoNative, NativeIntoFidl, UseDecl, UseProtocolDecl,
 };
-use cm_types::{Name, Path, RelativePath};
+use cm_types::{AllowedOffers, Name, Path, RelativePath};
 use config_encoder::ConfigFields;
 use derivative::Derivative;
 use directed_graph::DirectedGraph;
@@ -343,6 +343,14 @@ pub struct ResolvedInstanceState {
     /// component. We store them here as a memory optimization so that we do not
     /// need to retain the complete decl.
     pub storage_service_use_decls: Vec<UseDecl>,
+
+    /// The declarations of capabilities offered by this component instance.
+    /// We store them here as a memory optimization so that we do not need to
+    /// retain the complete decl.
+    pub offer_decls: Vec<OfferDecl>,
+
+    /// The declaration of the logger capability used by this component.
+    pub logger_decl: Option<UseProtocolDecl>,
 }
 
 /// Abbreviated equivalent to [ComponentAddress] that omits the actual url string.
@@ -456,6 +464,21 @@ impl ResolvedInstanceState {
             })
             .collect::<Vec<_>>();
 
+        let offer_decls =
+            match decl.collections.iter().find_map(|collection| match collection.allowed_offers {
+                AllowedOffers::StaticAndDynamic => Some(()),
+                AllowedOffers::StaticOnly => None,
+            }) {
+                Some(()) => decl.offers.iter().cloned().collect::<Vec<_>>(),
+                None => vec![],
+            };
+        let logger_decl = decl.uses.iter().find_map(|use_| match use_ {
+            cm_rust::UseDecl::Protocol(decl) => (decl.source_name
+                == fidl_fuchsia_logger::LogSinkMarker::PROTOCOL_NAME)
+                .then_some(decl.clone()),
+            _ => None,
+        });
+
         let mut state = Self {
             weak_component,
             execution_scope: component.execution_scope.clone(),
@@ -473,6 +496,8 @@ impl ResolvedInstanceState {
             storage_paths,
             collection_decls,
             storage_service_use_decls,
+            offer_decls,
+            logger_decl,
         };
         state.add_static_children(component).await?;
 
@@ -1006,7 +1031,7 @@ impl ResolvedInstanceState {
         if !dynamic_offers.is_empty() {
             extend_dict_with_offers(
                 &component,
-                &self.decl().unwrap().offers,
+                &self.offer_decls,
                 &child_component_output_dictionary_routers,
                 &self.sandbox.component_input,
                 &dynamic_offers,

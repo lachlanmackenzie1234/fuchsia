@@ -7,7 +7,6 @@ use crate::model::component::instance::ResolvedInstanceState;
 use cm_types::Name;
 use diagnostics_log::{BufferedPublisher, PublisherOptions};
 use fidl::endpoints;
-use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_logger as flogger;
 use fuchsia_sync::Mutex;
@@ -68,13 +67,12 @@ impl LoggerCache {
         }
 
         // Check that the component includes the logsink capability before logging on its behalf.
-        let decl = resolved_instance_state.resolved_component.decl.as_ref().unwrap();
-        let Some(decl) = get_logsink_decl(&decl) else {
+        let Some(decl) = &resolved_instance_state.logger_decl else {
             return false;
         };
 
         let program_input_dict = &resolved_instance_state.sandbox.program_input;
-        let router = match &decl {
+        let router = match decl {
             cm_rust::UseProtocolDecl {
                 target_path: Some(target_path),
                 numbered_handle: None,
@@ -138,16 +136,6 @@ impl LoggerCache {
 
         true
     }
-}
-
-/// Returns the UseProtocolDecl for the LogSink protocol, if any.
-fn get_logsink_decl<'a>(decl: &'a cm_rust::ComponentDecl) -> Option<&'a cm_rust::UseProtocolDecl> {
-    decl.uses.iter().find_map(|use_| match use_ {
-        cm_rust::UseDecl::Protocol(decl) => {
-            (decl.source_name == flogger::LogSinkMarker::PROTOCOL_NAME).then_some(decl)
-        }
-        _ => None,
-    })
 }
 
 #[cfg(test)]
