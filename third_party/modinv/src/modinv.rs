@@ -7,7 +7,7 @@ pub fn inv_mod_u32(num: u32) -> u32 {
     assert!(num % 2 != 0);
 
     let mut a: i64 = num as i64;
-    let mut b: i64 = (u32::max_value() as i64) + 1;
+    let mut b: i64 = (u32::MAX as i64) + 1;
 
     // ExtendedGcd
     // Input: positive integers a and b

@@ -55,7 +55,7 @@ use syncio::zxio_node_attr_has_t;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 const FUSE_ROOT_ID_U64: u64 = uapi::FUSE_ROOT_ID as u64;
-const CONFIGURATION_AVAILABLE_EVENT: u64 = std::u64::MAX;
+const CONFIGURATION_AVAILABLE_EVENT: u64 = u64::MAX;
 
 uapi::check_arch_independent_layout! {
     fuse_access_in {}
@@ -114,7 +114,7 @@ fn attr_valid_to_duration(
     attr_valid_nsec: u32,
 ) -> Result<zx::MonotonicDuration, Errno> {
     duration_from_timespec(uapi::timespec {
-        tv_sec: i64::try_from(attr_valid).unwrap_or(std::i64::MAX),
+        tv_sec: i64::try_from(attr_valid).unwrap_or(i64::MAX),
         tv_nsec: attr_valid_nsec.into(),
     })
 }
@@ -2142,7 +2142,7 @@ impl TryFrom<uapi::fuse_init_out> for FuseInitFlags {
 impl FuseInitFlags {
     /// Returns the 2 u32 components for these flags. The lowest part is returned first.
     fn get_u32_components(&self) -> (u32, u32) {
-        let flags = (self.bits() & (u32::max_value() as u64)) as u32;
+        let flags = (self.bits() & (u32::MAX as u64)) as u32;
         let flags2 = (self.bits() >> 32) as u32;
         (flags, flags2)
     }

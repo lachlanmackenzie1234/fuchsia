@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
-const NULL_WAKER_KEY: usize = usize::max_value();
+const NULL_WAKER_KEY: usize = usize::MAX;
 
 /// An `Event` is a clonable object that can be signaled once. Calls to `.wait()` produce a future,
 /// `EventWait`, that can wait on that signal. Once the `Event` has been signaled, all futures will

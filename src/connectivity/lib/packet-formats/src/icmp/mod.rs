@@ -846,7 +846,7 @@ impl<I: IcmpIpExt, M: IcmpMessage<I>> NestablePacketBuilder for IcmpPacketBuilde
         // Instead, we assert in serialize. Eventually, we will hopefully figure
         // out a way to implement InnerPacketBuilder (rather than PacketBuilder)
         // for these message types, and this won't be an issue anymore.
-        PacketConstraints::new(mem::size_of::<Header<M>>(), 0, 0, core::u32::MAX as usize)
+        PacketConstraints::new(mem::size_of::<Header<M>>(), 0, 0, u32::MAX as usize)
     }
 }
 

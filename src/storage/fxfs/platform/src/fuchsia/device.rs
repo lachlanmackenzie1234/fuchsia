@@ -138,7 +138,7 @@ impl BlockServer {
             }
             prev_id = id;
         }
-        if prev_id < std::u16::MAX {
+        if prev_id < u16::MAX {
             let vmo_id = prev_id + 1;
             vmos.insert(vmo_id, vmo);
             Some(vmo_id)

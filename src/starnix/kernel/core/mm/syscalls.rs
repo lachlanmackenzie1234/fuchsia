@@ -552,7 +552,7 @@ fn do_futex<Key: FutexKey>(
         FUTEX_REQUEUE | FUTEX_CMP_REQUEUE => {
             let wake_count = value as usize;
             let requeue_count: usize = timeout_or_value2.into();
-            if wake_count > std::i32::MAX as usize || requeue_count > std::i32::MAX as usize {
+            if wake_count > i32::MAX as usize || requeue_count > i32::MAX as usize {
                 return error!(EINVAL);
             }
             let expected_value = if cmd == FUTEX_CMP_REQUEUE { Some(value3) } else { None };

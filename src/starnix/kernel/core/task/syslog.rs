@@ -184,7 +184,7 @@ impl GrantedSyslog<'_> {
 
     pub fn size_unread(&self) -> Result<i32, Errno> {
         let mut subscription = self.syscall_subscription.lock();
-        Ok(subscription.available()?.try_into().unwrap_or(std::i32::MAX))
+        Ok(subscription.available()?.try_into().unwrap_or(i32::MAX))
     }
 
     pub fn size_buffer(&self) -> Result<i32, Errno> {

@@ -400,7 +400,7 @@ impl InspectData {
     }
 
     fn init_nodes(&mut self) {
-        self.elapsed_millis = Some(self.logger_root.create_int("elapsed time (ms)", std::i64::MIN));
+        self.elapsed_millis = Some(self.logger_root.create_int("elapsed time (ms)", i64::MIN));
         self.rx_bytes_per_sec = Some(self.logger_root.create_double("rx_bytes_per_sec", f64::MIN));
         self.tx_bytes_per_sec = Some(self.logger_root.create_double("tx_bytes_per_sec", f64::MIN));
         self.rx_frames_per_sec =

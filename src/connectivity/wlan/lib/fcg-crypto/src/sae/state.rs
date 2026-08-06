@@ -398,8 +398,8 @@ impl<E> SaeConfirmed<E> {
             sink.push(SaeUpdate::CancelTimeout(Timeout::Retransmission));
             sink.push(SaeUpdate::ResetTimeout(Timeout::KeyExpiration));
             self.rc = confirm_msg.send_confirm;
-            // We use u16::max_value() where IEEE specifies 2^16 - 1.
-            self.sc = u16::max_value();
+            // We use u16::MAX where IEEE specifies 2^16 - 1.
+            self.sc = u16::MAX;
             sink.push(SaeUpdate::Success(self.key.clone()));
             Ok(FrameResult::Proceed(()))
         } else {
@@ -447,8 +447,8 @@ impl<E> SaeAccepted<E> {
         confirm_msg: &ConfirmMsg<'_>,
     ) -> Result<(), RejectReason> {
         check_sync(&self.0.sync)?;
-        // We use u16::max_value() where IEEE specifies 2^16 - 1.
-        if confirm_msg.send_confirm <= self.0.rc || confirm_msg.send_confirm == u16::max_value() {
+        // We use u16::MAX where IEEE specifies 2^16 - 1.
+        if confirm_msg.send_confirm <= self.0.rc || confirm_msg.send_confirm == u16::MAX {
             return Ok(());
         }
         // If we fail to verify, the message is dropped silently.

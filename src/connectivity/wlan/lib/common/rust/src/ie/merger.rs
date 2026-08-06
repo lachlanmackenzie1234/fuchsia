@@ -103,7 +103,7 @@ impl IesUpdater {
     pub fn set(&mut self, ie_type: IeType, ie_content: &[u8]) -> Result<(), anyhow::Error> {
         // If length of this IE is too large, ignore it because later on we cannot construct the
         // IE anyway on `finalize`.
-        if ie_type.extra_len() + ie_content.len() > std::u8::MAX.into() {
+        if ie_type.extra_len() + ie_content.len() > u8::MAX.into() {
             return Err(format_err!("ie_content too large"));
         }
 

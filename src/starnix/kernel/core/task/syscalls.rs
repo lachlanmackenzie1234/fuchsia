@@ -782,7 +782,7 @@ fn get_default_cpu_set() -> CpuSet {
     while cpus_count > 0 {
         let count = std::cmp::min(cpus_count, 8);
         let (shl, overflow) = 1_u8.overflowing_shl(count);
-        let mask = if overflow { u8::max_value() } else { shl - 1 };
+        let mask = if overflow { u8::MAX } else { shl - 1 };
         result.bits[index] = mask;
         index += 1;
         cpus_count -= count;

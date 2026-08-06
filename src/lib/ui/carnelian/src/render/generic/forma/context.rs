@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use std::{mem, ptr, u32};
+use std::{mem, ptr};
 
 use anyhow::Error;
 use display_utils::PixelFormat;

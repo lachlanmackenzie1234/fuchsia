@@ -353,7 +353,7 @@ impl Validate for Elf64FileHeader {
         if self.phentsize as usize != mem::size_of::<Elf64ProgramHeader>() {
             return Err(ElfParseError::InvalidFileHeader("Invalid ELF program header size"));
         }
-        if self.phnum == std::u16::MAX {
+        if self.phnum == u16::MAX {
             return Err(ElfParseError::InvalidFileHeader(
                 "2^16 or more ELF program headers is unsupported",
             ));
@@ -390,7 +390,7 @@ impl Validate for Elf32FileHeader {
         if self.phentsize as usize != mem::size_of::<Elf32ProgramHeader>() {
             return Err(ElfParseError::InvalidFileHeader("Invalid ELF program header size"));
         }
-        if self.phnum == std::u16::MAX {
+        if self.phnum == u16::MAX {
             return Err(ElfParseError::InvalidFileHeader(
                 "2^16 or more ELF program headers is unsupported",
             ));

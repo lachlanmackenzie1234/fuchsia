@@ -264,7 +264,7 @@ impl NetbootPacketBuilder {
 
 impl NestablePacketBuilder for NetbootPacketBuilder {
     fn constraints(&self) -> PacketConstraints {
-        PacketConstraints::new(std::mem::size_of::<MessageHead>(), 0, 0, std::usize::MAX)
+        PacketConstraints::new(std::mem::size_of::<MessageHead>(), 0, 0, usize::MAX)
     }
 }
 

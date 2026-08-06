@@ -198,5 +198,5 @@ pub async fn main() -> std::process::ExitCode {
     let zx::ProcessInfo { return_code, .. } =
         netstack_process.info().expect("reading netstack process info");
     println!("netstack process exited with return code {return_code}");
-    std::process::exit(return_code.try_into().unwrap_or(std::i32::MIN))
+    std::process::exit(return_code.try_into().unwrap_or(i32::MIN))
 }

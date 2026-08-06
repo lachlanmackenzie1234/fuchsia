@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use packet_encoding::{Decodable, Encodable};
-use std::u8;
 
 use crate::packets::player_application_settings::{
     PlayerApplicationSettingAttributeId, PlayerApplicationSettings,
@@ -184,8 +183,8 @@ impl Encodable for SetPlayerApplicationSettingValueResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::packets::player_application_settings::settings_to_vec;
     use crate::packets::VendorDependentRawPdu;
+    use crate::packets::player_application_settings::settings_to_vec;
 
     #[test]
     // Test SetPlayerApplicationSettingValue command encoding success.

@@ -303,7 +303,7 @@ impl ConfigSingleValue {
             ConfigSingleValue::Int32(_) => ConfigValueType::Int32,
             ConfigSingleValue::Int64(_) => ConfigValueType::Int64,
             // We substitute the max size limit because the value itself doesn't carry the info.
-            ConfigSingleValue::String(_) => ConfigValueType::String { max_size: std::u32::MAX },
+            ConfigSingleValue::String(_) => ConfigValueType::String { max_size: u32::MAX },
         }
     }
 }
@@ -416,43 +416,43 @@ impl ConfigVectorValue {
         match self {
             ConfigVectorValue::BoolVector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Bool,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Uint8Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Uint8,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Uint16Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Uint16,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Uint32Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Uint32,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Uint64Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Uint64,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Int8Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Int8,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Int16Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Int16,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Int32Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Int32,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::Int64Vector(_) => ConfigValueType::Vector {
                 nested_type: ConfigNestedValueType::Int64,
-                max_count: std::u32::MAX,
+                max_count: u32::MAX,
             },
             ConfigVectorValue::StringVector(_) => ConfigValueType::Vector {
-                nested_type: ConfigNestedValueType::String { max_size: std::u32::MAX },
-                max_count: std::u32::MAX,
+                nested_type: ConfigNestedValueType::String { max_size: u32::MAX },
+                max_count: u32::MAX,
             },
         }
     }

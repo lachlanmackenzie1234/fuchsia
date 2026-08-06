@@ -63,7 +63,7 @@ const VALID_MAX_SOLICIT_TIMEOUT_RANGE: std::ops::RangeInclusive<u32> = 60..=8640
 ///
 /// [RFC 8415, Section 18.2.1]: https://datatracker.ietf.org/doc/html/rfc8415#section-18.2.1
 /// [Preference option]: https://datatracker.ietf.org/doc/html/rfc8415#section-21.8
-const ADVERTISE_MAX_PREFERENCE: u8 = std::u8::MAX;
+const ADVERTISE_MAX_PREFERENCE: u8 = u8::MAX;
 
 /// Denominator used for transforming the elapsed time from milliseconds to
 /// hundredths of a second.

@@ -11,7 +11,6 @@ use log::debug;
 use stalls::StallProvider;
 use stalls::refaults::RefaultProvider;
 use std::future::Future;
-use std::u64;
 
 /// Serve the inspect tree, and return an object holding the server's resources.
 pub fn serve(

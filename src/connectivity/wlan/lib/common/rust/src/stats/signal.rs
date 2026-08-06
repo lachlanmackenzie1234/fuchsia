@@ -19,7 +19,7 @@ pub struct SignalStrengthAverage {
 
 impl SignalStrengthAverage {
     pub fn new() -> Self {
-        Self { sum: FemtoWatt(0), n: 0, i: 0, samples: [DecibelMilliWatt(std::i8::MIN); N] }
+        Self { sum: FemtoWatt(0), n: 0, i: 0, samples: [DecibelMilliWatt(i8::MIN); N] }
     }
 
     pub fn avg_dbm(&self) -> DecibelMilliWatt {

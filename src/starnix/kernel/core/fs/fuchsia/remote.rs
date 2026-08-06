@@ -832,16 +832,16 @@ const NODE_INFO_ATTRIBUTES: fio::NodeAttributesQuery = fio::NodeAttributesQuery:
 pub(super) fn update_info_from_attrs(info: &mut FsNodeInfo, attrs: &zxio_node_attributes_t) {
     // TODO - store these in FsNodeState and convert on fstat
     if attrs.has.content_size {
-        info.size = attrs.content_size.try_into().unwrap_or(std::usize::MAX);
+        info.size = attrs.content_size.try_into().unwrap_or(usize::MAX);
     }
     if attrs.has.storage_size {
         info.blocks = usize::try_from(attrs.storage_size)
-            .unwrap_or(std::usize::MAX)
+            .unwrap_or(usize::MAX)
             .div_ceil(DEFAULT_BYTES_PER_BLOCK)
     }
     info.blksize = DEFAULT_BYTES_PER_BLOCK;
     if attrs.has.link_count {
-        info.link_count = attrs.link_count.try_into().unwrap_or(std::usize::MAX);
+        info.link_count = attrs.link_count.try_into().unwrap_or(usize::MAX);
     }
     if attrs.has.modification_time {
         info.time_modify =
@@ -870,16 +870,15 @@ fn update_info_from_fidl(
     immutable: &fio::ImmutableNodeAttributes,
 ) {
     if let Some(content_size) = immutable.content_size {
-        info.size = content_size.try_into().unwrap_or(std::usize::MAX);
+        info.size = content_size.try_into().unwrap_or(usize::MAX);
     }
     if let Some(storage_size) = immutable.storage_size {
-        info.blocks = usize::try_from(storage_size)
-            .unwrap_or(std::usize::MAX)
-            .div_ceil(DEFAULT_BYTES_PER_BLOCK);
+        info.blocks =
+            usize::try_from(storage_size).unwrap_or(usize::MAX).div_ceil(DEFAULT_BYTES_PER_BLOCK);
     }
     info.blksize = DEFAULT_BYTES_PER_BLOCK;
     if let Some(link_count) = immutable.link_count {
-        info.link_count = link_count.try_into().unwrap_or(std::usize::MAX);
+        info.link_count = link_count.try_into().unwrap_or(usize::MAX);
     }
     if let Some(modification_time) = mutable.modification_time {
         info.time_modify = UtcInstant::from_nanos(modification_time.try_into().unwrap_or(i64::MAX));

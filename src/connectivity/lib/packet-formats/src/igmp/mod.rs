@@ -223,7 +223,7 @@ where
     M::VariableBody: IgmpNonEmptyBody,
 {
     fn constraints(&self) -> PacketConstraints {
-        PacketConstraints::new(total_header_size::<M::FixedHeader>(), 0, 0, core::usize::MAX)
+        PacketConstraints::new(total_header_size::<M::FixedHeader>(), 0, 0, usize::MAX)
     }
 }
 

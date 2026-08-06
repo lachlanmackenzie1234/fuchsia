@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::hash;
 use std::ops::{Add, Div, Mul, Sub};
-use std::{f32, hash};
 
 use crate::CanonBits;
 
@@ -48,11 +48,11 @@ fn approx_atan2(y: f32, x: f32) -> f32 {
     let mut r = s.mul_add(-0.046_496_473, 0.159_314_22).mul_add(s, -0.327_622_77).mul_add(s * a, a);
 
     if y_abs > x_abs {
-        r = f32::consts::FRAC_PI_2 - r;
+        r = std::f32::consts::FRAC_PI_2 - r;
     }
 
     if x < 0.0 {
-        r = f32::consts::PI - r;
+        r = std::f32::consts::PI - r;
     }
 
     if y < 0.0 {

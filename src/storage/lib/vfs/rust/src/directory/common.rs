@@ -96,7 +96,7 @@ pub(crate) fn encode_dirent(
     );
 
     assert!(
-        fio::MAX_NAME_LENGTH <= u8::max_value() as u64,
+        fio::MAX_NAME_LENGTH <= u8::MAX as u64,
         "Expecting to be able to store MAX_FILENAME ({}) in one byte.",
         fio::MAX_NAME_LENGTH
     );

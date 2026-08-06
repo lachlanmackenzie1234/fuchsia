@@ -108,7 +108,7 @@ impl<'a> TemperatureHandlerBuilder<'a> {
         let cache_duration = self.cache_duration.unwrap_or(zx::MonotonicDuration::from_millis(0));
 
         let mutable_inner = MutableInner {
-            last_temperature: Celsius(std::f64::NAN),
+            last_temperature: Celsius(f64::NAN),
             last_poll_time: fasync::MonotonicInstant::INFINITE_PAST,
             driver_proxy: self.driver_proxy,
             temperature_override: None,

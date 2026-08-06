@@ -118,7 +118,7 @@ multiconst!(zx_koid_t, [
 
 multiconst!(zx_time_t, [
     ZX_TIME_INFINITE = i64::MAX;
-    ZX_TIME_INFINITE_PAST = ::core::i64::MIN;
+    ZX_TIME_INFINITE_PAST = i64::MIN;
 ]);
 
 multiconst!(zx_rights_t, [

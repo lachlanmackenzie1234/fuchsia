@@ -6,7 +6,7 @@
 
 use super::PeerConnRef;
 use crate::labels::NodeId;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 
 /// The type of frame that can be received on a QUIC stream
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +33,7 @@ const FRAME_HEADER_LENGTH: usize = 8;
 impl FrameHeader {
     fn to_bytes(&self) -> Result<[u8; FRAME_HEADER_LENGTH], Error> {
         let length = self.length;
-        if length > std::u32::MAX as usize {
+        if length > u32::MAX as usize {
             return Err(anyhow::format_err!("Message too long: {}", length));
         }
         let length = length as u32;
@@ -249,10 +249,12 @@ mod test {
 
     #[fuchsia::test]
     fn bad_frame_type() {
-        assert!(format!(
-            "{}",
-            FrameHeader::from_bytes(&[0, 0, 0, 0, 11, 0, 0, 0]).expect_err("should fail")
-        )
-        .contains("Unknown frame type 11"));
+        assert!(
+            format!(
+                "{}",
+                FrameHeader::from_bytes(&[0, 0, 0, 0, 11, 0, 0, 0]).expect_err("should fail")
+            )
+            .contains("Unknown frame type 11")
+        );
     }
 }

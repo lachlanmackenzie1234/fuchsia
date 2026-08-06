@@ -177,7 +177,7 @@ fn encode_name(buffer: &mut Vec<u8>, event: fio::WatchEvent, name: &str) -> bool
     }
 
     // We are going to encode the file name length as u8.
-    const_assert!(u8::max_value() as u64 >= fio::MAX_NAME_LENGTH);
+    const_assert!(u8::MAX as u64 >= fio::MAX_NAME_LENGTH);
 
     // TODO(https://fxbug.dev/293948129): Event producers should take a type that enforces this
     // constraint. "." is valid here, so taking [`crate::Name`] directly isn't sufficient.

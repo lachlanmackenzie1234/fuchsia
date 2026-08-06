@@ -1038,7 +1038,7 @@ impl<A: IpAddress> TcpSegmentBuilder<A> {
 
 impl<A: IpAddress> NestablePacketBuilder for TcpSegmentBuilder<A> {
     fn constraints(&self) -> PacketConstraints {
-        PacketConstraints::new(HDR_PREFIX_LEN, 0, 0, core::usize::MAX)
+        PacketConstraints::new(HDR_PREFIX_LEN, 0, 0, usize::MAX)
     }
 }
 

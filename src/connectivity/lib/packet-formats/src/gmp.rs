@@ -10,7 +10,6 @@ use core::borrow::Borrow;
 use core::fmt::Debug;
 use core::num::NonZeroUsize;
 use core::time::Duration;
-use core::usize;
 
 use net_types::MulticastAddr;
 use net_types::ip::IpAddress;

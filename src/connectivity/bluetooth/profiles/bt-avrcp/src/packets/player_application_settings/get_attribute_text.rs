@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use packet_encoding::{Decodable, Encodable};
-use std::u8;
 
 use crate::packets::player_application_settings::PlayerApplicationSettingAttributeId;
 use crate::packets::{

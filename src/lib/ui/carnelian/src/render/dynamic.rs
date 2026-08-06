@@ -14,8 +14,8 @@ use display_utils::PixelFormat;
 use euclid::default::{Point2D, Rect, Size2D, Transform2D, Vector2D};
 use euclid::{point2, size2};
 
+use std::mem;
 use std::ops::Add;
-use std::{mem, u32};
 /// Rendering context and API start point.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Image {

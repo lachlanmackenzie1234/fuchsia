@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use std::ops::Add;
-use std::{error, fmt, u32};
+use std::{error, fmt};
 
 use anyhow::Error;
 use display_utils::PixelFormat;

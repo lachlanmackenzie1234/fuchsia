@@ -5,7 +5,7 @@
 use bt_avctp::AvcCommandType;
 use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
 use log::{debug, info, warn};
-use packet_encoding::{decodable_enum, Decodable, Encodable};
+use packet_encoding::{Decodable, Encodable, decodable_enum};
 use std::result;
 use thiserror::Error;
 
@@ -627,7 +627,9 @@ impl MediaAttributeEntries {
             MediaAttributeId::DefaultCoverArt => prev = self.default_cover_art.replace(value),
         }
         if let Some(prev_value) = prev {
-            warn!("Replaced value for attribute ID {attribute_id:?}. Previous value was \"{prev_value:?}\"");
+            warn!(
+                "Replaced value for attribute ID {attribute_id:?}. Previous value was \"{prev_value:?}\""
+            );
         }
     }
 
@@ -657,7 +659,7 @@ impl MediaAttributeEntries {
         buf[0..4].copy_from_slice(&attr_id.to_be_bytes());
         let charset_id = u16::from(&CharsetId::Utf8);
         buf[4..6].copy_from_slice(&charset_id.to_be_bytes());
-        if value_len > std::u16::MAX.into() {
+        if value_len > u16::MAX.into() {
             return Err(Error::ParameterEncodingError);
         }
         buf[6..Self::ATTRIBUTE_HEADER_LEN].copy_from_slice(&(value_len as u16).to_be_bytes());

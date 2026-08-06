@@ -1088,7 +1088,7 @@ impl Ipv4PacketBuilder {
                 // than an assert) is fine because, with debug assertions
                 // disabled, we'll just write an incorrect header value, which
                 // is acceptable if the caller has violated their contract.
-                debug_assert!(total_len <= core::u16::MAX as usize);
+                debug_assert!(total_len <= u16::MAX as usize);
                 total_len as u16
             },
             id,
@@ -1205,7 +1205,7 @@ pub(crate) fn reassemble_fragmented_packet<
 
     // Make sure that the packet length is not more than the maximum
     // possible IPv4 packet length.
-    if byte_count > usize::from(core::u16::MAX) {
+    if byte_count > usize::from(u16::MAX) {
         return debug_err!(
             Err(ParseError::Format),
             "fragmented packet length of {} bytes is too large",

@@ -133,7 +133,7 @@ impl From<UtcClockDetails> for ClockDetails {
             details.reference_to_synthetic.rate.reference_ticks,
         ) {
             (0, _) => -ONE_MILLION,
-            (_, 0) => std::i32::MAX,
+            (_, 0) => i32::MAX,
             (syn, refr) => ((syn as i64 * ONE_MILLION as i64) / refr as i64) as i32 - ONE_MILLION,
         };
         ClockDetails {

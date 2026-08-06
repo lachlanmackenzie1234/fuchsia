@@ -577,7 +577,7 @@ impl<'a> AlignedOptionBuilder for HopByHopOption<'a> {
 
     fn serialize_padding(buf: &mut [u8], length: usize) {
         assert!(length <= buf.len());
-        assert!(length <= (core::u8::MAX as usize) + 2);
+        assert!(length <= (u8::MAX as usize) + 2);
 
         #[allow(clippy::comparison_chain)]
         if length == 1 {

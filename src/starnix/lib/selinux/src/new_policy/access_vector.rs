@@ -19,7 +19,7 @@ pub struct AccessVector(u32);
 
 impl AccessVector {
     pub const NONE: Self = Self(0);
-    pub const ALL: Self = Self(std::u32::MAX);
+    pub const ALL: Self = Self(u32::MAX);
 
     pub fn from_class_permission_id(id: PermissionId) -> Self {
         Self::from(id)

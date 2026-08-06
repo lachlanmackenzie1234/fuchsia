@@ -2823,7 +2823,7 @@ impl Subnet<Ipv4Addr> {
             // shifting right by the size of the value is undefined
             self.network
         } else {
-            let mask = <u32>::max_value() >> self.prefix;
+            let mask = u32::MAX >> self.prefix;
             Ipv4Addr::new((u32::from_be_bytes(self.network.0) | mask).to_be_bytes())
         }
     }

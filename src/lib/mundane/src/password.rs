@@ -118,7 +118,7 @@ pub mod scrypt {
     // Don't put a limit on the memory used by scrypt; it's too prone to
     // failure. Instead, rely on choosing sane defaults for N, r, and p to
     // ensure that we don't use too much memory.
-    const SCRYPT_MAX_MEM: usize = usize::max_value();
+    const SCRYPT_MAX_MEM: usize = usize::MAX;
 
     // TODO(joshlf): Provide a custom Debug impl for ScryptHash?
 

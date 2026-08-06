@@ -259,7 +259,7 @@ impl InspectData {
     }
 
     fn init_nodes(&mut self) {
-        self.elapsed_millis = Some(self.logger_root.create_int("elapsed time (ms)", std::i64::MIN));
+        self.elapsed_millis = Some(self.logger_root.create_int("elapsed time (ms)", i64::MIN));
         self.driver_nodes =
             self.driver_names.iter().map(|name| self.logger_root.create_child(name)).collect();
         for node in self.driver_nodes.iter() {

@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
-use packet_encoding::{decodable_enum, Decodable, Encodable};
-use std::{u32, u64};
+use packet_encoding::{Decodable, Encodable, decodable_enum};
 
 use crate::packets::{
     AvcCommandType, Error, PacketResult, PduId, PlaybackStatus,

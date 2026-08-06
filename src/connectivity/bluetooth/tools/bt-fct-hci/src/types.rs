@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use packet_encoding::decodable_enum;
 use std::ops::Range;
-use std::u16;
 use thiserror::Error;
 
 /// Decoding error type

@@ -122,7 +122,7 @@ impl<'de> de::Deserialize<'de> for StopTimeoutMs {
             where
                 E: de::Error,
             {
-                if v < 0 || v > i64::from(u32::max_value()) {
+                if v < 0 || v > i64::from(u32::MAX) {
                     return Err(E::invalid_value(
                         de::Unexpected::Signed(v),
                         &"an unsigned 32-bit integer",

@@ -333,7 +333,7 @@ impl MulticastRoutingManager {
         // Not found, new entry case. Check capacity and evict if needed.
         let mut evicted = None;
         if *total_routes >= MAX_ROUTE_CACHE_CAPACITY {
-            let mut oldest_time = fuchsia_async::MonotonicInstant::from_nanos(std::i64::MAX);
+            let mut oldest_time = fuchsia_async::MonotonicInstant::from_nanos(i64::MAX);
             let mut oldest_loc = None;
             for (multicast_group_addr, multicast_group_entries) in cache_table.iter() {
                 for (idx, entry) in multicast_group_entries.iter().enumerate() {

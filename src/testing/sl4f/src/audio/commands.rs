@@ -6,8 +6,8 @@ use crate::audio::types::AudioMethod;
 use crate::server::Facade;
 use anyhow::{Context, Error};
 use async_trait::async_trait;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use fidl_fuchsia_media::{AudioRenderUsage2, AudioSampleFormat, AudioStreamType};
 use fidl_fuchsia_media_sounds::{PlayerMarker, PlayerProxy};
 use fidl_fuchsia_test_audio::{CaptureMarker, CaptureProxy, InjectionMarker, InjectionProxy};
@@ -16,7 +16,7 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::lock::Mutex;
 use futures::{AsyncReadExt, AsyncWriteExt};
 use log::{error, info};
-use serde_json::{to_value, Value};
+use serde_json::{Value, to_value};
 
 #[async_trait(?Send)]
 impl Facade for AudioFacade {
@@ -202,7 +202,7 @@ impl AudioFacade {
     ) -> Result<(fidl_fuchsia_mem::Buffer, AudioStreamType), Error> {
         let frame_count = (frames_per_second as f32 * duration.as_secs_f32()) as usize;
 
-        let amplitude = volume * (std::i16::MAX as f32);
+        let amplitude = volume * (i16::MAX as f32);
         let frames_per_period = (frames_per_second as f32) / (frequency as f32);
         let mut samples = std::vec::Vec::with_capacity(frame_count);
         for i in 0..frame_count {

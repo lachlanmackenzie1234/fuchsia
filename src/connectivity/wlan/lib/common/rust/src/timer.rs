@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::{FutureExt, Stream, StreamExt};
-use std::sync::{atomic, Arc};
-use {fuchsia_async as fasync, zx};
+use std::sync::{Arc, atomic};
+use zx;
 
 use crate::sink::UnboundedSink;
 
@@ -33,13 +34,9 @@ pub fn make_async_timed_event_stream<E>(
                 fasync::Timer::new(fasync::MonotonicInstant::from_zx(deadline))
                     .map(|_| (timed_event, handle))
             })
-            .buffer_unordered(usize::max_value())
+            .buffer_unordered(usize::MAX)
             .filter_map(|(timed_event, handle)| async move {
-                if handle.is_active() {
-                    Some(timed_event)
-                } else {
-                    None
-                }
+                if handle.is_active() { Some(timed_event) } else { None }
             }),
     )
 }

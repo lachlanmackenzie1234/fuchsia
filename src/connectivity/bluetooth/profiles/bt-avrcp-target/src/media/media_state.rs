@@ -196,7 +196,7 @@ impl SessionInfo {
 
     /// Gets the track position, as defined by the AVRCP spec for notification of POS_CHANGED.
     fn get_track_position(&self) -> u32 {
-        self.playback_rate.map_or(std::u32::MAX, |r| r.current_position().unwrap_or_default())
+        self.playback_rate.map_or(u32::MAX, |r| r.current_position().unwrap_or_default())
     }
 
     /// Return a static value indicating the ID of the player.

@@ -405,7 +405,7 @@ where
             // data is actually more than 65535.
             if I::VERSION.is_v6()
                 && header.length.get() == 0
-                && remaining_buff_len.saturating_add(HEADER_BYTES) >= (core::u16::MAX as usize)
+                && remaining_buff_len.saturating_add(HEADER_BYTES) >= (u16::MAX as usize)
             {
                 return Some(remaining_buff_len);
             }
@@ -671,7 +671,7 @@ impl<A: IpAddress> NestablePacketBuilder for UdpPacketBuilder<A> {
                 // length field in the header, and so the length field is set to
                 // zero. That means that, from this packet's perspective,
                 // there's no effective limit on the body size.
-                core::usize::MAX
+                usize::MAX
             },
         )
     }

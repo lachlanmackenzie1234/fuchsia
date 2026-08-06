@@ -18,7 +18,7 @@ const OBEX_PROTOCOL_VERSION_NUMBER: u8 = 0x10;
 /// The maximum length of an OBEX packet is bounded by the 2-byte field describing the packet
 /// length (u16::MAX).
 /// Defined in OBEX 1.5 Section 3.4.1.3.
-pub const MAX_PACKET_SIZE: usize = std::u16::MAX as usize;
+pub const MAX_PACKET_SIZE: usize = u16::MAX as usize;
 
 /// The minimum size of the OBEX maximum packet length is 255 bytes.
 /// Defined in OBEX 1.5. Section 3.4.1.4.

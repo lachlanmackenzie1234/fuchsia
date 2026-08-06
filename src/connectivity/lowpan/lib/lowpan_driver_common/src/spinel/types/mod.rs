@@ -39,11 +39,7 @@ impl Header {
     pub fn new(nli: u8, tid: Option<NonZeroU8>) -> Option<Header> {
         let tid = tid.map_or(0, NonZeroU8::get);
 
-        if nli < 4 && tid < 16 {
-            Some(Header(0x80 + (nli << 4) + tid))
-        } else {
-            None
-        }
+        if nli < 4 && tid < 16 { Some(Header(0x80 + (nli << 4) + tid)) } else { None }
     }
 
     /// Network link ID.
@@ -327,11 +323,7 @@ pub type AddressTable = HashSet<AddressTableEntry>;
 
 impl std::convert::From<Subnet> for AddressTableEntry {
     fn from(subnet: Subnet) -> Self {
-        AddressTableEntry {
-            subnet,
-            preferred_lifetime: std::u32::MAX,
-            valid_lifetime: std::u32::MAX,
-        }
+        AddressTableEntry { subnet, preferred_lifetime: u32::MAX, valid_lifetime: u32::MAX }
     }
 }
 
@@ -361,8 +353,8 @@ impl Default for AddressTableEntry {
     fn default() -> Self {
         AddressTableEntry {
             subnet: Subnet { addr: std::net::Ipv6Addr::UNSPECIFIED, prefix_len: 0 },
-            preferred_lifetime: std::u32::MAX,
-            valid_lifetime: std::u32::MAX,
+            preferred_lifetime: u32::MAX,
+            valid_lifetime: u32::MAX,
         }
     }
 }

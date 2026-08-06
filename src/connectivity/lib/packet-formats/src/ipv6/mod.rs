@@ -60,9 +60,9 @@ pub const IPV6_PAYLOAD_LEN_BYTE_RANGE: Range<usize> = 4..6;
 const NEXT_HEADER_OFFSET: u8 = 6;
 
 // The maximum length for Hop-by-Hop Options. The stored byte's maximum
-// representable value is `core::u8::MAX` and it means the header has
+// representable value is `u8::MAX` and it means the header has
 // that many 8-octets, not including the first 8 octets.
-const IPV6_HBH_OPTIONS_MAX_LEN: usize = (core::u8::MAX as usize) * 8 + 8;
+const IPV6_HBH_OPTIONS_MAX_LEN: usize = (u8::MAX as usize) * 8 + 8;
 
 /// The maximum payload length after an IPv6 header.
 ///
@@ -70,7 +70,7 @@ const IPV6_HBH_OPTIONS_MAX_LEN: usize = (core::u8::MAX as usize) * 8 + 8;
 /// and must fit in a u16 as defined in [RFC 8200 Section 3].
 ///
 /// [RFC 8200 Section 3]: https://datatracker.ietf.org/doc/html/rfc8200#section-3.
-const IPV6_MAX_PAYLOAD_LENGTH: usize = core::u16::MAX as usize;
+const IPV6_MAX_PAYLOAD_LENGTH: usize = u16::MAX as usize;
 
 /// Convert an extension header parsing error to an IP packet
 /// parsing error.
@@ -1269,7 +1269,7 @@ impl Ipv6HeaderBuilder for Ipv6PacketBuilder {
                     // with debug assertions disabled, we'll just write an
                     // incorrect header value, which is acceptable if the
                     // caller has violated their contract.
-                    debug_assert!(payload_len <= core::u16::MAX as usize);
+                    debug_assert!(payload_len <= u16::MAX as usize);
                     payload_len as u16
                 },
                 next_header.into(),
@@ -1609,7 +1609,7 @@ pub(crate) fn reassemble_fragmented_packet<
 
     // Make sure that the payload length is not more than the maximum
     // possible IPv6 packet length.
-    if payload_length > usize::from(core::u16::MAX) {
+    if payload_length > usize::from(u16::MAX) {
         return debug_err!(
             Err(ParseError::Format.into()),
             "fragmented packet payload length of {} bytes is too large",

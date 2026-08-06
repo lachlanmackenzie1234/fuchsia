@@ -228,7 +228,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn process_heredocs(&mut self) -> Result<(), ParseError> {
-        let indices: Vec<usize> = self.pending_indices.drain(..).collect();
+        let indices: Vec<usize> = std::mem::take(&mut self.pending_indices);
         for idx in indices {
             let Token::RedirectHereDocPlaceholder { src_fd, delimiter, strip_tabs } =
                 &self.tokens[idx]

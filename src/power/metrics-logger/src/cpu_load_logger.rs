@@ -293,7 +293,7 @@ impl InspectData {
     }
 
     fn init_elapsed_time(&mut self) {
-        self.elapsed_millis = Some(self.logger_root.create_int("elapsed time (ms)", std::i64::MIN));
+        self.elapsed_millis = Some(self.logger_root.create_int("elapsed time (ms)", i64::MIN));
     }
 
     fn init_total_load(&mut self) {

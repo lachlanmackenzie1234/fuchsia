@@ -4,7 +4,6 @@
 
 use std::num::{NonZeroU32, TryFromIntError};
 use std::time::{Duration, Instant};
-use std::u64;
 
 use flex_fuchsia_developer_ffx_speedtest as fspeedtest;
 use futures::AsyncReadExt;

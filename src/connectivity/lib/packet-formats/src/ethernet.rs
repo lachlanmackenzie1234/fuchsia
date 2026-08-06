@@ -296,7 +296,7 @@ impl EthernetSerializationContext for NoOpSerializationContext {
 
 impl NestablePacketBuilder for EthernetFrameBuilder {
     fn constraints(&self) -> PacketConstraints {
-        PacketConstraints::new(ETHERNET_HDR_LEN_NO_TAG, 0, self.min_body_len, core::usize::MAX)
+        PacketConstraints::new(ETHERNET_HDR_LEN_NO_TAG, 0, self.min_body_len, usize::MAX)
     }
 }
 

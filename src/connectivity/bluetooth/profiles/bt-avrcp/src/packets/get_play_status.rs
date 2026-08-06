@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use packet_encoding::{Decodable, Encodable};
-use std::u32;
 
 use crate::packets::{
     AvcCommandType, Error, PacketResult, PduId, PlaybackStatus, VendorCommand, VendorDependentPdu,

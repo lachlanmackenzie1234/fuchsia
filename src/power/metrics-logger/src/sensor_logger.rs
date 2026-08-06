@@ -670,7 +670,7 @@ impl InspectData {
 
     fn init_nodes_for_logging_data(&mut self) {
         self.logger_root.atomic_update(|logger_root| {
-            self.elapsed_millis = Some(logger_root.create_int("elapsed time (ms)", std::i64::MIN));
+            self.elapsed_millis = Some(logger_root.create_int("elapsed time (ms)", i64::MIN));
             self.sensor_nodes =
                 self.sensor_names.iter().map(|name| logger_root.create_child(name)).collect();
             for node in self.sensor_nodes.iter() {
@@ -699,8 +699,8 @@ impl InspectData {
                 node.record_child("statistics", |statistics_node| {
                     let statistics_period =
                         statistics_node.create_int_array("(start ms, end ms]", 2);
-                    statistics_period.set(0, std::i64::MIN);
-                    statistics_period.set(1, std::i64::MIN);
+                    statistics_period.set(0, i64::MIN);
+                    statistics_period.set(1, i64::MIN);
                     self.statistics_periods.push(statistics_period);
 
                     // The indices of the statistics child nodes match the sequence defined in

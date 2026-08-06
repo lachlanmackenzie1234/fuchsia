@@ -90,7 +90,7 @@ impl std::convert::TryFrom<NormPerfs> for sys::zx_cpu_performance_scale_t {
 
     fn try_from(value: NormPerfs) -> Result<Self, Self::Error> {
         let (fraction, integer) = libm::modf(value.0);
-        if integer > std::u32::MAX as f64 {
+        if integer > u32::MAX as f64 {
             anyhow::bail!("Integer part {} exceeds std::u32::MAX", integer);
         }
         let integer_part = integer as u32;

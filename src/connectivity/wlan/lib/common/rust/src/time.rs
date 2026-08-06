@@ -54,7 +54,7 @@ where
 
 impl TimeUnit {
     pub const DEFAULT_BEACON_INTERVAL: Self = Self(100);
-    pub const MAX: Self = Self(std::u16::MAX);
+    pub const MAX: Self = Self(u16::MAX);
 
     pub const fn into_micros(&self) -> i64 {
         (self.0 as i64) * 1024

@@ -74,7 +74,7 @@ impl From<FemtoWatt> for DecibelMilliWatt {
     fn from(fw: FemtoWatt) -> Self {
         // Note: Negative power returns an invalid value.
         if fw.0 == 0 {
-            DecibelMilliWatt(std::i8::MIN)
+            DecibelMilliWatt(i8::MIN)
         } else {
             let dbm = 10.0 * ((fw.0 as f64).log10() - 12.0);
             DecibelMilliWatt(dbm.round() as i8)

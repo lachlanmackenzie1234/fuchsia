@@ -19,7 +19,6 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use std::time::SystemTime;
-use std::u32;
 use zx::MonotonicDuration;
 
 use crate::task::{ArgNameAndValue, CurrentTask, Kernel};

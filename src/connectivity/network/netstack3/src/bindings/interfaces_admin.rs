@@ -768,7 +768,7 @@ pub(crate) async fn run_interface_control<S: futures::Stream<Item = DeviceState>
         },
     );
     // Enable the stream of futures to be polled concurrently.
-    let mut stream_of_fut = stream_of_fut.buffer_unordered(std::usize::MAX);
+    let mut stream_of_fut = stream_of_fut.buffer_unordered(usize::MAX);
 
     let device_state = {
         device_state

@@ -71,7 +71,6 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::usize;
 use zerocopy::{Immutable, IntoBytes};
 
 uapi::check_arch_independent_layout! {

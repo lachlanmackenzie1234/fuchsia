@@ -5,7 +5,6 @@
 use crate::context::LowpanCtlContext;
 use crate::prelude::*;
 use fidl_fuchsia_lowpan_device::{Credential, Identity, ProvisioningParams};
-use std::u16;
 
 const PROVISION_CMD_NAME_LEN: usize = 63;
 const PROVISION_CMD_CRED_MASTER_LEY_LEN: &[usize] = &[16, 32];

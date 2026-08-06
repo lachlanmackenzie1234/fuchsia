@@ -137,7 +137,7 @@ fn attribution_info_for_kernel(
             resources: vec![fattribution::Resource::ProcessMapped(fattribution::ProcessMapped {
                 process: fuchsia_runtime::process_self().koid().unwrap().raw_koid(),
                 base: 0, // Attribute all the range.
-                len: u64::max_value(),
+                len: u64::MAX,
                 hint_skip_handle_table: false,
             })],
         })),

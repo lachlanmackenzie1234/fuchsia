@@ -197,7 +197,7 @@ impl<T> AudioStreamConn<T> {
                         lead_time.into_nanos(),
                         bytes
                     );
-                    u32::max_value()
+                    u32::MAX
                 }
             },
             None => {

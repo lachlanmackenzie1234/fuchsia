@@ -879,7 +879,7 @@ impl NestablePacketBuilder for DataPacketBuilder {
             std::mem::size_of::<MessageHead>() + std::mem::size_of::<U16>(),
             0,
             0,
-            std::u16::MAX.into(),
+            u16::MAX.into(),
         )
     }
 }
