@@ -211,6 +211,70 @@ mod vmo_rs {
         }
     }
 
+    /// Tests multiple pin calls on the same pages up to the maximum pin count.
+    #[test]
+    fn vmo_multiple_pin_test() {
+        // Creates a page VMO and pins the same pages multiple times.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = PAGE_SIZE * 16;
+        for is_ppb_enabled in [false, true] {
+            let _loaning_guard = ScopedLoaningEnabled::new(is_ppb_enabled);
+
+            // vmobject creation
+            let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, alloc_size));
+
+            // pinning whole range
+            expect_ok!(vmo.commit_range_pinned(0, alloc_size, false));
+            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+            // pinning subrange
+            expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 4 * PAGE_SIZE, false));
+            expect_true!(pages_in_wired_queue(&vmo, 0, alloc_size));
+
+            for _ in 1..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+                // pinning first page max times
+                expect_ok!(vmo.commit_range_pinned(0, PAGE_SIZE, false));
+            }
+            // page is pinned too much
+            expect_eq!(
+                Status::result_into_raw(vmo.commit_range_pinned(0, PAGE_SIZE, false)),
+                Status::UNAVAILABLE.into_raw()
+            );
+
+            vmo.unpin(0, alloc_size);
+            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 4 * PAGE_SIZE));
+            expect_true!(pages_in_any_anonymous_queue(
+                &vmo,
+                5 * PAGE_SIZE,
+                alloc_size - 5 * PAGE_SIZE
+            ));
+            // decommitting pinned range
+            expect_eq!(
+                Status::result_into_raw(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE)),
+                Status::BAD_STATE.into_raw()
+            );
+            // decommitting unpinned range
+            expect_ok!(vmo.decommit_range(5 * PAGE_SIZE, alloc_size - 5 * PAGE_SIZE));
+
+            vmo.unpin(PAGE_SIZE, 4 * PAGE_SIZE);
+            // decommitting unpinned range
+            expect_ok!(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE));
+
+            for _ in 2..crate::vm::page::OBJECT_MAX_PIN_COUNT {
+                vmo.unpin(0, PAGE_SIZE);
+            }
+            // decommitting unpinned range
+            expect_eq!(
+                Status::result_into_raw(vmo.decommit_range(0, PAGE_SIZE)),
+                Status::BAD_STATE.into_raw()
+            );
+
+            vmo.unpin(0, PAGE_SIZE);
+            // decommitting unpinned range
+            expect_ok!(vmo.decommit_range(0, PAGE_SIZE));
+        }
+    }
+
     /// Tests parent merging and user ID updates when VMO hierarchies collapse.
     #[test]
     fn vmo_parent_merge_test() {

@@ -8,6 +8,9 @@ use super::page_state::VmPageState;
 use crate::kernel::types::PAddr;
 use core::ffi::c_void;
 use core::ptr::NonNull;
+use page_bindings as bindings;
+
+pub const OBJECT_MAX_PIN_COUNT: u32 = bindings::VM_PAGE_OBJECT_MAX_PIN_COUNT;
 
 unsafe extern "C" {
     fn cpp_get_count(state: VmPageState) -> u64;
