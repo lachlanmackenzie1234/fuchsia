@@ -14,8 +14,8 @@
 
 __BEGIN_CDECLS
 
-bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues, const void* page);
-bool cpp_page_queues_debug_page_is_any_anonymous(const PageQueues* queues, const void* page);
+bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues, const vm_page_t* page);
+bool cpp_page_queues_debug_page_is_any_anonymous(const PageQueues* queues, const vm_page_t* page);
 
 __END_CDECLS
 

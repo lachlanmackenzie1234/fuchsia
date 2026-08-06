@@ -16,11 +16,11 @@
 extern "C" {
 
 FFI_ALWAYS_INLINE zx_status_t cpp_make_committed_pager_vmo(size_t num_pages, bool trap_dirty,
-                                                           bool resizable, void** out_pages,
+                                                           bool resizable, vm_page_t** out_pages,
                                                            VmObjectPaged** out_vmo) {
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = vm_unittest::make_committed_pager_vmo(
-      num_pages, trap_dirty, resizable, reinterpret_cast<vm_page_t**>(out_pages), &vmo);
+  zx_status_t status =
+      vm_unittest::make_committed_pager_vmo(num_pages, trap_dirty, resizable, out_pages, &vmo);
   *out_vmo = fbl::ExportToRawPtr(&vmo);
   return status;
 }

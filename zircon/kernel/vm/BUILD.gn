@@ -28,6 +28,7 @@ source_set("vm") {
     "mem_command.cc",
     "memory_stats.cc",
     "page.cc",
+    "page_ffi.cc",
     "page_queues.cc",
     "page_queues_ffi.cc",
     "page_source.cc",
@@ -257,6 +258,7 @@ kernel_bindgen_crate("pmm-bindings") {
   type_allowlist = [ "PmmOptDelayReuse" ]
   type_blocklist = [
     "PageQueues",
+    "vm_page_t",
     "zx_paddr_t",
     "zx_status_t",
   ]
@@ -265,6 +267,7 @@ kernel_bindgen_crate("pmm-bindings") {
     "--rustified-enum=PmmOptDelayReuse",
   ]
   deps = [
+    ":page-bindings",
     ":page-queues-bindings",
     "//sdk/rust/zx-types",
   ]
@@ -272,6 +275,7 @@ kernel_bindgen_crate("pmm-bindings") {
   edition = "2024"
   raw_lines = [
     "#![no_std]",
+    "use page_bindings::vm_page_t;",
     "use page_queues_bindings::PageQueues;",
     "pub use zx_types::{zx_paddr_t, zx_status_t};",
   ]
@@ -294,7 +298,6 @@ kernel_bindgen_crate("page-queues-bindings") {
   type_allowlist = [ "PageQueues" ]
   type_blocklist = [
     "fbl_RefPtr",
-    "vm_page",
     "vm_page_t",
     "zx_paddr_t",
     "zx_status_t",
@@ -308,9 +311,13 @@ kernel_bindgen_crate("page-queues-bindings") {
     "--no-recursive-allowlist",
     "--blocklist-function=PageQueues_.*",
   ]
-  deps = [ "//sdk/rust/zx-types" ]
+  deps = [
+    ":page-bindings",
+    "//sdk/rust/zx-types",
+  ]
   raw_lines = [
     "#![no_std]",
+    "use page_bindings::vm_page_t;",
     "pub use zx_types::zx_paddr_t;",
   ]
   expect_lints = [
@@ -321,16 +328,50 @@ kernel_bindgen_crate("page-queues-bindings") {
 
 kernel_bindgen_crate("page-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/page.h" ]
+  headers = [ "include/vm/page_ffi.h" ]
   non_rust_deps = [ ":bindgen_common_deps" ]
   output_name = "page_bindings.rs"
   cpp = true
 
+  edition = "2024"
   notice_year = 2026
   var_allowlist = [ "VM_PAGE_OBJECT_MAX_PIN_COUNT" ]
-
-  edition = "2024"
-  raw_lines = [ "#![no_std]" ]
+  function_allowlist = [
+    "cpp_get_count",
+    "cpp_add_to_initial_count",
+    "cpp_vm_page_is_loan_cancelled",
+    "cpp_vm_page_is_loaned",
+    "cpp_vm_page_set_is_loaned",
+    "cpp_vm_page_clear_is_loaned",
+    "cpp_vm_page_set_is_loan_cancelled",
+    "cpp_vm_page_clear_is_loan_cancelled",
+    "cpp_vm_page_dump",
+    "cpp_vm_page_paddr",
+    "cpp_vm_page_state",
+    "cpp_vm_page_set_state",
+  ]
+  type_allowlist = [
+    "vm_page_t",
+    "vm_page_state",
+  ]
+  opaque_types = [ "vm_page_t" ]
+  rustified_enum = [ "vm_page_state" ]
+  function_blocklist = [
+    "vm_page_get_count",
+    "vm_page_add_to_initial_count",
+    "vm_page_dump",
+  ]
+  additional_bindgen_flags = [
+    "--with-derive-custom-enum=vm_page_state=Ord",
+    "--with-derive-custom-enum=vm_page_state=PartialOrd",
+    "--no-recursive-allowlist",
+  ]
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::zx_paddr_t as paddr_t;",
+  ]
+  expect_lints = [ "non_camel_case_types" ]
+  deps = [ "//sdk/rust/zx-types" ]
 }
 
 kernel_bindgen_crate("vm-fault-bindings") {
@@ -440,7 +481,6 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
   type_blocklist = [
     "VmCowPages",
     "VmObject",
-    "vm_page",
     "vm_page_t",
     "zx_status_t",
   ]
@@ -458,6 +498,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "non_upper_case_globals",
   ]
   deps = [
+    ":page-bindings",
     ":vm-cow-pages-bindings",
     ":vm-object-bindings",
     "//sdk/rust/zx-types",
@@ -465,6 +506,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
 
   raw_lines = [
     "#![no_std]",
+    "use page_bindings::vm_page_t;",
     "use vm_cow_pages_bindings::VmCowPages;",
     "use vm_object_bindings::VmObject;",
     "use zx_types::zx_status_t;",
@@ -490,7 +532,6 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   type_allowlist = [ "VmCowPages" ]
   type_blocklist = [
     "PmmOptDelayReuse",
-    "vm_page",
     "vm_page_t",
     "zx_status_t",
   ]
@@ -503,12 +544,14 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   edition = "2024"
 
   deps = [
+    ":page-bindings",
     ":pmm-bindings",
     "//sdk/rust/zx-types",
   ]
 
   raw_lines = [
     "#![no_std]",
+    "use page_bindings::vm_page_t;",
     "use pmm_bindings::PmmOptDelayReuse;",
     "use zx_types::zx_status_t;",
   ]
@@ -572,6 +615,7 @@ kernel_bindgen_crate("test-helper-bindings") {
   notice_year = 2026
   function_allowlist = [ "cpp_make_committed_pager_vmo" ]
   type_blocklist = [
+    "vm_page_t",
     "zx_status_t",
     "VmObjectPaged",
   ]
@@ -580,10 +624,12 @@ kernel_bindgen_crate("test-helper-bindings") {
 
   raw_lines = [
     "#![no_std]",
+    "use page_bindings::vm_page_t;",
     "use vm_object_paged_bindings::VmObjectPaged;",
     "use zx_types::zx_status_t;",
   ]
   deps = [
+    ":page-bindings",
     ":vm-object-paged-bindings",
     "//sdk/rust/zx-types",
   ]

@@ -17,13 +17,13 @@
 extern "C" {
 
 FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues,
-                                                           const void* page) {
-  return queues->DebugPageIsWired(reinterpret_cast<const vm_page_t*>(page));
+                                                           const vm_page_t* page) {
+  return queues->DebugPageIsWired(page);
 }
 
 FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_any_anonymous(const PageQueues* queues,
-                                                                   const void* page) {
-  return queues->DebugPageIsAnyAnonymous(reinterpret_cast<const vm_page_t*>(page));
+                                                                   const vm_page_t* page) {
+  return queues->DebugPageIsAnyAnonymous(page);
 }
 
 }  // extern "C"

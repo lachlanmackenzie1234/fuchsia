@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::types::PAddr;
-use crate::vm::page::VmPagePtr;
+use crate::vm::page::{VmPagePtr, vm_page_t};
 use crate::vm::page_queues::PageQueues;
 use pmm_bindings as bindings;
 use zx_status::Status;
@@ -18,7 +18,7 @@ pub const ALLOC_FLAG_CAN_WAIT: u32 = bindings::PMM_ALLOC_FLAG_CAN_WAIT;
 
 /// Allocates a single physical page from the PMM.
 pub fn alloc_page(flags: u32) -> Result<(VmPagePtr, PAddr), Status> {
-    let mut page: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut page: *mut vm_page_t = core::ptr::null_mut();
     let mut paddr: bindings::zx_paddr_t = 0;
     // SAFETY: FFI call passing valid stack addresses to store the page pointer and physical address.
     let status = unsafe { bindings::cpp_pmm_alloc_page(flags, &mut page, &mut paddr) };

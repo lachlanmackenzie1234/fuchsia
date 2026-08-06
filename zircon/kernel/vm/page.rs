@@ -6,30 +6,16 @@
 
 use super::page_state::VmPageState;
 use crate::kernel::types::PAddr;
-use core::ffi::c_void;
 use core::ptr::NonNull;
 use page_bindings as bindings;
 
-pub const OBJECT_MAX_PIN_COUNT: u32 = bindings::VM_PAGE_OBJECT_MAX_PIN_COUNT;
+pub use bindings::vm_page_t;
 
-unsafe extern "C" {
-    fn cpp_get_count(state: VmPageState) -> u64;
-    fn cpp_add_to_initial_count(state: VmPageState, n: u64);
-    fn cpp_vm_page_is_loaned(page: *mut c_void) -> bool;
-    fn cpp_vm_page_is_loan_cancelled(page: *mut c_void) -> bool;
-    fn cpp_vm_page_set_is_loaned(page: *mut c_void);
-    fn cpp_vm_page_clear_is_loaned(page: *mut c_void);
-    fn cpp_vm_page_set_is_loan_cancelled(page: *mut c_void);
-    fn cpp_vm_page_clear_is_loan_cancelled(page: *mut c_void);
-    fn cpp_vm_page_dump(page: *mut c_void);
-    fn cpp_vm_page_paddr(page: *mut c_void) -> PAddr;
-    fn cpp_vm_page_state(page: *mut c_void) -> VmPageState;
-    fn cpp_vm_page_set_state(page: *mut c_void, new_state: VmPageState);
-}
+pub const OBJECT_MAX_PIN_COUNT: u32 = bindings::VM_PAGE_OBJECT_MAX_PIN_COUNT;
 
 /// Type-safe wrapper around a raw pointer to a kernel page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VmPagePtr(NonNull<c_void>);
+pub struct VmPagePtr(NonNull<bindings::vm_page_t>);
 
 impl VmPagePtr {
     /// Creates a `VmPagePtr` from a raw pointer.
@@ -37,7 +23,7 @@ impl VmPagePtr {
     /// # Safety
     ///
     /// The caller must ensure that `ptr` is a valid pointer to a kernel page.
-    pub const unsafe fn from_raw(ptr: *mut c_void) -> Option<Self> {
+    pub const unsafe fn from_raw(ptr: *mut bindings::vm_page_t) -> Option<Self> {
         match NonNull::new(ptr) {
             Some(nn) => Some(Self(nn)),
             None => None,
@@ -45,7 +31,7 @@ impl VmPagePtr {
     }
 
     /// Returns the raw pointer.
-    pub fn as_raw(self) -> *mut c_void {
+    pub fn as_raw(self) -> *mut bindings::vm_page_t {
         self.0.as_ptr()
     }
 
@@ -60,7 +46,7 @@ impl VmPagePtr {
     pub unsafe fn is_free(self) -> bool {
         // SAFETY: The caller guarantees via function safety preconditions that it is safe to
         // inspect the page state.
-        unsafe { self.state() == VmPageState::Free }
+        unsafe { self.state().0 == bindings::vm_page_state::FREE }
     }
 
     /// Returns whether this page is in the FREE_LOANED state. Similar to the FREE state the page is
@@ -74,7 +60,7 @@ impl VmPagePtr {
     pub unsafe fn is_free_loaned(self) -> bool {
         // SAFETY: The caller guarantees via function safety preconditions that it is safe to
         // inspect the page state.
-        unsafe { self.state() == VmPageState::FreeLoaned }
+        unsafe { self.state().0 == bindings::vm_page_state::FREE_LOANED }
     }
 
     /// If true, this page is "loaned" in the sense of being loaned from a contiguous VMO (via
@@ -93,7 +79,7 @@ impl VmPagePtr {
     pub unsafe fn is_loaned(self) -> bool {
         // SAFETY: The caller guarantees via function safety preconditions that it is safe to
         // inspect the loaned state.
-        unsafe { cpp_vm_page_is_loaned(self.as_raw()) }
+        unsafe { bindings::cpp_vm_page_is_loaned(self.as_raw()) }
     }
 
     /// If true, the original contiguous VMO wants the page back.  Such pages won't be reused until
@@ -109,7 +95,7 @@ impl VmPagePtr {
     pub unsafe fn is_loan_cancelled(self) -> bool {
         // SAFETY: The caller guarantees via function safety preconditions that it is safe to
         // inspect the loaned state.
-        unsafe { cpp_vm_page_is_loan_cancelled(self.as_raw()) }
+        unsafe { bindings::cpp_vm_page_is_loan_cancelled(self.as_raw()) }
     }
 
     /// Sets the loaned flag on the page.
@@ -119,7 +105,7 @@ impl VmPagePtr {
     /// The caller must ensure that it owns the page and holds the loaned pages lock of the PmmNode
     pub unsafe fn set_is_loaned(self) {
         // SAFETY: The caller guarantees ownership of the page and holds the necessary PmmNode lock.
-        unsafe { cpp_vm_page_set_is_loaned(self.as_raw()) }
+        unsafe { bindings::cpp_vm_page_set_is_loaned(self.as_raw()) }
     }
     /// Clears the loaned flag on the page.
     ///
@@ -128,7 +114,7 @@ impl VmPagePtr {
     /// The caller must ensure that it owns the page and holds the loaned pages lock of the PmmNode
     pub unsafe fn clear_is_loaned(self) {
         // SAFETY: The caller guarantees ownership of the page and holds the necessary PmmNode lock.
-        unsafe { cpp_vm_page_clear_is_loaned(self.as_raw()) }
+        unsafe { bindings::cpp_vm_page_clear_is_loaned(self.as_raw()) }
     }
 
     /// Sets the loan_cancelled flag on the page. May be done even if not the owner of the page.
@@ -138,7 +124,7 @@ impl VmPagePtr {
     /// The caller must ensure that it holds the loaned pages lock of the PmmNode
     pub unsafe fn set_is_loan_cancelled(self) {
         // SAFETY: The caller guarantees holding the necessary PmmNode lock.
-        unsafe { cpp_vm_page_set_is_loan_cancelled(self.as_raw()) }
+        unsafe { bindings::cpp_vm_page_set_is_loan_cancelled(self.as_raw()) }
     }
     /// Clears the loan_cancelled flag on the page. May be done even if not the owner of the page.
     ///
@@ -147,7 +133,7 @@ impl VmPagePtr {
     /// The caller must ensure that it holds the loaned pages lock of the PmmNode
     pub unsafe fn clear_is_loan_cancelled(self) {
         // SAFETY: The caller guarantees holding the necessary PmmNode lock.
-        unsafe { cpp_vm_page_clear_is_loan_cancelled(self.as_raw()) }
+        unsafe { bindings::cpp_vm_page_clear_is_loan_cancelled(self.as_raw()) }
     }
 
     /// Dumps information about the page to the debuglog.
@@ -159,7 +145,7 @@ impl VmPagePtr {
     pub unsafe fn dump(self) {
         // SAFETY: The caller guarantees via function safety preconditions that it is safe to access
         // the page state.
-        unsafe { cpp_vm_page_dump(self.as_raw()) }
+        unsafe { bindings::cpp_vm_page_dump(self.as_raw()) }
     }
 
     /// Return the physical address of the page.
@@ -171,7 +157,7 @@ impl VmPagePtr {
     pub unsafe fn paddr(self) -> PAddr {
         // SAFETY: The caller guarantees via function safety preconditions that it is safe to
         // inspect the page state.
-        unsafe { cpp_vm_page_paddr(self.as_raw()) }
+        unsafe { PAddr(bindings::cpp_vm_page_paddr(self.as_raw())) }
     }
 
     /// Return the current VmPageState of this page.
@@ -183,7 +169,8 @@ impl VmPagePtr {
     pub unsafe fn state(self) -> VmPageState {
         // SAFETY: The caller guarantees via function safety preconditions that it is safe to
         // inspect the page state.
-        unsafe { cpp_vm_page_state(self.as_raw()) }
+        let state = unsafe { bindings::cpp_vm_page_state(self.as_raw()) };
+        VmPageState(state)
     }
 
     /// Sets the VmPageState of this page.
@@ -195,7 +182,7 @@ impl VmPagePtr {
     pub unsafe fn set_state(self, new_state: VmPageState) {
         // SAFETY: The caller guarantees ownership of the page or holding the necessary locks to
         // modify its state.
-        unsafe { cpp_vm_page_set_state(self.as_raw(), new_state) }
+        unsafe { bindings::cpp_vm_page_set_state(self.as_raw(), new_state.0) }
     }
 }
 
@@ -206,7 +193,7 @@ impl VmPagePtr {
 pub fn get_count(state: VmPageState) -> u64 {
     // SAFETY: cpp_get_count is a thread-safe FFI call that disables preemption and reads atomic
     // per-CPU counters.
-    unsafe { cpp_get_count(state) }
+    unsafe { bindings::cpp_get_count(state.0) }
 }
 
 // Add |n| to the count of pages in state |state|.
@@ -217,6 +204,6 @@ pub fn add_to_initial_count(state: VmPageState, n: u64) {
     // SAFETY: cpp_add_to_initial_count is a thread-safe FFI call that disables preemption and
     // modifies atomic per-CPU counters during initialization.
     unsafe {
-        cpp_add_to_initial_count(state, n);
+        bindings::cpp_add_to_initial_count(state.0, n);
     }
 }

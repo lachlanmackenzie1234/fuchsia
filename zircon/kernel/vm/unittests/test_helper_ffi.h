@@ -17,7 +17,7 @@
 __BEGIN_CDECLS
 
 zx_status_t cpp_make_committed_pager_vmo(size_t num_pages, bool trap_dirty, bool resizable,
-                                         void** out_pages, VmObjectPaged** out_vmo);
+                                         vm_page_t** out_pages, VmObjectPaged** out_vmo);
 
 __END_CDECLS
 

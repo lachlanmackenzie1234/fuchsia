@@ -16,9 +16,9 @@
 extern "C" {
 
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_replace_page_with_loaned(VmCowPages* cow,
-                                                                        void* before_page,
+                                                                        vm_page_t* before_page,
                                                                         uint64_t offset) {
-  return cow->ReplacePageWithLoaned(reinterpret_cast<vm_page_t*>(before_page), offset);
+  return cow->ReplacePageWithLoaned(before_page, offset);
 }
 
 FFI_ALWAYS_INLINE void* cpp_vm_cow_pages_get_ref_counted(const VmCowPages* cow) {

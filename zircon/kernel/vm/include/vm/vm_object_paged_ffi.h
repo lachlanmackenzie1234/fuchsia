@@ -22,7 +22,7 @@ VmObjectPaged* cpp_vm_object_paged_create_contiguous(uint32_t pmm_alloc_flags, u
 VmObject* cpp_vm_object_paged_as_vm_object(VmObjectPaged* vmo);
 VmObjectPaged* cpp_vm_object_as_vm_object_paged(VmObject* vmo);
 VmCowPages* cpp_vm_object_paged_debug_get_cow_pages(VmObjectPaged* vmo);
-void* cpp_vm_object_paged_debug_get_page(VmObjectPaged* vmo, uint64_t offset);
+vm_page_t* cpp_vm_object_paged_debug_get_page(VmObjectPaged* vmo, uint64_t offset);
 
 __END_CDECLS
 

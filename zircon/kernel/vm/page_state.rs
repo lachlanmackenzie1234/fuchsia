@@ -5,36 +5,19 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::relaxed_atomic::RelaxedAtomicI64;
+pub use page_bindings as bindings;
 
 /// Defines the state of a VM page (`vm_page_t`).
-///
-/// Be sure to keep this enum in sync with the definition of `vm_page_t`.
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum VmPageState {
-    Free = 0,
-    Alloc,
-    Object,
-    Wired,
-    Heap,
-    /// Allocated to serve arch-specific mmu purposes.
-    Mmu,
-    /// Allocated for platform-specific iommu structures.
-    Iommu,
-    Ipc,
-    Cache,
-    Slab,
-    Zram,
-    FreeLoaned,
-
-    Count,
-}
+#[repr(transparent)]
+pub struct VmPageState(pub bindings::vm_page_state);
 
 impl VmPageState {
+    pub const COUNT: usize = bindings::vm_page_state::COUNT_ as usize;
     /// Returns the index of `self` as a `usize`.
     #[inline]
     pub const fn index(self) -> usize {
-        self as usize
+        self.0 as usize
     }
 }
 
@@ -43,23 +26,23 @@ impl VmPageState {
 #[derive(Debug, Default)]
 pub struct VmPageCounts {
     /// See comment in `percpu::vm_page_counts` for why we used a `RelaxedAtomic`.
-    pub by_state: [RelaxedAtomicI64; (VmPageState::Count).index()],
+    pub by_state: [RelaxedAtomicI64; VmPageState::COUNT],
 }
 
 /// Returns a string description of `state`.
 #[inline]
 pub const fn page_state_to_string(state: VmPageState) -> &'static str {
-    match state {
-        VmPageState::Free => "free",
-        VmPageState::Alloc => "alloc",
-        VmPageState::Object => "object",
-        VmPageState::Wired => "wired",
-        VmPageState::Heap => "heap",
-        VmPageState::Mmu => "mmu",
-        VmPageState::Ipc => "ipc",
-        VmPageState::Cache => "cache",
-        VmPageState::Slab => "slab",
-        VmPageState::Zram => "zram",
+    match state.0 {
+        bindings::vm_page_state::FREE => "free",
+        bindings::vm_page_state::ALLOC => "alloc",
+        bindings::vm_page_state::OBJECT => "object",
+        bindings::vm_page_state::WIRED => "wired",
+        bindings::vm_page_state::HEAP => "heap",
+        bindings::vm_page_state::MMU => "mmu",
+        bindings::vm_page_state::IPC => "ipc",
+        bindings::vm_page_state::CACHE => "cache",
+        bindings::vm_page_state::SLAB => "slab",
+        bindings::vm_page_state::ZRAM => "zram",
         _ => "unknown",
     }
 }

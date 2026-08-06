@@ -4,9 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::vm::page::VmPagePtr;
+use crate::vm::page::{VmPagePtr, vm_page_t};
 use crate::vm::vm_object_paged::VmObjectPaged;
-use core::ffi::c_void;
 use fbl::RefPtr;
 use test_helper_bindings as bindings;
 use zx_status::Status;
@@ -17,7 +16,7 @@ pub fn make_committed_pager_vmo<const N: usize>(
     resizable: bool,
 ) -> Result<(RefPtr<VmObjectPaged>, [VmPagePtr; N]), Status> {
     let mut raw_vmo = core::ptr::null_mut();
-    let mut page_ptrs: [*mut c_void; N] = [core::ptr::null_mut(); N];
+    let mut page_ptrs: [*mut vm_page_t; N] = [core::ptr::null_mut(); N];
 
     // SAFETY: page_ptrs.as_mut_ptr() is valid for writing N pointers, and raw_vmo is a valid out-pointer.
     let status = unsafe {
