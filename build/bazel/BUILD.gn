@@ -16,7 +16,6 @@ import("//build/config/clang/clang.gni")
 import("//build/images/vbmeta.gni")
 import("//build/info/info.gni")
 import("//build/product.gni")
-import("//src/connectivity/policy/netcfg/delegated_network_provisioning.gni")
 
 assert(
     current_toolchain == default_toolchain,
@@ -198,21 +197,6 @@ generated_file("gn_build_variables_for_bazel") {
       location = declaration
     },
   ]
-
-  # LINT.IfChange
-  declaration =
-      "//src/connectivity/policy/netcfg/delegated_network_provisioning.gni"
-  import(declaration)
-  contents += [
-    {
-      name = "delegated_network_provisioning"
-      value = delegated_network_provisioning
-      type = "bool"
-      location = declaration
-    },
-  ]
-
-  # LINT.ThenChange(//src/connectivity/policy/netcfg/delegated_network_provisioning.gni)
 
   # LINT.IfChange
   declaration = "//boards/vim3/args.gni"
