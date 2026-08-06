@@ -11,6 +11,8 @@ struct MutexField {
     ident: Ident,
     class_ident: Ident,
     mutex_type: proc_macro2::TokenStream,
+    custom_class: Option<Ident>,
+    is_phantom: bool,
 }
 
 struct GuardedField {
@@ -38,6 +40,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             let mut is_pinned = false;
             let mut is_unpinned = false;
             let mut attrs_to_remove = Vec::new();
+            let mut custom_class = None;
             let mut mutex_type = quote! { ::ksync::RawMutex };
 
             for (idx, attr) in field.attrs.iter().enumerate() {
@@ -45,10 +48,22 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     is_mutex = true;
                     attrs_to_remove.push(idx);
 
-                    if !matches!(attr.meta, syn::Meta::Path(_)) {
+                    if let syn::Meta::List(meta_list) = &attr.meta {
+                        match meta_list.parse_args::<Ident>() {
+                            Ok(ident) => {
+                                custom_class = Some(ident);
+                            }
+                            Err(_) => {
+                                errors.push(syn::Error::new(
+                                    meta_list.span(),
+                                    "#[mutex(LockClass)] accepts at most one identifier representing the lock class.",
+                                ));
+                            }
+                        }
+                    } else if !matches!(attr.meta, syn::Meta::Path(_)) {
                         errors.push(syn::Error::new(
                             attr.meta.span(),
-                            "#[mutex] attribute does not accept arguments. Use KMutex<LockType> to specify the lock type.",
+                            "#[mutex] attribute must be either #[mutex] or #[mutex(LockClass)].",
                         ));
                     }
                 } else if attr.path().is_ident("brwlock") {
@@ -107,7 +122,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
                 // Automatically prepend the #[pin] attribute for pin-init layout
                 field.attrs.push(syn::parse_quote!(#[pin]));
-                mutex_fields.push((field.clone(), mutex_type));
+                mutex_fields.push((field.clone(), mutex_type, custom_class));
             } else if is_brwlock {
                 if !is_brwlock_type(&field.ty) {
                     errors.push(syn::Error::new(
@@ -151,22 +166,12 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     let mut brwlock_fields_processed = Vec::new();
     let mut generated_names = std::collections::HashSet::new();
 
-    for (field, mutex_type) in mutex_fields {
+    for (field, mutex_type, custom_class) in mutex_fields {
         let field_ident = field.ident.clone().unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
 
-        let class_name = format!("{}{}", struct_ident, format_ident!("{}Class", mu_camel));
         let guard_name = format!("{}{}Guard", struct_ident, mu_camel);
 
-        if !generated_names.insert(class_name.clone()) {
-            errors.push(syn::Error::new(
-                field_ident.span(),
-                format!(
-                    "The lock field '{}' generates the duplicate class name '{}'. Please use distinct field names.",
-                    field_ident, class_name
-                )
-            ));
-        }
         if !generated_names.insert(guard_name.clone()) {
             errors.push(syn::Error::new(
                 field_ident.span(),
@@ -177,8 +182,32 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             ));
         }
 
-        let class_ident = format_ident!("{}{}", struct_ident, format_ident!("{}Class", mu_camel));
-        mutex_fields_processed.push(MutexField { ident: field_ident, class_ident, mutex_type });
+        let class_ident = match custom_class {
+            Some(ref ident) => ident.clone(),
+            None => {
+                let class_name = format!("{}{}", struct_ident, format_ident!("{}Class", mu_camel));
+                if !generated_names.insert(class_name.clone()) {
+                    errors.push(syn::Error::new(
+                        field_ident.span(),
+                        format!(
+                            "The lock field '{}' generates the duplicate class name '{}'. Please use distinct field names.",
+                            field_ident, class_name
+                        )
+                    ));
+                }
+                format_ident!("{}{}", struct_ident, format_ident!("{}Class", mu_camel))
+            }
+        };
+
+        let is_phantom = is_phantom_mutex_type(&field.ty);
+
+        mutex_fields_processed.push(MutexField {
+            ident: field_ident,
+            class_ident,
+            mutex_type,
+            custom_class,
+            is_phantom,
+        });
     }
 
     for field in brwlock_fields {
@@ -222,6 +251,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             ident: field_ident,
             class_ident,
             mutex_type: quote! { ::ksync::RawBrwLockPi },
+            custom_class: None,
+            is_phantom: false,
         });
     }
 
@@ -310,7 +341,10 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 let ident = &const_param.ident;
                 Some(quote! { #ident })
             }
-            syn::GenericParam::Lifetime(_) => None,
+            syn::GenericParam::Lifetime(lifetime_param) => {
+                let lifetime = &lifetime_param.lifetime;
+                Some(quote! { #lifetime })
+            }
         })
         .collect();
 
@@ -333,11 +367,13 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     // 1. ZST Lock Class structures are shared globally
     let mut marker_structs = quote! {};
     for lock in mutex_fields_processed.iter().chain(brwlock_fields_processed.iter()) {
-        let class_ident = &lock.class_ident;
-        marker_structs.extend(quote! {
-            #[allow(non_camel_case_types)]
-            #struct_vis struct #class_ident;
-        });
+        if lock.custom_class.is_none() {
+            let class_ident = &lock.class_ident;
+            marker_structs.extend(quote! {
+                #[allow(non_camel_case_types)]
+                #struct_vis struct #class_ident;
+            });
+        }
     }
 
     let mut generated_code = quote! {};
@@ -353,9 +389,15 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let guard_ident = format_ident!("{}{}Guard", struct_ident, mu_camel);
         let fields_ident = format_ident!("{}{}Fields", struct_ident, mu_camel);
         let fields_mut_ident = format_ident!("{}{}FieldsMut", struct_ident, mu_camel);
+        let token_guard_ident = format_ident!("{}{}TokenGuard", struct_ident, mu_camel);
+        let token_guard_mut_ident = format_ident!("{}{}TokenGuardMut", struct_ident, mu_camel);
 
         let mut lock_method_ident = format_ident!("lock_{}", mu_ident);
         lock_method_ident.set_span(mu_ident.span());
+        let mut guard_method_ident = format_ident!("guard_{}", mu_ident);
+        guard_method_ident.set_span(mu_ident.span());
+        let mut guard_mut_method_ident = format_ident!("guard_{}_mut", mu_ident);
+        guard_mut_method_ident.set_span(mu_ident.span());
 
         let this_guarded_fields: Vec<&GuardedField> =
             guarded_fields.iter().filter(|f| f.mutex_ident == *mu_ident).collect();
@@ -365,6 +407,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let mut fields_mut_decl = quote! {};
         let mut fields_init = quote! {};
         let mut fields_mut_init = quote! {};
+        let mut token_guard_accessors = quote! {};
+        let mut token_guard_mut_accessors = quote! {};
 
         for f in &this_guarded_fields {
             let f_ident = &f.ident;
@@ -372,6 +416,45 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             let f_vis = &f.vis;
 
             let f_mut_ident = format_ident!("{}_mut", f_ident);
+
+            token_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> &#f_ty {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get(self.token) }
+                }
+            });
+
+            if f.project_as_pin {
+                token_guard_mut_accessors.extend(quote! {
+                    #[inline]
+                    #f_vis fn #f_ident(&self) -> &#f_ty {
+                        // SAFETY: The lock token proves that the lock protecting this cell is held.
+                        unsafe { self.parent.#f_ident.get(&*self.token) }
+                    }
+
+                    #[inline]
+                    #f_vis fn #f_mut_ident(&mut self) -> ::core::pin::Pin<&mut #f_ty> {
+                        // SAFETY: We hold an exclusive mutable reference to the guard token,
+                        // and the parent struct is pinned so structurally pinned fields remain pinned.
+                        unsafe { ::core::pin::Pin::new_unchecked(self.parent.#f_ident.get_mut(&mut *self.token)) }
+                    }
+                });
+            } else {
+                token_guard_mut_accessors.extend(quote! {
+                    #[inline]
+                    #f_vis fn #f_ident(&self) -> &#f_ty {
+                        // SAFETY: The lock token proves that the lock protecting this cell is held.
+                        unsafe { self.parent.#f_ident.get(&*self.token) }
+                    }
+
+                    #[inline]
+                    #f_vis fn #f_mut_ident(&mut self) -> &mut #f_ty {
+                        // SAFETY: We hold an exclusive mutable reference to the guard token.
+                        unsafe { self.parent.#f_ident.get_mut(&mut *self.token) }
+                    }
+                });
+            }
 
             if f.project_as_pin {
                 guard_accessors.extend(quote! {
@@ -449,17 +532,113 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         }
 
         let params_with_bounds = &params_no_defaults;
-        let guard_decl_generics = quote! { <'a, #params_with_bounds> };
-        let guard_ty_generics = quote! { <'a, #(#ty_params),*> };
-        let return_ty_generics = quote! { <'_, #(#ty_params),*> };
         let fields_decl_generics = quote! { <'b, #params_with_bounds> };
         let fields_ty_generics = quote! { <'b, #(#ty_params),*> };
+        let fields_ret_ty_generics = quote! { <'f, #(#ty_params),*> };
+        let token_guard_decl_generics = quote! { <'b, 'a, #params_with_bounds> };
+        let token_guard_impl_generics = quote! { <'b, 'a, #params_with_bounds> };
+        let token_guard_ty_generics = quote! { <'b, 'a, #(#ty_params),*> };
 
         let struct_upper = struct_ident.to_string().to_ascii_uppercase();
         let mu_upper = mu_camel.to_string().to_ascii_uppercase();
         let reg_ident = format_ident!("{}_{}_REGISTRATION", struct_upper, mu_upper);
         let string_reg_ident = format_ident!("{}_{}_STRING_REG", struct_upper, mu_upper);
         let path_name = format!("{}::{}", struct_ident, mu_ident);
+
+        let guard_struct_generics = if mutex.is_phantom {
+            let mut params = params_no_defaults.clone();
+            params.push(syn::parse_quote!(M: ::ksync::RawLock = ::ksync::RawMutex));
+            quote! { <'a, #params> }
+        } else {
+            quote! { <'a, #params_with_bounds> }
+        };
+        let guard_impl_generics = if mutex.is_phantom {
+            let mut params = params_no_defaults.clone();
+            params.push(syn::parse_quote!(M: ::ksync::RawLock));
+            quote! { <'a, #params> }
+        } else {
+            quote! { <'a, #params_with_bounds> }
+        };
+        let guard_ty_generics = if mutex.is_phantom {
+            let mut args = ty_params.clone();
+            args.push(quote! { M });
+            quote! { <'a, #(#args),*> }
+        } else {
+            quote! { <'a, #(#ty_params),*> }
+        };
+        let guard_inner_type = if mutex.is_phantom {
+            quote! { ::ksync::KMutexGuard<'a, #class_ident, M> }
+        } else {
+            quote! { ::ksync::KMutexGuard<'a, #class_ident, #mutex_type> }
+        };
+        let lock_method_def = if mutex.is_phantom {
+            quote! {
+                #[inline]
+                #struct_vis fn #lock_method_ident<'a, M: ::ksync::RawLock>(
+                    &'a self,
+                    real_mutex: &'a ::ksync::KMutex<#class_ident, M>,
+                ) -> impl pin_init::PinInit<#guard_ident #guard_ty_generics, ::core::convert::Infallible> {
+                    pin_init::pin_init!(#guard_ident {
+                        parent: self,
+                        inner <- ::ksync::KMutexGuard::new(real_mutex),
+                    })
+                }
+            }
+        } else {
+            let return_ty_generics = quote! { <'_, #(#ty_params),*> };
+            quote! {
+                #[inline]
+                #struct_vis fn #lock_method_ident(&self) -> impl pin_init::PinInit<#guard_ident #return_ty_generics, ::core::convert::Infallible> {
+                    pin_init::pin_init!(#guard_ident {
+                        parent: self,
+                        inner <- ::ksync::KMutexGuard::new(&self.#mu_ident),
+                    })
+                }
+            }
+        };
+
+        let guard_method_def = quote! {
+            #[inline]
+            #struct_vis fn #guard_method_ident<'b, 'a>(
+                &'b self,
+                token: &'b ::ksync::LockToken<'a, #class_ident>,
+            ) -> #token_guard_ident #token_guard_ty_generics {
+                #token_guard_ident {
+                    parent: self,
+                    token,
+                }
+            }
+
+            #[inline]
+            #struct_vis fn #guard_mut_method_ident<'b, 'a>(
+                &'b self,
+                token: &'b mut ::ksync::LockToken<'a, #class_ident>,
+            ) -> #token_guard_mut_ident #token_guard_ty_generics {
+                #token_guard_mut_ident {
+                    parent: self,
+                    token,
+                }
+            }
+        };
+
+        let class_registration_code = if mutex.custom_class.is_none() {
+            quote! {
+                ::ksync::declare_interned_string!(#string_reg_ident, #path_name);
+
+                #[unsafe(link_section = "rust_lock_classes")]
+                #[used]
+                static #reg_ident: ::ksync::LockClassRegistration = ::ksync::LockClassRegistration::with_flags(
+                    #string_reg_ident,
+                    #flags_expr,
+                );
+
+                impl ::ksync::LockClass for #class_ident {
+                    const ID: *mut ::core::ffi::c_void = #reg_ident.get();
+                }
+            }
+        } else {
+            quote! {}
+        };
 
         generated_code.extend(quote! {
             #[allow(dead_code)]
@@ -474,38 +653,36 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 _marker: ::core::marker::PhantomData<(&'b (), #(#phantom_ty_params),*)>,
             }
 
-            ::ksync::declare_interned_string!(#string_reg_ident, #path_name);
-
-            #[unsafe(link_section = "rust_lock_classes")]
-            #[used]
-            static #reg_ident: ::ksync::LockClassRegistration = ::ksync::LockClassRegistration::with_flags(
-                #string_reg_ident,
-                #flags_expr,
-            );
-
-            impl ::ksync::LockClass for #class_ident {
-                const ID: *mut ::core::ffi::c_void = #reg_ident.get();
-            }
+            #class_registration_code
 
             #[pin_init::pin_data(PinnedDrop)]
-            #struct_vis struct #guard_ident #guard_decl_generics #where_clause {
+            #struct_vis struct #guard_ident #guard_struct_generics #where_clause {
                 parent: &'a #struct_ident #ty_generics,
                 #[pin]
-                inner: ::ksync::KMutexGuard<'a, #class_ident, #mutex_type>,
+                inner: #guard_inner_type,
             }
 
             #[pin_init::pinned_drop]
-            impl #guard_decl_generics pin_init::PinnedDrop for #guard_ident #guard_ty_generics #where_clause {
+            impl #guard_impl_generics pin_init::PinnedDrop for #guard_ident #guard_ty_generics #where_clause {
                 fn drop(self: ::core::pin::Pin<&mut Self>) {
                 }
             }
 
-            impl #guard_decl_generics #guard_ident #guard_ty_generics #where_clause {
+            impl #guard_impl_generics #guard_ident #guard_ty_generics #where_clause {
                 #guard_accessors
 
                 #[inline]
                 #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
                     self.inner.token()
+                }
+
+                #[inline]
+                #struct_vis fn token_mut(self: ::core::pin::Pin<&mut Self>) -> &mut ::ksync::LockToken<'a, #class_ident> {
+                    // SAFETY: Safe projection to obtain unpinned reference to self without moving fields.
+                    let me = unsafe { self.get_unchecked_mut() };
+                    // SAFETY: `inner` is structurally pinned inside `self`.
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    inner_pin.token_mut()
                 }
 
                 #[inline]
@@ -532,14 +709,74 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-            impl #impl_generics #struct_ident #ty_generics #where_clause {
+            #[allow(dead_code)]
+            #struct_vis struct #token_guard_ident #token_guard_decl_generics #where_clause {
+                parent: &'b #struct_ident #ty_generics,
+                token: &'b ::ksync::LockToken<'a, #class_ident>,
+            }
+
+            impl #token_guard_impl_generics #token_guard_ident #token_guard_ty_generics #where_clause {
+                #token_guard_accessors
+
                 #[inline]
-                #struct_vis fn #lock_method_ident(&self) -> impl pin_init::PinInit<#guard_ident #return_ty_generics, ::core::convert::Infallible> {
-                    pin_init::pin_init!(#guard_ident {
-                        parent: self,
-                        inner <- ::ksync::KMutexGuard::new(&self.#mu_ident),
-                    })
+                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+                    self.token
                 }
+
+                #[inline]
+                #struct_vis fn fields<'f>(&'f self) -> #fields_ident #fields_ret_ty_generics {
+                    let me = self;
+                    let token = me.token;
+                    #fields_ident {
+                        #fields_init
+                        _marker: ::core::marker::PhantomData,
+                    }
+                }
+            }
+
+            #[allow(dead_code)]
+            #struct_vis struct #token_guard_mut_ident #token_guard_decl_generics #where_clause {
+                parent: &'b #struct_ident #ty_generics,
+                token: &'b mut ::ksync::LockToken<'a, #class_ident>,
+            }
+
+            impl #token_guard_impl_generics #token_guard_mut_ident #token_guard_ty_generics #where_clause {
+                #token_guard_mut_accessors
+
+                #[inline]
+                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+                    &*self.token
+                }
+
+                #[inline]
+                #struct_vis fn token_mut(&mut self) -> &mut ::ksync::LockToken<'a, #class_ident> {
+                    &mut *self.token
+                }
+
+                #[inline]
+                #struct_vis fn fields<'f>(&'f self) -> #fields_ident #fields_ret_ty_generics {
+                    let me = self;
+                    let token = &*me.token;
+                    #fields_ident {
+                        #fields_init
+                        _marker: ::core::marker::PhantomData,
+                    }
+                }
+
+                #[inline]
+                #struct_vis fn fields_mut<'f>(&'f mut self) -> #fields_mut_ident #fields_ret_ty_generics {
+                    let me = self;
+                    let token = &mut *me.token;
+                    #fields_mut_ident {
+                        #fields_mut_init
+                        _marker: ::core::marker::PhantomData,
+                    }
+                }
+            }
+
+            impl #impl_generics #struct_ident #ty_generics #where_clause {
+                #lock_method_def
+                #guard_method_def
             }
         });
     }
@@ -554,10 +791,16 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let read_fields_ident = format_ident!("{}{}ReadFields", struct_ident, mu_camel);
         let write_fields_ident = format_ident!("{}{}WriteFields", struct_ident, mu_camel);
 
+        let read_token_guard_ident = format_ident!("{}{}ReadTokenGuard", struct_ident, mu_camel);
+        let write_token_guard_ident = format_ident!("{}{}WriteTokenGuard", struct_ident, mu_camel);
         let mut read_lock_method_ident = format_ident!("read_{}", lock_ident);
         read_lock_method_ident.set_span(lock_ident.span());
         let mut write_lock_method_ident = format_ident!("write_{}", lock_ident);
         write_lock_method_ident.set_span(lock_ident.span());
+        let mut guard_read_method_ident = format_ident!("guard_read_{}", lock_ident);
+        guard_read_method_ident.set_span(lock_ident.span());
+        let mut guard_write_method_ident = format_ident!("guard_write_{}", lock_ident);
+        guard_write_method_ident.set_span(lock_ident.span());
 
         let this_guarded_fields: Vec<&GuardedField> =
             guarded_fields.iter().filter(|f| f.mutex_ident == *lock_ident).collect();
@@ -568,6 +811,8 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let mut write_fields_decl = quote! {};
         let mut read_fields_init = quote! {};
         let mut write_fields_init = quote! {};
+        let mut read_token_guard_accessors = quote! {};
+        let mut write_token_guard_accessors = quote! {};
 
         for f in &this_guarded_fields {
             let f_ident = &f.ident;
@@ -575,6 +820,45 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             let f_vis = &f.vis;
 
             let f_mut_ident = format_ident!("{}_mut", f_ident);
+
+            read_token_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> &#f_ty {
+                    // SAFETY: The read token proves shared access to this cell.
+                    unsafe { self.parent.#f_ident.get(self.token) }
+                }
+            });
+
+            if f.project_as_pin {
+                write_token_guard_accessors.extend(quote! {
+                    #[inline]
+                    #f_vis fn #f_ident(&self) -> &#f_ty {
+                        // SAFETY: The write token proves shared access to this cell.
+                        unsafe { self.parent.#f_ident.get(&*self.token) }
+                    }
+
+                    #[inline]
+                    #f_vis fn #f_mut_ident(&mut self) -> ::core::pin::Pin<&mut #f_ty> {
+                        // SAFETY: We hold an exclusive mutable reference to the write token,
+                        // and the parent struct is pinned so structurally pinned fields remain pinned.
+                        unsafe { ::core::pin::Pin::new_unchecked(self.parent.#f_ident.get_mut(&mut *self.token)) }
+                    }
+                });
+            } else {
+                write_token_guard_accessors.extend(quote! {
+                    #[inline]
+                    #f_vis fn #f_ident(&self) -> &#f_ty {
+                        // SAFETY: The write token proves shared access to this cell.
+                        unsafe { self.parent.#f_ident.get(&*self.token) }
+                    }
+
+                    #[inline]
+                    #f_vis fn #f_mut_ident(&mut self) -> &mut #f_ty {
+                        // SAFETY: We hold an exclusive mutable reference to the write token.
+                        unsafe { self.parent.#f_ident.get_mut(&mut *self.token) }
+                    }
+                });
+            }
 
             read_guard_accessors.extend(quote! {
                 #[inline]
@@ -627,8 +911,12 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let guard_decl_generics = quote! { <'a, #params_with_bounds> };
         let guard_ty_generics = quote! { <'a, #(#ty_params),*> };
         let return_ty_generics = quote! { <'_, #(#ty_params),*> };
+        let token_guard_decl_generics = quote! { <'b, 'a, #params_with_bounds> };
+        let token_guard_impl_generics = quote! { <'b, 'a, #params_with_bounds> };
+        let token_guard_ty_generics = quote! { <'b, 'a, #(#ty_params),*> };
         let fields_decl_generics = quote! { <'b, #params_with_bounds> };
         let fields_ty_generics = quote! { <'b, #(#ty_params),*> };
+        let fields_ret_ty_generics = quote! { <'f, #(#ty_params),*> };
 
         let struct_upper = struct_ident.to_string().to_ascii_uppercase();
         let mu_upper = mu_camel.to_string().to_ascii_uppercase();
@@ -726,6 +1014,71 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
+            #[allow(dead_code)]
+            #struct_vis struct #read_token_guard_ident #token_guard_decl_generics #where_clause {
+                parent: &'b #struct_ident #ty_generics,
+                token: &'b ::ksync::LockToken<'a, #class_ident>,
+            }
+
+            impl #token_guard_impl_generics #read_token_guard_ident #token_guard_ty_generics #where_clause {
+                #read_token_guard_accessors
+
+                #[inline]
+                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+                    self.token
+                }
+
+                #[inline]
+                #struct_vis fn fields<'f>(&'f self) -> #read_fields_ident #fields_ret_ty_generics {
+                    let me = self;
+                    let token = me.token;
+                    #read_fields_ident {
+                        #read_fields_init
+                        _marker: ::core::marker::PhantomData,
+                    }
+                }
+            }
+
+            #[allow(dead_code)]
+            #struct_vis struct #write_token_guard_ident #token_guard_decl_generics #where_clause {
+                parent: &'b #struct_ident #ty_generics,
+                token: &'b mut ::ksync::LockToken<'a, #class_ident>,
+            }
+
+            impl #token_guard_impl_generics #write_token_guard_ident #token_guard_ty_generics #where_clause {
+                #write_token_guard_accessors
+
+                #[inline]
+                #struct_vis fn token(&self) -> &::ksync::LockToken<'a, #class_ident> {
+                    &*self.token
+                }
+
+                #[inline]
+                #struct_vis fn token_mut(&mut self) -> &mut ::ksync::LockToken<'a, #class_ident> {
+                    &mut *self.token
+                }
+
+                #[inline]
+                #struct_vis fn fields<'f>(&'f self) -> #read_fields_ident #fields_ret_ty_generics {
+                    let me = self;
+                    let token = &*me.token;
+                    #read_fields_ident {
+                        #read_fields_init
+                        _marker: ::core::marker::PhantomData,
+                    }
+                }
+
+                #[inline]
+                #struct_vis fn fields_mut<'f>(&'f mut self) -> #write_fields_ident #fields_ret_ty_generics {
+                    let me = self;
+                    let token = &mut *me.token;
+                    #write_fields_ident {
+                        #write_fields_init
+                        _marker: ::core::marker::PhantomData,
+                    }
+                }
+            }
+
             impl #impl_generics #struct_ident #ty_generics #where_clause {
                 #[inline]
                 #struct_vis fn #read_lock_method_ident(&self) -> impl pin_init::PinInit<#read_guard_ident #return_ty_generics, ::core::convert::Infallible> {
@@ -741,6 +1094,28 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                         parent: self,
                         inner <- ::ksync::BrwLockPiWriteGuard::new(&self.#lock_ident),
                     })
+                }
+
+                #[inline]
+                #struct_vis fn #guard_read_method_ident<'b, 'a>(
+                    &'b self,
+                    token: &'b ::ksync::LockToken<'a, #class_ident>,
+                ) -> #read_token_guard_ident #token_guard_ty_generics {
+                    #read_token_guard_ident {
+                        parent: self,
+                        token,
+                    }
+                }
+
+                #[inline]
+                #struct_vis fn #guard_write_method_ident<'b, 'a>(
+                    &'b self,
+                    token: &'b mut ::ksync::LockToken<'a, #class_ident>,
+                ) -> #write_token_guard_ident #token_guard_ty_generics {
+                    #write_token_guard_ident {
+                        parent: self,
+                        token,
+                    }
                 }
             }
         });
@@ -825,4 +1200,23 @@ fn extract_lock_type(ty: &Type) -> Result<Option<proc_macro2::TokenStream>, syn:
         }
     }
     Ok(None)
+}
+
+fn is_phantom_mutex_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(last_segment) = type_path.path.segments.last() {
+            if last_segment.ident == "KMutex" {
+                if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
+                    if let Some(syn::GenericArgument::Type(Type::Path(arg_path))) =
+                        args.args.first()
+                    {
+                        if let Some(arg_seg) = arg_path.path.segments.last() {
+                            return arg_seg.ident == "PhantomMutex";
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
 }

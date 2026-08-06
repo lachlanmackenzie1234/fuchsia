@@ -41,6 +41,7 @@ macro_rules! lock {
 mod kcell;
 mod kmutex;
 mod lock_token;
+mod phantom_mutex;
 mod raw_lock;
 
 #[cfg(not(feature = "kernel"))]
@@ -66,6 +67,7 @@ mod raw_userspace_brwlock;
 pub use kmutex::{KMutex, KMutexGuard};
 pub use lock_token::LockToken;
 pub use lockdep::{LockClass, LockClassRegistration};
+pub use phantom_mutex::PhantomMutex;
 pub use raw_lock::{LockPolicy, RawLock};
 
 #[cfg(not(feature = "kernel"))]

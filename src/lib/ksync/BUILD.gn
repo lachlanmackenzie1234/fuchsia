@@ -26,6 +26,7 @@ rustc_library("ksync") {
     "src/kmutex.rs",
     "src/lib.rs",
     "src/lock_token.rs",
+    "src/phantom_mutex.rs",
     "src/raw_kernel_brwlock.rs",
     "src/raw_kernel_event.rs",
     "src/raw_kernel_mutex.rs",
@@ -90,6 +91,7 @@ if (is_kernel) {
       ":ksync",
       "//third_party/rust_crates:pin-init",
       "//zircon/kernel/lib/unittest:unittest-rs",
+      "//zircon/system/ulib/fbl/rust:fbl",
     ]
   }
 }

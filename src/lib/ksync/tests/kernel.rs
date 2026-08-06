@@ -6,10 +6,14 @@
 #[unittest::suite(name = "rust_ksync")]
 /// Tests for Rust ksync bindings
 mod ksync_tests {
-    use pin_init::{pin_init, stack_pin_init};
+    use pin_init::{pin_data, pin_init, stack_pin_init};
     use unittest::{assert_true, expect_false, expect_ok, expect_true};
 
     #[ksync::guarded]
+    #[fbl::ref_counted]
+    #[derive(fbl::Recyclable)]
+    #[pin_data]
+    #[repr(C)]
     struct GuardedMutexObj {
         #[mutex]
         mu: ksync::KMutex,
@@ -49,6 +53,14 @@ mod ksync_tests {
         value: u32,
     }
 
+    #[ksync::guarded]
+    struct GuardedPhantomObj {
+        #[mutex(GuardedMutexObjMuClass)]
+        mu: ksync::KMutex<ksync::PhantomMutex>,
+        #[guarded_by(mu)]
+        target: fbl::RefPtr<GuardedMutexObj>,
+    }
+
     unsafe extern "C" {
         fn cpp_verify_mutex_id(
             lock: *const core::ffi::c_void,
@@ -71,10 +83,11 @@ mod ksync_tests {
     /// test Rust KMutex ID
     #[test]
     fn mutex_id() {
-        stack_pin_init!(let obj = pin_init!(GuardedMutexObj {
+        let obj = fbl::pin_make_ref_counted!(GuardedMutexObj {
             mu <- ksync::KMutex::init(),
             value: 0.into(),
-        }));
+        })
+        .unwrap();
         unsafe {
             assert_true!(cpp_verify_mutex_id(
                 &obj.mu as *const _ as *const core::ffi::c_void,
@@ -162,10 +175,11 @@ mod ksync_tests {
     /// test Rust KMutex
     #[test]
     fn mutex() {
-        stack_pin_init!(let obj = pin_init!(GuardedMutexObj {
+        let obj = fbl::pin_make_ref_counted!(GuardedMutexObj {
             mu <- ksync::KMutex::init(),
             value: 42.into(),
-        }));
+        })
+        .unwrap();
 
         {
             ksync::lock!(let mut guard = obj.lock_mu());
@@ -176,6 +190,50 @@ mod ksync_tests {
         {
             ksync::lock!(let guard = obj.lock_mu());
             expect_true!(*guard.value() == 43);
+        }
+    }
+
+    /// test PhantomMutex and #[mutex(LockClass)]
+    #[test]
+    fn phantom_lock() {
+        // This test demonstrates how an object (`phantom_obj`) can use a zero-sized `PhantomMutex`
+        // to participate in `#[guarded]` type checking while physical mutual exclusion is
+        // provided by an external physical lock (`real_obj.mu`).
+
+        // Create an object with a real, physical `KMutex`, wrapped in an `fbl::RefPtr`.
+        let real_obj = fbl::pin_make_ref_counted!(GuardedMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 1.into(),
+        })
+        .unwrap();
+
+        // Create an object protected by a zero-sized `PhantomMutex` (no physical lock storage).
+        // Its synchronization is provided externally by `real_obj.mu`.
+        let target = real_obj.clone();
+        stack_pin_init!(let phantom_obj = pin_init!(GuardedPhantomObj {
+            mu: ksync::KMutex::new(ksync::PhantomMutex),
+            target: target.into(),
+        }));
+
+        {
+            // Acquire a guard for `phantom_obj` by passing the physical `real_obj.mu` to `lock_mu`.
+            ksync::lock!(let mut guard = phantom_obj.lock_mu(&real_obj.mu));
+
+            // Read the reference to `real_obj` from `phantom_obj.target`.
+            let target = guard.target().clone();
+
+            // Using the proof token from `guard`, read `target.value`.
+            expect_true!(*target.guard_mu(guard.token()).value() == 1);
+
+            // Modify `target.value` using the mutable token from `guard`.
+            *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 200;
+        }
+
+        {
+            // Lock `real_obj` directly using `GuardedMutexObj`'s own guard to verify
+            // that we read back the same value (200) that was written via `phantom_obj`.
+            ksync::lock!(let guard = real_obj.lock_mu());
+            expect_true!(*guard.value() == 200);
         }
     }
 
