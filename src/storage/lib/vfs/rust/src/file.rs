@@ -303,21 +303,9 @@ pub fn serve(
 #[cfg(test)]
 #[cfg(not(feature = "fdomain"))]
 pub fn serve_proxy(file: Arc<impl FileLike>, flags: fio::Flags) -> fio::FileProxy {
-    #[cfg(feature = "fdomain")]
-    let scope = crate::execution_scope::ExecutionScope::new(flex_local::local_client_empty());
-    #[cfg(not(feature = "fdomain"))]
     let scope = crate::execution_scope::ExecutionScope::new();
-
-    #[cfg(feature = "fdomain")]
-    let (proxy, server) = {
-        let client = scope.domain();
-        client.create_proxy::<fio::FileMarker>()
-    };
-    #[cfg(not(feature = "fdomain"))]
     let (proxy, server) = fidl::endpoints::create_proxy::<fio::FileMarker>();
-
     let request = flags.to_object_request(server);
-
     request.handle(|request| serve(file, scope, &flags, request));
     proxy
 }
