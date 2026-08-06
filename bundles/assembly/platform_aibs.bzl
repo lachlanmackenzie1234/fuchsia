@@ -63,6 +63,7 @@ bringup_platform_aib_names = [
     "usb_ums_function",
 
     # Storage
+    "auto_slot_committer",
     "fshost_common",
     "fshost_non_eng",
     "fshost_non_recovery",

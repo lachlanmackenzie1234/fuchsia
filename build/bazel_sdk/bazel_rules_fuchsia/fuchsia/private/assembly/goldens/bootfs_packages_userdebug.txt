@@ -3,6 +3,7 @@ archivist
 ?archivist-pipelines
 ?asix-88179
 ?asix-88772b
+?auto-slot-committer
 ?blobfs
 block-core
 ?boot-shell-commands

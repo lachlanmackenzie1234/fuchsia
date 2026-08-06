@@ -55,6 +55,13 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             }
         }
 
+        // Add auto-slot-committer if requested. This unconditionally marks the current slot as
+        // successful on boot, to avoid triggering bootloader slot failure logic after consecutive
+        // boots.
+        if storage_config.auto_slot_committer {
+            builder.platform_bundle("auto_slot_committer")?;
+        }
+
         // Include fuchsia.fshost/Recovery capabilities if this configuration supports recovery
         // (e.g. userspace fastboot or FDR), or if we are including partitioning tools that require
         // recovery functionality (e.g. to reset the device partition tables or flash a new system).

@@ -40,6 +40,10 @@ pub struct StorageConfig {
     /// If set, use keymint for encrypting data.  Requires the `fuchsia::keymint` board capability.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub keymint_enabled: bool,
+
+    /// If set, include the auto-slot-committer component.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub auto_slot_committer: bool,
 }
 
 /// Platform configuration options for the component id index

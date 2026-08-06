@@ -501,6 +501,10 @@ group("paver_legacy") {
   deps = [ "//bundles/assembly/bazel_inputs/src/bringup/bin/paver:package" ]
 }
 
+group("auto_slot_committer") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/bringup/bin/auto-slot-committer:package" ]
+}
+
 group("paver_shards_bootstrap") {
   deps = []
 }

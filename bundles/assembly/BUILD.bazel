@@ -1003,6 +1003,26 @@ assembly_input_bundle(
 
 # buildifier: leave-alone
 assembly_input_bundle(
+    name = "auto_slot_committer",
+    allowed_in = [
+        # The real system-update-committer handles slot management on
+        # higher-featured builds, so we should only use auto-slot-committer
+        # for bootstrap. We also restrict to userdebug/eng builds, there's a
+        # higher bar for adding components to user builds and we don't need it
+        # for bringup.
+        "bootstrap::userdebug",
+        "bootstrap::eng",
+    ],
+    bootstrap_shards = [
+        "//src/bringup/bin/auto-slot-committer:meta/auto-slot-committer.bootstrap_shard.cml",
+    ],
+    bootfs_packages = [
+        "//bundles/assembly/bazel_inputs/src/bringup/bin/auto-slot-committer:package",
+    ],
+)
+
+# buildifier: leave-alone
+assembly_input_bundle(
     name = "paver_shards_core",
     core_shards = [
         "//src/bringup/bin/paver:meta/paver.core_shard.cml",
