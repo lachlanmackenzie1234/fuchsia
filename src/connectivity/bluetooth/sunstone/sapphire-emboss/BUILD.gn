@@ -6,6 +6,10 @@ import("//build/rust/rustc_library.gni")
 import(
     "//third_party/github.com/google/experimental-emboss-rust/build_defs.gni")
 
+emboss_rust_library("pw_bluetooth_att_emb") {
+  source = "emboss/pw_bluetooth/att.emb"
+}
+
 emboss_rust_library("pw_bluetooth_hci_common_emb") {
   source = "emboss/pw_bluetooth/hci_common.emb"
 }
@@ -30,6 +34,7 @@ rustc_library("sapphire-emboss") {
   with_unit_tests = true
   sources = [ "src/lib.rs" ]
   deps = [
+    ":pw_bluetooth_att_emb",
     ":pw_bluetooth_hci_commands_emb",
     ":pw_bluetooth_hci_common_emb",
     ":pw_bluetooth_hci_h4_emb",
