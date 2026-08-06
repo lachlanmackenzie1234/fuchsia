@@ -373,7 +373,6 @@ zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
   const std::vector<fuchsia_driver_framework::NodeProperty2> irq_gpio_properties{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_INTERRUPT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "INTERRUPT"),
   };
 
@@ -387,7 +386,6 @@ zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
   const std::vector<fuchsia_driver_framework::NodeProperty2> reset_gpio_properties{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_RESET),
       fdf::MakeProperty2(bind_fuchsia::NAME, "RESET"),
   };
 
@@ -401,7 +399,6 @@ zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
   const std::vector<fuchsia_driver_framework::NodeProperty2> cs_gpio_properties{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SPICC1_SS0),
       fdf::MakeProperty2(bind_fuchsia::NAME, "SPICC1_SS0"),
   };
 

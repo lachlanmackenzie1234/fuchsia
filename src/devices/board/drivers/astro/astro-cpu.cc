@@ -12,7 +12,6 @@
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
-#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/google/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
@@ -138,7 +137,6 @@ zx_status_t Astro::CpuInit() {
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, "fuchsia.clock.FUNCTION." + function),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});

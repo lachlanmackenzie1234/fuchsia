@@ -116,7 +116,6 @@ zx_status_t Nelson::ButtonsInit() {
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolUpProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_VOLUME_UP),
       fdf::MakeProperty2(bind_fuchsia::NAME, "VOLUME_UP"),
   };
 
@@ -128,7 +127,6 @@ zx_status_t Nelson::ButtonsInit() {
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolDownProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_VOLUME_DOWN),
       fdf::MakeProperty2(bind_fuchsia::NAME, "VOLUME_DOWN"),
   };
 
@@ -140,7 +138,6 @@ zx_status_t Nelson::ButtonsInit() {
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolBothProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_VOLUME_BOTH),
       fdf::MakeProperty2(bind_fuchsia::NAME, "VOLUME_BOTH"),
   };
 
@@ -152,7 +149,6 @@ zx_status_t Nelson::ButtonsInit() {
   const std::vector<fuchsia_driver_framework::NodeProperty2> kMicPrivacyProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_MIC_MUTE),
       fdf::MakeProperty2(bind_fuchsia::NAME, "MIC_MUTE"),
   };
 

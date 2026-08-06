@@ -92,7 +92,7 @@ static GENERIC_BOARD_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
     service_configs: phf::phf_map! {
         "fuchsia.hardware.clock.Service" => ServiceBindConfig {            transport: TransportType::Zircon,
             rules: &[PropertyRule {
-                bind_key: "fuchsia.clock.NAME",
+                bind_key: "fuchsia.NAME",
                 sources: &[ValueSource::ResourceName, ValueSource::Template("")],
                 value_type: RuleValueType::String,
                 destination: Destination::Both,

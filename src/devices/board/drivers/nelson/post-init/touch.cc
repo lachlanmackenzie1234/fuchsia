@@ -74,7 +74,6 @@ const std::vector kInterruptRules = {
 const std::vector kInterruptProperties = {
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_TOUCH_INTERRUPT),
     fdf::MakeProperty2(bind_fuchsia::NAME, "TOUCH_INTERRUPT")};
 
 const std::vector kResetRules = {
@@ -87,7 +86,6 @@ const std::vector kResetRules = {
 const std::vector kResetProperties = {
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_TOUCH_RESET),
     fdf::MakeProperty2(bind_fuchsia::NAME, "TOUCH_RESET"),
 };
 

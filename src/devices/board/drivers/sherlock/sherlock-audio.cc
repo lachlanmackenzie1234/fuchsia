@@ -176,7 +176,6 @@ zx_status_t Sherlock::AudioInit() {
   auto enable_audio_gpio_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_ENABLE),
       fdf::MakeProperty2(bind_fuchsia::NAME, "SOC_AUDIO_ENABLE"),
   };
   sherlock_tdm_i2s_parents.push_back(fdf::ParentSpec2{{

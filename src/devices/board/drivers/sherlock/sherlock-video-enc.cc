@@ -12,7 +12,6 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
-#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
 #include <bind/fuchsia/hardware/clock/cpp/bind.h>
@@ -78,7 +77,6 @@ const std::vector<fdf::BindRule2> kClkDosHCodecRules = std::vector{
 const std::vector<fdf::NodeProperty2> kClkDosHCodecProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                        bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, bind_fuchsia_clock::FUNCTION_DOS_GCLK_HCODEC),
     fdf::MakeProperty2(bind_fuchsia::NAME, "DOS_GCLK_HCODEC"),
 };
 
@@ -90,7 +88,6 @@ const std::vector<fdf::BindRule2> kClkDosRules = std::vector{
 const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                        bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, bind_fuchsia_clock::FUNCTION_DOS),
     fdf::MakeProperty2(bind_fuchsia::NAME, "DOS"),
 };
 

@@ -143,7 +143,6 @@ zx::result<> PostInit::InitDisplay() {
   std::vector<fuchsia_driver_framework::NodeProperty2> gpio_properties{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_LCD_RESET),
       fdf::MakeProperty2(bind_fuchsia::NAME, "LCD_RESET"),
   };
 

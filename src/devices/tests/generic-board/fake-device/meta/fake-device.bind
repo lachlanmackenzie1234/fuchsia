@@ -13,6 +13,6 @@ primary parent "pdev" {
 
 parent "my-clock" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.NAME == "my-clock";
+  fuchsia.NAME == "my-clock";
 }
 

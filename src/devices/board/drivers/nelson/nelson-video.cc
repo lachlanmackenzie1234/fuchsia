@@ -14,7 +14,6 @@
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/amlogic/platform/meson/cpp/bind.h>
-#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
 #include <bind/fuchsia/hardware/clock/cpp/bind.h>
@@ -130,8 +129,6 @@ zx_status_t Nelson::VideoInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                                  bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION,
-                                 bind_fuchsia_clock::FUNCTION_DOS_GCLK_VDEC),
               fdf::MakeProperty2(bind_fuchsia::NAME, "DOS_GCLK_VDEC"),
           },
   }};
@@ -148,7 +145,6 @@ zx_status_t Nelson::VideoInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                                  bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, bind_fuchsia_clock::FUNCTION_DOS),
               fdf::MakeProperty2(bind_fuchsia::NAME, "DOS"),
           },
   }};

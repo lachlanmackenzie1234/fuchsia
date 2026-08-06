@@ -72,8 +72,7 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 using spi_channel_t = fidl_metadata::spi::Channel;
 
 fdf::wire::CompositeNodeSpec MakeSpiCompositeNodeSpec(fidl::AnyArena& fidl_arena, std::string name,
-                                                      uint32_t gpio_pin, std::string gpio_function,
-                                                      std::string gpio_name,
+                                                      uint32_t gpio_pin, std::string gpio_name,
                                                       std::string register_id) {
   const std::vector kGpioSpiRules = {
       fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
@@ -84,7 +83,6 @@ fdf::wire::CompositeNodeSpec MakeSpiCompositeNodeSpec(fidl::AnyArena& fidl_arena
   const std::vector kGpioSpiProperties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, gpio_function),
       fdf::MakeProperty2(bind_fuchsia::NAME, gpio_name),
   };
 
@@ -232,7 +230,6 @@ zx_status_t Nelson::Spi0Init() {
       fidl::ToWire(fidl_arena, spi_0_dev),
       MakeSpiCompositeNodeSpec(
           fidl_arena, "spi_0", /* gpio_pin */ GPIO_SOC_SPI_A_SS0,
-          /* gpio_function */ bind_fuchsia_gpio::FUNCTION_SPICC0_SS0,
           /* gpio_name */ "SPICC0_SS0",
           /* register_id */ bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET));
   if (!result.ok()) {
@@ -364,7 +361,6 @@ zx_status_t Nelson::Spi1Init() {
       fidl::ToWire(fidl_arena, spi_1_dev),
       MakeSpiCompositeNodeSpec(
           fidl_arena, "spi_1", /* gpio_pin */ GPIO_SOC_SPI_B_SS0,
-          /* gpio_function */ bind_fuchsia_gpio::FUNCTION_SPICC1_SS0,
           /* gpio_name */ "SPICC1_SS0",
           /* register_id */ bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC1_RESET));
   if (!result.ok()) {

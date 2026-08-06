@@ -114,7 +114,6 @@ zx_status_t Nelson::OtRadioInit() {
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, "fuchsia.gpio.FUNCTION." + function),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});

@@ -317,8 +317,6 @@ zx::result<> GpioImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                                  bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, "fuchsia.gpio.FUNCTION." + gpio_name),
-              fdf::MakeProperty2(bind_fuchsia_gpio::NAME, gpio_name),
               fdf::MakeProperty2(bind_fuchsia::NAME, gpio_name),
           },
   }};

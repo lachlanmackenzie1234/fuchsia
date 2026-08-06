@@ -12,7 +12,6 @@
 
 #include <bind/fuchsia/amlogic/platform/meson/cpp/bind.h>
 #include <bind/fuchsia/arm/platform/cpp/bind.h>
-#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/clock/cpp/bind.h>
 #include <bind/fuchsia/hardware/gpu/mali/cpp/bind.h>
@@ -127,8 +126,6 @@ zx_status_t Astro::MaliInit() {
             {
                 fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                                    bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-                fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION,
-                                   bind_fuchsia_clock::FUNCTION_GP0_PLL),
                 fdf::MakeProperty2(bind_fuchsia::NAME, "GP0_PLL"),
             },
     }};

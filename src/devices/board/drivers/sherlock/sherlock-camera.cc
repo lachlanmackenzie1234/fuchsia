@@ -15,7 +15,6 @@
 #include <bind/fuchsia/amlogic/platform/t931/cpp/bind.h>
 #include <bind/fuchsia/arm/platform/cpp/bind.h>
 #include <bind/fuchsia/camera/cpp/bind.h>
-#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
@@ -297,8 +296,6 @@ zx_status_t Sherlock::CameraInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                                  bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION,
-                                 bind_fuchsia_gpio::FUNCTION_CAM_RESET),
               fdf::MakeProperty2(bind_fuchsia::NAME, "CAM_RESET"),
           },
   }};
@@ -315,8 +312,6 @@ zx_status_t Sherlock::CameraInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                                  bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION,
-                                 bind_fuchsia_gpio::FUNCTION_VANA_ENABLE),
               fdf::MakeProperty2(bind_fuchsia::NAME, "VANA_ENABLE"),
           },
   }};
@@ -333,8 +328,6 @@ zx_status_t Sherlock::CameraInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                                  bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION,
-                                 bind_fuchsia_gpio::FUNCTION_VDIG_ENABLE),
               fdf::MakeProperty2(bind_fuchsia::NAME, "VDIG_ENABLE"),
           },
   }};
@@ -352,8 +345,6 @@ zx_status_t Sherlock::CameraInit() {
           {
               fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                                  bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION,
-                                 bind_fuchsia_clock::FUNCTION_CAMERA_SENSOR),
               fdf::MakeProperty2(bind_fuchsia::NAME, "CAMERA_SENSOR"),
           },
   }};

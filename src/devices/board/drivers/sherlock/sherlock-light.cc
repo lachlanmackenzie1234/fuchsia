@@ -92,7 +92,6 @@ zx_status_t Sherlock::LightInit() {
   const auto kGpioLightInterruptProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_LIGHT_INTERRUPT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "LIGHT_INTERRUPT"),
   };
 
@@ -186,7 +185,6 @@ zx_status_t Sherlock::LightInit() {
   auto amber_led_gpio_properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_GPIO_AMBER_LED),
       fdf::MakeProperty2(bind_fuchsia::NAME, "GPIO_AMBER_LED"),
   };
 
@@ -200,8 +198,6 @@ zx_status_t Sherlock::LightInit() {
   auto amber_led_pwm_properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                          bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
-                         bind_fuchsia_pwm::PWM_ID_FUNCTION_AMBER_LED),
       fdf::MakeProperty2(bind_fuchsia::NAME, "AMBER_LED"),
   };
 
@@ -215,7 +211,6 @@ zx_status_t Sherlock::LightInit() {
   auto green_led_gpio_properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_GPIO_GREEN_LED),
       fdf::MakeProperty2(bind_fuchsia::NAME, "GPIO_GREEN_LED"),
   };
 
@@ -229,8 +224,6 @@ zx_status_t Sherlock::LightInit() {
   auto green_led_pwm_properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                          bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
-                         bind_fuchsia_pwm::PWM_ID_FUNCTION_GREEN_LED),
       fdf::MakeProperty2(bind_fuchsia::NAME, "GREEN_LED"),
   };
 

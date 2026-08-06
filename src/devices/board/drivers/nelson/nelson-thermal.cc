@@ -15,7 +15,6 @@
 #include <zircon/syscalls/smc.h>
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
-#include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/clock/cpp/bind.h>
@@ -204,8 +203,6 @@ const std::vector<fdf::BindRule2> kPwmRules = std::vector{
 const std::vector<fdf::NodeProperty2> kPwmProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
                        bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_pwm::PWM_ID_FUNCTION,
-                       bind_fuchsia_pwm::PWM_ID_FUNCTION_CORE_POWER_BIG_CLUSTER),
     fdf::MakeProperty2(bind_fuchsia::NAME, "CORE_POWER_BIG_CLUSTER"),
 };
 
@@ -308,7 +305,6 @@ zx_status_t Nelson::ThermalInit() {
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia_clock::FUNCTION, "fuchsia.clock.FUNCTION." + function),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
     parents.push_back(fdf::ParentSpec2{{rules, properties}});

@@ -11,11 +11,3 @@ extend uint fuchsia.BIND_PROTOCOL {
 extend uint fuchsia.BIND_INIT_STEP {
   PWM = 0x004D5750,
 };
-
-enum PWM_ID_FUNCTION {
-  AMBER_LED,
-  GREEN_LED,
-  CORE_POWER_BIG_CLUSTER,
-  CORE_POWER_LITTLE_CLUSTER,
-  LCD_BRIGHTNESS,
-};

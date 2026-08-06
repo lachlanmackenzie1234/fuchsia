@@ -66,7 +66,6 @@ const std::vector<fdf::BindRule2> kAudioEnableGpioRules = std::vector{
 const std::vector<fdf::NodeProperty2> kAudioEnableGpioProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_ENABLE),
     fdf::MakeProperty2(bind_fuchsia::NAME, "SOC_AUDIO_ENABLE"),
 };
 
@@ -120,7 +119,6 @@ const std::vector<fdf::BindRule2> kFaultGpioRules = std::vector{
 const std::vector<fdf::NodeProperty2> kFaultGpioProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_SOC_AUDIO_FAULT),
     fdf::MakeProperty2(bind_fuchsia::NAME, "SOC_AUDIO_FAULT"),
 };
 
