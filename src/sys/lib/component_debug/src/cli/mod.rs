@@ -21,7 +21,7 @@ pub mod start;
 pub mod stop;
 pub mod storage;
 
-pub use capability::capability_cmd;
+pub use capability::{capability_cmd, capability_cmd_print, capability_cmd_serialized};
 pub use collection::{collection_list_cmd, collection_show_cmd};
 pub use config::{config_list_cmd, config_set_cmd, config_unset_cmd};
 pub use create::create_cmd;

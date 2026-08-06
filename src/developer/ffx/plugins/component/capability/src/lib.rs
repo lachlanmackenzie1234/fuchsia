@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use component_debug::cli::capability_cmd;
+use component_debug::capability::RouteSegment;
+use component_debug::cli::{capability_cmd_print, capability_cmd_serialized};
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
 use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_component_capability_args::ComponentCapabilityCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use target_holders::RemoteControlProxyHolder;
 
@@ -23,16 +24,21 @@ fho::embedded_plugin!(CapabilityTool);
 
 #[async_trait(?Send)]
 impl FfxMain for CapabilityTool {
-    // TODO(b/471819893) Support actual JSON output, not just "raw"
-    type Writer = SimpleWriter;
+    type Writer = MachineWriter<Vec<RouteSegment>>;
     type Error = ::fho::Error;
 
-    async fn main(self, writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
-        // All errors from component_debug library are user-visible.
-        capability_cmd(self.cmd.capability, realm_query, writer)
-            .await
-            .map_err(|e| ffx_error!(e))?;
+        if writer.is_machine() {
+            let output = capability_cmd_serialized(self.cmd.capability, realm_query)
+                .await
+                .map_err(|e| ffx_error!(e))?;
+            writer.machine(&output)?;
+        } else {
+            capability_cmd_print(self.cmd.capability, realm_query, writer)
+                .await
+                .map_err(|e| ffx_error!(e))?;
+        }
         Ok(())
     }
 }

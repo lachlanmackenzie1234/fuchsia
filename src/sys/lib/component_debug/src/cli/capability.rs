@@ -6,12 +6,20 @@ use crate::capability::*;
 use anyhow::Result;
 use flex_fuchsia_sys2 as fsys;
 
-pub async fn capability_cmd<W: std::io::Write>(
+pub async fn capability_cmd_serialized(
+    query: String,
+    realm_query: fsys::RealmQueryProxy,
+) -> Result<Vec<RouteSegment>> {
+    let segments = get_all_route_segments(query, &realm_query).await?;
+    Ok(segments)
+}
+
+pub async fn capability_cmd_print<W: std::io::Write>(
     query: String,
     realm_query: fsys::RealmQueryProxy,
     mut writer: W,
 ) -> Result<()> {
-    let segments = get_all_route_segments(query, &realm_query).await?;
+    let segments = capability_cmd_serialized(query, realm_query).await?;
 
     let mut decls = vec![];
     let mut exposes = vec![];
@@ -70,4 +78,12 @@ pub async fn capability_cmd<W: std::io::Write>(
     }
 
     Ok(())
+}
+
+pub async fn capability_cmd<W: std::io::Write>(
+    query: String,
+    realm_query: fsys::RealmQueryProxy,
+    writer: W,
+) -> Result<()> {
+    capability_cmd_print(query, realm_query, writer).await
 }

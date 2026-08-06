@@ -28,6 +28,14 @@ pub enum FindInstancesError {
     },
 }
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(
+    feature = "serde",
+    derive(Deserialize, Serialize),
+    serde(tag = "type", rename_all = "snake_case")
+)]
 pub enum RouteSegment {
     /// The capability was used by a component instance in its manifest.
     UseBy { moniker: Moniker, capability: UseDecl },
@@ -290,5 +298,36 @@ mod tests {
         assert!(found_expose);
         assert!(found_offer);
         assert!(found_declaration);
+    }
+
+    #[cfg(feature = "serde")]
+    #[fuchsia::test]
+    async fn test_route_segment_serialization() {
+        use serde_json::json;
+
+        let segment = RouteSegment::DeclareBy {
+            moniker: "/my_foo".try_into().unwrap(),
+            capability: CapabilityDecl::Protocol(ProtocolDecl {
+                name: "fuchsia.foo.bar".parse().unwrap(),
+                source_path: Some("/svc/fuchsia.foo.bar".parse().unwrap()),
+                delivery: Default::default(),
+            }),
+        };
+
+        let serialized = serde_json::to_value(&segment).expect("failed to serialize RouteSegment");
+
+        assert_eq!(
+            serialized,
+            json!({
+                "type": "declare_by",
+                "moniker": "/my_foo",
+                "capability": {
+                    "type": "protocol",
+                    "name": "fuchsia.foo.bar",
+                    "source_path": "/svc/fuchsia.foo.bar",
+                    "delivery": "immediate"
+                }
+            })
+        );
     }
 }
