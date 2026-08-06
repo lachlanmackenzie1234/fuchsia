@@ -34,6 +34,9 @@ declare_args() {
   # the build.
   universe_package_labels = []
 
+  # Targets to add to the build graph in the default (Fuchsia) toolchain.
+  target_labels = []
+
   # If you add package labels to this variable, the packages will be included in
   # the 'discoverable' package set, as defined by RFC-0212 "Package Sets":
   # https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets
@@ -2428,8 +2431,8 @@ group("developer_specified_tests") {
     ":*",
     "//build/images/updates:*",
   ]
-  public_deps =
-      developer_test_labels + e2e_test_labels + hermetic_test_package_labels
+  public_deps = target_labels + developer_test_labels + e2e_test_labels +
+                hermetic_test_package_labels
 }
 
 ###
