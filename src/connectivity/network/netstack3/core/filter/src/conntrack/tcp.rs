@@ -95,7 +95,7 @@ enum State {
     ///
     /// The connection stays in this state until it is completely torn down
     /// by the closing handshake or a valid RST.
-    Established(PeerPair),
+    Established(PeerPair<Peer>),
 }
 
 impl State {
@@ -300,7 +300,7 @@ impl Peer {
         len: u32,
         ack: SeqNum,
         wnd: UnscaledWindowSize,
-        fin_seen: bool,
+        control: Option<Control>,
     ) -> Self {
         let Self { window_scale, max_wnd, max_wnd_seq, max_next_seq, unacked_data, fin_state } =
             self;
@@ -328,7 +328,11 @@ impl Peer {
             max_wnd_seq: if max_wnd_seq.before(wnd_seq) { wnd_seq } else { max_wnd_seq },
             max_next_seq: sender_max_next_seq,
             unacked_data: if sender_max_next_seq.after(max_next_seq) { true } else { unacked_data },
-            fin_state: if fin_seen { fin_state.update_fin_sent(end - 1) } else { fin_state },
+            fin_state: if control == Some(Control::FIN) {
+                fin_state.update_fin_sent(end - 1)
+            } else {
+                fin_state
+            },
         }
     }
 
@@ -431,13 +435,13 @@ impl FinState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PeerPair {
-    original: Peer,
-    reply: Peer,
+struct PeerPair<T> {
+    original: T,
+    reply: T,
 }
 
-impl PeerPair {
-    fn into_update_peers(self, dir: ConnectionDirection) -> UpdatePeers {
+impl<T> PeerPair<T> {
+    fn into_update_peers(self, dir: ConnectionDirection) -> UpdatePeers<T> {
         let Self { original, reply } = self;
         match dir {
             ConnectionDirection::Original => UpdatePeers { sender: original, receiver: reply, dir },
@@ -448,14 +452,14 @@ impl PeerPair {
 
 /// Centralizes and names the peers for performing updates. Avoids ambiguity
 /// about which peer is the sender/receiver.
-struct UpdatePeers {
-    sender: Peer,
-    receiver: Peer,
+struct UpdatePeers<T> {
+    sender: T,
+    receiver: T,
     dir: ConnectionDirection,
 }
 
-impl UpdatePeers {
-    fn into_peer_pair(self) -> PeerPair {
+impl<T> UpdatePeers<T> {
+    fn into_peer_pair(self) -> PeerPair<T> {
         let Self { sender, receiver, dir } = self;
         match dir {
             ConnectionDirection::Original => PeerPair { original: sender, reply: receiver },
@@ -649,7 +653,7 @@ impl SynSent {
 ///
 /// This state deletes the connection once FINs from both peers have been ACKed.
 fn update_for_established(
-    mut peers: UpdatePeers,
+    mut peers: UpdatePeers<Peer>,
     segment: &SegmentHeader,
     payload_len: usize,
 ) -> (State, bool) {
@@ -669,7 +673,7 @@ fn update_for_established(
     // Neither Linux nor gVisor do anything special for these segments.
 
     let logical_len = segment.len(payload_len);
-    let SegmentHeader { seq, ack, wnd, control, options: _, push: _ } = segment;
+    let &SegmentHeader { seq, ack, wnd, control, options: _, push: _ } = segment;
 
     // From RFC 9293:
     //   If the ACK control bit is set, this field contains the value of the
@@ -682,21 +686,20 @@ fn update_for_established(
         }
     };
 
-    if !Peer::ack_segment_valid(&peers.sender, &peers.receiver, *seq, logical_len, *ack) {
+    if !Peer::ack_segment_valid(&peers.sender, &peers.receiver, seq, logical_len, ack) {
         return (State::Established(peers.into_peer_pair()), false);
     }
 
-    let fin_seen = match control {
+    match control {
         Some(Control::SYN) => {
             return (State::Established(peers.into_peer_pair()), false);
         }
         Some(Control::RST) => return (State::Closed, true),
-        Some(Control::FIN) => true,
-        None => false,
+        Some(Control::FIN) | None => {}
     };
 
-    peers.sender = peers.sender.update_sender(*seq, logical_len, *ack, *wnd, fin_seen);
-    peers.receiver = peers.receiver.update_receiver(*ack);
+    peers.sender = peers.sender.update_sender(seq, logical_len, ack, wnd, control);
+    peers.receiver = peers.receiver.update_receiver(ack);
 
     if peers.sender.fin_state.acked() && peers.receiver.fin_state.acked() {
         // Removing the entry immediately is not expected to break any
@@ -1083,7 +1086,7 @@ mod tests {
         len: u32,
         ack: SeqNum,
         wnd: UnscaledWindowSize,
-        fin_seen: bool,
+        control: Option<Control>,
     }
 
     #[test_case(
@@ -1100,7 +1103,7 @@ mod tests {
             len: 10,
             ack: SeqNum::new(100),
             wnd: UnscaledWindowSize::from_u32(4),
-            fin_seen: false
+            control: None,
         } => Peer {
             window_scale: WindowScale::new(3).unwrap(),
             max_wnd: WindowSize::new(32).unwrap(),
@@ -1124,7 +1127,7 @@ mod tests {
             len: 10,
             ack: SeqNum::new(0),
             wnd: UnscaledWindowSize::from_u32(0),
-            fin_seen: false
+            control: None,
         } => Peer {
             window_scale: WindowScale::new(3).unwrap(),
             max_wnd: WindowSize::new(16).unwrap(),
@@ -1148,7 +1151,7 @@ mod tests {
             len: 10,
             ack: SeqNum::new(0),
             wnd: UnscaledWindowSize::from_u32(0),
-            fin_seen: true
+            control: Some(Control::FIN),
         } => Peer {
             window_scale: WindowScale::new(3).unwrap(),
             max_wnd: WindowSize::new(16).unwrap(),
@@ -1159,7 +1162,7 @@ mod tests {
         }; "fin sent"
     )]
     fn peer_update_sender_test(peer: Peer, args: PeerUpdateSenderArgs) -> Peer {
-        peer.update_sender(args.seq, args.len, args.ack, args.wnd, args.fin_seen)
+        peer.update_sender(args.seq, args.len, args.ack, args.wnd, args.control)
     }
 
     #[test_case(
