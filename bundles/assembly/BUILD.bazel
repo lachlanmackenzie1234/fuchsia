@@ -4079,7 +4079,8 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "virtual_audio_driver",
     allowed_in = [
-        "eng",
+        "standard::eng",
+        "utility::eng",
     ],
     drivers = [
         {
@@ -4095,7 +4096,8 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "audio_driver_development_tools",
     allowed_in = [
-        "eng",
+        "standard::eng",
+        "utility::eng",
     ],
 )
 
@@ -4104,7 +4106,8 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "virtual_audio_util",
     allowed_in = [
-        "eng",
+        "standard::eng",
+        "utility::eng",
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
@@ -4122,7 +4125,8 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "virtual_audio_legacy_driver",
     allowed_in = [
-        "eng",
+        "standard::eng",
+        "utility::eng",
     ],
     drivers = [
         {
@@ -4138,7 +4142,8 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "virtual_audio_legacy_util",
     allowed_in = [
-        "eng",
+        "standard::eng",
+        "utility::eng",
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util",
@@ -4156,7 +4161,8 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "audio_legacy_driver_tools",
     allowed_in = [
-        "eng",
+        "standard::eng",
+        "utility::eng",
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-codec-ctl",

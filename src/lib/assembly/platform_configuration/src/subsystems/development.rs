@@ -130,30 +130,15 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
         }
 
         if config.tools.audio.driver_tools {
-            context.ensure_build_type_and_feature_set_level(
-                &[BuildType::Eng],
-                &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
-                "Audio driver development tools",
-            )?;
             builder.platform_bundle("audio_driver_development_tools")?;
             builder.platform_bundle("audio_legacy_driver_tools")?;
             builder.platform_bundle("virtual_audio_util")?;
             builder.platform_bundle("virtual_audio_legacy_util")?;
         }
         if config.tools.audio.legacy_driver_tools {
-            context.ensure_build_type_and_feature_set_level(
-                &[BuildType::Eng],
-                &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
-                "Audio legacy driver tools",
-            )?;
             builder.platform_bundle("audio_legacy_driver_tools")?;
         }
         if let Some(vad) = &config.tools.audio.virtual_audio {
-            context.ensure_build_type_and_feature_set_level(
-                &[BuildType::Eng],
-                &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
-                "Virtual audio development support",
-            )?;
             if vad.is_modern_enabled() {
                 builder.platform_bundle("virtual_audio_driver")?;
                 if vad.tools {
@@ -168,11 +153,6 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             }
         }
         if config.tools.audio.full_stack_tools {
-            context.ensure_build_type_and_feature_set_level(
-                &[BuildType::Eng],
-                &[FeatureSetLevel::Standard],
-                "Audio full-stack development tools",
-            )?;
             builder.platform_bundle("audio_full_stack_development_tools")?;
         }
 
