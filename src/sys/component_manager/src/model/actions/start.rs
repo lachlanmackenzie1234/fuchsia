@@ -177,7 +177,13 @@ async fn do_start(
         |_: AbortError| StartActionError::Aborted { moniker: component.moniker.clone() };
 
     // Resolve the component and find the runner to use.
-    let (runner_router, runner_name, resolved_component, mut program_input_dict) = {
+    let (
+        runner_router,
+        runner_name,
+        resolved_component,
+        mut program_input_dict,
+        storage_service_use_decls,
+    ) = {
         trace::duration!("component_manager", "Actions::Start::resolve_runner", "moniker" => component.moniker.as_str());
 
         // Obtain the runner declaration under a short lock, as `open_runner` may run for a long
@@ -204,6 +210,7 @@ async fn do_start(
             resolved_state.decl().unwrap().get_runner().as_ref().map(|r| r.source_name.clone()),
             resolved_state.resolved_component.clone(),
             resolved_state.sandbox.program_input.namespace(),
+            resolved_state.storage_service_use_decls.clone(),
         )
     };
     let runner = match runner_router {
@@ -237,14 +244,10 @@ async fn do_start(
         program_input_dict = dict_deep_copy(&program_input_dict);
         dict_merge(&program_input_dict, additions);
     }
-    let decl = resolved_component
-        .decl
-        .as_ref()
-        .expect("component decl dropped before component instantiated");
     let mut namespace_builder = create_namespace(
         resolved_component.package.as_ref(),
         component,
-        decl,
+        &storage_service_use_decls,
         &program_input_dict,
         component.execution_scope.clone(),
     )
@@ -278,6 +281,10 @@ async fn do_start(
         fdecl::OnTerminate::None => {}
     }
 
+    let decl = resolved_component
+        .decl
+        .as_ref()
+        .expect("component decl dropped before component instantiated");
     let encoded_config = match decl.config {
         None => None,
         Some(ref config_decl) => match config_decl.value_source {

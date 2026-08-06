@@ -17,8 +17,11 @@ use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use futures::future::BoxFuture;
+use log::warn;
 use moniker::Moniker;
 use router_error::RouterError;
+use routing::component_instance::ResolvedInstanceInterface;
+use routing::resolving::{ComponentAddress, ResolverError};
 use runtime_capabilities::{Dictionary, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 
@@ -217,4 +220,144 @@ fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dictionary) {
     );
     let prev = dict.insert("pkg".parse().unwrap(), launch_task_on_receive.into_dir_router().into());
     assert!(prev.is_none(), "conflict with pkg directory in framework dictionary");
+}
+
+/// Re-resolve an already resolved component to retrieve its component
+/// declaration. This allows us to save memory by dropping the component decl
+/// from the ResolvedInstanceState of a component.
+pub(crate) async fn resolve_with_pinned_url(
+    component: &Arc<ComponentInstance>,
+) -> Result<cm_rust::ComponentDecl, ResolveError> {
+    let mut address;
+    let mut package;
+    {
+        let state = component.lock_state().await;
+        let resolved = state.get_resolved_state().ok_or(ResolveError::InstanceNotResolved)?;
+        address = resolved.address().await.map_err(|_| ResolveError::BadUrl)?;
+        package = resolved.package().map(|p| Clone::clone(&p.package_dir));
+    };
+    let can_pin = match &address {
+        ComponentAddress::Absolute { url, .. } => match url.scheme() {
+            "fuchsia-pkg" => {
+                // Only fuchsia-pkg urls support pinning.
+                true
+            }
+            _ => false,
+        },
+        ComponentAddress::RelativePath { .. } => {
+            // The Context token already pins the package, we don't need to modify the url.
+            false
+        }
+    };
+    if !can_pin {
+        package = None;
+    }
+    if let Some(package) = package {
+        let (meta_file, server_end) = fidl::endpoints::create_proxy::<fio::FileMarker>();
+        package
+            .open(
+                "meta",
+                fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+                server_end.into(),
+            )
+            .map_err(|err| {
+                warn!(err:%, url:% = component.url();
+                      "resolve_with_pinned_url: failed to open package");
+                ResolveError::PackageOpenFailed
+            })?;
+        let merkle = fuchsia_fs::file::read_to_string(&meta_file).await.map_err(|err| {
+            warn!(err:%, url:% = component.url();
+                  "resolve_with_pinned_url: failed to open package");
+            ResolveError::PackageReadFailed
+        })?;
+        match &mut address {
+            ComponentAddress::Absolute { url } => {
+                url.set_query(Some(&format!("hash={merkle}")));
+            }
+            ComponentAddress::RelativePath { .. } => {
+                unreachable!("resolve_with_pinned_url: RelativePath is never pinned");
+            }
+        }
+    }
+
+    let component_info = match component.perform_resolve(None, &address).await {
+        Ok(c) => c,
+        // This was a request to the base resolver, which does not support
+        // pinning, or the request was made without an active package server.
+        Err(err @ ResolverError::MalformedUrl(_))
+        | Err(err @ ResolverError::PackageNotFound(_)) => {
+            match &mut address {
+                ComponentAddress::Absolute { url } => {
+                    if url.query().is_none() {
+                        warn!(err:%, url:% = component.url();
+                              "resolve_with_pinned_url: resolution failed");
+                        return Err(ResolveError::ReresolveFailed);
+                    } else {
+                        // Try again without a hash pin in the query string.
+                        url.set_query(None);
+                    }
+                }
+                ComponentAddress::RelativePath { .. } => {
+                    return Err(ResolveError::ReresolveFailed);
+                }
+            }
+            component.perform_resolve(None, &address).await.map_err(|err| {
+                warn!(err:%, url:% = component.url();
+                      "resolve_with_pinned_url: re-resolution failed");
+                ResolveError::ReresolveFailed
+            })?
+        }
+        Err(err) => {
+            warn!(err:%, url:% = component.url();
+                    "resolve_with_pinned_url: resolution failed");
+            return Err(ResolveError::ReresolveFailed);
+        }
+    };
+    Ok(component_info.decl)
+}
+
+#[derive(Debug)]
+pub(crate) enum ResolveError {
+    InstanceNotResolved,
+    BadUrl,
+    PackageOpenFailed,
+    PackageReadFailed,
+    ReresolveFailed,
+}
+
+impl From<ResolveError> for fsys::GetDeclarationError {
+    fn from(value: ResolveError) -> Self {
+        match value {
+            ResolveError::InstanceNotResolved => Self::InstanceNotResolved,
+            ResolveError::BadUrl => Self::BadUrl,
+            ResolveError::PackageOpenFailed => Self::PackageOpenFailed,
+            ResolveError::PackageReadFailed => Self::PackageReadFailed,
+            ResolveError::ReresolveFailed => Self::ResolveFailed,
+        }
+    }
+}
+
+impl From<ResolveError> for fsys::RouteValidatorError {
+    fn from(value: ResolveError) -> Self {
+        match value {
+            ResolveError::InstanceNotResolved => Self::InstanceNotResolved,
+            ResolveError::BadUrl => Self::Internal,
+            ResolveError::PackageOpenFailed => Self::InstanceNotResolved,
+            ResolveError::PackageReadFailed => Self::InstanceNotResolved,
+            ResolveError::ReresolveFailed => Self::InstanceNotReresolved,
+        }
+    }
+}
+
+impl From<ResolveError> for fcomponent::Error {
+    fn from(value: ResolveError) -> Self {
+        match value {
+            ResolveError::InstanceNotResolved => Self::InstanceNotFound,
+            ResolveError::BadUrl => Self::Internal,
+            ResolveError::PackageOpenFailed => Self::InstanceCannotResolve,
+            ResolveError::PackageReadFailed => Self::InstanceCannotResolve,
+            ResolveError::ReresolveFailed => Self::InstanceCannotResolve,
+        }
+    }
 }

@@ -4,7 +4,7 @@
 
 use crate::model::component::{ComponentInstance, Package, WeakComponentInstance};
 use ::routing::component_instance::ComponentInstanceInterface;
-use cm_rust::{Availability, ComponentDecl};
+use cm_rust::{Availability, UseDecl};
 use cm_types::{NamespacePath, Path};
 use errors::CreateNamespaceError;
 use fidl::endpoints::Proxy;
@@ -31,7 +31,7 @@ pub static PKG_PATH: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/pkg"))
 pub async fn create_namespace(
     package: Option<&Package>,
     component: &Arc<ComponentInstance>,
-    decl: &ComponentDecl,
+    use_decls: &Vec<UseDecl>,
     program_input_dict: &Arc<Dictionary>,
     scope: ExecutionScope,
 ) -> Result<NamespaceBuilder, CreateNamespaceError> {
@@ -48,7 +48,7 @@ pub async fn create_namespace(
     }
 
     let mut dont_flatten_past = HashSet::new();
-    for use_ in &decl.uses {
+    for use_ in use_decls {
         match use_ {
             // In order to maintain the legacy error reporting contract for
             // storage capabilities, we need to verify that the target component

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::framework::resolve_with_pinned_url;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::namespace::create_namespace;
 use crate::model::storage::admin_protocol::StorageAdmin;
@@ -198,14 +199,9 @@ async fn get_resolved_declaration(
         .await
         .map_err(|_| fsys::GetDeclarationError::InstanceNotFound)?;
 
-    let state = instance.lock_state().await;
-
-    let decl = state
-        .get_resolved_state()
-        .ok_or(fsys::GetDeclarationError::InstanceNotResolved)?
-        .decl()
-        .unwrap()
-        .clone()
+    let decl = resolve_with_pinned_url(&instance)
+        .await
+        .map_err(fsys::GetDeclarationError::from)?
         .native_into_fidl();
 
     let bytes = fidl::persist(&decl).map_err(|error| {
@@ -338,7 +334,7 @@ async fn construct_namespace(
     let namespace = create_namespace(
         resolved_state.package(),
         &instance,
-        resolved_state.decl().unwrap(),
+        &resolved_state.storage_service_use_decls,
         &resolved_state.sandbox.program_input.namespace(),
         instance.execution_scope.clone(),
     )
@@ -442,19 +438,14 @@ async fn connect_to_storage_admin(
         .map_err(|_| fsys::ConnectToStorageAdminError::InstanceNotFound)?;
 
     let storage_decl = {
-        let state = instance.lock_state().await;
-        state
-            .get_resolved_state()
-            .ok_or(fsys::ConnectToStorageAdminError::InstanceNotResolved)?
-            .decl()
-            .unwrap()
-            .find_storage_source(
-                &storage_name
-                    .parse()
-                    .map_err(|_| fsys::ConnectToStorageAdminError::BadCapability)?,
-            )
-            .ok_or(fsys::ConnectToStorageAdminError::StorageNotFound)?
-            .clone()
+        let decl = resolve_with_pinned_url(&instance)
+            .await
+            .map_err(|_e| fsys::ConnectToStorageAdminError::InstanceNotResolved)?;
+        decl.find_storage_source(
+            &storage_name.parse().map_err(|_| fsys::ConnectToStorageAdminError::BadCapability)?,
+        )
+        .ok_or(fsys::ConnectToStorageAdminError::StorageNotFound)?
+        .clone()
     };
 
     let storage_admin = StorageAdmin::new(storage_decl, instance.as_weak())

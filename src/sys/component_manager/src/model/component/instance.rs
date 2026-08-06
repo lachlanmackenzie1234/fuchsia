@@ -338,6 +338,11 @@ pub struct ResolvedInstanceState {
     /// The collection declarations of this component instance. We store them here as a memory
     /// optimization so that we do not need to retain the complete decl.
     pub collection_decls: Vec<CollectionDecl>,
+
+    /// The declarations of storage and service capabilities used by this
+    /// component. We store them here as a memory optimization so that we do not
+    /// need to retain the complete decl.
+    pub storage_service_use_decls: Vec<UseDecl>,
 }
 
 /// Abbreviated equivalent to [ComponentAddress] that omits the actual url string.
@@ -442,6 +447,15 @@ impl ResolvedInstanceState {
         let collection_decls =
             decl.collections.iter().map(|collection| collection.clone()).collect::<Vec<_>>();
 
+        let storage_service_use_decls = decl
+            .uses
+            .iter()
+            .filter_map(|use_| match use_ {
+                UseDecl::Storage(_) | UseDecl::Service(_) => Some(use_.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
         let mut state = Self {
             weak_component,
             execution_scope: component.execution_scope.clone(),
@@ -458,6 +472,7 @@ impl ResolvedInstanceState {
             capability_requested_receivers,
             storage_paths,
             collection_decls,
+            storage_service_use_decls,
         };
         state.add_static_children(component).await?;
 
@@ -813,11 +828,7 @@ impl ResolvedInstanceState {
             let namespace_builder = create_namespace(
                 self.resolved_component.package.as_ref(),
                 &component,
-                &self
-                    .resolved_component
-                    .decl
-                    .as_ref()
-                    .expect("component decl dropped before component instantiated"),
+                &self.storage_service_use_decls,
                 &self.sandbox.program_input.namespace(),
                 component.execution_scope.clone(),
             )

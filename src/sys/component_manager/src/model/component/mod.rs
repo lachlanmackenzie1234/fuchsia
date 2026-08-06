@@ -162,6 +162,7 @@ impl Component {
     pub fn resolve_with_config(
         ResolvedComponent {
             context_to_resolve_children,
+            // Component just resolved so this is fine
             decl,
             package,
             config_values,

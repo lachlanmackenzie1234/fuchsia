@@ -121,8 +121,11 @@ type RouteValidatorError = flexible enum {
     INVALID_ARGUMENTS = 2;
     /// The component instance was not found.
     INSTANCE_NOT_FOUND = 3;
-    /// The component instance was not resolved.
+    /// The component instance could not be resolved.
     INSTANCE_NOT_RESOLVED = 4;
+    /// The component instance could not be re-resolved.
+    @available(added=NEXT)
+    INSTANCE_NOT_RERESOLVED = 5;
 };
 
 @discoverable(server="platform")
