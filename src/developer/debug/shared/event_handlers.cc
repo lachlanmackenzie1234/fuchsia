@@ -148,11 +148,6 @@ void ChannelExceptionHandler::Handler(async_dispatcher_t* dispatcher, async_wait
   FX_DCHECK(handler_it != loop->channel_exception_handlers().end());
   const ChannelExceptionHandler& handler = handler_it->second;
 
-  auto cleanup = fit::defer([handle = handler.handle_.get()] {
-    zx_status_t status = StartListening(handle);
-    FX_DCHECK(status == ZX_OK) << "Got: " << ZxStatusToString(status);
-  });
-
   int watch_info_id = handler.watch_info_id();
   auto* watch_info = loop->FindWatchInfo(watch_info_id);
   FX_DCHECK(watch_info);
@@ -181,6 +176,11 @@ void ChannelExceptionHandler::Handler(async_dispatcher_t* dispatcher, async_wait
 
   FX_CHECK(status == ZX_OK) << "Got error when reading from exception channel: "
                             << ZxStatusToString(status);
+
+  // Re-arm the wait prior to invoking callbacks, so if a callback synchronously calls
+  // StopWatching(), ~ChannelExceptionHandler() cleanly cancels the wait without access after free.
+  status = StartListening(handler.handle_.get());
+  FX_DCHECK(status == ZX_OK) << "Got: " << ZxStatusToString(status);
 
   loop->HandleChannelException(handler, std::move(exception), exception_info);
 }
