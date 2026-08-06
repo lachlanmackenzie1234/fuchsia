@@ -26,7 +26,7 @@ use netlink_packet_sock_diag::{
 };
 
 use crate::client::{AsyncWorkItem, ClientTable, InternalClient};
-use crate::logging::{log_debug, log_error};
+use crate::logging::{log_debug, log_error, log_warn};
 use crate::messaging::Sender;
 use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
@@ -215,11 +215,17 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
                     self.client_table.send_message_to_group(msg, group.into());
                 }
             }
+            Some(Err(fnet_sockets_ext::DestructionWatcherError::DroppedEvents(num_dropped))) => {
+                log_warn!("Missing {num_dropped} socket destruction events from the netstack.");
+            }
             Some(Err(e)) => {
-                panic!("unexpected socket destruction watcher error: {e:?}");
+                log_error!("unexpected socket destruction watcher error: {e:?}");
             }
             None => {
-                panic!("destruction watcher stream ended unexpectedly");
+                // This is only likely to happen if the netstack has
+                // crashed. The whole system is about to go down anyway, so it's
+                // not worth trying to recover.
+                log_error!("destruction watcher stream ended unexpectedly");
             }
         }
     }
@@ -1203,23 +1209,31 @@ mod tests {
             sink_udp_v6: &mut crate::messaging::testutil::FakeSenderSink<SockDiagResponse>,
             socket_state: &fnet_sockets::IpSocketState,
             expected_group: NetlinkSockDiagNotifiedGroup,
+            dropped_events: u64,
         ) {
-            let run_step = event_loop.run_one_step();
-            let next_req = watcher_stream.next();
-            pin_mut!(run_step, next_req);
-            let (watch_req, event_loop_fut) = match future::select(next_req, run_step).await {
-                future::Either::Left((req, fut)) => (req.unwrap().unwrap(), fut),
-                future::Either::Right(_) => unreachable!("event loop should not finish first"),
-            };
-            let responder = match watch_req {
-                fnet_sockets::DestructionWatcherRequest::Watch { responder } => responder,
-                fnet_sockets::DestructionWatcherRequest::_UnknownMethod { .. } => {
-                    panic!("unknown method request");
-                }
-            };
-            responder.send(&[socket_state.clone()]).unwrap();
+            {
+                let run_step = event_loop.run_one_step();
+                let next_req = watcher_stream.next();
+                pin_mut!(run_step, next_req);
+                let (watch_req, event_loop_fut) = match future::select(next_req, run_step).await {
+                    future::Either::Left((req, fut)) => (req.unwrap().unwrap(), fut),
+                    future::Either::Right(_) => unreachable!("event loop should not finish first"),
+                };
+                let responder = match watch_req {
+                    fnet_sockets::DestructionWatcherRequest::Watch { responder } => responder,
+                    fnet_sockets::DestructionWatcherRequest::_UnknownMethod { .. } => {
+                        panic!("unknown method request");
+                    }
+                };
+                responder.send(&[socket_state.clone()], dropped_events).unwrap();
 
-            event_loop_fut.await;
+                event_loop_fut.await;
+            }
+
+            // We log and keep going if events are dropped.
+            if dropped_events > 0 {
+                event_loop.run_one_step().await;
+            }
 
             let msg_tcp_v4 = sink_tcp_v4.take_messages();
             let msg_tcp_v6 = sink_tcp_v6.take_messages();
@@ -1275,6 +1289,7 @@ mod tests {
             &mut sink_udp_v6,
             &socket_tcp_v4,
             NetlinkSockDiagNotifiedGroup::TcpV4Destroy,
+            0,
         )
         .await;
 
@@ -1308,6 +1323,7 @@ mod tests {
             &mut sink_udp_v6,
             &socket_tcp_v6,
             NetlinkSockDiagNotifiedGroup::TcpV6Destroy,
+            10,
         )
         .await;
 
@@ -1340,6 +1356,7 @@ mod tests {
             &mut sink_udp_v6,
             &socket_udp_v4,
             NetlinkSockDiagNotifiedGroup::UdpV4Destroy,
+            0,
         )
         .await;
 
@@ -1372,6 +1389,7 @@ mod tests {
             &mut sink_udp_v6,
             &socket_udp_v6,
             NetlinkSockDiagNotifiedGroup::UdpV6Destroy,
+            10,
         )
         .await;
 

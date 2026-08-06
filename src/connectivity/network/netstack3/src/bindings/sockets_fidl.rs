@@ -4,10 +4,11 @@
 
 //! FIDL Worker for the `fuchsia.net.sockets` API.
 
+use std::collections::VecDeque;
 use std::convert::Infallible as Never;
 use std::sync::Arc;
 
-use fidl::endpoints::{ProtocolMarker, RequestStream as _, Responder as _};
+use fidl::endpoints::{ProtocolMarker, Responder as _};
 use fidl_fuchsia_net_sockets as fnet_sockets;
 use fidl_fuchsia_net_sockets_ext as fnet_sockets_ext;
 use fidl_fuchsia_net_sockets_ext::IpSocketMatcherError;
@@ -15,7 +16,6 @@ use fidl_fuchsia_net_tcp as fnet_tcp;
 use fidl_fuchsia_net_udp as fnet_udp;
 use fuchsia_async as fasync;
 use futures::channel::mpsc;
-use futures::future::{FusedFuture as _, OptionFuture};
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use netstack3_core::socket::{IpSocketMatcher, SocketTransportProtocolMatcher};
@@ -144,10 +144,11 @@ pub(crate) async fn serve_watcher(
     dispatcher: SocketDestructionDispatcher,
     responder: fidl_fuchsia_net_sockets::DiagnosticsGetDestructionWatcherResponder,
 ) -> Result<(), fidl::Error> {
-    let (sender, receiver) = mpsc::channel(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE as usize * 5);
-    let cancel = async_utils::event::Event::new();
+    const MAX_BATCH_SIZE: usize = fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE as usize;
+    const MAX_STASHED_DESTRUCTION_EVENTS: usize = MAX_BATCH_SIZE * 5;
 
-    let id = dispatcher.add_client(sender, cancel.clone());
+    let (sender, mut receiver) = mpsc::unbounded();
+    let id = dispatcher.add_client(sender);
     let _cleanup = scopeguard::guard((dispatcher, id), |(d, id)| {
         d.remove_client(id);
     });
@@ -155,55 +156,35 @@ pub(crate) async fn serve_watcher(
     // notifications once the call returns.
     responder.send()?;
 
-    let mut receiver = receiver.ready_chunks(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE as usize);
-    let control_handle = stream.control_handle();
+    let mut stashed_events = VecDeque::new();
+    let mut dropped_events = 0u64;
+    let mut pending_responder = None;
     let mut stream = stream.fuse();
-    let mut cancel_fut = cancel.wait().fuse();
-
-    let mut pending_watch = OptionFuture::default();
-
-    /// State for responding to a call to `Watch()` that blocked because there
-    /// were no destruction events available.
-    #[derive(Debug)]
-    struct CompletedPendingWatchEvent {
-        responder: fnet_sockets::DestructionWatcherWatchResponder,
-        event_batch: Option<Vec<fnet_sockets::IpSocketState>>,
-    }
 
     #[derive(Debug)]
     enum WatcherEvent {
-        Canceled,
+        NewEvent(Option<fnet_sockets::IpSocketState>),
         Request(Result<Option<fnet_sockets::DestructionWatcherRequest>, fidl::Error>),
-        CompletedPendingWatchEvent(CompletedPendingWatchEvent),
     }
 
     loop {
         let event = futures::select_biased! {
-            () = cancel_fut => WatcherEvent::Canceled,
+            event = receiver.next().fuse() => WatcherEvent::NewEvent(event),
             request = stream.try_next() => WatcherEvent::Request(request),
-            res = pending_watch => WatcherEvent::CompletedPendingWatchEvent(
-                res.expect("event sender is never dropped")
-            ),
         };
 
         match event {
-            WatcherEvent::Canceled => {
-                log::warn!("Watcher pipeline canceled due to full buffer");
-                control_handle.shutdown_with_epitaph(fidl::Status::NO_RESOURCES);
-                break;
-            }
             WatcherEvent::Request(request) => match request? {
                 Some(fnet_sockets::DestructionWatcherRequest::Watch { responder }) => {
-                    if !pending_watch.is_terminated() {
+                    if pending_responder.is_some() {
+                        log::warn!("Destruction watcher id={id}: peer called Watch() concurrently");
                         responder
                             .control_handle()
                             .shutdown_with_epitaph(fidl::Status::ALREADY_EXISTS);
                         break;
                     }
-                    pending_watch = Some(receiver.next().map(move |chunk| {
-                        CompletedPendingWatchEvent { responder, event_batch: chunk }
-                    }))
-                    .into();
+
+                    pending_responder = Some(responder);
                 }
                 Some(fnet_sockets::DestructionWatcherRequest::_UnknownMethod {
                     ordinal, ..
@@ -212,20 +193,40 @@ pub(crate) async fn serve_watcher(
                 }
                 None => break,
             },
-            WatcherEvent::CompletedPendingWatchEvent(CompletedPendingWatchEvent {
-                responder,
-                event_batch,
-            }) => {
-                match event_batch {
-                    Some(events) => {
-                        responder.send(&events)?;
-                        pending_watch = None.into();
+            WatcherEvent::NewEvent(event) => match event {
+                Some(event) => {
+                    if stashed_events.len() < MAX_STASHED_DESTRUCTION_EVENTS {
+                        stashed_events.push_back(event);
+                    } else {
+                        log::trace!("Destruction watcher id={id}: dropped event");
+                        dropped_events += 1;
                     }
-                    // The cancel event is signalled before the sender is
-                    // dropped so it should not be possible for this task to
-                    // observe the closure.
-                    None => unreachable!(),
                 }
+                None => {
+                    log::info!(
+                        "Destruction watcher id={id}: event channel closed. Are we shutting down?"
+                    );
+                    break;
+                }
+            },
+        }
+
+        if !stashed_events.is_empty() {
+            match pending_responder.take() {
+                Some(responder) => {
+                    // Only grab the first set of contiguous elements to avoid an
+                    // unnecessary call to VecDeque::make_contiguous. The common
+                    // case is a single event. Otherwise, there are likely
+                    // MAX_STASHED_DESTRUCTION_EVENTS, in which case first will
+                    // probably be longer than MAX_BATCH_SIZE.
+                    let (first, _rest) = stashed_events.as_slices();
+                    let batch_len = std::cmp::min(first.len(), MAX_BATCH_SIZE);
+
+                    let dropped_events = std::mem::replace(&mut dropped_events, 0);
+                    responder.send(&first[..batch_len], dropped_events)?;
+                    let _ = stashed_events.drain(..batch_len);
+                }
+                None => {}
             }
         }
     }
@@ -239,10 +240,9 @@ pub(crate) struct SocketDestructionDispatcher(Arc<Mutex<SocketDestructionDispatc
 impl SocketDestructionDispatcher {
     pub(crate) fn add_client(
         &self,
-        sender: mpsc::Sender<fnet_sockets::IpSocketState>,
-        cancel: async_utils::event::Event,
+        sender: mpsc::UnboundedSender<fnet_sockets::IpSocketState>,
     ) -> u64 {
-        self.0.lock().add_client(sender, cancel)
+        self.0.lock().add_client(sender)
     }
 
     pub(crate) fn remove_client(&self, id: u64) {
@@ -266,39 +266,25 @@ struct SocketDestructionDispatcherInner {
 
 struct WatcherSink {
     id: u64,
-    sender: mpsc::Sender<fnet_sockets::IpSocketState>,
-    cancel: async_utils::event::Event,
+    sender: mpsc::UnboundedSender<fnet_sockets::IpSocketState>,
 }
 
 impl WatcherSink {
     fn try_send(&mut self, state: fnet_sockets::IpSocketState) {
-        self.sender.try_send(state).unwrap_or_else(|e| {
-            if e.is_full() {
-                let _: bool = self.cancel.signal();
-            }
+        let Self { id, sender } = self;
+        sender.unbounded_send(state).unwrap_or_else(|_| {
+            log::debug!("Destruction watcher id={id}: event send raced with drop");
         });
     }
 }
 
-impl Drop for WatcherSink {
-    fn drop(&mut self) {
-        // This ensures that the task can never observe the sender being closed
-        // on drop.
-        let _: bool = self.cancel.signal();
-    }
-}
-
 impl SocketDestructionDispatcherInner {
-    fn add_client(
-        &mut self,
-        sender: mpsc::Sender<fnet_sockets::IpSocketState>,
-        cancel: async_utils::event::Event,
-    ) -> u64 {
+    fn add_client(&mut self, sender: mpsc::UnboundedSender<fnet_sockets::IpSocketState>) -> u64 {
         let Self { clients, next_id } = self;
 
         let id = *next_id;
         *next_id = next_id.checked_add(1).expect("shouldn't have u64::MAX watchers");
-        clients.push(WatcherSink { id, sender, cancel });
+        clients.push(WatcherSink { id, sender });
 
         id
     }

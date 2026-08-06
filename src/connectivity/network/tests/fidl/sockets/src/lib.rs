@@ -895,10 +895,10 @@ async fn diagnostics_recent_destructions<I: Ip>(name: &str, protocol: Protocol) 
     };
     // Socket is dropped here.
 
-    let sockets: Vec<fnet_sockets::IpSocketState> =
-        watcher.watch().await.expect("watch should succeed");
+    let (sockets, dropped_events) = watcher.watch().await.expect("watch should succeed");
 
     assert_eq!(sockets.len(), 1);
+    assert_eq!(dropped_events, 0);
     let socket = &sockets[0];
     assert_eq!(socket.cookie, Some(cookie));
 
@@ -969,9 +969,7 @@ async fn diagnostics_recent_destructions_queue_limit<I: Ip>(name: &str) {
         .expect("get_destruction_watcher should succeed");
 
     let queue_capacity = usize::try_from(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE).unwrap() * 5;
-    // We need +2 here because in addition to the buffer, there is one element
-    // reserved for each sender (which in this case is 1). This is due to the
-    // internal use of the futures::mpsc::channel buffer to enforce the limit.
+    // Overflow by a couple to make sure we know how to count properly.
     for _ in 0..(queue_capacity + 2) {
         let socket = realm
             .datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp)
@@ -980,11 +978,13 @@ async fn diagnostics_recent_destructions_queue_limit<I: Ip>(name: &str) {
         socket.bind(&local_addr.into()).expect("bind should succeed");
     }
 
-    let signals = watcher.on_closed().await.expect("on_closed should succeed");
-    assert!(signals.contains(zx::Signals::CHANNEL_PEER_CLOSED));
+    // We get a full batch, but are also signalled of dropped events.
+    let (sockets, dropped_events) = watcher.watch().await.expect("watch should succeed");
+    assert_eq!(sockets.len(), usize::try_from(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE).unwrap());
+    assert_eq!(dropped_events, 2);
 
-    assert_matches!(
-        watcher.watch().await,
-        Err(fidl::Error::ClientChannelClosed { epitaph, .. }) if epitaph == zx::Status::NO_RESOURCES
-    );
+    // Still another full batch, but the dropped signal is cleared.
+    let (sockets, dropped_events) = watcher.watch().await.expect("watch should succeed");
+    assert_eq!(sockets.len(), usize::try_from(fnet_sockets::MAX_IP_SOCKET_BATCH_SIZE).unwrap());
+    assert_eq!(dropped_events, 0);
 }

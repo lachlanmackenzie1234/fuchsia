@@ -713,6 +713,9 @@ pub enum DestructionWatcherError {
     /// The netstack returned an empty batch of sockets.
     #[error("received empty batch of sockets")]
     EmptyBatch,
+    /// Events were dropped
+    #[error("events were dropped")]
+    DroppedEvents(u64),
 }
 
 impl From<fidl::Error> for DestructionWatcherError {
@@ -731,19 +734,25 @@ pub async fn watch_destruction(
     diagnostics.get_destruction_watcher(server_end).await?;
 
     Ok(futures::stream::try_unfold(proxy, |proxy| async {
-        let batch = proxy.watch().await?;
-        if batch.is_empty() {
-            Err(DestructionWatcherError::EmptyBatch)
+        let (sockets, dropped_events) = proxy.watch().await?;
+
+        let items = if sockets.is_empty() {
+            vec![Err(DestructionWatcherError::EmptyBatch)]
         } else {
-            let batch = batch
+            let dropped_events_iter = if dropped_events > 0 {
+                Some(Err(DestructionWatcherError::DroppedEvents(dropped_events)))
+            } else {
+                None
+            };
+
+            sockets
                 .into_iter()
                 .map(|s| s.try_into().map_err(DestructionWatcherError::Conversion))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok::<_, DestructionWatcherError>(Some((
-                futures::stream::iter(batch.into_iter().map(Ok)),
-                proxy,
-            )))
-        }
+                .chain(dropped_events_iter)
+                .collect()
+        };
+
+        Ok::<_, fidl::Error>(Some((futures::stream::iter(items), proxy)))
     })
     .try_flatten())
 }
@@ -1620,7 +1629,7 @@ mod tests {
                         }
                     };
                     if let Some(batch) = batch {
-                        responder.send(&batch).unwrap();
+                        responder.send(&batch, 0).unwrap();
                     } else {
                         drop(responder);
                     }
@@ -1713,7 +1722,7 @@ mod tests {
                     None => vec![],
                     Some(s) => vec![s],
                 };
-                responder.send(&batch).unwrap();
+                responder.send(&batch, 0).unwrap();
             }
             fnet_sockets::DiagnosticsRequest::IterateIp { .. } => unreachable!(),
         };
@@ -1730,7 +1739,6 @@ mod tests {
             pin_mut!(stream);
 
             let result = stream.next().await.expect("got a result");
-            assert_matches!(stream.next().await, None);
             result
         };
 
@@ -1742,7 +1750,80 @@ mod tests {
             DestructionWatcherError::Conversion(b) => {
                 assert_matches!(result, Err(DestructionWatcherError::Conversion(a)) if a == b);
             }
-            DestructionWatcherError::Fidl(_) => unreachable!(),
+            DestructionWatcherError::Fidl(_) | DestructionWatcherError::DroppedEvents(_) => {
+                unreachable!()
+            }
         }
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn watch_destruction_dropped_events() {
+        let socket = fnet_sockets::IpSocketState {
+            family: Some(fnet::IpVersion::V4),
+            src_addr: Some(fidl_ip!("192.168.1.1")),
+            dst_addr: Some(fidl_ip!("192.168.1.2")),
+            cookie: Some(1234),
+            marks: Some(fnet::Marks {
+                mark_1: Some(1111),
+                mark_2: None,
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
+            transport: Some(fnet_sockets::IpSocketTransportState::Tcp(
+                fnet_sockets::IpSocketTcpState {
+                    src_port: Some(1111),
+                    dst_port: Some(2222),
+                    state: Some(fnet_tcp::State::Established),
+                    tcp_info: None,
+                    __source_breaking: fidl::marker::SourceBreaking,
+                },
+            )),
+            __source_breaking: fidl::marker::SourceBreaking,
+        };
+
+        let (diagnostics, diagnostics_server_end) =
+            fidl::endpoints::create_proxy::<fnet_sockets::DiagnosticsMarker>();
+        let serve_watcher = {
+            let socket = socket.clone();
+            async |req: fnet_sockets::DiagnosticsRequest| match req {
+                fnet_sockets::DiagnosticsRequest::GetDestructionWatcher { watcher, responder } => {
+                    responder.send().unwrap();
+                    let mut stream = watcher.into_stream();
+                    let req = stream.next().await.unwrap().unwrap();
+                    let responder = match req {
+                        fnet_sockets::DestructionWatcherRequest::Watch { responder } => responder,
+                        fnet_sockets::DestructionWatcherRequest::_UnknownMethod { .. } => {
+                            unreachable!()
+                        }
+                    };
+                    responder.send(&[socket], 100).unwrap();
+                }
+                fnet_sockets::DiagnosticsRequest::IterateIp { .. } => unreachable!(),
+            }
+        };
+
+        let (mut diagnostics_request_stream, _control_handle) =
+            diagnostics_server_end.into_stream_and_control_handle();
+        let server_fut = diagnostics_request_stream
+            .next()
+            .then(|req| serve_watcher(req.expect("Request stream ended unexpectedly").unwrap()))
+            .fuse();
+
+        let expected_socket: IpSocketState = socket.try_into().unwrap();
+
+        let client_fut = async {
+            let stream = watch_destruction(&diagnostics).await.unwrap();
+            pin_mut!(stream);
+
+            assert_matches!(
+                stream.next().await,
+                Some(Ok(sock)) => assert_eq!(sock, expected_socket)
+            );
+            assert_matches!(
+                stream.next().await,
+                Some(Err(DestructionWatcherError::DroppedEvents(100)))
+            );
+        };
+
+        let _: ((), ()) = future::join(server_fut, client_fut).await;
     }
 }

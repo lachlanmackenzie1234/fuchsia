@@ -123,10 +123,12 @@ open protocol DestructionWatcher {
     /// allowed and will result in the channel being closed with
     /// `ALREADY_EXISTS`.
     ///
-    /// If the client doesn't read events fast enough, the channel is closed
-    /// with `NO_RESOURCES`.
+    /// If the client doesn't read events fast enough, some may be dropped. The
+    /// client can detect this by looking at `dropped_events`.
     strict Watch() -> (struct {
         sockets vector<IpSocketState>:MAX_IP_SOCKET_BATCH_SIZE;
+        /// The number of events dropped since the last call.
+        dropped_events uint64;
     });
 };
 
