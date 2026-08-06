@@ -110,7 +110,7 @@ impl State {
             None | Some(Control::FIN) | Some(Control::RST) => return None,
         }
 
-        Some(State::SynSent(SynSent {
+        Some(Self::SynSent(SynSent {
             iss: segment.seq,
             logical_len: segment.len(payload_len),
             advertised_window_scale: segment.options.window_scale(),
@@ -118,6 +118,7 @@ impl State {
             // which is larger than the largest possible unscaled window
             // size (2^16).
             window_size: WindowSize::from_u32(u16::from(segment.wnd).into()).unwrap(),
+            dir: ConnectionDirection::Original,
         }))
     }
 
@@ -455,8 +456,30 @@ impl<T> UpdatePeers<T> {
     }
 }
 
-/// State for the SynSent state.
-///
+/// State for [`State::SynSent`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SynSent {
+    /// The ISS (initial send sequence number).
+    iss: SeqNum,
+
+    /// The logical length of the segment.
+    logical_len: u32,
+
+    /// The window scale (if set in the initial SYN).
+    advertised_window_scale: Option<WindowScale>,
+
+    /// The advertised window size. Converted into a sequence number once we
+    /// know what the other stack's ISN is.
+    ///
+    /// RFC 1323 2.2:
+    ///   The Window field in a SYN (i.e., a <SYN> or <SYN,ACK>) segment itself
+    ///   is never scaled.
+    window_size: WindowSize,
+
+    /// The stack the above state comes from.
+    dir: ConnectionDirection,
+}
+
 /// State transitions for in-range segments by direction:
 /// - Original
 ///   - SYN: Update data, stay in SynSent
@@ -470,39 +493,19 @@ impl<T> UpdatePeers<T> {
 ///   - RST: Delete connection
 ///   - FIN: Invalid
 ///   - ACK: Invalid
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SynSent {
-    /// The ISS (initial send sequence number) for the original TCP stack.
-    iss: SeqNum,
-
-    /// The logical length of the segment sent by the original TCP stack.
-    logical_len: u32,
-
-    /// The window scale (if set in the initial SYN) for the original TCP stack.
-    advertised_window_scale: Option<WindowScale>,
-
-    /// The window size of the original TCP stack. Will be converted into a
-    /// sequence number once we know what the reply stack's ISN is.
-    ///
-    /// RFC 1323 2.2:
-    ///   The Window field in a SYN (i.e., a <SYN> or <SYN,ACK>) segment itself
-    ///   is never scaled.
-    window_size: WindowSize,
-}
-
 fn update_for_syn_sent(
     state: SynSent,
     segment: &SegmentHeader,
     payload_len: usize,
     dir: ConnectionDirection,
 ) -> (State, bool) {
-    let SynSent { iss, logical_len, advertised_window_scale, window_size } = state;
+    let SynSent { iss, logical_len, advertised_window_scale, window_size, dir: state_dir } = state;
 
     // This is another packet in the same direction as the first one.  Update
     // existing parameters for initial SYN, but only for packets that look to be
     // valid retransmits of the initial SYN. This behavior is copied over from
     // gVisor.
-    if dir == ConnectionDirection::Original {
+    if dir == state_dir {
         if let Some(_) = segment.ack {
             return (State::SynSent(state), false);
         }
@@ -514,7 +517,7 @@ fn update_for_syn_sent(
             Some(Control::SYN) => {}
         };
 
-        if segment.seq != iss || segment.options.window_scale() != advertised_window_scale {
+        if segment.seq != state.iss || segment.options.window_scale() != advertised_window_scale {
             return (State::SynSent(state), false);
         }
 
@@ -524,10 +527,11 @@ fn update_for_syn_sent(
 
         (
             State::SynSent(SynSent {
-                iss: iss,
+                iss,
                 logical_len: u32::max(segment.len(payload_len), logical_len),
                 advertised_window_scale: advertised_window_scale,
                 window_size: core::cmp::max(seg_window_size, window_size),
+                dir: state_dir,
             }),
             true,
         )
@@ -557,6 +561,7 @@ fn update_for_syn_sent(
             // know the receiver will tear down the connection.
             Some(Control::RST) => match segment.ack {
                 None => (State::SynSent(state), false),
+
                 Some(_) => (State::Closed, true),
             },
 
@@ -569,8 +574,8 @@ fn update_for_syn_sent(
                     return (State::Untracked, true);
                 };
 
-                let reply_window_scale = segment.options.window_scale();
-                let reply_window_size =
+                let sender_window_scale = segment.options.window_scale();
+                let sender_window_size =
                     WindowSize::from_u32(u16::from(segment.wnd).into()).unwrap();
 
                 // RFC 1323 2.2:
@@ -578,43 +583,44 @@ fn update_for_syn_sent(
                 //   must send Window Scale options in their SYN
                 //   segments to enable window scaling in either
                 //   direction.
-                let (original_window_scale, reply_window_scale) =
-                    match (advertised_window_scale, reply_window_scale) {
-                        (Some(original), Some(reply)) => (original, reply),
+                let (receiver_window_scale, sender_window_scale) =
+                    match (advertised_window_scale, sender_window_scale) {
+                        (Some(receiver), Some(sender)) => (receiver, sender),
                         _ => (WindowScale::ZERO, WindowScale::ZERO),
                     };
 
-                let original_max_next_seq = iss + logical_len;
+                let receiver_max_next_seq = iss + logical_len;
 
                 (
-                    State::Established(PeerPair {
-                        original: Peer {
-                            window_scale: original_window_scale,
-                            max_wnd: window_size,
-                            // We're still waiting on an ACK from
-                            // the original stack, so this is
-                            // slightly different from the normal
-                            // calculation. It's still valid because
-                            // we can assume that the implicit ACK
-                            // number is the reply ISS (no data
-                            // ACKed).
-                            max_wnd_seq: segment.seq + window_size,
-                            max_next_seq: original_max_next_seq,
-                            unacked_data: ack.before(original_max_next_seq),
-                            fin_state: FinState::NotSent,
-                        },
-                        reply: Peer {
-                            window_scale: reply_window_scale,
-                            max_wnd: reply_window_size,
-                            max_wnd_seq: ack + reply_window_size,
-                            max_next_seq: segment.seq + segment.len(payload_len),
-                            // The reply peer will always have
-                            // unacked data here because the SYN we
-                            // just saw sent needs to be acked.
-                            unacked_data: true,
-                            fin_state: FinState::NotSent,
-                        },
-                    }),
+                    State::Established(
+                        (UpdatePeers {
+                            sender: Peer {
+                                window_scale: sender_window_scale,
+                                max_wnd: sender_window_size,
+                                max_wnd_seq: ack + sender_window_size,
+                                max_next_seq: segment.seq + segment.len(payload_len),
+                                // The sender peer will always have unacked data here
+                                // because the SYN we just saw sent needs to be acked.
+                                unacked_data: true,
+                                fin_state: FinState::NotSent,
+                            },
+                            receiver: Peer {
+                                window_scale: receiver_window_scale,
+                                max_wnd: window_size,
+                                // We're still waiting on an ACK from the receiver
+                                // stack, so this is slightly different from the normal
+                                // calculation. It's still valid because we can assume
+                                // that the implicit ACK number is the sender ISS (no
+                                // data ACKed).
+                                max_wnd_seq: segment.seq + window_size,
+                                max_next_seq: receiver_max_next_seq,
+                                unacked_data: ack.before(receiver_max_next_seq),
+                                fin_state: FinState::NotSent,
+                            },
+                            dir,
+                        })
+                        .into_peer_pair(),
+                    ),
                     true,
                 )
             }
@@ -739,6 +745,7 @@ mod tests {
             logical_len: 3,
             advertised_window_scale: None,
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let segment = SegmentHeader {
@@ -797,6 +804,7 @@ mod tests {
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let expected_state = state.clone();
@@ -813,6 +821,7 @@ mod tests {
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let segment = SegmentHeader {
@@ -843,6 +852,7 @@ mod tests {
                 logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 10 + 1,
                 advertised_window_scale: WindowScale::new(ORIGINAL_WS),
                 window_size: WindowSize::from_u32(ORIGINAL_WND as u32 + 10).unwrap(),
+                dir: ConnectionDirection::Original
             }
         )
     }
@@ -855,6 +865,7 @@ mod tests {
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: None,
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let segment = SegmentHeader {
@@ -892,6 +903,7 @@ mod tests {
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: None,
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let segment = SegmentHeader {
@@ -920,6 +932,7 @@ mod tests {
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let segment = SegmentHeader {
@@ -943,6 +956,7 @@ mod tests {
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: None,
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let segment = SegmentHeader {
@@ -968,6 +982,7 @@ mod tests {
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
             window_size: WindowSize::from_u32(ORIGINAL_WND as u32).unwrap(),
+            dir: ConnectionDirection::Original,
         });
 
         let segment = SegmentHeader {
