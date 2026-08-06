@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::framework::controller;
+use crate::framework::{controller, resolve_with_pinned_url};
 use crate::model::actions::{Action, ActionKey};
 use crate::model::component::instance::{
     InstanceState, ResolvedInstanceState, StartedInstanceState,
@@ -20,7 +20,9 @@ use cm_rust::ComponentDecl;
 use cm_types::{Name, RelativePath};
 use cm_util::{AbortError, AbortFutureExt, AbortHandle, AbortableScope};
 use config_encoder::ConfigFields;
-use errors::{ActionError, CreateNamespaceError, StartActionError, StructuredConfigError};
+use errors::{
+    ActionError, CreateNamespaceError, ResolveActionError, StartActionError, StructuredConfigError,
+};
 use fidl::Vmo;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component_decl as fdecl;
@@ -99,9 +101,9 @@ struct StartContext {
 
 fn open_protocols_with_numbered_handle(
     resolved_instance_state: &ResolvedInstanceState,
+    decl: &cm_rust::ComponentDecl,
     target: Arc<WeakInstanceToken>,
 ) -> Vec<fprocess::HandleInfo> {
-    let decl = resolved_instance_state.resolved_component.decl.as_ref().expect("decl should exist");
     let numbered_handle_dict = resolved_instance_state.sandbox.program_input.numbered_handles();
     decl.uses
         .iter()
@@ -177,17 +179,34 @@ async fn do_start(
         |_: AbortError| StartActionError::Aborted { moniker: component.moniker.clone() };
 
     // Resolve the component and find the runner to use.
-    let (
-        runner_router,
-        runner_name,
-        resolved_component,
-        mut program_input_dict,
-        storage_service_use_decls,
-    ) = {
+    let (runner_router, runner_name, resolved_component, mut program_input_dict, decl) = {
         trace::duration!("component_manager", "Actions::Start::resolve_runner", "moniker" => component.moniker.as_str());
 
-        // Obtain the runner declaration under a short lock, as `open_runner` may run for a long
-        // time if components along the route need to be resolved.
+        // Obtain a clone of the decl under a short lock. If the decl has
+        // already been dropped from the ResolvedInstanceState, then we will
+        // need to reacquire the lock in order to reresolve the decl.  As a
+        // result, we keep the lock tightly scoped here.
+        let maybe_decl = {
+            let resolved_state = component
+                .lock_resolved_state()
+                .with(&abortable_scope)
+                .await
+                .map_err(abort_error)?
+                .map_err(|err| StartActionError::ResolveActionError {
+                    moniker: component.moniker.clone(),
+                    err: Box::new(err),
+                })?;
+            resolved_state.decl().cloned()
+        };
+        let decl = match maybe_decl {
+            Some(decl) => decl,
+            None => resolve_with_pinned_url(component).await.map_err(|err| {
+                StartActionError::ResolveActionError {
+                    moniker: component.moniker.clone(),
+                    err: Box::new(ActionError::from(ResolveActionError::from(err))),
+                }
+            })?,
+        };
         let resolved_state = component
             .lock_resolved_state()
             .with(&abortable_scope)
@@ -197,9 +216,9 @@ async fn do_start(
                 moniker: component.moniker.clone(),
                 err: Box::new(err),
             })?;
-
         let mut numbered_handles = open_protocols_with_numbered_handle(
             &resolved_state,
+            &decl,
             component.clone().as_weak().into(),
         );
         incoming.numbered_handles.append(&mut numbered_handles);
@@ -207,10 +226,10 @@ async fn do_start(
         let runner = resolved_state.sandbox.program_input.runner();
         (
             runner,
-            resolved_state.decl().unwrap().get_runner().as_ref().map(|r| r.source_name.clone()),
+            decl.get_runner().as_ref().map(|r| r.source_name.clone()),
             resolved_state.resolved_component.clone(),
             resolved_state.sandbox.program_input.namespace(),
-            resolved_state.storage_service_use_decls.clone(),
+            decl,
         )
     };
     let runner = match runner_router {
@@ -247,7 +266,7 @@ async fn do_start(
     let mut namespace_builder = create_namespace(
         resolved_component.package.as_ref(),
         component,
-        &storage_service_use_decls,
+        &decl.uses,
         &program_input_dict,
         component.execution_scope.clone(),
     )
@@ -281,10 +300,6 @@ async fn do_start(
         fdecl::OnTerminate::None => {}
     }
 
-    let decl = resolved_component
-        .decl
-        .as_ref()
-        .expect("component decl dropped before component instantiated");
     let encoded_config = match decl.config {
         None => None,
         Some(ref config_decl) => match config_decl.value_source {
@@ -295,7 +310,7 @@ async fn do_start(
                         err: StructuredConfigError::ConfigValuesMissing,
                     });
                 };
-                update_config_fields(Arc::make_mut(&mut config), decl, &component)
+                update_config_fields(Arc::make_mut(&mut config), &decl, &component)
                     .with(&abortable_scope)
                     .await
                     .map_err(abort_error)??;
@@ -303,7 +318,7 @@ async fn do_start(
                 Some(encode_config(config, &component.moniker).await?)
             }
             cm_rust::ConfigValueSource::Capabilities(_) => {
-                let config = create_config_with_capabilities(decl, &component)
+                let config = create_config_with_capabilities(&decl, &component)
                     .with(&abortable_scope)
                     .await
                     .map_err(abort_error)??;
@@ -327,7 +342,7 @@ async fn do_start(
         execution_controller_task,
     };
 
-    start_component(&component, decl.clone(), start_context).await
+    start_component(&component, decl.into(), start_context).await
 }
 
 fn dict_deep_copy(dict: &Arc<Dictionary>) -> Arc<Dictionary> {
@@ -458,6 +473,24 @@ async fn start_component(
         runtime_dir = started.runtime_dir().cloned();
 
         state.replace(|instance_state| match instance_state {
+            #[cfg(not(test))]
+            InstanceState::Resolved(mut resolved) => {
+                // Drop the decl now that it's no longer needed.
+                let decl = resolved.resolved_component.decl.take();
+                match decl {
+                    Some(d) => {
+                        // Put the decl back if it has collections, so that
+                        // dynamic children can have their manifest validated
+                        // against their parent (this component).
+                        if d.collections.len() > 0 {
+                            resolved.resolved_component.decl = Some(d);
+                        }
+                    }
+                    None => (),
+                }
+                InstanceState::Started(resolved, started)
+            }
+            #[cfg(test)]
             InstanceState::Resolved(resolved) => InstanceState::Started(resolved, started),
             other_state => panic!("starting an unresolved component: {:?}", other_state),
         });

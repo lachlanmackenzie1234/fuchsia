@@ -31,7 +31,7 @@ pub static PKG_PATH: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/pkg"))
 pub async fn create_namespace(
     package: Option<&Package>,
     component: &Arc<ComponentInstance>,
-    use_decls: &Vec<UseDecl>,
+    use_decls: &[UseDecl],
     program_input_dict: &Arc<Dictionary>,
     scope: ExecutionScope,
 ) -> Result<NamespaceBuilder, CreateNamespaceError> {

@@ -207,12 +207,12 @@ impl From<&Component> for fresolution::Component {
             vmo.write(&bytes, 0).unwrap();
             fmem::Data::Buffer(fmem::Buffer { vmo, size: bytes.len() as u64 })
         };
-        let decl = Some(bytes_to_fmem_data(
-            &fidl::persist(&component.decl.as_ref().unwrap().as_ref().clone().native_into_fidl())
-                .expect(
-                    "we should always be able to persist a manifest that we got by unpersisting it",
-                ),
-        ));
+        let decl = component.decl.as_ref().map(|decl| {
+            let decl = decl.as_ref().clone().native_into_fidl();
+            bytes_to_fmem_data(&fidl::persist(&decl).expect(
+                "we should always be able to persist a manifest that we got by unpersisting it",
+            ))
+        });
         let package = component.package.as_ref().map(|package| fresolution::Package {
             directory: fuchsia_fs::directory::clone(&package.package_dir)
                 .ok()
