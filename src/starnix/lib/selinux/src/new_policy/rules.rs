@@ -877,9 +877,10 @@ struct BinaryAccessVectorRuleHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::NewPolicy;
     use crate::new_policy::metadata::PolicyVersion;
     use crate::new_policy::parser::PolicyWriter;
-    use crate::new_policy::traits::PolicyId;
+    use crate::new_policy::traits::{HasPolicyId, PolicyId};
 
     #[test]
     fn test_xperms_bitmap_ops_and_contains() {
@@ -1070,5 +1071,199 @@ mod tests {
         assert_eq!(nodes[2].false_rules.av_rules().len(), 0);
         assert_eq!(nodes[3].true_rules.av_rules().len(), 1);
         assert_eq!(nodes[3].false_rules.av_rules().len(), 0);
+    }
+
+    #[test]
+    fn parse_allowxperm_one_ioctl() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
+        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+
+        let class_id =
+            policy.classes().get_by_name(b"class_one_ioctl").expect("look up class_one_ioctl").id();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0xabcd));
+    }
+
+    // `ioctl` extended permissions that are declared in the same rule, and have the same
+    // high byte, are stored in the same `AccessVectorRule` in the compiled policy.
+    #[test]
+    fn parse_allowxperm_two_ioctls_same_range_coalesced() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
+        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+
+        let class_id = policy
+            .classes()
+            .get_by_name(b"class_two_ioctls_same_range")
+            .expect("look up class_two_ioctls_same_range")
+            .id();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x12);
+        assert_eq!(rules[0].count(), 2);
+        assert!(rules[0].contains(0x1234));
+        assert!(rules[0].contains(0x1256));
+    }
+
+    #[test]
+    fn parse_allowxperm_one_driver_range() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
+        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+
+        let class_id = policy
+            .classes()
+            .get_by_name(b"class_one_driver_range")
+            .expect("look up class_one_driver_range")
+            .id();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIXES);
+        assert_eq!(rules[0].count(), 0x100);
+        assert!(rules[0].contains(0x1000));
+        assert!(rules[0].contains(0x10ab));
+    }
+
+    #[test]
+    fn parse_allowxperm_two_ioctls_different_range() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
+        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+
+        let class_id = policy
+            .classes()
+            .get_by_name(b"class_two_ioctls_diff_range")
+            .expect("look up class_two_ioctls_diff_range")
+            .id();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x56);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x5678));
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x12);
+        assert_eq!(rules[1].count(), 1);
+        assert!(rules[1].contains(0x1234));
+    }
+
+    #[test]
+    fn parse_allowxperm_one_nlmsg() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
+        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+
+        let class_id =
+            policy.classes().get_by_name(b"class_one_nlmsg").expect("look up class_one_nlmsg").id();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x12));
+    }
+
+    // If an allowxperm rule and an auditallowxperm rule specify exactly the same permissions, they
+    // are not coalesced into a single `AccessVectorRule` in the policy; two rules appear in the
+    // policy.
+    #[test]
+    fn parse_auditallowxperm_not_coalesced() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
+        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+
+        let class_id = policy
+            .classes()
+            .get_by_name(b"class_auditallowxperm_not_coalesced")
+            .expect("look up class_auditallowxperm_not_coalesced")
+            .id();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let allow_rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+        let auditallow_rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::AuditAllowXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+
+        assert_eq!(allow_rules.len(), 1);
+        assert_eq!(allow_rules[0].count(), 1);
+        assert!(allow_rules[0].contains(0xabcd));
+        assert_eq!(auditallow_rules.len(), 1);
+        assert_eq!(auditallow_rules[0].count(), 1);
+        assert!(auditallow_rules[0].contains(0xabcd));
+    }
+
+    #[test]
+    fn parse_dontauditxperm() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
+        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+
+        let class_id = policy
+            .classes()
+            .get_by_name(b"class_dontauditxperm")
+            .expect("look up class_dontauditxperm")
+            .id();
+        let type0 = policy.types().get_by_name(b"type0").expect("look up type0").id();
+        let rules: Vec<_> = policy
+            .access_vector_rules()
+            .find_xperm_rules(type0, type0, class_id)
+            .filter(|r| r.kind() == RuleKind::DontAuditXperm)
+            .map(|r| r.extended_permissions())
+            .collect();
+
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].xperms_type(), XPERMS_TYPE_NLMSG);
+        assert_eq!(rules[0].xperms_optional_prefix(), 0x00);
+        assert_eq!(rules[0].count(), 1);
+        assert!(rules[0].contains(0x11));
+        assert_eq!(rules[1].xperms_type(), XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+        assert_eq!(rules[1].xperms_optional_prefix(), 0x10);
+        assert_eq!(rules[1].count(), 1);
+        assert!(rules[1].contains(0x1000));
     }
 }
