@@ -8,6 +8,9 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
 use async_trait::async_trait;
 use capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
+use clonable_error::ClonableError;
+use cm_types::Url;
+use errors::ResolveActionError;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_internal as finternal;
@@ -232,8 +235,13 @@ pub(crate) async fn resolve_with_pinned_url(
     let mut package;
     {
         let state = component.lock_state().await;
-        let resolved = state.get_resolved_state().ok_or(ResolveError::InstanceNotResolved)?;
-        address = resolved.address().await.map_err(|_| ResolveError::BadUrl)?;
+        let resolved = state
+            .get_resolved_state()
+            .ok_or(ResolveError::InstanceNotResolved { url: component.url().clone() })?;
+        address = resolved.address().await.map_err(|_| ResolveError::BadUrl {
+            url: component.url().clone(),
+            moniker: component.moniker.clone(),
+        })?;
         package = resolved.package().map(|p| Clone::clone(&p.package_dir));
     };
     let can_pin = match &address {
@@ -264,12 +272,12 @@ pub(crate) async fn resolve_with_pinned_url(
             .map_err(|err| {
                 warn!(err:%, url:% = component.url();
                       "resolve_with_pinned_url: failed to open package");
-                ResolveError::PackageOpenFailed
+                ResolveError::PackageOpenFailed { url: component.url().clone(), err }
             })?;
         let merkle = fuchsia_fs::file::read_to_string(&meta_file).await.map_err(|err| {
             warn!(err:%, url:% = component.url();
                   "resolve_with_pinned_url: failed to open package");
-            ResolveError::PackageReadFailed
+            ResolveError::PackageReadFailed { url: component.url().clone(), err }
         })?;
         match &mut address {
             ComponentAddress::Absolute { url } => {
@@ -292,26 +300,32 @@ pub(crate) async fn resolve_with_pinned_url(
                     if url.query().is_none() {
                         warn!(err:%, url:% = component.url();
                               "resolve_with_pinned_url: resolution failed");
-                        return Err(ResolveError::ReresolveFailed);
+                        return Err(ResolveError::ReresolveFailed {
+                            url: Url::new(url.as_str()).unwrap(),
+                            err,
+                        });
                     } else {
                         // Try again without a hash pin in the query string.
                         url.set_query(None);
                     }
                 }
                 ComponentAddress::RelativePath { .. } => {
-                    return Err(ResolveError::ReresolveFailed);
+                    return Err(ResolveError::ReresolveFailed {
+                        url: component.url().clone(),
+                        err,
+                    });
                 }
             }
             component.perform_resolve(None, &address).await.map_err(|err| {
                 warn!(err:%, url:% = component.url();
                       "resolve_with_pinned_url: re-resolution failed");
-                ResolveError::ReresolveFailed
+                ResolveError::ReresolveFailed { url: component.url().clone(), err }
             })?
         }
         Err(err) => {
             warn!(err:%, url:% = component.url();
                     "resolve_with_pinned_url: resolution failed");
-            return Err(ResolveError::ReresolveFailed);
+            return Err(ResolveError::ReresolveFailed { url: component.url().clone(), err });
         }
     };
     Ok(component_info.decl)
@@ -319,21 +333,21 @@ pub(crate) async fn resolve_with_pinned_url(
 
 #[derive(Debug)]
 pub(crate) enum ResolveError {
-    InstanceNotResolved,
-    BadUrl,
-    PackageOpenFailed,
-    PackageReadFailed,
-    ReresolveFailed,
+    InstanceNotResolved { url: Url },
+    BadUrl { url: Url, moniker: Moniker },
+    PackageOpenFailed { url: Url, err: fidl::Error },
+    PackageReadFailed { url: Url, err: fuchsia_fs::file::ReadError },
+    ReresolveFailed { url: Url, err: ResolverError },
 }
 
 impl From<ResolveError> for fsys::GetDeclarationError {
     fn from(value: ResolveError) -> Self {
         match value {
-            ResolveError::InstanceNotResolved => Self::InstanceNotResolved,
-            ResolveError::BadUrl => Self::BadUrl,
-            ResolveError::PackageOpenFailed => Self::PackageOpenFailed,
-            ResolveError::PackageReadFailed => Self::PackageReadFailed,
-            ResolveError::ReresolveFailed => Self::ResolveFailed,
+            ResolveError::InstanceNotResolved { .. } => Self::InstanceNotResolved,
+            ResolveError::BadUrl { .. } => Self::BadUrl,
+            ResolveError::PackageOpenFailed { .. } => Self::PackageOpenFailed,
+            ResolveError::PackageReadFailed { .. } => Self::PackageReadFailed,
+            ResolveError::ReresolveFailed { .. } => Self::ResolveFailed,
         }
     }
 }
@@ -341,11 +355,11 @@ impl From<ResolveError> for fsys::GetDeclarationError {
 impl From<ResolveError> for fsys::RouteValidatorError {
     fn from(value: ResolveError) -> Self {
         match value {
-            ResolveError::InstanceNotResolved => Self::InstanceNotResolved,
-            ResolveError::BadUrl => Self::Internal,
-            ResolveError::PackageOpenFailed => Self::InstanceNotResolved,
-            ResolveError::PackageReadFailed => Self::InstanceNotResolved,
-            ResolveError::ReresolveFailed => Self::InstanceNotReresolved,
+            ResolveError::InstanceNotResolved { .. } => Self::InstanceNotResolved,
+            ResolveError::BadUrl { .. } => Self::Internal,
+            ResolveError::PackageOpenFailed { .. } => Self::InstanceNotResolved,
+            ResolveError::PackageReadFailed { .. } => Self::InstanceNotResolved,
+            ResolveError::ReresolveFailed { .. } => Self::InstanceNotReresolved,
         }
     }
 }
@@ -353,11 +367,44 @@ impl From<ResolveError> for fsys::RouteValidatorError {
 impl From<ResolveError> for fcomponent::Error {
     fn from(value: ResolveError) -> Self {
         match value {
-            ResolveError::InstanceNotResolved => Self::InstanceNotFound,
-            ResolveError::BadUrl => Self::Internal,
-            ResolveError::PackageOpenFailed => Self::InstanceCannotResolve,
-            ResolveError::PackageReadFailed => Self::InstanceCannotResolve,
-            ResolveError::ReresolveFailed => Self::InstanceCannotResolve,
+            ResolveError::InstanceNotResolved { .. } => Self::InstanceNotFound,
+            ResolveError::BadUrl { .. } => Self::Internal,
+            ResolveError::PackageOpenFailed { .. } => Self::InstanceCannotResolve,
+            ResolveError::PackageReadFailed { .. } => Self::InstanceCannotResolve,
+            ResolveError::ReresolveFailed { .. } => Self::InstanceCannotResolve,
+        }
+    }
+}
+
+impl From<ResolveError> for ResolveActionError {
+    fn from(value: ResolveError) -> Self {
+        match value {
+            ResolveError::InstanceNotResolved { url, .. } => ResolveActionError::ResolverError {
+                url,
+                err: Box::new(ResolverError::Internal(ClonableError::from(anyhow::anyhow!(
+                    "instance is not resolved"
+                )))),
+            },
+            ResolveError::BadUrl { url, moniker } => {
+                ResolveActionError::ComponentAddressParseError {
+                    url,
+                    moniker,
+                    err: Box::new(ResolverError::MalformedUrl(ClonableError::from(
+                        anyhow::anyhow!("bad url"),
+                    ))),
+                }
+            }
+            ResolveError::PackageOpenFailed { url, err, .. } => ResolveActionError::ResolverError {
+                url,
+                err: Box::new(ResolverError::Io(ClonableError::from(anyhow::Error::from(err)))),
+            },
+            ResolveError::PackageReadFailed { url, err, .. } => ResolveActionError::ResolverError {
+                url,
+                err: Box::new(ResolverError::Io(ClonableError::from(anyhow::Error::from(err)))),
+            },
+            ResolveError::ReresolveFailed { url, err } => {
+                ResolveActionError::ResolverError { url, err: Box::new(err) }
+            }
         }
     }
 }
