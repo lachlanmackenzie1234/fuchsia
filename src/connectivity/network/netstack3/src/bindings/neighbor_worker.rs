@@ -18,7 +18,7 @@ use assert_matches::assert_matches;
 use futures::channel::mpsc;
 use futures::task::Poll;
 use futures::{Future, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpAddr, IpAddress, Ipv4, Ipv6};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
@@ -195,6 +195,40 @@ fn new_fidl_entry(
     .into()
 }
 
+fn get_link_layer_addr(state: &neighbor::EventState<Mac>) -> Option<UnicastAddr<Mac>> {
+    match state {
+        neighbor::EventState::Static(addr) => Some(*addr),
+        neighbor::EventState::Dynamic(state) => match state {
+            neighbor::EventDynamicState::Incomplete => None,
+            neighbor::EventDynamicState::Reachable(addr) => Some(*addr),
+            neighbor::EventDynamicState::Stale(addr) => Some(*addr),
+            neighbor::EventDynamicState::Delay(addr) => Some(*addr),
+            neighbor::EventDynamicState::Probe(addr) => Some(*addr),
+            neighbor::EventDynamicState::Unreachable(addr) => Some(*addr),
+        },
+    }
+}
+
+/// Returns whether the event is "interesting" (e.g. worthy of any info log).
+///
+/// Add and remove events are automatically interesting. Changes are interesting
+/// if the entry is not known to be reachable, or if the the entry's link layer
+/// address changed.
+fn is_interesting_event(event: &Event, old_state: Option<&NeighborState>) -> bool {
+    match event.kind {
+        neighbor::EventKind::Added(_) => true,
+        neighbor::EventKind::Removed => true,
+        neighbor::EventKind::Changed(new_state) => {
+            let Some(old) = old_state else {
+                panic!("neighbor changed but not found: {event:?}");
+            };
+
+            !old.previously_reachable
+                || (get_link_layer_addr(&old.state) != get_link_layer_addr(&new_state))
+        }
+    }
+}
+
 pub(crate) struct Worker {
     event_receiver: mpsc::UnboundedReceiver<Event>,
     watcher_receiver: mpsc::Receiver<NewWatcher>,
@@ -211,10 +245,7 @@ pub(crate) fn new_worker() -> (Worker, mpsc::Sender<NewWatcher>, mpsc::Unbounded
 }
 
 fn handle_new_watcher(
-    neighbor_state: &HashMap<
-        BindingId,
-        HashMap<SpecifiedAddr<IpAddr>, (neighbor::EventState<Mac>, StackTime)>,
-    >,
+    neighbor_state: &HashMap<BindingId, HashMap<SpecifiedAddr<IpAddr>, NeighborState>>,
     watchers: &mut futures::stream::FuturesUnordered<Watcher>,
     NewWatcher { options, stream }: NewWatcher,
 ) {
@@ -230,14 +261,16 @@ fn handle_new_watcher(
         neighbor_state
             .iter()
             .map(|(binding_id, entries)| {
-                entries.iter().map(|(addr, (state, last_updated))| {
-                    fnet_neighbor::EntryIteratorItem::Existing(new_fidl_entry(
-                        *binding_id,
-                        *addr,
-                        *state,
-                        *last_updated,
-                    ))
-                })
+                entries.iter().map(
+                    |(addr, NeighborState { state, last_updated, previously_reachable: _ })| {
+                        fnet_neighbor::EntryIteratorItem::Existing(new_fidl_entry(
+                            *binding_id,
+                            *addr,
+                            *state,
+                            *last_updated,
+                        ))
+                    },
+                )
             })
             .flatten()
             .chain(std::iter::once(fnet_neighbor::EntryIteratorItem::Idle(
@@ -248,14 +281,21 @@ fn handle_new_watcher(
     watchers.push(Watcher { stream, options, event_queue, responder: None });
 }
 
+#[derive(Clone, Copy, Debug)]
+struct NeighborState {
+    state: neighbor::EventState<Mac>,
+    last_updated: StackTime,
+    // True if the neighbor was at one point in state `Reachable` and has not
+    // since transitioned to state `Unreachable`.
+    previously_reachable: bool,
+}
+
 impl Worker {
     pub(crate) async fn run(self, ctx: Ctx) {
         let Self { event_receiver: event_stream, watcher_receiver: new_watchers } = self;
         let mut watchers = futures::stream::FuturesUnordered::<Watcher>::new();
-        let mut neighbor_state: HashMap<
-            _,
-            HashMap<SpecifiedAddr<IpAddr>, (neighbor::EventState<Mac>, StackTime)>,
-        > = HashMap::new();
+        let mut neighbor_state: HashMap<_, HashMap<SpecifiedAddr<IpAddr>, NeighborState>> =
+            HashMap::new();
 
         enum SinkItem {
             NewWatcher(NewWatcher),
@@ -301,9 +341,16 @@ impl Worker {
                 Item::SinkItem(Some(SinkItem::Event(
                     ref event @ Event { ref id, kind, addr, at },
                 ))) => {
-                    info!(tag = "NUD"; "{}", EventLogger { event, ctx: &ctx });
-
                     let DeviceIdAndName { id: binding_id, name: _ } = *id.bindings_id();
+
+                    let old_entry = neighbor_state.get(&binding_id).and_then(|m| m.get(&addr));
+
+                    if is_interesting_event(event, old_entry) {
+                        info!(tag = "NUD"; "{}", EventLogger { event, ctx: &ctx });
+                    } else {
+                        debug!(tag = "NUD"; "{}", EventLogger { event, ctx: &ctx });
+                    }
+
                     let entry = neighbor_state
                         .entry(binding_id)
                         .or_insert_with(|| HashMap::new())
@@ -318,7 +365,17 @@ impl Worker {
                                 );
                             }
                             std::collections::hash_map::Entry::Vacant(vacant) => {
-                                let _ = vacant.insert((state, at));
+                                let reachable = matches!(
+                                    state,
+                                    neighbor::EventState::Dynamic(
+                                        neighbor::EventDynamicState::Reachable(_)
+                                    )
+                                );
+                                let _ = vacant.insert(NeighborState {
+                                    state,
+                                    last_updated: at,
+                                    previously_reachable: reachable,
+                                });
                                 fnet_neighbor::EntryIteratorItem::Added(new_fidl_entry(
                                     binding_id, addr, state, at,
                                 ))
@@ -329,7 +386,11 @@ impl Worker {
                                 panic!("neighbor removed but not found: {event:?}");
                             }
                             std::collections::hash_map::Entry::Occupied(occupied) => {
-                                let (state, at) = occupied.remove();
+                                let NeighborState {
+                                    state,
+                                    last_updated: at,
+                                    previously_reachable: _,
+                                } = occupied.remove();
 
                                 let entry = assert_matches!(
                                     neighbor_state.entry(binding_id),
@@ -349,14 +410,34 @@ impl Worker {
                                 panic!("neighbor changed but not found: {event:?}");
                             }
                             std::collections::hash_map::Entry::Occupied(mut occupied) => {
-                                let (current_state, _) = *occupied.get();
+                                let NeighborState {
+                                    state: current_state,
+                                    last_updated: _,
+                                    previously_reachable,
+                                } = *occupied.get();
                                 // NS3 core guarantees to only emit changed events if state
                                 // actually changed.
                                 assert_ne!(
                                     current_state, state,
                                     "neighbor changed but nothing changed: {event:?}",
                                 );
-                                let _ = occupied.insert((state, at));
+                                // If the current state confirms reachable or
+                                // unreachable, use that. Otherwise, use the
+                                // tracked reachability from the old state.
+                                let reachable = match &state {
+                                    neighbor::EventState::Dynamic(
+                                        neighbor::EventDynamicState::Reachable(_),
+                                    ) => true,
+                                    neighbor::EventState::Dynamic(
+                                        neighbor::EventDynamicState::Unreachable(_),
+                                    ) => false,
+                                    _ => previously_reachable,
+                                };
+                                let _ = occupied.insert(NeighborState {
+                                    state,
+                                    last_updated: at,
+                                    previously_reachable: reachable,
+                                });
                                 fnet_neighbor::EntryIteratorItem::Changed(new_fidl_entry(
                                     binding_id, addr, state, at,
                                 ))
