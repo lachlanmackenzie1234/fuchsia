@@ -6,7 +6,7 @@ use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
 
 use super::context::MlsLevel;
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{CategoryId, SensitivityId};
 
@@ -47,13 +47,13 @@ impl Parse for Sensitivity {
 }
 
 impl Serialize for Sensitivity {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinarySensitivityMetadata {
             length: self.name.len() as u32,
             is_alias: if self.is_alias { 1 } else { 0 },
         };
         metadata.serialize(writer)?;
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         self.level.serialize(writer)?;
         Ok(())
     }
@@ -109,14 +109,14 @@ impl Parse for Category {
 }
 
 impl Serialize for Category {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryCategoryMetadata {
             length: self.name.len() as u32,
             id: self.id.as_u32(),
             is_alias: if self.is_alias { 1 } else { 0 },
         };
         metadata.serialize(writer)?;
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         Ok(())
     }
 }
@@ -139,9 +139,11 @@ impl Validate for CategoryId {
 
 #[cfg(test)]
 mod tests {
-    use super::super::CategorySet;
-    use super::super::traits::{HasName, HasPolicyId};
     use super::*;
+    use crate::new_policy::CategorySet;
+    use crate::new_policy::metadata::PolicyVersion;
+    use crate::new_policy::parser::PolicyWriter;
+    use crate::new_policy::traits::{HasName, HasPolicyId};
 
     #[test]
     fn test_category_parse_and_serialize() {
@@ -158,7 +160,8 @@ mod tests {
         assert_eq!(category.name(), b"test");
 
         let mut writer = Vec::new();
-        category.serialize(&mut writer).expect("serialize Category");
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        category.serialize(&mut policy_writer).expect("serialize Category");
         assert_eq!(writer.as_slice(), &data);
     }
 
@@ -197,7 +200,8 @@ mod tests {
         assert_eq!(sensitivity.level().categories(), &CategorySet::from_ids([]));
 
         let mut writer = Vec::new();
-        sensitivity.serialize(&mut writer).expect("serialize Sensitivity");
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        sensitivity.serialize(&mut policy_writer).expect("serialize Sensitivity");
         assert_eq!(writer.as_slice(), &data);
     }
 }

@@ -5,7 +5,7 @@
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::{ByteArray, PolicyCursor};
+use super::parser::{ByteArray, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, Serialize, Validate};
 
 /// Magic number identifying a SELinux policy file.
@@ -79,14 +79,17 @@ impl Validate for Signature {
 }
 
 /// Version of the SELinux policy database.
-#[derive(Debug, Parse, Serialize)]
-pub(super) struct PolicyVersion {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Parse, Serialize)]
+pub struct PolicyVersion {
     value: u32,
 }
 
 impl PolicyVersion {
+    pub const V30: Self = Self { value: 30 };
+    pub const V33: Self = Self { value: 33 };
+
     /// Returns the raw policy version value.
-    pub(super) fn get(&self) -> u32 {
+    pub fn get(&self) -> u32 {
         self.value
     }
 }
@@ -142,7 +145,7 @@ impl Parse for Config {
 }
 
 impl Serialize for Config {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let mut flags = self.raw_flags;
         match self.handle_unknown {
             HandleUnknown::Reject => flags |= CONFIG_HANDLE_UNKNOWN_REJECT_FLAG,

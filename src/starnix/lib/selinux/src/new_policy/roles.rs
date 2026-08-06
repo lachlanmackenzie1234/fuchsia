@@ -5,7 +5,7 @@
 use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{ClassId, NewPolicy, TypeId, TypeSet};
 
@@ -68,14 +68,14 @@ impl Parse for Role {
 }
 
 impl Serialize for Role {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryRoleMetadata {
             key_length: self.name.len() as u32,
             id: self.id.as_u32(),
             bounds: self.bounds.map_or(0, |id| id.as_u32()),
         };
         metadata.serialize(writer)?;
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         self.dominates.serialize(writer)?;
         self.types.serialize(writer)?;
         Ok(())
@@ -138,6 +138,8 @@ impl RoleAllow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::metadata::PolicyVersion;
+    use crate::new_policy::parser::PolicyWriter;
     use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 
     #[test]
@@ -165,7 +167,8 @@ mod tests {
         // dominates and types are empty dynamically validated by round-trip
 
         let mut writer = Vec::new();
-        role.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        role.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 
@@ -185,7 +188,8 @@ mod tests {
         assert_eq!(trans.class(), ClassId::from_u32(4).unwrap());
 
         let mut writer = Vec::new();
-        trans.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        trans.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 
@@ -201,7 +205,8 @@ mod tests {
         assert_eq!(allow.new_role(), RoleId::from_u32(2).unwrap());
 
         let mut writer = Vec::new();
-        allow.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        allow.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 

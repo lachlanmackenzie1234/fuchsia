@@ -9,6 +9,7 @@ use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le
 
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
+use super::metadata::PolicyVersion;
 use super::traits::{Parse, Serialize, Validate};
 use selinux_policy_derive::{Parse, Serialize};
 
@@ -62,7 +63,7 @@ impl<'a> PolicyCursor<'a> {
         Ok(value)
     }
 
-    /// Reads a slice of `count` bytes from the cursor.
+    /// Reads a byte slice of `count` bytes from the cursor.
     pub(super) fn read_bytes(&mut self, count: usize) -> Result<&'a [u8], ParseError> {
         if self.offset + count > self.data.len() {
             return Err(ParseError::MissingData {
@@ -77,6 +78,30 @@ impl<'a> PolicyCursor<'a> {
     }
 }
 
+/// Writer used to serialize elements into a byte vector for a specific policy version.
+#[derive(Debug)]
+pub struct PolicyWriter<'a> {
+    version: PolicyVersion,
+    writer: &'a mut Vec<u8>,
+}
+
+impl<'a> PolicyWriter<'a> {
+    /// Creates a new [`PolicyWriter`] wrapping `writer` for the specified `version`.
+    pub fn new(version: PolicyVersion, writer: &'a mut Vec<u8>) -> Self {
+        Self { version, writer }
+    }
+
+    /// Returns target [`PolicyVersion`].
+    pub fn version(&self) -> PolicyVersion {
+        self.version
+    }
+
+    /// Appends raw bytes into destination writer.
+    pub fn write_bytes(&mut self, bytes: &[u8]) {
+        self.writer.extend_from_slice(bytes);
+    }
+}
+
 impl Parse for u8 {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         cursor.read::<u8>()
@@ -84,8 +109,8 @@ impl Parse for u8 {
 }
 
 impl Serialize for u8 {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
-        writer.push(*self);
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
+        writer.write_bytes(&[*self]);
         Ok(())
     }
 }
@@ -104,9 +129,9 @@ impl Parse for u16 {
 }
 
 impl Serialize for u16 {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let val = le::U16::new(*self);
-        writer.extend_from_slice(zerocopy::IntoBytes::as_bytes(&val));
+        writer.write_bytes(zerocopy::IntoBytes::as_bytes(&val));
         Ok(())
     }
 }
@@ -125,9 +150,9 @@ impl Parse for u32 {
 }
 
 impl Serialize for u32 {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let val = le::U32::new(*self);
-        writer.extend_from_slice(zerocopy::IntoBytes::as_bytes(&val));
+        writer.write_bytes(zerocopy::IntoBytes::as_bytes(&val));
         Ok(())
     }
 }
@@ -166,10 +191,10 @@ impl Parse for ByteArray {
 }
 
 impl Serialize for ByteArray {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let count = self.data.len() as u32;
         count.serialize(writer)?;
-        writer.extend_from_slice(&self.data);
+        writer.write_bytes(&self.data);
         Ok(())
     }
 }
@@ -199,8 +224,8 @@ impl Parse for RemainingBytes {
 }
 
 impl Serialize for RemainingBytes {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
-        writer.extend_from_slice(&self.bytes);
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
+        writer.write_bytes(&self.bytes);
         Ok(())
     }
 }
@@ -219,9 +244,9 @@ impl Parse for u64 {
 }
 
 impl Serialize for u64 {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let val = le::U64::new(*self);
-        writer.extend_from_slice(zerocopy::IntoBytes::as_bytes(&val));
+        writer.write_bytes(zerocopy::IntoBytes::as_bytes(&val));
         Ok(())
     }
 }
@@ -239,7 +264,7 @@ impl<T> Parse for std::marker::PhantomData<T> {
 }
 
 impl<T> Serialize for std::marker::PhantomData<T> {
-    fn serialize(&self, _writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, _writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         Ok(())
     }
 }
@@ -250,10 +275,17 @@ impl<T> Validate for std::marker::PhantomData<T> {
     }
 }
 
-/// Sized array of elements of type `T`, prefixed by a `u32` count.
+/// Standard policy array container, storing elements in a heap-allocated slice.
+/// Prefixed by a 32-bit count field in the binary policy format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Array<T> {
     elements: Box<[T]>,
+}
+
+impl<T> Default for Array<T> {
+    fn default() -> Self {
+        Self { elements: Box::new([]) }
+    }
 }
 
 impl<T> From<Vec<T>> for Array<T> {
@@ -284,7 +316,7 @@ impl<T: Parse> Parse for Array<T> {
 }
 
 impl<T: Serialize> Serialize for Array<T> {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let count = self.elements.len() as u32;
         count.serialize(writer)?;
         for element in self.elements.iter() {
@@ -339,6 +371,7 @@ impl<T: Validate> Validate for SymbolArray<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::metadata::PolicyVersion;
 
     #[test]
     fn test_policy_cursor_parse_u32() {
@@ -389,7 +422,8 @@ mod tests {
     fn test_u32_serialize() {
         let val = 42u32;
         let mut writer = Vec::new();
-        val.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        val.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, [42, 0, 0, 0]);
     }
 
@@ -397,7 +431,8 @@ mod tests {
     fn test_u64_serialize() {
         let val = 42u64;
         let mut writer = Vec::new();
-        val.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        val.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, [42, 0, 0, 0, 0, 0, 0, 0]);
     }
 
@@ -427,7 +462,8 @@ mod tests {
     fn test_byte_array_serialize() {
         let array = ByteArray { data: vec![5, 6, 7, 8].into_boxed_slice() };
         let mut writer = Vec::new();
-        array.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        array.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, [4, 0, 0, 0, 5, 6, 7, 8]);
     }
 
@@ -446,7 +482,8 @@ mod tests {
 
         // Serialize remaining bytes
         let mut writer = Vec::new();
-        remaining.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        remaining.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, [9, 9, 9]);
     }
 
@@ -460,7 +497,8 @@ mod tests {
         assert_eq!(cursor.offset, 12);
 
         let mut writer = Vec::new();
-        array.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        array.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 
@@ -476,7 +514,8 @@ mod tests {
         assert_eq!(cursor.offset, 16);
 
         let mut writer = Vec::new();
-        sym_array.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        sym_array.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 }

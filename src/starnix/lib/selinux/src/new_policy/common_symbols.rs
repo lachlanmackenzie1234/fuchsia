@@ -6,7 +6,7 @@ use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::indexed::IdAndNameIndexed;
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::permissions::Permission;
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
@@ -64,7 +64,7 @@ impl Parse for CommonSymbol {
 }
 
 impl Serialize for CommonSymbol {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let header = BinaryCommonSymbolHeader {
             name_len: self.name.len() as u32,
             id: self.id.as_u32(),
@@ -73,7 +73,7 @@ impl Serialize for CommonSymbol {
         };
         header.serialize(writer)?;
 
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         for permission in self.permissions.iter() {
             permission.serialize(writer)?;
         }

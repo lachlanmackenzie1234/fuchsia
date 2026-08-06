@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, Serialize, Validate};
 use super::{CategoryId, CategorySet, RoleId, SensitivityId, TypeId, UserId};
 
@@ -93,7 +93,7 @@ impl Parse for MlsRange {
 }
 
 impl Serialize for MlsRange {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         if let Some(ref high) = self.high {
             2u32.serialize(writer)?;
             self.low.sensitivity.serialize(writer)?;

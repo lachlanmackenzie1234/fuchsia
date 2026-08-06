@@ -4,7 +4,7 @@
 
 use super::context::{MlsLevel, MlsRange};
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{NewPolicy, RoleSet, UserId};
 
@@ -64,14 +64,14 @@ impl Parse for User {
 }
 
 impl Serialize for User {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryUserMetadata {
             key_length: self.name.len() as u32,
             id: self.id.as_u32(),
             bounds: self.bounds.map_or(0, |id| id.as_u32()),
         };
         metadata.serialize(writer)?;
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         self.roles.serialize(writer)?;
         self.range.serialize(writer)?;
         self.default_level.serialize(writer)?;
@@ -92,6 +92,7 @@ impl Validate for UserId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::metadata::PolicyVersion;
     use crate::new_policy::traits::{HasName, HasPolicyId};
 
     #[test]
@@ -130,7 +131,8 @@ mod tests {
         assert_eq!(user.default_level().sensitivity().as_u32(), 1);
 
         let mut writer = Vec::new();
-        user.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        user.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 }

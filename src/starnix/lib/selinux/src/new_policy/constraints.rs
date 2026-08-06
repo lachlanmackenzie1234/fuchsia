@@ -4,7 +4,7 @@
 
 use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::{Array, PolicyCursor};
+use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{AccessVector, NewPolicy, RoleId, TypeId, UserId};
 
@@ -194,7 +194,11 @@ impl<T: PolicyId + Parse> NameExpression<T> {
 }
 
 impl<T: PolicyId + Serialize> NameExpression<T> {
-    pub fn serialize(&self, writer: &mut Vec<u8>, operand_type: u32) -> Result<(), SerializeError> {
+    pub fn serialize(
+        &self,
+        writer: &mut PolicyWriter<'_>,
+        operand_type: u32,
+    ) -> Result<(), SerializeError> {
         ConstraintTerm::NAME_EXPR.serialize(writer)?;
         (operand_type | self.subject.as_u32()).serialize(writer)?;
         let binary = BinaryNameExpression {
@@ -322,7 +326,7 @@ impl Parse for ConstraintTerm {
 }
 
 impl Serialize for ConstraintTerm {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         match self {
             Self::Not => {
                 Self::NOT_OPERATOR.serialize(writer)?;
@@ -442,6 +446,8 @@ impl Constraint {
 #[cfg(test)]
 mod tests {
     use super::{PolicyCursor, *};
+    use crate::new_policy::metadata::PolicyVersion;
+    use crate::new_policy::parser::PolicyWriter;
 
     #[test]
     fn test_minimal_constraint_parse_and_serialize() {
@@ -455,7 +461,8 @@ mod tests {
         assert!(constraint.constraint_expr().is_empty());
 
         let mut writer = Vec::new();
-        constraint.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        constraint.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 
@@ -491,7 +498,8 @@ mod tests {
         }
 
         let mut writer = Vec::new();
-        term.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        term.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 

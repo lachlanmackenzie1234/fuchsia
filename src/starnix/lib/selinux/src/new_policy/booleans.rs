@@ -5,7 +5,7 @@
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
@@ -51,14 +51,14 @@ impl Parse for ConditionalBoolean {
 }
 
 impl Serialize for ConditionalBoolean {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryConditionalBooleanMetadata {
             id: self.id.as_u32(),
             active: if self.active { 1 } else { 0 },
             key_length: self.name.len() as u32,
         };
         metadata.serialize(writer)?;
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         Ok(())
     }
 }
@@ -74,6 +74,7 @@ impl Validate for ConditionalBooleanId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::metadata::PolicyVersion;
     use crate::new_policy::traits::{HasName, HasPolicyId};
 
     #[test]
@@ -92,7 +93,8 @@ mod tests {
         assert_eq!(boolean.name(), b"test");
 
         let mut writer = Vec::new();
-        boolean.serialize(&mut writer).expect("serialize ConditionalBoolean");
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        boolean.serialize(&mut policy_writer).expect("serialize ConditionalBoolean");
         assert_eq!(writer.as_slice(), &data);
     }
 

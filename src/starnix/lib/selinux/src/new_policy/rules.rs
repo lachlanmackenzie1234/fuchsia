@@ -10,7 +10,7 @@ use hashbrown::hash_table::Entry;
 use rapidhash::RapidBuildHasher;
 
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::{Array, PolicyCursor};
+use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{AccessVector, ClassId, ConditionalBooleanId, NewPolicy, TypeId, U24Index};
 
@@ -70,7 +70,7 @@ impl Parse for XpermsBitmap {
 }
 
 impl Serialize for XpermsBitmap {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         for &word in self.0.iter() {
             (word as u32).serialize(writer)?;
             ((word >> 32) as u32).serialize(writer)?;
@@ -576,7 +576,7 @@ impl Parse for AccessVectorRules {
 }
 
 impl Serialize for AccessVectorRules {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let count = self.rule_order.len() as u32;
         count.serialize(writer)?;
 
@@ -725,7 +725,7 @@ impl Parse for IndexedAccessVectorRules {
 }
 
 impl Serialize for IndexedAccessVectorRules {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         self.rules.serialize(writer)
     }
 }
@@ -823,7 +823,7 @@ impl Parse for ConditionalExpressionElement {
 }
 
 impl Serialize for ConditionalExpressionElement {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let (expr_type, boolean_id) = match self {
             Self::Boolean(id) => (COND_EXPR_BOOL, id.as_u32()),
             Self::Not => (COND_EXPR_NOT, 0),
@@ -877,6 +877,8 @@ struct BinaryAccessVectorRuleHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::metadata::PolicyVersion;
+    use crate::new_policy::parser::PolicyWriter;
     use crate::new_policy::traits::PolicyId;
 
     #[test]
@@ -929,7 +931,8 @@ mod tests {
         assert_eq!(av_rules.av_rules[0].access_vector, AccessVector::from(5));
 
         let mut writer = Vec::new();
-        av_rules.serialize(&mut writer).expect("serialize rules table");
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        av_rules.serialize(&mut policy_writer).expect("serialize rules table");
         assert_eq!(writer.as_slice(), &data);
     }
 
@@ -952,7 +955,8 @@ mod tests {
         assert_eq!(av_rules.type_rules[0].new_type, TypeId::from_u32(10).unwrap());
 
         let mut writer = Vec::new();
-        av_rules.serialize(&mut writer).expect("serialize rules table");
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        av_rules.serialize(&mut policy_writer).expect("serialize rules table");
         assert_eq!(writer.as_slice(), &data);
     }
 
@@ -982,7 +986,8 @@ mod tests {
         assert!(!xp.xperms_bitmap.contains(1));
 
         let mut writer = Vec::new();
-        av_rules.serialize(&mut writer).expect("serialize rules table");
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        av_rules.serialize(&mut policy_writer).expect("serialize rules table");
         assert_eq!(writer.as_slice(), &data);
     }
 

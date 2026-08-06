@@ -4,7 +4,7 @@
 
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 
 /// Trait for types that can be parsed from a [`PolicyCursor`].
 pub trait Parse: Sized {
@@ -13,7 +13,7 @@ pub trait Parse: Sized {
 
 /// Trait for types that can be serialized into a byte vector.
 pub trait Serialize {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError>;
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError>;
 }
 
 /// Trait for types that can be validated against the parsed policy.
@@ -50,7 +50,7 @@ impl<T> Serialize for T
 where
     T: PolicyId,
 {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         self.as_u32().serialize(writer)
     }
 }

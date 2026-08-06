@@ -9,7 +9,7 @@ use super::constraints::{Constraint, ConstraintTerm};
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::indexed::IdAndNameIndexed;
-use super::parser::{Array, PolicyCursor};
+use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::permissions::Permission;
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 
@@ -168,7 +168,7 @@ impl Parse for Class {
 }
 
 impl Serialize for Class {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let metadata = BinaryClassMetadata {
             key_length: self.name.len() as u32,
             common_key_length: self.common_name.len() as u32,
@@ -179,8 +179,8 @@ impl Serialize for Class {
         };
         metadata.serialize(writer)?;
 
-        writer.extend_from_slice(&self.name);
-        writer.extend_from_slice(&self.common_name);
+        writer.write_bytes(&self.name);
+        writer.write_bytes(&self.common_name);
 
         for permission in self.permissions.iter() {
             permission.serialize(writer)?;
@@ -238,8 +238,10 @@ impl Validate for ClassId {
 
 #[cfg(test)]
 mod tests {
-    use super::super::traits::{HasName, HasPolicyId};
     use super::{PolicyCursor, *};
+    use crate::new_policy::metadata::PolicyVersion;
+    use crate::new_policy::parser::PolicyWriter;
+    use crate::new_policy::traits::{HasName, HasPolicyId};
 
     #[test]
     fn test_class_defaults_parse_and_serialize() {
@@ -257,7 +259,8 @@ mod tests {
         assert_eq!(defaults.type_(), ClassDefault::Source);
 
         let mut writer = Vec::new();
-        defaults.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        defaults.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 
@@ -286,7 +289,8 @@ mod tests {
         assert!(class.validate_transitions().is_empty());
 
         let mut writer = Vec::new();
-        class.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        class.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, data);
     }
 }

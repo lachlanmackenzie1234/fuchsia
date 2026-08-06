@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::{Array, PolicyCursor};
+use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 
 use selinux_policy_derive::{Parse, Serialize};
@@ -87,7 +87,7 @@ impl Parse for ExtensibleBitmap {
 }
 
 impl Serialize for ExtensibleBitmap {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let meta = BinaryExtensibleBitmapMetadata {
             map_item_size_bits: MAP_NODE_BITS,
             high_bit: self.high_bit(),

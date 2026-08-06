@@ -237,7 +237,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl #impl_generics crate::new_policy::traits::Serialize for #name #ty_generics #where_clause {
-            fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), crate::new_policy::error::SerializeError> {
+            fn serialize(&self, writer: &mut crate::new_policy::parser::PolicyWriter<'_>) -> Result<(), crate::new_policy::error::SerializeError> {
                 #serialize_impl
                 Ok(())
             }

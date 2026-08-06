@@ -4,6 +4,7 @@
 
 pub(super) mod access_vector;
 pub(super) mod bitmap;
+pub(super) mod booleans;
 pub(super) mod classes;
 pub(super) mod common_symbols;
 pub(super) mod constraints;
@@ -15,24 +16,23 @@ pub(super) mod metadata;
 pub(super) mod mls;
 pub(super) mod parser;
 pub(super) mod permissions;
+pub(super) mod policy_cap;
 pub(super) mod roles;
 pub(super) mod rules;
 pub(super) mod traits;
+pub(super) mod types;
 pub(super) mod u24_index;
+pub(super) mod users;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
-use error::{ParseError, ValidateError};
-use metadata::{Config, Counts, Magic, PolicyVersion, Signature};
-pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX};
+use error::{ParseError, SerializeError, ValidateError};
+use metadata::{Config, Counts, Magic, Signature};
+pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
+pub use parser::PolicyWriter;
 use parser::{Array, PolicyCursor, RemainingBytes};
-use traits::Validate;
+use traits::{Serialize, Validate};
 pub use u24_index::U24Index;
-
-pub(super) mod booleans;
-pub(super) mod policy_cap;
-pub(super) mod types;
-pub(super) mod users;
 
 pub use access_vector::AccessVector;
 pub use bitmap::IdSpan;
@@ -122,9 +122,15 @@ impl NewPolicy {
         Validate::validate(self, self)
     }
 
+    /// Serializes the policy to binary representation.
+    pub fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+        let mut policy_writer = PolicyWriter::new(self.version, writer);
+        Serialize::serialize(self, &mut policy_writer)
+    }
+
     /// Returns the policy version.
-    pub fn policy_version(&self) -> u32 {
-        self.version.get()
+    pub fn version(&self) -> PolicyVersion {
+        self.version
     }
 
     /// Returns the [`HandleUnknown`] configuration.
@@ -236,11 +242,13 @@ mod tests {
         assert!(matches!(err, ParseError::InvalidEnumValue { enum_name: "TestEnum", value: 3 }));
 
         let mut writer = Vec::new();
-        TestEnum::ValueOne.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        TestEnum::ValueOne.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, vec![1, 0, 0, 0]);
 
         let mut writer = Vec::new();
-        TestEnum::ValueTwo.serialize(&mut writer).unwrap();
+        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
+        TestEnum::ValueTwo.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, vec![2, 0, 0, 0]);
 
         let policy_bytes = include_bytes!("../../testdata/policies/selinux_testsuite");

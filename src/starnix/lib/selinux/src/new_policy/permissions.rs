@@ -7,7 +7,7 @@ use std::num::NonZeroU8;
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use selinux_policy_derive::{HasName, HasPolicyId};
 
@@ -50,11 +50,11 @@ impl Parse for Permission {
 }
 
 impl Serialize for Permission {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let length = self.name.len() as u32;
         length.serialize(writer)?;
         self.id.as_u32().serialize(writer)?;
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         Ok(())
     }
 }

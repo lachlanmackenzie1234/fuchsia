@@ -21,7 +21,6 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
-use crate::new_policy::traits::Serialize as _;
 pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 pub use crate::new_policy::{
     AccessVector, CategoryId, ClassId, HandleUnknown, MlsLevel, MlsRange, POLICYDB_VERSION_MAX,
@@ -553,7 +552,6 @@ pub(super) mod tests {
 
     use anyhow::Context as _;
     use serde::Deserialize;
-    use std::ops::Deref;
 
     /// Returns whether the input types are explicitly granted `permission` via an `allow [...];`
     /// policy statement.
@@ -655,12 +653,12 @@ pub(super) mod tests {
                 })
                 .expect("validate policy");
 
-            assert_eq!(expectations.expected_policy_version, policy.policy_version());
+            assert_eq!(expectations.expected_policy_version, policy.version().get());
             assert_eq!(expectations.expected_handle_unknown, policy.handle_unknown());
 
             // Returned policy bytes must be identical to input policy bytes.
             let binary_policy = policy.serialize();
-            assert_eq!(&policy_bytes, binary_policy.deref());
+            assert_eq!(policy_bytes, &binary_policy[..]);
         }
     }
 

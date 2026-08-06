@@ -9,7 +9,7 @@ use std::ops::Deref;
 use hashbrown::HashTable;
 
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::PolicyCursor;
+use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
 use super::{NewPolicy, U24Index};
 
@@ -105,7 +105,7 @@ where
 }
 
 impl<C: Serialize> Serialize for IdAndNameIndexed<C> {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         self.container.serialize(writer)
     }
 }

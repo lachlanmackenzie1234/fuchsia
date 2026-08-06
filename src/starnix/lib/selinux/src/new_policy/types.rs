@@ -11,7 +11,7 @@ use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::indexed::hash_name;
-use super::parser::{Array, PolicyCursor};
+use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{HasName, Parse, PolicyId, Serialize, Validate};
 use super::{NewPolicy, U24Index};
 
@@ -107,7 +107,7 @@ impl Parse for Type {
 }
 
 impl Serialize for Type {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let properties_val = match self.properties {
             TypeKind::Alias => TypeKind::ALIAS,
             TypeKind::Type => TypeKind::TYPE,
@@ -120,7 +120,7 @@ impl Serialize for Type {
             bounds: self.bounds.map_or(0, |id| id.as_u32()),
         };
         metadata.serialize(writer)?;
-        writer.extend_from_slice(&self.name);
+        writer.write_bytes(&self.name);
         Ok(())
     }
 }
@@ -180,7 +180,7 @@ impl Parse for Types {
 }
 
 impl Serialize for Types {
-    fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         self.primary_names_count.serialize(writer)?;
         self.ordered.serialize(writer)
     }

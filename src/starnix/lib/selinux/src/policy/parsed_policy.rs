@@ -27,7 +27,7 @@ use crate::new_policy::rules::{
     XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG, XpermsBitmap,
 };
 use crate::new_policy::traits::{HasPolicyId, PolicyId};
-use crate::new_policy::{Class, NewPolicy};
+use crate::new_policy::{Class, NewPolicy, PolicyVersion};
 use crate::policy::arrays::FsContext;
 use crate::policy::view::CustomKeyHashedView;
 use crate::{NullessByteStr, PolicyCap};
@@ -423,7 +423,7 @@ fn parse_policy_remaining(
 ) -> Result<(ParsedPolicy, usize), anyhow::Error> {
     let tail = PolicyCursor::new(&rest_data);
 
-    let (filename_transition_list, tail) = if new_policy.policy_version() >= 33 {
+    let (filename_transition_list, tail) = if new_policy.version() >= PolicyVersion::V33 {
         let (filename_transition_list, tail) = SimpleArray::<FilenameTransition>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
             .context("parsing standard filename transitions")?;
@@ -465,7 +465,7 @@ fn parse_policy_remaining(
         .context("parsing ipv6 nodes")?;
 
     let (infinitiband_partition_keys, infinitiband_end_ports, tail) =
-        if new_policy.policy_version() >= MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY {
+        if new_policy.version().get() >= MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY {
             let (infinity_band_partition_keys, tail) =
                 SimpleArray::<InfinitiBandPartitionKey>::parse(tail)
                     .map_err(Into::<anyhow::Error>::into)
