@@ -135,6 +135,10 @@ source_set("tests") {
     sources += [ "message_loop_linux_unittest.cc" ]
   }
 
+  if (is_fuchsia) {
+    sources += [ "message_loop_fuchsia_unittest.cc" ]
+  }
+
   deps = [
     ":shared",
     "//third_party/googletest:gtest",
