@@ -264,13 +264,12 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 got_channel = status.connected.primary.number
 
                 if got_channel == previous_channel:
-                    asserts.assert_less(
-                        time.time(),
-                        must_change_channel_by,
-                        "expected channel to switch from channel "
-                        f"{previous_channel} to {current_channel} "
-                        f"within {must_change_channel_within:.2}s",
-                    )
+                    if time.time() > must_change_channel_by:
+                        raise signals.TestFailure(
+                            f"Failed to switch channel: expected {current_channel}, "
+                            f"but remained on {got_channel} "
+                            f"after the {must_change_channel_within:.2f}s timeout expired."
+                        )
                     await asyncio.sleep(0.1)
                     continue
 
