@@ -11,7 +11,7 @@ use super::{NewPolicy, RoleSet, UserId};
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 /// Parsed SELinux user definition.
-#[derive(Debug, Clone, PartialEq, Eq, Validate, HasName, HasPolicyId)]
+#[derive(Debug, Validate, HasName, HasPolicyId)]
 pub struct User {
     id: UserId,
     name: Box<[u8]>,

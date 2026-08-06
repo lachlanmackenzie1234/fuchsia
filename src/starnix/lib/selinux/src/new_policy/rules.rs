@@ -630,7 +630,7 @@ impl Validate for AccessVectorRules {
 /// Binary policies guarantee that rules for the same key in the global table are contiguous.
 /// Three corresponding [`HashTable`]s map [`RuleKey`]s to the index of the **first** matching rule.
 /// Lookups return an iterator that starts at that index and yields rules until the key changes.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct IndexedAccessVectorRules {
     rules: AccessVectorRules,
     av_table: HashTable<U24Index>,

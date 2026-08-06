@@ -45,7 +45,7 @@ pub enum HandleUnknown {
 }
 
 /// Magic number at the start of a SELinux policy binary.
-#[derive(Debug, Clone, Parse, Serialize)]
+#[derive(Debug, Parse, Serialize)]
 pub(super) struct Magic {
     value: u32,
 }
@@ -60,7 +60,7 @@ impl Validate for Magic {
 }
 
 /// Signature string that identifies the policy database.
-#[derive(Debug, Clone, Parse, Serialize)]
+#[derive(Debug, Parse, Serialize)]
 pub(super) struct Signature {
     value: ByteArray,
 }
@@ -79,7 +79,7 @@ impl Validate for Signature {
 }
 
 /// Version of the SELinux policy database.
-#[derive(Debug, Clone, Parse, Serialize)]
+#[derive(Debug, Parse, Serialize)]
 pub(super) struct PolicyVersion {
     value: u32,
 }
@@ -102,7 +102,7 @@ impl Validate for PolicyVersion {
 }
 
 /// Configuration flags of the SELinux policy.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(super) struct Config {
     handle_unknown: HandleUnknown,
     raw_flags: u32,
@@ -161,7 +161,7 @@ impl Validate for Config {
 
 /// Contains various count fields representing the size of different registries
 /// and tables in the policy.
-#[derive(Debug, Clone, Parse, Serialize, Validate)]
+#[derive(Debug, Parse, Serialize, Validate)]
 pub(super) struct Counts {
     /// Number of symbols in the symbol table.
     symbols_count: u32,

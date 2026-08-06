@@ -11,7 +11,7 @@ use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{CategoryId, SensitivityId};
 
 /// MLS sensitivity level definition in an SELinux policy.
-#[derive(Debug, Clone, HasName, HasPolicyId)]
+#[derive(Debug, HasName, HasPolicyId)]
 pub struct Sensitivity {
     id: SensitivityId,
     name: Box<[u8]>,
@@ -77,7 +77,7 @@ impl Validate for SensitivityId {
 }
 
 /// MLS category definition in an SELinux policy.
-#[derive(Debug, Clone, HasName, HasPolicyId)]
+#[derive(Debug, HasName, HasPolicyId)]
 pub struct Category {
     id: CategoryId,
     name: Box<[u8]>,

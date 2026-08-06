@@ -19,7 +19,7 @@ pub struct CommonSymbolTag;
 pub type CommonSymbolId = IdType<std::num::NonZeroU16, CommonSymbolTag>;
 
 /// Parsed SELinux common symbol table entry (e.g. `common file { ... }`).
-#[derive(Debug, Clone, PartialEq, Eq, HasName, HasPolicyId)]
+#[derive(Debug, HasName, HasPolicyId)]
 pub struct CommonSymbol {
     id: CommonSymbolId,
     name: Box<[u8]>,

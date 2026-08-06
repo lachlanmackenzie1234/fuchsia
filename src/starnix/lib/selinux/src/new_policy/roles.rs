@@ -29,7 +29,7 @@ struct BinaryRoleMetadata {
 }
 
 /// Parsed SELinux [`Role`] definition.
-#[derive(Debug, Clone, PartialEq, Eq, Validate, HasName, HasPolicyId)]
+#[derive(Debug, Validate, HasName, HasPolicyId)]
 pub struct Role {
     id: RoleId,
     name: Box<[u8]>,
@@ -92,7 +92,7 @@ impl Validate for RoleId {
 }
 
 /// SELinux policy role transition rule (`role_transition`).
-#[derive(Clone, Debug, PartialEq, Eq, Parse, Serialize, Validate)]
+#[derive(Debug, Parse, Serialize, Validate)]
 pub struct RoleTransition {
     current_role: RoleId,
     type_: TypeId,
@@ -119,7 +119,7 @@ impl RoleTransition {
 }
 
 /// SELinux policy role allow rule (`allow` for roles).
-#[derive(Clone, Debug, PartialEq, Eq, Parse, Serialize, Validate)]
+#[derive(Debug, Parse, Serialize, Validate)]
 pub struct RoleAllow {
     source_role: RoleId,
     new_role: RoleId,

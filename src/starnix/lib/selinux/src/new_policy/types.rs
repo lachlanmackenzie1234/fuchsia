@@ -52,12 +52,12 @@ impl TypeKind {
 }
 
 /// Parsed SELinux type, containing an ID, a name, properties, and optional bounds.
-#[derive(Debug, Clone, PartialEq, Eq, HasPolicyId)]
+#[derive(Debug, HasPolicyId)]
 pub struct Type {
-    pub(super) id: TypeId,
-    pub(super) name: Box<[u8]>,
-    pub(super) properties: TypeKind,
-    pub(super) bounds: Option<TypeId>,
+    id: TypeId,
+    name: Box<[u8]>,
+    properties: TypeKind,
+    bounds: Option<TypeId>,
 }
 
 impl HasName for Type {
@@ -133,7 +133,7 @@ impl Validate for Type {
 }
 
 /// Container for all types in the policy, providing indices for fast lookup by ID and Name.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Types {
     primary_names_count: u32,
     /// In-order list of all types, attributes, and aliases.
@@ -147,14 +147,6 @@ pub struct Types {
     by_name: HashTable<U24Index>,
     hasher: rapidhash::RapidBuildHasher,
 }
-
-impl PartialEq for Types {
-    fn eq(&self, other: &Self) -> bool {
-        self.primary_names_count == other.primary_names_count && self.ordered == other.ordered
-    }
-}
-
-impl Eq for Types {}
 
 impl Parse for Types {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {

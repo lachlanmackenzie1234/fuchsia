@@ -19,7 +19,7 @@ pub struct PermissionTag;
 pub type PermissionId = IdType<NonZeroU8, PermissionTag>;
 
 /// Parsed SELinux permission, containing a type-safe ID and a name.
-#[derive(Debug, Clone, PartialEq, Eq, HasName, HasPolicyId)]
+#[derive(Debug, HasName, HasPolicyId)]
 pub struct Permission {
     id: PermissionId,
     name: Box<[u8]>,

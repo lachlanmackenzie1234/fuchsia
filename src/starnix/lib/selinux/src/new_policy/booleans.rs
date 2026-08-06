@@ -18,7 +18,7 @@ pub struct ConditionalBooleanTag;
 pub type ConditionalBooleanId = IdType<std::num::NonZeroU32, ConditionalBooleanTag>;
 
 /// Parsed SELinux conditional boolean definition.
-#[derive(Debug, Clone, PartialEq, Eq, Validate, HasName, HasPolicyId)]
+#[derive(Debug, Validate, HasName, HasPolicyId)]
 pub struct ConditionalBoolean {
     id: ConditionalBooleanId,
     active: bool,

@@ -139,7 +139,7 @@ impl Validate for u32 {
 }
 
 /// Container representing a `u32` count followed by that many raw bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ByteArray {
     data: Box<[u8]>,
 }
@@ -185,7 +185,7 @@ impl Validate for ByteArray {
 /// byte-for-byte re-serialization of the whole policy, and for the old policy
 /// framework to use to parse the fields that have not yet been migrated. This
 /// field will be removed once the migration is complete.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct RemainingBytes {
     pub(super) bytes: std::sync::Arc<[u8]>,
 }
@@ -308,7 +308,7 @@ impl<T: Validate> Validate for Array<T> {
 /// In the SELinux binary policy database, each symbol table is prefixed by a header
 /// containing a `primary_names_count` field, followed by the array of items (which itself
 /// is prefixed by an `items_count` field).
-#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize)]
+#[derive(Debug, Parse, Serialize)]
 pub struct SymbolArray<T> {
     /// The number of primary names in this array (excluding aliases).
     /// Included in the policy to allow allocation of index structures to be optimized.

@@ -86,7 +86,7 @@ pub type CategorySetBuilder = bitmap::IdSetBuilder<CategoryId>;
 
 /// Top-level [`NewPolicy`] structure that parses the first few fields
 /// and stores the rest in [`Self::rest`] to allow round-trip testing.
-#[derive(Debug, Clone, Parse, Serialize, Validate)]
+#[derive(Debug, Parse, Serialize, Validate)]
 pub struct NewPolicy {
     magic: Magic,
     signature: Signature,

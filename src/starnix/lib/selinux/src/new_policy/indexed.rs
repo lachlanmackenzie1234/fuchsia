@@ -29,7 +29,6 @@ pub(super) fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u6
 /// The order of elements in the original collection is currently retained, to
 /// allow the `IdAndNameIndexed<C>` to serialize the collection into exactly the same
 /// byte sequence as it was parsed from.
-#[derive(Clone)]
 pub struct IdAndNameIndexed<C> {
     container: C,
     id_to_index: Box<[Option<U24Index>]>,
@@ -93,14 +92,6 @@ impl<C: Debug> Debug for IdAndNameIndexed<C> {
         f.debug_struct("IdAndNameIndexed").field("container", &self.container).finish()
     }
 }
-
-impl<C: PartialEq> PartialEq for IdAndNameIndexed<C> {
-    fn eq(&self, other: &Self) -> bool {
-        self.container == other.container
-    }
-}
-
-impl<C: Eq> Eq for IdAndNameIndexed<C> {}
 
 impl<C, T> Parse for IdAndNameIndexed<C>
 where

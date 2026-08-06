@@ -57,7 +57,7 @@ pub enum ClassDefaultRange {
 }
 
 /// Set of rules for computing default security context fields for a class.
-#[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
+#[derive(Debug, Parse, Serialize, Validate)]
 pub struct ClassDefaults {
     default_user: ClassDefault,
     default_role: ClassDefault,
@@ -84,7 +84,7 @@ impl ClassDefaults {
 }
 
 /// Parsed SELinux object class definition, including permissions and constraints.
-#[derive(Debug, Clone, PartialEq, Eq, HasName, HasPolicyId)]
+#[derive(Debug, HasName, HasPolicyId)]
 pub struct Class {
     id: ClassId,
     name: Box<[u8]>,
