@@ -68,8 +68,7 @@ class PcieIwlwifiDriver : public wlan::iwlwifi::WlanPhyDevice,
   // from child nodes.
   void on_fidl_error(fidl::UnbindInfo error) override;
 
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fdf::NodeController> metadata) override;
+  void handle_unknown_event(fidl::UnknownEventMetadata<fdf::NodeController> metadata) override;
 
  private:
   zx_status_t Initialize();

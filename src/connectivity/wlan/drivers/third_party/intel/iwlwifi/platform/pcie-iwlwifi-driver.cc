@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "third_party/iwlwifi/platform/pcie-iwlwifi-driver.h"
-#include "third_party/iwlwifi/platform/wlansoftmac-device.h"
 
 #include <fidl/fuchsia.component.decl/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
@@ -20,6 +19,7 @@
 #include <wlan/drivers/log_instance.h>
 
 #include "third_party/iwlwifi/platform/kernel.h"
+#include "third_party/iwlwifi/platform/wlansoftmac-device.h"
 
 extern "C" {
 #include "third_party/iwlwifi/iwl-debug.h"
@@ -39,8 +39,7 @@ extern "C" {
 namespace wlan {
 namespace iwlwifi {
 
-PcieIwlwifiDriver::PcieIwlwifiDriver()
-    : WlanPhyDevice(), fdf::DriverBase2("iwlwifi") {
+PcieIwlwifiDriver::PcieIwlwifiDriver() : WlanPhyDevice(), fdf::DriverBase2("iwlwifi") {
   pci_dev_ = {};
 }
 
@@ -344,7 +343,8 @@ zx_status_t PcieIwlwifiDriver::StartPci() {
 zx_status_t PcieIwlwifiDriver::AddWlanPhyService() {
   // Add the service contains Wlanphy protocol to outgoing directory.
   auto wlanphy = [this](fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end) {
-    // Note: The same dispatcher here is used for softmac device, will it affect the data path performance?
+    // Note: The same dispatcher here is used for softmac device, will it affect the data path
+    // performance?
     ServiceConnectHandler(dispatcher(), std::move(server_end));
   };
 

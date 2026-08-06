@@ -36,19 +36,21 @@ class WlanPhyDevice : public fidl::Server<fuchsia_wlan_phy::WlanPhy> {
   void SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) override;
   void ClearCountry(ClearCountryCompleter::Sync& completer) override;
   void GetCountry(GetCountryCompleter::Sync& completer) override;
-  void SetPowerSaveMode(SetPowerSaveModeRequest& request, SetPowerSaveModeCompleter::Sync& completer) override;
+  void SetPowerSaveMode(SetPowerSaveModeRequest& request,
+                        SetPowerSaveModeCompleter::Sync& completer) override;
   void GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) override;
   void PowerDown(PowerDownCompleter::Sync& completer) override;
   void PowerUp(PowerUpCompleter::Sync& completer) override;
   void Reset(ResetCompleter::Sync& completer) override;
   void GetPowerState(GetPowerStateCompleter::Sync& completer) override;
-  void SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request, SetBtCoexistenceModeCompleter::Sync& completer) override;
-  void SetTxPowerScenario(SetTxPowerScenarioRequest& request, SetTxPowerScenarioCompleter::Sync& completer) override;
+  void SetBtCoexistenceMode(SetBtCoexistenceModeRequest& request,
+                            SetBtCoexistenceModeCompleter::Sync& completer) override;
+  void SetTxPowerScenario(SetTxPowerScenarioRequest& request,
+                          SetTxPowerScenarioCompleter::Sync& completer) override;
   void ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) override;
   void GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) override;
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_wlan_phy::WlanPhy> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override {}
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_wlan_phy::WlanPhy> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   void ServiceConnectHandler(async_dispatcher_t* dispatcher,
                              fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end);

@@ -163,9 +163,8 @@ void fill_band_cap_list(const struct iwl_nvm_data* nvm_data,
           .number = static_cast<uint8_t>(sband->channels[ch_idx].ch_num),
       };
     }
-    band_cap_builder.primary_channels(
-        fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>(
-            arena, primary_channels.begin(), primary_channels.end()));
+    band_cap_builder.primary_channels(fidl::VectorView<wlan_ieee80211_wire::ChannelNumber>(
+        arena, primary_channels.begin(), primary_channels.end()));
 
     band_cap_list[band_idx] = band_cap_builder.Build();
   }
@@ -405,7 +404,7 @@ zx_status_t mac_set_channel(struct iwl_mvm_vif* mvmvif, const wlan_channel_t* ch
            : channel->bandwidth == CHANNEL_BANDWIDTH_CBW80      ? "80"
            : channel->bandwidth == CHANNEL_BANDWIDTH_CBW160     ? "160"
            : channel->bandwidth == CHANNEL_BANDWIDTH_CBW80P80   ? "80+80"
-                                                          : "unknown",
+                                                                : "unknown",
            channel->vht_secondary_80_channel);
 
   if (mvmvif->phy_ctxt && mvmvif->phy_ctxt->channel && mvmvif->phy_ctxt->channel->hw_value != 0) {
@@ -551,9 +550,12 @@ zx_status_t mac_notify_association_complete(
     return ZX_ERR_BAD_STATE;
   }
 
-  if (!assoc_cfg->has_primary() || !assoc_cfg->has_bandwidth() || !assoc_cfg->has_rates() || !assoc_cfg->has_listen_interval()) {
-    IWL_ERR(mvmif, "Fields primary(%d), bandwidth(%d), rates(%d) and listen_interval(%d) are required.\n",
-            assoc_cfg->has_primary(), assoc_cfg->has_bandwidth(), assoc_cfg->has_rates(), assoc_cfg->has_listen_interval());
+  if (!assoc_cfg->has_primary() || !assoc_cfg->has_bandwidth() || !assoc_cfg->has_rates() ||
+      !assoc_cfg->has_listen_interval()) {
+    IWL_ERR(mvmif,
+            "Fields primary(%d), bandwidth(%d), rates(%d) and listen_interval(%d) are required.\n",
+            assoc_cfg->has_primary(), assoc_cfg->has_bandwidth(), assoc_cfg->has_rates(),
+            assoc_cfg->has_listen_interval());
     return ZX_ERR_INVALID_ARGS;
   }
 

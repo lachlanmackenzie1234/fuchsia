@@ -191,8 +191,8 @@ bool WlanSoftmacDevice::IsValidChannel(fuchsia_wlan_ieee80211::wire::ChannelNumb
                                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw) {
   if (cbw == fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40 ||
       cbw == fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below) {
-    if (channel.band == fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz &&
-        channel.number >= 10 && channel.number <= 14) {
+    if (channel.band == fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz && channel.number >= 10 &&
+        channel.number <= 14) {
       IWL_WARN(mvmvif_, "The 40%sMHz bandwidth is not supported on the channel %d.\n",
                cbw == fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below ? "-" : "",
                channel.number);
@@ -230,7 +230,9 @@ void WlanSoftmacDevice::SetChannel(SetChannelRequestView request, fdf::Arena& ar
 
   wlan_channel_t channel = {
       .primary = request->primary().number,
-      .vht_secondary_80_channel = request->has_vht_secondary_80_channel() ? request->vht_secondary_80_channel().number : static_cast<uint8_t>(0),
+      .vht_secondary_80_channel = request->has_vht_secondary_80_channel()
+                                      ? request->vht_secondary_80_channel().number
+                                      : static_cast<uint8_t>(0),
   };
 
   switch (request->bandwidth()) {
@@ -253,8 +255,7 @@ void WlanSoftmacDevice::SetChannel(SetChannelRequestView request, fdf::Arena& ar
       channel.bandwidth = CHANNEL_BANDWIDTH_CBW80P80;
       break;
     default:
-      IWL_ERR(this, "Bandwidth (%u) is not supported",
-               static_cast<uint32_t>(request->bandwidth()));
+      IWL_ERR(this, "Bandwidth (%u) is not supported", static_cast<uint32_t>(request->bandwidth()));
       completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
       return;
   }

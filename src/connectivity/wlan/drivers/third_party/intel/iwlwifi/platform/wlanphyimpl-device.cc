@@ -30,7 +30,8 @@ WlanPhyDevice::WlanPhyDevice() = default;
 WlanPhyDevice::~WlanPhyDevice() = default;
 
 void WlanPhyDevice::GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) {
-  fuchsia_wlan_common::WlanMacRole supported_mac_roles_list[fuchsia_wlan_common::kMaxSupportedMacRoles] = {};
+  fuchsia_wlan_common::WlanMacRole
+      supported_mac_roles_list[fuchsia_wlan_common::kMaxSupportedMacRoles] = {};
   uint8_t supported_mac_roles_count = 0;
   zx_status_t status =
       phy_get_supported_mac_roles(drvdata(), supported_mac_roles_list, &supported_mac_roles_count);
@@ -46,7 +47,8 @@ void WlanPhyDevice::GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& co
     return;
   }
 
-  std::vector<fuchsia_wlan_common::WlanMacRole> roles(supported_mac_roles_list, supported_mac_roles_list + supported_mac_roles_count);
+  std::vector<fuchsia_wlan_common::WlanMacRole> roles(
+      supported_mac_roles_list, supported_mac_roles_list + supported_mac_roles_count);
   fuchsia_wlan_phy::WlanPhyGetSupportedMacRolesResponse response{{.supported_mac_roles = roles}};
   completer.Reply(zx::ok(std::move(response)));
 }
@@ -137,8 +139,7 @@ void WlanPhyDevice::DestroyIface(DestroyIfaceRequest& request,
   completer.Reply(zx::ok());
 }
 
-void WlanPhyDevice::SetCountry(SetCountryRequest& request,
-                               SetCountryCompleter::Sync& completer) {
+void WlanPhyDevice::SetCountry(SetCountryRequest& request, SetCountryCompleter::Sync& completer) {
   wlan_phy_country_t country;
   memcpy(&country.alpha2[0], request.country().data(), fuchsia_wlan_internal::kCountryCodeLen);
   zx_status_t status = phy_set_country(drvdata(), &country);
@@ -183,8 +184,7 @@ void WlanPhyDevice::GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer)
   completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyDevice::Init(InitRequest& request,
-                         InitCompleter::Sync& completer) {
+void WlanPhyDevice::Init(InitRequest& request, InitCompleter::Sync& completer) {
   if (!request.notify_client().has_value()) {
     IWL_ERR(this, "Failed to initialize WlanPhy server. notify_client client end not provided.");
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
@@ -228,8 +228,8 @@ void WlanPhyDevice::GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& comple
   completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void WlanPhyDevice::ServiceConnectHandler(
-    async_dispatcher_t* dispatcher, fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end) {
+void WlanPhyDevice::ServiceConnectHandler(async_dispatcher_t* dispatcher,
+                                          fidl::ServerEnd<fuchsia_wlan_phy::WlanPhy> server_end) {
   bindings_.AddBinding(dispatcher, std::move(server_end), this, fidl::kIgnoreBindingClosure);
 }
 
