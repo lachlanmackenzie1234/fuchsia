@@ -41,11 +41,14 @@ rustc_library(
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:http-body-util",
         "//third_party/rust_crates/vendor:hyper",
         "//third_party/rust_crates/vendor:hyper-rustls",
+        "//third_party/rust_crates/vendor:hyper-util",
         "//third_party/rust_crates/vendor:rustls",
         "//third_party/rust_crates/vendor:socket2",
         "//third_party/rust_crates/vendor:tokio",
+        "//third_party/rust_crates/vendor:tower-service",
     ] + select({
         "@platforms//os:fuchsia": [
             "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust",

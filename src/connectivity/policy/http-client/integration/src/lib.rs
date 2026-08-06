@@ -10,7 +10,7 @@ use fidl_fuchsia_net_http as http;
 use fuchsia_async as fasync;
 use fuchsia_component_test::ScopedInstance;
 use futures::stream::FuturesUnordered;
-use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _, select};
+use futures::{FutureExt as _, StreamExt as _, select};
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::pin;
@@ -36,52 +36,51 @@ async fn run_without_connecting<F: Future<Output = ()>>(
     func: impl FnOnce(SocketAddr, ScopedInstance) -> F,
 ) {
     use futures::future::Either;
-    use hyper::service::{make_service_fn, service_fn};
-    use hyper::{Body, Method, Response, StatusCode, header};
+    use hyper::{Method, Response, StatusCode, header};
     use std::convert::{Infallible, TryInto as _};
     use std::net::{IpAddr, Ipv6Addr};
+    use std::sync::Arc;
 
     let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0);
     let listener = fasync::net::TcpListener::bind(&addr).expect("bind");
     let server_addr = listener.local_addr().expect("local address");
-    let listener = listener
-        .accept_stream()
-        .map_ok(|(stream, _): (_, SocketAddr)| fuchsia_hyper::TcpStream { stream });
 
     const ROOT: &str = "/";
     let root = || ROOT.try_into().expect("root location");
     let loop1 = || LOOP1.try_into().expect("loop1 location");
     let loop2 = || LOOP2.try_into().expect("loop2 location");
 
-    let svc = service_fn(move |req| {
-        let ready = |t| std::future::ready(t).left_future();
+    let svc = Arc::new(move |req: hyper::Request<hyper::body::Incoming>| {
+        let ready = |t: Response<http_body_util::Full<hyper::body::Bytes>>| {
+            std::future::ready(t).left_future()
+        };
         let pending = std::future::pending().right_future();
 
         match (req.method(), req.uri().path()) {
             (&Method::GET, ROOT) => {
-                let response = Response::new(ROOT_DOCUMENT.into());
+                let response = Response::new(http_body_util::Full::new(ROOT_DOCUMENT.into()));
                 ready(response)
             }
             (&Method::GET, TRIGGER_301) => {
-                let mut response = Response::new(Body::empty());
+                let mut response = Response::new(http_body_util::Full::default());
                 *response.status_mut() = StatusCode::MOVED_PERMANENTLY;
                 assert_eq!(response.headers_mut().insert(header::LOCATION, root()), None);
                 ready(response)
             }
             (&Method::POST, SEE_OTHER) => {
-                let mut response = Response::new(Body::empty());
+                let mut response = Response::new(http_body_util::Full::default());
                 *response.status_mut() = StatusCode::SEE_OTHER;
                 assert_eq!(response.headers_mut().insert(header::LOCATION, root()), None);
                 ready(response)
             }
             (&Method::GET, LOOP1) => {
-                let mut response = Response::new(Body::empty());
+                let mut response = Response::new(http_body_util::Full::default());
                 *response.status_mut() = StatusCode::MOVED_PERMANENTLY;
                 assert_eq!(response.headers_mut().insert(header::LOCATION, loop2()), None);
                 ready(response)
             }
             (&Method::GET, LOOP2) => {
-                let mut response = Response::new(Body::empty());
+                let mut response = Response::new(http_body_util::Full::default());
                 *response.status_mut() = StatusCode::MOVED_PERMANENTLY;
                 assert_eq!(response.headers_mut().insert(header::LOCATION, loop1()), None);
                 ready(response)
@@ -89,7 +88,7 @@ async fn run_without_connecting<F: Future<Output = ()>>(
             (&Method::GET, PENDING) => pending,
             (&Method::GET, BIG_STREAM) => {
                 let encoding = "application/octet-stream".try_into().expect("octet stream");
-                let mut response = Response::new(big_vec().into());
+                let mut response = Response::new(http_body_util::Full::new(big_vec().into()));
                 assert_eq!(
                     response.headers_mut().insert(header::TRANSFER_ENCODING, encoding),
                     None
@@ -97,7 +96,7 @@ async fn run_without_connecting<F: Future<Output = ()>>(
                 ready(response)
             }
             _ => {
-                let mut response = Response::new(Body::empty());
+                let mut response = Response::new(http_body_util::Full::default());
                 *response.status_mut() = StatusCode::NOT_FOUND;
                 ready(response)
             }
@@ -105,13 +104,28 @@ async fn run_without_connecting<F: Future<Output = ()>>(
         .map(Ok::<_, Infallible>)
     });
 
-    let make_svc = make_service_fn(move |_: &fuchsia_hyper::TcpStream| {
-        futures::future::ok::<_, Infallible>(svc)
+    let server = fasync::Task::spawn(async move {
+        let mut listener = listener;
+        loop {
+            match listener.accept().await {
+                Ok((next_listener, conn, _)) => {
+                    listener = next_listener;
+                    let io =
+                        hyper_util::rt::TokioIo::new(fuchsia_hyper::TcpStream { stream: conn });
+                    let svc = svc.clone();
+                    let service = hyper::service::service_fn(move |req| (*svc)(req));
+                    fasync::Task::spawn(async move {
+                        let _ =
+                            hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor)
+                                .serve_connection(io, service)
+                                .await;
+                    })
+                    .detach();
+                }
+                Err(_) => break,
+            }
+        }
     });
-
-    let server = hyper::Server::builder(hyper::server::accept::from_stream(listener))
-        .executor(fuchsia_hyper::Executor)
-        .serve(make_svc);
 
     const HTTP_CLIENT_URL: &str = "#meta/http-client.cm";
     let http_client = ScopedInstance::new(behavior.into(), HTTP_CLIENT_URL.into())

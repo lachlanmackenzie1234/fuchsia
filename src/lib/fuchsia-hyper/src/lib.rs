@@ -5,9 +5,10 @@
 use futures::future::{Future, FutureExt};
 use futures::io::{self, AsyncRead, AsyncWrite};
 use futures::task::{Context, Poll};
-use hyper::Body;
-use hyper::client::Client;
-use hyper::client::connect::{Connected, Connection};
+use hyper::body::Body;
+use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::{Connected, Connection};
+use hyper_util::rt::TokioIo;
 #[cfg(not(target_os = "fuchsia"))]
 use netext::MultithreadedTokioAsyncWrapper;
 use std::marker::PhantomData;
@@ -39,10 +40,11 @@ pub use crate::fuchsia::*;
 mod happy_eyeballs;
 
 /// A Fuchsia-compatible hyper client configured for making HTTP requests.
-pub type HttpClient = Client<HyperConnector, Body>;
+pub type HttpClient<B = http_body_util::Full<hyper::body::Bytes>> = Client<HyperConnector, B>;
 
 /// A Fuchsia-compatible hyper client configured for making HTTP and HTTPS requests.
-pub type HttpsClient = Client<hyper_rustls::HttpsConnector<HyperConnector>, Body>;
+pub type HttpsClient<B = http_body_util::Full<hyper::body::Bytes>> =
+    Client<hyper_rustls::HttpsConnector<HyperConnector>, B>;
 
 /// A trait to implement a builder for a Fuchsia compatible hyper client
 /// configured for either only HTTP or both HTTP and HTTPS requests.
@@ -52,19 +54,19 @@ pub trait MakeClientBuilder: Sized {
     }
 }
 
-impl MakeClientBuilder for HttpClient {}
-impl MakeClientBuilder for HttpsClient {}
+impl<B: Body + Send> MakeClientBuilder for HttpClient<B> {}
+impl<B: Body + Send> MakeClientBuilder for HttpsClient<B> {}
 
 /// A future that yields a hyper-compatible TCP stream.
 #[must_use = "futures do nothing unless polled"]
 pub struct HyperConnectorFuture {
     // FIXME(https://github.com/rust-lang/rust/issues/63063): We should be able to remove this
     // `Box` once rust allows impl Traits in type aliases.
-    fut: Pin<Box<dyn Future<Output = Result<TcpStream, io::Error>> + Send>>,
+    fut: Pin<Box<dyn Future<Output = Result<TokioIo<TcpStream>, io::Error>> + Send>>,
 }
 
 impl Future for HyperConnectorFuture {
-    type Output = Result<TcpStream, io::Error>;
+    type Output = Result<TokioIo<TcpStream>, io::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.fut.as_mut().poll(cx)
@@ -211,27 +213,32 @@ impl<T> Default for HttpClientBuilder<T> {
     }
 }
 
-impl HttpClientBuilder<HttpClient> {
+impl<B: Body + Send> HttpClientBuilder<HttpClient<B>>
+where
+    B::Data: Send,
+{
     /// Constructs an HttpClient
-    pub fn build(mut self) -> HttpClient {
-        Client::builder().executor(Executor).build(self.connector())
+    pub fn build(mut self) -> HttpClient<B> {
+        Client::builder(Executor).build(self.connector())
     }
 }
 
-impl HttpClientBuilder<HttpsClient> {
+impl<B: Body + Send> HttpClientBuilder<HttpsClient<B>>
+where
+    B::Data: Send,
+{
     /// Constructs an HttpsClient
-    pub fn build(mut self) -> HttpsClient {
+    pub fn build(mut self) -> HttpsClient<B> {
         let https = hyper_rustls::HttpsConnector::from((
             self.connector(),
             self.tls.unwrap_or_else(|| {
                 let root_store = new_root_cert_store();
                 rustls::ClientConfig::builder()
-                    .with_safe_defaults()
                     .with_root_certificates(root_store)
                     .with_no_client_auth()
             }),
         ));
-        Client::builder().executor(Executor).build(https)
+        Client::builder(Executor).build(https)
     }
 
     /// Overrides the default tls `ClientConfig`

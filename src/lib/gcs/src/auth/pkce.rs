@@ -13,7 +13,9 @@ use crate::error::GcsError;
 use anyhow::{Context, Result, bail};
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL_SAFE_NO_PAD;
-use hyper::{Body, Method, Request};
+use http_body_util::BodyExt;
+use hyper::{Method, Request};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -264,7 +266,7 @@ pub(crate) async fn auth_code_to_refresh(
     }
 
     // Extract the new tokens.
-    let bytes = hyper::body::to_bytes(res.into_body()).await?;
+    let bytes = res.into_body().collect().await?.to_bytes();
     let info: ExchangeAuthCodeResponse = serde_json::from_slice(&bytes)?;
     let refresh_token = info.refresh_token;
     let access_token = info.access_token;

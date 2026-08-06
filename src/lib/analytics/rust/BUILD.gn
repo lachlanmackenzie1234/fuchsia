@@ -77,6 +77,7 @@ if (is_host) {
       "//third_party/rust_crates:cfg-if",
       "//third_party/rust_crates:futures",
       "//third_party/rust_crates:home",
+      "//third_party/rust_crates:http-body-util",
       "//third_party/rust_crates:hyper",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:nix",

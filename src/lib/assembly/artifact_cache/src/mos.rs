@@ -7,10 +7,11 @@
 use crate::artifact::{Artifact, ArtifactType, CIPDPackage, MOSIdentifier};
 use anyhow::{Context, Result, anyhow, bail};
 use gcs::client::Client as GcsClient;
-use hyper::{Body, Method, Request};
+use http_body_util::BodyExt;
+use hyper::{Method, Request};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use serde::Deserialize;
-use serde_json;
-use serde_json::json;
+use serde_json::{self, json};
 
 /// Parse strings like "mos://fuchsia/boards/x64@1.2.3.4" into a MOS identifier.
 pub fn parse_mos_artifact(s: impl AsRef<str>) -> Result<Option<Artifact>> {
@@ -207,7 +208,7 @@ impl MOSClient {
 
         let res = self.gcs_client.send_request(req).await?;
         let status = res.status();
-        let body_bytes = hyper::body::to_bytes(res.into_body()).await?;
+        let body_bytes = res.into_body().collect().await?.to_bytes();
         let body_str = String::from_utf8_lossy(&body_bytes).to_string();
 
         if !status.is_success() {
@@ -219,11 +220,11 @@ impl MOSClient {
     async fn get(&self, uri: String) -> Result<String> {
         let url = format!("{}/{}", self.base_url, uri);
         let req = Request::builder().method(Method::GET).uri(url.as_str());
-        let req = req.body(Body::empty())?;
+        let req = req.body(Body::default())?;
 
         let res = self.gcs_client.send_request(req).await?;
         let status = res.status();
-        let body_bytes = hyper::body::to_bytes(res.into_body()).await?;
+        let body_bytes = res.into_body().collect().await?.to_bytes();
         let body_str = String::from_utf8_lossy(&body_bytes).to_string();
 
         if !status.is_success() {

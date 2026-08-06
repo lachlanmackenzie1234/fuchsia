@@ -25,7 +25,8 @@ use ::gcs::client::{Client, FileProgress, ProgressResult};
 use ::gcs::error::GcsError;
 use camino::{Utf8Path, Utf8PathBuf};
 use ffx_config::EnvironmentContext;
-use hyper::{Body, Method, Request};
+use http_body_util::BodyExt as _;
+use hyper::{Method, Request};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -78,6 +79,9 @@ pub enum PbmsError {
 
     #[error("Hyper error: {0}")]
     Hyper(#[from] hyper::Error),
+
+    #[error("Hyper client error: {0}")]
+    HyperClient(#[from] hyper_util::client::legacy::Error),
 
     #[error("Http error failed with status {0} for {1}")]
     HttpFailed(hyper::StatusCode, String),
@@ -283,12 +287,12 @@ where
             let req = Request::builder()
                 .method(Method::GET)
                 .uri(product_url.as_str())
-                .body(Body::empty())?;
+                .body(http_body_util::Full::<hyper::body::Bytes>::new("".into()))?;
             let res = https_client.request(req).await?;
             if !res.status().is_success() {
                 return Err(PbmsError::HttpFailed(res.status(), product_url.to_string()));
             }
-            let bytes = hyper::body::to_bytes(res.into_body()).await?;
+            let bytes = res.into_body().collect().await?.to_bytes();
             String::from_utf8_lossy(&bytes).to_string()
         }
         GS_SCHEME => string_from_gcs(product_url.as_str(), auth_flow, progress, ui, client).await?,

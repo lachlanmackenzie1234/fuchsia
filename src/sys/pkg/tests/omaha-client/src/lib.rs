@@ -43,6 +43,7 @@ use mock_omaha_server::{
     OmahaResponse, OmahaServer, OmahaServerBuilder, PrivateKeyAndId, PrivateKeys,
     ResponseAndMetadata,
 };
+use mock_omaha_server_fuchsia::OmahaServerExt as _;
 use mock_paver::{MockPaverService, MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
 use mock_reboot::MockRebootService;
 use mock_resolver::MockResolverService;
@@ -208,7 +209,7 @@ impl TestEnvBuilder {
         fs.dir("config").add_remote("data", config_data);
         fs.dir("config").add_remote("build-info", build_info);
 
-        let server = Arc::new(Mutex::new({
+        let server = Arc::new(std::sync::Mutex::new({
             let mut b = OmahaServerBuilder::default().responses_by_appid(
                 self.responses_by_appid
                     .into_iter()
@@ -733,7 +734,7 @@ struct TestEnv {
     realm_instance: RealmInstance,
     _mounts: Mounts,
     proxies: Proxies,
-    server: Arc<Mutex<OmahaServer>>,
+    server: Arc<std::sync::Mutex<OmahaServer>>,
     reboot_called: oneshot::Receiver<()>,
 }
 
@@ -1735,7 +1736,7 @@ async fn test_omaha_client_installation_deferred() {
         config_status_response.lock().replace(fpaver::ConfigurationStatus::Healthy).unwrap(),
         fpaver::ConfigurationStatus::Pending
     );
-    env.server.lock().set_all_cohort_assertions(Some("1:1:".to_string()));
+    env.server.lock().unwrap().set_all_cohort_assertions(Some("1:1:".to_string()));
     omaha_client_update(
         env,
         tree_assertion!(
@@ -2097,15 +2098,21 @@ async fn test_update_check_sets_updatedisabled_when_opted_out() {
     let env = TestEnvBuilder::new().default_with_response(OmahaResponse::NoUpdate).build().await;
 
     // The default is to enable updates.
-    env.server.lock().set_all_update_check_assertions(UpdateCheckAssertion::UpdatesEnabled);
+    env.server
+        .lock()
+        .unwrap()
+        .set_all_update_check_assertions(UpdateCheckAssertion::UpdatesEnabled);
     do_nop_update_check(&env).await;
 
     // The user preference is read for each update check.
-    env.server.lock().set_all_update_check_assertions(UpdateCheckAssertion::UpdatesDisabled);
+    env.server
+        .lock()
+        .unwrap()
+        .set_all_update_check_assertions(UpdateCheckAssertion::UpdatesDisabled);
     env.proxies
         .config_optout
         .set(fuchsia_update_config_optout::OptOutPreference::AllowOnlySecurityUpdates);
-    env.server.lock().set_all_cohort_assertions(Some("1:1:".to_string()));
+    env.server.lock().unwrap().set_all_cohort_assertions(Some("1:1:".to_string()));
     do_nop_update_check(&env).await;
 }
 
@@ -2115,7 +2122,7 @@ async fn test_omaha_client_keeps_cohort() {
 
     do_nop_update_check(&env).await;
 
-    env.server.lock().set_all_cohort_assertions(Some("1:1:".to_string()));
+    env.server.lock().unwrap().set_all_cohort_assertions(Some("1:1:".to_string()));
     do_nop_update_check(&env).await;
 }
 
@@ -2142,7 +2149,7 @@ async fn test_omaha_client_persists_cohort() {
         .connect_to_protocol_at_exposed_dir()
         .expect("connect to update manager");
 
-    env.server.lock().set_all_cohort_assertions(Some("1:1:".to_string()));
+    env.server.lock().unwrap().set_all_cohort_assertions(Some("1:1:".to_string()));
     do_nop_update_check(&env).await;
 }
 

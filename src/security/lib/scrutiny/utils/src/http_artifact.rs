@@ -7,6 +7,7 @@ use crate::io::ReadSeek;
 use anyhow::{Context, Result, anyhow};
 use fuchsia_async::TimeoutExt;
 use fuchsia_merkle::Hash;
+use http_body_util::BodyExt;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -101,7 +102,7 @@ impl HttpFetcher for RealHttpFetcher {
             match res.status() {
                 hyper::StatusCode::OK => {
                     let body_bytes = async {
-                        hyper::body::to_bytes(res.into_body()).await.map_err(|e| {
+                        res.into_body().collect().await.map(|b| b.to_bytes()).map_err(|e| {
                             FetchError::NetworkError(format!("Failed to read body: {}", e))
                         })
                     }

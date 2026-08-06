@@ -23,8 +23,9 @@ idk_rustc_binary_host_tool(
         "//src/lib/fuchsia-hyper",
         "//third_party/rust_crates/vendor:argh",
         "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http-body-util",
         "//third_party/rust_crates/vendor:hyper",
-        "//third_party/rust_crates/vendor:hyper-rustls",
+        "//third_party/rust_crates/vendor:hyper-util",
         "//third_party/rust_crates/vendor:omaha_client",
     ],
 )

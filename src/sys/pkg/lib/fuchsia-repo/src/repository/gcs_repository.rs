@@ -15,8 +15,10 @@ use crate::util::file_stream;
 use anyhow::{Context as _, anyhow};
 use futures::future::BoxFuture;
 use futures::{AsyncRead, FutureExt as _, TryStreamExt as _};
+use http_body_util::{BodyExt, BodyStream};
 use hyper::header::CONTENT_LENGTH;
-use hyper::{Body, Response, StatusCode};
+use hyper::{Response, StatusCode};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::io::{self, Seek as _, SeekFrom, Write as _};
@@ -128,7 +130,11 @@ where
 
                         return Ok(Resource {
                             content_range: content_len.into(),
-                            stream: Box::pin(body.map_err(std::io::Error::other)),
+                            stream: Box::pin(
+                                BodyStream::new(body)
+                                    .map_ok(|frame| frame.into_data().unwrap_or_default())
+                                    .map_err(std::io::Error::other),
+                            ),
                         });
                     }
 
@@ -153,20 +159,22 @@ where
                         Err(Error::Other(anyhow!("unexpected status code {}: {}", url, status)))
                     } else {
                         // GCS may return a more detailed error description in the body.
-                        if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
-                            let body_str = String::from_utf8_lossy(&body);
-                            Err(Error::Other(anyhow!(
-                                "error downloading resource {}: {}\n{}",
-                                url,
-                                status,
-                                body_str
-                            )))
-                        } else {
-                            Err(Error::Other(anyhow!(
+                        match resp.into_body().collect().await {
+                            Ok(body) => {
+                                let body = body.to_bytes();
+                                let body_str = String::from_utf8_lossy(&body);
+                                Err(Error::Other(anyhow!(
+                                    "error downloading resource {}: {}\n{}",
+                                    url,
+                                    status,
+                                    body_str
+                                )))
+                            }
+                            Err(_) => Err(Error::Other(anyhow!(
                                 "error downloading resource {}: {}",
                                 url,
                                 status
-                            )))
+                            ))),
                         }
                     }
                 }
@@ -182,16 +190,14 @@ where
     /// compute the actual length, then return it.
     async fn get_with_stored_content_len(
         &self,
-        mut body: Body,
+        body: Body,
         range: Range,
     ) -> Result<Resource, Error> {
         let mut file = SpooledTempFile::new(UNKNOWN_CONTENT_LEN_BUF_SIZE);
 
-        let mut total_len = 0;
-        while let Some(chunk) = body.try_next().await? {
-            total_len += chunk.len() as u64;
-            file.write_all(&chunk).map_err(Error::Io)?;
-        }
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let total_len = bytes.len() as u64;
+        file.write_all(&bytes).map_err(Error::Io)?;
         file.flush().map_err(Error::Io)?;
 
         file.seek(SeekFrom::Start(0)).map_err(Error::Io)?;
@@ -341,15 +347,22 @@ mod tests {
                     // We don't support range requests.
                     assert_eq!(resource.content_range.to_http_content_range_header(), None);
 
+                    let content_len = resource.content_len();
+                    let mut stream = resource.stream;
+                    let mut bytes = Vec::new();
+                    while let Some(frame) = stream.try_next().await? {
+                        bytes.extend_from_slice(&frame);
+                    }
+
                     Ok(Response::builder()
                         .status(StatusCode::OK)
-                        .header(self.content_length_header, resource.content_len())
-                        .body(Body::wrap_stream(resource.stream))
+                        .header(self.content_length_header, content_len)
+                        .body(http_body_util::Full::new(bytes.into()))
                         .unwrap())
                 }
                 Err(Error::NotFound) => Ok(Response::builder()
                     .status(StatusCode::NOT_FOUND)
-                    .body(Body::empty())
+                    .body(http_body_util::Full::default())
                     .unwrap()),
                 res => panic!("unexpected result {res:#?}"),
             }

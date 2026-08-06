@@ -13,5 +13,5 @@ mod source;
 pub use client::FromHttpLoaderError;
 pub use client::{Client, ClientPollError, FromHyperClientError};
 pub use event::Event;
-pub use server::{EventSender, SseResponseCreator};
+pub use server::{Body, EventSender, SseResponseCreator};
 pub use source::EventSource;

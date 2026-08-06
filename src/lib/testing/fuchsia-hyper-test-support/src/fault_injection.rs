@@ -5,17 +5,17 @@
 //! These are Handler implementations that are specifically for injecting faults into the behavior
 //! of the server.
 
-use crate::Handler;
-use futures::future::{pending, BoxFuture};
+use crate::{Body, Handler};
+use futures::future::{BoxFuture, pending};
 use futures::prelude::*;
 use hyper::header::CONTENT_LENGTH;
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
 
 /// Handler that never sends bytes.
 pub struct Hang;
 
 impl Handler for Hang {
-    fn handles(&self, _: &Request<Body>) -> Option<BoxFuture<'_, Response<Body>>> {
+    fn handles(&self, _: &Request<hyper::body::Incoming>) -> Option<BoxFuture<'_, Response<Body>>> {
         Some(pending().boxed())
     }
 }
@@ -34,7 +34,7 @@ impl HangBody {
 }
 
 impl Handler for HangBody {
-    fn handles(&self, _: &Request<Body>) -> Option<BoxFuture<'_, Response<Body>>> {
+    fn handles(&self, _: &Request<hyper::body::Incoming>) -> Option<BoxFuture<'_, Response<Body>>> {
         let content_length = self.content_length;
         Some(
             async move {

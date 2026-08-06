@@ -8,12 +8,15 @@ use futures::future::Future;
 use futures::lock::Mutex;
 use futures::stream::Stream;
 use futures::task::{Context, Poll};
-use hyper::body::{Body, Bytes};
+use http_body_util::StreamBody;
+use hyper::body::Bytes;
 use hyper::{Response, StatusCode};
 use std::mem::replace;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::Arc;
+
+pub type Body = StreamBody<BodyAbortStream>;
 
 pub struct SseResponseCreator {
     buffer_size: usize,
@@ -37,7 +40,7 @@ impl SseResponseCreator {
         Response::builder()
             .status(StatusCode::OK)
             .header("content-type", "text/event-stream")
-            .body(Body::wrap_stream(BodyAbortStream { abort_rx, chunk_rx }))
+            .body(StreamBody::new(BodyAbortStream { abort_rx, chunk_rx }))
             .unwrap() // builder arguments are all statically determined, build will not fail
     }
 }
@@ -80,20 +83,20 @@ impl EventSender {
 
 // reimplementation of the body created by hyper::body::body::channel() b/c hyper doesn't allow
 // specifying the buffer size and doesn't provide an abort channel.
-struct BodyAbortStream {
+pub struct BodyAbortStream {
     abort_rx: oneshot::Receiver<()>,
     chunk_rx: mpsc::Receiver<Bytes>,
 }
 
 impl Stream for BodyAbortStream {
-    type Item = Result<Bytes, &'static str>;
+    type Item = Result<hyper::body::Frame<Bytes>, &'static str>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Poll::Ready(_) = Pin::new(&mut self.abort_rx).poll(cx) {
             return Poll::Ready(Some(Err("client dropped")));
         }
         match Pin::new(&mut self.chunk_rx).poll_next(cx) {
-            Poll::Ready(Some(chunk)) => Poll::Ready(Some(Ok(chunk))),
+            Poll::Ready(Some(chunk)) => Poll::Ready(Some(Ok(hyper::body::Frame::data(chunk)))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
@@ -146,7 +149,7 @@ mod tests {
         let mut body_stream = resp.into_body();
         let body_bytes = body_stream.next().await;
 
-        assert_eq!(body_bytes.unwrap().unwrap().to_vec(), event.to_vec());
+        assert_eq!(body_bytes.unwrap().unwrap().data_ref().unwrap().to_vec(), event.to_vec());
     }
 
     #[fasync::run_singlethreaded(test)]
@@ -164,7 +167,7 @@ mod tests {
 
         let body_bytes1 = body_stream1.next().await;
 
-        assert_matches!(body_bytes1, Some(Ok(chunk)) if chunk.to_vec() == event0.to_vec());
+        assert_matches!(body_bytes1, Some(Ok(chunk)) if chunk.data_ref().unwrap().to_vec() == event0.to_vec());
 
         let event1 = Event::from_type_and_data("event_type1", "data_contents1").unwrap();
         event_sender.send(&event1).await;
@@ -174,7 +177,7 @@ mod tests {
         assert_matches!(body_bytes0, Some(Err(_)));
 
         let body_bytes1 = body_stream1.next().await;
-        assert_eq!(body_bytes1.unwrap().unwrap().to_vec(), event1.to_vec());
+        assert_eq!(body_bytes1.unwrap().unwrap().data_ref().unwrap().to_vec(), event1.to_vec());
     }
 
     #[fasync::run_singlethreaded(test)]

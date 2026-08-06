@@ -4,10 +4,10 @@
 
 //! Handler implementations
 
-use crate::Handler;
-use futures::future::{ready, BoxFuture};
+use crate::{Body, Handler};
+use futures::future::{BoxFuture, ready};
 use futures::prelude::*;
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
 use std::path::PathBuf;
 
 /// Returns a fixed response for any request (it doesn't match on any path)
@@ -18,7 +18,7 @@ pub struct StaticResponse {
     body: Vec<u8>,
 }
 impl Handler for StaticResponse {
-    fn handles(&self, _: &Request<Body>) -> Option<BoxFuture<'_, Response<Body>>> {
+    fn handles(&self, _: &Request<hyper::body::Incoming>) -> Option<BoxFuture<'_, Response<Body>>> {
         let mut builder = Response::builder();
         builder = builder.status(self.status);
         for (key, value) in &self.headers {
@@ -30,7 +30,9 @@ impl Handler for StaticResponse {
 impl StaticResponse {
     /// Create a new StaticResponse handler, which returns the given response body.
     pub fn ok_body(body: impl Into<Vec<u8>>) -> Self {
-        StaticResponse { status: StatusCode::OK, headers: vec![], body: body.into() }
+        let body = body.into();
+        let headers = vec![("Content-Length".to_string(), body.len().to_string())];
+        StaticResponse { status: StatusCode::OK, headers, body }
     }
 }
 
@@ -50,7 +52,10 @@ impl<H> Handler for ForPath<H>
 where
     H: Handler,
 {
-    fn handles(&self, request: &Request<Body>) -> Option<BoxFuture<'_, Response<Body>>> {
+    fn handles(
+        &self,
+        request: &Request<hyper::body::Incoming>,
+    ) -> Option<BoxFuture<'_, Response<Body>>> {
         if self.path == PathBuf::from(request.uri().path()) {
             self.handler.handles(request)
         } else {

@@ -27,7 +27,6 @@ use omaha_client::cup_ecdsa::{
 use omaha_client::protocol::response::{App, Response};
 use omaha_client::version::Version;
 use p256::ecdsa::DerSignature;
-use p256::ecdsa::signature::Signature;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;

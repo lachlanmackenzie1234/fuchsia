@@ -4,8 +4,9 @@
 
 use fuchsia_pkg_testing::serve::{HttpRange, responder};
 use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
+use fuchsia_repo::body::Body;
 use futures::future::{BoxFuture, FutureExt as _};
-use hyper::{Body, Response};
+use hyper::Response;
 use lib::{EMPTY_REPO_PATH, FILE_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING, TestEnvBuilder};
 use std::convert::TryInto as _;
 use std::sync::Arc;

@@ -45,6 +45,7 @@ rustc_test("driver") {
     "//src/sys/pkg/testing/mock-crash-reporter:lib",
     "//src/sys/pkg/testing/mock-health-verification",
     "//src/sys/pkg/testing/mock-installer",
+    "//src/sys/pkg/testing/mock-omaha-server-fuchsia",
     "//src/sys/pkg/testing/mock-paver",
     "//src/sys/pkg/testing/mock-reboot",
     "//src/sys/pkg/testing/mock-resolver",

@@ -17,12 +17,13 @@ use futures::future::{Future, FutureExt};
 use futures::io;
 use futures::task::{Context, Poll};
 use http::uri::{Scheme, Uri};
-use hyper::service::Service;
+use hyper_util::rt::TokioIo;
 use rustls::RootCertStore;
 use std::convert::TryFrom as _;
 use std::net::SocketAddr;
 use std::num::TryFromIntError;
 use std::sync::{Arc, LazyLock};
+use tower_service::Service;
 use zx::StatusExt;
 
 pub fn new_root_cert_store() -> Arc<RootCertStore> {
@@ -30,13 +31,7 @@ pub fn new_root_cert_store() -> Arc<RootCertStore> {
     static ROOT_STORE: LazyLock<Arc<RootCertStore>> = LazyLock::new(|| {
         let mut root_store = rustls::RootCertStore::empty();
 
-        root_store.add_trust_anchors(webpki_roots_fuchsia::TLS_SERVER_ROOTS.iter().map(|cert| {
-            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                cert.subject,
-                cert.spki,
-                cert.name_constraints,
-            )
-        }));
+        root_store.extend(webpki_roots_fuchsia::TLS_SERVER_ROOTS.iter().cloned());
 
         Arc::new(root_store)
     });
@@ -74,7 +69,7 @@ impl HyperConnector {
 }
 
 impl Service<Uri> for HyperConnector {
-    type Response = TcpStream;
+    type Response = TokioIo<TcpStream>;
     type Error = std::io::Error;
     type Future = HyperConnectorFuture;
 
@@ -90,7 +85,7 @@ impl Service<Uri> for HyperConnector {
 }
 
 impl HyperConnector {
-    async fn call_async(&self, dst: Uri) -> Result<TcpStream, io::Error> {
+    async fn call_async(&self, dst: Uri) -> Result<TokioIo<TcpStream>, io::Error> {
         let host = dst.host().ok_or_else(|| io::Error::other("destination host is unspecified"))?;
         let port = match dst.port() {
             Some(port) => port.as_u16(),
@@ -112,7 +107,7 @@ impl HyperConnector {
         .await?;
         let () = self.tcp_options.apply(stream.std())?;
 
-        Ok(TcpStream { stream })
+        Ok(TokioIo::new(TcpStream { stream }))
     }
 }
 
@@ -316,7 +311,7 @@ mod test {
         let interval = std::time::Duration::from_secs(47);
         let count = 58;
         let uri = format!("https://{}", addr).parse::<hyper::Uri>().unwrap();
-        let (TcpStream { stream }, _server) = future::try_join(
+        let (io, _server) = future::try_join(
             HyperConnector::from_tcp_options(TcpOptions {
                 keepalive_idle: Some(idle),
                 keepalive_interval: Some(interval),
@@ -329,7 +324,8 @@ mod test {
         .await
         .unwrap();
 
-        let stream = socket2::SockRef::from(stream.std());
+        let tcp_stream = io.into_inner();
+        let stream = socket2::SockRef::from(tcp_stream.stream.std());
 
         assert_matches!(stream.keepalive(), Ok(v) if v);
         assert_matches!(stream.tcp_keepalive_time(), Ok(v) if v == idle);

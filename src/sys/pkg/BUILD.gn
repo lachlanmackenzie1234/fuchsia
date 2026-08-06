@@ -50,6 +50,7 @@ if (is_host) {
       "bin:host_tests",
       "lib:host_tests",
       "scripts:host_tests",
+      "testing:host_tests",
     ]
   }
 }

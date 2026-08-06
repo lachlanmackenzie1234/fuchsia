@@ -9,42 +9,50 @@ use assert_matches::assert_matches;
 use fuchsia_async::net::TcpListener;
 use fuchsia_async::{self as fasync};
 use fuchsia_hyper::new_https_client;
-use futures::future::{TryFutureExt, join};
-use futures::stream::{StreamExt, TryStreamExt};
-use hyper::server::Server;
-use hyper::server::accept::from_stream;
-use hyper::service::{make_service_fn, service_fn};
-use std::convert::Infallible;
+use futures::future::join;
+use futures::stream::StreamExt;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 fn spawn_server(buffer_size: usize) -> (String, EventSender) {
-    let (connections, url) = {
+    let (listener, url) = {
         let listener = TcpListener::bind(&SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0)).unwrap();
         let local_addr = listener.local_addr().unwrap();
-        (
-            listener
-                .accept_stream()
-                .map_ok(|(conn, _addr)| fuchsia_hyper::TcpStream { stream: conn }),
-            format!("http://{}", local_addr),
-        )
+        (listener.accept_stream(), format!("http://{}", local_addr))
     };
     let (sse_response_creator, event_sender) =
         SseResponseCreator::with_additional_buffer_size(buffer_size);
     let sse_response_creator = Arc::new(sse_response_creator);
-    let server = Server::builder(from_stream(connections))
-        .executor(fuchsia_hyper::Executor)
-        .serve(make_service_fn(move |_socket: &fuchsia_hyper::TcpStream| {
-            let sse_response_creator = Arc::clone(&sse_response_creator);
-            async move {
-                Ok::<_, Infallible>(service_fn(move |_req| {
-                    let sse_response_creator = Arc::clone(&sse_response_creator);
-                    async move { Ok::<_, Infallible>(sse_response_creator.create().await) }
-                }))
+    let builder = hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor);
+
+    fasync::Task::spawn(async move {
+        let mut tasks = futures::stream::FuturesUnordered::new();
+        let mut listener = listener.fuse();
+        loop {
+            futures::select! {
+                res = listener.next() => {
+                    match res {
+                        Some(Ok((stream, _addr))) => {
+                            let stream = fuchsia_hyper::TcpStream { stream };
+                            let sse_response_creator = Arc::clone(&sse_response_creator);
+                            let service = service_fn(move |_req| {
+                                let sse_response_creator = Arc::clone(&sse_response_creator);
+                                async move { Ok::<_, std::convert::Infallible>(sse_response_creator.create().await) }
+                            });
+                            let builder = builder.clone();
+                            tasks.push(fasync::Task::spawn(async move {
+                                let _ = builder.serve_connection(TokioIo::new(stream), service).await;
+                            }));
+                        }
+                        _ => break,
+                    }
+                }
+                _ = tasks.next() => {}
             }
-        }))
-        .unwrap_or_else(|e| panic!("mock sse server failed: {:?}", e));
-    fasync::Task::spawn(server).detach();
+        }
+    }).detach();
     (url, event_sender)
 }
 

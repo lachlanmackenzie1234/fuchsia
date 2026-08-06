@@ -8,11 +8,13 @@ use fidl_fuchsia_testing_sl4f::{
 };
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::RwLock;
+use http_body_util::{BodyExt as _, Full};
 use log::{error, info, warn};
 use maplit::{convert_args, hashmap};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+pub type Body = Full<hyper::body::Bytes>;
 
 // Standardized sl4f types and constants
 use crate::bluetooth::avrcp_facade::AvrcpFacade;
@@ -389,7 +391,7 @@ impl Sl4fClients {
     }
 }
 
-fn json<T>(content: &T) -> hyper::Response<hyper::Body>
+fn json<T>(content: &T) -> hyper::Response<Body>
 where
     T: serde::Serialize,
 {
@@ -398,17 +400,17 @@ where
     let application_json = "application/json".try_into().expect("json header value");
     let data = serde_json::to_string(content).expect("encode json");
 
-    let mut response = hyper::Response::new(data.into());
+    let mut response = hyper::Response::new(Full::new(data.into()));
     assert_eq!(response.headers_mut().insert(hyper::header::CONTENT_TYPE, application_json), None);
     response
 }
 
 /// Handles all incoming requests to SL4F server, routes accordingly
 pub async fn serve(
-    request: hyper::Request<hyper::Body>,
+    request: hyper::Request<hyper::body::Incoming>,
     clients: Arc<RwLock<Sl4fClients>>,
     sender: async_channel::Sender<AsyncRequest>,
-) -> hyper::Response<hyper::Body> {
+) -> hyper::Response<Body> {
     use hyper::Method;
 
     match (request.method(), request.uri().path()) {
@@ -449,9 +451,9 @@ pub async fn serve(
 /// Given the request, map the test request to a FIDL query and execute
 /// asynchronously
 async fn client_request(
-    request: hyper::Request<hyper::Body>,
+    request: hyper::Request<hyper::body::Incoming>,
     sender: &async_channel::Sender<AsyncRequest>,
-) -> hyper::Response<hyper::Body> {
+) -> hyper::Response<Body> {
     const FAIL_TEST_ACK: &str = "Command failed";
 
     let (request_id, method_id, method_params) = match parse_request(request).await {
@@ -491,9 +493,9 @@ async fn client_request(
 
 /// Initializes a new client, adds to clients.
 async fn client_init(
-    request: hyper::Request<hyper::Body>,
+    request: hyper::Request<hyper::body::Incoming>,
     clients: &Arc<RwLock<Sl4fClients>>,
-) -> hyper::Response<hyper::Body> {
+) -> hyper::Response<Body> {
     const INIT_ACK: &str = "Recieved init request.";
     const FAIL_INIT_ACK: &str = "Failed to init client.";
 
@@ -516,11 +518,11 @@ async fn client_init(
 /// Given a request, grabs the method id, name, and parameters
 /// Return Sl4fError if fail
 async fn parse_request(
-    request: hyper::Request<hyper::Body>,
+    request: hyper::Request<hyper::body::Incoming>,
 ) -> Result<(RequestId, MethodId, Value), Error> {
     use bytes::Buf as _;
 
-    let body = hyper::body::aggregate(request.into_body()).await.context("read request")?;
+    let body = request.into_body().collect().await.context("read request")?.aggregate();
 
     // Ignore the json_rpc field
     let request_data: CommandRequest = match serde_json::from_reader(body.reader()) {
@@ -546,9 +548,9 @@ async fn parse_request(
 }
 
 async fn server_cleanup(
-    request: hyper::Request<hyper::Body>,
+    request: hyper::Request<hyper::body::Incoming>,
     sender: &async_channel::Sender<AsyncRequest>,
-) -> hyper::Response<hyper::Body> {
+) -> hyper::Response<Body> {
     const FAIL_CLEANUP_ACK: &str = "Failed to cleanup SL4F resources.";
     const CLEANUP_ACK: &str = "Successful cleanup of SL4F resources.";
 

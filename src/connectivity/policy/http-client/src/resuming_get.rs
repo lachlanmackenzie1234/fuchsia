@@ -7,9 +7,10 @@ use fuchsia_async::TimeoutExt as _;
 use fuchsia_inspect as finspect;
 use fuchsia_inspect::Property as _;
 use futures::future::TryFutureExt as _;
-use futures::stream::{Stream, TryStreamExt as _};
-use hyper::body::HttpBody;
-use hyper::{Body, Request, StatusCode};
+use futures::stream::{Stream, StreamExt as _, TryStreamExt as _};
+use http_body_util::BodyStream;
+use hyper::body::Body as _;
+use hyper::{Request, StatusCode};
 use log::warn;
 use std::convert::TryInto as _;
 use std::str::FromStr;
@@ -33,8 +34,9 @@ pub(crate) async fn resuming_get<'a>(
     (u64, impl Stream<Item = Result<hyper::body::Bytes, ResumingGetError>> + 'a),
     ResumingGetError,
 > {
-    let request =
-        Request::get(&uri).body(Body::empty()).map_err(ResumingGetError::CreateHttpRequest)?;
+    let request = Request::get(&uri)
+        .body(http_body_util::Full::default())
+        .map_err(ResumingGetError::CreateHttpRequest)?;
     let response = client
         .request(request)
         .map_err(ResumingGetError::SendHttpRequest)
@@ -55,7 +57,16 @@ pub(crate) async fn resuming_get<'a>(
             let mut resumptions = 0;
             let mut bytes_downloaded = 0;
             let mut progress_this_attempt = false;
-            let mut chunks = response.into_body();
+            let mut chunks = BodyStream::new(response.into_body())
+                .filter_map(
+                    |res: Result<hyper::body::Frame<hyper::body::Bytes>, hyper::Error>| async move {
+                        match res {
+                            Ok(frame) => frame.into_data().ok().map(Ok),
+                            Err(e) => Some(Err(e)),
+                        }
+                    },
+                )
+                .boxed();
             let inspect_resumptions = inspect.create_uint("resumptions", 0);
             let inspect_first_byte_pos = inspect.create_uint("first-byte-pos", 0);
             while bytes_downloaded < expected_len {
@@ -103,7 +114,7 @@ pub(crate) async fn resuming_get<'a>(
                                 http::header::RANGE,
                                 format!("bytes={first_byte_pos}-{last_byte_pos}"),
                             )
-                            .body(Body::empty())
+                            .body(http_body_util::Full::default())
                             .map_err(ResumingGetError::CreateHttpResumeRequest)?;
 
                         let response = client
@@ -151,7 +162,7 @@ pub(crate) async fn resuming_get<'a>(
                             });
                         }
 
-                        if let Some(content_length) = HttpBody::size_hint(response.body()).exact() {
+                        if let Some(content_length) = response.body().size_hint().exact() {
                             if content_length != 1 + last_byte_pos - first_byte_pos {
                                 return Err(ResumingGetError::ContentLengthContentRangeMismatch {
                                     content_length,
@@ -160,7 +171,19 @@ pub(crate) async fn resuming_get<'a>(
                                 });
                             }
                         }
-                        chunks = response.into_body();
+                        chunks = BodyStream::new(response.into_body())
+                            .filter_map(
+                                |res: Result<
+                                    hyper::body::Frame<hyper::body::Bytes>,
+                                    hyper::Error,
+                                >| async move {
+                                    match res {
+                                        Ok(frame) => frame.into_data().ok().map(Ok),
+                                        Err(e) => Some(Err(e)),
+                                    }
+                                },
+                            )
+                            .boxed();
                         inspect_first_byte_pos.set(first_byte_pos);
                     }
                     // !progress_this_attempt
@@ -182,7 +205,7 @@ pub(crate) enum ResumingGetError {
     CreateHttpRequest(#[source] hyper::http::Error),
 
     #[error("sending http request")]
-    SendHttpRequest(#[source] hyper::Error),
+    SendHttpRequest(#[source] hyper_util::client::legacy::Error),
 
     #[error(
         // LINT.IfChange(blob_header_timeout)
@@ -210,7 +233,7 @@ pub(crate) enum ResumingGetError {
     CreateHttpResumeRequest(#[source] hyper::http::Error),
 
     #[error("sending http resume request")]
-    SendHttpResumeRequest(#[source] hyper::Error),
+    SendHttpResumeRequest(#[source] hyper_util::client::legacy::Error),
 
     #[error("resume header timeout")]
     ResumeHeaderTimeout,
@@ -340,8 +363,18 @@ impl FromStr for HttpContentRange {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use fuchsia_async as fasync;
+    use fuchsia_hyper as fhyper;
     use std::sync::{Arc, Mutex};
-    use {fuchsia_async as fasync, fuchsia_hyper as fhyper};
+
+    type TestBody = http_body_util::combinators::BoxBody<hyper::body::Bytes, std::io::Error>;
+    fn stream_body(items: Vec<Result<Vec<u8>, String>>) -> TestBody {
+        let stream = futures::stream::iter(items).map(|res| match res {
+            Ok(bytes) => Ok(hyper::body::Frame::data(bytes.into())),
+            Err(err) => Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
+        });
+        http_body_util::BodyExt::boxed(http_body_util::StreamBody::new(Box::pin(stream)))
+    }
 
     #[test]
     fn parse_http_content_range_success() {
@@ -422,14 +455,11 @@ mod tests {
     // Takes an async fn that maps requests to responses and returns an http server and the address
     // the server is listening on.
     fn create_http_server<F>(
-        handler: impl FnMut(hyper::Request<hyper::Body>) -> F + Send + Clone + 'static,
-    ) -> (std::net::SocketAddr, fasync::Task<Result<(), hyper::Error>>)
+        handler: impl FnMut(hyper::Request<hyper::body::Incoming>) -> F + Send + Clone + 'static,
+    ) -> (std::net::SocketAddr, fasync::Task<()>)
     where
         F: std::future::Future<
-                Output = std::result::Result<
-                    hyper::Response<hyper::Body>,
-                    std::convert::Infallible,
-                >,
+                Output = std::result::Result<hyper::Response<TestBody>, std::convert::Infallible>,
             >,
         F: Send + 'static,
     {
@@ -437,18 +467,33 @@ mod tests {
             std::net::SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0);
         let listener = fasync::net::TcpListener::bind(&addr).expect("bind");
         let server_addr = listener.local_addr().expect("local address");
-        let listener = listener
-            .accept_stream()
-            .map_ok(|(stream, _): (_, std::net::SocketAddr)| fuchsia_hyper::TcpStream { stream });
-        let make_svc = hyper::service::make_service_fn(move |_: &fhyper::TcpStream| {
-            std::future::ready(Ok::<_, std::convert::Infallible>(hyper::service::service_fn(
-                handler.clone(),
-            )))
+        let handler = std::sync::Arc::new(std::sync::Mutex::new(handler));
+        let server = fasync::Task::spawn(async move {
+            let mut listener = listener;
+            loop {
+                match listener.accept().await {
+                    Ok((next_listener, conn, _)) => {
+                        listener = next_listener;
+                        let io =
+                            hyper_util::rt::TokioIo::new(fuchsia_hyper::TcpStream { stream: conn });
+                        let handler = handler.clone();
+                        let service = hyper::service::service_fn(move |req| {
+                            let mut h = handler.lock().unwrap();
+                            (h)(req)
+                        });
+                        fasync::Task::spawn(async move {
+                            let _ = hyper_util::server::conn::auto::Builder::new(
+                                fuchsia_hyper::Executor,
+                            )
+                            .serve_connection(io, service)
+                            .await;
+                        })
+                        .detach();
+                    }
+                    Err(_) => break,
+                }
+            }
         });
-        let server = hyper::Server::builder(hyper::server::accept::from_stream(listener))
-            .executor(fhyper::Executor)
-            .serve(make_svc);
-        let server = fasync::Task::spawn(server);
         (server_addr, server)
     }
 
@@ -469,7 +514,7 @@ mod tests {
         // client receive buffer and then erroring. Responds successfully to the third request with
         // the remainder of the content. Expects the first request to be a regular GET and the
         // second and third requests to have the RANGE header set.
-        let handler = move |req: hyper::Request<hyper::Body>| {
+        let handler = move |req: hyper::Request<hyper::body::Incoming>| {
             assert_eq!(req.method(), http::Method::GET);
             assert_eq!(req.uri().path(), "/the-file.txt");
             let range_header = req.headers().get(http::header::RANGE).cloned();
@@ -482,10 +527,10 @@ mod tests {
                 0 => hyper::Response::builder()
                     .status(http::StatusCode::OK)
                     .header(http::header::CONTENT_LENGTH, content.len())
-                    .body(Body::wrap_stream(futures::stream::iter(vec![
+                    .body(stream_body(vec![
                         Ok(content[..BODY_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING].to_owned()),
                         Err("short return".to_owned()),
-                    ])))
+                    ]))
                     .unwrap(),
                 1 => {
                     let first_byte_pos =
@@ -501,13 +546,13 @@ mod tests {
                             (content.len() - first_byte_pos) as u64,
                         )
                         .header(http::header::CONTENT_RANGE, content_range.stringify())
-                        .body(Body::wrap_stream(futures::stream::iter(vec![
+                        .body(stream_body(vec![
                             Ok(content[first_byte_pos
                                 ..first_byte_pos
                                     + BODY_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING]
                                 .to_vec()),
                             Err("short return".to_owned()),
-                        ])))
+                        ]))
                         .unwrap()
                 }
                 2 => {
@@ -524,7 +569,7 @@ mod tests {
                             (content.len() - first_byte_pos) as u64,
                         )
                         .header(http::header::CONTENT_RANGE, content_range.stringify())
-                        .body(content[first_byte_pos..].to_vec().into())
+                        .body(stream_body(vec![Ok(content[first_byte_pos..].to_vec())]))
                         .unwrap()
                 }
                 _ => panic!("client should only resume twice"),
@@ -578,7 +623,7 @@ mod tests {
         // client receive buffer and then erroring. Responds successfully to the third request with
         // the remainder of the content. Expects the first request to be a regular GET and the
         // second and third requests to have the RANGE header set.
-        let handler = move |req: hyper::Request<hyper::Body>| {
+        let handler = move |req: hyper::Request<hyper::body::Incoming>| {
             assert_eq!(req.method(), http::Method::GET);
             assert_eq!(req.uri().path(), "/the-file.txt");
             let range_header = req.headers().get(http::header::RANGE).cloned();
@@ -591,10 +636,10 @@ mod tests {
                 0 => hyper::Response::builder()
                     .status(http::StatusCode::OK)
                     .header(http::header::CONTENT_LENGTH, content.len())
-                    .body(Body::wrap_stream(futures::stream::iter(vec![
+                    .body(stream_body(vec![
                         Ok(content[..BODY_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING].to_owned()),
                         Err("short return".to_owned()),
-                    ])))
+                    ]))
                     .unwrap(),
                 1 => {
                     let first_byte_pos =
@@ -610,13 +655,13 @@ mod tests {
                             (content.len() - first_byte_pos) as u64,
                         )
                         .header(http::header::CONTENT_RANGE, content_range.stringify())
-                        .body(Body::wrap_stream(futures::stream::iter(vec![
+                        .body(stream_body(vec![
                             Ok(content[first_byte_pos
                                 ..first_byte_pos
                                     + BODY_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING]
                                 .to_vec()),
                             Err("short return".to_owned()),
-                        ])))
+                        ]))
                         .unwrap()
                 }
                 _ => panic!("client should only resume once"),
@@ -671,7 +716,7 @@ mod tests {
         // Responds to the first request by streaming enough body content to fill the hyper client
         // receive buffer and then erroring. Responds to the second request with an error. Expects
         // the first request to be a regular GET and the second request to have the RANGE header.
-        let handler = move |req: hyper::Request<hyper::Body>| {
+        let handler = move |req: hyper::Request<hyper::body::Incoming>| {
             assert_eq!(req.method(), http::Method::GET);
             assert_eq!(req.uri().path(), "/the-file.txt");
             let range_header = req.headers().get(http::header::RANGE).cloned();
@@ -684,10 +729,10 @@ mod tests {
                 0 => hyper::Response::builder()
                     .status(http::StatusCode::OK)
                     .header(http::header::CONTENT_LENGTH, content.len())
-                    .body(Body::wrap_stream(futures::stream::iter(vec![
+                    .body(stream_body(vec![
                         Ok(content[..BODY_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING].to_owned()),
                         Err("short return".to_owned()),
-                    ])))
+                    ]))
                     .unwrap(),
                 1 => {
                     let first_byte_pos =
@@ -703,9 +748,7 @@ mod tests {
                             (content.len() - first_byte_pos) as u64,
                         )
                         .header(http::header::CONTENT_RANGE, content_range.stringify())
-                        .body(Body::wrap_stream(futures::stream::iter(vec![
-                            Err::<Vec<u8>, String>("short return".to_owned()),
-                        ])))
+                        .body(stream_body(vec![Err("short return".to_owned())]))
                         .unwrap()
                 }
                 _ => panic!("client should only resume once"),

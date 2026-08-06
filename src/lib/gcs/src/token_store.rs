@@ -14,7 +14,9 @@ use fuchsia_backoff::retry_or_last_error;
 #[cfg(not(test))]
 use fuchsia_hyper::HttpsClient;
 use http::{StatusCode, request};
-use hyper::{Body, Method, Request, Response};
+use http_body_util::BodyExt;
+use hyper::{Method, Request, Response};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::fmt;
 use std::path::PathBuf;
 use url::Url;
@@ -140,7 +142,8 @@ impl TokenStore {
             segments.pop_if_empty().push(bucket).extend(object.split('/'));
         }
 
-        let req = Request::builder().method(Method::GET).uri(url.to_string()).body(Body::empty())?;
+        let req =
+            Request::builder().method(Method::GET).uri(url.to_string()).body(Body::default())?;
         self.request_with_retries(https_client, req).await.context("sending http(s) request")
     }
 
@@ -180,6 +183,9 @@ impl TokenStore {
         let auth_used = req.headers().contains_key("Authorization");
 
         let res = https_client.request(req).await.context("https_client.request")?;
+        let (res_parts, incoming) = res.into_parts();
+        let bytes = incoming.collect().await?.to_bytes();
+        let res = Response::from_parts(res_parts, Body::from(bytes));
         match res.status() {
             // Status 403 (FORBIDDEN) means an access token is needed.
             // If an access token was already used, there's no need in getting
@@ -203,7 +209,7 @@ impl TokenStore {
             // For any other client or server error, read the body for more details.
             s if s.is_client_error() || s.is_server_error() => {
                 let status = res.status();
-                let body_bytes = hyper::body::to_bytes(res.into_body()).await?;
+                let body_bytes = res.into_body().collect().await?.to_bytes();
                 let body_str = String::from_utf8_lossy(&body_bytes);
                 bail!("Request failed with status {}: {}", status, body_str);
             }
@@ -223,7 +229,7 @@ impl TokenStore {
         req: Request<Body>,
     ) -> Result<Response<Body>> {
         let (parts, body) = req.into_parts();
-        let body = hyper::body::to_bytes(body).await?.to_vec();
+        let body = body.collect().await?.to_bytes().to_vec();
         retry_or_last_error(default_backoff_strategy(), || async {
             self.execute_request(https_client, &parts, Body::from(body.clone()))
                 .await
@@ -340,7 +346,7 @@ impl TokenStore {
             }
             status => {
                 // If the upload failed, provide a detailed error from the response body.
-                let body_bytes = hyper::body::to_bytes(res.into_body()).await?;
+                let body_bytes = res.into_body().collect().await?.to_bytes();
                 let error_body = String::from_utf8_lossy(&body_bytes);
                 bail!("GCS upload failed with status {}: {}", status, error_body);
             }
@@ -397,14 +403,12 @@ impl TokenStore {
                 url.query_pairs_mut().append_pair("pageToken", t.as_str());
             }
             let req =
-                Request::builder().method(Method::GET).uri(url.to_string()).body(Body::empty())?;
+                Request::builder().method(Method::GET).uri(url.to_string()).body(Body::default())?;
             let res =
                 self.request_with_retries(https_client, req).await.context("sending request")?;
             match res.status() {
                 StatusCode::OK => {
-                    let bytes = hyper::body::to_bytes(res.into_body())
-                        .await
-                        .context("hyper::body::to_bytes")?;
+                    let bytes = res.into_body().collect().await.context("collect body")?.to_bytes();
                     let info: ListResponse =
                         serde_json::from_slice(&bytes).context("serde_json::from_slice")?;
                     results.extend(info.items.into_iter().map(|i| i.name));
@@ -533,12 +537,12 @@ mod test {
         let req1 = Request::builder()
             .method(Method::GET)
             .uri(url)
-            .body(Body::empty())
+            .body(Body::default())
             .expect("Request::builder");
         let req2 = Request::builder()
             .method(Method::GET)
             .uri(url)
-            .body(Body::empty())
+            .body(Body::default())
             .expect("Request::builder");
         let res503 = http::Response::builder()
             .status(http::StatusCode::SERVICE_UNAVAILABLE)

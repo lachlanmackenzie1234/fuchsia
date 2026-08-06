@@ -8,8 +8,9 @@ use crate::util::read_stream_to_end;
 use bytes::Bytes;
 use fidl_fuchsia_pkg_ext::RepositoryConfig;
 use futures::future::ready;
-use futures::stream::{BoxStream, StreamExt, once};
+use futures::stream::once;
 use std::io;
+use std::pin::Pin;
 
 /// [Resource] represents some resource as a stream of [Bytes] as provided from
 /// a repository server.
@@ -18,7 +19,8 @@ pub struct Resource {
     pub content_range: ContentRange,
 
     /// A stream of bytes representing the resource.
-    pub stream: BoxStream<'static, io::Result<Bytes>>,
+    pub stream:
+        Pin<Box<dyn futures::stream::Stream<Item = io::Result<Bytes>> + Send + Sync + 'static>>,
 }
 
 impl Resource {
@@ -56,7 +58,7 @@ impl TryFrom<RepositoryConfig> for Resource {
         let complete_len = json.len() as u64;
         Ok(Resource {
             content_range: ContentRange::Full { complete_len },
-            stream: once(ready(Ok(json))).boxed(),
+            stream: Box::pin(once(ready(Ok(json)))),
         })
     }
 }

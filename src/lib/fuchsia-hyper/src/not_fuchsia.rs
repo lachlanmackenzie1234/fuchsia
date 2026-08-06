@@ -5,7 +5,7 @@
 use crate::{HyperConnectorFuture, SocketOptions, TcpOptions, TcpStream, parse_ip_addr};
 use futures::io;
 use http::uri::{Scheme, Uri};
-use hyper::service::Service;
+use hyper_util::rt::TokioIo;
 use log::warn;
 use netext::TokioAsyncReadExt;
 use rustls::RootCertStore;
@@ -13,6 +13,7 @@ use std::net::ToSocketAddrs;
 use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll};
 use tokio::net;
+use tower_service::Service;
 
 pub fn new_root_cert_store() -> Arc<RootCertStore> {
     // It can be expensive to parse the certs, so cache them
@@ -23,7 +24,7 @@ pub fn new_root_cert_store() -> Arc<RootCertStore> {
             .expect("Could not load TLS CA certificates from platform root store");
 
         if !certs.is_empty() {
-            let (added, ignored) = root_store.add_parsable_certificates(&certs);
+            let (added, ignored) = root_store.add_parsable_certificates(certs);
 
             if ignored != 0 {
                 warn!("Failed to load {ignored} certificates into the root store");
@@ -65,7 +66,7 @@ impl HyperConnector {
 }
 
 impl Service<Uri> for HyperConnector {
-    type Response = TcpStream;
+    type Response = TokioIo<TcpStream>;
     type Error = std::io::Error;
     type Future = HyperConnectorFuture;
 
@@ -80,7 +81,7 @@ impl Service<Uri> for HyperConnector {
 }
 
 impl HyperConnector {
-    async fn call_async(&self, dst: Uri) -> Result<TcpStream, io::Error> {
+    async fn call_async(&self, dst: Uri) -> Result<TokioIo<TcpStream>, io::Error> {
         let port = match dst.port() {
             Some(p) => p.as_u16(),
             None => {
@@ -115,7 +116,7 @@ impl HyperConnector {
         };
         let () = self.tcp_options.apply(&stream)?;
 
-        Ok(TcpStream { stream: stream.into_multithreaded_futures_stream() })
+        Ok(TokioIo::new(TcpStream { stream: stream.into_multithreaded_futures_stream() }))
     }
 }
 
@@ -151,11 +152,8 @@ mod test {
     use anyhow::{Error, Result};
     use futures::future::BoxFuture;
     use futures::stream::FuturesUnordered;
-    use futures::{StreamExt, TryFutureExt, TryStreamExt};
-    use hyper::body::HttpBody;
-    use hyper::server::Server;
-    use hyper::server::accept::from_stream;
-    use hyper::service::{make_service_fn, service_fn};
+    use futures::{StreamExt, TryStreamExt};
+    use http_body_util::BodyExt as _;
     use hyper::{Response, StatusCode};
     use std::convert::Infallible;
     use std::io::Write;
@@ -171,9 +169,10 @@ mod test {
         let status = res.status();
 
         if status == StatusCode::OK {
-            while let Some(next) = res.data().await {
-                let chunk = next?;
-                buffer.write_all(&chunk)?;
+            while let Some(frame) = res.frame().await {
+                if let Ok(data) = frame?.into_data() {
+                    buffer.write_all(&data)?;
+                }
             }
             buffer.flush()?;
         }
@@ -198,27 +197,33 @@ mod test {
             TcpStream { stream: netext::TokioAsyncReadExt::into_multithreaded_futures_stream(conn) }
         });
 
-        let connections = listener
+        let mut connections = listener
             .map_ok(|conn| Pin::new(Box::new(conn)) as Pin<Box<dyn AsyncReadWrite>>)
             .boxed();
 
-        let make_svc = make_service_fn(move |_socket| async move {
-            Ok::<_, Infallible>(service_fn(move |_req| async move {
-                Ok::<_, Infallible>(Response::new(Body::from("Hello")))
-            }))
-        });
+        let (stop, mut rx_stop) = futures::channel::oneshot::channel();
 
-        let (stop, rx_stop) = futures::channel::oneshot::channel();
-
-        let server = async {
-            Server::builder(from_stream(connections))
-                .executor(Executor)
-                .serve(make_svc)
-                .with_graceful_shutdown(
-                    rx_stop.map(|res| res.unwrap_or_else(|futures::channel::oneshot::Canceled| ())),
-                )
-                .unwrap_or_else(|e| panic!("error serving repo over http: {}", e))
-                .await;
+        let server = async move {
+            while let Some(Ok(conn)) = connections.next().await {
+                let io = hyper_util::rt::TokioIo::new(conn);
+                let service = hyper::service::service_fn(
+                    move |_req: hyper::Request<hyper::body::Incoming>| async move {
+                        Ok::<_, Infallible>(Response::new(http_body_util::Full::new(
+                            hyper::body::Bytes::from("Hello"),
+                        )))
+                    },
+                );
+                let builder = hyper_util::server::conn::auto::Builder::new(Executor);
+                let mut conn_fut = Box::pin(builder.serve_connection(io, service));
+                match futures::future::select(&mut conn_fut, &mut rx_stop).await {
+                    futures::future::Either::Left(_) => {}
+                    futures::future::Either::Right(_) => {
+                        conn_fut.as_mut().graceful_shutdown();
+                        let _ = conn_fut.await;
+                        break;
+                    }
+                }
+            }
             Ok(())
         };
 

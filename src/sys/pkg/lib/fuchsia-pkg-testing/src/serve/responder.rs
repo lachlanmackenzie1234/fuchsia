@@ -5,11 +5,13 @@
 //! HttpResponder implementations
 
 use crate::serve::HttpResponder;
+use fuchsia_repo::body::Body;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::future::{BoxFuture, Shared, pending, ready};
 use futures::prelude::*;
-use hyper::{Body, Request, Response, StatusCode};
+use http_body_util::BodyExt;
+use hyper::{Request, Response, StatusCode};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -484,7 +486,7 @@ impl HttpResponder for BlockResponseBodyOnce {
 }
 
 async fn body_to_bytes(body: Body) -> Vec<u8> {
-    hyper::body::to_bytes(body).await.expect("body to bytes").to_vec()
+    body.collect().await.expect("body to bytes").to_bytes().to_vec()
 }
 
 /// Responder that yields the response up to the final byte, then produces an error.  Panics if the

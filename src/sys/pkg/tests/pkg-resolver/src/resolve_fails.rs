@@ -234,7 +234,7 @@ async fn failed_resolve_stops_fetching_blobs() {
     let first_meta_far_http_path = format!("/blobs/1/{}", pkg_many_failing_content_blobs.hash());
     let second_meta_far_http_path = format!("/blobs/1/{}", pkg_only_meta_far_different_hash.hash());
     let fail_content_blobs = responder::Filter::new(
-        move |req: &hyper::Request<hyper::Body>| {
+        move |req: &hyper::Request<fuchsia_repo::body::Body>| {
             req.uri().path() != first_meta_far_http_path
                 && req.uri().path() != second_meta_far_http_path
         },

@@ -5,12 +5,13 @@
 use http::uri::{self, Uri};
 
 pub trait HttpUriExt {
-    /// Normalizes empty paths to `/`, appends `/` to `self`'s path if it does not end with one,
-    /// then appends `path`, preserving any query parameters. Does nothing if `path` is the empty
-    /// string.
+    /// Appends `/` to `self`'s path if it does not already end with one, then appends `path`,
+    /// preserving any query parameters. Does nothing if `path` is the empty string. Note that
+    /// empty paths on URIs with authorities are implicitly normalized to start with `/` by
+    /// `http::Uri`.
     ///
-    /// Will only error if asked to add a path to a `Uri` without a scheme (because `Uri` requires
-    /// a scheme if a path is present), or if `path` contains invalid URI characters.
+    /// Will error if `path` contains invalid URI characters, or if the resulting URI parts are
+    /// invalid (e.g., combining an authority and path without a scheme).
     fn extend_dir_with_path(self, path: &str) -> Result<Uri, Error>;
 
     /// Append the given query parameter `key`=`value` to the URI, preserving existing query
@@ -34,17 +35,17 @@ impl HttpUriExt for Uri {
             Some(path_and_query) => (path_and_query.path(), path_and_query.query()),
             None => ("/", None),
         };
-        let new_path_and_query = if base_path.ends_with("/") {
+        let new_path_and_query = if base_path.ends_with('/') {
             if let Some(query) = query {
-                format!("{}{}?{}", base_path, path, query)
+                format!("{base_path}{path}?{query}")
             } else {
-                format!("{}{}", base_path, path)
+                format!("{base_path}{path}")
             }
         } else {
             if let Some(query) = query {
-                format!("{}/{}?{}", base_path, path, query)
+                format!("{base_path}/{path}?{query}")
             } else {
-                format!("{}/{}", base_path, path)
+                format!("{base_path}/{path}")
             }
         };
         base_parts.path_and_query = Some(new_path_and_query.parse()?);
@@ -158,7 +159,6 @@ mod tests {
     #[test]
     fn no_query_empty_argument() {
         assert_expected_path(None, "", None);
-        assert_expected_path(Some(""), "", None);
         assert_expected_path(Some("/"), "", Some("/"));
         assert_expected_path(Some("/a"), "", Some("/a"));
         assert_expected_path(Some("/a/"), "", Some("/a/"));
@@ -175,7 +175,6 @@ mod tests {
     #[test]
     fn no_query_has_argument() {
         assert_expected_path(None, "c", Some("/c"));
-        assert_expected_path(Some(""), "c", Some("/c"));
         assert_expected_path(Some("/"), "c", Some("/c"));
         assert_expected_path(Some("/a"), "c", Some("/a/c"));
         assert_expected_path(Some("/a/"), "c", Some("/a/c"));
@@ -189,6 +188,21 @@ mod tests {
         assert_expected_path(Some("/a/?k=v"), "c", Some("/a/c?k=v"));
     }
 
+    #[test]
+    fn extend_dir_with_authority() {
+        let uri = "http://example.com".parse::<Uri>().unwrap();
+        let extended = uri.extend_dir_with_path("foo").unwrap();
+        assert_eq!(extended.to_string(), "http://example.com/foo");
+
+        let uri = "http://example.com/".parse::<Uri>().unwrap();
+        let extended = uri.extend_dir_with_path("foo").unwrap();
+        assert_eq!(extended.to_string(), "http://example.com/foo");
+
+        let uri = "http://example.com?k=v".parse::<Uri>().unwrap();
+        let extended = uri.extend_dir_with_path("foo").unwrap();
+        assert_eq!(extended.to_string(), "http://example.com/foo?k=v");
+    }
+
     fn assert_expected_param(base: Option<&str>, key: &str, value: &str, expected: Option<&str>) {
         let uri = make_uri_from_path_and_query(base).append_query_parameter(key, value).unwrap();
         assert_eq!(
@@ -200,7 +214,6 @@ mod tests {
     #[test]
     fn new_query() {
         assert_expected_param(None, "k", "v", Some("/?k=v"));
-        assert_expected_param(Some(""), "k", "v", Some("/?k=v"));
         assert_expected_param(Some("/"), "k", "v", Some("/?k=v"));
         assert_expected_param(Some("/a"), "k", "v", Some("/a?k=v"));
         assert_expected_param(Some("/a/"), "k", "v", Some("/a/?k=v"));

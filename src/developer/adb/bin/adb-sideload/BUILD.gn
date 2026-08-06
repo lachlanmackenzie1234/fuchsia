@@ -26,7 +26,9 @@ rustc_binary("adb-sideload") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:http-body-util",
     "//third_party/rust_crates:hyper",
+    "//third_party/rust_crates:hyper-util",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:memchr",
   ]

@@ -294,6 +294,7 @@ template("rustc_binary") {
     forward_variables_from(invoker,
                            [
                              "allow_legacy_edition",
+                             "applicable_licenses",
                              "assert_no_deps",
                              "check_cfgs",
                              "data_deps",

@@ -20,16 +20,18 @@ use chrono::Utc;
 use fuchsia_async::{self as fasync, Task};
 use futures::future::BoxFuture;
 use futures::prelude::*;
-use hyper::server::accept::from_stream;
-use hyper::server::Server;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
 #[cfg(not(target_os = "fuchsia"))]
 use netext::TokioAsyncReadExt;
 use std::convert::Infallible;
 use std::net::{Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
+
+/// Body type implementation for hyper 1.0 test server support.
+pub mod body;
+pub use crate::body::Body;
 
 // Some provided Handler implementations.
 pub mod handler;
@@ -50,11 +52,17 @@ pub struct TestServer {
 pub trait Handler: 'static + Send + Sync {
     /// A Handler impl signals that it wishes to handle a request by returning a response for it,
     /// otherwise it returns None.
-    fn handles(&self, request: &Request<Body>) -> Option<BoxFuture<'_, Response<Body>>>;
+    fn handles(
+        &self,
+        request: &Request<hyper::body::Incoming>,
+    ) -> Option<BoxFuture<'_, Response<Body>>>;
 }
 
 impl Handler for Arc<dyn Handler> {
-    fn handles(&self, request: &Request<Body>) -> Option<BoxFuture<'_, Response<Body>>> {
+    fn handles(
+        &self,
+        request: &Request<hyper::body::Incoming>,
+    ) -> Option<BoxFuture<'_, Response<Body>>> {
         (**self).handles(request)
     }
 }
@@ -62,11 +70,7 @@ impl Handler for Arc<dyn Handler> {
 impl TestServer {
     /// return the scheme of the TestServer
     fn scheme(&self) -> &'static str {
-        if self.use_https {
-            "https"
-        } else {
-            "http"
-        }
+        if self.use_https { "https" } else { "http" }
     }
 
     /// Returns the URL that can be used to connect to this repository from this device.
@@ -91,7 +95,7 @@ impl TestServer {
     /// request.  It then returns that response.  If not response is found, it returns 404 NOT_FOUND.
     async fn handle_request(
         handlers: Arc<Vec<Arc<dyn Handler>>>,
-        req: Request<Body>,
+        req: Request<hyper::body::Incoming>,
     ) -> Response<Body> {
         let response = handlers.iter().find_map(|h| h.handles(&req));
 
@@ -111,7 +115,10 @@ impl TestServer {
 #[derive(Default)]
 pub struct TestServerBuilder {
     handlers: Vec<Arc<dyn Handler>>,
-    https_certs: Option<(Vec<rustls::Certificate>, rustls::PrivateKey)>,
+    https_certs: Option<(
+        Vec<rustls::pki_types::CertificateDer<'static>>,
+        rustls::pki_types::PrivateKeyDer<'static>,
+    )>,
 }
 
 impl TestServerBuilder {
@@ -149,7 +156,6 @@ impl TestServerBuilder {
         let (tls_acceptor, use_https) = if let Some((cert_chain, private_key)) = self.https_certs {
             // build a server configuration using a test CA and cert chain
             let tls_config = rustls::ServerConfig::builder()
-                .with_safe_defaults()
                 .with_no_client_auth()
                 .with_single_cert(cert_chain, private_key)
                 .unwrap();
@@ -191,41 +197,45 @@ impl TestServerBuilder {
 
             // This is the root Arc<Vec<Arc<dyn Handler>>>.
             let handlers = Arc::new(self.handlers);
-
-            let make_svc = make_service_fn(move |_socket| {
-                // Each connection to the server receives a separate service_fn instance, and so
-                // needs it's own copy of the handlers, this is a factory of sorts.
-                let handlers = Arc::clone(&handlers);
-
-                async move {
-                    Ok::<_, Infallible>(service_fn(move |req| {
-                        // Each request made by a connection is serviced by the service_fn created from
-                        // this scope, which is why there is another cloning of the Arc of Handlers.
-                        let method = req.method().to_owned();
-                        let path = req.uri().path().to_owned();
-                        TestServer::handle_request(Arc::clone(&handlers), req)
-                            .inspect(move |x| {
-                                println!(
-                                    "{} [test http] {} {} => {}",
-                                    Utc::now().format("%T.%6f"),
-                                    method,
-                                    path,
-                                    x.status()
-                                )
-                            })
-                            .map(Ok::<_, Infallible>)
-                    }))
+            let builder = hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor);
+            let mut rx_stop = rx_stop.fuse();
+            let mut connections = connections.fuse();
+            let mut tasks = futures::stream::FuturesUnordered::new();
+            loop {
+                futures::select! {
+                    conn_res = connections.next() => {
+                        match conn_res {
+                            Some(Ok(conn)) => {
+                                let handlers = Arc::clone(&handlers);
+                                let builder = builder.clone();
+                                tasks.push(fasync::Task::spawn(async move {
+                                    let _ = builder.serve_connection(
+                                        hyper_util::rt::TokioIo::new(conn),
+                                        service_fn(move |req| {
+                                            let method = req.method().to_owned();
+                                            let path = req.uri().path().to_owned();
+                                            TestServer::handle_request(Arc::clone(&handlers), req)
+                                                .inspect(move |x| {
+                                                    println!(
+                                                        "{} [test http] {} {} => {}",
+                                                        Utc::now().format("%T.%6f"),
+                                                        method,
+                                                        path,
+                                                        x.status()
+                                                    )
+                                                })
+                                                .map(Ok::<_, Infallible>)
+                                        }),
+                                    ).await;
+                                }));
+                            }
+                            _ => break,
+                        }
+                    }
+                    _ = tasks.next() => {}
+                    _ = rx_stop => break,
                 }
-            });
-
-            Server::builder(from_stream(connections))
-                .executor(fuchsia_hyper::Executor)
-                .serve(make_svc)
-                .with_graceful_shutdown(
-                    rx_stop.map(|res| res.unwrap_or_else(|futures::channel::oneshot::Canceled| ())),
-                )
-                .unwrap_or_else(|e| panic!("error serving repo over http: {}", e))
-                .await;
+            }
         });
 
         TestServer { stop, addr, use_https, task }
@@ -257,7 +267,10 @@ fn accept_stream<'a>(
     impl<'a> Stream for AcceptStream<'a> {
         type Item = std::io::Result<fuchsia_async::net::TcpStream>;
 
-        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        fn poll_next(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<<Self as Stream>::Item>> {
             let mut this = self.project();
             match this.listener.async_accept(cx) {
                 Poll::Ready(Ok((conn, _addr))) => Poll::Ready(Some(Ok(conn))),
@@ -277,21 +290,14 @@ fn accept_stream<'a>(
     netext::TcpListenerRefStream(listener)
 }
 
-fn parse_cert_chain(mut bytes: &[u8]) -> Vec<rustls::Certificate> {
-    rustls_pemfile::certs(&mut bytes)
-        .expect("certs to parse")
-        .into_iter()
-        .map(|cert| rustls::Certificate(cert))
-        .collect()
+fn parse_cert_chain(mut bytes: &[u8]) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    rustls_pemfile::certs(&mut bytes).collect::<Result<Vec<_>, _>>().expect("certs to parse")
 }
 
-fn parse_private_key(mut bytes: &[u8]) -> rustls::PrivateKey {
-    let keys = rustls_pemfile::read_all(&mut bytes).expect("private keys to parse");
-    assert_eq!(keys.len(), 1, "expecting a single private key");
-    match keys.into_iter().next().unwrap() {
-        rustls_pemfile::Item::RSAKey(key) => return rustls::PrivateKey(key),
-        _ => panic!("expected an RSA private key"),
-    }
+fn parse_private_key(mut bytes: &[u8]) -> rustls::pki_types::PrivateKeyDer<'static> {
+    rustls_pemfile::private_key(&mut bytes)
+        .expect("private keys to parse")
+        .expect("one private key")
 }
 
 trait AsyncReadWrite: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send {}
@@ -300,12 +306,14 @@ impl<T> AsyncReadWrite for T where T: tokio::io::AsyncRead + tokio::io::AsyncWri
 // These are a set of useful functions when writing tests.
 
 /// Create a GET request for a given url, which can be used with any hyper client.
-pub fn make_get(url: impl AsRef<str>) -> Result<Request<Body>, Error> {
-    Request::get(url.as_ref()).body(Body::empty()).map_err(Error::from)
+pub fn make_get(
+    url: impl AsRef<str>,
+) -> Result<Request<http_body_util::Full<hyper::body::Bytes>>, Error> {
+    Request::get(url.as_ref()).body(http_body_util::Full::default()).map_err(Error::from)
 }
 
 /// Perform an HTTP GET for the given url, returning the result.
-pub async fn get(url: impl AsRef<str>) -> Result<Response<Body>, Error> {
+pub async fn get(url: impl AsRef<str>) -> Result<Response<hyper::body::Incoming>, Error> {
     let request = make_get(url)?;
     let client = fuchsia_hyper::new_client();
     let response = client.request(request).await?;
@@ -313,19 +321,22 @@ pub async fn get(url: impl AsRef<str>) -> Result<Response<Body>, Error> {
 }
 
 /// Collect a Response into a single Vec of bytes.
-pub async fn body_as_bytes(response: Response<Body>) -> Result<Vec<u8>, Error> {
-    let bytes = response
-        .into_body()
-        .try_fold(Vec::new(), |mut vec, b| async move {
-            vec.extend(b);
-            Ok(vec)
-        })
-        .await?;
-    Ok(bytes)
+pub async fn body_as_bytes<B>(response: Response<B>) -> Result<Vec<u8>, Error>
+where
+    B: hyper::body::Body,
+    B::Error: Into<Error>,
+{
+    use http_body_util::BodyExt as _;
+    let bytes = response.into_body().collect().await.map_err(Into::into)?.to_bytes();
+    Ok(bytes.to_vec())
 }
 
-/// Collect a Response's Body and convert the body to a tring.
-pub async fn body_as_string(response: Response<Body>) -> Result<String, Error> {
+/// Collect a Response's Body and convert the body to a string.
+pub async fn body_as_string<B>(response: Response<B>) -> Result<String, Error>
+where
+    B: hyper::body::Body,
+    B::Error: Into<Error>,
+{
     let bytes = body_as_bytes(response).await?;
     let string = String::from_utf8(bytes)?;
     Ok(string)

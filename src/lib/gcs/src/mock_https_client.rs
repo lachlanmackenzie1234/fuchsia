@@ -15,7 +15,9 @@
 //! ```
 
 use fuchsia_sync::Mutex;
-use hyper::{Body, Request};
+use http_body_util::BodyExt;
+use hyper::Request;
+pub type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -64,8 +66,8 @@ impl HttpsClient {
         );
         assert_eq!(expected.req.method(), req.method());
         let expected_bytes =
-            hyper::body::to_bytes(expected.req.into_body()).await.expect("expected.req.into_body");
-        let req_bytes = hyper::body::to_bytes(req.into_body()).await.expect("req.into_body");
+            expected.req.into_body().collect().await.expect("expected.req.into_body").to_bytes();
+        let req_bytes = req.into_body().collect().await.expect("req.into_body").to_bytes();
         assert_eq!(expected_bytes, req_bytes);
 
         expected.res
@@ -101,7 +103,7 @@ mod tests {
             .expect("Request::builder");
         let res = https_client.request(req).await.expect("https_client.request");
         assert_eq!(res.status(), http::StatusCode::OK);
-        let bytes = hyper::body::to_bytes(res.into_body()).await.expect("body::to_bytes");
+        let bytes = res.into_body().collect().await.expect("body collect").to_bytes();
         assert_eq!(b"beta", &bytes[..]);
     }
 

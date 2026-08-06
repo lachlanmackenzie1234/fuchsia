@@ -10,8 +10,9 @@ use fuchsia_async::TimeoutExt;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::prelude::*;
-use hyper::client::ResponseFuture;
-use hyper::{Body, Client, Request, Response};
+use http_body_util::BodyExt;
+use hyper::{Request, Response};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use omaha_client::app_set::VecAppSet;
 use omaha_client::common::App;
 use omaha_client::configuration::{Config, Updater};
@@ -33,7 +34,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub struct FuchsiaHyperHttpRequest {
-    client: Client<hyper_rustls::HttpsConnector<fuchsia_hyper::HyperConnector>, Body>,
+    client: fuchsia_hyper::HttpsClient,
 }
 
 impl HttpRequest for FuchsiaHyperHttpRequest {
@@ -44,10 +45,14 @@ impl HttpRequest for FuchsiaHyperHttpRequest {
     }
 }
 
-async fn collect_from_future(response_future: ResponseFuture) -> Result<Response<Vec<u8>>, Error> {
-    let response = response_future.await?;
+async fn collect_from_future(
+    response_future: impl Future<
+        Output = Result<Response<hyper::body::Incoming>, hyper_util::client::legacy::Error>,
+    >,
+) -> Result<Response<Vec<u8>>, Error> {
+    let response = response_future.await.map_err(Error::new_transport)?;
     let (parts, body) = response.into_parts();
-    let bytes = hyper::body::to_bytes(body).await?;
+    let bytes = body.collect().await.map_err(Error::new_transport)?.to_bytes();
     Ok(Response::from_parts(parts, bytes.to_vec()))
 }
 

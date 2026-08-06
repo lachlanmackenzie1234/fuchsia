@@ -12,9 +12,10 @@ use anyhow::{Context, Result, bail};
 use fuchsia_backoff::retry_or_last_error;
 #[cfg(not(test))]
 use fuchsia_hyper::{HttpsClient, new_https_client};
-use hyper::body::HttpBody as _;
+use http_body_util::BodyExt;
 use hyper::header::CONTENT_LENGTH;
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -298,10 +299,12 @@ impl Client {
             // around 20% of the execution time can be spent updating the
             // progress UI. The throttle makes the overhead negligible.
             let mut throttle = Throttle::from_duration(std::time::Duration::from_millis(500));
-            while let Some(next) = res.data().await {
-                let chunk = next.context("next chunk")?;
-                writer.write_all(&chunk).context("write chunk")?;
-                at += chunk.len() as u64;
+            while let Some(next) = res.frame().await {
+                let frame = next.context("next frame")?;
+                if let Ok(chunk) = frame.into_data() {
+                    writer.write_all(&chunk).context("write chunk")?;
+                    at += chunk.len() as u64;
+                }
                 if at > of {
                     of = at;
                 }
@@ -351,7 +354,7 @@ mod test {
         let req = Request::builder()
             .method(Method::GET)
             .uri("https://storage.googleapis.com/for_testing_does_not_exist/face_test_object")
-            .body(Body::empty())
+            .body(Body::default())
             .expect("Request::builder");
         let res404 = http::Response::builder()
             .status(http::StatusCode::NOT_FOUND)
@@ -420,7 +423,7 @@ mod test {
         assert_eq!(res.status(), 200);
         // The data is expected to be small (less than a KiB). For a non-test
         // keeping the whole file in memory may be impractical.
-        let streamed_bytes = hyper::body::to_bytes(res.into_body()).await.expect("streamed bytes");
+        let streamed_bytes = res.into_body().collect().await.expect("streamed bytes").to_bytes();
         let streamed = String::from_utf8(streamed_bytes.to_vec()).expect("streamed string");
 
         // Compare the fetched and streamed data.

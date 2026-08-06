@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use crate::AnalyticsError;
-use hyper::body::HttpBody;
-use hyper::{Body, Method, Request};
+use http_body_util::BodyExt;
+use hyper::{Method, Request};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 
 use crate::ga4_event::Post;
 
@@ -59,8 +60,8 @@ impl GA4AnalyticsClient {
         Ok(match res {
             Ok(mut res) => {
                 log::trace!("GA 4 Analytics response: {}", res.status());
-                while let Some(chunk) = res.body_mut().data().await {
-                    log::trace!(chunk:?; "");
+                while let Some(frame) = res.body_mut().frame().await {
+                    log::trace!(frame:?; "");
                 }
             }
             Err(e) => log::trace!("Error posting GA 4 analytics: {}", e),
@@ -113,7 +114,7 @@ mod tests {
         assert_eq!(query_map["api_secret"], "key");
         assert_eq!(query_map["measurement_id"], "code");
         // Validate the request body
-        let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+        let body_bytes = req.into_body().collect().await.unwrap().to_bytes();
         let body_json: serde_json::Value = serde_json::from_slice(&body_bytes[..]).unwrap();
         assert_eq!(body_json["client_id"], "test_client");
         assert_eq!(body_json["events"][0]["name"], "test_event");

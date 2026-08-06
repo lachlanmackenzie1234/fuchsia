@@ -61,7 +61,9 @@ pub enum GcsError {
     RefreshAccessError(http::StatusCode),
 
     /// May be a network issue. Consider informing the user and offer to retry.
-    #[error("GCS HttpTransientError: {0}. Too many transient network errors; check network connection and try again.")]
+    #[error(
+        "GCS HttpTransientError: {0}. Too many transient network errors; check network connection and try again."
+    )]
     HttpTransientError(http::StatusCode),
 
     /// May be a network issue. Consider informing the user and offer to retry.
@@ -75,6 +77,10 @@ pub enum GcsError {
     /// May be a network issue. Consider informing the user and offer to retry.
     #[error("GCS HyperError: {0}. Check network connection and try again.")]
     HyperError(#[from] hyper::Error),
+
+    /// May be a network issue. Consider informing the user and offer to retry.
+    #[error("GCS HyperUtilError: {0}. Check network connection and try again.")]
+    HyperUtilError(#[from] hyper_util::client::legacy::Error),
 
     /// Possible in-transit corruption, but more likely the GCS protocol
     /// changed. May need to update GCS lib.

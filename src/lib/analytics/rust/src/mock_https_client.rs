@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 use fuchsia_sync::Mutex;
-use hyper::{Body, Request, Response, Result};
+use http_body_util::BodyExt;
+use hyper::{Request, Response, Result};
 use std::sync::Arc;
+pub type Body = http_body_util::Full<hyper::body::Bytes>;
 
 #[derive(Clone)]
 pub struct HttpsClient {
@@ -18,7 +20,7 @@ impl HttpsClient {
 
     pub async fn request(&self, req: Request<Body>) -> Result<Response<Body>> {
         self.last_request.lock().replace(req);
-        Ok(Response::builder().status(200).body(Body::empty()).unwrap())
+        Ok(Response::builder().status(200).body(Body::default()).unwrap())
     }
 
     pub fn take_last_request(&self) -> Option<Request<Body>> {
@@ -33,7 +35,7 @@ pub fn new_https_client() -> HttpsClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::{Body, Method, Request};
+    use hyper::{Method, Request};
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_mock_https_client() {
@@ -52,7 +54,7 @@ mod tests {
         let last_request = client.take_last_request().unwrap();
         assert_eq!(*last_request.uri(), *"https://example.com");
         assert_eq!(*last_request.method(), Method::POST);
-        let body = hyper::body::to_bytes(last_request.into_body()).await.unwrap();
+        let body = last_request.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&body[..], b"alpha");
 
         // After taking, the last request should be None

@@ -29,6 +29,16 @@ _TOKIO_HOST_FEATURES = [
     "time",
 ]
 
+_TOKIO_HOST_DEPS = [
+    "//third_party/rust_crates/ask2patch/memchr",
+    "//third_party/rust_crates/forks/libc-0.2.189:libc",
+    "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
+    "//third_party/rust_crates/vendor/mio-1.2.1:mio",
+    "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
+    "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
+    "//third_party/rust_crates/vendor/socket2-0.6.4:socket2",
+]
+
 CRATE_ANNOTATIONS = {
     "anyhow": [
         crate.annotation(
@@ -119,15 +129,8 @@ CRATE_ANNOTATIONS = {
             deps = crate.select(
                 common = [],
                 selects = {
-                    "@platforms//os:linux": [
-                        "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
-                        "//third_party/rust_crates/vendor/libc-0.2.189:libc",
-                        "//third_party/rust_crates/ask2patch/memchr",
-                        "//third_party/rust_crates/vendor/mio-1.2.1:mio",
-                        "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
-                        "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
-                        "//third_party/rust_crates/vendor/socket2-0.6.4:socket2",
-                    ],
+                    "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": _TOKIO_HOST_DEPS,
+                    "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": _TOKIO_HOST_DEPS,
                 },
             ),
             crate_features = crate.select(
@@ -224,7 +227,7 @@ CRATE_ANNOTATIONS = {
     ],
     "mock-omaha-server": [
         crate.annotation(
-            version = "0.3.8",
+            version = "0.5.0",
             deps = crate.select(
                 common = [
                     "//src/lib/fuchsia-async",

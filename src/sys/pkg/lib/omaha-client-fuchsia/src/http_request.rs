@@ -5,14 +5,15 @@
 use fuchsia_async::TimeoutExt;
 use futures::future::BoxFuture;
 use futures::prelude::*;
-use hyper::client::ResponseFuture;
-use hyper::{Body, Client, Request, Response};
+use http_body_util::BodyExt;
+use hyper::{Request, Response};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use omaha_client::http_request::{Error, HttpRequest};
 use std::time::Duration;
 
 pub struct FuchsiaHyperHttpRequest {
     timeout: Duration,
-    client: Client<hyper_rustls::HttpsConnector<fuchsia_hyper::HyperConnector>, Body>,
+    client: fuchsia_hyper::HttpsClient,
 }
 
 impl HttpRequest for FuchsiaHyperHttpRequest {
@@ -26,10 +27,14 @@ impl HttpRequest for FuchsiaHyperHttpRequest {
 }
 
 // Helper to clarify the types of the futures involved
-async fn collect_from_future(response_future: ResponseFuture) -> Result<Response<Vec<u8>>, Error> {
-    let response = response_future.await.map_err(Error::from)?;
+async fn collect_from_future(
+    response_future: impl Future<
+        Output = Result<Response<hyper::body::Incoming>, hyper_util::client::legacy::Error>,
+    >,
+) -> Result<Response<Vec<u8>>, Error> {
+    let response = response_future.await.map_err(Error::new_transport)?;
     let (parts, body) = response.into_parts();
-    let bytes = hyper::body::to_bytes(body).await?;
+    let bytes = body.collect().await.map_err(Error::new_transport)?.to_bytes();
     Ok(Response::from_parts(parts, bytes.to_vec()))
 }
 
@@ -54,7 +59,7 @@ mod tests {
 
     /// Helper that constructs a Request for a given path on the given test server.
     fn make_request_for(server: &TestServer, path: &str) -> Request<Body> {
-        Request::builder().uri(server.local_url_for_path(path)).body(Body::empty()).unwrap()
+        Request::builder().uri(server.local_url_for_path(path)).body(Body::default()).unwrap()
     }
 
     /// Test that the HttpRequest implementation works against a simple server and returns

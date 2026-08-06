@@ -904,7 +904,7 @@ mod tests {
     }
 
     prop_compose! {
-        fn uri_with_adversarial_path()(path in "[p/]{0,6}") -> http::Uri
+        fn uri_with_adversarial_path()(path in "/p[p/]{0,6}") -> http::Uri
         {
             let mut parts = http::uri::Parts::default();
             parts.scheme = Some(http::uri::Scheme::HTTP);

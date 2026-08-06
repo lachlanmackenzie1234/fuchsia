@@ -7,27 +7,29 @@
 use anyhow::{Context, Result};
 use fuchsia_hyper::new_https_client;
 use gcs::auth::pkce::new_refresh_token;
-use gcs::auth::{new_access_token, GcsCredentials};
+use gcs::auth::{GcsCredentials, new_access_token};
 use gcs::client::Client;
 
 /// A simple test to be sure the base libs haven't changed in an incompatible
 /// way.
 async fn hyper_test() -> Result<()> {
-    use hyper::body::HttpBody;
-    use hyper::{Body, Method, Request, Response, StatusCode};
+    use http_body_util::{BodyExt as _, Full};
+    use hyper::body::Bytes;
+    use hyper::{Method, Request, StatusCode};
     use std::io::{self, Write};
     println!("hyper_test");
 
     let https_client = new_https_client();
     let req = Request::builder().method(Method::GET).uri("https://www.google.com/");
-    let req = req.body(Body::from(""))?;
-    let mut res: Response<Body> = https_client.request(req).await?;
+    let req = req.body(Full::<Bytes>::default())?;
+    let mut res = https_client.request(req).await?;
     if res.status() == StatusCode::OK {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
-        while let Some(next) = res.data().await {
-            let chunk = next?;
-            handle.write_all(&chunk)?;
+        while let Some(frame) = res.frame().await {
+            if let Ok(data) = frame?.into_data() {
+                handle.write_all(&data)?;
+            }
         }
     }
     Ok(())

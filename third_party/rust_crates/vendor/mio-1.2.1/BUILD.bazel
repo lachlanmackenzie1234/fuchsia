@@ -50,12 +50,20 @@ rust_library(
         ],
     ),
     crate_features = [
-        "default",
-        "log",
         "net",
         "os-ext",
         "os-poll",
-    ],
+    ] + select({
+        "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
+            "default",  # aarch64-unknown-linux-gnu
+            "log",  # aarch64-unknown-linux-gnu
+        ],
+        "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
+            "default",  # x86_64-unknown-linux-gnu
+            "log",  # x86_64-unknown-linux-gnu
+        ],
+        "//conditions:default": [],
+    }),
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -76,20 +84,20 @@ rust_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     version = "1.2.1",
-    deps = [
-        "//third_party/rust_crates/vendor/log-0.4.29:log",
-    ] + select({
+    deps = select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
             "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(any(unix, target_os = "hermit", target_os = "wasi"))
         ],
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
             "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(any(unix, target_os = "hermit", target_os = "wasi"))
+            "//third_party/rust_crates/vendor/log-0.4.29:log",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
             "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(any(unix, target_os = "hermit", target_os = "wasi"))
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "//third_party/rust_crates/forks/libc-0.2.189:libc",  # cfg(any(unix, target_os = "hermit", target_os = "wasi"))
+            "//third_party/rust_crates/vendor/log-0.4.29:log",  # x86_64-unknown-linux-gnu
         ],
         "//conditions:default": [],
     }),

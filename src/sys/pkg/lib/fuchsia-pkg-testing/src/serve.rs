@@ -12,15 +12,15 @@ use fidl_fuchsia_pkg_ext::{
 };
 use fuchsia_async::net::TcpListener;
 use fuchsia_async::{self as fasync, Task};
+use fuchsia_repo::body::Body;
 use fuchsia_url::RepositoryUrl;
 use futures::future::BoxFuture;
 use futures::prelude::*;
 use http::Uri;
+use http_body_util::BodyExt;
 use http_sse::{Event, EventSender, SseResponseCreator};
-use hyper::server::Server;
-use hyper::server::accept::from_stream;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, StatusCode, header};
+use hyper::service::service_fn;
+use hyper::{Method, Request, Response, StatusCode, header};
 use std::convert::{Infallible, TryInto as _};
 use std::io::{Cursor, Read as _, Seek as _};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
@@ -143,7 +143,6 @@ impl ServedRepositoryBuilder {
                 ),
             };
             let mut tls_config = rustls::ServerConfig::builder()
-                .with_safe_defaults()
                 .with_no_client_auth()
                 .with_single_cert(certs, key)
                 .unwrap();
@@ -181,46 +180,74 @@ impl ServedRepositoryBuilder {
             SseResponseCreator::with_additional_buffer_size(10);
         let auto_response_creator = Arc::new(auto_response_creator);
 
-        let make_svc = make_service_fn(move |_socket| {
-            let root = root.clone();
-            let response_overriders = Arc::clone(&response_overriders);
-            let auto_response_creator = Arc::clone(&auto_response_creator);
-
-            async move {
-                Ok::<_, Infallible>(service_fn(move |req| {
-                    let method = req.method().to_owned();
-                    let path = req.uri().path().to_owned();
-                    let headers = req.headers().clone();
-                    ServedRepository::handle_tuf_repo_request_infallible(
-                        root.clone(),
-                        Arc::clone(&response_overriders),
-                        Arc::clone(&auto_response_creator),
-                        req,
-                    )
-                    .inspect(move |x| {
-                        println!(
-                            "{} [http repo] {} {} {:?} => {}",
-                            Utc::now().format("%T.%6f"),
-                            method,
-                            path,
-                            headers,
-                            x.status()
-                        )
-                    })
-                    .map(Ok::<_, Infallible>)
-                }))
-            }
-        });
-
         let (stop, rx_stop) = futures::channel::oneshot::channel();
+        let rx_stop = rx_stop.map(|res| res.unwrap_or(())).shared();
 
-        let server = Server::builder(from_stream(connections))
-            .executor(fuchsia_hyper::Executor)
-            .serve(make_svc)
-            .with_graceful_shutdown(rx_stop.map(|res| res.unwrap_or(())))
-            .unwrap_or_else(|e| panic!("error serving repo over http: {e}"));
-
-        let server = Task::spawn(server);
+        let server = Task::spawn(async move {
+            let mut connections = connections.fuse();
+            let mut tasks = futures::stream::FuturesUnordered::new();
+            loop {
+                futures::select! {
+                    conn = connections.next() => {
+                        match conn {
+                            Some(Ok(conn)) => {
+                                let root = root.clone();
+                                let response_overriders = Arc::clone(&response_overriders);
+                                let auto_response_creator = Arc::clone(&auto_response_creator);
+                                let rx_stop = rx_stop.clone();
+                                tasks.push(fuchsia_async::Task::spawn(async move {
+                                    let service = service_fn(move |req: Request<hyper::body::Incoming>| {
+                                        let (parts, _body) = req.into_parts();
+                                        let req = Request::from_parts(parts, Body::empty());
+                                        let method = req.method().to_owned();
+                                        let path = req.uri().path().to_owned();
+                                        let headers = req.headers().clone();
+                                        ServedRepository::handle_tuf_repo_request_infallible(
+                                            root.clone(),
+                                            Arc::clone(&response_overriders),
+                                            Arc::clone(&auto_response_creator),
+                                            req,
+                                        )
+                                        .inspect(move |x| {
+                                            println!(
+                                                "{} [http repo] {} {} {:?} => {}",
+                                                Utc::now().format("%T.%6f"),
+                                                method,
+                                                path,
+                                                headers,
+                                                x.status()
+                                            )
+                                        })
+                                        .map(Ok::<_, Infallible>)
+                                    });
+                                    let builder = hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor);
+                                    let conn = builder.serve_connection(hyper_util::rt::TokioIo::new(conn), service);
+                                    let mut conn = std::pin::pin!(conn);
+                                    futures::select! {
+                                        res = conn.as_mut().fuse() => {
+                                            if let Err(e) = res {
+                                                log::warn!("error serving repo connection: {e}");
+                                            }
+                                        }
+                                        _ = rx_stop.clone() => {
+                                            conn.as_mut().graceful_shutdown();
+                                            let _ = conn.await;
+                                        }
+                                    }
+                                }));
+                            }
+                            Some(Err(e)) => {
+                                log::error!("error accepting repo connection: {e}");
+                            }
+                            None => break,
+                        }
+                    }
+                    _ = rx_stop.clone() => break,
+                    _ = tasks.next() => {}
+                }
+            }
+            while tasks.next().await.is_some() {}
+        });
 
         Ok(ServedRepository {
             repo: self.repo,
@@ -234,21 +261,14 @@ impl ServedRepositoryBuilder {
     }
 }
 
-fn parse_cert_chain(mut bytes: &[u8]) -> Vec<rustls::Certificate> {
-    rustls_pemfile::certs(&mut bytes)
-        .expect("certs to parse")
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect()
+fn parse_cert_chain(mut bytes: &[u8]) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    rustls_pemfile::certs(&mut bytes).collect::<Result<Vec<_>, _>>().expect("certs to parse")
 }
 
-fn parse_private_key(mut bytes: &[u8]) -> rustls::PrivateKey {
-    let keys = rustls_pemfile::read_all(&mut bytes).expect("private keys to parse");
-    assert_eq!(keys.len(), 1, "expecting a single private key");
-    match keys.into_iter().next().unwrap() {
-        rustls_pemfile::Item::RSAKey(key) => rustls::PrivateKey(key),
-        _ => panic!("expected an RSA private key"),
-    }
+fn parse_private_key(mut bytes: &[u8]) -> rustls::pki_types::PrivateKeyDer<'static> {
+    rustls_pemfile::private_key(&mut bytes)
+        .expect("private keys to parse")
+        .expect("one private key")
 }
 
 /// A [`Repository`] being served over HTTP.
@@ -408,7 +428,15 @@ impl ServedRepository {
         }
 
         let response = if uri_path.to_str() == Some("/auto") {
-            auto_response_creator.create().await
+            let resp = auto_response_creator.create().await;
+            let (parts, body) = resp.into_parts();
+            let body = body.filter_map(|res| async move {
+                match res {
+                    Ok(frame) => frame.into_data().ok().map(Ok),
+                    Err(e) => Some(Err(e)),
+                }
+            });
+            Response::from_parts(parts, Body::wrap_stream(body))
         } else {
             let fs_path = repo.join(uri_path.strip_prefix("/").unwrap_or(uri_path));
             // TODO(https://fxbug.dev/42150717) synchronous IO in an async context.
@@ -512,7 +540,9 @@ impl TryFrom<&http::HeaderValue> for HttpRange {
 }
 
 async fn get(url: impl AsRef<str>) -> Result<Vec<u8>, Error> {
-    let request = Request::get(url.as_ref()).body(Body::empty()).map_err(Error::from)?;
+    let request = Request::get(url.as_ref())
+        .body(http_body_util::Full::<hyper::body::Bytes>::new("".into()))
+        .map_err(Error::from)?;
     let client = fuchsia_hyper::new_client();
     let response = client.request(request).await?;
 
@@ -520,7 +550,7 @@ async fn get(url: impl AsRef<str>) -> Result<Vec<u8>, Error> {
         return Err(format_err!("unexpected status code: {:?}", response.status()));
     }
 
-    let body = hyper::body::to_bytes(response).await?;
+    let body = response.into_body().collect().await?.to_bytes();
 
     Ok(body.to_vec())
 }

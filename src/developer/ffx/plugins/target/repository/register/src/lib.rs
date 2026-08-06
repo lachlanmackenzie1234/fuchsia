@@ -16,7 +16,9 @@ use fho::{
 use fidl_fuchsia_pkg_ext::{
     RepositoryConfig, RepositoryRegistrationAliasConflictMode, RepositoryTarget,
 };
-use hyper::{Body, Method, Request};
+use http_body_util::{BodyExt as _, Full};
+use hyper::body::Bytes;
+use hyper::{Method, Request};
 use pkg::repo::{RepoHostAddr, register_target_with_repo_instance};
 use pkg::{PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances};
 use schemars::JsonSchema;
@@ -250,7 +252,7 @@ async fn fetch_config_file_from_url(url: &Url) -> Result<RepositoryConfig> {
     let req = Request::builder()
         .method(Method::GET)
         .uri(url.as_str())
-        .body(Body::empty())
+        .body(Full::<Bytes>::default())
         .map_err(|e| bug!("error building GET request for {}: {}", url, e))?;
     let res = https_client
         .request(req)
@@ -259,9 +261,12 @@ async fn fetch_config_file_from_url(url: &Url) -> Result<RepositoryConfig> {
     if !res.status().is_success() {
         return_user_error!("http(s) request failed for {}: status {}", url, res.status());
     }
-    let bytes = hyper::body::to_bytes(res.into_body()).await.map_err(|e| {
-        user_error!("error getting body from response after fetching {}: {}", url, e)
-    })?;
+    let bytes = res
+        .into_body()
+        .collect()
+        .await
+        .map_err(|e| user_error!("error getting body from response after fetching {}: {}", url, e))?
+        .to_bytes();
     serde_json::from_slice(&bytes)
         .map_err(|e| user_error!("error parsing config file from {}: {}", url, e))
 }

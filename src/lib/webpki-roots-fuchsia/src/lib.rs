@@ -46,15 +46,21 @@ static CERT_DERS: LazyLock<Vec<Vec<u8>>> = LazyLock::new(|| {
     }
     cert_ders
 });
-pub static TLS_SERVER_ROOTS: LazyLock<Vec<webpki::TrustAnchor<'static>>> = LazyLock::new(|| {
+static CERT_PKI_DERS: LazyLock<Vec<webpki::types::CertificateDer<'static>>> = LazyLock::new(|| {
     CERT_DERS
         .iter()
-        .map(|cert_bytes| {
-            webpki::TrustAnchor::try_from_cert_der(cert_bytes)
-                .expect("Parsing root certificate failed")
-        })
+        .map(|cert_bytes| webpki::types::CertificateDer::from(cert_bytes.as_slice()))
         .collect()
 });
+pub static TLS_SERVER_ROOTS: LazyLock<Vec<webpki::types::TrustAnchor<'static>>> =
+    LazyLock::new(|| {
+        CERT_PKI_DERS
+            .iter()
+            .map(|cert_der| {
+                webpki::anchor_from_trusted_cert(cert_der).expect("Parsing root certificate failed")
+            })
+            .collect()
+    });
 
 #[cfg(test)]
 mod test {

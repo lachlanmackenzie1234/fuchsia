@@ -11,7 +11,7 @@ use ::gcs::client::{
 };
 
 use async_fs::File;
-use futures::{AsyncWriteExt as _, TryStreamExt as _};
+use futures::{AsyncWriteExt as _, StreamExt as _, TryStreamExt as _};
 use hyper::StatusCode;
 use hyper::header::CONTENT_LENGTH;
 use std::path::{Path, PathBuf};
@@ -115,7 +115,14 @@ where
     let path = local_dir.join(name);
     let mut file = File::create(&path).await?;
 
-    let mut stream = res.into_body();
+    let mut stream = std::pin::pin!(http_body_util::BodyStream::new(res.into_body()).filter_map(
+        |res| async move {
+            match res {
+                Ok(frame) => frame.into_data().ok().map(Ok),
+                Err(e) => Some(Err(e)),
+            }
+        }
+    ));
 
     let mut of = length;
     // Throttle the progress UI updates to avoid burning CPU on changes

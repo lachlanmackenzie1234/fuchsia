@@ -13,7 +13,8 @@ use fuchsia_hyper::{HttpsClient, TcpOptions, new_https_client_from_tcp_options};
 use futures::StreamExt;
 use http::uri::Uri;
 use http::{Request, StatusCode};
-use hyper::Body;
+use http_body_util::Full;
+use hyper::body::Bytes;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::{self, Path, PathBuf};
@@ -820,7 +821,7 @@ pub async fn check_external_links(links: &Vec<LinkReference>) -> Option<Vec<DocC
 
 /// Check that the URL is valid (200 or 301 or 302).
 async fn check_url_link(client: HttpsClient, link: &LinkReference) -> Option<DocCheckError> {
-    let request = match Request::get(&link.link).body(Body::from("")) {
+    let request = match Request::get(&link.link).body(Full::<Bytes>::default()) {
         Ok(request) => request,
         Err(e) => {
             return Some(DocCheckError::new_error(

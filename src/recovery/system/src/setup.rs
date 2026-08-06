@@ -4,13 +4,16 @@
 
 use anyhow::{Context as _, Error};
 use fuchsia_async as fasync;
-use hyper::{Body, Request, Response};
+use http_body_util::{BodyExt, Full};
+use hyper::{Request, Response};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 
 const SERVER_PORT: u16 = 8880;
+
+pub type Body = Full<hyper::body::Bytes>;
 
 pub enum SetupEvent {
     Root,
@@ -31,21 +34,19 @@ struct DevhostRequestInfo {
 }
 
 async fn parse_ota_json(
-    request: Request<Body>,
+    request: Request<hyper::body::Incoming>,
     remote_addr: IpAddr,
 ) -> Result<DevhostConfig, Error> {
-    use bytes::Buf as _;
-
-    let body = hyper::body::aggregate(request.into_body()).await.context("read request")?;
+    let body = request.into_body().collect().await.context("read request")?.to_bytes();
     let DevhostRequestInfo { port } =
-        serde_json::from_reader(body.reader()).context("Failed to parse JSON")?;
+        serde_json::from_slice(&body).context("Failed to parse JSON")?;
 
     let url = format!("http://{}/config.json", SocketAddr::new(remote_addr, port));
     Ok(DevhostConfig { url })
 }
 
 async fn serve<Fut, F>(
-    request: Request<Body>,
+    request: Request<hyper::body::Incoming>,
     remote_addr: SocketAddr,
     handler: F,
 ) -> Response<Body>
@@ -58,24 +59,25 @@ where
     match (request.method(), request.uri().path()) {
         (&Method::GET, "/") => {
             let () = handler(SetupEvent::Root).await;
-            Response::new("Root document".into())
+            Response::new(Full::new("Root document".into()))
         }
         (&Method::POST, "/ota/devhost") => {
             // get devhost info out of POST request.
             match parse_ota_json(request, remote_addr.ip()).await {
                 Err(e) => {
-                    let mut response = Response::new(format!("Bad request: {:?}", e).into());
+                    let mut response =
+                        Response::new(Full::new(format!("Bad request: {:?}", e).into()));
                     *response.status_mut() = StatusCode::BAD_REQUEST;
                     response
                 }
                 Ok(cfg) => {
                     let () = handler(SetupEvent::DevhostOta { cfg }).await;
-                    Response::new("Started OTA".into())
+                    Response::new(Full::new("Started OTA".into()))
                 }
             }
         }
         _ => {
-            let mut response = Response::new("Unknown command".into());
+            let mut response = Response::new(Full::new("Unknown command".into()));
             *response.status_mut() = StatusCode::NOT_FOUND;
             response
         }
@@ -89,29 +91,49 @@ where
     Fut: Send + 'static,
     F: Clone + Send + 'static,
 {
-    use futures::{FutureExt as _, TryStreamExt as _};
-    use hyper::service::{make_service_fn, service_fn};
+    use futures::{FutureExt as _, StreamExt as _};
+    use hyper::service::service_fn;
+    use hyper_util::rt::TokioIo;
 
     println!("recovery: start_server");
 
     let addr = SocketAddr::new(IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), SERVER_PORT);
     let listener = fasync::net::TcpListener::bind(&addr).expect("bind");
-    let listener = listener
-        .accept_stream()
-        .map_ok(|(stream, _): (_, SocketAddr)| fuchsia_hyper::TcpStream { stream });
+    let listener = listener.accept_stream();
 
-    let make_svc = make_service_fn(move |fuchsia_hyper::TcpStream { stream }| {
-        let handler = handler.clone();
-        std::future::ready((|| {
-            let remote_addr = stream.std().peer_addr().context("peer addr")?;
-            Ok::<_, Error>(service_fn(move |request| {
-                let handler = handler.clone();
-                serve(request, remote_addr, handler).map(Ok::<_, Infallible>)
-            }))
-        })())
-    });
+    let builder = hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor);
 
-    hyper::Server::builder(hyper::server::accept::from_stream(listener))
-        .executor(fuchsia_hyper::Executor)
-        .serve(make_svc)
+    async move {
+        let mut listener = listener.fuse();
+        let mut tasks = futures::stream::FuturesUnordered::new();
+        loop {
+            futures::select! {
+                res = listener.next() => {
+                    match res {
+                        Some(Ok((stream, remote_addr))) => {
+                            let handler = handler.clone();
+                            let service = service_fn(move |request| {
+                                let handler = handler.clone();
+                                serve(request, remote_addr, handler).map(Ok::<_, Infallible>)
+                            });
+                            let builder = builder.clone();
+                            let stream = fuchsia_hyper::TcpStream { stream };
+                            tasks.push(fasync::Task::spawn(async move {
+                                if let Err(e) = builder.serve_connection(TokioIo::new(stream), service).await {
+                                    println!("recovery server connection error: {e}");
+                                }
+                            }));
+                        }
+                        Some(Err(e)) => {
+                            println!("recovery accept error: {e}");
+                        }
+                        None => break,
+                    }
+                }
+                _ = tasks.next() => {}
+            }
+        }
+        while let Some(_) = tasks.next().await {}
+        Ok(())
+    }
 }

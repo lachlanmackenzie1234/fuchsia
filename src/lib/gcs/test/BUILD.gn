@@ -18,6 +18,7 @@ if (is_host) {
       "//src/lib/gcs",
       "//src/lib/structured_ui",
       "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:http-body-util",
       "//third_party/rust_crates:hyper",
     ]
   }

@@ -17,7 +17,9 @@ rustc_library("fuchsia-hyper-test-support") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:http-body-util",
     "//third_party/rust_crates:hyper",
+    "//third_party/rust_crates:hyper-util",
     "//third_party/rust_crates:rustls",
     "//third_party/rust_crates:rustls-pemfile",
     "//third_party/rust_crates:tokio",
@@ -31,6 +33,7 @@ rustc_library("fuchsia-hyper-test-support") {
   }
 
   sources = [
+    "src/body.rs",
     "src/fault_injection.rs",
     "src/handler.rs",
     "src/lib.rs",

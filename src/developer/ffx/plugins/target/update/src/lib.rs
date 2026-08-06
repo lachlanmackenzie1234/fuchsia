@@ -1308,7 +1308,11 @@ mod tests {
         let url = url_str.expect("StartUpdate should be called");
         let client = fuchsia_hyper::new_client();
         let res = client
-            .request(hyper::Request::get(&url).body(hyper::Body::empty()).unwrap())
+            .request(
+                hyper::Request::get(&url)
+                    .body(http_body_util::Full::<hyper::body::Bytes>::default())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(res.status(), hyper::StatusCode::OK);

@@ -55,6 +55,7 @@ rust_library(
     crate_features = [
         "algorithm",
         "alloc",
+        "default",
         "der",
         "digest",
         "pem",

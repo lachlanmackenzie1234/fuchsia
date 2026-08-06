@@ -1279,14 +1279,38 @@ alias(
 )
 
 alias(
-    name = "http-0.2.4",
-    actual = "//third_party/rust_crates/vendor/http-0.2.4:http",
+    name = "http-1.4.2",
+    actual = "//third_party/rust_crates/vendor/http-1.4.2:http",
     tags = ["manual"],
 )
 
 alias(
     name = "http",
-    actual = "//third_party/rust_crates/vendor/http-0.2.4:http",
+    actual = "//third_party/rust_crates/vendor/http-1.4.2:http",
+    tags = ["manual"],
+)
+
+alias(
+    name = "http-body-1.1.0",
+    actual = "//third_party/rust_crates/vendor/http-body-1.1.0:http_body",
+    tags = ["manual"],
+)
+
+alias(
+    name = "http-body",
+    actual = "//third_party/rust_crates/vendor/http-body-1.1.0:http_body",
+    tags = ["manual"],
+)
+
+alias(
+    name = "http-body-util-0.1.4",
+    actual = "//third_party/rust_crates/vendor/http-body-util-0.1.4:http_body_util",
+    tags = ["manual"],
+)
+
+alias(
+    name = "http-body-util",
+    actual = "//third_party/rust_crates/vendor/http-body-util-0.1.4:http_body_util",
     tags = ["manual"],
 )
 
@@ -1303,26 +1327,38 @@ alias(
 )
 
 alias(
-    name = "hyper-0.14.19",
-    actual = "//third_party/rust_crates/vendor/hyper-0.14.19:hyper",
+    name = "hyper-1.11.0",
+    actual = "//third_party/rust_crates/vendor/hyper-1.11.0:hyper",
     tags = ["manual"],
 )
 
 alias(
     name = "hyper",
-    actual = "//third_party/rust_crates/vendor/hyper-0.14.19:hyper",
+    actual = "//third_party/rust_crates/vendor/hyper-1.11.0:hyper",
     tags = ["manual"],
 )
 
 alias(
-    name = "hyper-rustls-0.24.2",
-    actual = "//third_party/rust_crates/vendor/hyper-rustls-0.24.2:hyper_rustls",
+    name = "hyper-rustls-0.27.9",
+    actual = "//third_party/rust_crates/vendor/hyper-rustls-0.27.9:hyper_rustls",
     tags = ["manual"],
 )
 
 alias(
     name = "hyper-rustls",
-    actual = "//third_party/rust_crates/vendor/hyper-rustls-0.24.2:hyper_rustls",
+    actual = "//third_party/rust_crates/vendor/hyper-rustls-0.27.9:hyper_rustls",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hyper-util-0.1.20",
+    actual = "//third_party/rust_crates/vendor/hyper-util-0.1.20:hyper_util",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hyper-util",
+    actual = "//third_party/rust_crates/vendor/hyper-util-0.1.20:hyper_util",
     tags = ["manual"],
 )
 
@@ -1567,14 +1603,14 @@ alias(
 )
 
 alias(
-    name = "mock-omaha-server-0.3.8",
-    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.3.8:mock_omaha_server",
+    name = "mock-omaha-server-0.5.0",
+    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.5.0:mock_omaha_server",
     tags = ["manual"],
 )
 
 alias(
     name = "mock-omaha-server",
-    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.3.8:mock_omaha_server",
+    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.5.0:mock_omaha_server",
     tags = ["manual"],
 )
 
@@ -1711,14 +1747,14 @@ alias(
 )
 
 alias(
-    name = "omaha_client-0.3.8",
-    actual = "//third_party/rust_crates/vendor/omaha_client-0.3.8:omaha_client",
+    name = "omaha_client-0.4.1",
+    actual = "//third_party/rust_crates/vendor/omaha_client-0.4.1:omaha_client",
     tags = ["manual"],
 )
 
 alias(
     name = "omaha_client",
-    actual = "//third_party/rust_crates/vendor/omaha_client-0.3.8:omaha_client",
+    actual = "//third_party/rust_crates/vendor/omaha_client-0.4.1:omaha_client",
     tags = ["manual"],
 )
 
@@ -2119,6 +2155,24 @@ alias(
 )
 
 alias(
+    name = "rand-0.8.4",
+    actual = "//third_party/rust_crates/vendor/rand-0.8.4:rand",
+    tags = ["manual"],
+)
+
+alias(
+    name = "rand_0_8-0.8.4",
+    actual = "//third_party/rust_crates/vendor/rand-0.8.4:rand",
+    tags = ["manual"],
+)
+
+alias(
+    name = "rand_0_8",
+    actual = "//third_party/rust_crates/vendor/rand-0.8.4:rand",
+    tags = ["manual"],
+)
+
+alias(
     name = "rand-0.9.4",
     actual = "//third_party/rust_crates/vendor/rand-0.9.4:rand",
     tags = ["manual"],
@@ -2371,14 +2425,14 @@ alias(
 )
 
 alias(
-    name = "rustls-0.21.12",
-    actual = "//third_party/rust_crates/vendor/rustls-0.21.12:rustls",
+    name = "rustls-0.23.42",
+    actual = "//third_party/rust_crates/vendor/rustls-0.23.42:rustls",
     tags = ["manual"],
 )
 
 alias(
     name = "rustls",
-    actual = "//third_party/rust_crates/vendor/rustls-0.21.12:rustls",
+    actual = "//third_party/rust_crates/vendor/rustls-0.23.42:rustls",
     tags = ["manual"],
 )
 
@@ -2395,26 +2449,26 @@ alias(
 )
 
 alias(
-    name = "rustls-pemfile-1.0.4",
-    actual = "//third_party/rust_crates/vendor/rustls-pemfile-1.0.4:rustls_pemfile",
+    name = "rustls-pemfile-2.2.0",
+    actual = "//third_party/rust_crates/vendor/rustls-pemfile-2.2.0:rustls_pemfile",
     tags = ["manual"],
 )
 
 alias(
     name = "rustls-pemfile",
-    actual = "//third_party/rust_crates/vendor/rustls-pemfile-1.0.4:rustls_pemfile",
+    actual = "//third_party/rust_crates/vendor/rustls-pemfile-2.2.0:rustls_pemfile",
     tags = ["manual"],
 )
 
 alias(
-    name = "rustls-webpki-0.101.7",
-    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.101.7:webpki",
+    name = "rustls-webpki-0.102.8",
+    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.102.8:webpki",
     tags = ["manual"],
 )
 
 alias(
     name = "rustls-webpki",
-    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.101.7:webpki",
+    actual = "//third_party/rust_crates/vendor/rustls-webpki-0.102.8:webpki",
     tags = ["manual"],
 )
 
@@ -3056,25 +3110,25 @@ alias(
 
 alias(
     name = "tokio-1.52.3",
-    actual = "//third_party/rust_crates/vendor/tokio-1.52.3:tokio",
+    actual = "//third_party/rust_crates/forks/tokio-1.52.3:tokio",
     tags = ["manual"],
 )
 
 alias(
     name = "tokio",
-    actual = "//third_party/rust_crates/vendor/tokio-1.52.3:tokio",
+    actual = "//third_party/rust_crates/forks/tokio-1.52.3:tokio",
     tags = ["manual"],
 )
 
 alias(
-    name = "tokio-rustls-0.24.1",
-    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.24.1:tokio_rustls",
+    name = "tokio-rustls-0.26.4",
+    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.26.4:tokio_rustls",
     tags = ["manual"],
 )
 
 alias(
     name = "tokio-rustls",
-    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.24.1:tokio_rustls",
+    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.26.4:tokio_rustls",
     tags = ["manual"],
 )
 
@@ -3111,6 +3165,18 @@ alias(
 alias(
     name = "toml_edit",
     actual = "//third_party/rust_crates/vendor/toml_edit-0.24.0-spec-1.1.0:toml_edit",
+    tags = ["manual"],
+)
+
+alias(
+    name = "tower-service-0.3.3",
+    actual = "//third_party/rust_crates/vendor/tower-service-0.3.3:tower_service",
+    tags = ["manual"],
+)
+
+alias(
+    name = "tower-service",
+    actual = "//third_party/rust_crates/vendor/tower-service-0.3.3:tower_service",
     tags = ["manual"],
 )
 
@@ -3171,18 +3237,6 @@ alias(
 alias(
     name = "ttf-parser",
     actual = "//third_party/rust_crates/vendor/ttf-parser-0.25.1:ttf_parser",
-    tags = ["manual"],
-)
-
-alias(
-    name = "tuf-0.3.0-beta14",
-    actual = "//third_party/rust_crates/vendor/tuf-0.3.0-beta14:tuf",
-    tags = ["manual"],
-)
-
-alias(
-    name = "tuf",
-    actual = "//third_party/rust_crates/vendor/tuf-0.3.0-beta14:tuf",
     tags = ["manual"],
 )
 

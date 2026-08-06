@@ -13,8 +13,11 @@ use fuchsia_hyper as fhyper;
 use fuchsia_inspect as finspect;
 use futures::StreamExt;
 use futures::prelude::*;
+use http_body_util::{BodyStream, Full};
 use http_client_config::Config;
 use hyper::header::{AUTHORIZATION, COOKIE, HeaderName, PROXY_AUTHORIZATION, WWW_AUTHENTICATE};
+
+pub type Body = Full<hyper::body::Bytes>;
 use log::{debug, error, info, trace};
 use std::str::FromStr as _;
 
@@ -55,7 +58,7 @@ struct RedirectInfo {
 fn redirect_info(
     old_uri: &hyper::Uri,
     method: &hyper::Method,
-    hyper_response: &hyper::Response<hyper::Body>,
+    hyper_response: &hyper::Response<impl hyper::body::Body>,
 ) -> Option<RedirectInfo> {
     if hyper_response.status().is_redirection() {
         Some(RedirectInfo {
@@ -81,7 +84,7 @@ fn redirect_info(
 async fn to_success_response(
     current_url: &hyper::Uri,
     current_method: &hyper::Method,
-    mut hyper_response: hyper::Response<hyper::Body>,
+    hyper_response: hyper::Response<hyper::body::Incoming>,
     scope: vfs::execution_scope::ExecutionScope,
 ) -> net_http::Response {
     let redirect_info = redirect_info(current_url, current_method, &hyper_response);
@@ -114,9 +117,10 @@ async fn to_success_response(
     };
 
     let _ = scope.spawn(async move {
-        let hyper_body = hyper_response.body_mut();
-        while let Some(chunk) = hyper_body.next().await {
-            if let Ok(chunk) = chunk {
+        let mut hyper_body = BodyStream::new(hyper_response.into_body());
+        while let Some(frame) = hyper_body.next().await {
+            if let Ok(frame) = frame {
+              if let Ok(chunk) = frame.into_data() {
                 let mut offset: usize = 0;
                 while offset < chunk.len() {
                     let pending = match tx.wait_one(
@@ -149,6 +153,7 @@ async fn to_success_response(
                     };
                     offset += written;
                 }
+              }
             }
         }
     });
@@ -156,29 +161,33 @@ async fn to_success_response(
     response
 }
 
-fn to_fidl_error(error: &hyper::Error) -> net_http::Error {
-    #[allow(clippy::if_same_then_else)] // TODO(https://fxbug.dev/42176989)
-    if error.is_parse() {
-        net_http::Error::UnableToParse
-    } else if error.is_user() {
-        //TODO(zmbush): handle this case.
-        net_http::Error::Internal
-    } else if error.is_canceled() {
-        //TODO(zmbush): handle this case.
-        net_http::Error::Internal
-    } else if error.is_closed() {
-        net_http::Error::ChannelClosed
-    } else if error.is_connect() {
-        net_http::Error::Connect
-    } else if error.is_incomplete_message() {
-        //TODO(zmbush): handle this case.
-        net_http::Error::Internal
-    } else if error.is_body_write_aborted() {
-        //TODO(zmbush): handle this case.
-        net_http::Error::Internal
-    } else {
-        net_http::Error::Internal
+fn to_fidl_error(error: &hyper_util::client::legacy::Error) -> net_http::Error {
+    use std::error::Error as _;
+
+    if error.is_connect() {
+        return net_http::Error::Connect;
     }
+
+    let mut source = error.source();
+    while let Some(err) = source {
+        if let Some(hyper_err) = err.downcast_ref::<hyper::Error>() {
+            if hyper_err.is_parse() || hyper_err.is_parse_status() || hyper_err.is_parse_too_large()
+            {
+                return net_http::Error::UnableToParse;
+            }
+
+            if hyper_err.is_closed() || hyper_err.is_canceled() || hyper_err.is_shutdown() {
+                return net_http::Error::ChannelClosed;
+            }
+
+            if hyper_err.is_timeout() {
+                return net_http::Error::DeadlineExceeded;
+            }
+        }
+        source = err.source();
+    }
+
+    net_http::Error::Internal
 }
 
 fn to_error_response(error: net_http::Error) -> net_http::Response {
@@ -254,9 +263,9 @@ impl Loader {
         }
     }
 
-    fn build_request(&self) -> hyper::Request<hyper::Body> {
+    fn build_request(&self) -> hyper::Request<Body> {
         let Self { method, url, headers, body, deadline: _, scope: _ } = self;
-        let mut request = hyper::Request::new(body.clone().into());
+        let mut request = hyper::Request::new(Full::new(body.clone().into()));
         *request.method_mut() = method.clone();
         *request.uri_mut() = url.clone();
         *request.headers_mut() = headers.clone();
@@ -317,7 +326,8 @@ impl Loader {
 
     async fn fetch(
         mut self,
-    ) -> Result<(hyper::Response<hyper::Body>, hyper::Uri, hyper::Method), net_http::Error> {
+    ) -> Result<(hyper::Response<hyper::body::Incoming>, hyper::Uri, hyper::Method), net_http::Error>
+    {
         let deadline = self.deadline;
         if deadline < fasync::MonotonicInstant::now() {
             return Err(net_http::Error::DeadlineExceeded);
@@ -406,7 +416,7 @@ fn strip_sensitive_headers(headers: &mut hyper::HeaderMap) {
 fn handle_redirect(
     old_url: &hyper::Uri,
     method: &hyper::Method,
-    hyper_response: &hyper::Response<hyper::Body>,
+    hyper_response: &hyper::Response<impl hyper::body::Body>,
     headers: &mut hyper::HeaderMap,
 ) -> Option<(hyper::Uri, hyper::Method)> {
     let redirect = redirect_info(old_url, method, hyper_response)?;
@@ -624,7 +634,8 @@ mod tests {
         let old_url = hyper::Uri::from_static("https://example.com/path");
         let method = hyper::Method::GET;
 
-        let mut response = hyper::Response::new(hyper::Body::empty());
+        let mut response =
+            hyper::Response::new(http_body_util::Full::<hyper::body::Bytes>::default());
         *response.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
         assert!(!response.headers_mut().append(LOCATION, HeaderValue::from_static(redirect_url),));
 

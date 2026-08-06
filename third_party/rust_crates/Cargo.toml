@@ -133,12 +133,15 @@ hkdf_0_12 = { package = "hkdf", version = "0.12.4" }
 hmac = "0.13.0"
 hmac-0_12 = { package = "hmac", version = "0.12.1" }
 hound = "3.5.1"
-http = "0.2.4"
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
 humansize = "2.1.3"
 # TODO(https://fxbug.dev/100964): We intentionally did not enable http2, since we're
 # currently not using it on Fuchsia. Please see this ticket if you want to
 # enable it.
-hyper = { version = "0.14.19", default-features = false, features = ["stream", "http1", "client", "server"] }
+hyper = { version = "1", default-features = false, features = ["client", "http1", "server"] }
+hyper-util = { version = "0.1", default-features = false, features = ["client", "http1", "service", "server"] }
 indexmap = { version = "2.14.0", features = ["serde"] }
 iota = "0.2.3"
 itertools = "0.14"
@@ -156,7 +159,6 @@ maybe-owned = "0.3.4"
 md-5 = "0.11.0"
 memchr = "2.8.0"
 memoffset = "0.9.1"
-mock-omaha-server = { version = "0.3.8", default-features = false }
 mockall = "0.14"
 munge = "0.4.4"
 nix = { version = "0.31.3", features = ["feature", "fs", "hostname", "net", "process", "signal", "user"] }
@@ -166,7 +168,7 @@ nom_locate = "5.0.0"
 num = { version = "0.4.3", features = ["rand"] }
 num-derive = "0.4.2"
 num-traits = "0.2.19"
-omaha_client = "0.3.8"
+omaha_client = "0.4.1"
 once_cell = "1.21.3"
 p256 = { version = "0.14.0", features = ["ecdh", "pem", "serde"] }
 p256-0_11 = { package = "p256", version = "0.11.1", features = ["ecdh", "pem", "serde"] }
@@ -190,6 +192,7 @@ proptest-derive = "0.8.0"
 prost = "0.14.4"
 prost-build = "0.14.4"
 rand = { version = "0.9.4", features = ["small_rng"] }
+rand-0_8 = { package = "rand", version = "0.8.4" }
 rand_core = "0.9.5"
 rand_xorshift = "0.4"
 range-alloc = "0.1.5"
@@ -204,9 +207,9 @@ ring = "0.17.14"
 rkyv = { version = "0.8.16", features = ["little_endian", "unaligned", "pointer_width_32"] }
 rsa = { version = "0.9.10", default-features = false }
 rustc-hash = "1.0.1"
-rustls = { version = "0.21.12", features = ["dangerous_configuration"] }
-rustls-pemfile = "1.0.4"
-rustls-webpki = "0.101.6"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+rustls-pemfile = "2"
+rustls-webpki = "0.102"
 rustyline = "18.0.1"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
@@ -247,12 +250,13 @@ termion = "4.0.6"
 test-case = "3.3.1"
 textwrap = { version = "0.16.2", default-features = false }
 thiserror = "2.0.18"
-tokio-rustls = "0.24.1"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 toml = "1.1.2"
 toml_edit = "0.24.0"
+tower-service = "0.3"
 tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes", "log"] }
 tracing-mutex = { version = "0.3.2", features = ["experimental", "lockapi", "parkinglot"] }
-tuf = { version = "=0.3.0-beta14", default-features = false, features = ["hyper"] }
+tuf = { path = "forks/tuf-0.3.0-beta14", default-features = false, features = ["hyper"] }
 typed-builder = "0.23.2"
 unic-char-range = "0.9"
 unic-ucd-block = "0.9"
@@ -287,7 +291,8 @@ der-0_7_10 = { package = "der", version = "0.7.10", features = ["alloc", "derive
 euclid = { version = "0.22.14", features = [ "serde" ] }
 flagset = "0.4.7"
 getopts = "0.2"
-hyper-rustls = { version = "0.24.2", default-features = false }
+hyper-rustls = { version = "0.27.9", default-features = false, features = ["ring", "http1", "tls12"] }
+mock-omaha-server = "0.5.0"
 openat = "0.1.21"
 openssl = { version = "0.10.81", features = ["unstable_boringssl"] }
 pkcs1 = "0.7.5"
@@ -324,12 +329,13 @@ cargo_metadata = "0.23.1"
 crossterm = "0.19"
 fuse3 = { version = "0.9.0", features = ["tokio-runtime", "unprivileged"] }
 home = "0.5.12"
-hyper-rustls = { version = "0.24.2", default-features = false, features = ["rustls-native-certs"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "rustls-native-certs", "ring", "tls12"] }
 indoc = "2.0.7"
 loom = { version = "0.7.2", features = ["checkpoint", "futures"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit mio dependency when it can be
 # pulled in automatically by tokio
 mio = { version = "=1.2.1", features = ["net", "os-ext", "os-poll"] }
+mock-omaha-server = { version = "0.5.0", features = ["tokio"] }
 notify = { version = "8.2.0", default-features = false, features = ["macos_fsevent"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit num_cpus dependency when it can be
 # pulled in automatically by tokio
@@ -413,7 +419,6 @@ portable-atomic-util = { path = "empty/portable-atomic-util" }
 r-efi = { path = "empty/r-efi" }
 r-efi-6 = { package = "r-efi", path = "empty/r-efi-6" }
 rustversion = { path = "empty/rustversion" }
-security-framework-2 = { package = "security-framework", path = "empty/security-framework-2" }
 security-framework-3 = { package = "security-framework", path = "empty/security-framework-3" }
 vcpkg = { path = "empty/vcpkg" }
 wasi-0_11_0_preview1 = { path = "empty/wasi-0.11.0-wasi-snapshot-preview1", package = "wasi" }
@@ -459,6 +464,7 @@ prettytable-rs = { path = "forks/prettytable-rs" }
 # Fork of `rapidhash` has quality benchmarks removed; see forks/rapidhash-1.4.0/README.fuchsia.
 rapidhash = { path = "forks/rapidhash-1.4.0" }
 semver = { path = "forks/semver-1.0.28" }
+tokio = { path = "forks/tokio-1.52.3" }
 tracing-core = { path = "forks/tracing-core" }
 tracing-mutex = { path = "forks/tracing-mutex-0.3.2" }
 trait-make = { path = "forks/trait-make" }
@@ -732,9 +738,6 @@ rustflags = [
   "--cfg=httparse_simd_neon_intrinsics",
 ]
 
-[gn.package.hyper."0.14.19"]
-groups = [ { name = "hyper" }, { name = "hyper-0.14" } ]
-
 [gn.package.indexmap."1.9.2"]
 rustflags = ["--cfg=has_std"]
 
@@ -774,19 +777,19 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 [gn.package.memoffset."0.9.1"]
 rustflags = ["--cfg=tuple_ty", "--cfg=allow_clippy", "--cfg=maybe_uninit", "--cfg=doctests", "--cfg=raw_ref_macros", "--cfg=stable_const", "--cfg=stable_offset_of"]
 
-[gn.package.mock-omaha-server."0.3.8"]
-rustflags = ["--cfg=fasync"]
+[gn.package.mock-omaha-server."0.5.0"]
+tests = true
+rustflags = ["--cfg=export_testing_macro"]
 deps = [
   "//src/lib/fuchsia-async",
   "//src/lib/fuchsia-hyper",
-  "//src/lib/fuchsia-sync",
-  "//third_party/rust_crates:argh"
-]
-
-[gn.package.mock-omaha-server."0.3.8".platform."cfg(not(target_os = \"fuchsia\"))"]
-deps = [
+  "//third_party/rust_crates:argh",
+  "//third_party/rust_crates:hyper-util",
   "//third_party/rust_crates:tokio",
 ]
+
+[gn.package.mock-omaha-server."0.5.0".binary.mock-omaha-server]
+output_name = "mock-omaha-server"
 
 [gn.package.inotify-sys."0.1.8"]
 # Has build script but no config needed.
@@ -954,6 +957,8 @@ rustflags = ["--cfg=span_locations", "--cfg=wrap_proc_macro"]
 [gn.package.rand_chacha."0.3.1"]
 license_files = ["LICENSE-APACHE"]
 
+[gn.package.rand."0.8.4"]
+groups = [ { name = "rand-0.8", visibility = [ ":*" ] } ]
 
 [gn.package.rand_core."0.6.4"]
 license_files = ["LICENSE-APACHE"]
@@ -984,21 +989,21 @@ visibility = [
   "//third_party/rust_crates/compat/icu:*",
   ":ring",
   ":ring-0.17.14",
-  ":rustls-v0_21_12.actual",
-  ":rustls-v0_21_12.rustdoc",
-  ":rustls-v0_21_12.aux.deps.deps",
-  ":rustls-v0_21_12.aux.deps.transdeps",
-  ":rustls-v0_21_12.actual.rust_compilation_deps",
-  ":rustls-webpki-v0_101_7.actual",
-  ":rustls-webpki-v0_101_7.rustdoc",
-  ":rustls-webpki-v0_101_7.aux.deps.deps",
-  ":rustls-webpki-v0_101_7.aux.deps.transdeps",
-  ":rustls-webpki-v0_101_7.actual.rust_compilation_deps",
-  ":sct-v0_7_1.actual",
-  ":sct-v0_7_1.rustdoc",
-  ":sct-v0_7_1.aux.deps.deps",
-  ":sct-v0_7_1.aux.deps.transdeps",
-  ":sct-v0_7_1.actual.rust_compilation_deps",
+  ":rustls-v0_23_42.actual",
+  ":rustls-v0_23_42.rustdoc",
+  ":rustls-v0_23_42.aux.deps.deps",
+  ":rustls-v0_23_42.aux.deps.transdeps",
+  ":rustls-v0_23_42.actual.rust_compilation_deps",
+  ":rustls-webpki-v0_102_8.actual",
+  ":rustls-webpki-v0_102_8.rustdoc",
+  ":rustls-webpki-v0_102_8.aux.deps.deps",
+  ":rustls-webpki-v0_102_8.aux.deps.transdeps",
+  ":rustls-webpki-v0_102_8.actual.rust_compilation_deps",
+  ":rustls-webpki-v0_103_13.actual",
+  ":rustls-webpki-v0_103_13.rustdoc",
+  ":rustls-webpki-v0_103_13.aux.deps.deps",
+  ":rustls-webpki-v0_103_13.aux.deps.transdeps",
+  ":rustls-webpki-v0_103_13.actual.rust_compilation_deps",
   ":tuf-v0_3_0-beta14.actual",
   ":tuf-v0_3_0-beta14.rustdoc",
   ":tuf-v0_3_0-beta14.aux.deps.deps",
@@ -1119,7 +1124,7 @@ rustflags = [
   "--cfg=bsd",
 ]
 
-[gn.package.rustls."0.21.12"]
+[gn.package.rustls."0.23.42"]
 rustflags = []
 
 [gn.package.rutabaga_gfx."0.1.75"]
@@ -1276,6 +1281,7 @@ reviewed_features = [
   "fs",
   "io-util",
   "libc",
+  "macros",
   "mio",
   "net",
   "num_cpus",
@@ -1286,6 +1292,8 @@ reviewed_features = [
   "socket2",
   "sync",
   "time",
+  "tokio-macros",
+  "windows-sys",
 ]
 
 [gn.package.tokio."1.52.3".platform."cfg(not(target_os = \"fuchsia\"))"]

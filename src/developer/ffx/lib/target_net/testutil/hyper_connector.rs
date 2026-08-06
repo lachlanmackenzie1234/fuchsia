@@ -11,9 +11,10 @@ use ffx_target_net::{SocketProvider, TargetTcpStream};
 use futures::future::BoxFuture;
 use futures::{AsyncRead as _, AsyncWrite as _, FutureExt as _};
 use http::uri::{Scheme, Uri};
-use hyper::client::connect::{Connected, Connection};
-use hyper::service::Service;
+use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::{Connected, Connection};
 use thiserror::Error;
+use tower_service::Service;
 
 /// An [`hyper`] compatible implementation of an HTTP client that can use
 /// target-side sockets to back connections.
@@ -31,8 +32,8 @@ impl TargetHyperConnector {
     }
 
     /// Creates a new [`hyper::Client`] from this connector.
-    pub fn into_client(self) -> hyper::Client<Self> {
-        hyper::Client::builder().executor(fuchsia_hyper::Executor).build(self)
+    pub fn into_client(self) -> Client<Self, http_body_util::Full<hyper::body::Bytes>> {
+        Client::builder(fuchsia_hyper::Executor).build(self)
     }
 }
 
@@ -49,7 +50,7 @@ pub enum TargetHyperConnectorError {
 }
 
 impl Service<Uri> for TargetHyperConnector {
-    type Response = TargetHyperTcpStream;
+    type Response = hyper_util::rt::TokioIo<TargetHyperTcpStream>;
     type Error = TargetHyperConnectorError;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -77,7 +78,9 @@ impl Service<Uri> for TargetHyperConnector {
                 .or_else(|_| host.parse::<Ipv6Addr>().map(Into::into))
                 .map_err(|_| TargetHyperConnectorError::BadHost(host.to_string()))?;
 
-            Ok(TargetHyperTcpStream(socket_provider.connect(SocketAddr::new(host, port)).await?))
+            Ok(hyper_util::rt::TokioIo::new(TargetHyperTcpStream(
+                socket_provider.connect(SocketAddr::new(host, port)).await?,
+            )))
         }
         .boxed()
     }

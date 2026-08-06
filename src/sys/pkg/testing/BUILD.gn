@@ -4,6 +4,13 @@
 
 import("//build/dist/resource.gni")
 
+if (is_host) {
+  group("host_tests") {
+    testonly = true
+    public_deps = [ "mock-omaha-server:host_tests" ]
+  }
+}
+
 if (is_fuchsia) {
   group("hermetic_tests") {
     testonly = true
@@ -14,7 +21,7 @@ if (is_fuchsia) {
       "mock-health-verification:hermetic_tests",
       "mock-installer:hermetic_tests",
       "mock-metrics:hermetic_tests",
-      "mock-omaha-server:hermetic_tests",
+      "mock-omaha-server-fuchsia:hermetic_tests",
       "mock-paver:hermetic_tests",
       "mock-reboot:hermetic_tests",
       "mock-resolver:hermetic_tests",

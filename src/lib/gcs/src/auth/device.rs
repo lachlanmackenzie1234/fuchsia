@@ -7,7 +7,9 @@
 
 use crate::auth::info::{AUTH_SCOPE, CLIENT_ID, CLIENT_SECRET};
 use anyhow::{Context, Result, bail};
-use hyper::{Body, Method, Request};
+use http_body_util::BodyExt;
+use hyper::{Method, Request};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -161,7 +163,7 @@ async fn get_device_code(https_client: &HttpsClient) -> Result<DeviceCodeRespons
     let res = https_client.request(req).await?;
     log::debug!("{:?}", res);
     if !res.status().is_success() {
-        let bytes = hyper::body::to_bytes(res.into_body()).await?;
+        let bytes = res.into_body().collect().await?.to_bytes();
         let error: DeviceCodeError = serde_json::from_slice(&bytes)?;
         log::debug!(
             "Error while getting device code: {:?}, {:?}, {:?}",
@@ -178,7 +180,7 @@ async fn get_device_code(https_client: &HttpsClient) -> Result<DeviceCodeRespons
             ),
         }
     }
-    let bytes = hyper::body::to_bytes(res.into_body()).await?;
+    let bytes = res.into_body().collect().await?.to_bytes();
     let info: DeviceCodeResponse = serde_json::from_slice(&bytes)?;
     Ok(info)
 }
@@ -202,12 +204,12 @@ async fn poll_for_refresh_token(
 
     let res = https_client.request(req).await?;
     if !res.status().is_success() {
-        let bytes = hyper::body::to_bytes(res.into_body()).await?;
+        let bytes = res.into_body().collect().await?.to_bytes();
         let body: DeviceRefreshTokenError = serde_json::from_slice(&bytes)?;
         log::debug!("Polling for device refresh token: {:?}", body);
         return Ok(None);
     }
-    let bytes = hyper::body::to_bytes(res.into_body()).await?;
+    let bytes = res.into_body().collect().await?.to_bytes();
     let info: DeviceRefreshTokenResponse = serde_json::from_slice(&bytes)?;
     Ok(Some(info))
 }

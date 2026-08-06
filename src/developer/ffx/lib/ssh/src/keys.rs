@@ -9,7 +9,9 @@ use ffx_config::api::ConfigError;
 use ffx_config::keys::{AUTHORIZED_KEYS_HTTP_PORT_QUERY, SSH_PRIVATE_KEY, SSH_PUB_KEY};
 use fho::FfxContext;
 use fuchsia_async::Task;
+use http_body_util::{BodyExt, Empty};
 use hyper::body::Buf;
+use hyper_util::rt::TokioIo;
 use ring::rand::{self, SystemRandom};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::Serialize;
@@ -65,18 +67,18 @@ async fn query_device_authorized_keys(
     stream.set_nonblocking(true).bug()?;
     let stream = AsyncTcpStream::from_std(stream).bug()?;
     let (mut request_sender, connection) =
-        hyper::client::conn::handshake(stream).await.map_err(|e| {
+        hyper::client::conn::http1::handshake(TokioIo::new(stream)).await.map_err(|e| {
             fho::user_error!(
                 "{context_string} failed to initiate http handshake with device at {addr}: {e:?}"
             )
         })?;
     let _conn_task = Task::local(connection);
-    let mut response = request_sender
+    let response = request_sender
         .send_request(
             hyper::Request::builder()
                 .header("Host", format!("{addr}"))
                 .method("GET")
-                .body(hyper::Body::from(""))
+                .body(Empty::<hyper::body::Bytes>::new())
                 .bug()?,
         )
         .await
@@ -84,9 +86,12 @@ async fn query_device_authorized_keys(
             fho::user_error!("{context_string} failed to send HTTP request to {addr}: {e:?}")
         })?;
     let status = response.status();
-    let body_bytes = hyper::body::to_bytes(response.body_mut())
+    let body_bytes = response
+        .into_body()
+        .collect()
         .await
-        .user_message("failed to read http body")?;
+        .map_err(|e| fho::user_error!("failed to read http body: {e:?}"))?
+        .to_bytes();
     if status != hyper::StatusCode::OK {
         let body = String::from_utf8_lossy(&body_bytes);
         fho::return_user_error!(

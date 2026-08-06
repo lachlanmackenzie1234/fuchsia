@@ -39,6 +39,7 @@ rustc_library(
         "//third_party/rust_crates/vendor:cfg-if",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:home",
+        "//third_party/rust_crates/vendor:http-body-util",
         "//third_party/rust_crates/vendor:hyper",
         "//third_party/rust_crates/vendor:log",
         "//third_party/rust_crates/vendor:nix",

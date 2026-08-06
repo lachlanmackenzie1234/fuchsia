@@ -10,9 +10,9 @@ use fuchsia_async as fasync;
 use fuchsia_hyper::HttpsClient;
 #[cfg(target_os = "fuchsia")]
 use futures::io::AsyncReadExt as _;
-use futures::stream::{Stream, StreamExt as _, TryStreamExt as _};
+use futures::stream::{Stream, StreamExt as _};
 use futures::task::{Context, Poll};
-use hyper::{Body, Request, StatusCode};
+use hyper::{Request, StatusCode};
 use std::pin::Pin;
 use thiserror::Error;
 
@@ -34,7 +34,7 @@ impl Client {
     ) -> Result<Self, FromHyperClientError> {
         let request = Request::get(url.as_ref())
             .header("accept", "text/event-stream")
-            .body(Body::empty())
+            .body(http_body_util::Full::default())
             .map_err(|e| FromHyperClientError::CreateRequest(e))?;
         let response = https_client
             .request(request)
@@ -44,7 +44,17 @@ impl Client {
             return Err(FromHyperClientError::HttpStatus(response.status()));
         }
         Ok(Self {
-            chunks: response.into_body().map_err(|e| anyhow::anyhow!(e)).boxed(),
+            chunks: http_body_util::BodyStream::new(response.into_body())
+                .filter_map(|frame_res| async move {
+                    match frame_res {
+                        Ok(frame) => match frame.into_data() {
+                            Ok(bytes) => Some(Ok(bytes)),
+                            Err(_) => None,
+                        },
+                        Err(e) => Some(Err(anyhow::anyhow!(e))),
+                    }
+                })
+                .boxed(),
             source: EventSource::new(),
             events: vec![].into_iter(),
         })
@@ -116,7 +126,7 @@ pub enum FromHyperClientError {
     CreateRequest(#[source] hyper::http::Error),
 
     #[error("error making http request")]
-    MakeRequest(#[source] hyper::Error),
+    MakeRequest(#[source] hyper_util::client::legacy::Error),
 
     #[error("http server responded with status other than OK: {0}")]
     HttpStatus(hyper::StatusCode),
@@ -177,37 +187,105 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_async::net::TcpListener;
     use fuchsia_hyper::new_https_client;
-    use futures::future::{Future, TryFutureExt as _};
+    use futures::TryStreamExt as _;
+    use futures::future::Future;
     use hyper::Response;
-    use hyper::server::Server;
-    use hyper::server::accept::from_stream;
-    use hyper::service::{make_service_fn, service_fn};
-    use std::convert::Infallible;
+    use hyper::service::service_fn;
     use std::net::{Ipv4Addr, SocketAddr};
     use test_case::test_case;
+    pub enum Body {
+        Empty(http_body_util::Empty<hyper::body::Bytes>),
+        Full(http_body_util::Full<hyper::body::Bytes>),
+        Stream(
+            http_body_util::StreamBody<
+                std::pin::Pin<
+                    Box<
+                        dyn futures::stream::Stream<
+                                Item = Result<
+                                    hyper::body::Frame<hyper::body::Bytes>,
+                                    Box<dyn std::error::Error + Send + Sync + 'static>,
+                                >,
+                            > + Send,
+                    >,
+                >,
+            >,
+        ),
+    }
 
-    fn spawn_server<F>(handle_req: fn(Request<Body>) -> F) -> String
+    impl Body {
+        pub fn empty() -> Self {
+            Body::Empty(http_body_util::Empty::new())
+        }
+        pub fn wrap_stream<S, O, E>(stream: S) -> Self
+        where
+            S: futures::stream::Stream<Item = Result<O, E>> + Send + 'static,
+            O: Into<hyper::body::Bytes>,
+            E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        {
+            let stream = stream.map(|res| match res {
+                Ok(data) => Ok(hyper::body::Frame::data(data.into())),
+                Err(e) => Err(e.into()),
+            });
+            Body::Stream(http_body_util::StreamBody::new(Box::pin(stream)))
+        }
+    }
+    impl From<Vec<u8>> for Body {
+        fn from(data: Vec<u8>) -> Self {
+            Body::Full(http_body_util::Full::new(data.into()))
+        }
+    }
+    impl hyper::body::Body for Body {
+        type Data = hyper::body::Bytes;
+        type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+        fn poll_frame(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
+            match self.get_mut() {
+                Body::Empty(b) => std::pin::Pin::new(b).poll_frame(cx).map_err(|e| match e {}),
+                Body::Full(b) => std::pin::Pin::new(b).poll_frame(cx).map_err(|e| match e {}),
+                Body::Stream(b) => std::pin::Pin::new(b).poll_frame(cx),
+            }
+        }
+    }
+
+    fn spawn_server<F>(handle_req: fn(Request<hyper::body::Incoming>) -> F) -> String
     where
         F: Future<Output = Result<Response<Body>, hyper::Error>> + Send + 'static,
     {
-        let (connections, url) = {
+        use futures::StreamExt as _;
+        use hyper_util::rt::TokioIo;
+
+        let (listener, url) = {
             let listener =
                 TcpListener::bind(&SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0)).unwrap();
             let local_addr = listener.local_addr().unwrap();
-            (
-                listener
-                    .accept_stream()
-                    .map_ok(|(conn, _addr)| fuchsia_hyper::TcpStream { stream: conn }),
-                format!("http://{}", local_addr),
-            )
+            (listener.accept_stream(), format!("http://{}", local_addr))
         };
-        let server = Server::builder(from_stream(connections))
-            .executor(fuchsia_hyper::Executor)
-            .serve(make_service_fn(move |_socket: &fuchsia_hyper::TcpStream| async move {
-                Ok::<_, Infallible>(service_fn(handle_req))
-            }))
-            .unwrap_or_else(|e| panic!("mock sse server failed: {:?}", e));
-        fasync::Task::spawn(server).detach();
+        let builder = hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor);
+        fasync::Task::spawn(async move {
+            let mut tasks = futures::stream::FuturesUnordered::new();
+            let mut listener = listener.fuse();
+            loop {
+                futures::select! {
+                    res = listener.next() => {
+                        match res {
+                            Some(Ok((stream, _addr))) => {
+                                let stream = fuchsia_hyper::TcpStream { stream };
+                                let service = service_fn(handle_req);
+                                let builder = builder.clone();
+                                tasks.push(fasync::Task::spawn(async move {
+                                    let _ = builder.serve_connection(TokioIo::new(stream), service).await;
+                                }));
+                            }
+                            _ => break,
+                        }
+                    }
+                    _ = tasks.next() => {}
+                }
+            }
+        }).detach();
         url
     }
 
@@ -236,7 +314,9 @@ mod tests {
     #[test_case("loader")]
     #[fasync::run_singlethreaded(test)]
     async fn receive_one_event(byte_source: &str) {
-        async fn handle_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+        async fn handle_req(
+            _req: Request<hyper::body::Incoming>,
+        ) -> Result<Response<Body>, hyper::Error> {
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "text/event-stream")
@@ -256,7 +336,9 @@ mod tests {
     #[test_case("loader")]
     #[fasync::run_singlethreaded(test)]
     async fn client_sends_correct_http_headers(byte_source: &str) {
-        async fn handle_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+        async fn handle_req(
+            req: Request<hyper::body::Incoming>,
+        ) -> Result<Response<Body>, hyper::Error> {
             assert_eq!(req.method(), &hyper::Method::GET);
             assert_eq!(
                 req.headers().get("accept").map(|h| h.as_bytes()),
@@ -292,7 +374,9 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn hyper_error_http_status() {
-        async fn handle_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+        async fn handle_req(
+            _req: Request<hyper::body::Incoming>,
+        ) -> Result<Response<Body>, hyper::Error> {
             Ok(Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty()).unwrap())
         }
         let url = spawn_server(handle_req);
@@ -305,7 +389,9 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn loader_error_http_status() {
-        async fn handle_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+        async fn handle_req(
+            _req: Request<hyper::body::Incoming>,
+        ) -> Result<Response<Body>, hyper::Error> {
             Ok(Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty()).unwrap())
         }
         let url = spawn_server(handle_req);
@@ -334,7 +420,9 @@ mod tests {
         // body chunk stream.
         const BODY_SIZE_LARGE_ENOUGH_TO_TRIGGER_DELAYED_STREAMING: usize = 1_000_000;
 
-        async fn handle_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+        async fn handle_req(
+            _req: Request<hyper::body::Incoming>,
+        ) -> Result<Response<Body>, hyper::Error> {
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(

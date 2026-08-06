@@ -4,13 +4,12 @@
 
 use fuchsia_async as fasync;
 use fuchsia_sync::RwLock;
-use futures::{FutureExt as _, TryStreamExt as _};
-use hyper::service::{make_service_fn, service_fn};
+use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use std::convert::Infallible;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
-use sl4f_lib::server::sl4f::{serve, Sl4f, Sl4fClients};
+use sl4f_lib::server::sl4f::{Sl4f, Sl4fClients, serve};
 use sl4f_lib::server::sl4f_executor::run_fidl_loop;
 
 // Config, flexible for any ip/port combination
@@ -38,20 +37,40 @@ async fn main() {
     // gap, but no longer does. It would be good to refactor this away.
     let (sender, async_receiver) = async_channel::unbounded();
 
-    let make_svc = make_service_fn(move |_: &fuchsia_hyper::TcpStream| {
-        let sender = sender.clone();
-        let sl4f_clients = Arc::clone(&sl4f_clients);
-        futures::future::ok::<_, Infallible>(service_fn(move |request| {
-            serve(request, Arc::clone(&sl4f_clients), sender.clone()).map(Ok::<_, Infallible>)
-        }))
-    });
+    let builder = hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor);
+    let mut tasks = futures::stream::FuturesUnordered::new();
+    let listener = listener.fuse();
+    let fidl_loop = run_fidl_loop(sl4f, async_receiver).fuse();
+    futures::pin_mut!(listener, fidl_loop);
 
-    let server = hyper::Server::builder(hyper::server::accept::from_stream(listener))
-        .executor(fuchsia_hyper::Executor)
-        .serve(make_svc);
-
-    futures::select! {
-        res = server.fuse() => panic!("HTTP server died: {:?}", res),
-        () = run_fidl_loop(sl4f, async_receiver).fuse() => panic!("FIDL handler died")
+    loop {
+        futures::select! {
+            stream_res = listener.next() => {
+                match stream_res {
+                    Some(Ok(stream)) => {
+                        let sender = sender.clone();
+                        let sl4f_clients = Arc::clone(&sl4f_clients);
+                        let builder = builder.clone();
+                        tasks.push(fasync::Task::spawn(async move {
+                            if let Err(e) = builder
+                                .serve_connection(
+                                    hyper_util::rt::TokioIo::new(stream),
+                                    hyper::service::service_fn(move |request| {
+                                        serve(request, Arc::clone(&sl4f_clients), sender.clone()).map(Ok::<_, Infallible>)
+                                    }),
+                                )
+                                .await
+                            {
+                                log::error!("Error serving connection: {:?}", e);
+                            }
+                        }));
+                    }
+                    Some(Err(e)) => log::error!("Error accepting connection: {:?}", e),
+                    None => break,
+                }
+            }
+            _ = tasks.next() => {}
+            () = fidl_loop => panic!("FIDL handler died"),
+        }
     }
 }

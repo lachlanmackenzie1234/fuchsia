@@ -9,7 +9,9 @@ use ffx_config::EnvironmentContext;
 use ffx_target_repository_rule_replace_args::{JsonURI, ReplaceCommand};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, FhoEnvironment, Result, bug, return_user_error, user_error};
-use hyper::{Body, Method, Request};
+use http_body_util::{BodyExt as _, Full};
+use hyper::body::Bytes;
+use hyper::{Method, Request};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -117,7 +119,7 @@ async fn read_literal_rule_from_url(url: &Url) -> Result<RuleConfig> {
     let req = Request::builder()
         .method(Method::GET)
         .uri(url.as_str())
-        .body(Body::empty())
+        .body(Full::<Bytes>::default())
         .map_err(|e| bug!("error building GET request for {}: {}", url, e))?;
     let res = https_client
         .request(req)
@@ -126,9 +128,12 @@ async fn read_literal_rule_from_url(url: &Url) -> Result<RuleConfig> {
     if !res.status().is_success() {
         return_user_error!("http(s) request failed for {}: status {}", url, res.status());
     }
-    let bytes = hyper::body::to_bytes(res.into_body()).await.map_err(|e| {
-        user_error!("error getting body from response after fetching {}: {}", url, e)
-    })?;
+    let bytes = res
+        .into_body()
+        .collect()
+        .await
+        .map_err(|e| user_error!("error getting body from response after fetching {}: {}", url, e))?
+        .to_bytes();
     serde_json::from_slice(&bytes)
         .map_err(|e| user_error!("error parsing config file from {}: {}", url, e))
 }

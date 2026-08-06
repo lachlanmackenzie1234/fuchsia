@@ -21,7 +21,9 @@ pub mod pkce;
 
 use crate::error::GcsError;
 use anyhow::Result;
-use hyper::{Body, Method, Request};
+use http_body_util::BodyExt;
+use hyper::{Method, Request};
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use info::{CLIENT_ID, CLIENT_SECRET, OAUTH_REFRESH_TOKEN_ENDPOINT};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -108,7 +110,7 @@ pub async fn new_access_token(credentials: &GcsCredentials) -> Result<String, Gc
     let res = https_client.request(req).await?;
 
     if res.status().is_success() {
-        let bytes = hyper::body::to_bytes(res.into_body()).await?;
+        let bytes = res.into_body().collect().await?.to_bytes();
         let info: OauthTokenResponse = serde_json::from_slice(&bytes)?;
         Ok(info.access_token)
     } else {

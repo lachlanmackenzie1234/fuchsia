@@ -9,7 +9,7 @@ use fidl_fuchsia_buildinfo::ProviderMarker as BuildInfoMarker;
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
 use fuchsia_component::client;
-use futures::prelude::*;
+use http_body_util::BodyExt;
 use hyper::Uri;
 use isolated_ota::{OmahaConfig, download_and_apply_update};
 use serde_json::{Value, json};
@@ -126,14 +126,7 @@ impl OtaEnvBuilder {
             .get(Uri::from_str(&cfg.url).context("Bad URL")?)
             .await
             .context("Fetching config from devhost")?;
-        let body = response
-            .into_body()
-            .try_fold(Vec::new(), |mut vec, b| async move {
-                vec.extend(b);
-                Ok(vec)
-            })
-            .await
-            .context("into body")?;
+        let body = response.into_body().collect().await.context("into body")?.to_bytes();
         let repo_info: Value = serde_json::from_slice(&body).context("Failed to parse JSON")?;
 
         // Convert into a pkg-resolver friendly format.
@@ -335,10 +328,12 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_pkg_testing::serve::HttpResponder;
     use fuchsia_pkg_testing::{Package, PackageBuilder, RepositoryBuilder, make_epoch_json};
+    use fuchsia_repo::body::Body;
     use fuchsia_runtime::{HandleType, take_startup_handle};
     use fuchsia_sync::Mutex;
+    use futures::FutureExt as _;
     use futures::future::{BoxFuture, ready};
-    use hyper::{Body, Request, Response, StatusCode, header};
+    use hyper::{Request, Response, StatusCode, header};
     use std::collections::{BTreeSet, HashMap};
     use url::Url;
 

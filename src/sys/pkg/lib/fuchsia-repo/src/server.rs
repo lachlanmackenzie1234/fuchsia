@@ -17,10 +17,11 @@ use futures::future::Shared;
 use futures::prelude::*;
 use http::Uri;
 use http_sse::{Event, EventSender, SseResponseCreator};
-use hyper::body::Body;
 use hyper::header::RANGE;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
+
+pub use crate::body::{Body, BodySender};
 use log::{error, info, warn};
 use netext::{TcpListenerStream, TokioAsyncReadExt, TokioAsyncWrapper};
 use serde::{Deserialize, Serialize};
@@ -313,8 +314,9 @@ async fn handle_connection(
             format!("{target_tcp:?}")
         }
     };
-    let conn = hyper::server::conn::Http::new().with_executor(executor.clone()).serve_connection(
-        conn,
+    let builder = hyper_util::server::conn::auto::Builder::new(executor.clone());
+    let conn = builder.serve_connection(
+        hyper_util::rt::TokioIo::new(conn),
         service_fn(|req| {
             // Each request made by a connection is serviced by the
             // service_fn created from this scope, which is why there is
@@ -365,9 +367,9 @@ async fn handle_connection(
 /// [GracefulConnection] will signal to the connection to shut down if we receive a shutdown signal
 /// on the `stop` channel.
 #[pin_project::pin_project]
-struct GracefulConnection<S>
+struct GracefulConnection<'a, S>
 where
-    S: hyper::service::Service<Request<Body>, Response = Response<Body>>,
+    S: hyper::service::Service<Request<hyper::body::Incoming>, Response = Response<Body>>,
     S::Error: std::error::Error + Send + Sync + 'static,
     S::Future: 'static,
 {
@@ -376,18 +378,23 @@ where
 
     /// The hyper connection.
     #[pin]
-    conn: hyper::server::conn::Connection<ConnectionStream, S, TaskExecutor<()>>,
+    conn: hyper_util::server::conn::auto::Connection<
+        'a,
+        hyper_util::rt::TokioIo<ConnectionStream>,
+        S,
+        TaskExecutor<()>,
+    >,
 
     shutting_down: bool,
 }
 
-impl<S> Future for GracefulConnection<S>
+impl<'a, S> Future for GracefulConnection<'a, S>
 where
-    S: hyper::service::Service<Request<Body>, Response = Response<Body>>,
+    S: hyper::service::Service<Request<hyper::body::Incoming>, Response = Response<Body>>,
     S::Error: std::error::Error + Send + Sync + 'static,
     S::Future: 'static,
 {
-    type Output = Result<(), hyper::Error>;
+    type Output = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
@@ -423,7 +430,7 @@ async fn handle_request(
     server_stopped: Shared<futures::channel::oneshot::Receiver<()>>,
     repo_manager: Arc<RepositoryManager>,
     sse_response_creators: Arc<SseResponseCreatorMap>,
-    req: Request<Body>,
+    req: Request<hyper::body::Incoming>,
 ) -> (Response<Body>, Option<ContentRange>) {
     let mut path = req.uri().path();
 
@@ -632,7 +639,7 @@ async fn handle_auto(
 
     // Exit early if we've already created an auto-handler.
     if let Some(response_creator) = response_creator {
-        return response_creator.create().await;
+        return response_creator.create().await.map(Body::from);
     }
 
     // Otherwise, create a timestamp watch stream. We'll do it racily to avoid holding the lock and
@@ -696,7 +703,7 @@ async fn handle_auto(
     };
 
     // Finally, create the response for the client.
-    response_creator.create().await
+    response_creator.create().await.map(Body::from)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -884,6 +891,7 @@ mod tests {
     use fidl_fuchsia_pkg_ext::{MirrorConfigBuilder, RepositoryConfig, RepositoryConfigBuilder};
     use fuchsia_async as fasync;
     use fuchsia_hyper::HttpClient;
+    use http_body_util::BodyExt;
     use http_sse::Client as SseClient;
     use std::fs::remove_file;
     use std::io::Write as _;
@@ -892,8 +900,11 @@ mod tests {
     /// Make a GET request to some `url`.
     ///
     /// This takes a `client`, which allows hyper to do connection pooling.
-    async fn get(client: &HttpClient, url: impl AsRef<str>) -> Result<Response<Body>> {
-        let req = Request::get(url.as_ref()).body(Body::empty())?;
+    async fn get(
+        client: &HttpClient,
+        url: impl AsRef<str>,
+    ) -> Result<Response<hyper::body::Incoming>> {
+        let req = Request::get(url.as_ref()).body(http_body_util::Full::default())?;
         let response = client.request(req).await?;
         Ok(response)
     }
@@ -909,7 +920,7 @@ mod tests {
         let response = get(client, url).await?;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()["Accept-Ranges"], "bytes");
-        Ok(hyper::body::to_bytes(response).await?)
+        Ok(response.into_body().collect().await?.to_bytes())
     }
 
     /// Make a GET request to some `url` for some range of bytes.
@@ -920,7 +931,7 @@ mod tests {
         url: impl AsRef<str>,
         start: Option<u64>,
         end: Option<u64>,
-    ) -> Result<Response<Body>> {
+    ) -> Result<Response<hyper::body::Incoming>> {
         let start_str = match start {
             Some(start) => start.to_string(),
             None => "".to_owned(),
@@ -931,7 +942,7 @@ mod tests {
         };
         let req = Request::get(url.as_ref())
             .header("Range", format!("bytes={start_str}-{end_str}"))
-            .body(Body::empty())?;
+            .body(http_body_util::Full::default())?;
         let response = client.request(req).await?;
         Ok(response)
     }
@@ -961,7 +972,7 @@ mod tests {
             format!("bytes {start_str}-{end_str}/{total_len}")
         );
 
-        Ok(hyper::body::to_bytes(response).await?)
+        Ok(response.into_body().collect().await?.to_bytes())
     }
 
     fn write_file(path: &Utf8Path, body: &[u8]) {
@@ -1039,7 +1050,7 @@ mod tests {
             assert_eq!(result.status(), StatusCode::OK);
             let body = format!("{REPOSITORY_PREFIX}{REPOSITORY_SUFFIX}");
             let body_bytes = body.as_bytes();
-            let result_body_bytes = hyper::body::to_bytes(result.into_body()).await.unwrap();
+            let result_body_bytes = result.into_body().collect().await.unwrap().to_bytes();
             assert_eq!(result_body_bytes, body_bytes);
         })
         .await
@@ -1069,7 +1080,7 @@ mod tests {
         run_test(manager, |server_url| async move {
             let result = get(client, server_url).await.unwrap();
             assert_eq!(result.status(), StatusCode::OK);
-            let result_body_bytes = hyper::body::to_bytes(result.into_body()).await.unwrap();
+            let result_body_bytes = result.into_body().collect().await.unwrap().to_bytes();
 
             let middle = "<li><a href=\"devhost-0\">devhost-0</a></li><li><a href=\"devhost-1\">devhost-1</a></li>".to_string();
             let body_str = format!("{REPOSITORY_PREFIX}{middle}{REPOSITORY_SUFFIX}");
@@ -1100,7 +1111,7 @@ mod tests {
             let url =  format!("{server_url}/{devhost}");
             let result = get(client, url).await.unwrap();
             assert_eq!(result.status(), StatusCode::OK);
-            let result_body_bytes = hyper::body::to_bytes(result.into_body()).await.unwrap();
+            let result_body_bytes = result.into_body().collect().await.unwrap().to_bytes();
 
             let middle = "<tr>\n            \
             <td><a href=\"fuchsia-pkg://fuchsia-pkg://devhost-0/package1/0\">package1/0</a></td>\n            \
@@ -1140,7 +1151,7 @@ mod tests {
                 let url = format!("{server_url}/{devhost}");
                 let result = get(client, url).await.unwrap();
                 assert_eq!(result.status(), StatusCode::OK);
-                let result_body_bytes = hyper::body::to_bytes(result.into_body()).await.unwrap();
+                let result_body_bytes = result.into_body().collect().await.unwrap().to_bytes();
 
                 let body_str = format!("{PACKAGE_PREFIX}{PACKAGE_SUFFIX}");
                 let body_bytes = body_str.as_bytes();

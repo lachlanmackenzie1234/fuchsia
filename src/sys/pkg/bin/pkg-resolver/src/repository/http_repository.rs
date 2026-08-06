@@ -96,20 +96,21 @@ where
                 fnet_http::Response { status_code: Some(404), .. } => {
                     return Err(tuf::Error::MetadataNotFound { path: meta_path, version });
                 }
-                fnet_http::Response { error, status_code, status_line, .. } => {
-                    if let Some(status_code) = status_code
-                        && let Ok(status_code) = u16::try_from(status_code)
-                        && let Ok(status_code) = http::StatusCode::from_u16(status_code)
+                fnet_http::Response { status_code: Some(code), .. } => {
+                    if let Ok(code) = u16::try_from(code)
+                        .map_err(|_| ())
+                        .and_then(|c| http::StatusCode::from_u16(c).map_err(|_| ()))
                     {
-                        return Err(tuf::Error::BadHttpStatus {
-                            uri: uri.to_string(),
-                            code: status_code,
-                        });
-                    } else {
-                        return Err(tuf::Error::Opaque(format!(
-                            "HTTP Get failed {error:?} {status_code:?} {status_line:?} {uri}"
-                        )));
+                        return Err(tuf::Error::BadHttpStatus { uri: uri.to_string(), code });
                     }
+                    return Err(tuf::Error::Opaque(format!(
+                        "HTTP Get failed invalid status_code {code} {uri}"
+                    )));
+                }
+                fnet_http::Response { error, status_code: None, status_line, .. } => {
+                    return Err(tuf::Error::Opaque(format!(
+                        "HTTP Get failed no status_code {error:?} {status_line:?} {uri}"
+                    )));
                 }
             };
             Ok(Box::new(fasync::Socket::from_socket(socket))

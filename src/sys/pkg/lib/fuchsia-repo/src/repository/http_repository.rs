@@ -13,10 +13,11 @@ use crate::resource::Resource;
 use anyhow::{Context as _, Result, anyhow};
 use futures::future::BoxFuture;
 use futures::{AsyncRead, FutureExt as _, TryStreamExt as _};
-use hyper::client::Client;
-use hyper::client::connect::Connect;
 use hyper::header::{CONTENT_LENGTH, CONTENT_RANGE, RANGE};
-use hyper::{Body, Method, Request, StatusCode, Uri};
+use hyper::{Method, Request, StatusCode, Uri};
+use hyper_util::client::legacy::Client;
+use hyper_util::client::legacy::connect::Connect;
+type Body = http_body_util::Full<hyper::body::Bytes>;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::time::SystemTime;
@@ -92,7 +93,7 @@ where
                 builder = builder.header(RANGE, http_range);
             }
 
-            let request = builder.body(Body::empty()).context("creating http request")?;
+            let request = builder.body(Body::default()).context("creating http request")?;
 
             let resp = self
                 .client
@@ -153,9 +154,11 @@ where
                 }
             };
 
-            let body = resp.into_body();
+            let body = http_body_util::BodyStream::new(resp.into_body())
+                .map_ok(|frame| frame.into_data().unwrap_or_default())
+                .map_err(std::io::Error::other);
 
-            Ok(Resource { content_range, stream: Box::pin(body.map_err(std::io::Error::other)) })
+            Ok(Resource { content_range, stream: Box::pin(body) })
         }
         .boxed()
     }

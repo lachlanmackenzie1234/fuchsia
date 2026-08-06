@@ -121,6 +121,7 @@ rustc_test("resolve_fails") {
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
     "//src/lib/fuchsia",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
+    "//src/sys/pkg/lib/fuchsia-repo",
     "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
     "//third_party/rust_crates:hyper",
   ]
@@ -171,6 +172,7 @@ rustc_test("resolve_resumes_blob_gets") {
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
     "//src/lib/fuchsia",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
+    "//src/sys/pkg/lib/fuchsia-repo",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:http",
     "//third_party/rust_crates:hyper",

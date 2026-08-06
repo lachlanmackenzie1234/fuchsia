@@ -9,8 +9,10 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
+use http_body_util::{BodyExt as _, Full};
 use hyper::service::service_fn;
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
+pub type Body = Full<hyper::body::Bytes>;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
@@ -461,10 +463,11 @@ async fn start_server(
         let cache_for_handler = target_status_cache.clone();
         let log_context_for_handler = log_context.clone();
 
+        let builder = hyper_util::server::conn::auto::Builder::new(fuchsia_hyper::Executor);
         tokio::task::spawn(async move {
-            if let Err(err) = hyper::server::conn::Http::new()
+            if let Err(err) = builder
                 .serve_connection(
-                    stream,
+                    hyper_util::rt::TokioIo::new(stream),
                     service_fn(move |req| {
                         handle_request(
                             req,
@@ -504,16 +507,20 @@ async fn flush_logs(ctx: &Arc<LogContext>) -> anyhow::Result<()> {
     }
 }
 
-async fn handle_request(
-    req: Request<Body>,
+async fn handle_request<B>(
+    req: Request<B>,
     cache: Cache,
     log_context: Option<Arc<LogContext>>,
-) -> std::result::Result<Response<Body>, Infallible> {
-    let mut response = Response::new("".into());
+) -> std::result::Result<Response<Body>, Infallible>
+where
+    B: hyper::body::Body,
+    B::Error: std::fmt::Debug + std::fmt::Display,
+{
+    let mut response = Response::new(Full::new("".into()));
     match req.uri().path() {
         "/intentional_disconnect" => {
             if req.method() == hyper::Method::POST {
-                let body = hyper::body::to_bytes(req.into_body()).await;
+                let body = req.into_body().collect().await.map(|b| b.to_bytes());
                 match body {
                     Ok(bytes) => {
                         if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
@@ -628,7 +635,7 @@ impl FfxMain for MonitorTool {
                 let req = Request::builder()
                     .method(hyper::Method::POST)
                     .uri(uri)
-                    .body(Body::empty())
+                    .body(Full::new(hyper::body::Bytes::new()))
                     .unwrap();
 
                 if let Err(e) = client.request(req).await {
@@ -661,9 +668,12 @@ impl FfxMain for MonitorTool {
                     .await
                     .context("sending request")?;
 
-                let body = hyper::body::to_bytes(response.into_body())
+                let body = response
+                    .into_body()
+                    .collect()
                     .await
-                    .context("reading response body")?;
+                    .context("reading response body")?
+                    .to_bytes();
                 let json: serde_json::Value =
                     serde_json::from_slice(&body).context("parsing json")?;
 
@@ -1013,7 +1023,7 @@ mod tests {
             cache_lock.insert("targets".to_string(), serde_json::json!([]));
             drop(cache_lock);
 
-            let req = Request::builder().uri("/status").body(Body::empty()).unwrap();
+            let req = Request::builder().uri("/status").body(Body::default()).unwrap();
             let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(
@@ -1068,7 +1078,7 @@ mod tests {
             let req = Request::builder()
                 .method(hyper::Method::GET)
                 .uri("/intentional_disconnect")
-                .body(Body::empty())
+                .body(Body::default())
                 .unwrap();
             let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
             assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
@@ -1079,7 +1089,7 @@ mod tests {
             let req = Request::builder()
                 .method(hyper::Method::POST)
                 .uri("/stop")
-                .body(Body::empty())
+                .body(Body::default())
                 .unwrap();
             let log_context_clone = log_context.clone();
             let cache_clone = cache.clone();
@@ -1100,29 +1110,39 @@ mod tests {
 
         // Test /intentional_disconnect - Failed to read body
         {
-            let (sender, body) = Body::channel();
-            sender.abort();
+            struct ErrorBody;
+            impl hyper::body::Body for ErrorBody {
+                type Data = hyper::body::Bytes;
+                type Error = std::io::Error;
+                fn poll_frame(
+                    self: std::pin::Pin<&mut Self>,
+                    _cx: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>>
+                {
+                    std::task::Poll::Ready(Some(Err(std::io::Error::other("Failed to read body"))))
+                }
+            }
             let req = Request::builder()
                 .method(hyper::Method::POST)
                 .uri("/intentional_disconnect")
-                .body(body)
+                .body(ErrorBody)
                 .unwrap();
             let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
             assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
-            let body_bytes = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+            let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
             assert!(std::str::from_utf8(&body_bytes).unwrap().contains("Failed to read body"));
         }
 
         // Test Not Found
         {
-            let req = Request::builder().uri("/unknown").body(Body::empty()).unwrap();
+            let req = Request::builder().uri("/unknown").body(Body::default()).unwrap();
             let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
             assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         }
 
         // Test with log_context = None
         {
-            let req = Request::builder().uri("/status").body(Body::empty()).unwrap();
+            let req = Request::builder().uri("/status").body(Body::default()).unwrap();
             let resp = handle_request(req, cache.clone(), None).await.unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
 
@@ -1138,7 +1158,7 @@ mod tests {
             let req = Request::builder()
                 .method(hyper::Method::POST)
                 .uri("/stop")
-                .body(Body::empty())
+                .body(Body::default())
                 .unwrap();
             let resp = handle_request(req, cache.clone(), None).await.unwrap();
             assert_eq!(resp.status(), StatusCode::OK);

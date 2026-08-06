@@ -238,33 +238,48 @@ mod tests {
     // Takes an async fn that maps requests to responses and returns an http server and the address
     // the server is listening on.
     fn create_http_server<F>(
-        handler: impl FnMut(hyper::Request<hyper::Body>) -> F + Send + Clone + 'static,
-    ) -> (std::net::SocketAddr, fasync::Task<Result<(), hyper::Error>>)
+        handler: impl FnMut(hyper::Request<hyper::body::Incoming>) -> F + Send + Clone + 'static,
+    ) -> (std::net::SocketAddr, fasync::Task<()>)
     where
         F: std::future::Future<
                 Output = std::result::Result<
-                    hyper::Response<hyper::Body>,
+                    hyper::Response<http_body_util::Full<hyper::body::Bytes>>,
                     std::convert::Infallible,
                 >,
-            >,
-        F: Send + 'static,
+            > + Send
+            + 'static,
     {
         let addr =
             std::net::SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 0);
         let listener = fasync::net::TcpListener::bind(&addr).expect("bind");
         let server_addr = listener.local_addr().expect("local address");
-        let listener = listener
-            .accept_stream()
-            .map_ok(|(stream, _): (_, std::net::SocketAddr)| fuchsia_hyper::TcpStream { stream });
-        let make_svc = hyper::service::make_service_fn(move |_: &fhyper::TcpStream| {
-            std::future::ready(Ok::<_, std::convert::Infallible>(hyper::service::service_fn(
-                handler.clone(),
-            )))
+        let handler = std::sync::Arc::new(std::sync::Mutex::new(handler));
+        let server = fasync::Task::spawn(async move {
+            let mut listener = listener;
+            loop {
+                match listener.accept().await {
+                    Ok((next_listener, conn, _)) => {
+                        listener = next_listener;
+                        let io =
+                            hyper_util::rt::TokioIo::new(fuchsia_hyper::TcpStream { stream: conn });
+                        let handler = handler.clone();
+                        let service = hyper::service::service_fn(move |req| {
+                            let mut h = handler.lock().unwrap();
+                            (h)(req)
+                        });
+                        fasync::Task::spawn(async move {
+                            let _ = hyper_util::server::conn::auto::Builder::new(
+                                fuchsia_hyper::Executor,
+                            )
+                            .serve_connection(io, service)
+                            .await;
+                        })
+                        .detach();
+                    }
+                    Err(_) => break,
+                }
+            }
         });
-        let server = hyper::Server::builder(hyper::server::accept::from_stream(listener))
-            .executor(fhyper::Executor)
-            .serve(make_svc);
-        let server = fasync::Task::spawn(server);
         (server_addr, server)
     }
 
@@ -302,14 +317,14 @@ mod tests {
         let content_clone = content.clone();
         let request_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
         // Expects exactly one request, responds with `content`.
-        let handler = move |req: hyper::Request<hyper::Body>| {
+        let handler = move |req: hyper::Request<hyper::body::Incoming>| {
             assert_eq!(req.method(), http::Method::GET);
             assert_eq!(req.uri().path(), "/the-file.txt");
             assert_eq!(request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst), 0);
             let resp = hyper::Response::builder()
                 .status(http::StatusCode::OK)
                 .header(http::header::CONTENT_LENGTH, content.len())
-                .body(hyper::Body::from(content.clone()))
+                .body(http_body_util::Full::new(content.clone().into()))
                 .unwrap();
             std::future::ready(Ok::<_, std::convert::Infallible>(resp))
         };

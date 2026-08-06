@@ -14,7 +14,7 @@ use fidl_fuchsia_metrics::{
 };
 use fuchsia_component::client::connect_to_protocol;
 use futures::{FutureExt as _, future};
-use hyper::StatusCode;
+use http::StatusCode;
 
 pub fn tuf_error_as_update_tuf_client_event_code(
     e: &error::TufOrTimeout,

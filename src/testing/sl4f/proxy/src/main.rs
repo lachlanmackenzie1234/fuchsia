@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_testing_proxy::{
-    TcpProxyControlRequest, TcpProxyControlRequestStream, TcpProxy_Marker, TcpProxy_RequestStream,
+    TcpProxy_Marker, TcpProxy_RequestStream, TcpProxyControlRequest, TcpProxyControlRequestStream,
 };
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::channel::mpsc;
-use futures::future::{select, FutureExt, TryFutureExt};
+use futures::future::{FutureExt, TryFutureExt, select};
 use futures::io::AsyncReadExt;
 use futures::lock::Mutex;
 use futures::stream::{StreamExt, TryStreamExt};
@@ -210,9 +210,8 @@ mod test {
     use fidl_fuchsia_testing_proxy::{TcpProxyControlMarker, TcpProxyControlProxy};
     use fuchsia_async::DurationExt;
 
-    use hyper::server::accept::from_stream;
-    use hyper::server::Server;
-    use hyper::{Body, Response, Uri};
+    use http_body_util::BodyExt as _;
+    use hyper::{Response, Uri};
     use std::convert::Infallible;
     use std::net::SocketAddr;
 
@@ -235,21 +234,37 @@ mod test {
     fn launch_test_server(addr: SocketAddr) -> u16 {
         let tcp_listener = fasync::net::TcpListener::bind(&addr).unwrap();
         let port = tcp_listener.local_addr().unwrap().port();
-        let connections = tcp_listener
-            .accept_stream()
-            .map_ok(|(conn, _addr)| fuchsia_hyper::TcpStream { stream: conn });
 
-        let make_svc = hyper::service::make_service_fn(move |_socket| async {
-            Ok::<_, Infallible>(hyper::service::service_fn(move |_req| async {
-                info!("HTTP server got request!");
-                Ok::<_, Infallible>(Response::new(Body::from(TEST_RESPONSE)))
-            }))
-        });
-        let server = Server::builder(from_stream(connections))
-            .executor(fuchsia_hyper::Executor)
-            .serve(make_svc)
-            .unwrap_or_else(|e| panic!("HTTP server failed! {:?}", e));
-        fasync::Task::spawn(server).detach();
+        fasync::Task::spawn(async move {
+            let mut listener = tcp_listener;
+            loop {
+                match listener.accept().await {
+                    Ok((next_listener, conn, _)) => {
+                        listener = next_listener;
+                        let io =
+                            hyper_util::rt::TokioIo::new(fuchsia_hyper::TcpStream { stream: conn });
+                        let service = hyper::service::service_fn(
+                            move |_req: hyper::Request<hyper::body::Incoming>| async {
+                                info!("HTTP server got request!");
+                                Ok::<_, Infallible>(Response::new(http_body_util::Full::new(
+                                    hyper::body::Bytes::from(TEST_RESPONSE),
+                                )))
+                            },
+                        );
+                        fasync::Task::spawn(async move {
+                            let _ = hyper_util::server::conn::auto::Builder::new(
+                                fuchsia_hyper::Executor,
+                            )
+                            .serve_connection(io, service)
+                            .await;
+                        })
+                        .detach();
+                    }
+                    Err(_) => break,
+                }
+            }
+        })
+        .detach();
 
         port
     }
@@ -275,15 +290,8 @@ mod test {
             .unwrap();
         let response = http_client.get(request_uri).await.unwrap();
         assert_eq!(response.status(), hyper::StatusCode::OK);
-        let resp_body = response
-            .into_body()
-            .try_fold(Vec::new(), |mut vec, b| async move {
-                vec.extend(b);
-                Ok(vec)
-            })
-            .await
-            .unwrap();
-        assert_eq!(String::from_utf8(resp_body).unwrap().as_str(), TEST_RESPONSE);
+        let resp_body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(String::from_utf8(resp_body.to_vec()).unwrap().as_str(), TEST_RESPONSE);
     }
 
     /// Asserts that an HTTP request to [::1]:port fails.

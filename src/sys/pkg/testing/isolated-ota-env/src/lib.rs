@@ -17,17 +17,17 @@ use fuchsia_component_test::LocalComponentHandles;
 use fuchsia_merkle::Hash;
 use fuchsia_pkg_testing::serve::ServedRepository;
 use fuchsia_pkg_testing::{Package, RepositoryBuilder};
-use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use isolated_ota::{OmahaConfig, UpdateUrlSource};
 use mock_omaha_server::{
     OmahaResponse, OmahaServer, OmahaServerBuilder, ResponseAndMetadata, ResponseMap,
 };
+use mock_omaha_server_fuchsia::OmahaServerExt as _;
 use mock_paver::{MockPaverService, MockPaverServiceBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 pub const GLOBAL_SSL_CERTS_PATH: &str = "/config/ssl";
