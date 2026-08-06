@@ -58,17 +58,20 @@ pub fn ref_counted(_attr: TokenStream, item: TokenStream) -> TokenStream {
         panic!("ref_counted attribute only supports structs with named fields");
     }
 
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
     let expanded = quote! {
         #input
 
-        impl ::fbl::HasRefCount for #name {
+        impl #impl_generics ::fbl::HasRefCount for #name #ty_generics #where_clause {
             fn ref_count(&self) -> &::fbl::RefCounted {
+                // Compile-time validation that ref_count is at offset 0
+                const {
+                    assert!(core::mem::offset_of!(Self, ref_count) == 0);
+                }
                 &self.ref_count
             }
         }
-
-        // Compile-time validation that ref_count is at offset 0
-        ::fbl::__static_assert!(core::mem::offset_of!(#name, ref_count) == 0);
     };
 
     TokenStream::from(expanded)
