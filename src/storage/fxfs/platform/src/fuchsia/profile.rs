@@ -33,6 +33,7 @@ use std::mem::size_of;
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use storage_device::buffer::{BufferFuture, BufferRef};
 use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 use vfs::execution_scope::ActiveGuard;
 
@@ -46,22 +47,17 @@ const IO_SIZE: usize = 1 << 17; // 128KiB. Needs to be a power of 2 and >= block
 pub static RECORDED: AtomicU64 = AtomicU64::new(0);
 
 /// A handle for recording a profile to.
+#[async_trait]
 pub trait RecordingHandle: Send + Sync {
     /// Append data to the handle.
-    fn append<'a>(
-        &'a self,
-        buf: storage_device::buffer::BufferRef<'a>,
-    ) -> futures::future::BoxFuture<'a, Result<u64, Error>>;
+    async fn append<'a>(&'a self, buf: BufferRef<'a>) -> Result<u64, Error>;
 
-    fn allocate_buffer(
-        &self,
-        size: usize,
-    ) -> futures::future::BoxFuture<'_, storage_device::buffer::Buffer<'_>>;
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_>;
 
     fn block_size(&self) -> usize;
 
     /// The recording is finished being appended to the file. Commit it.
-    fn commit(self: Box<Self>) -> futures::future::BoxFuture<'static, Result<(), Error>>;
+    async fn commit(self: Box<Self>) -> Result<(), Error>;
 
     /// When the recording fails or is stopped prematurely this will be called to clean up the
     /// resources, delete the backing data.
@@ -134,36 +130,28 @@ impl FileRecordingHandle {
     }
 }
 
+#[async_trait]
 impl RecordingHandle for FileRecordingHandle {
-    fn append<'a>(
-        &'a self,
-        buf: storage_device::buffer::BufferRef<'a>,
-    ) -> futures::future::BoxFuture<'a, Result<u64, Error>> {
-        async move { self.handle.write_or_append(None, buf).await.map_err(Into::into) }.boxed()
+    async fn append<'a>(&'a self, buf: BufferRef<'a>) -> Result<u64, Error> {
+        self.handle.write_or_append(None, buf).await.map_err(Into::into)
     }
 
-    fn allocate_buffer(
-        &self,
-        size: usize,
-    ) -> futures::future::BoxFuture<'_, storage_device::buffer::Buffer<'_>> {
-        self.handle.allocate_buffer(size).boxed()
+    fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
+        self.handle.allocate_buffer(size)
     }
 
     fn block_size(&self) -> usize {
         self.handle.block_size() as usize
     }
 
-    fn commit(self: Box<Self>) -> futures::future::BoxFuture<'static, Result<(), Error>> {
-        async move {
-            let store = self.volume.store();
-            self.commit_impl().await.inspect_err(|_| {
-                store
-                    .filesystem()
-                    .graveyard()
-                    .queue_tombstone_object(store.store_object_id(), self.handle.object_id());
-            })
-        }
-        .boxed()
+    async fn commit(self: Box<Self>) -> Result<(), Error> {
+        let store = self.volume.store();
+        self.commit_impl().await.inspect_err(|_| {
+            store
+                .filesystem()
+                .graveyard()
+                .queue_tombstone_object(store.store_object_id(), self.handle.object_id());
+        })
     }
 
     fn abort_cleanup(self: Box<Self>) {
