@@ -172,124 +172,67 @@ impl<'a> OpenRequest<'a> {
 
     /// Opens a directory.
     pub fn open_dir(self, dir: Arc<impl Directory>) -> Result<(), Status> {
-        match self {
+        let OpenRequest { scope, request_flags, path, object_request } = self;
+        match request_flags {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
                 not(fuchsia_api_level_at_least = "32")
             ))]
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open1(flags),
-                path,
-                object_request,
-            } => {
+            RequestFlags::Open1(flags) => {
                 dir.deprecated_open(scope, flags, path, object_request.take().into_server_end());
                 // This will cause issues for heavily nested directory structures because it thwarts
                 // tail recursion optimization, but that shouldn't occur in practice.
                 Ok(())
             }
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open3(flags),
-                path,
-                object_request,
-            } => dir.open(scope, path, flags, object_request),
+            RequestFlags::Open3(flags) => dir.open(scope, path, flags, object_request),
         }
     }
 
     /// Opens a file.
     pub fn open_file(self, file: Arc<impl FileLike>) -> Result<(), Status> {
-        match self {
+        let OpenRequest { scope, request_flags, path, object_request } = self;
+        if !path.is_empty() {
+            return Err(Status::NOT_DIR);
+        }
+        match request_flags {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
                 not(fuchsia_api_level_at_least = "32")
             ))]
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open1(flags),
-                path,
-                object_request,
-            } => {
-                if !path.is_empty() {
-                    return Err(Status::NOT_DIR);
-                }
-                file::serve(file, scope, &flags, object_request)
-            }
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open3(flags),
-                path,
-                object_request,
-            } => {
-                if !path.is_empty() {
-                    return Err(Status::NOT_DIR);
-                }
-                file::serve(file, scope, &flags, object_request)
-            }
+            RequestFlags::Open1(flags) => file::serve(file, scope, &flags, object_request),
+            RequestFlags::Open3(flags) => file::serve(file, scope, &flags, object_request),
         }
     }
 
     /// Opens a symlink.
-    pub fn open_symlink(self, service: Arc<impl Symlink>) -> Result<(), Status> {
-        match self {
+    pub fn open_symlink(self, symlink: Arc<impl Symlink>) -> Result<(), Status> {
+        let OpenRequest { scope, request_flags, path, object_request } = self;
+        if !path.is_empty() {
+            return Err(Status::NOT_DIR);
+        }
+        match request_flags {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
                 not(fuchsia_api_level_at_least = "32")
             ))]
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open1(flags),
-                path,
-                object_request,
-            } => {
-                if !path.is_empty() {
-                    return Err(Status::NOT_DIR);
-                }
-                symlink::serve(service, scope, flags, object_request)
-            }
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open3(flags),
-                path,
-                object_request,
-            } => {
-                if !path.is_empty() {
-                    return Err(Status::NOT_DIR);
-                }
-                symlink::serve(service, scope, flags, object_request)
-            }
+            RequestFlags::Open1(flags) => symlink::serve(symlink, scope, flags, object_request),
+            RequestFlags::Open3(flags) => symlink::serve(symlink, scope, flags, object_request),
         }
     }
 
     /// Opens a service.
     pub fn open_service(self, service: Arc<impl ServiceLike>) -> Result<(), Status> {
-        match self {
+        let OpenRequest { scope, request_flags, path, object_request } = self;
+        if !path.is_empty() {
+            return Err(Status::NOT_DIR);
+        }
+        match request_flags {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
                 not(fuchsia_api_level_at_least = "32")
             ))]
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open1(flags),
-                path,
-                object_request,
-            } => {
-                if !path.is_empty() {
-                    return Err(Status::NOT_DIR);
-                }
-                service::serve(service, scope, &flags, object_request)
-            }
-            OpenRequest {
-                scope,
-                request_flags: RequestFlags::Open3(flags),
-                path,
-                object_request,
-            } => {
-                if !path.is_empty() {
-                    return Err(Status::NOT_DIR);
-                }
-                service::serve(service, scope, &flags, object_request)
-            }
+            RequestFlags::Open1(flags) => service::serve(service, scope, &flags, object_request),
+            RequestFlags::Open3(flags) => service::serve(service, scope, &flags, object_request),
         }
     }
 
@@ -360,44 +303,14 @@ impl<'a> OpenRequest<'a> {
     pub fn spawn(self, entry: Arc<impl DirectoryEntryAsync>) {
         let OpenRequest { scope, request_flags, path, object_request } = self;
         let mut object_request = object_request.take();
-        match request_flags {
-            #[cfg(any(
-                fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "32")
-            ))]
-            RequestFlags::Open1(flags) => {
-                scope.clone().spawn(async move {
-                    match entry
-                        .open_entry_async(OpenRequest::new(
-                            scope,
-                            RequestFlags::Open1(flags),
-                            path,
-                            &mut object_request,
-                        ))
-                        .await
-                    {
-                        Ok(()) => {}
-                        Err(s) => object_request.shutdown(s),
-                    }
-                });
+        scope.clone().spawn(async move {
+            if let Err(s) = entry
+                .open_entry_async(OpenRequest::new(scope, request_flags, path, &mut object_request))
+                .await
+            {
+                object_request.shutdown(s)
             }
-            RequestFlags::Open3(flags) => {
-                scope.clone().spawn(async move {
-                    match entry
-                        .open_entry_async(OpenRequest::new(
-                            scope,
-                            RequestFlags::Open3(flags),
-                            path,
-                            &mut object_request,
-                        ))
-                        .await
-                    {
-                        Ok(()) => {}
-                        Err(s) => object_request.shutdown(s),
-                    }
-                });
-            }
-        }
+        });
     }
 
     /// Returns the execution scope for this request.
