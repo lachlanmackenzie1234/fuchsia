@@ -52,13 +52,13 @@ Smmu::Smmu(uint64_t phys_reg_base) : phys_reg_base_(phys_reg_base) {}
 Smmu::~Smmu() {
   // By the time that we destruct, all of our interrupts should be unregistered.
   // Assert this.
-  if constexpr (DEBUG_ASSERT_IMPLEMENTED) {
+  if constexpr (ZX_DEBUG_ASSERT_IMPLEMENTED) {
     for (const GlobalIrqVector& vec : global_irqs_) {
-      DEBUG_ASSERT(!vec.registered);
+      ZX_DEBUG_ASSERT(!vec.registered);
     }
 
     for (const ContextIrqVector& vec : context_irqs_) {
-      DEBUG_ASSERT(!vec.registered);
+      ZX_DEBUG_ASSERT(!vec.registered);
     }
   }
 }
@@ -190,9 +190,9 @@ zx::result<fbl::RefPtr<iommu::Bti>> Smmu::CreateBti(uint64_t bus_txn_id) {
   //
   // If our SMMU driver is set to disabled, no one should be attempting to
   // allocate any BTIs here. They should be using StubIommus instead.
-  DEBUG_ASSERT_MSG((op_mode_ == ArmSmmuMode::kPassthru) || (op_mode_ == ArmSmmuMode::kEnforced),
-                   "SMMU must be passthru or enforced when creating a BTI (%u)",
-                   static_cast<uint32_t>(op_mode_));
+  ZX_DEBUG_ASSERT_MSG((op_mode_ == ArmSmmuMode::kPassthru) || (op_mode_ == ArmSmmuMode::kEnforced),
+                      "SMMU must be passthru or enforced when creating a BTI (%u)",
+                      static_cast<uint32_t>(op_mode_));
   BtiMode bti_mode =
       (op_mode_ == ArmSmmuMode::kPassthru) ? BtiMode::kBypass : BtiMode::kTranslation;
   fbl::RefPtr<SmmuBti> bti = SmmuBti::Create(*this, ktl::move(*smrg), ktl::move(*cb), bti_mode);
@@ -348,8 +348,8 @@ zx_status_t Smmu::Init(const zbi_dcfg_arm_smmu_driver_t& config) {
 
   // Allocate storage for our global and context interrupts based on the values
   // passed to us, and make copies of the configuration.
-  DEBUG_ASSERT(config.irq_cnt <= ktl::size(config.irqs));
-  DEBUG_ASSERT(config.global_irq_cnt <= config.irq_cnt);
+  ZX_DEBUG_ASSERT(config.irq_cnt <= ktl::size(config.irqs));
+  ZX_DEBUG_ASSERT(config.global_irq_cnt <= config.irq_cnt);
   const auto all_irqs = ktl::span<const zbi_dcfg_arm_smmu_irq_t>{config.irqs, config.irq_cnt};
   const auto global_irqs = all_irqs.subspan(0, config.global_irq_cnt);
   const auto context_irqs =
@@ -739,7 +739,7 @@ void Smmu::HandleGlobalIrq(uint32_t ndx) {
     //    no good reason we should ever have a bad configuration, and we should
     //    consider this to be a bug.
     Guard<SpinLock, IrqSave> guard{&irq_lock_};
-    DEBUG_ASSERT(ndx < global_irqs_.size());
+    ZX_DEBUG_ASSERT(ndx < global_irqs_.size());
     mask_interrupt(global_irqs_[ndx].irq_def.num);
   }
 
@@ -810,11 +810,11 @@ void Smmu::HandleContextIrq(uint32_t cb_ndx) {
   fbl::RefPtr<SmmuBti> target;
   uint32_t irq_num;
 
-  DEBUG_ASSERT(cb_ndx < num_cbs());
+  ZX_DEBUG_ASSERT(cb_ndx < num_cbs());
 
   {
     Guard<SpinLock, IrqSave> guard{&irq_lock_};
-    DEBUG_ASSERT(cb_ndx < context_irqs_.size());
+    ZX_DEBUG_ASSERT(cb_ndx < context_irqs_.size());
     ContextIrqVector& vec = context_irqs_[cb_ndx];
 
     // Attempt to take a reference to our target BTI before we drop the IRQ lock
@@ -833,7 +833,7 @@ void Smmu::HandleContextIrq(uint32_t cb_ndx) {
   auto clear_in_flight = fit::defer([this, cb_ndx]() {
     Guard<SpinLock, IrqSave> guard{&irq_lock_};
     ContextIrqVector& vec = context_irqs_[cb_ndx];
-    DEBUG_ASSERT(vec.in_flight == true);
+    ZX_DEBUG_ASSERT(vec.in_flight == true);
     vec.in_flight = false;
   });
 
@@ -1075,7 +1075,7 @@ void Smmu::ShutdownBti(SmmuBti& bti) {
   // and returning all resources to the SMMU's pool in the process.  Once we are
   // done with that, we can remove ourselves from the global BTI list and we
   // should be finished.
-  DEBUG_ASSERT(bti.InContainer());
+  ZX_DEBUG_ASSERT(bti.InContainer());
   bti.Shutdown(*this);
   bti_list_.erase(bti);
 }
@@ -1091,8 +1091,8 @@ void Smmu::AssociateBtiIrq(SmmuBti& bti, uint32_t cb_ndx) {
   }
 
   ContextIrqVector& vec = context_irqs_[cb_ndx];
-  DEBUG_ASSERT(vec.bti == nullptr);
-  DEBUG_ASSERT(vec.registered);
+  ZX_DEBUG_ASSERT(vec.bti == nullptr);
+  ZX_DEBUG_ASSERT(vec.registered);
 
   vec.bti = fbl::RefPtr<SmmuBti>{&bti};
   vec.enabled = true;
@@ -1114,7 +1114,7 @@ void Smmu::ShutdownContextBankIrq(uint32_t cb_ndx) {
     }
 
     ContextIrqVector& vec = context_irqs_[cb_ndx];
-    DEBUG_ASSERT(vec.registered);
+    ZX_DEBUG_ASSERT(vec.registered);
 
     in_flight = vec.in_flight;
     bti_ref = ktl::move(vec.bti);  // Move the reference outside of the spinlock before dropping it.
@@ -1175,9 +1175,9 @@ zx_status_t Smmu::AdoptSmrg(uint32_t smrg_ndx, SmrValue reg_stream_ids) {
   // enabled, and not currently in use according to our bookkeeping.  At this
   // point in initialization, we should also be able to ASSERT all of these
   // things.
-  DEBUG_ASSERT(smrg_ndx < num_smrgs());
-  DEBUG_ASSERT(available_smrgs_.TestBit(smrg_ndx));
-  DEBUG_ASSERT(gr0::SMR::Get(smrg_ndx).ReadFrom(&gr0_base_).VALID());
+  ZX_DEBUG_ASSERT(smrg_ndx < num_smrgs());
+  ZX_DEBUG_ASSERT(available_smrgs_.TestBit(smrg_ndx));
+  ZX_DEBUG_ASSERT(gr0::SMR::Get(smrg_ndx).ReadFrom(&gr0_base_).VALID());
 
   // Go over our existing BTIs.  None of the stream IDs we are attempting to
   // claim should currently be in use by any of our active BTIs.  If they are,

@@ -31,7 +31,7 @@ class SmrValue {
   class iterator {
    public:
     uint16_t operator*() const {
-      DEBUG_ASSERT(state_ndx_ < state_count());
+      ZX_DEBUG_ASSERT(state_ndx_ < state_count());
 
       uint16_t ret = value_ & ~mask_;
       uint32_t mask_ndx = ktl::countr_zero(mask_);

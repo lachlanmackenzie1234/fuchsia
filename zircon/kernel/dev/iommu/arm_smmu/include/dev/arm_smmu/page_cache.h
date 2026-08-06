@@ -10,6 +10,7 @@
 #include <lib/arch/cache.h>
 #include <lib/zx/result.h>
 #include <stdint.h>
+#include <zircon/assert.h>
 
 #include <vm/page.h>
 #include <vm/physmap.h>
@@ -22,14 +23,14 @@ class PageCache {
   PageCache() = default;
 
   ~PageCache() {
-    DEBUG_ASSERT(!cache_entries_);
-    DEBUG_ASSERT(!in_flight_pages_);
-    DEBUG_ASSERT(page_cache_.is_empty());
+    ZX_DEBUG_ASSERT(!cache_entries_);
+    ZX_DEBUG_ASSERT(!in_flight_pages_);
+    ZX_DEBUG_ASSERT(page_cache_.is_empty());
   }
 
   // Return a page to the cache which the caller had fetched using GetPage.
   void ReturnPage(vm_page_t* page) {
-    DEBUG_ASSERT(in_flight_pages_ > 0);
+    ZX_DEBUG_ASSERT(in_flight_pages_ > 0);
     page_cache_.push_front(page);
     ++cache_entries_;
     --in_flight_pages_;
@@ -39,13 +40,13 @@ class PageCache {
     vm_page_t* ret{nullptr};
 
     if (!page_cache_.is_empty()) {
-      DEBUG_ASSERT(cache_entries_ > 0);
+      ZX_DEBUG_ASSERT(cache_entries_ > 0);
       --cache_entries_;
       ++in_flight_pages_;
       return zx::ok(page_cache_.pop_front());
     }
 
-    DEBUG_ASSERT(cache_entries_ == 0);
+    ZX_DEBUG_ASSERT(cache_entries_ == 0);
     if (const zx_status_t status = pmm_alloc_page(PMM_ALLOC_FLAG_ANY, &ret); status != ZX_OK) {
       return zx::error(status);
     }
@@ -75,14 +76,14 @@ class PageCache {
     // return the extra pages to the PMM.
     if (max_pages == 0) {
       pmm_free(&page_cache_);
-      DEBUG_ASSERT(page_cache_.is_empty());
+      ZX_DEBUG_ASSERT(page_cache_.is_empty());
     } else {
       auto split_point = page_cache_.begin();
       for (uint32_t i = 1; i < max_pages; ++i, split_point++) {
       }
       VmPageDoublyLinkedList free_me = page_cache_.split_after(split_point);
       pmm_free(&free_me);
-      DEBUG_ASSERT(free_me.is_empty());
+      ZX_DEBUG_ASSERT(free_me.is_empty());
     }
 
     cache_entries_ = max_pages;

@@ -33,26 +33,26 @@ fbl::RefPtr<SmmuPmt> SmmuPmt::Create(SmmuBti& owner, PinnedVmObject pinned_vmo, 
 
 SmmuPmt::SmmuPmt(fbl::RefPtr<SmmuBti> owner, PinnedVmObject pinned_vmo, BtiMode bti_mode)
     : iommu::Pmt{ktl::move(pinned_vmo)}, owner_{ktl::move(owner)}, bti_mode_{bti_mode} {
-  DEBUG_ASSERT((bti_mode == BtiMode::kBypass) || (bti_mode == BtiMode::kTranslation));
+  ZX_DEBUG_ASSERT((bti_mode == BtiMode::kBypass) || (bti_mode == BtiMode::kTranslation));
 }
 
 SmmuPmt::~SmmuPmt() {
   // We should never destruct while we are active.
-  DEBUG_ASSERT(state() != State::kActive);
+  ZX_DEBUG_ASSERT(state() != State::kActive);
 
   // The only legitimate reason for us to still be holding a pinned VMO, is
   // because we took ownership of the VMO while we were in the Initial state,
   // but never managed to make it to the active state.  It's ok if this happens,
   // we've never been exposed to any users, and the pinned memory will be
   // returned as our PinnedVmObject destructs.
-  DEBUG_ASSERT((pinned_vmo().vmo() == nullptr) || (state() != State::kInitial));
+  ZX_DEBUG_ASSERT((pinned_vmo().vmo() == nullptr) || (state() != State::kInitial));
 
   // The only way it should be possible for us to end up with an active map
   // location as we are being destructed would be for us to have successfully
   // created the mapping, but for our BTI to enter the fault state as we are
   // doing so.  Still, it _could_ happen, so be sure to check, just in case.
   if (map_location_) {
-    DEBUG_ASSERT(state() == State::kInitial);
+    ZX_DEBUG_ASSERT(state() == State::kInitial);
     owner_->ReleaseMapping(ktl::move(map_location_));
   }
 }
@@ -133,14 +133,14 @@ zx::result<iommu::QueryAddressResult> SmmuPmt::QueryAddress(uint64_t query_offse
         return zx::error(status);
       }
     } else {
-      DEBUG_ASSERT(paddr != iommu::INVALID_PADDR);
+      ZX_DEBUG_ASSERT(paddr != iommu::INVALID_PADDR);
       return zx::ok(iommu::QueryAddressResult{.device_vaddr = paddr, .size = query_size});
     }
 
     // We shouldn't be here after our first attempt.  The second attempt must
     // always either succeed or fail.  If this is our first attempt, reduce our
     // query size to just one page.
-    DEBUG_ASSERT(!attempt);
+    ZX_DEBUG_ASSERT(!attempt);
     query_size = kPageSize;
   }
 

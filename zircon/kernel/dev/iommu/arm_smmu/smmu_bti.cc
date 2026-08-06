@@ -21,15 +21,15 @@ namespace arm_smmu {
 
 SmmuBti::SmmuBti(fbl::RefPtr<Smmu> smmu, uint64_t bti_id)
     : iommu::Bti{bti_id}, smmu_{ktl::move(smmu)} {
-  DEBUG_ASSERT(smmu_.get() != nullptr);
+  ZX_DEBUG_ASSERT(smmu_.get() != nullptr);
 }
 
 SmmuBti::~SmmuBti() {
   // By the time we destruct, we should have been shut down already and all of
   // our resources explicitly released.
-  DEBUG_ASSERT(smmu_ == nullptr);
-  DEBUG_ASSERT(context_bank_ == nullptr);
-  DEBUG_ASSERT(smrg_list_.is_empty());
+  ZX_DEBUG_ASSERT(smmu_ == nullptr);
+  ZX_DEBUG_ASSERT(context_bank_ == nullptr);
+  ZX_DEBUG_ASSERT(smrg_list_.is_empty());
 }
 
 zx::result<fbl::RefPtr<iommu::Pmt>> SmmuBti::Map(PinnedVmObject pinned_vmo, uint32_t perms,
@@ -132,7 +132,7 @@ zx::result<fbl::RefPtr<iommu::Pmt>> SmmuBti::Map(PinnedVmObject pinned_vmo, uint
   DeviceAspace::Allocation mapped_location;
 
   if (observed_mode == BtiMode::kTranslation) {
-    DEBUG_ASSERT(aspace_ != nullptr);
+    ZX_DEBUG_ASSERT(aspace_ != nullptr);
 
     DeviceAspace::TlbInvalOp tlb_inval_op{TlbInvalThunk, this};
     zx::result<DeviceAspace::Allocation> maybe_location =
@@ -215,8 +215,8 @@ void SmmuBti::ReleaseQuarantine() {
 
     // No one should be calling ReleaseQuarantine on us unless we are in one of
     // the 3 operational states:  Fault, Bypass, or Translation.
-    DEBUG_ASSERT((mode() == BtiMode::kFault) || (mode() == BtiMode::kBypass) ||
-                 (mode() == BtiMode::kTranslation));
+    ZX_DEBUG_ASSERT((mode() == BtiMode::kFault) || (mode() == BtiMode::kBypass) ||
+                    (mode() == BtiMode::kTranslation));
 
     // ReleaseQuarantine should be idempotent.  If we are already operating in
     // Bypass or Translation, there is nothing to do.
@@ -226,7 +226,7 @@ void SmmuBti::ReleaseQuarantine() {
       quarantined_page_count_ = 0;
 
       zx::result<> set_mode_result = SetModeLocked(target_mode);
-      DEBUG_ASSERT(set_mode_result.is_ok());
+      ZX_DEBUG_ASSERT(set_mode_result.is_ok());
     }
   }
 
@@ -277,17 +277,17 @@ void SmmuBti::OnDispatcherZeroHandles() {
   {
     Guard<Mutex> pmt_guard{&pmt_lock_};
     Guard<SpinLock, IrqSave> guard{&lock_};
-    DEBUG_ASSERT(!orphaned_);
+    ZX_DEBUG_ASSERT(!orphaned_);
 
     quarantined_pmt_count = quarantined_pmt_count_;
     quarantined_page_count = quarantined_page_count_;
 
     // These must either both be zero, or both be non-zero.
-    DEBUG_ASSERT((quarantined_pmt_count == 0) == (quarantined_page_count == 0));
+    ZX_DEBUG_ASSERT((quarantined_pmt_count == 0) == (quarantined_page_count == 0));
 
     if (quarantined_page_count && (smmu_->op_mode() != ArmSmmuMode::kEnforced)) {
       // If we have quarantined PMTs, we should already be in the kFault state.
-      DEBUG_ASSERT(mode() == BtiMode::kFault);
+      ZX_DEBUG_ASSERT(mode() == BtiMode::kFault);
       orphaned_ = true;
     } else {
       // If we have no (logically) quarantined PMTs, or we are operating in
@@ -314,7 +314,7 @@ void SmmuBti::OnDispatcherZeroHandles() {
 
 void SmmuBti::OnEndOfLife() {
   // We should never be calling OnEndOfLife twice.
-  DEBUG_ASSERT(smmu_ != nullptr);
+  ZX_DEBUG_ASSERT(smmu_ != nullptr);
   smmu_->ShutdownBti(*this);
 
   // The Smmu ref pointer is const member of SmmuBti to prevent us from
@@ -345,7 +345,7 @@ uint64_t SmmuBti::minimum_contiguity() const {
     // up (under the hood) creating a StubIommu instance instead.
     case ArmSmmuMode::kDisabled:
     default:
-      DEBUG_ASSERT(false);
+      ZX_DEBUG_ASSERT(false);
       return 0;
   }
 }
@@ -368,7 +368,7 @@ uint64_t SmmuBti::aspace_size() const {
     // See above, it should be impossible to get here.
     case ArmSmmuMode::kDisabled:
     default:
-      DEBUG_ASSERT(false);
+      ZX_DEBUG_ASSERT(false);
       return 0;
   }
 }
@@ -386,8 +386,8 @@ size_t SmmuBti::quarantine_count() const {
 bool SmmuBti::in_fault_state() const {
   Guard<SpinLock, IrqSave> guard{&lock_};
   // It should not be possible to get here unless we are in an operational state.
-  DEBUG_ASSERT((mode() == BtiMode::kFault) || (mode() == BtiMode::kBypass) ||
-               (mode() == BtiMode::kTranslation));
+  ZX_DEBUG_ASSERT((mode() == BtiMode::kFault) || (mode() == BtiMode::kBypass) ||
+                  (mode() == BtiMode::kTranslation));
   return mode() == BtiMode::kFault;
 }
 
@@ -396,7 +396,7 @@ fbl::RefPtr<SmmuBti> SmmuBti::Create(Smmu& smmu, ktl::unique_ptr<StreamMatchRegG
                                      BtiMode initial_mode) {
   // We always use the raw value of our first SMRG's match register as our
   // opaque "bti id".
-  DEBUG_ASSERT(smrg != nullptr);
+  ZX_DEBUG_ASSERT(smrg != nullptr);
   const uint64_t bti_id = smrg->stream_ids().value();
 
   fbl::AllocChecker ac;
@@ -414,12 +414,12 @@ fbl::RefPtr<SmmuBti> SmmuBti::Create(Smmu& smmu, ktl::unique_ptr<StreamMatchRegG
     // state it was in when handed to us by the bootloader, and should not even
     // actually change state.
     if (initial_mode == BtiMode::kAdopted) {
-      DEBUG_ASSERT(!context_bank || context_bank->mode() == BtiMode::kAdopted);
+      ZX_DEBUG_ASSERT(!context_bank || context_bank->mode() == BtiMode::kAdopted);
       bti->mode_ = BtiMode::kAdopted;
     }
 
     if (context_bank != nullptr) {
-      DEBUG_ASSERT(smmu.available_cbs_.TestBit(context_bank->cb_ndx()));
+      ZX_DEBUG_ASSERT(smmu.available_cbs_.TestBit(context_bank->cb_ndx()));
       smmu.available_cbs_.ClrBit(context_bank->cb_ndx());
       bti->context_bank_ = ktl::move(context_bank);
     }
@@ -458,7 +458,7 @@ fbl::RefPtr<SmmuBti> SmmuBti::Create(Smmu& smmu, ktl::unique_ptr<StreamMatchRegG
     // have to be allocated at this point in time as we will (initially) have no
     // pinned memory.
     [[maybe_unused]] zx::result<> res = bti->SetModeLocked(initial_mode);
-    DEBUG_ASSERT(!res.is_error());
+    ZX_DEBUG_ASSERT(!res.is_error());
 
     // If we have a context bank, associate ourselves with our context bank's
     // interrupt, then enable the interrupt at the context bank level.
@@ -484,7 +484,7 @@ void SmmuBti::Shutdown(Smmu& smmu) {
 
     {
       Guard<SpinLock, IrqSave> guard{&lock_};
-      DEBUG_ASSERT(mode() != BtiMode::kShutdown);
+      ZX_DEBUG_ASSERT(mode() != BtiMode::kShutdown);
 
       // Lock down all of the hardware, and place ourselves in the shutdown
       // state first. This should never fail as we should never be shutting down
@@ -496,7 +496,7 @@ void SmmuBti::Shutdown(Smmu& smmu) {
       // allocation once again.  We are finished messing with the registers; they
       // belong to our SMMU instance once again.
       for (const StreamMatchRegGroup& smrg : smrg_list_) {
-        DEBUG_ASSERT(!smmu.available_smrgs_.TestBit(smrg.smrg_ndx()));
+        ZX_DEBUG_ASSERT(!smmu.available_smrgs_.TestBit(smrg.smrg_ndx()));
         smmu.available_smrgs_.SetBit(smrg.smrg_ndx());
       }
 
@@ -505,14 +505,14 @@ void SmmuBti::Shutdown(Smmu& smmu) {
         // registered context bank IRQs, and that there are not any context bank
         // interrupts in flight targeting this BTI.  This was taken care of for us
         // by our SMMU instance during Smmu::ShutdownBti.
-        DEBUG_ASSERT(!smmu.available_cbs_.TestBit(context_bank_->cb_ndx()));
+        ZX_DEBUG_ASSERT(!smmu.available_cbs_.TestBit(context_bank_->cb_ndx()));
         smmu.available_cbs_.SetBit(context_bank_->cb_ndx());
       }
 
       // If we are shutting down, we should not have any active or quarantined PMTs left.
-      DEBUG_ASSERT(active_pmt_list_.is_empty());
-      DEBUG_ASSERT(quarantined_pmt_count_ == 0);
-      DEBUG_ASSERT(quarantined_page_count_ == 0);
+      ZX_DEBUG_ASSERT(active_pmt_list_.is_empty());
+      ZX_DEBUG_ASSERT(quarantined_pmt_count_ == 0);
+      ZX_DEBUG_ASSERT(quarantined_page_count_ == 0);
 
       // Move our resources outside of our spinlock's scope so that they can
       // return to the heap after the lock has been dropped.
@@ -541,7 +541,7 @@ void SmmuBti::Shutdown(Smmu& smmu) {
     // Then, all we need to do here, is reset our pointer.
     //
     if (aspace_ != nullptr) {
-      DEBUG_ASSERT(local_context_bank != nullptr);
+      ZX_DEBUG_ASSERT(local_context_bank != nullptr);
       auto thunk = [](void*, uint64_t, uint64_t) -> void {};
       DeviceAspace::TlbInvalOp no_op{thunk, local_context_bank.get()};
       aspace_->FreeTranslationTables(no_op);
@@ -570,19 +570,19 @@ void SmmuBti::AssertOwned(StreamMatchRegGroup& smrg) {
   // Right now, in all of the practical systems we have encountered so far, a
   // BTI's list of SMRGs is pretty much only one, or at most 2, entries long.
   // It seems reasonable to perform this O(n) validation in systems with
-  // DEBUG_ASSERT implemented if N is expected to be a low as this.
-  if constexpr (DEBUG_ASSERT_IMPLEMENTED) {
+  // ZX_DEBUG_ASSERT implemented if N is expected to be a low as this.
+  if constexpr (ZX_DEBUG_ASSERT_IMPLEMENTED) {
     for (const StreamMatchRegGroup& x : smrg_list_) {
       if (&x == &smrg) {
         return;
       }
     }
-    DEBUG_ASSERT(false);
+    ZX_DEBUG_ASSERT(false);
   }
 }
 
 void SmmuBti::TlbInvalThunk(void* _thiz, uint64_t base, uint64_t size) {
-  DEBUG_ASSERT(_thiz != nullptr);
+  ZX_DEBUG_ASSERT(_thiz != nullptr);
   SmmuBti& thiz = *reinterpret_cast<SmmuBti*>(_thiz);
 
   // This callback is being invoked from DeviceAspace code after it has made
@@ -603,7 +603,7 @@ void SmmuBti::TlbInvalThunk(void* _thiz, uint64_t base, uint64_t size) {
   // We should always have a context bank whenever we are being asked to
   // invalidate our TLBs by our DeviceAspace.
   Guard<SpinLock, IrqSave> guard{&thiz.lock_};
-  DEBUG_ASSERT(thiz.context_bank_ != nullptr);
+  ZX_DEBUG_ASSERT(thiz.context_bank_ != nullptr);
 
   // No size means flush everything.  Otherwise, just flush the requested range.
   if (!size) {
@@ -641,8 +641,8 @@ zx::result<ktl::unique_ptr<DeviceAspace>> SmmuBti::CreateAspace() {
 }
 
 void SmmuBti::AttachAspace(ktl::unique_ptr<DeviceAspace> aspace) {
-  DEBUG_ASSERT(aspace_ == nullptr);
-  DEBUG_ASSERT(context_bank_->ttbrs_[0].ttbr_paddr == 0);
+  ZX_DEBUG_ASSERT(aspace_ == nullptr);
+  ZX_DEBUG_ASSERT(context_bank_->ttbrs_[0].ttbr_paddr == 0);
 
   // Take ownership of the address space, and fill out its details in our TTBR0 bookkeeping.
   aspace_ = ktl::move(aspace);
@@ -701,13 +701,13 @@ void SmmuBti::AddSmrgLocked(Smmu& smmu, ktl::unique_ptr<StreamMatchRegGroup> smr
   // translation, pointed at this BTI's CB, and enabled.
   //
   if (smrg->mode() == S2CR_Type::kTranslation) {
-    DEBUG_ASSERT(context_bank_ != nullptr);
-    DEBUG_ASSERT(context_bank_->cb_ndx() == smrg->cb_ndx());
+    ZX_DEBUG_ASSERT(context_bank_ != nullptr);
+    ZX_DEBUG_ASSERT(context_bank_->cb_ndx() == smrg->cb_ndx());
   }
 
   // The SMRG we are adding should not be marked as in-use at the SMMU level
   // (yet).
-  DEBUG_ASSERT(smmu.available_smrgs_.TestBit(smrg->smrg_ndx()));
+  ZX_DEBUG_ASSERT(smmu.available_smrgs_.TestBit(smrg->smrg_ndx()));
 
   // Everything checks out.  Add the SMRG to our list, and mark it as in use in
   // our parent SMMU.
@@ -739,7 +739,7 @@ zx::result<> SmmuBti::SetModeLocked(BtiMode target_mode) {
 
   // We were not adopted, so we should be able to assert that we have a
   // context bank.  Do so, then configure our context bank for its new mode.
-  DEBUG_ASSERT(context_bank_ != nullptr);
+  ZX_DEBUG_ASSERT(context_bank_ != nullptr);
   context_bank_->SetMode(*this, mode_);
 
   for (StreamMatchRegGroup& smrg : smrg_list_) {
@@ -857,12 +857,12 @@ void SmmuBti::OnPmtUnpin(SmmuPmt& pmt) {
 
     Guard<SpinLock, IrqSave> guard{&lock_};
     if (pmt.state() == SmmuPmt::State::kActive) {
-      DEBUG_ASSERT(pmt.InContainer());
+      ZX_DEBUG_ASSERT(pmt.InContainer());
       active_pmt_list_.erase(pmt);
       pmt.set_state(SmmuPmt::State::kReleased);
     } else {
-      DEBUG_ASSERT(!pmt.InContainer());
-      DEBUG_ASSERT(pmt.pinned_vmo().vmo() == nullptr);
+      ZX_DEBUG_ASSERT(!pmt.InContainer());
+      ZX_DEBUG_ASSERT(pmt.pinned_vmo().vmo() == nullptr);
     }
 
     return pmt.TakePinnedVmo();
@@ -891,7 +891,7 @@ void SmmuBti::OnPmtZeroHandles(SmmuPmt& pmt) {
     ReleaseMapping(pmt.TakeMapLocation());
 
     Guard<SpinLock, IrqSave> guard{&lock_};
-    DEBUG_ASSERT(pmt.state() != SmmuPmt::State::kInitial);
+    ZX_DEBUG_ASSERT(pmt.state() != SmmuPmt::State::kInitial);
     if (pmt.state() == SmmuPmt::State::kActive) {
       // If a PMT has its last handle closed before being formally unpinned,
       // then we have leaked the PMT and will need to quarantine it.
@@ -901,7 +901,7 @@ void SmmuBti::OnPmtZeroHandles(SmmuPmt& pmt) {
       ASSERT(set_fault_mode_result.is_ok());
 
       // Remove the PMT from the active set of PMTs and flag it as quarantined.
-      DEBUG_ASSERT(pmt.InContainer());
+      ZX_DEBUG_ASSERT(pmt.InContainer());
       active_pmt_list_.erase(pmt);
       pmt.set_state(SmmuPmt::State::kQuarantined);
 
@@ -912,9 +912,9 @@ void SmmuBti::OnPmtZeroHandles(SmmuPmt& pmt) {
     } else {
       // If this PMT was not active, then it should be in the Released state and
       // not on the active list.
-      DEBUG_ASSERT(pmt.state() == SmmuPmt::State::kReleased);
-      DEBUG_ASSERT(!pmt.InContainer());
-      DEBUG_ASSERT(pmt.pinned_vmo().vmo() == nullptr);
+      ZX_DEBUG_ASSERT(pmt.state() == SmmuPmt::State::kReleased);
+      ZX_DEBUG_ASSERT(!pmt.InContainer());
+      ZX_DEBUG_ASSERT(pmt.pinned_vmo().vmo() == nullptr);
     }
 
     has_active_pmts = !active_pmt_list_.is_empty();
@@ -943,7 +943,7 @@ void SmmuBti::OnPmtZeroHandles(SmmuPmt& pmt) {
   }
 
   // #2 : Shutdown if it is time.
-  DEBUG_ASSERT((quarantined_page_count == 0) == (quarantined_pmt_count == 0));
+  ZX_DEBUG_ASSERT((quarantined_page_count == 0) == (quarantined_pmt_count == 0));
   if (was_orphaned && !has_active_pmts &&
       (!quarantined_pmt_count || smmu_->op_mode() == ArmSmmuMode::kEnforced)) {
     OnEndOfLife();

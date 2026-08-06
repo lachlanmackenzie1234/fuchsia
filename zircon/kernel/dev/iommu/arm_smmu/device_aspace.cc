@@ -24,9 +24,9 @@ using namespace vmsav8_64;
 
 DeviceAspace::~DeviceAspace() {
   // By the time that we destruct, our translation tables must have already been freed.
-  DEBUG_ASSERT(root_tt_page_ == nullptr);
-  DEBUG_ASSERT(page_cache_.cache_entries() == 0);
-  DEBUG_ASSERT(page_cache_.in_flight_pages() == 0);
+  ZX_DEBUG_ASSERT(root_tt_page_ == nullptr);
+  ZX_DEBUG_ASSERT(page_cache_.cache_entries() == 0);
+  ZX_DEBUG_ASSERT(page_cache_.in_flight_pages() == 0);
 }
 
 zx::result<ktl::unique_ptr<DeviceAspace>> DeviceAspace::Create(uint64_t aspace_start,
@@ -66,7 +66,7 @@ zx::result<ktl::unique_ptr<DeviceAspace>> DeviceAspace::Create(uint64_t aspace_s
 }
 
 paddr_t DeviceAspace::GetRootPaddr() const {
-  DEBUG_ASSERT(root_tt_page_ != nullptr);
+  ZX_DEBUG_ASSERT(root_tt_page_ != nullptr);
   return root_tt_page_->paddr();
 }
 
@@ -112,7 +112,7 @@ zx::result<DeviceAspace::Allocation> DeviceAspace::Map(const PinnedVmObject& pin
     // way, return INVALID_ARGS instead of ALREADY_EXISTS, to make it clear that
     // the request was malformed, not that it collided with an existing
     // allocation.
-    DEBUG_ASSERT(exclusive_end > 0);
+    ZX_DEBUG_ASSERT(exclusive_end > 0);
     if ((req.base < first_valid_address()) || ((exclusive_end - 1) > last_valid_address())) {
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
@@ -177,9 +177,9 @@ void DeviceAspace::Unmap(Allocation alloc, TlbInvalOp& tlb_inval_op) {
   // allocation.  If it is, we know that the translation table page is no longer
   // in use by any other allocation, and we can put it on the list to return to
   // the PMM after TLB invalidation
-  DEBUG_ASSERT(tlb_inval_op.is_valid());
-  DEBUG_ASSERT((alloc->base & kPageMask) == 0);
-  DEBUG_ASSERT((alloc->size & kPageMask) == 0);
+  ZX_DEBUG_ASSERT(tlb_inval_op.is_valid());
+  ZX_DEBUG_ASSERT((alloc->base & kPageMask) == 0);
+  ZX_DEBUG_ASSERT((alloc->size & kPageMask) == 0);
   const uint64_t base = alloc->base;
   const uint64_t size = alloc->size;
   uint64_t addr = base;
@@ -187,12 +187,12 @@ void DeviceAspace::Unmap(Allocation alloc, TlbInvalOp& tlb_inval_op) {
 
   // We don't permit mappings larger than 2^32 pages (and even that would be
   // pretty extreme).
-  DEBUG_ASSERT((size >> kPageShift) < ktl::numeric_limits<uint32_t>::max());
+  ZX_DEBUG_ASSERT((size >> kPageShift) < ktl::numeric_limits<uint32_t>::max());
 
   [[maybe_unused]] const zx::result<> init_res = tt_helper_.InitializeForUnmap(addr);
-  DEBUG_ASSERT(init_res.is_ok());  // Init for an unmap can never fail.
+  ZX_DEBUG_ASSERT(init_res.is_ok());  // Init for an unmap can never fail.
 
-  DEBUG_ASSERT(base + size > base);
+  ZX_DEBUG_ASSERT(base + size > base);
   const uint64_t last = base + size;
   while (addr < last) {
     // If we have pages for all four translation levels, then go ahead and
@@ -214,7 +214,7 @@ void DeviceAspace::Unmap(Allocation alloc, TlbInvalOp& tlb_inval_op) {
     if (tt_helper_.CurrentPageEntryValid()) {
       tt_helper_.AssignPageEntry(0);
       [[maybe_unused]] const zx::result<> advance_res = tt_helper_.Advance();
-      DEBUG_ASSERT(advance_res.is_ok());  // Advance during an unmap can never fail.
+      ZX_DEBUG_ASSERT(advance_res.is_ok());  // Advance during an unmap can never fail.
       addr += kPageSize;
     } else {
       break;
@@ -235,8 +235,8 @@ void DeviceAspace::FreeTranslationTablesHelper(vm_page_t* table_page, uint32_t l
   // We should never be passed a `nullptr` value for the table we are attempting
   // to free, and never recurse past the Table/Block descriptors level of
   // things (levels [0-2]).
-  DEBUG_ASSERT(table_page);
-  DEBUG_ASSERT(level < 3);
+  ZX_DEBUG_ASSERT(table_page);
+  ZX_DEBUG_ASSERT(level < 3);
 
   // Our page is a table of 512 64-bit entries.  Set up an alias to easily
   // access the entries.
@@ -248,7 +248,7 @@ void DeviceAspace::FreeTranslationTablesHelper(vm_page_t* table_page, uint32_t l
   for (uint32_t i = 0; i < kEntriesPerPage; ++i) {
     uint64_t e = table[i];
     if (IsValidEntry(e)) {
-      DEBUG_ASSERT(IsTableEntry(e));
+      ZX_DEBUG_ASSERT(IsTableEntry(e));
 
       const paddr_t next_pa = GetTableEntryPAddr(e);
       uint64_t* next_va = static_cast<uint64_t*>(paddr_to_physmap(next_pa));
@@ -261,7 +261,7 @@ void DeviceAspace::FreeTranslationTablesHelper(vm_page_t* table_page, uint32_t l
         // This is a level 2 entry pointing to a level 3 page.  We are not going
         // to walk every entry in the level 3 page, so explicitly zero out the
         // level 3 page before proceeding.
-        DEBUG_ASSERT(level == 2);
+        ZX_DEBUG_ASSERT(level == 2);
         memset(next_va, 0, kPageSize);
       }
 
@@ -280,8 +280,8 @@ void DeviceAspace::FreeTranslationTablesHelper(vm_page_t* table_page, uint32_t l
       page_cache_.ReturnPage(next_vm_page);
     } else {
       // If an entry is not valid, we should have stored all zeros there.
-      DEBUG_ASSERT_MSG(e == 0, "Bad Invalid Entry 0x%08lx (table %p, level %u, index %u)", e, table,
-                       level, i);
+      ZX_DEBUG_ASSERT_MSG(e == 0, "Bad Invalid Entry 0x%08lx (table %p, level %u, index %u)", e,
+                          table, level, i);
     }
   }
 
@@ -289,7 +289,7 @@ void DeviceAspace::FreeTranslationTablesHelper(vm_page_t* table_page, uint32_t l
   // page.  Flush it out of the CPU cache and add it back to the page cache,
   // then zero out the bookkeeping.
   if (level == 0) {
-    DEBUG_ASSERT(root_tt_page_ == table_page);
+    ZX_DEBUG_ASSERT(root_tt_page_ == table_page);
     arch::CleanDataCacheRange(reinterpret_cast<uintptr_t>(table), kPageSize);
     page_cache_.ReturnPage(table_page);
     root_tt_page_ = nullptr;
@@ -298,7 +298,7 @@ void DeviceAspace::FreeTranslationTablesHelper(vm_page_t* table_page, uint32_t l
 
 void DeviceAspace::FreeTranslationTables(TlbInvalOp& tlb_inval_op) {
   // Recursively zero-out all of the PTE levels.
-  DEBUG_ASSERT(root_tt_page_ != nullptr);
+  ZX_DEBUG_ASSERT(root_tt_page_ != nullptr);
   FreeTranslationTablesHelper(root_tt_page_, 0);
 
   // Then invalidate the TLBs and finally return all of the pages from the cache

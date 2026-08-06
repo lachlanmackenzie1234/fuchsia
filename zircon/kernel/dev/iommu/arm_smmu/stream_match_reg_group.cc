@@ -15,9 +15,9 @@ StreamMatchRegGroup::StreamMatchRegGroup(uint32_t smrg_ndx, SmrValue stream_ids)
     : smrg_ndx_(smrg_ndx), stream_ids_{stream_ids} {}
 
 StreamMatchRegGroup::~StreamMatchRegGroup() {
-  DEBUG_ASSERT(gr0_base_.base() == 0);
-  DEBUG_ASSERT(mode_ == S2CR_Type::kInvalid);
-  DEBUG_ASSERT(cb_ndx_ == kInvalidCBNdx);
+  ZX_DEBUG_ASSERT(gr0_base_.base() == 0);
+  ZX_DEBUG_ASSERT(mode_ == S2CR_Type::kInvalid);
+  ZX_DEBUG_ASSERT(cb_ndx_ == kInvalidCBNdx);
 }
 
 ktl::unique_ptr<StreamMatchRegGroup> StreamMatchRegGroup::Create(Smmu& smmu, uint32_t smrg_ndx,
@@ -114,7 +114,7 @@ zx::result<> StreamMatchRegGroup::AdoptRegisterState(Smmu& smmu) {
 
 void StreamMatchRegGroup::EnableForContextBank(SmmuBti& owner, uint32_t cb_ndx) {
   owner.AssertOwned(*this);
-  DEBUG_ASSERT((mode_ == S2CR_Type::kInvalid) == (cb_ndx_ == kInvalidCBNdx));
+  ZX_DEBUG_ASSERT((mode_ == S2CR_Type::kInvalid) == (cb_ndx_ == kInvalidCBNdx));
   if (mode_ == S2CR_Type::kInvalid) {
     mode_ = S2CR_Type::kTranslation;
     cb_ndx_ = cb_ndx;

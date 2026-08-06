@@ -207,7 +207,7 @@ class Smmu final : public iommu::Iommu, public fbl::DoublyLinkedListable<fbl::Re
   uint32_t num_cbs() const { return num_cbs_; }
 
   hwreg::RegisterMmio get_cb_base(uint32_t ndx) {
-    DEBUG_ASSERT(ndx < num_cbs());
+    ZX_DEBUG_ASSERT(ndx < num_cbs());
     auto addr = reinterpret_cast<volatile void*>(cb0_base_.base() + (reg_page_size() * ndx));
     return hwreg::RegisterMmio{addr};
   }

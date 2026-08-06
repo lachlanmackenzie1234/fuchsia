@@ -78,10 +78,10 @@ class SmmuBti final : public iommu::Bti, public fbl::DoublyLinkedListable<fbl::R
   uint32_t cb_ndx() const TA_EXCL(lock_);
   void AssertCanary() const { canary_.Assert(); }
   void AssertOwned(StreamMatchRegGroup& smrg) TA_REQ(lock_);
-  void AssertOwned(ContextBank& cb) TA_REQ(lock_) { DEBUG_ASSERT(&cb == context_bank_.get()); }
+  void AssertOwned(ContextBank& cb) TA_REQ(lock_) { ZX_DEBUG_ASSERT(&cb == context_bank_.get()); }
 
   const Smmu& smmu() const {
-    DEBUG_ASSERT(smmu_ != nullptr);
+    ZX_DEBUG_ASSERT(smmu_ != nullptr);
     return *smmu_;
   }
 

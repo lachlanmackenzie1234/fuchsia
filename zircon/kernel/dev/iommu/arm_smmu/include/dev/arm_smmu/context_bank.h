@@ -34,8 +34,8 @@ class ContextBank : public fbl::DoublyLinkedListable<ktl::unique_ptr<ContextBank
   void SetMode(SmmuBti& owner, BtiMode mode) TA_REQ(owner.get_lock());
 
   static void Disable(Smmu& smmu, uint32_t cb_ndx) TA_REQ(smmu.get_lock()) {
-    DEBUG_ASSERT(cb_ndx < smmu.num_cbs());
-    DEBUG_ASSERT(smmu.available_cbs_.TestBit(cb_ndx));
+    ZX_DEBUG_ASSERT(cb_ndx < smmu.num_cbs());
+    ZX_DEBUG_ASSERT(smmu.available_cbs_.TestBit(cb_ndx));
     DisableRegs(smmu.gr1_base_, smmu.get_cb_base(cb_ndx), cb_ndx);
   }
 
@@ -82,7 +82,7 @@ class ContextBank : public fbl::DoublyLinkedListable<ktl::unique_ptr<ContextBank
                           uint32_t cb_ndx);
 
   static uint16_t asid(uint32_t cb_ndx) {
-    DEBUG_ASSERT(cb_ndx <= 0xFF);
+    ZX_DEBUG_ASSERT(cb_ndx <= 0xFF);
     return static_cast<uint16_t>(cb_ndx | kUpperASIDBits);
   }
 

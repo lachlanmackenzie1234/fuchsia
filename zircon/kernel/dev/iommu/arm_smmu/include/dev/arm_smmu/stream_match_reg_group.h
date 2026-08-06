@@ -39,8 +39,8 @@ class StreamMatchRegGroup : public fbl::DoublyLinkedListable<ktl::unique_ptr<Str
   StreamMatchRegGroup operator=(StreamMatchRegGroup&&) = delete;
 
   static void Disable(Smmu& smmu, uint32_t smrg_ndx) TA_REQ(smmu.get_lock()) {
-    DEBUG_ASSERT(smrg_ndx < smmu.num_smrgs());
-    DEBUG_ASSERT(smmu.available_smrgs_.TestBit(smrg_ndx));
+    ZX_DEBUG_ASSERT(smrg_ndx < smmu.num_smrgs());
+    ZX_DEBUG_ASSERT(smmu.available_smrgs_.TestBit(smrg_ndx));
     DisableRegs(smmu.gr0_base_, smrg_ndx);
   }
 

@@ -194,7 +194,7 @@ int Smmu::CmdShow(int argc, const cmd_args* argv, int cmd_ndx) const {
   Guard<Mutex> guard{&lock_};
 
   int arg_ndx = cmd_ndx + 1;
-  DEBUG_ASSERT(arg_ndx <= argc);
+  ZX_DEBUG_ASSERT(arg_ndx <= argc);
 
   zx::result<fbl::RefPtr<SmmuBti>> maybe_tgt = FindCmdTarget(argc - arg_ndx, argv + arg_ndx);
   if (maybe_tgt.is_error()) {
@@ -447,7 +447,7 @@ void SmmuBti::CmdLock(uint32_t ndx) {
     // If the SMMU is not operating in Enforced mode, it must be in passthru
     // mode (if it was in disabled mode, there would be no constructed SmmuBti
     // objects).
-    DEBUG_ASSERT(smmu_->op_mode() == ArmSmmuMode::kPassthru);
+    ZX_DEBUG_ASSERT(smmu_->op_mode() == ArmSmmuMode::kPassthru);
 
     // Force the BTI into fault mode.  This will lock things down if we
     // are in passthru mode, and prevent new PMTs from being created moving
@@ -612,7 +612,7 @@ void Smmu::CmdDumpRegs() {
 int Smmu::CmdBtiOp(int argc, const cmd_args* argv, int cmd_ndx, BtiOpFunc op) {
   Guard<Mutex> guard{&lock_};
 
-  DEBUG_ASSERT(cmd_ndx < argc);
+  ZX_DEBUG_ASSERT(cmd_ndx < argc);
   const int tgt_ndx = cmd_ndx + 1;
 
   if (tgt_ndx >= argc) {
@@ -792,22 +792,22 @@ int Smmu::ConsoleCmd(int argc, const cmd_args* argv, uint32_t flags) {
       return usage(ZX_ERR_INVALID_ARGS);
 
     case Cmd::Show:
-      DEBUG_ASSERT(chosen_smmu != nullptr);
+      ZX_DEBUG_ASSERT(chosen_smmu != nullptr);
       return chosen_smmu->CmdShow(argc, argv, cmd_ndx);
 
     case Cmd::DumpRegs:
-      DEBUG_ASSERT(chosen_smmu != nullptr);
+      ZX_DEBUG_ASSERT(chosen_smmu != nullptr);
       chosen_smmu->CmdDumpRegs();
       return ZX_OK;
 
     case Cmd::Lock: {
-      DEBUG_ASSERT(chosen_smmu != nullptr);
+      ZX_DEBUG_ASSERT(chosen_smmu != nullptr);
       BtiOpFunc LockBti{[](const Smmu& smmu, SmmuBti& bti, uint32_t ndx) { bti.CmdLock(ndx); }};
       return chosen_smmu->CmdBtiOp(argc, argv, cmd_ndx, LockBti);
     } break;
 
     case Cmd::InvalidateSids: {
-      DEBUG_ASSERT(chosen_smmu != nullptr);
+      ZX_DEBUG_ASSERT(chosen_smmu != nullptr);
 
       BtiOpFunc InvalidateSids{[](const Smmu& smmu, SmmuBti& bti, uint32_t ndx) {
         char bti_name[ZX_MAX_NAME_LEN];

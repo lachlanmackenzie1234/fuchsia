@@ -15,9 +15,9 @@ namespace arm_smmu {
 
 ContextBank::ContextBank(uint32_t cb_ndx) : cb_ndx_(cb_ndx) {}
 ContextBank::~ContextBank() {
-  DEBUG_ASSERT(gr1_base_.base() == 0);
-  DEBUG_ASSERT(cb_base_.base() == 0);
-  DEBUG_ASSERT(mode_ == BtiMode::kShutdown);
+  ZX_DEBUG_ASSERT(gr1_base_.base() == 0);
+  ZX_DEBUG_ASSERT(cb_base_.base() == 0);
+  ZX_DEBUG_ASSERT(mode_ == BtiMode::kShutdown);
 }
 
 // -- Notes about TLB invalidation operations --
@@ -107,8 +107,8 @@ void ContextBank::TLBInvalidateByAsid(uint16_t asid, hwreg::RegisterMmio& cb_bas
 
 void ContextBank::TLBInvalidateRegion(uint64_t base_va, uint64_t size, uint16_t asid,
                                       hwreg::RegisterMmio& cb_base) {
-  DEBUG_ASSERT((base_va & kPageMask) == 0);
-  DEBUG_ASSERT((size & kPageMask) == 0);
+  ZX_DEBUG_ASSERT((base_va & kPageMask) == 0);
+  ZX_DEBUG_ASSERT((size & kPageMask) == 0);
 
   // If the number of page entries to invalidate is below our (arbitrary)
   // acceptable threshold, invalidate TLB entries based on device virtual
@@ -294,16 +294,16 @@ void ContextBank::DecodeTtbrRegions(uint32_t t0sz, uint32_t t1sz) {
       // ignoring the fact that values less than 12 might be nonsensical.  Be
       // sure to special case sz == 0.  It is technically illegal to shift a 64
       // bit value to the left by >= 64 bits.
-      DEBUG_ASSERT(t0sz < 64);
-      DEBUG_ASSERT(t1sz < 64);
+      ZX_DEBUG_ASSERT(t0sz < 64);
+      ZX_DEBUG_ASSERT(t1sz < 64);
       ttbrs_[0].last_valid_addr = t0sz ? ((uint64_t{1} << (64 - t0sz)) - 1) : 0xFFFF'FFFF'FFFF'FFFF;
       ttbrs_[1].first_valid_addr = t1sz ? ~((uint64_t{1} << (64 - t1sz)) - 1) : 0x0;
       ttbrs_[1].last_valid_addr = 0xFFFF'FFFF'FFFF'FFFF;
     } break;
     case AddrMode::kExt32Bit: {
       // Section 1.5.1, Table 1-7
-      DEBUG_ASSERT(t0sz < 8);
-      DEBUG_ASSERT(t1sz < 8);
+      ZX_DEBUG_ASSERT(t0sz < 8);
+      ZX_DEBUG_ASSERT(t1sz < 8);
 
       // TODO(johngro); this is true for S1 translation, figure out what it is
       // for S2 translation.
@@ -338,7 +338,7 @@ void ContextBank::DecodeTtbrRegions(uint32_t t0sz, uint32_t t1sz) {
     } break;
     case AddrMode::k32Bit: {
       // Section 1.5.1, Table 1-6
-      DEBUG_ASSERT(t0sz < 8);
+      ZX_DEBUG_ASSERT(t0sz < 8);
       ttbrs_[0].last_valid_addr = (uint64_t{1} << (32 - t0sz)) - 1;
 
       if (t0sz) {
@@ -389,10 +389,10 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
   // 1) Adopted context banks.
   // 2) Context bank which have already shut down.
   // 3) To attempt to move from non-faulting mode -> a different non-faulting mode.
-  DEBUG_ASSERT(mode_ != BtiMode::kAdopted);
-  DEBUG_ASSERT(mode_ != BtiMode::kShutdown);
-  DEBUG_ASSERT(!(((mode_ == BtiMode::kTranslation) && (target_mode == BtiMode::kBypass)) ||
-                 ((mode_ == BtiMode::kBypass) && (target_mode == BtiMode::kTranslation))));
+  ZX_DEBUG_ASSERT(mode_ != BtiMode::kAdopted);
+  ZX_DEBUG_ASSERT(mode_ != BtiMode::kShutdown);
+  ZX_DEBUG_ASSERT(!(((mode_ == BtiMode::kTranslation) && (target_mode == BtiMode::kBypass)) ||
+                    ((mode_ == BtiMode::kBypass) && (target_mode == BtiMode::kTranslation))));
 
   // If we are already in the proper mode, no action is needed.
   if (mode_ == target_mode) {
@@ -463,21 +463,22 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
     // though the HW is in translation mode.  Said another way, Fault mode is
     // Translate mode but with no valid PTEs.
     case BtiMode::kFault: {
-#ifdef DEBUG_ASSERT_IMPLEMENTED
+#ifdef ZX_DEBUG_ASSERT_IMPLEMENTED
       const s1cbr::TCR_64Bit tcr = s1cbr::TCR_64Bit::Get().ReadFrom(&cb_base_);
-      DEBUG_ASSERT_MSG((tcr.EPD0() == 1) && (tcr.EPD1() == 1),
-                       "Failed to disable page table walking in TCR (0x%08x) for Context Bank #%u",
-                       tcr.reg_value(), cb_ndx_);
+      ZX_DEBUG_ASSERT_MSG(
+          (tcr.EPD0() == 1) && (tcr.EPD1() == 1),
+          "Failed to disable page table walking in TCR (0x%08x) for Context Bank #%u",
+          tcr.reg_value(), cb_ndx_);
 
       const s1cbr::SCTLR sctlr = s1cbr::SCTLR::Get().ReadFrom(&cb_base_);
-      DEBUG_ASSERT_MSG((sctlr.M() == 1),
-                       "Failed to enable MMU in SCTLR (0x%08x) for Context Bank #%u",
-                       sctlr.reg_value(), cb_ndx_);
+      ZX_DEBUG_ASSERT_MSG((sctlr.M() == 1),
+                          "Failed to enable MMU in SCTLR (0x%08x) for Context Bank #%u",
+                          sctlr.reg_value(), cb_ndx_);
 
       const gr1::CBAR cbar = gr1::CBAR::Get(cb_ndx_).ReadFrom(&gr1_base_);
-      DEBUG_ASSERT_MSG((cbar.TYPE() == CBAR_Type::kS1TS2Bypass),
-                       "Failed to configure for S1TS2Bypass CBAR (0x%08x) for Context Bank #%u",
-                       cbar.reg_value(), cb_ndx_);
+      ZX_DEBUG_ASSERT_MSG((cbar.TYPE() == CBAR_Type::kS1TS2Bypass),
+                          "Failed to configure for S1TS2Bypass CBAR (0x%08x) for Context Bank #%u",
+                          cbar.reg_value(), cb_ndx_);
 #endif
     } break;
 
@@ -506,8 +507,8 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
           //.set_IRPTNDX(0)                   // We only support SMMUv2, which has an interrupt
           .WriteTo(&gr1_base_);  // per context bank, and IRPTNDX is ignored.
 
-      DEBUG_ASSERT(ttbrs_[0].enabled == false);
-      DEBUG_ASSERT(ttbrs_[0].ttbr_paddr != 0);
+      ZX_DEBUG_ASSERT(ttbrs_[0].enabled == false);
+      ZX_DEBUG_ASSERT(ttbrs_[0].ttbr_paddr != 0);
 
       // Configure the TTBR0 base address and ASID, enable page table walking
       // from TTBR0, but not TTBR1, and finally, enabled the MMU.  Note that we
@@ -557,8 +558,8 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
     case BtiMode::kInvalid:
       __FALLTHROUGH;
     default:
-      DEBUG_ASSERT_MSG(false, "%s : Invalid target mode (%s) for context bank %u.\n",
-                       owner.smmu().name(), BtiModeToString(target_mode), cb_ndx_);
+      ZX_DEBUG_ASSERT_MSG(false, "%s : Invalid target mode (%s) for context bank %u.\n",
+                          owner.smmu().name(), BtiModeToString(target_mode), cb_ndx_);
       return;
   }
 
@@ -642,7 +643,7 @@ void ContextBank::DisableRegs(hwreg::RegisterMmio gr1_base, hwreg::RegisterMmio 
 
 zx::result<> ContextBank::AdoptRegisterState(Smmu& smmu) {
   // We should only be adopting registers during initialization.
-  DEBUG_ASSERT(mode_ == BtiMode::kInvalid);
+  ZX_DEBUG_ASSERT(mode_ == BtiMode::kInvalid);
 
   // Figure out whether or not this context bank is configured in a way which
   // matches one of our standard modes.

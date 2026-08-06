@@ -55,7 +55,7 @@ class Bitmask {
   }
 
   bool TestBit(uint32_t ndx) const {
-    DEBUG_ASSERT(ndx <= Bits);
+    ZX_DEBUG_ASSERT(ndx <= Bits);
     const uint32_t sndx = ndx / kBitsPerStorage;
     const uint32_t bndx = ndx % kBitsPerStorage;
     const StorageType mask = StorageType{1} << bndx;
@@ -63,7 +63,7 @@ class Bitmask {
   }
 
   void SetLowestNBits(uint32_t N) {
-    DEBUG_ASSERT(N <= Bits);
+    ZX_DEBUG_ASSERT(N <= Bits);
 
     uint32_t sndx = 0;
     while (N >= kBitsPerStorage) {

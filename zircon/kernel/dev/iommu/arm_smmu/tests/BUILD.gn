@@ -29,6 +29,7 @@ cc_test_executable("arm_smmu_tests_binary") {
   ]
 
   deps = [
+    "//sdk/lib/zircon-assert",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/region-alloc:headers",
     "//zircon/system/ulib/zx",

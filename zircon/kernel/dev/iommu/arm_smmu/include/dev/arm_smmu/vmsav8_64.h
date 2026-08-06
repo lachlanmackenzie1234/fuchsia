@@ -56,7 +56,7 @@ constexpr inline paddr_t GetTableEntryPAddr(uint64_t e) { return e & kValidAddrM
 // Note: The passed address must be valid, and we debug assert this, but we also
 // unconditionally mask the passed address just in case.
 inline uint64_t MakeTableEntry(paddr_t addr) {
-  DEBUG_ASSERT_MSG(IsValidAddr(addr), "Bad Address %016lx", addr);
+  ZX_DEBUG_ASSERT_MSG(IsValidAddr(addr), "Bad Address %016lx", addr);
   return (addr & kValidAddrMask) | kValidEntryBit | kTableEntryBit;
 }
 
@@ -146,7 +146,7 @@ inline uint64_t MakePageEntry(paddr_t addr, uint32_t perms) {
   // Note: We set the access flag bit to 1 from the start because we don't make
   // use of it, and we don't want TLB fills to be writing to the page
   // descriptors.
-  DEBUG_ASSERT(IsValidAddr(addr));
+  ZX_DEBUG_ASSERT(IsValidAddr(addr));
   return (addr & kValidAddrMask) | kValidEntryBit | kPageEntryBit | kPageEntryAccessFlagBit |
          GetPageEntryPerms(perms);
 }

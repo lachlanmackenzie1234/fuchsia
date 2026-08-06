@@ -89,7 +89,7 @@ class DeviceAspace {
   uint32_t granule_size_bits() const { return kPageShift; }
   uint64_t first_valid_address() const { return aspace_start_; }
   uint64_t last_valid_address() const {
-    DEBUG_ASSERT(aspace_len_ > 0);
+    ZX_DEBUG_ASSERT(aspace_len_ > 0);
     return aspace_start_ + aspace_len_ - 1;
   }
 

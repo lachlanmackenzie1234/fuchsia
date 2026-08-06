@@ -134,8 +134,8 @@ ktl::optional<ArmSmmuMode> ParseSmmuModeCommon(const char* mode_string,
         return ktl::nullopt;
       }
     } else {
-      DEBUG_ASSERT(behavior == ParseBehavior::kTolerateErrors);
-      DEBUG_ASSERT(base_addr.has_value());
+      ZX_DEBUG_ASSERT(behavior == ParseBehavior::kTolerateErrors);
+      ZX_DEBUG_ASSERT(base_addr.has_value());
       if (parsed_addr == base_addr.value()) {
         return mode_opt;
       }

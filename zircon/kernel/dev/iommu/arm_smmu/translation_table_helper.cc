@@ -74,14 +74,14 @@ void TranslationTableHelper::AssignPageEntry(uint64_t page_entry) {
   static_assert(kLevels > 0);
   Level& L = levels_[kLevels - 1];
 
-  DEBUG_ASSERT(L.table != nullptr);
-  DEBUG_ASSERT(L.ndx <= kAddrBitsMask);
+  ZX_DEBUG_ASSERT(L.table != nullptr);
+  ZX_DEBUG_ASSERT(L.ndx <= kAddrBitsMask);
   L.table[L.ndx] = page_entry;
   L.dirty = true;
 }
 
 void TranslationTableHelper::FinishOperation() {
-  DEBUG_ASSERT_MSG(op_ != Op::Invalid, "Bad State %u", static_cast<uint32_t>(op_));
+  ZX_DEBUG_ASSERT_MSG(op_ != Op::Invalid, "Bad State %u", static_cast<uint32_t>(op_));
 
   // Finish each level, flushing any dirty pages and reclaiming any now-unused
   // pages if this is an UnmapOp.
@@ -101,25 +101,25 @@ bool TranslationTableHelper::CurrentPageEntryValid() {
     return false;
   }
 
-  DEBUG_ASSERT(last_level.ndx <= kAddrBitsMask);
+  ZX_DEBUG_ASSERT(last_level.ndx <= kAddrBitsMask);
   const uint64_t entry = last_level.table[last_level.ndx];
   const bool valid = IsValidEntry(entry);
-  DEBUG_ASSERT(valid || (entry == 0));
+  ZX_DEBUG_ASSERT(valid || (entry == 0));
 
   return valid;
 }
 
 zx::result<> TranslationTableHelper::Initialize(Op op, uint64_t address) {
   // We expect only page aligned addresses
-  DEBUG_ASSERT((address & ~kValidAddrMask) == 0);
+  ZX_DEBUG_ASSERT((address & ~kValidAddrMask) == 0);
 
   // The requested operation must either be a map or unmap operation.
-  DEBUG_ASSERT(op != Op::Invalid);
+  ZX_DEBUG_ASSERT(op != Op::Invalid);
   op_ = op;
 
   // Reset our level state, then compute the initial indices for each level of
   // the translation table and stash our root page.
-  DEBUG_ASSERT(aspace_.root_tt_page_ != nullptr);
+  ZX_DEBUG_ASSERT(aspace_.root_tt_page_ != nullptr);
   memset(&levels_, 0, sizeof(levels_));
   levels_[0].table = static_cast<uint64_t*>(paddr_to_physmap(aspace_.root_tt_page_->paddr()));
   for (uint32_t i = 0; i < kLevels; ++i) {
@@ -142,13 +142,13 @@ zx::result<> TranslationTableHelper::Initialize(Op op, uint64_t address) {
 }
 
 void TranslationTableHelper::FinishLevel(uint32_t level_ndx) {
-  DEBUG_ASSERT(level_ndx < kLevels);
+  ZX_DEBUG_ASSERT(level_ndx < kLevels);
   Level& l = levels_[level_ndx];
 
   // Nothing to do if we have no page for this level (something which should
   // only be possible during Unmap operations).
   if (l.table == nullptr) {
-    DEBUG_ASSERT(op_ == Op::Unmap);
+    ZX_DEBUG_ASSERT(op_ == Op::Unmap);
     return;
   }
 
@@ -186,7 +186,7 @@ void TranslationTableHelper::FinishLevel(uint32_t level_ndx) {
         // page for a level which does not even intersect our address space.
         // There is no reason we should have every allocated a page for that slice
         // of the address space in the first place.
-        DEBUG_ASSERT(r.size > delta);
+        ZX_DEBUG_ASSERT(r.size > delta);
         r.base = aspace_.aspace_start_;
         r.size -= delta;
       }
@@ -195,7 +195,7 @@ void TranslationTableHelper::FinishLevel(uint32_t level_ndx) {
       const uint64_t region_end = r.base + r.size;
       if (region_end > aspace_end) {
         const uint64_t delta = region_end - aspace_end;
-        DEBUG_ASSERT(r.size > delta);
+        ZX_DEBUG_ASSERT(r.size > delta);
         r.size -= delta;
       }
 
@@ -208,11 +208,11 @@ void TranslationTableHelper::FinishLevel(uint32_t level_ndx) {
       // the Unmap operation, after the TLBs have been invalidated.
       zx::result<bool> test_result = aspace_.avail_regions_.TestRegionContainedBy(
           r, RegionAllocator::TestRegionSet::Available);
-      DEBUG_ASSERT(test_result.is_ok());
+      ZX_DEBUG_ASSERT(test_result.is_ok());
       if (test_result.value()) {
         Level& prev_level = levels_[level_ndx - 1];
-        DEBUG_ASSERT(prev_level.table != nullptr);
-        DEBUG_ASSERT(prev_level.ndx <= kAddrBitsMask);
+        ZX_DEBUG_ASSERT(prev_level.table != nullptr);
+        ZX_DEBUG_ASSERT(prev_level.ndx <= kAddrBitsMask);
 
         prev_level.table[prev_level.ndx] = 0;
         prev_level.dirty = true;
@@ -223,8 +223,8 @@ void TranslationTableHelper::FinishLevel(uint32_t level_ndx) {
         // Return the page to the page cache.  It will linger there full of
         // zeros until the TLBs have been invalidated and it can finally be
         // safely returned to the PMM.
-        DEBUG_ASSERT_MSG(return_me != nullptr, "Failed to recover vm_page %p, phys 0x%016lx",
-                         l.table, return_me_phys);
+        ZX_DEBUG_ASSERT_MSG(return_me != nullptr, "Failed to recover vm_page %p, phys 0x%016lx",
+                            l.table, return_me_phys);
         aspace_.page_cache_.ReturnPage(return_me);
       }
     }
@@ -232,12 +232,12 @@ void TranslationTableHelper::FinishLevel(uint32_t level_ndx) {
     // We are finished with this level.  Reset the table pointer and the index.
     l.table = nullptr;
     l.ndx = 0;
-    DEBUG_ASSERT(l.dirty == false);
+    ZX_DEBUG_ASSERT(l.dirty == false);
   }
 }
 
 zx::result<> TranslationTableHelper::FindPageForLevel(uint32_t level) {
-  DEBUG_ASSERT((level > 0) && (level < kLevels));
+  ZX_DEBUG_ASSERT((level > 0) && (level < kLevels));
   if (levels_[level].table != nullptr) {
     return zx::ok();
   }
@@ -258,7 +258,7 @@ zx::result<> TranslationTableHelper::FindPageForLevel(uint32_t level) {
   {
     const uint64_t existing_entry = levels_[prev].table[levels_[prev].ndx];
     if (IsValidEntry(existing_entry)) {
-      DEBUG_ASSERT(IsTableEntry(existing_entry));
+      ZX_DEBUG_ASSERT(IsTableEntry(existing_entry));
       paddr_t phys = GetTableEntryPAddr(existing_entry);
       levels_[level].table = static_cast<uint64_t*>(paddr_to_physmap(phys));
       return zx::ok();
