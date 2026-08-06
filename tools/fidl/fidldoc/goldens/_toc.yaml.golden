@@ -158,3 +158,6 @@ toc:
   - title: test.versions
     path: /test.versions
     version_added: "1"
+  - title: test.zxtypes
+    path: /test.zxtypes
+    version_added: ""

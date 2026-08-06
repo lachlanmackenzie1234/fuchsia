@@ -47,6 +47,7 @@ standalone_libraries = [
   "unknown_interactions.test.fidl",
   "vectors.test.fidl",
   "versions.test.fidl",
+  "zx_types.test.fidl",
 ]
 
 libaries_with_drivers = [

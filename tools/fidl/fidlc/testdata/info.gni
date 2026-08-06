@@ -464,6 +464,14 @@ fidl_testdata_info = [
     ]
   },
   {
+    name = "zx_types"
+    target = "//tools/fidl/fidlc/testdata:test.zxtypes"
+    host_build_denylist = [
+      # Host-side FIDL doesn't support zx.Status
+      "fidlgen_rust_next",
+    ]
+  },
+  {
     name = "experimental_zx_c_types"
     target = "//tools/fidl/fidlc/testdata:test.experimentalzxctypes"
     denylist = [
