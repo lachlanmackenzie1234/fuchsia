@@ -4042,8 +4042,8 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "audio_development_support",
-    allowed_in = [
-        "eng",
+    auto_include_in = [
+        "standard::eng",
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/services/ffxdaemon:audio_ffx_daemon",

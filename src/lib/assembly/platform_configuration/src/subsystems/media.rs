@@ -18,7 +18,6 @@ impl DefineSubsystemConfiguration<PlatformMediaConfig> for MediaSubsystem {
         if *context.feature_set_level == FeatureSetLevel::Standard
             && *context.build_type == BuildType::Eng
         {
-            builder.platform_bundle("audio_development_support")?;
             builder.platform_bundle("virtual_audio_driver")?;
             builder.platform_bundle("virtual_audio_legacy_driver")?;
 
