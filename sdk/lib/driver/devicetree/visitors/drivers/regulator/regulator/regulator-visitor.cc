@@ -15,6 +15,7 @@
 #include <memory>
 #include <regex>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/vreg/cpp/bind.h>
 #include <bind/fuchsia/regulator/cpp/bind.h>
 
@@ -171,6 +172,7 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
               fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
                                  bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeProperty2(bind_fuchsia_regulator::NAME, *regulator_name),
+              fdf::MakeProperty2(bind_fuchsia::NAME, *regulator_name),
           },
   }};
 
