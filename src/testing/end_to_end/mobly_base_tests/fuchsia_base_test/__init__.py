@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Async Fuchsia base test class."""
 
+from __future__ import annotations
+
 import enum
 import importlib
 import logging
@@ -99,7 +101,7 @@ class FuchsiaTestCases(fuchsia_async_extension.TestCases):
     tracing_on: TracingOn
 
     @property
-    def test(self) -> "FuchsiaBaseTest":
+    def test(self) -> FuchsiaBaseTest:
         # Downcast super().test to FuchsiaBaseTest. This avoids the
         # complexity of making FuchsiaTestCases a generic type which
         # leads to a paradox where we want FuchsiaTestCases to be

@@ -18,6 +18,8 @@ as a deadline type in tests:
    with a "default" deadline.
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -45,21 +47,21 @@ class Deadline:
         return self._deadline == other._deadline
 
     @staticmethod
-    def from_timeout(duration: timedelta) -> "Deadline":
+    def from_timeout(duration: timedelta) -> Deadline:
         """Creates a Deadline instance based on a duration and the current timestamp"""
         return Deadline(datetime.now(timezone.utc) + duration)
 
     @staticmethod
-    def infinite_past() -> "Deadline":
+    def infinite_past() -> Deadline:
         """Creates a deadline that has already passed."""
         return Deadline(datetime.min.replace(tzinfo=timezone.utc))
 
     @staticmethod
-    def infinite() -> "Deadline":
+    def infinite() -> Deadline:
         """Creates a deadline that will never pass."""
         return Deadline(datetime.max.replace(tzinfo=timezone.utc))
 
-    def subdeadline_with_timeout(self, duration: timedelta) -> "Deadline":
+    def subdeadline_with_timeout(self, duration: timedelta) -> Deadline:
         """Like from_timeout, but the result will be no later than `self`."""
         if duration < timedelta(seconds=0):
             _LOGGER.warning("Timeout duration is negative, using 0")
@@ -74,7 +76,7 @@ class Deadline:
             min(self._deadline, datetime.now(timezone.utc) + duration)
         )
 
-    def subdeadline_with_grace_period(self, duration: timedelta) -> "Deadline":
+    def subdeadline_with_grace_period(self, duration: timedelta) -> Deadline:
         """Returns a subdeadline that expires `duration` earlier than `self`."""
         if duration < timedelta(seconds=0):
             _LOGGER.warning("Grace period is negative, using 0")

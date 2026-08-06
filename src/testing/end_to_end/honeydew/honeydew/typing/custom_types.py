@@ -28,7 +28,7 @@ class TargetAddr(abc.ABC):
     """Abstract base class representing a generic Fuchsia Target Address."""
 
     @classmethod
-    def from_str(cls, query: str) -> "TargetAddr":
+    def from_str(cls, query: str) -> TargetAddr:
         """Attempts to parse a string query into a TargetAddr.
 
         Args:
@@ -52,7 +52,7 @@ class TargetAddr(abc.ABC):
         raise NotImplementedError("Subclasses must implement from_str")
 
     @classmethod
-    def from_json(cls, obj: dict[str, Any]) -> "TargetAddr":
+    def from_json(cls, obj: dict[str, Any]) -> TargetAddr:
         """Parses a FFX target address JSON object into a TargetAddr.
 
         Args:
@@ -96,7 +96,7 @@ class TargetUsb(TargetAddr):
             raise ValueError(f"target_id: {self.target_id} was negative")
 
     @classmethod
-    def from_str(cls, query: str) -> "TargetUsb":
+    def from_str(cls, query: str) -> TargetUsb:
         """Attempts to parse a string query into a TargetUsb.
 
         Args:
@@ -118,7 +118,7 @@ class TargetUsb(TargetAddr):
         raise ValueError(f"Invalid USB address '{query}': no 'usb:' prefix")
 
     @classmethod
-    def from_json(cls, obj: dict[str, Any]) -> "TargetUsb":
+    def from_json(cls, obj: dict[str, Any]) -> TargetUsb:
         """Parses a FFX target address JSON object into a TargetUsb.
 
         Args:
@@ -182,7 +182,7 @@ class IpPort(TargetAddr):
             return f"{host}"
 
     @classmethod
-    def from_str(cls, query: str) -> "IpPort":
+    def from_str(cls, query: str) -> IpPort:
         """Attempts to parse a string query into a IpPort.
 
         Args:
@@ -300,7 +300,7 @@ class IpPort(TargetAddr):
             raise e
 
     @classmethod
-    def from_json(cls, obj: dict[str, Any]) -> "IpPort":
+    def from_json(cls, obj: dict[str, Any]) -> IpPort:
         """Parses a FFX target address JSON object into an IpPort.
 
         Args:
@@ -406,38 +406,38 @@ class MacAddress:
         self._mac = bytes(mac)
 
     @classmethod
-    def random(cls) -> "MacAddress":
+    def random(cls) -> MacAddress:
         """Create a random MAC address."""
         return cls(random.randbytes(6))
 
     def __bytes__(self) -> builtins.bytes:
         return self._mac
 
-    def with_unicast_bit(self) -> "MacAddress":
+    def with_unicast_bit(self) -> MacAddress:
         """Return a copy of the MAC address with the unicast bit set."""
         b = bytearray(self._mac)
         b[0] &= 0xFE
         return MacAddress(b)
 
-    def with_multicast_bit(self) -> "MacAddress":
+    def with_multicast_bit(self) -> MacAddress:
         """Return a copy of the MAC address with the multicast bit set."""
         b = bytearray(self._mac)
         b[0] |= 0x01
         return MacAddress(b)
 
-    def with_locally_administered_bit(self) -> "MacAddress":
+    def with_locally_administered_bit(self) -> MacAddress:
         """Return a copy of the MAC address with the locally administered bit set."""
         b = bytearray(self._mac)
         b[0] |= 0x02
         return MacAddress(b)
 
-    def with_universally_administered_bit(self) -> "MacAddress":
+    def with_universally_administered_bit(self) -> MacAddress:
         """Return a copy of the MAC address with the universally administered bit set."""
         b = bytearray(self._mac)
         b[0] &= 0xFD
         return MacAddress(b)
 
-    def with_octet_incremented(self, index: int) -> "MacAddress":
+    def with_octet_incremented(self, index: int) -> MacAddress:
         """Return a copy of the MAC address with the octet at `index` incremented by 1."""
         if not 0 <= index < 6:
             raise ValueError(f"Invalid index {index}")

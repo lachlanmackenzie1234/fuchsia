@@ -4,6 +4,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import itertools
 import logging
 import os
@@ -84,7 +86,7 @@ class IpVersionType(Enum):
                 return True
 
     @staticmethod
-    def all() -> list["IpVersionType"]:
+    def all() -> list[IpVersionType]:
         return [
             IpVersionType.IPV4,
             IpVersionType.IPV6,

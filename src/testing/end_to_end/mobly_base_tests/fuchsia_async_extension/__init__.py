@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import asyncio
 import copy
 import functools
@@ -112,10 +114,10 @@ class TestCases:
     """Base class for modular test cases."""
 
     def __init__(self) -> None:
-        self._mobly_test: "AsyncBaseTestClass | None" = None
+        self._mobly_test: AsyncBaseTestClass | None = None
 
     @property
-    def test(self) -> "AsyncBaseTestClass":
+    def test(self) -> AsyncBaseTestClass:
         assert (
             self._mobly_test is not None
         ), "mobly_test was not injected properly."

@@ -181,7 +181,7 @@ class SSHConfig:
         ] + command
 
     @staticmethod
-    def from_config(config: Mapping[str, Json]) -> "SSHConfig":
+    def from_config(config: Mapping[str, Json]) -> SSHConfig:
         c = MapValidator(config)
         ssh_binary_path = c.get(str, "ssh_binary_path", None)
         if ssh_binary_path is None:

@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Data classes and enums for Wi-Fi Configuration."""
+
+from __future__ import annotations
+
 import dataclasses
 import enum
 import random
@@ -41,7 +44,7 @@ class Band(enum.StrEnum):
                 raise ValueError(f"Unsupported band: {self}")
 
     @property
-    def default_bss_channel(self) -> "BssChannel":
+    def default_bss_channel(self) -> BssChannel:
         """Returns the default BssChannel configuration for this band."""
         match self:
             case Band.BAND_2G:
@@ -410,17 +413,17 @@ class CapabilitySelection:
     capabilities: list[str] = dataclasses.field(default_factory=list)
 
     @classmethod
-    def DEFAULT(cls) -> "CapabilitySelection":
+    def DEFAULT(cls) -> CapabilitySelection:
         """Use OpenWrt system defaults."""
         return cls(mode="DEFAULT")
 
     @classmethod
-    def DISABLED(cls) -> "CapabilitySelection":
+    def DISABLED(cls) -> CapabilitySelection:
         """Explicitly disable all capabilities."""
         return cls(mode="DISABLED")
 
     @classmethod
-    def CUSTOM(cls, capabilities: list[str]) -> "CapabilitySelection":
+    def CUSTOM(cls, capabilities: list[str]) -> CapabilitySelection:
         """Provide a custom list of capabilities to enable."""
         return cls(mode="CUSTOM", capabilities=capabilities)
 
@@ -463,7 +466,7 @@ class RadioConfig:
         ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
         custom_uci_options: UciRadioOptions | None = None,
         custom_hostapd_options: HostapdOptions | None = None,
-    ) -> "RadioConfig":
+    ) -> RadioConfig:
         """Creates a RadioConfig object with the specified channel and BSS settings.
 
         Args:
@@ -535,8 +538,8 @@ class AccessPointConfig:
     @classmethod
     def generate(
         cls,
-        radios: list[RadioConfig] | None = None,
-    ) -> "AccessPointConfig":
+        radios: list["RadioConfig"] | None = None,
+    ) -> AccessPointConfig:
         """Creates an AccessPointConfig containing the specified radio configurations.
 
         Args:

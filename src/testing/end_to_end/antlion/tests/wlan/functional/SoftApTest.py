@@ -4,6 +4,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import logging
 import multiprocessing as mp
 import random
@@ -92,7 +94,7 @@ class APParams:
     password: str
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "APParams":
+    def from_dict(d: dict[str, Any]) -> APParams:
         security_mode_str = get_typed(
             d, "security_mode", str, SecurityMode.OPEN.value
         )
@@ -167,7 +169,7 @@ class SoftAPParams:
         return f'{band}_{self.security_type.replace("/", "_")}_{self.connectivity_mode}'
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "SoftAPParams":
+    def from_dict(d: dict[str, Any]) -> SoftAPParams:
         security_type = get_typed(
             d, "security_type", str, SecurityMode.OPEN.value
         )
@@ -222,7 +224,7 @@ class AssociationStressTestParams:
         return f"{self.soft_ap_params}_{self.test_type}_{self.iterations}_iterations"
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "AssociationStressTestParams":
+    def from_dict(d: dict[str, Any]) -> AssociationStressTestParams:
         test_type = get_typed(
             d, "test_type", str, TestType.ASSOCIATE_AND_PASS_TRAFFIC.value
         )
@@ -247,7 +249,7 @@ class ClientModeAlternatingTestParams:
         )
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "ClientModeAlternatingTestParams":
+    def from_dict(d: dict[str, Any]) -> ClientModeAlternatingTestParams:
         return ClientModeAlternatingTestParams(
             ap_params=APParams.from_dict(d.get("ap_params", {})),
             soft_ap_params=SoftAPParams.from_dict(d.get("soft_ap_params", {})),
@@ -264,7 +266,7 @@ class ToggleTestParams:
         return f"{self.soft_ap_params}_{self.iterations}_iterations"
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "ToggleTestParams":
+    def from_dict(d: dict[str, Any]) -> ToggleTestParams:
         return ToggleTestParams(
             soft_ap_params=SoftAPParams.from_dict(d.get("soft_ap_params", {})),
             iterations=get_typed(d, "iterations", int, 10),
@@ -280,7 +282,7 @@ class ClientModeToggleTestParams:
         return f"{self.ap_params}_{self.iterations}_iterations"
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "ClientModeToggleTestParams":
+    def from_dict(d: dict[str, Any]) -> ClientModeToggleTestParams:
         return ClientModeToggleTestParams(
             ap_params=APParams.from_dict(d.get("ap_params", {})),
             iterations=get_typed(d, "iterations", int, 10),

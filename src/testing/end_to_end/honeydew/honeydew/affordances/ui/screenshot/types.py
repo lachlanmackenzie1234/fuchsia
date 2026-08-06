@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Abstract base class for Screenshot affordance."""
 
+from __future__ import annotations
+
 import enum
 from dataclasses import dataclass
 from importlib import resources as impresources
@@ -20,7 +22,7 @@ class ScreenshotImageType(enum.StrEnum):
     BGRA = "bgra"
 
     @staticmethod
-    def from_file_path(path: str) -> "ScreenshotImageType":
+    def from_file_path(path: str) -> ScreenshotImageType:
         """Extract ScreenshotImageType from a path's extension.
 
         Args:
@@ -75,7 +77,7 @@ class ScreenshotImage:
             )
 
     @staticmethod
-    def load_from_path(path: str) -> "ScreenshotImage":
+    def load_from_path(path: str) -> ScreenshotImage:
         """Reads screenshot image from a given path.
 
         Args:
@@ -94,7 +96,7 @@ class ScreenshotImage:
     @staticmethod
     def load_from_resource(
         package_name: impresources.Package | str, file_name: str
-    ) -> "ScreenshotImage":
+    ) -> ScreenshotImage:
         """Reads screenshot image from a python packaged resource.
 
         This is useful for packaging screenshot golden files within a test:
@@ -131,7 +133,7 @@ class ScreenshotImage:
     @staticmethod
     def _from_data(
         data: bytes, file_type: ScreenshotImageType
-    ) -> "ScreenshotImage":
+    ) -> ScreenshotImage:
         match file_type:
             case ScreenshotImageType.BGRA:
                 # Since `ffx target screenshot` bgra files don't contain size
@@ -226,7 +228,7 @@ class ScreenshotImage:
     def _pixel_count(self) -> int:
         return self.size.width * self.size.height
 
-    def pixel_similarity(self, other: "ScreenshotImage") -> float:
+    def pixel_similarity(self, other: ScreenshotImage) -> float:
         """Returns the ratio of pixels that are equal in this and another images.
 
         For example, image 1:
@@ -291,7 +293,7 @@ class ScreenshotImage:
                 hist[p] = hist.get(p, 0) + 1
         return hist
 
-    def histogram_similarity(self, other: "ScreenshotImage") -> float:
+    def histogram_similarity(self, other: ScreenshotImage) -> float:
         """Returns the fraction of pixel colors that are the same in this and another image.
 
         This similarity measurement is useful for comparing screenshot subject to rotation,

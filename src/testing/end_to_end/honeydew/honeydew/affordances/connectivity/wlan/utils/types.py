@@ -1,7 +1,6 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
 """Data types used by wlan affordance."""
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ class NetworkConfig:
     credential_value: str
 
     @staticmethod
-    def from_fidl(fidl: f_wlan_policy.NetworkConfig) -> "NetworkConfig":
+    def from_fidl(fidl: f_wlan_policy.NetworkConfig) -> NetworkConfig:
         """Parse from a fuchsia.wlan.policy/NetworkConfig."""
         assert fidl.id_ is not None, f"{fidl!r} missing id"
         assert fidl.credential is not None, f"{fidl!r} missing credential"
@@ -72,7 +71,7 @@ class NetworkIdentifier:
     security_type: f_wlan_policy.SecurityType
 
     @staticmethod
-    def from_fidl(fidl: f_wlan_policy.NetworkIdentifier) -> "NetworkIdentifier":
+    def from_fidl(fidl: f_wlan_policy.NetworkIdentifier) -> NetworkIdentifier:
         """Parse from a fuchsia.wlan.policy/NetworkIdentifier."""
 
         return NetworkIdentifier(
@@ -199,7 +198,7 @@ class NetworkState:
     disconnect_status: f_wlan_policy.DisconnectStatus | None
 
     @staticmethod
-    def from_fidl(fidl: f_wlan_policy.NetworkState) -> "NetworkState":
+    def from_fidl(fidl: f_wlan_policy.NetworkState) -> NetworkState:
         """Parse from a fuchsia.wlan.policy/NetworkState."""
         assert fidl.id_ is not None, f"{fidl!r} missing id"
         assert fidl.state is not None, f"{fidl!r} missing state"
@@ -234,7 +233,7 @@ class ClientStateSummary:
     @staticmethod
     def from_fidl(
         fidl: f_wlan_policy.ClientStateSummary,
-    ) -> "ClientStateSummary":
+    ) -> ClientStateSummary:
         """Parse from a fuchsia.wlan.policy/ClientStateSummary."""
         assert fidl.networks is not None, f"{fidl!r} missing networks"
         assert fidl.state is not None, f"{fidl!r} missing state"
@@ -420,7 +419,7 @@ class AccessPointState:
     @staticmethod
     def from_fidl(
         fidl: f_wlan_policy.AccessPointState,
-    ) -> "AccessPointState":
+    ) -> AccessPointState:
         """Parse from a fuchsia.wlan.policy/AccessPointState."""
         assert fidl.state is not None, f"{fidl!r} missing state"
         assert fidl.mode is not None, f"{fidl!r} missing mode"

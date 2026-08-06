@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Library for interacting with OpenWRT Access Points."""
 
+from __future__ import annotations
+
 import ipaddress
 import json
 import logging
@@ -50,7 +52,7 @@ _WEP_HEX_LENGTH: list[int] = [10, 26, 32, 58]
 _WEP_STR_LENGTH: list[int] = [5, 13, 16]
 
 
-def create(configs: List[ControllerConfig]) -> List["OpenWrtAP"]:
+def create(configs: List[ControllerConfig]) -> List[OpenWrtAP]:
     """Creates OpenWRT controller objects from testbed configs.
 
     Args:
@@ -64,7 +66,7 @@ def create(configs: List[ControllerConfig]) -> List["OpenWrtAP"]:
     return [OpenWrtAP(config) for config in configs]
 
 
-def destroy(objects: List["OpenWrtAP"]) -> None:
+def destroy(objects: List[OpenWrtAP]) -> None:
     """Destroys OpenWRT controller objects.
 
     Args:
@@ -79,7 +81,7 @@ def destroy(objects: List["OpenWrtAP"]) -> None:
         ap.ssh.close()
 
 
-def get_info(objects: List["OpenWrtAP"]) -> List[Json]:
+def get_info(objects: List[OpenWrtAP]) -> List[Json]:
     """Gets information from OpenWRT controller objects.
 
     Args:

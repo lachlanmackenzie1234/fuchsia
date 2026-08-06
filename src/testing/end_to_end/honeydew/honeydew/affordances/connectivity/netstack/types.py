@@ -44,7 +44,7 @@ class InterfaceProperties:
     @staticmethod
     def from_fidl(
         fidl: f_net_interfaces.Properties, mac: MacAddress | None
-    ) -> "InterfaceProperties":
+    ) -> InterfaceProperties:
         """Create an InterfaceProperties from the FIDL equivalent.
 
         `mac` is necessary since fuchsia.net.interface/Properties does not

@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Utilities for power-related operations on Fuchsia devices."""
 
+from __future__ import annotations
+
 import dataclasses
 import logging
 from datetime import timedelta
@@ -37,7 +39,7 @@ class SagSuspendStats:
     fail_count: int
     total_time_in_suspend: timedelta
 
-    def __sub__(self, other: "SagSuspendStats") -> "SagSuspendStats":
+    def __sub__(self, other: "SagSuspendStats") -> SagSuspendStats:
         return SagSuspendStats(
             success_count=self.success_count - other.success_count,
             fail_count=self.fail_count - other.fail_count,

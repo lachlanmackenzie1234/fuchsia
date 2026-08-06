@@ -4,6 +4,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import logging
 import os
 import time
@@ -99,7 +101,7 @@ class ThroughputKey:
     channel_bandwidth: int
 
     @staticmethod
-    def from_test(test: TestParams) -> "ThroughputKey":
+    def from_test(test: TestParams) -> ThroughputKey:
         return ThroughputKey(
             country_code=test.country_code,
             security_mode=test.security_mode,
