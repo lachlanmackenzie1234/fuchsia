@@ -14,14 +14,13 @@ pub struct ScreenCoordinates {
     display_metrics: DisplayMetrics,
 }
 
-#[allow(dead_code)]
 impl ScreenCoordinates {
-    /// Create a [`ScreenCoordinates`] from the given pixel corrdinates
+    /// Create a [`ScreenCoordinates`] from the given pixel coordinates
     pub fn from_pixels(x: f32, y: f32, display_metrics: DisplayMetrics) -> Self {
         Self { x_pixels: x, y_pixels: y, display_metrics }
     }
 
-    /// Create a [`ScreenCoordinates`] from the given pip corrdinates
+    /// Create a [`ScreenCoordinates`] from the given pip coordinates
     pub fn from_pips(x: f32, y: f32, display_metrics: DisplayMetrics) -> Self {
         Self {
             x_pixels: x * display_metrics.pixels_per_pip(),
@@ -30,7 +29,7 @@ impl ScreenCoordinates {
         }
     }
 
-    /// Create a [`ScreenCoordinates`] from the given millimeter corrdinates
+    /// Create a [`ScreenCoordinates`] from the given millimeter coordinates
     pub fn from_mm(x: f32, y: f32, display_metrics: DisplayMetrics) -> Self {
         Self {
             x_pixels: x * display_metrics.pixels_per_pip() * display_metrics.mm_per_pip(),
@@ -44,12 +43,12 @@ impl ScreenCoordinates {
         Self { x_pixels: position.x, y_pixels: position.y, display_metrics }
     }
 
-    /// Retreive the x and y positions as pixel values
+    /// Retrieve the x and y positions as pixel values
     pub fn pixels(&self) -> (f32, f32) {
         (self.x_pixels, self.y_pixels)
     }
 
-    /// Retreive the x and y positions as pip values
+    /// Retrieve the x and y positions as pip values
     pub fn pips(&self) -> (f32, f32) {
         (
             self.x_pixels / self.display_metrics.pixels_per_pip(),
@@ -57,13 +56,13 @@ impl ScreenCoordinates {
         )
     }
 
-    /// Retreive the x and y positions as millimeter values
+    /// Retrieve the x and y positions as millimeter values
     pub fn mm(&self) -> (f32, f32) {
         let (x_pips, y_pips) = self.pips();
         (x_pips / self.display_metrics.mm_per_pip(), y_pips / self.display_metrics.mm_per_pip())
     }
 
-    /// Retreive the x and y positions as a [`Position`]
+    /// Retrieve the x and y positions as a [`Position`]
     pub fn position(&self) -> Position {
         Position { x: self.x_pixels, y: self.y_pixels }
     }
@@ -78,14 +77,13 @@ pub struct ScreenSize {
     display_metrics: DisplayMetrics,
 }
 
-#[allow(dead_code)]
 impl ScreenSize {
-    /// Create a [`ScreenSize`] from the given pixel corrdinates
+    /// Create a [`ScreenSize`] from the given pixel coordinates
     pub fn from_pixels(width: f32, height: f32, display_metrics: DisplayMetrics) -> Self {
         Self { width_pixels: width, height_pixels: height, display_metrics }
     }
 
-    /// Create a [`ScreenSize`] from the given pip corrdinates
+    /// Create a [`ScreenSize`] from the given pip coordinates
     pub fn from_pips(width: f32, height: f32, display_metrics: DisplayMetrics) -> Self {
         Self {
             width_pixels: width * display_metrics.pixels_per_pip(),
@@ -94,7 +92,7 @@ impl ScreenSize {
         }
     }
 
-    /// Create a [`ScreenSize`] from the given millimeter corrdinates
+    /// Create a [`ScreenSize`] from the given millimeter coordinates
     pub fn from_mm(width: f32, height: f32, display_metrics: DisplayMetrics) -> Self {
         Self {
             width_pixels: width * display_metrics.pixels_per_pip() * display_metrics.mm_per_pip(),
@@ -108,12 +106,12 @@ impl ScreenSize {
         Self { width_pixels: size.width, height_pixels: size.height, display_metrics }
     }
 
-    /// Retreive the width and height as pixel values
+    /// Retrieve the width and height as pixel values
     pub fn pixels(&self) -> (f32, f32) {
         (self.width_pixels, self.height_pixels)
     }
 
-    /// Retreive the width and height as pip values
+    /// Retrieve the width and height as pip values
     pub fn pips(&self) -> (f32, f32) {
         (
             self.width_pixels / self.display_metrics.pixels_per_pip(),
@@ -121,7 +119,7 @@ impl ScreenSize {
         )
     }
 
-    /// Retreive the width and height as millimeter values
+    /// Retrieve the width and height as millimeter values
     pub fn mm(&self) -> (f32, f32) {
         let (width_pips, height_pips) = self.pips();
         (
@@ -130,7 +128,7 @@ impl ScreenSize {
         )
     }
 
-    /// Retreive the width and height as a [`Size`]
+    /// Retrieve the width and height as a [`Size`]
     pub fn size(&self) -> Size {
         Size { width: self.width_pixels, height: self.height_pixels }
     }
@@ -150,11 +148,11 @@ mod tests {
     }
 
     #[inline]
-    fn assert_postion_close_enough(left: Position, right: Position) {
+    fn assert_position_close_enough(left: Position, right: Position) {
         assert_close_enough((left.x, left.y), (right.x, right.y));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_pixel_constructor() {
         let display_metrics =
             DisplayMetrics::new(Size { width: 1000.0, height: 500.0 }, Some(10.0), None, None);
@@ -163,10 +161,10 @@ mod tests {
         assert_close_enough(coords.pixels(), (100.0, 100.0));
         assert_close_enough(coords.pips(), (52.2449, 52.2449));
         assert_close_enough(coords.mm(), (272.9529, 272.9529));
-        assert_postion_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
+        assert_position_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_pip_constructor() {
         let display_metrics =
             DisplayMetrics::new(Size { width: 1000.0, height: 500.0 }, Some(10.0), None, None);
@@ -175,10 +173,10 @@ mod tests {
         assert_close_enough(coords.pixels(), (100.0, 100.0));
         assert_close_enough(coords.pips(), (52.2449, 52.2449));
         assert_close_enough(coords.mm(), (272.9529, 272.9529));
-        assert_postion_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
+        assert_position_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_mm_constructor() {
         let display_metrics =
             DisplayMetrics::new(Size { width: 1000.0, height: 500.0 }, Some(10.0), None, None);
@@ -187,10 +185,10 @@ mod tests {
         assert_close_enough(coords.pixels(), (100.0, 100.0));
         assert_close_enough(coords.pips(), (52.2449, 52.2449));
         assert_close_enough(coords.mm(), (272.9529, 272.9529));
-        assert_postion_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
+        assert_position_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_position_constructor() {
         let display_metrics =
             DisplayMetrics::new(Size { width: 1000.0, height: 500.0 }, Some(10.0), None, None);
@@ -200,6 +198,6 @@ mod tests {
         assert_close_enough(coords.pixels(), (100.0, 100.0));
         assert_close_enough(coords.pips(), (52.2449, 52.2449));
         assert_close_enough(coords.mm(), (272.9529, 272.9529));
-        assert_postion_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
+        assert_position_close_enough(coords.position(), Position { x: 100.0, y: 100.0 });
     }
 }

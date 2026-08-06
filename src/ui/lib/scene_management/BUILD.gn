@@ -32,6 +32,8 @@ _scene_management = {
     "//third_party/rust_crates:num-traits",
   ]
 
+  test_deps = [ "//src/lib/fuchsia" ]
+
   sources = [
     "src/display_metrics.rs",
     "src/graphics_utils.rs",

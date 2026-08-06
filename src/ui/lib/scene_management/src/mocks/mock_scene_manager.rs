@@ -49,7 +49,6 @@ impl MockSceneManager {
 }
 
 #[async_trait(?Send)]
-#[allow(unused_variables)]
 impl SceneManagerTrait for MockSceneManager {
     fn present_root_view(&self) {
         self.was_present_root_view_called.set(true);
@@ -70,16 +69,16 @@ impl SceneManagerTrait for MockSceneManager {
 
     async fn set_root_view_deprecated(
         &self,
-        view_provider: ui_app::ViewProviderProxy,
+        _view_provider: ui_app::ViewProviderProxy,
     ) -> Result<ui_views::ViewRef, Error> {
         unimplemented!()
     }
 
-    fn set_cursor_position(&self, position_physical_px: input_pipeline::Position) {
+    fn set_cursor_position(&self, _position_physical_px: input_pipeline::Position) {
         unimplemented!()
     }
 
-    fn set_cursor_visibility(&self, visible: bool) {
+    fn set_cursor_visibility(&self, _visible: bool) {
         unimplemented!()
     }
 

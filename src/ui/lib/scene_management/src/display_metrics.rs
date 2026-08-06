@@ -33,7 +33,6 @@ pub struct DisplayMetrics {
     /// The pixel density of the display. This is either supplied by the client constructing
     /// the display metrics, or a hard-coded default is used based on the display dimensions.
     // TODO(https://fxbug.dev/42165549)
-    #[allow(unused)]
     density_in_pixels_per_mm: f32,
 
     /// The expected viewing distance for the display, in millimeters. For example, a desktop
@@ -69,6 +68,12 @@ impl DisplayMetrics {
     /// The ideal visual angle of a pip unit in degrees, assuming default settings.
     /// The value has been empirically determined.
     const IDEAL_PIP_VISUAL_ANGLE_DEGREES: f32 = 0.0255;
+
+    /// Slope factor used in computing adaptation factor for perceptual differences at varying distances.
+    const ADAPTATION_SLOPE: f32 = 0.5;
+
+    /// Offset factor (in mm) used in computing adaptation factor for perceptual differences at varying distances.
+    const ADAPTATION_OFFSET: f32 = 180.0;
 
     /// Creates a new [`DisplayMetrics`] struct.
     ///
@@ -141,10 +146,12 @@ impl DisplayMetrics {
         // millimeters per millimeter.
         let pvsize_in_mm_per_mm = 1.0 / (density_in_pixels_per_mm * viewing_distance_in_mm);
 
-        // The adaption factor is an empirically determined fudge factor to take into account
+        // The adaptation factor is an empirically determined fudge factor to take into account
         // human perceptual differences for objects at varying distances, even if those objects
         // are adjusted to be the same size to the eye.
-        let adaptation_factor = (viewing_distance_in_mm * 0.5 + 180.0) / viewing_distance_in_mm;
+        let adaptation_factor = (viewing_distance_in_mm * Self::ADAPTATION_SLOPE
+            + Self::ADAPTATION_OFFSET)
+            / viewing_distance_in_mm;
 
         // Compute the pip visual size as a function of viewing distance in
         // millimeters per millimeter.
@@ -349,7 +356,7 @@ mod tests {
     use super::*;
 
     // Density is used as the denominator in pip calculation, so must be handled explicitly.
-    #[test]
+    #[fuchsia::test]
     fn test_zero_density() {
         let metrics =
             DisplayMetrics::new(Size { width: 100.0, height: 100.0 }, Some(0.0), None, None);
@@ -360,7 +367,7 @@ mod tests {
     }
 
     // Viewing distance is used as the denominator in pip calculation, so must be handled explicitly.
-    #[test]
+    #[fuchsia::test]
     fn test_zero_distance() {
         let metrics = DisplayMetrics::new(
             Size { width: 100.0, height: 100.0 },
@@ -375,7 +382,7 @@ mod tests {
     }
 
     // Tests that a known default density produces the same metrics as explicitly specified.
-    #[test]
+    #[fuchsia::test]
     fn test_pixels_per_pip_default() {
         let dimensions = DisplayMetrics::ACER_SWITCH_12_ALPHA_DIMENSIONS;
         let metrics = DisplayMetrics::new(
