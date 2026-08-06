@@ -7,7 +7,7 @@
 ## Subcommands
 
 1.  **`query`**: Executes SQL queries to inspect and extract structured data from traces. Backed by Perfetto's Trace Processor.
-2.  **`analyze`** *(Planned)*: Merges, summarizes, and processes structured query output to identify performance anomalies (e.g. jank, CPU starvation).
+2.  **`analyze`**: Executes specialized analysis plugins to identify performance anomalies (e.g., binder delays, jank, CPU starvation).
 3.  **`visualize`** *(Planned)*: Generates HTML reports, flamegraphs, SVGs, or deep-link trampoline URLs for the Perfetto UI.
 
 ---
@@ -101,6 +101,38 @@ fx perf-analyze --format json query \
     ]
   }
 ]
+```
+
+## The `analyze` Subcommand
+
+The `analyze` subcommand runs specialized analysis plugins against a trace file to identify specific performance anomalies.
+
+### Arguments
+
+*   **`--trace <path_or_url>`** *(Required)*: File path to a local `.fxt` trace file or a URL to a remote trace.
+*   **`--plugin <plugin_name>`** *(Required)*: Name of the analysis plugin to execute (e.g., `binder`).
+*   **`--list-plugins`**: Lists all available analysis plugins.
+
+---
+
+## Available Plugins
+
+### `binder` (Starnix Binder Analysis)
+
+Analyzes Starnix binder delays, missed wakeups (scheduling delays), and late-spawned wakers.
+
+#### Plugin-Specific Arguments
+
+*   **`--threshold-ms <float>`**: Threshold for scheduling delay and queue latency in milliseconds (default: `10.0`).
+*   **`--complete-only`**: Only return complete transactions (default: False, includes incomplete transactions).
+
+#### Example
+
+```shell
+fx perf-analyze --format markdown analyze \
+  --trace "https://ui.perfetto.dev/#!/?s=b3615b084da54e9a0742dd8f6280de355df4f513" \
+  --plugin binder \
+  --threshold-ms 15.0
 ```
 
 ---

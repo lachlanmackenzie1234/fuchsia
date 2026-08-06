@@ -14,20 +14,27 @@ import sys
 from typing import Sequence
 
 import result_formatter
+from binder import BinderPlugin
+from plugins import AnalyzePlugin, PluginArgumentError
 from query import TpShell
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    plugins: Sequence[AnalyzePlugin] | None = None,
+) -> int:
     """Main entry point for the performance analysis tool.
 
     Args:
         argv: Optional list of arguments to parse. Defaults to sys.argv[1:].
+        plugins: Optional sequence of AnalyzePlugin instances to register.
 
     Returns:
         Exit code (0 for success, non-zero for failure).
     """
     parser = argparse.ArgumentParser(
-        description="Fuchsia Standalone Performance Analysis Tool"
+        description="Fuchsia Standalone Performance Analysis Tool",
+        exit_on_error=False,
     )
     parser.add_argument(
         "--format",
@@ -50,7 +57,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # 'query' subcommand
     query_parser = subparsers.add_parser(
-        "query", help="Perform SQL queries on a trace file"
+        "query",
+        help="Perform SQL queries on a trace file",
+        exit_on_error=False,
     )
     query_parser.add_argument(
         "--trace", required=True, help="Trace file path or URL"
@@ -59,15 +68,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     group.add_argument("--sql", help="SQL query to run")
     group.add_argument("--batch", help="Batch JSON or @file")
 
+    # 'analyze' subcommand
+    analyze_parser = subparsers.add_parser(
+        "analyze",
+        help="Analyze traces with high-level plugins",
+        add_help=False,
+        exit_on_error=False,
+    )
+    analyze_parser.add_argument(
+        "-h",
+        "--help",
+        action="store_true",
+        help="show this help message and exit",
+    )
+    analyze_parser.add_argument("--trace", help="Trace file path or URL")
+    analyze_parser.add_argument("--plugin", help="Plugin to run")
+    analyze_parser.add_argument(
+        "--list-plugins", action="store_true", help="List available plugins"
+    )
+
     try:
-        args = parser.parse_args(argv)
+        args, remaining_args = parser.parse_known_args(argv)
+    except argparse.ArgumentError as e:
+        parser.print_usage(sys.stderr)
+        print(f"{parser.prog}: error: {e}", file=sys.stderr)
+        return 2
     except SystemExit as e:
-        if e.code is None:
-            return 0
-        if isinstance(e.code, int):
-            return e.code
-        print(f"Error: {e.code}", file=sys.stderr)
-        return 1
+        return e.code if isinstance(e.code, int) else 0
 
     # Configure logging based on verbose flag
     log_level = logging.DEBUG if args.verbose else logging.WARNING
@@ -77,13 +104,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         stream=sys.stderr,
     )
 
+    formatter = result_formatter.FORMATTERS[args.format]
+
     if args.command is None:
         parser.print_help()
         return 2
 
     if args.command == "query":
+        if remaining_args:
+            query_parser.print_usage(sys.stderr)
+            print(
+                f"{query_parser.prog}: error: unrecognized arguments: {' '.join(remaining_args)}",
+                file=sys.stderr,
+            )
+            return 2
+
         tp_shell = TpShell()
-        formatter = result_formatter.FORMATTERS[args.format]
         try:
             results = tp_shell.query(
                 trace_path=args.trace,
@@ -94,6 +130,79 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Format and print results
             print(formatter.format_results(results))
             return 0
+        except Exception as e:
+            print(formatter.format_error(str(e)))
+            return 1
+
+    elif args.command == "analyze":
+        if plugins is None:
+            plugins = [BinderPlugin()]
+
+        if args.list_plugins:
+            plugin_data = [
+                {"name": p.name, "description": p.description} for p in plugins
+            ]
+            print(formatter.format_results(plugin_data))
+            return 0
+
+        if args.help:
+            if args.plugin:
+                plugin = next(
+                    (p for p in plugins if p.name == args.plugin), None
+                )
+                if not plugin:
+                    print(
+                        f"Error: Plugin '{args.plugin}' not found.",
+                        file=sys.stderr,
+                    )
+                    return 2
+                try:
+                    plugin.analyze(
+                        ["--help"], args.trace or "", cache=args.cache
+                    )
+                    return 0
+                except SystemExit as e:
+                    if e.code is None or e.code == 0:
+                        return 0
+                    return e.code if isinstance(e.code, int) else 1
+                except Exception as e:
+                    print(f"Error: {e}", file=sys.stderr)
+                    return 1
+            else:
+                analyze_parser.print_help()
+                return 0
+
+        if not args.trace or not args.plugin:
+            missing = []
+            if not args.trace:
+                missing.append("--trace")
+            if not args.plugin:
+                missing.append("--plugin")
+            analyze_parser.print_usage(sys.stderr)
+            print(
+                f"{analyze_parser.prog}: error: the following arguments are required: {', '.join(missing)}",
+                file=sys.stderr,
+            )
+            return 2
+
+        plugin = next((p for p in plugins if p.name == args.plugin), None)
+        if not plugin:
+            print(f"Error: Plugin '{args.plugin}' not found.", file=sys.stderr)
+            return 2
+
+        try:
+            results = plugin.analyze(
+                remaining_args, args.trace, cache=args.cache
+            )
+            print(formatter.format_results(results))
+            return 0
+        except PluginArgumentError as e:
+            print(formatter.format_error(str(e)))
+            return 2
+        except SystemExit as e:
+            if e.code is None or e.code == 0:
+                return 0
+            return e.code if isinstance(e.code, int) else 1
         except Exception as e:
             print(formatter.format_error(str(e)))
             return 1
