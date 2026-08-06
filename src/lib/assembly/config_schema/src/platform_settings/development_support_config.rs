@@ -126,10 +126,7 @@ pub struct DisplayToolsConfig {
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AudioToolsConfig {
-    /// Include tools for audio driver development, such as:
-    ///   - 'audio-codec-ctl'
-    ///   - 'audio-driver-ctl'
-    ///   - 'virtual_audio_util'
+    /// Include tools for audio driver development.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub driver_tools: bool,
 
@@ -139,6 +136,44 @@ pub struct AudioToolsConfig {
     ///   - 'wav_recorder'
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub full_stack_tools: bool,
+
+    /// Include tools for legacy audio driver development, such as:
+    ///   - 'audio-codec-ctl'
+    ///   - 'audio-driver-ctl'
+    ///   - 'dsputil'
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub legacy_driver_tools: bool,
+
+    /// Configuration for virtual audio drivers and corresponding CLI utilities.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtual_audio: Option<VirtualAudioConfig>,
+}
+
+/// Configuration for virtual audio drivers (`virtual-audio` /
+/// `virtual-audio-legacy`) and CLI utils.
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct VirtualAudioConfig {
+    /// Whether to include legacy virtual audio driver (`virtual-audio-legacy`).
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub legacy: bool,
+
+    /// Whether to include modern virtual audio driver (`virtual-audio`).
+    /// If omitted in JSON, this defaults to `!legacy` (i.e., true if legacy
+    /// is false, false if legacy is true).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modern: Option<bool>,
+
+    /// Whether to include the corresponding CLI utilities
+    /// (`virtual_audio_util` and `virtual_audio_legacy_util`).
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub tools: bool,
+}
+
+impl VirtualAudioConfig {
+    pub fn is_modern_enabled(&self) -> bool {
+        self.modern.unwrap_or(!self.legacy)
+    }
 }
 
 /// Platform-provided tools for development and debugging connectivity.

@@ -140,6 +140,33 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
             builder.platform_bundle("virtual_audio_util")?;
             builder.platform_bundle("virtual_audio_legacy_util")?;
         }
+        if config.tools.audio.legacy_driver_tools {
+            context.ensure_build_type_and_feature_set_level(
+                &[BuildType::Eng],
+                &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
+                "Audio legacy driver tools",
+            )?;
+            builder.platform_bundle("audio_legacy_driver_tools")?;
+        }
+        if let Some(vad) = &config.tools.audio.virtual_audio {
+            context.ensure_build_type_and_feature_set_level(
+                &[BuildType::Eng],
+                &[FeatureSetLevel::Utility, FeatureSetLevel::Standard],
+                "Virtual audio development support",
+            )?;
+            if vad.is_modern_enabled() {
+                builder.platform_bundle("virtual_audio_driver")?;
+                if vad.tools {
+                    builder.platform_bundle("virtual_audio_util")?;
+                }
+            }
+            if vad.legacy {
+                builder.platform_bundle("virtual_audio_legacy_driver")?;
+                if vad.tools {
+                    builder.platform_bundle("virtual_audio_legacy_util")?;
+                }
+            }
+        }
         if config.tools.audio.full_stack_tools {
             context.ensure_build_type_and_feature_set_level(
                 &[BuildType::Eng],
