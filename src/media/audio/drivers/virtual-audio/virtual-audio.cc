@@ -86,9 +86,7 @@ void VirtualAudio::GetNumDevices(GetNumDevicesCompleter::Sync& completer) {
 }
 
 void VirtualAudio::RemoveAll(RemoveAllCompleter::Sync& completer) {
-  fdf::info("VirtualAudio::RemoveAll called, devices count: {}", devices_.size());
   devices_.clear();
-  fdf::info("VirtualAudio::RemoveAll devices cleared, sending reply");
   completer.Reply();
 }
 
