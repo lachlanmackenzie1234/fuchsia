@@ -40,11 +40,7 @@ rustc_library("console_env") {
 
 kernel_rust_mod("console_rust") {
   output_name = "console_rust"
-  visibility = [
-    "//zircon/kernel/bin:*",
-    "//zircon/kernel/lib/console/*",
-    "//zircon/kernel/top:*",
-  ]
+  visibility = [ "//zircon/kernel/*" ]
   sources = [ "rust/src/mod.rs" ]
   source_root = "rust/src/mod.rs"
   deps = [
