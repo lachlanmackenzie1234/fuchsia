@@ -9,7 +9,10 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <zircon/compiler.h>
 #include <zircon/syscalls/resource.h>
+
+__BEGIN_CDECLS
 
 // Called by platform specific code to add a range to a specific resource type's
 // deny list.  Must be called after global .ctors, heap initialization, and
@@ -27,5 +30,7 @@ void root_resource_filter_add_deny_region(uintptr_t base, size_t size, zx_rsrc_k
 // specified range and kind may be created.  This restriction applies even to
 // users with access to the root resource.
 bool root_resource_filter_can_access_region(uintptr_t base, size_t size, zx_rsrc_kind_t kind);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_LIB_ROOT_RESOURCE_FILTER_INCLUDE_LIB_ROOT_RESOURCE_FILTER_H_

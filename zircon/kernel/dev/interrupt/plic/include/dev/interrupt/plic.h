@@ -7,11 +7,17 @@
 #ifndef ZIRCON_KERNEL_DEV_INTERRUPT_PLIC_INCLUDE_DEV_INTERRUPT_PLIC_H_
 #define ZIRCON_KERNEL_DEV_INTERRUPT_PLIC_INCLUDE_DEV_INTERRUPT_PLIC_H_
 
+#include <zircon/compiler.h>
+
 #include <phys/handoff.h>
 
+__BEGIN_CDECLS
+
 // Early and late initialization routines for the driver.
-void PLICInitEarly(const zbi_dcfg_riscv_plic_driver_t& config);
-void PLICInitPostVm(const zbi_dcfg_riscv_plic_driver_t& config);
-void PLICInitLate(const zbi_dcfg_riscv_plic_driver_t& config);
+void plic_init_early(const zbi_dcfg_riscv_plic_driver_t& config);
+void plic_init_post_vm(const zbi_dcfg_riscv_plic_driver_t& config);
+void plic_init_late(const zbi_dcfg_riscv_plic_driver_t& config);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_DEV_INTERRUPT_PLIC_INCLUDE_DEV_INTERRUPT_PLIC_H_
