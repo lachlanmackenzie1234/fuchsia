@@ -11,7 +11,7 @@ mod nfd;
 use unicode_gen;
 
 /// Filters a valid sequence of unicode characters, casefolding.
-pub struct CaseFoldIterator<I: Iterator<Item = char>> {
+pub(crate) struct CaseFoldIterator<I: Iterator<Item = char>> {
     /// The not-yet-normalized input sequence.
     input: I,
     buf: VecDeque<char>,
@@ -37,7 +37,7 @@ impl<I: Iterator<Item = char>> Iterator for CaseFoldIterator<I> {
     }
 }
 
-pub fn casefold<I: Iterator<Item = char>>(input: I) -> CaseFoldIterator<I> {
+pub(crate) fn casefold<I: Iterator<Item = char>>(input: I) -> CaseFoldIterator<I> {
     CaseFoldIterator { input, buf: VecDeque::new() }
 }
 
@@ -209,6 +209,15 @@ impl<'a> From<&'a str> for &'a CasefoldStr {
         CasefoldStr::new(item)
     }
 }
+
+impl<'a> std::convert::TryFrom<&'a [u8]> for &'a CasefoldStr {
+    type Error = std::str::Utf8Error;
+
+    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
+        std::str::from_utf8(bytes).map(CasefoldStr::new)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
