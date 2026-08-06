@@ -8,10 +8,7 @@ import("//src/lib/vulkan/vulkan.gni")
 
 group("tests") {
   testonly = true
-  public_deps = [
-    ":carnelian_pixel_test",
-    "//src/graphics/bin/vulkan_loader",
-  ]
+  public_deps = [ ":carnelian_pixel_test" ]
 }
 
 cc_test_executable("carnelian_pixel_test_bin") {

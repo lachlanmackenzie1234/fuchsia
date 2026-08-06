@@ -176,6 +176,7 @@ fn configure_subsystems(
         starnix: &platform.starnix,
         health_check: &platform.health_check,
         memory_allocator: &platform.memory_allocator,
+        graphics: &platform.graphics,
     };
     component::ComponentSubsystem::define_configuration(
         &context_base.for_subsystem("component"),

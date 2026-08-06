@@ -20,7 +20,6 @@ template("generate_web_runner_tests") {
       "//src/chromium/web_runner_tests",
 
       # The deps below are necessary on minimal product configs.
-      "//src/graphics/bin/vulkan_loader",
       "//src/ui/bin/text:text_manager",
 
       # This dependency is used to provide a fake

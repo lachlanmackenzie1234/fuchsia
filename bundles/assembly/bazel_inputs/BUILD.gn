@@ -399,10 +399,6 @@ group("vulkan_loader") {
   deps = [ "//bundles/assembly/bazel_inputs/src/graphics/bin/vulkan_loader" ]
 }
 
-group("vulkan_loader_for_lavapipe") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/graphics/bin/vulkan_loader:vulkan_loader_for_lavapipe" ]
-}
-
 group("lavapipe_pkg") {
   deps = [ "//bundles/assembly/bazel_inputs/src/graphics/lib/lavapipe-vulkan:lavapipe_pkg" ]
 }

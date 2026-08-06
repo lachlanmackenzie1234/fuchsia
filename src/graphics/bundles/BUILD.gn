@@ -22,9 +22,3 @@ group("drivers") {
     "//src/graphics/drivers/msd-vsi-vip:msd_vsi_test",
   ]
 }
-
-# This contains services needed for Vulkan drivers to work. It should be
-# included in base_package_labels.
-group("vulkan") {
-  deps = [ "//src/graphics/bin/vulkan_loader" ]
-}

@@ -4,7 +4,8 @@
 
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
-use assembly_config_schema::platform_settings::graphics_config::{GraphicsConfig, VulkanIcd};
+use assembly_config_schema::board_config::Architecture;
+use assembly_config_schema::platform_settings::graphics_config::GraphicsConfig;
 use assembly_config_schema::platform_settings::ui_config::PlatformUiConfig;
 use assembly_constants::BoardFeature;
 
@@ -39,20 +40,55 @@ impl DefineSubsystemConfiguration<(&GraphicsConfig, &PlatformUiConfig)>
         if *context.feature_set_level == FeatureSetLevel::Standard
             && context.board_config.provides_feature(BoardFeature::VulkanGpu)
         {
-            match graphics_config.vulkan_icd {
-                VulkanIcd::Default => {
-                    builder.platform_bundle("vulkan_loader")?;
-                }
-                VulkanIcd::Lavapipe => {
-                    // TODO(b/541271630): Restrict lavapipe to eng build types.
-                    context.ensure_build_type(
-                        &[BuildType::Eng, BuildType::UserDebug],
-                        "vulkan_icd lavapipe",
-                    )?;
-                    builder.platform_bundle("vulkan_loader_for_lavapipe")?;
-                    builder.platform_bundle("lavapipe_pkg")?;
-                }
+            builder.platform_bundle("vulkan_loader")?;
+
+            // LINT.IfChange(vulkan_loader_lavapipe)
+            let (default_magma, default_goldfish, default_lavapipe) =
+                match (&context.board_config.arch, context.build_type) {
+                    (Architecture::X64, BuildType::Eng) => {
+                        // Magma is unsupported on x64, but goldfish and lavapipe
+                        // are permitted on eng builds only.
+                        (false, true, true)
+                    }
+                    (Architecture::X64, _) => {
+                        // In non-eng variants, we do not allow lavapipe.
+                        (false, true, false)
+                    }
+                    _ => {
+                        // We support magma on other architectures, so we prefer it.
+                        (true, true, false)
+                    }
+                };
+            // LINT.ThenChange(//src/lib/assembly/platform_configuration/src/subsystems/component.rs:vulkan_loader_lavapipe)
+
+            let allow_magma = graphics_config.vulkan_icd.allow_magma.unwrap_or(default_magma);
+            let allow_goldfish =
+                graphics_config.vulkan_icd.allow_goldfish.unwrap_or(default_goldfish);
+            let allow_lavapipe =
+                graphics_config.vulkan_icd.allow_lavapipe.unwrap_or(default_lavapipe);
+
+            // TODO(https://fxbug.dev/541271630): Restrict lavapipe to eng build types.
+            if allow_lavapipe {
+                context.ensure_build_type(
+                    &[BuildType::Eng, BuildType::UserDebug],
+                    "vulkan_icd lavapipe",
+                )?;
+                builder.platform_bundle("lavapipe_pkg")?;
+                builder.core_shard(&context.get_resource("lavapipe.core_shard.cml"));
+            } else {
+                builder.core_shard(&context.get_resource("lavapipe-disabled.core_shard.cml"));
             }
+
+            builder
+                .package("vulkan_loader")
+                .component("meta/vulkan_loader.cm")?
+                .field("allow_magma_icds", allow_magma)?
+                .field("allow_goldfish_icd", allow_goldfish)?
+                .field("allow_lavapipe_icd", allow_lavapipe)?
+                .field(
+                    "lavapipe_icd_url",
+                    "fuchsia-pkg://fuchsia.com/libvulkan_lavapipe#meta/vulkan.cm",
+                )?;
         }
 
         if context.board_config.provides_feature(BoardFeature::FakeDisplay) && ui_config.enabled {
@@ -315,7 +351,11 @@ mod tests {
             ..ConfigurationContext::default_for_tests()
         };
         let config = GraphicsConfig {
-            vulkan_icd: VulkanIcd::Lavapipe,
+            vulkan_icd: VulkanIcd {
+                allow_magma: Some(false),
+                allow_goldfish: Some(false),
+                allow_lavapipe: Some(true),
+            },
             virtual_console: VirtconConfig { enable: Some(false), ..Default::default() },
         };
         let mut builder = ConfigurationBuilderImpl::default();
@@ -330,7 +370,7 @@ mod tests {
             config.bundles,
             [
                 "display_drivers_base".to_string(),
-                "vulkan_loader_for_lavapipe".to_string(),
+                "vulkan_loader".to_string(),
                 "lavapipe_pkg".to_string()
             ]
             .into()

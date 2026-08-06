@@ -13,17 +13,17 @@ pub struct GraphicsConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub virtual_console: VirtconConfig,
 
-    /// Which Vulkan ICD to use.
+    /// Which Vulkan ICDs to allow.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub vulkan_icd: VulkanIcd,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum VulkanIcd {
-    #[default]
-    Default,
-    Lavapipe,
+#[serde(default, deny_unknown_fields)]
+pub struct VulkanIcd {
+    pub allow_magma: Option<bool>,
+    pub allow_goldfish: Option<bool>,
+    pub allow_lavapipe: Option<bool>,
 }
 
 /// Platform configuration options for the virtual console

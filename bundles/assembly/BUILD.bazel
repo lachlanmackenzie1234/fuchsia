@@ -863,23 +863,6 @@ assembly_input_bundle(
     ],
 )
 
-# AIB for the Vulkan Loader for Lavapipe
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "vulkan_loader_for_lavapipe",
-    # TODO(https://fxbug.dev/541271630): Restrict lavapipe to eng build types.
-    allowed_in = [
-        "userdebug",
-        "eng",
-    ],
-    base_packages = select({
-        "//build/bazel/platforms:is_fuchsia_riscv64": [],
-        "//conditions:default": [
-            "//bundles/assembly/bazel_inputs/src/graphics/bin/vulkan_loader:vulkan_loader_for_lavapipe",
-        ],
-    }),
-)
-
 # AIB for the Lavapipe ICD Package
 # buildifier: leave-alone
 assembly_input_bundle(
@@ -1837,7 +1820,6 @@ assembly_input_bundle(
         # to support ephemeral resolution of shell packages.
         "//src/sys/process-resolver:meta/process_resolver.pkg-resolver.core_shard.cml",
         "//src/sys/core:meta/core-env-full-resolver.core_shard.cml",
-        "//src/sys/core:meta/lavapipe.core_shard.cml",
         "//src/sys/core:meta/unrestricted-storage.core_shard.cml",
         "//src/sys/tools/debug-dash-launcher:meta/debug_dash_launcher.core_shard.cml",
         "//src/storage/fs_realm:meta/fs_realm.core_shard.cml",
@@ -1897,9 +1879,6 @@ assembly_input_bundle(
         # user and userdebug only have the base-resolver, not the
         # pkg-resolver.
         "//src/sys/process-resolver:meta/process_resolver.base-resolver.core_shard.cml",
-
-        # Lavapipe is only enabled on eng builds.
-        "//src/sys/core:meta/lavapipe-disabled.core_shard.cml",
 
         # user and userdebug restrict access to the Storage capability
         # to registered component ids.
@@ -4964,6 +4943,7 @@ assembly_resources_directory(
         "//src/security/policy:component_manager_policy_user.json5",
         "//src/security/policy:component_manager_policy_userdebug.json5",
         "//src/security/policy:subsystems/component_manager_policy_starnix.json5",
+        "//src/security/policy:subsystems/component_manager_policy_vulkan_loader.json5",
         "//src/sys/component_manager/configs:bootfs_config.json5",
 
         # Networking resources.
@@ -4991,6 +4971,8 @@ assembly_resources_directory(
         "//src/security/bin/tee_manager:meta/proprietary_tee_manager.no_session.core_shard.cml.template",
         "//src/security/bin/tee_manager:meta/proprietary_tee_manager.session.core_shard.cml.template",
         "//src/security/bin/tee_manager:meta/tee_manager.core_shard.cml",
+        "//src/sys/core:meta/lavapipe.core_shard.cml",
+        "//src/sys/core:meta/lavapipe-disabled.core_shard.cml",
 
         # Default recovery logo
         "//src/recovery/system:res/fuchsia-logo.riv",

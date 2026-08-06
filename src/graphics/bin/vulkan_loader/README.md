@@ -101,6 +101,49 @@ metadata.json is a single JSON file that describes the ICD to the loader. Exampl
 * `manifest_path` is the location of the [Khronos ICD manifest json file][loaderinterface] relative
     to the exposed `contents` directory.
 
+## Configuration
+
+The Vulkan loader's structured configuration is managed dynamically by **Product Assembly**.
+The structured configuration parameters available for `vulkan_loader` are:
+
+* `allow_magma_icds` (boolean): Enables loading hardware Magma Vulkan ICDs.
+* `allow_goldfish_icd` (boolean): Enables loading the Goldfish emulator Vulkan ICD.
+* `allow_lavapipe_icd` (boolean): Enables loading the LavaPipe software Vulkan ICD.
+* `lavapipe_icd_url` (string): Component URL of the LavaPipe ICD package.
+
+These values are configured at the product assembly level in the platform `graphics` subsystem config:
+
+```json5
+// Example Assembly platform configuration
+{
+  platform: {
+    graphics: {
+      vulkan_icd: {
+        allow_magma: true
+        allow_goldfish: true
+        allow_lavapipe: false
+      }
+    }
+  }
+}
+```
+
+To override local ICD settings locally during development, such as disabling
+goldfish for lavapipe testing, you can use Product Assembly developer overrides,
+and provide:
+
+```json5
+{
+  platform: {
+    graphics: {
+      vulkan_icd: {
+        allow_goldfish: false
+      }
+    }
+  }
+}
+```
+
 ## Debugging
 
 The loader service exposes inspect data (under `core/vulkan_loader`) about its

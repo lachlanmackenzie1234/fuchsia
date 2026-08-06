@@ -13,8 +13,3 @@ prebuilt_package(
     name = "vulkan_loader",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/graphics/bin/vulkan_loader:vulkan_loader",
 )
-
-prebuilt_package(
-    name = "vulkan_loader_for_lavapipe",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/graphics/bin/vulkan_loader:vulkan_loader_for_lavapipe",
-)

@@ -112,9 +112,6 @@ board_input_bundle("main_bundle") {
     # Goldfish devices are provided by femu/aemu.
     "//src/graphics/lib/goldfish-vulkan/gnbuild:goldfish",
 
-    # Lavapipe used in some scenarios
-    "//src/graphics/lib/lavapipe-vulkan:lavapipe_pkg",
-
     # Vulkan ICD for virtio-gpu
     "//src/graphics/drivers/gfxstream-vulkan",
   ]

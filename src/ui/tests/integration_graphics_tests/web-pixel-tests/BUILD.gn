@@ -16,7 +16,6 @@ group("tests") {
     # TODO(https://fxbug.dev/42070261): Should these be deps of the individual test
     # targets above?
     "//src/chromium:web_context_provider_for_test",
-    "//src/graphics/bin/vulkan_loader",
   ]
 }
 

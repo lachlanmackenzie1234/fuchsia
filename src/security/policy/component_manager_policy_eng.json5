@@ -249,9 +249,6 @@
 
                     // This protocol is used by console-launcher to run tests in bringup builds.
                     "/bootstrap/console-launcher",
-
-                    // Allow Lavapipe only on Eng builds.
-                    "/core/vulkan_loader",
                 ],
             },
             {

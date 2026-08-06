@@ -4,7 +4,9 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::{Context, Result};
+use assembly_config_schema::board_config::Architecture;
 use assembly_config_schema::platform_settings::development_support_config::DevelopmentSupportConfig;
+use assembly_config_schema::platform_settings::graphics_config::GraphicsConfig;
 use assembly_config_schema::platform_settings::health_check_config::HealthCheckConfig;
 use assembly_config_schema::platform_settings::memory_allocator_config::MemoryAllocatorConfig;
 use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixConfig;
@@ -22,6 +24,7 @@ pub(crate) struct ComponentConfig<'a> {
     pub starnix: &'a PlatformStarnixConfig,
     pub health_check: &'a HealthCheckConfig,
     pub memory_allocator: &'a MemoryAllocatorConfig,
+    pub graphics: &'a GraphicsConfig,
 }
 
 pub(crate) struct ComponentSubsystem;
@@ -75,6 +78,17 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         // Apply platform policies specific to subsystems.
         if config.starnix.enabled {
             input.push(context.get_resource("component_manager_policy_starnix.json5"));
+        }
+
+        // LINT.IfChange(vulkan_loader_lavapipe)
+        let default_lavapipe = matches!(
+            (&context.board_config.arch, context.build_type),
+            (Architecture::X64, BuildType::Eng)
+        );
+        // LINT.ThenChange(//src/lib/assembly/platform_configuration/src/subsystems/graphics.rs:vulkan_loader_lavapipe)
+        let allow_lavapipe = config.graphics.vulkan_icd.allow_lavapipe.unwrap_or(default_lavapipe);
+        if allow_lavapipe {
+            input.push(context.get_resource("component_manager_policy_vulkan_loader.json5"));
         }
 
         let monikers: Vec<&str> = config
@@ -216,6 +230,8 @@ mod tests {
         std::fs::write(resdir_path.join("bootfs_config.json5"), "{}").unwrap();
         std::fs::write(resdir_path.join("component_manager_policy.json5"), "{}").unwrap();
         std::fs::write(resdir_path.join("component_manager_policy_eng.json5"), "{}").unwrap();
+        std::fs::write(resdir_path.join("component_manager_policy_vulkan_loader.json5"), "{}")
+            .unwrap();
         std::fs::write(resdir_path.join("core_component_id_index.json5"), "{ instances: [] }")
             .unwrap();
         std::fs::write(
