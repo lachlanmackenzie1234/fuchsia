@@ -267,8 +267,6 @@ type setArgs struct {
 	cargoTOMLGen     bool
 	jsonIDEScripts   []string
 	universePackages []string
-	basePackages     []string
-	cachePackages    []string
 	hostLabels       []string
 	testLabels       []string
 	variants         []string
@@ -336,8 +334,6 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 	flagSet.BoolVar(&cmd.cargoTOMLGen, "cargo-toml-gen", false, "")
 	flagSet.StringSliceVar(&cmd.jsonIDEScripts, "json-ide-script", []string{}, "")
 	flagSet.StringSliceVar(&cmd.universePackages, "with", []string{}, "")
-	flagSet.StringSliceVar(&cmd.basePackages, "with-base", []string{}, "")
-	flagSet.StringSliceVar(&cmd.cachePackages, "with-cache", []string{}, "")
 	flagSet.StringSliceVar(&cmd.hostLabels, "with-host", []string{}, "")
 	flagSet.StringSliceVar(&cmd.testLabels, "with-test", []string{}, "")
 	flagSet.StringSliceVar(&cmd.variants, "variant", []string{}, "")
@@ -384,19 +380,6 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 	case "release", "debug", "balanced":
 	default:
 		return nil, fmt.Errorf("Invalid --compilation-mode: %q. Valid values are 'release', 'balanced', 'debug'.", cmd.compilationMode)
-	}
-
-	if len(cmd.basePackages) != 0 || len(cmd.cachePackages) != 0 {
-		message := "The --with-base and --with-cache arguments have been removed.\n" +
-			"\n" +
-			"Please switch to one of the following:\n" +
-			"  - Use --with-test for tests.\n" +
-			"  - Use developer overrides for assembly (go/fuchsia-assembly-overrides) for\n" +
-			"    anything that needs to be added to the base/cache package set for a product.\n" +
-			"  - Use --with for adding other targets to the build (such as tools not in\n" +
-			"    //bundles/tools).\n" +
-			"\n"
-		return nil, fmt.Errorf(message)
 	}
 
 	if cmd.buildDir != "" {

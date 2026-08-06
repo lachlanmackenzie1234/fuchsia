@@ -12,16 +12,11 @@ main_pb_label = "//bundles:main"
 compilation_mode = "debug"
 
 # Target lists:
-base_package_labels = []
-cache_package_labels = []
 universe_package_labels = [
   "//scripts:tests",
   "//tools/devshell/python:tests",
 ]
 developer_test_labels = []
-base_package_labels += ["//src:tests", "//other:tests"]
-base_package_labels -= ["//src:tests"]
-cache_package_labels = ["//src/other:tests"]
 developer_test_labels = ["//src/other:tests"]
 """
 
@@ -123,7 +118,7 @@ ARGS_GN_JSON = r"""
          "location": {
             "begin_column": 17,
             "begin_line": 3,
-            "end_column": 32,
+            "end_column": 33,
             "end_line": 3
          },
          "type": "LITERAL",
@@ -132,7 +127,7 @@ ARGS_GN_JSON = r"""
       "location": {
          "begin_column": 1,
          "begin_line": 3,
-         "end_column": 32,
+         "end_column": 33,
          "end_line": 3
       },
       "type": "BINARY",
@@ -172,86 +167,8 @@ ARGS_GN_JSON = r"""
          "location": {
             "begin_column": 1,
             "begin_line": 9,
-            "end_column": 20,
-            "end_line": 9
-         },
-         "type": "IDENTIFIER",
-         "value": "base_package_labels"
-      }, {
-         "begin_token": "[",
-         "child": [  ],
-         "end": {
-            "location": {
-               "begin_column": 24,
-               "begin_line": 9,
-               "end_column": 25,
-               "end_line": 9
-            },
-            "type": "END",
-            "value": "]"
-         },
-         "location": {
-            "begin_column": 23,
-            "begin_line": 9,
             "end_column": 24,
             "end_line": 9
-         },
-         "type": "LIST"
-      } ],
-      "location": {
-         "begin_column": 1,
-         "begin_line": 9,
-         "end_column": 24,
-         "end_line": 9
-      },
-      "type": "BINARY",
-      "value": "="
-   }, {
-      "child": [ {
-         "location": {
-            "begin_column": 1,
-            "begin_line": 10,
-            "end_column": 21,
-            "end_line": 10
-         },
-         "type": "IDENTIFIER",
-         "value": "cache_package_labels"
-      }, {
-         "begin_token": "[",
-         "child": [  ],
-         "end": {
-            "location": {
-               "begin_column": 25,
-               "begin_line": 10,
-               "end_column": 26,
-               "end_line": 10
-            },
-            "type": "END",
-            "value": "]"
-         },
-         "location": {
-            "begin_column": 24,
-            "begin_line": 10,
-            "end_column": 25,
-            "end_line": 10
-         },
-         "type": "LIST"
-      } ],
-      "location": {
-         "begin_column": 1,
-         "begin_line": 10,
-         "end_column": 25,
-         "end_line": 10
-      },
-      "type": "BINARY",
-      "value": "="
-   }, {
-      "child": [ {
-         "location": {
-            "begin_column": 1,
-            "begin_line": 11,
-            "end_column": 24,
-            "end_line": 11
          },
          "type": "IDENTIFIER",
          "value": "universe_package_labels"
@@ -260,18 +177,18 @@ ARGS_GN_JSON = r"""
          "child": [ {
             "location": {
                "begin_column": 3,
-               "begin_line": 12,
+               "begin_line": 10,
                "end_column": 20,
-               "end_line": 12
+               "end_line": 10
             },
             "type": "LITERAL",
             "value": "\"//scripts:tests\""
          }, {
             "location": {
                "begin_column": 3,
-               "begin_line": 13,
+               "begin_line": 11,
                "end_column": 34,
-               "end_line": 13
+               "end_line": 11
             },
             "type": "LITERAL",
             "value": "\"//tools/devshell/python:tests\""
@@ -279,26 +196,26 @@ ARGS_GN_JSON = r"""
          "end": {
             "location": {
                "begin_column": 1,
-               "begin_line": 14,
+               "begin_line": 12,
                "end_column": 2,
-               "end_line": 14
+               "end_line": 12
             },
             "type": "END",
             "value": "]"
          },
          "location": {
             "begin_column": 27,
-            "begin_line": 11,
+            "begin_line": 9,
             "end_column": 1,
-            "end_line": 14
+            "end_line": 12
          },
          "type": "LIST"
       } ],
       "location": {
          "begin_column": 1,
-         "begin_line": 11,
+         "begin_line": 9,
          "end_column": 1,
-         "end_line": 14
+         "end_line": 12
       },
       "type": "BINARY",
       "value": "="
@@ -306,9 +223,9 @@ ARGS_GN_JSON = r"""
       "child": [ {
          "location": {
             "begin_column": 1,
-            "begin_line": 15,
+            "begin_line": 13,
             "end_column": 22,
-            "end_line": 15
+            "end_line": 13
          },
          "type": "IDENTIFIER",
          "value": "developer_test_labels"
@@ -318,26 +235,26 @@ ARGS_GN_JSON = r"""
          "end": {
             "location": {
                "begin_column": 26,
-               "begin_line": 15,
+               "begin_line": 13,
                "end_column": 27,
-               "end_line": 15
+               "end_line": 13
             },
             "type": "END",
             "value": "]"
          },
          "location": {
             "begin_column": 25,
-            "begin_line": 15,
+            "begin_line": 13,
             "end_column": 26,
-            "end_line": 15
+            "end_line": 13
          },
          "type": "LIST"
       } ],
       "location": {
          "begin_column": 1,
-         "begin_line": 15,
+         "begin_line": 13,
          "end_column": 26,
-         "end_line": 15
+         "end_line": 13
       },
       "type": "BINARY",
       "value": "="
@@ -345,162 +262,9 @@ ARGS_GN_JSON = r"""
       "child": [ {
          "location": {
             "begin_column": 1,
-            "begin_line": 16,
-            "end_column": 20,
-            "end_line": 16
-         },
-         "type": "IDENTIFIER",
-         "value": "base_package_labels"
-      }, {
-         "begin_token": "[",
-         "child": [ {
-            "location": {
-               "begin_column": 25,
-               "begin_line": 16,
-               "end_column": 38,
-               "end_line": 16
-            },
-            "type": "LITERAL",
-            "value": "\"//src:tests\""
-         }, {
-            "location": {
-               "begin_column": 40,
-               "begin_line": 16,
-               "end_column": 55,
-               "end_line": 16
-            },
-            "type": "LITERAL",
-            "value": "\"//other:tests\""
-         } ],
-         "end": {
-            "location": {
-               "begin_column": 55,
-               "begin_line": 16,
-               "end_column": 56,
-               "end_line": 16
-            },
-            "type": "END",
-            "value": "]"
-         },
-         "location": {
-            "begin_column": 24,
-            "begin_line": 16,
-            "end_column": 55,
-            "end_line": 16
-         },
-         "type": "LIST"
-      } ],
-      "location": {
-         "begin_column": 1,
-         "begin_line": 16,
-         "end_column": 55,
-         "end_line": 16
-      },
-      "type": "BINARY",
-      "value": "+="
-   }, {
-      "child": [ {
-         "location": {
-            "begin_column": 1,
-            "begin_line": 17,
-            "end_column": 20,
-            "end_line": 17
-         },
-         "type": "IDENTIFIER",
-         "value": "base_package_labels"
-      }, {
-         "begin_token": "[",
-         "child": [ {
-            "location": {
-               "begin_column": 25,
-               "begin_line": 17,
-               "end_column": 38,
-               "end_line": 17
-            },
-            "type": "LITERAL",
-            "value": "\"//src:tests\""
-         } ],
-         "end": {
-            "location": {
-               "begin_column": 38,
-               "begin_line": 17,
-               "end_column": 39,
-               "end_line": 17
-            },
-            "type": "END",
-            "value": "]"
-         },
-         "location": {
-            "begin_column": 24,
-            "begin_line": 17,
-            "end_column": 38,
-            "end_line": 17
-         },
-         "type": "LIST"
-      } ],
-      "location": {
-         "begin_column": 1,
-         "begin_line": 17,
-         "end_column": 38,
-         "end_line": 17
-      },
-      "type": "BINARY",
-      "value": "-="
-   }, {
-      "child": [ {
-         "location": {
-            "begin_column": 1,
-            "begin_line": 18,
-            "end_column": 21,
-            "end_line": 18
-         },
-         "type": "IDENTIFIER",
-         "value": "cache_package_labels"
-      }, {
-         "begin_token": "[",
-         "child": [ {
-            "location": {
-               "begin_column": 25,
-               "begin_line": 18,
-               "end_column": 44,
-               "end_line": 18
-            },
-            "type": "LITERAL",
-            "value": "\"//src/other:tests\""
-         } ],
-         "end": {
-            "location": {
-               "begin_column": 44,
-               "begin_line": 18,
-               "end_column": 45,
-               "end_line": 18
-            },
-            "type": "END",
-            "value": "]"
-         },
-         "location": {
-            "begin_column": 24,
-            "begin_line": 18,
-            "end_column": 44,
-            "end_line": 18
-         },
-         "type": "LIST"
-      } ],
-      "location": {
-         "begin_column": 1,
-         "begin_line": 18,
-         "end_column": 44,
-         "end_line": 18
-      },
-      "type": "BINARY",
-      "value": "="
-   }, {
-      "child": [ {
-         "location": {
-            "begin_column": 1,
-            "begin_line": 19,
+            "begin_line": 14,
             "end_column": 22,
-            "end_line": 19
+            "end_line": 14
          },
          "type": "IDENTIFIER",
          "value": "developer_test_labels"
@@ -509,9 +273,9 @@ ARGS_GN_JSON = r"""
          "child": [ {
             "location": {
                "begin_column": 26,
-               "begin_line": 19,
+               "begin_line": 14,
                "end_column": 45,
-               "end_line": 19
+               "end_line": 14
             },
             "type": "LITERAL",
             "value": "\"//src/other:tests\""
@@ -519,26 +283,26 @@ ARGS_GN_JSON = r"""
          "end": {
             "location": {
                "begin_column": 45,
-               "begin_line": 19,
+               "begin_line": 14,
                "end_column": 46,
-               "end_line": 19
+               "end_line": 14
             },
             "type": "END",
             "value": "]"
          },
          "location": {
             "begin_column": 25,
-            "begin_line": 19,
+            "begin_line": 14,
             "end_column": 45,
-            "end_line": 19
+            "end_line": 14
          },
          "type": "LIST"
       } ],
       "location": {
          "begin_column": 1,
-         "begin_line": 19,
+         "begin_line": 14,
          "end_column": 45,
-         "end_line": 19
+         "end_line": 14
       },
       "type": "BINARY",
       "value": "="
@@ -547,7 +311,7 @@ ARGS_GN_JSON = r"""
       "begin_column": 1,
       "begin_line": 1,
       "end_column": 45,
-      "end_line": 19
+      "end_line": 14
    },
    "result_mode": "discards_result",
    "type": "BLOCK"

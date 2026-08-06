@@ -167,14 +167,6 @@ async def args_gn_collector() -> list[data.Result]:
             "Universe packages",
             "--with argument of `fx set`",
         ),
-        base_package_labels=(
-            "Base packages",
-            "--with-base argument of `fx set`",
-        ),
-        cache_package_labels=(
-            "Cache packages",
-            "--with-cache argument of `fx set`",
-        ),
         host_labels=("Host labels", "--with-host argument of `fx set`"),
         developer_test_labels=(
             "Developer tests",

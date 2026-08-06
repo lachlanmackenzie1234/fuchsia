@@ -78,16 +78,6 @@ func TestParseArgsAndEnv(t *testing.T) {
 			},
 		},
 		{
-			name:      "base packages not allowed",
-			args:      []string{"core.x64", "--with-base", "u1"},
-			expectErr: true,
-		},
-		{
-			name:      "cache packages not allowed",
-			args:      []string{"core.x64", "--with-cache", "u1"},
-			expectErr: true,
-		},
-		{
 			name: "tests",
 			args: []string{"core.x64", "--with-test", "b1,b2", "--with-test", "b3,b4"},
 			expected: setArgs{

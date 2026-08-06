@@ -363,8 +363,6 @@ Build Info:
   Board: x64 (//boards/x64.gni)
   Product: core (//products/core.gni)
   Product bundle: main (set with `fx set-main-pb`)
-  Base packages: [//other:tests] (--with-base argument of `fx set`)
-  Cache packages: [//src/other:tests] (--with-cache argument of `fx set`)
   Universe packages: [//scripts:tests, //tools/devshell/python:tests] (--with argument of `fx set`)
   Developer tests: [//src/other:tests] (--with-test argument of `fx set`)
   Compilation mode: debug
@@ -379,8 +377,6 @@ Source Info:
 Build Info:
   Board: x64 (//boards/x64.gni)
   Product: core (//products/core.gni)
-  Base packages: [//other:tests] (--with-base argument of `fx set`)
-  Cache packages: [//src/other:tests] (--with-cache argument of `fx set`)
   Universe packages: [//scripts:tests, //tools/devshell/python:tests] (--with argument of `fx set`)
   Developer tests: [//src/other:tests] (--with-test argument of `fx set`)
   Compilation mode: debug
@@ -431,20 +427,6 @@ EXPECTED_JSON_OUTPUT = """
         "title": "Product bundle",
         "value": "main",
         "notes": "set with `fx set-main-pb`"
-      },
-      "base_package_labels": {
-        "title": "Base packages",
-        "value": [
-          "//other:tests"
-        ],
-        "notes": "--with-base argument of `fx set`"
-      },
-      "cache_package_labels": {
-        "title": "Cache packages",
-        "value": [
-          "//src/other:tests"
-        ],
-        "notes": "--with-cache argument of `fx set`"
       },
       "universe_package_labels": {
         "title": "Universe packages",
@@ -509,20 +491,6 @@ EXPECTED_JSON_OUTPUT_NO_PB = """
         "title": "Product",
         "value": "core",
         "notes": "//products/core.gni"
-      },
-      "base_package_labels": {
-        "title": "Base packages",
-        "value": [
-          "//other:tests"
-        ],
-        "notes": "--with-base argument of `fx set`"
-      },
-      "cache_package_labels": {
-        "title": "Cache packages",
-        "value": [
-          "//src/other:tests"
-        ],
-        "notes": "--with-cache argument of `fx set`"
       },
       "universe_package_labels": {
         "title": "Universe packages",
