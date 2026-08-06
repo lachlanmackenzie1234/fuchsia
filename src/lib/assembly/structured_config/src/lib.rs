@@ -121,6 +121,7 @@ static SUPPORTED_RUNNERS: &[&str] = &[
     "elf_test_runner",
     "elf_test_create_raw_processes_ambient_exec_runner",
     "gtest_runner",
+    "rust_test_runner",
     "starnix",
     "zxtest_runner",
 ];
