@@ -150,7 +150,7 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         self.sl4f_obj.run.return_value = _SAMPLE_ADDRESS_OUTPUT
         res = await self.bluetooth_common_sl4f_obj.get_active_adapter_address()
         self.sl4f_obj.run.assert_called()
-        self.assertEqual(str(res), "20:1F:3B:62:E9:D2")
+        self.assertEqual(res, MacAddress("20:1F:3B:62:E9:D2"))
 
     async def test_get_active_adapter_address_fail(self) -> None:
         """Test for Bluetooth.get_active_adapter_address() method."""

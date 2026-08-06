@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import abc
+import builtins
 import enum
 import ipaddress
+import random
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -385,7 +387,6 @@ class FidlEndpoint:
     protocol: str
 
 
-@dataclass(frozen=True)
 class MacAddress:
     """MAC address following the EUI-48 identifier format.
 
@@ -393,39 +394,68 @@ class MacAddress:
     interface controllers.
     """
 
-    mac: str
-    """MAC address in the form "xx:xx:xx:xx:xx:xx"."""
+    _mac: bytes
 
-    @staticmethod
-    def from_bytes(b: bytes) -> "MacAddress":
-        """Create a MacAddress from bytes."""
-        if len(b) != 6:
-            raise ValueError(f"Expected 6 bytes, got {len(b)}")
-        mac = ":".join([f"{octet:0>2x}" for octet in b])
-        return MacAddress(mac)
+    def __init__(self, mac: str | bytes | bytearray) -> None:
+        if isinstance(mac, str):
+            mac = bytes([int(a, 16) for a in mac.split(":")])
+
+        if len(mac) != 6:
+            raise ValueError(f"Expected 6 bytes, got {len(mac)}")
+
+        self._mac = bytes(mac)
+
+    @classmethod
+    def random(cls) -> "MacAddress":
+        """Create a random MAC address."""
+        return cls(random.randbytes(6))
+
+    def __bytes__(self) -> builtins.bytes:
+        return self._mac
+
+    def with_unicast_bit(self) -> "MacAddress":
+        """Return a copy of the MAC address with the unicast bit set."""
+        b = bytearray(self._mac)
+        b[0] &= 0xFE
+        return MacAddress(b)
+
+    def with_multicast_bit(self) -> "MacAddress":
+        """Return a copy of the MAC address with the multicast bit set."""
+        b = bytearray(self._mac)
+        b[0] |= 0x01
+        return MacAddress(b)
+
+    def with_locally_administered_bit(self) -> "MacAddress":
+        """Return a copy of the MAC address with the locally administered bit set."""
+        b = bytearray(self._mac)
+        b[0] |= 0x02
+        return MacAddress(b)
+
+    def with_universally_administered_bit(self) -> "MacAddress":
+        """Return a copy of the MAC address with the universally administered bit set."""
+        b = bytearray(self._mac)
+        b[0] &= 0xFD
+        return MacAddress(b)
+
+    def with_octet_incremented(self, index: int) -> "MacAddress":
+        """Return a copy of the MAC address with the octet at `index` incremented by 1."""
+        if not 0 <= index < 6:
+            raise ValueError(f"Invalid index {index}")
+        b = bytearray(self._mac)
+        b[index] = (b[index] + 1) % 256
+        return MacAddress(b)
 
     def __str__(self) -> str:
         """Return MAC address in the form "xx:xx:xx:xx:xx:xx"."""
-        return self.mac
+        return ":".join([f"{octet:0>2x}" for octet in self._mac])
 
-    def bytes(self) -> bytes:
-        """Convert MAC into a byte array.
+    def __repr__(self) -> str:
+        return f"MacAddress('{self}')"
 
-        Returns:
-            Byte array of the MAC address.
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, MacAddress):
+            return False
+        return self._mac == other._mac
 
-        Raises:
-            ValueError: Invalid MAC address
-        """
-        try:
-            mac = bytes([int(a, 16) for a in self.mac.split(":", 5)])
-            for i, octet in enumerate(mac):
-                if octet > 255:
-                    raise ValueError(
-                        f"Invalid octet at index {i}: larger than 8 bits"
-                    )
-            if len(mac) != 6:
-                raise ValueError(f"Expected 6 bytes, got {len(mac)}")
-            return mac
-        except ValueError as e:
-            raise ValueError("Invalid MAC address") from e
+    def __hash__(self) -> int:
+        return hash(self._mac)

@@ -718,9 +718,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             ).unwrap()
         except Exception as e:
             raise RuntimeError(f"DeviceMonitor.QueryIface() error: {e}") from e
-        mac_addr = MacAddress.from_bytes(
-            bytes(query_iface_response.resp.sta_addr)
-        )
+        mac_addr = MacAddress(bytes(query_iface_response.resp.sta_addr))
         return str(mac_addr)
 
 

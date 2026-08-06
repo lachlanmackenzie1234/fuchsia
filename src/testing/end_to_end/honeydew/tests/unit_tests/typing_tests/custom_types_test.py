@@ -285,6 +285,131 @@ class CustomTypesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = custom_types.TargetUsb(12345).ip_str
 
+    def test_mac_with_bytes(self) -> None:
+        """Test if initialization works for valid bytes."""
+        mac = custom_types.MacAddress(
+            bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB])
+        )
+        self.assertEqual(
+            bytes(mac),
+            bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB]),
+        )
+        self.assertEqual(
+            str(mac),
+            "01:23:45:67:89:ab",
+        )
+
+    def test_mac_with_str(self) -> None:
+        """Test if initialization works for valid strings."""
+        mac = custom_types.MacAddress("01:23:45:67:89:ab")
+        self.assertEqual(
+            bytes(mac),
+            bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB]),
+        )
+        self.assertEqual(
+            str(mac),
+            "01:23:45:67:89:ab",
+        )
+
+    def test_mac_with_bytes_invalid(self) -> None:
+        """Test if initialization fails for invalid bytes."""
+        for msg, mac_bytes in [
+            ("empty", bytes([])),
+            (
+                "too short (01:23:45:67:89)",
+                bytes([0x01, 0x23, 0x45, 0x67, 0x89]),
+            ),
+            (
+                "too long (01:23:45:67:89:ab:cd)",
+                bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD]),
+            ),
+            ("invalid type inside list", [0x01, 0x23, 0x45, 0x67, 0x89, "a"]),
+        ]:
+            with self.subTest(msg=msg, mac_bytes=mac_bytes):
+                with self.assertRaises((ValueError, TypeError)):
+                    custom_types.MacAddress(mac_bytes)  # type: ignore
+
+    def test_mac_with_str_invalid(self) -> None:
+        """Test if initialization fails for invalid strings."""
+        for msg, mac_str in [
+            ("empty", ""),
+            ("too short (01:23:45:67:89)", "01:23:45:67:89"),
+            (
+                "too long (01:23:45:67:89:ab:cd)",
+                "01:23:45:67:89:ab:cd",
+            ),
+            ("invalid byte", "01:23:45:67:89:abcd"),
+            ("invalid hex", "hello world!"),
+        ]:
+            with self.subTest(msg=msg, mac_str=mac_str):
+                with self.assertRaises(ValueError):
+                    custom_types.MacAddress(mac_str)
+
+    def test_mac_random(self) -> None:
+        """Test random MAC generation and ensure they differ."""
+        for _ in range(10):
+            mac1 = custom_types.MacAddress.random()
+            mac2 = custom_types.MacAddress.random()
+
+            self.assertEqual(len(bytes(mac1)), 6)
+            self.assertEqual(len(bytes(mac2)), 6)
+
+            if mac1 != mac2:
+                return  # Test passes if we successfully generated two different ones!
+
+        self.fail("Generated identical MAC addresses 10 times in a row")
+
+    def test_mac_with_unicast_bit(self) -> None:
+        mac = custom_types.MacAddress("ff:ff:ff:ff:ff:ff").with_unicast_bit()
+        self.assertEqual(bytes(mac)[0] & 0x01, 0)
+
+    def test_mac_with_multicast_bit(self) -> None:
+        mac = custom_types.MacAddress("00:00:00:00:00:00").with_multicast_bit()
+        self.assertEqual(bytes(mac)[0] & 0x01, 1)
+
+    def test_mac_with_locally_administered_bit(self) -> None:
+        mac = custom_types.MacAddress(
+            "00:00:00:00:00:00"
+        ).with_locally_administered_bit()
+        self.assertEqual(bytes(mac)[0] & 0x02, 2)
+
+    def test_mac_with_universally_administered_bit(self) -> None:
+        mac = custom_types.MacAddress(
+            "ff:ff:ff:ff:ff:ff"
+        ).with_universally_administered_bit()
+        self.assertEqual(bytes(mac)[0] & 0x02, 0)
+
+    def test_mac_with_octet_incremented(self) -> None:
+        mac = custom_types.MacAddress(
+            "00:00:00:00:00:00"
+        ).with_octet_incremented(5)
+        self.assertEqual(str(mac), "00:00:00:00:00:01")
+
+        # Test wrap around
+        mac = custom_types.MacAddress(
+            "ff:ff:ff:ff:ff:ff"
+        ).with_octet_incremented(5)
+        self.assertEqual(str(mac), "ff:ff:ff:ff:ff:00")
+
+        with self.assertRaises(ValueError):
+            mac.with_octet_incremented(6)
+
+    def test_mac_eq_and_hash(self) -> None:
+        """Test MAC addresses correctly act as dictionary keys."""
+        mac1 = custom_types.MacAddress("01:23:45:67:89:ab")
+        mac2 = custom_types.MacAddress(
+            bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB])
+        )
+        mac3 = custom_types.MacAddress("11:22:33:44:55:66")
+
+        self.assertEqual(mac1, mac2)
+        self.assertNotEqual(mac1, mac3)
+        self.assertNotEqual(mac1, "01:23:45:67:89:ab")  # Not equal to string
+
+        # Test dictionary keys (hashing)
+        mac_dict = {mac1: "value"}
+        self.assertEqual(mac_dict[mac2], "value")
+
 
 if __name__ == "__main__":
     unittest.main()

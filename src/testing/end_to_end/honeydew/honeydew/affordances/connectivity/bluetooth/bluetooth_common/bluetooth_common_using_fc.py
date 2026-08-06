@@ -310,7 +310,7 @@ class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
             for host in hosts:
                 if host.addresses:
                     res = host.addresses[0]
-                    return custom_types.MacAddress.from_bytes(bytes(res.bytes_))
+                    return custom_types.MacAddress(bytes(res.bytes_))
         raise bluetooth_errors.BluetoothStateError(
             f"No Bluetooth addresses found on {self._device_name} in FIDL response: {hosts_response}"
         )
@@ -355,9 +355,7 @@ class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
             return self.known_devices
         for p in results.updated:
             if p.address and p.id_:
-                mac_address = custom_types.MacAddress.from_bytes(
-                    bytes(p.address.bytes_)
-                )
+                mac_address = custom_types.MacAddress(bytes(p.address.bytes_))
                 self.known_devices[mac_address] = bt_types.BluetoothPeerInfo(
                     id=p.id_,
                     address=list(p.address.bytes_),

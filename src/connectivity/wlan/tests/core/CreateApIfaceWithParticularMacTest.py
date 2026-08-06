@@ -13,7 +13,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 
 logger = logging.getLogger(__name__)
 
-import random
 
 import fidl_fuchsia_wlan_common as fw_common
 from core_testing import base_test
@@ -23,10 +22,11 @@ from mobly import asserts, test_runner
 class CreateApIfaceWithParticularMacTest(base_test.CoreBaseTestClass):
     async def test_create_ap_iface_with_particular_mac(self) -> None:
         # Generate a valid randomized MAC to set in the driver
-        random_six_bytes = [random.randint(0, 255) for _ in range(6)]
-        random_six_bytes[0] &= 0xFE  # bit 0: 0 = unicast
-        random_six_bytes[0] |= 0x02  # bit 1: 1 = locally-administered
-        random_sta_addr = MacAddress.from_bytes(bytes(random_six_bytes))
+        random_sta_addr = (
+            MacAddress.random()
+            .with_unicast_bit()
+            .with_locally_administered_bit()
+        )
 
         logger.info(f"Creating AP iface with MAC {random_sta_addr}")
         # TODO(https://fxbug.dev/470568403): This fails on some devices.
@@ -34,7 +34,7 @@ class CreateApIfaceWithParticularMacTest(base_test.CoreBaseTestClass):
             await self.test_kit.device_monitor.create_iface(
                 phy_id=self.test_kit.phy_id,
                 role=fw_common.WlanMacRole.AP,
-                sta_address=random_sta_addr.bytes(),
+                sta_address=bytes(random_sta_addr),
             )
         ).unwrap()
         assert (
@@ -54,7 +54,7 @@ class CreateApIfaceWithParticularMacTest(base_test.CoreBaseTestClass):
         )
         asserts.assert_equal(
             random_sta_addr,
-            MacAddress.from_bytes(bytes(query_iface_response.sta_addr)),
+            MacAddress(bytes(query_iface_response.sta_addr)),
         )
 
 

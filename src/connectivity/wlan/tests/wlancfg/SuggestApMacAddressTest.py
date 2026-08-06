@@ -71,13 +71,9 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         logger.info(f"Created SoftAP and retrieved MAC: {initial_mac_addr}")
 
-        suggested_mac_addr = MacAddress.from_bytes(
-            bytes([0x22 for _ in range(6)])
-        )
+        suggested_mac_addr = MacAddress(bytes([0x22 for _ in range(6)]))
         if initial_mac_addr == suggested_mac_addr:
-            suggested_mac_addr = MacAddress.from_bytes(
-                bytes([0x33 for _ in range(6)])
-            )
+            suggested_mac_addr = MacAddress(bytes([0x33 for _ in range(6)]))
 
         # Suggest and verify new mac address
         logger.info(
@@ -85,7 +81,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         await self.dut.wlan_policy_ap.stop_all()
         await self.deprecated_configurator.suggest_access_point_mac_address(
-            mac=fidl_net.MacAddress(octets=suggested_mac_addr.bytes())
+            mac=fidl_net.MacAddress(octets=bytes(suggested_mac_addr))
         )
         await self.dut.wlan_policy_ap.start(
             TEST_SSID,
@@ -109,7 +105,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         logger.info(f"Resetting to initial mac address ({initial_mac_addr}).")
         await self.dut.wlan_policy_ap.stop_all()
         await self.deprecated_configurator.suggest_access_point_mac_address(
-            mac=fidl_net.MacAddress(octets=initial_mac_addr.bytes())
+            mac=fidl_net.MacAddress(octets=bytes(initial_mac_addr))
         )
         await self.dut.wlan_policy_ap.start(
             TEST_SSID,
@@ -142,7 +138,7 @@ class SuggestApMacAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 wlan_iface
             )
             if query_iface_result.role == fidl_common.WlanMacRole.AP:
-                return MacAddress.from_bytes(bytes(query_iface_result.sta_addr))
+                return MacAddress(bytes(query_iface_result.sta_addr))
         raise signals.TestFailure(
             "Failed to get ap interface mac address. No AP interface found."
         )

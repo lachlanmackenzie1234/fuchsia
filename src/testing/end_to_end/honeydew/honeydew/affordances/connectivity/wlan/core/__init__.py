@@ -250,7 +250,7 @@ class WlanCore(AsyncLazyReady):
                 await self._device_monitor_proxy.create_iface(
                     phy_id=phy_id,
                     role=role,
-                    sta_address=MacAddress(sta_addr).bytes(),
+                    sta_address=bytes(MacAddress(sta_addr)),
                 )
             ).unwrap()
         except (AssertionError, ZxStatus, FcTransportStatus) as e:
@@ -400,7 +400,7 @@ class WlanCore(AsyncLazyReady):
         ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
         for ids in wlan_iface_ids:
             result = await self.query_iface(ids)
-            mac = MacAddress.from_bytes(bytes(result.sta_addr))
+            mac = MacAddress(bytes(result.sta_addr))
             match result.role:
                 case f_wlan_common.WlanMacRole.CLIENT:
                     client[mac] = result

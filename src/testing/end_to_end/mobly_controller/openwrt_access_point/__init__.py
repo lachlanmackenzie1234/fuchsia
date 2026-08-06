@@ -585,7 +585,7 @@ class OpenWrtAP:
                         tokens = line.split()
                         bssid = tokens[1]
                         try:
-                            MacAddress(bssid).bytes()
+                            MacAddress(bssid)
                         except ValueError as e:
                             raise AssertionError(
                                 f"Invalid BSSID format: {bssid}"

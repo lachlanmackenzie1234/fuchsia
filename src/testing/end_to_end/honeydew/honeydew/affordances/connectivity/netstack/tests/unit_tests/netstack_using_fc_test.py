@@ -161,7 +161,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         mac_result = f_net_root.InterfacesGetMacResult(
             response=f_net_root.InterfacesGetMacResponse(
                 mac=f_net.MacAddress(
-                    octets=list(_TEST_MAC.bytes()),
+                    octets=bytes(_TEST_MAC),
                 ),
             )
         )

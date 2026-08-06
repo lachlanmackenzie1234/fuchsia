@@ -174,9 +174,7 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
                         continue  # this is fine and sometimes even expected
 
                     mac = (
-                        MacAddress.from_bytes(
-                            bytes(get_mac_response.mac.octets)
-                        )
+                        MacAddress(bytes(get_mac_response.mac.octets))
                         if get_mac_response.mac
                         else None
                     )
