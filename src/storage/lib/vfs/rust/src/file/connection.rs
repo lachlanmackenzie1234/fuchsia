@@ -1016,7 +1016,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             .scope
             .token_registry()
             .get_owner_and_rights(target_parent_token.into())?
-            .ok_or(Err(Status::NOT_FOUND))?;
+            .ok_or(Status::NOT_FOUND)?;
 
         if !target_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
             return Err(Status::ACCESS_DENIED);

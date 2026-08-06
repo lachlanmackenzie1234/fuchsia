@@ -217,7 +217,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
             .scope
             .token_registry()
             .get_owner_and_rights(dst_parent_token)?
-            .ok_or(Err(Status::NOT_FOUND))?;
+            .ok_or(Status::NOT_FOUND)?;
 
         if !dst_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
             return Err(Status::ACCESS_DENIED);

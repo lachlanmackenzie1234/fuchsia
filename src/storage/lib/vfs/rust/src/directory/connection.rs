@@ -499,7 +499,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             .scope
             .token_registry()
             .get_owner_and_rights(target_parent_token)?
-            .ok_or(Err(Status::NOT_FOUND))?;
+            .ok_or(Status::NOT_FOUND)?;
 
         if !target_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
             return Err(Status::BAD_HANDLE);
