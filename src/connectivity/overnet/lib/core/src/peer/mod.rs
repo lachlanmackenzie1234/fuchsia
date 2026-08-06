@@ -264,6 +264,14 @@ impl Peer {
                     endpoint:?;
                     "connection closed"
                 ),
+                e @ RunnerError::HandshakeError { .. } => {
+                    log::debug!(
+                        node_id:% = get_router_node_id(),
+                        endpoint:?;
+                        "runner error during handshake: {:?}",
+                        e
+                    )
+                }
                 _ => log::warn!(
                     node_id:% = get_router_node_id(),
                     endpoint:?;
