@@ -13,7 +13,7 @@ mod vmo_rs {
     use crate::vm::page::VmPagePtr;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pinned_vm_object::PinnedVmObject;
-    use crate::vm::pmm::{self, ALLOC_FLAG_ANY, paddr_to_vm_page};
+    use crate::vm::pmm::{self, ALLOC_FLAG_ANY, PmmOptDelayReuse, paddr_to_vm_page};
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
@@ -511,5 +511,153 @@ mod vmo_rs {
         // VMO, which is not a valid request.  However, under the hood, we'll make it far enough to create
         // the VMO even thought it will be destroyed before the call returns.
         assert_eq!(Status::result_into_raw(vmo.map(|_| ())), Status::INVALID_ARGS.into_raw());
+    }
+
+    /// Tests that snapshot creation inherits ever_pinned_ into the hidden parent.
+    #[test]
+    fn vmo_ever_pinned_hidden_parent_creation_test() {
+        // Tests that when creating a bidirectional clone (snapshot) of a once-pinned VMO,
+        // the newly created hidden parent correctly inherits the `ever_pinned_` flag.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo_size = PAGE_SIZE;
+
+        // Create root VMO.
+        let vmo = unwrap_ok!(VmObjectPaged::create(0, 0, vmo_size));
+
+        // Commit a page at offset 0.
+        let val: u32 = 0x42;
+        assert_ok!(vmo.write(0, &val.to_le_bytes()));
+
+        let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+
+        // Initially, ever_pinned_ should be false.
+        expect_true!(cow.should_delay_reuse_on_free() == PmmOptDelayReuse::Default);
+
+        // Pin the page.
+        assert_ok!(vmo.commit_range_pinned(0, vmo_size, true));
+
+        // ever_pinned_ should be true.
+        expect_true!(cow.should_delay_reuse_on_free() == PmmOptDelayReuse::Yes);
+
+        // Unpin the page.
+        vmo.unpin(0, vmo_size);
+
+        // ever_pinned_ should still be true.
+        expect_true!(cow.should_delay_reuse_on_free() == PmmOptDelayReuse::Yes);
+
+        // Create a bidirectional clone (snapshot) of the root VMO.
+        let _clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            vmo_size,
+            true
+        ));
+
+        // Retrieve the hidden parent.
+        let h_cow = cow.debug_get_parent().expect("cow has parent");
+
+        expect_eq!(PmmOptDelayReuse::Yes, h_cow.should_delay_reuse_on_free());
+        expect_eq!(PmmOptDelayReuse::Default, cow.should_delay_reuse_on_free());
+    }
+
+    /// Tests that page migration into a sibling clone inherits the ever_pinned_ flag.
+    #[test]
+    fn vmo_ever_pinned_page_migration_test() {
+        // Tests that when a once-pinned page is migrated into a sibling clone during copy-on-write
+        // page migration, the sibling clone correctly inherits the `ever_pinned_` flag.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo_size = PAGE_SIZE;
+
+        // Create root VMO.
+        let vmo = unwrap_ok!(VmObjectPaged::create(0, 0, vmo_size));
+
+        // Commit a page at offset 0.
+        let val: u32 = 0x42;
+        assert_ok!(vmo.write(0, &val.to_le_bytes()));
+
+        let _cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+
+        // Pin and unpin the page.
+        assert_ok!(vmo.commit_range_pinned(0, vmo_size, true));
+        vmo.unpin(0, vmo_size);
+
+        // Create a bidirectional clone (snapshot) of the root VMO.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            vmo_size,
+            true
+        ));
+
+        let c_cow = VmObject::downcast_paged(clone.clone())
+            .expect("is paged")
+            .debug_get_cow_pages()
+            .expect("clone has cow pages");
+
+        // The sibling clone is created with ever_pinned_ = false.
+        expect_true!(c_cow.should_delay_reuse_on_free() == PmmOptDelayReuse::Default);
+
+        // Write to the root VMO to fork the page. The original once-pinned page in the hidden
+        // parent is now only visible to the clone.
+        let val2: u32 = 0x43;
+        assert_ok!(vmo.write(0, &val2.to_le_bytes()));
+
+        // Write to the clone to trigger page migration from the hidden parent to the clone.
+        assert_ok!(clone.write(0, &val.to_le_bytes()));
+
+        // The clone should now have ever_pinned_ = true since the once-pinned page was migrated
+        // into it.
+        expect_eq!(PmmOptDelayReuse::Yes, c_cow.should_delay_reuse_on_free());
+    }
+
+    /// Tests that hidden parent collapse and page merge into a child clone inherits ever_pinned_.
+    #[test]
+    fn vmo_ever_pinned_parent_merge_test() {
+        // Tests that when a hidden parent collapses and merges its pages into a child clone, the
+        // child clone correctly inherits the `ever_pinned_` flag.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo_size = PAGE_SIZE;
+
+        // Create root VMO.
+        let vmo = unwrap_ok!(VmObjectPaged::create(0, 0, vmo_size));
+
+        // Commit a page at offset 0.
+        let val: u32 = 0x42;
+        assert_ok!(vmo.write(0, &val.to_le_bytes()));
+
+        let _cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+
+        // Pin and unpin the page.
+        assert_ok!(vmo.commit_range_pinned(0, vmo_size, true));
+        vmo.unpin(0, vmo_size);
+
+        // Create a bidirectional clone (snapshot) of the root VMO.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            vmo_size,
+            true
+        ));
+
+        let c_cow = VmObject::downcast_paged(clone.clone())
+            .expect("is paged")
+            .debug_get_cow_pages()
+            .expect("clone has cow pages");
+
+        // The sibling clone is created with ever_pinned_ = false.
+        expect_true!(c_cow.should_delay_reuse_on_free() == PmmOptDelayReuse::Default);
+
+        // Close the root VMO. This merges the hidden parent's pages into the clone.
+        drop(vmo);
+
+        // The clone should now have ever_pinned_ = true since the hidden parent collapsed and
+        // merged its pages into the clone.
+        expect_eq!(PmmOptDelayReuse::Yes, c_cow.should_delay_reuse_on_free());
     }
 }

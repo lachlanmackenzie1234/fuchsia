@@ -10,6 +10,8 @@ use crate::vm::page_queues::PageQueues;
 use pmm_bindings as bindings;
 use zx_status::Status;
 
+pub use bindings::PmmOptDelayReuse;
+
 // Flags for PMM allocation routines.
 pub const ALLOC_FLAG_ANY: u32 = bindings::PMM_ALLOC_FLAG_ANY;
 pub const ALLOC_FLAG_CAN_WAIT: u32 = bindings::PMM_ALLOC_FLAG_CAN_WAIT;

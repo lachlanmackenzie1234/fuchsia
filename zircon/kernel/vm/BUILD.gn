@@ -254,12 +254,16 @@ kernel_bindgen_crate("pmm-bindings") {
     "cpp_pmm_free_page",
     "cpp_paddr_to_vm_page",
   ]
+  type_allowlist = [ "PmmOptDelayReuse" ]
   type_blocklist = [
     "PageQueues",
     "zx_paddr_t",
     "zx_status_t",
   ]
-  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  additional_bindgen_flags = [
+    "--no-recursive-allowlist",
+    "--rustified-enum=PmmOptDelayReuse",
+  ]
   deps = [
     ":page-queues-bindings",
     "//sdk/rust/zx-types",
@@ -425,6 +429,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_object_as_vm_object_paged",
     "cpp_vm_object_paged_as_vm_object",
     "cpp_vm_object_paged_create",
     "cpp_vm_object_paged_create_contiguous",
@@ -479,9 +484,12 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_get_ref_counted",
     "cpp_vm_cow_pages_initialize_page_cache",
     "cpp_vm_cow_pages_replace_page_with_loaned",
+    "cpp_vm_cow_pages_should_delay_reuse_on_free",
+    "cpp_vm_cow_pages_debug_get_parent",
   ]
   type_allowlist = [ "VmCowPages" ]
   type_blocklist = [
+    "PmmOptDelayReuse",
     "vm_page",
     "vm_page_t",
     "zx_status_t",
@@ -494,10 +502,14 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
 
   edition = "2024"
 
-  deps = [ "//sdk/rust/zx-types" ]
+  deps = [
+    ":pmm-bindings",
+    "//sdk/rust/zx-types",
+  ]
 
   raw_lines = [
     "#![no_std]",
+    "use pmm_bindings::PmmOptDelayReuse;",
     "use zx_types::zx_status_t;",
   ]
 }

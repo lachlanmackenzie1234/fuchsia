@@ -5,8 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
+use super::vm_object_paged::VmObjectPaged;
 use crate::kernel::types::PAddr;
 use core::marker::{PhantomData, PhantomPinned};
+use core::mem::ManuallyDrop;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use kalloc::AllocError;
@@ -174,6 +176,22 @@ impl VmObject {
         let status =
             unsafe { bindings::cpp_vm_object_get_page_blocking(self.as_raw(), offset, pf_flags) };
         Status::ok(status)
+    }
+
+    /// Downcasts a `RefPtr<VmObject>` by value into a `RefPtr<VmObjectPaged>` if it is a paged VMO.
+    pub fn downcast_paged(this: RefPtr<Self>) -> Option<RefPtr<VmObjectPaged>> {
+        let this = ManuallyDrop::new(this);
+        // SAFETY: `this.as_raw()` returns a valid `VmObject` pointer.
+        let raw =
+            unsafe { vm_object_paged_bindings::cpp_vm_object_as_vm_object_paged(this.as_raw()) };
+        if raw.is_null() {
+            drop(ManuallyDrop::into_inner(this));
+            None
+        } else {
+            // SAFETY: `raw` points to a valid `VmObjectPaged` whose reference count is owned by
+            // `this`.
+            unsafe { VmObjectPaged::from_raw(raw) }
+        }
     }
 
     /// Sets the user ID of the VMO.

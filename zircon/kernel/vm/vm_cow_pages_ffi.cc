@@ -28,8 +28,18 @@ FFI_ALWAYS_INLINE void* cpp_vm_cow_pages_get_ref_counted(const VmCowPages* cow) 
 
 FFI_ALWAYS_INLINE void cpp_vm_cow_pages_free(VmCowPages* cow) { delete cow; }
 
-void cpp_vm_cow_pages_initialize_page_cache(uint32_t level) {
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_initialize_page_cache(uint32_t level) {
   VmCowPages::InitializePageCache(level);
+}
+
+FFI_ALWAYS_INLINE PmmOptDelayReuse
+cpp_vm_cow_pages_should_delay_reuse_on_free(const VmCowPages* cow) {
+  return cow->should_delay_reuse_on_free();
+}
+
+FFI_ALWAYS_INLINE VmCowPages* cpp_vm_cow_pages_debug_get_parent(VmCowPages* cow) {
+  auto parent = cow->DebugGetParent();
+  return fbl::ExportToRawPtr(&parent);
 }
 
 }  // extern "C"

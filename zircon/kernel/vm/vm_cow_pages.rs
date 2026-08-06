@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::page::VmPagePtr;
+use crate::vm::pmm::PmmOptDelayReuse;
 use core::marker::PhantomPinned;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
@@ -67,6 +68,21 @@ impl VmCowPages {
             )
         };
         Status::ok(status)
+    }
+
+    /// Returns whether page reuse should be delayed on free (i.e. if ever pinned).
+    pub fn should_delay_reuse_on_free(&self) -> PmmOptDelayReuse {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_should_delay_reuse_on_free(self.as_raw()) }
+    }
+
+    /// Returns the parent `VmCowPages` in the COW hierarchy, if any.
+    pub fn debug_get_parent(&self) -> Option<RefPtr<VmCowPages>> {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        let raw = unsafe { bindings::cpp_vm_cow_pages_debug_get_parent(self.as_raw()) };
+        // SAFETY: cpp_vm_cow_pages_debug_get_parent returns a valid exported `VmCowPages` pointer,
+        // or null if there is no parent.
+        unsafe { Self::from_raw(raw) }
     }
 }
 

@@ -11,6 +11,7 @@
 #include <kernel/ffi.h>
 
 #include "vm/vm_object.h"
+#include "vm/vm_object_paged.h"
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
