@@ -209,6 +209,10 @@ zx::result<> VirtualAudioComposite::Init(
   return zx::ok();
 }
 
+VirtualAudioComposite::~VirtualAudioComposite() {
+  fdf::info("Destroying VirtualAudioComposite {}", instance_id_);
+}
+
 fuchsia_virtualaudio::RingBuffer& VirtualAudioComposite::GetRingBuffer(uint64_t id) {
   // TODO(https://fxbug.dev/42075676): Add support for a variable number of ring buffers (incl. 0).
   ZX_ASSERT(id == kRingBufferId);

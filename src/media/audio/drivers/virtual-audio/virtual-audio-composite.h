@@ -41,6 +41,7 @@ class VirtualAudioComposite
         dispatcher_(dispatcher),
         device_binding_(dispatcher_, std::move(server), this, std::move(on_device_binding_closed)),
         instance_id_(instance_id) {}
+  ~VirtualAudioComposite();
 
   zx::result<> Init(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent);
 
