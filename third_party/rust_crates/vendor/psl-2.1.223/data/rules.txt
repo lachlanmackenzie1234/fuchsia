@@ -6,6 +6,7 @@ mil.ac
 net.ac
 org.ac
 drr.ac
+sch.ac
 feedback.ac
 forms.ac
 ad
@@ -197,8 +198,6 @@ futurehosting.at
 futuremailing.at
 *.ex.ortsinfo.at
 *.kunden.ortsinfo.at
-biz.at
-info.at
 123webseite.at
 priv.at
 4.at
@@ -1775,7 +1774,6 @@ us-1.evennode.com
 us-2.evennode.com
 us-3.evennode.com
 us-4.evennode.com
-onfabrica.com
 fastly-edge.com
 fastly-terrarium.com
 fastvps-server.com
@@ -1980,7 +1978,6 @@ w-corp-staticblitz.com
 w-credentialless-staticblitz.com
 w-staticblitz.com
 stackhero-network.com
-api.stdlib.com
 strapiapp.com
 media.strapiapp.com
 streak-link.com
@@ -2046,6 +2043,8 @@ net.cv
 nome.cv
 org.cv
 publ.cv
+dev.cv
+store.cv
 cw
 com.cw
 edu.cw
@@ -2128,6 +2127,8 @@ in-brb.de
 in-butter.de
 in-dsl.de
 in-vpn.de
+home64.de
+ipv64.de
 iservschule.de
 mein-iserv.de
 schuldock.de
@@ -2386,12 +2387,16 @@ edu.gd
 gov.gd
 ge
 com.ge
+cyb.ge
 edu.ge
 gov.ge
+llc.ge
 net.ge
+online.ge
 org.ge
 pvt.ge
 school.ge
+tnx.ge
 gf
 gg
 co.gg
@@ -2618,7 +2623,9 @@ in
 5g.in
 6g.in
 ac.in
+aero.in
 ai.in
+alumni.in
 am.in
 bank.in
 bihar.in
@@ -2653,8 +2660,10 @@ pg.in
 post.in
 pro.in
 res.in
+school.in
 travel.in
 tv.in
+ub.in
 uk.in
 up.in
 us.in
@@ -2699,7 +2708,6 @@ mil.io
 net.io
 nom.io
 org.io
-*.on-acorn.io
 myaddr.io
 apigee.io
 b-data.io
@@ -2712,7 +2720,6 @@ brave.io
 browsersafetymark.io
 cdn.bubble.io
 bubbleapps.io
-uk0.bigv.io
 cleverapps.io
 cloudbeesusercontent.io
 dyndns.dappnode.io
@@ -2755,7 +2762,6 @@ pantheonsite.io
 id.forgerock.io
 pstmn.io
 mock.pstmn.io
-protonet.io
 qcx.io
 *.sys.qcx.io
 qoto.io
@@ -2767,7 +2773,6 @@ site.rb-hosting.io
 readthedocs.io
 resindevice.io
 devices.resinstaging.io
-hzc.io
 sandcats.io
 client.scrypted.io
 mo-siemens.io
@@ -2874,7 +2879,6 @@ trentin-sudtirol.it
 trentin-südtirol.it
 trentin-sued-tirol.it
 trentin-suedtirol.it
-trentino.it
 trentino-a-adige.it
 trentino-aadige.it
 trentino-alto-adige.it
@@ -2895,7 +2899,6 @@ trentinos-tirol.it
 trentinostirol.it
 trentinosud-tirol.it
 trentinosüd-tirol.it
-trentinosudtirol.it
 trentinosüdtirol.it
 trentinosued-tirol.it
 trentinosuedtirol.it
@@ -2911,7 +2914,6 @@ umbria.it
 val-d-aosta.it
 val-daosta.it
 vald-aosta.it
-valdaosta.it
 valle-aosta.it
 valle-d-aosta.it
 valle-daosta.it
@@ -2947,7 +2949,6 @@ aosta.it
 aoste.it
 ap.it
 aq.it
-aquila.it
 ar.it
 arezzo.it
 ascoli-piceno.it
@@ -3171,6 +3172,9 @@ sondrio.it
 sp.it
 sr.it
 ss.it
+su.it
+sud-sardegna.it
+sudsardegna.it
 südtirol.it
 suedtirol.it
 sv.it
@@ -3191,6 +3195,7 @@ trani-barletta-andria.it
 traniandriabarletta.it
 tranibarlettaandria.it
 trapani.it
+trentino.it
 trento.it
 treviso.it
 trieste.it
@@ -3209,6 +3214,7 @@ ve.it
 venezia.it
 venice.it
 verbania.it
+verbano-cusio-ossola.it
 vercelli.it
 verona.it
 vi.it
@@ -5456,6 +5462,7 @@ i234.me
 myds.me
 synology.me
 site.transip.me
+grok.me
 nohost.me
 mg
 co.mg
@@ -5648,7 +5655,6 @@ ctfcloud.net
 feste-ip.net
 knx-server.net
 static-access.net
-*.cryptonomic.net
 dattolocal.net
 mydatto.net
 debian.net
@@ -5727,6 +5733,7 @@ oninferno.net
 botdash.net
 apps-1and1.net
 ipifony.net
+ipv64.net
 cloudjiffy.net
 fra1-de.cloudjiffy.net
 west1-us.cloudjiffy.net
@@ -5905,13 +5912,17 @@ no
 fhs.no
 folkebibl.no
 fylkesbibl.no
+gielda.no
+herad.no
 idrett.no
+kommune.no
 museum.no
 priv.no
+suohkan.no
+tjielte.no
+uenorge.no
 vgs.no
 dep.no
-herad.no
-kommune.no
 mil.no
 stat.no
 aa.no
@@ -6047,7 +6058,7 @@ askøy.no
 askvoll.no
 asnes.no
 åsnes.no
-audnedaln.no
+audnedal.no
 aukra.no
 aure.no
 aurland.no
@@ -6158,7 +6169,6 @@ forsand.no
 fosnes.no
 fræna.no
 frana.no
-frei.no
 frogn.no
 froland.no
 frosta.no
@@ -6209,6 +6219,7 @@ halden.no
 halsa.no
 hamar.no
 hamaroy.no
+hamarøy.no
 hammarfeasta.no
 hámmárfeasta.no
 hammerfest.no
@@ -6263,6 +6274,7 @@ karasjohka.no
 kárášjohka.no
 karasjok.no
 karlsoy.no
+karlsøy.no
 karmoy.no
 karmøy.no
 kautokeino.no
@@ -6451,6 +6463,7 @@ ralingen.no
 rana.no
 randaberg.no
 rauma.no
+re.no
 rendalen.no
 rennebu.no
 rennesoy.no
@@ -6608,6 +6621,7 @@ tysvær.no
 tysvar.no
 ullensaker.no
 ullensvang.no
+ulstein.no
 ulvik.no
 unjarga.no
 unjárga.no
@@ -6839,7 +6853,6 @@ in-dsl.org
 in-vpn.org
 js.org
 barsy.org
-mayfirst.org
 routingthecloud.org
 bmoattachments.org
 cable-modem.org
@@ -7572,7 +7585,6 @@ or.th
 online.th
 shop.th
 tj
-ac.tj
 biz.tj
 co.tj
 com.tj
@@ -7810,8 +7822,6 @@ org.uk
 plc.uk
 police.uk
 *.sch.uk
-dh.bytemark.co.uk
-vm.bytemark.co.uk
 api.gov.uk
 conn.uk
 copro.uk
@@ -8461,7 +8471,6 @@ csb.app
 preview.csb.app
 convex.app
 corespeed.app
-deta.app
 ondigitalocean.app
 easypanel.app
 encr.app
@@ -9061,7 +9070,6 @@ r2.dev
 workers.dev
 deno.dev
 deno-staging.dev
-deta.dev
 lp.dev
 api.lp.dev
 objects.lp.dev
@@ -9217,7 +9225,6 @@ fan
 mkm.fan
 fans
 farm
-storj.farm
 farmers
 fashion
 fast
@@ -9826,6 +9833,7 @@ me.scot
 org.scot
 gov.scot
 service.gov.scot
+mygov.scot
 search
 seat
 secure
@@ -9887,6 +9895,7 @@ madethis.site
 support.site
 *.platformsh.site
 *.tst.site
+playcode.site
 byen.site
 puter.site
 sol.site
@@ -10068,6 +10077,7 @@ watch
 watches
 weather
 weatherchannel
+web
 webcam
 weber
 website
