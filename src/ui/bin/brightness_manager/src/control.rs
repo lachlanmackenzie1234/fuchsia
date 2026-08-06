@@ -10,6 +10,8 @@ use async_trait::async_trait;
 use fidl_fuchsia_ui_brightness::{
     ControlRequest as BrightnessControlRequest, ControlWatchAutoBrightnessAdjustmentResponder,
     ControlWatchAutoBrightnessResponder, ControlWatchCurrentBrightnessResponder,
+    ReaderRequest as BrightnessReaderRequest, ReaderWatchAutoBrightnessAdjustmentResponder,
+    ReaderWatchAutoBrightnessResponder, ReaderWatchCurrentBrightnessResponder,
 };
 use fuchsia_async::{self as fasync, DurationExt as _};
 use futures::channel::mpsc::UnboundedSender;
@@ -108,41 +110,48 @@ static BRIGHTNESS_CHANGE_DURATION: LazyLock<Arc<Mutex<MonotonicDuration>>> = Laz
     Arc::new(Mutex::new(MonotonicDuration::from_millis(BRIGHTNESS_CHANGE_DURATION_MS)))
 });
 
-pub struct WatcherCurrentResponder {
-    watcher_current_responder: ControlWatchCurrentBrightnessResponder,
-}
-
-impl Sender<f32> for WatcherCurrentResponder {
-    fn send_response(self, data: f32) {
-        if let Err(e) = self.watcher_current_responder.send(data) {
-            log::error!("Failed to reply to WatchCurrentBrightness: {}", e);
+macro_rules! impl_watcher_responder {
+    ($name:ident, $type:ty, $control_responder:ident, $reader_responder:ident, $method:expr) => {
+        pub enum $name {
+            Control($control_responder),
+            Reader($reader_responder),
         }
-    }
-}
 
-pub struct WatcherAutoResponder {
-    watcher_auto_responder: ControlWatchAutoBrightnessResponder,
-}
-
-impl Sender<bool> for WatcherAutoResponder {
-    fn send_response(self, data: bool) {
-        if let Err(e) = self.watcher_auto_responder.send(data) {
-            log::error!("Failed to reply to WatchAutoBrightness: {}", e);
+        impl Sender<$type> for $name {
+            fn send_response(self, data: $type) {
+                let result = match self {
+                    $name::Control(r) => r.send(data),
+                    $name::Reader(r) => r.send(data),
+                };
+                if let Err(e) = result {
+                    log::error!("Failed to reply to {}: {}", $method, e);
+                }
+            }
         }
-    }
+    };
 }
 
-pub struct WatcherAdjustmentResponder {
-    watcher_adjustment_responder: ControlWatchAutoBrightnessAdjustmentResponder,
-}
-
-impl Sender<f32> for WatcherAdjustmentResponder {
-    fn send_response(self, data: f32) {
-        if let Err(e) = self.watcher_adjustment_responder.send(data) {
-            log::error!("Failed to reply to WatchAutoBrightnessAdjustment: {}", e);
-        }
-    }
-}
+impl_watcher_responder!(
+    WatcherCurrentResponder,
+    f32,
+    ControlWatchCurrentBrightnessResponder,
+    ReaderWatchCurrentBrightnessResponder,
+    "WatchCurrentBrightness"
+);
+impl_watcher_responder!(
+    WatcherAutoResponder,
+    bool,
+    ControlWatchAutoBrightnessResponder,
+    ReaderWatchAutoBrightnessResponder,
+    "WatchAutoBrightness"
+);
+impl_watcher_responder!(
+    WatcherAdjustmentResponder,
+    f32,
+    ControlWatchAutoBrightnessAdjustmentResponder,
+    ReaderWatchAutoBrightnessAdjustmentResponder,
+    "WatchAutoBrightnessAdjustment"
+);
 
 #[derive(Debug)]
 pub struct Control {
@@ -192,7 +201,7 @@ impl Control {
         result
     }
 
-    pub async fn handle_request(
+    pub async fn handle_control_request(
         &mut self,
         request: BrightnessControlRequest,
         watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
@@ -206,12 +215,11 @@ impl Control {
                 self.set_auto_brightness().await;
             }
             BrightnessControlRequest::WatchAutoBrightness { responder } => {
-                let watch_auto_result =
-                    self.watch_auto_brightness(watch_auto_handler, responder).await;
-                match watch_auto_result {
-                    Ok(_v) => {}
-                    Err(e) => log::error!("Watch auto brightness failed due to err {}.", e),
-                }
+                self.handle_watch_auto_brightness(
+                    watch_auto_handler,
+                    WatcherAutoResponder::Control(responder),
+                )
+                .await;
             }
             BrightnessControlRequest::SetManualBrightness { value, control_handle: _ } => {
                 let value = num_traits::clamp(value, 0.0, 1.0);
@@ -229,12 +237,11 @@ impl Control {
                 .await;
             }
             BrightnessControlRequest::WatchCurrentBrightness { responder } => {
-                let watch_current_result =
-                    self.watch_current_brightness(watch_current_handler, responder).await;
-                match watch_current_result {
-                    Ok(_v) => {}
-                    Err(e) => log::error!("Watch current brightness failed due to err {}.", e),
-                }
+                self.handle_watch_current_brightness(
+                    watch_current_handler,
+                    WatcherCurrentResponder::Control(responder),
+                )
+                .await;
             }
             BrightnessControlRequest::SetBrightnessTable { table, control_handle: _ } => {
                 let result = self.check_brightness_table_and_set_new_curve(&table.into()).await;
@@ -254,30 +261,111 @@ impl Control {
                 self.scale_new_adjustment(adjustment).await;
             }
             BrightnessControlRequest::WatchAutoBrightnessAdjustment { responder } => {
-                let watch_adjustment_result = self
-                    .watch_auto_brightness_adjustment(watch_adjustment_handler, responder)
-                    .await;
-                match watch_adjustment_result {
-                    Ok(_v) => {}
-                    Err(e) => log::error!("Watch adjustment failed due to err {}.", e),
-                }
+                self.handle_watch_auto_brightness_adjustment(
+                    watch_adjustment_handler,
+                    WatcherAdjustmentResponder::Control(responder),
+                )
+                .await;
             }
             BrightnessControlRequest::GetMaxAbsoluteBrightness { responder } => {
-                let result = self.get_max_absolute_brightness();
-                match result.await {
-                    Ok(value) => {
-                        if let Err(e) = responder.send(Ok(value)) {
-                            log::error!("Failed to reply to GetMaxAbsoluteBrightness: {}", e);
-                        }
+                self.handle_get_max_absolute_brightness(|res| {
+                    if let Err(e) = responder.send(res) {
+                        log::error!("Failed to reply to GetMaxAbsoluteBrightness: {}", e);
                     }
-                    Err(e) => {
-                        log::error!("Failed to get max absolute brightness: {}", e);
+                })
+                .await;
+            }
+        }
+    }
 
-                        if let Err(e) = responder.send(Err(ZX_ERR_NOT_SUPPORTED)) {
-                            log::error!("Failed to reply to GetMaxAbsoluteBrightness: {}", e);
-                        }
+    pub async fn handle_reader_request(
+        &mut self,
+        request: BrightnessReaderRequest,
+        watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
+        watch_auto_handler: Arc<Mutex<WatchHandler<bool, WatcherAutoResponder>>>,
+        watch_adjustment_handler: Arc<Mutex<WatchHandler<f32, WatcherAdjustmentResponder>>>,
+    ) {
+        match request {
+            BrightnessReaderRequest::WatchAutoBrightness { responder } => {
+                self.handle_watch_auto_brightness(
+                    watch_auto_handler,
+                    WatcherAutoResponder::Reader(responder),
+                )
+                .await;
+            }
+            BrightnessReaderRequest::WatchCurrentBrightness { responder } => {
+                self.handle_watch_current_brightness(
+                    watch_current_handler,
+                    WatcherCurrentResponder::Reader(responder),
+                )
+                .await;
+            }
+            BrightnessReaderRequest::WatchAutoBrightnessAdjustment { responder } => {
+                self.handle_watch_auto_brightness_adjustment(
+                    watch_adjustment_handler,
+                    WatcherAdjustmentResponder::Reader(responder),
+                )
+                .await;
+            }
+            BrightnessReaderRequest::GetMaxAbsoluteBrightness { responder } => {
+                self.handle_get_max_absolute_brightness(|res| {
+                    if let Err(e) = responder.send(res) {
+                        log::error!("Failed to reply to GetMaxAbsoluteBrightness: {}", e);
                     }
-                }
+                })
+                .await;
+            }
+            BrightnessReaderRequest::_UnknownMethod { ordinal, .. } => {
+                log::warn!("Unknown Reader method ordinal: {}", ordinal);
+            }
+        }
+    }
+
+    async fn handle_watch_auto_brightness(
+        &mut self,
+        watch_auto_handler: Arc<Mutex<WatchHandler<bool, WatcherAutoResponder>>>,
+        responder: WatcherAutoResponder,
+    ) {
+        let watch_auto_result = self.watch_auto_brightness(watch_auto_handler, responder).await;
+        if let Err(e) = watch_auto_result {
+            log::error!("Watch auto brightness failed due to err {}.", e);
+        }
+    }
+
+    async fn handle_watch_current_brightness(
+        &mut self,
+        watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
+        responder: WatcherCurrentResponder,
+    ) {
+        let watch_current_result =
+            self.watch_current_brightness(watch_current_handler, responder).await;
+        if let Err(e) = watch_current_result {
+            log::error!("Watch current brightness failed due to err {}.", e);
+        }
+    }
+
+    async fn handle_watch_auto_brightness_adjustment(
+        &mut self,
+        watch_adjustment_handler: Arc<Mutex<WatchHandler<f32, WatcherAdjustmentResponder>>>,
+        responder: WatcherAdjustmentResponder,
+    ) {
+        let watch_adjustment_result =
+            self.watch_auto_brightness_adjustment(watch_adjustment_handler, responder).await;
+        if let Err(e) = watch_adjustment_result {
+            log::error!("Watch adjustment failed due to err {}.", e);
+        }
+    }
+
+    async fn handle_get_max_absolute_brightness(
+        &mut self,
+        send_response: impl FnOnce(Result<f64, zx::sys::zx_status_t>),
+    ) {
+        let result = self.get_max_absolute_brightness().await;
+        match result {
+            Ok(value) => send_response(Ok(value)),
+            Err(e) => {
+                log::error!("Failed to get max absolute brightness: {}", e);
+                send_response(Err(ZX_ERR_NOT_SUPPORTED));
             }
         }
     }
@@ -313,10 +401,10 @@ impl Control {
     async fn watch_auto_brightness(
         &mut self,
         watch_auto_handler: Arc<Mutex<WatchHandler<bool, WatcherAutoResponder>>>,
-        responder: ControlWatchAutoBrightnessResponder,
+        responder: WatcherAutoResponder,
     ) -> Result<(), Error> {
         let mut hanging_get_lock = watch_auto_handler.lock().await;
-        hanging_get_lock.watch(WatcherAutoResponder { watcher_auto_responder: responder })?;
+        hanging_get_lock.watch(responder)?;
         Ok(())
     }
 
@@ -406,10 +494,10 @@ impl Control {
     async fn watch_current_brightness(
         &mut self,
         watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
-        responder: ControlWatchCurrentBrightnessResponder,
+        responder: WatcherCurrentResponder,
     ) -> Result<(), Error> {
         let mut hanging_get_lock = watch_current_handler.lock().await;
-        hanging_get_lock.watch(WatcherCurrentResponder { watcher_current_responder: responder })?;
+        hanging_get_lock.watch(responder)?;
         Ok(())
     }
 
@@ -491,11 +579,10 @@ impl Control {
     async fn watch_auto_brightness_adjustment(
         &mut self,
         watch_adjustment_handler: Arc<Mutex<WatchHandler<f32, WatcherAdjustmentResponder>>>,
-        responder: ControlWatchAutoBrightnessAdjustmentResponder,
+        responder: WatcherAdjustmentResponder,
     ) -> Result<(), Error> {
         let mut hanging_get_lock = watch_adjustment_handler.lock().await;
-        hanging_get_lock
-            .watch(WatcherAdjustmentResponder { watcher_adjustment_responder: responder })?;
+        hanging_get_lock.watch(responder)?;
         Ok(())
     }
 
@@ -506,9 +593,16 @@ impl Control {
 
 #[async_trait(? Send)]
 pub trait ControlTrait {
-    async fn handle_request(
+    async fn handle_control_request(
         &mut self,
         request: BrightnessControlRequest,
+        watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
+        watch_auto_handler: Arc<Mutex<WatchHandler<bool, WatcherAutoResponder>>>,
+        watch_adjustment_handler: Arc<Mutex<WatchHandler<f32, WatcherAdjustmentResponder>>>,
+    );
+    async fn handle_reader_request(
+        &mut self,
+        request: BrightnessReaderRequest,
         watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
         watch_auto_handler: Arc<Mutex<WatchHandler<bool, WatcherAutoResponder>>>,
         watch_adjustment_handler: Arc<Mutex<WatchHandler<f32, WatcherAdjustmentResponder>>>,
@@ -521,14 +615,32 @@ pub trait ControlTrait {
 
 #[async_trait(? Send)]
 impl ControlTrait for Control {
-    async fn handle_request(
+    async fn handle_control_request(
         &mut self,
         request: BrightnessControlRequest,
         watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
         watch_auto_handler: Arc<Mutex<WatchHandler<bool, WatcherAutoResponder>>>,
         watch_adjustment_handler: Arc<Mutex<WatchHandler<f32, WatcherAdjustmentResponder>>>,
     ) {
-        self.handle_request(
+        Control::handle_control_request(
+            self,
+            request,
+            watch_current_handler,
+            watch_auto_handler,
+            watch_adjustment_handler,
+        )
+        .await;
+    }
+
+    async fn handle_reader_request(
+        &mut self,
+        request: BrightnessReaderRequest,
+        watch_current_handler: Arc<Mutex<WatchHandler<f32, WatcherCurrentResponder>>>,
+        watch_auto_handler: Arc<Mutex<WatchHandler<bool, WatcherAutoResponder>>>,
+        watch_adjustment_handler: Arc<Mutex<WatchHandler<f32, WatcherAdjustmentResponder>>>,
+    ) {
+        Control::handle_reader_request(
+            self,
             request,
             watch_current_handler,
             watch_auto_handler,
@@ -538,19 +650,19 @@ impl ControlTrait for Control {
     }
 
     async fn add_current_sender_channel(&mut self, sender: UnboundedSender<f32>) {
-        self.add_current_sender_channel(sender).await;
+        Control::add_current_sender_channel(self, sender).await;
     }
 
     async fn add_auto_sender_channel(&mut self, sender: UnboundedSender<bool>) {
-        self.add_auto_sender_channel(sender).await;
+        Control::add_auto_sender_channel(self, sender).await;
     }
 
     async fn add_adjustment_sender_channel(&mut self, sender: UnboundedSender<f32>) {
-        self.add_adjustment_sender_channel(sender).await;
+        Control::add_adjustment_sender_channel(self, sender).await;
     }
 
     fn get_backlight_and_auto_brightness_on(&mut self) -> (Arc<dyn BacklightControl>, bool) {
-        self.get_backlight_and_auto_brightness_on()
+        Control::get_backlight_and_auto_brightness_on(self)
     }
 }
 
@@ -736,7 +848,7 @@ async fn set_brightness_slowly(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::path::Path;
 
     use anyhow::format_err;
@@ -827,7 +939,7 @@ mod tests {
         (sensor, backlight)
     }
 
-    async fn generate_control_struct(sensor: f32, backlight: f64) -> Control {
+    pub(crate) async fn generate_control_struct(sensor: f32, backlight: f64) -> Control {
         let (sensor, backlight) = set_mocks(sensor, backlight);
         let set_brightness_abort_handle = Arc::new(Mutex::new(None::<AbortHandle>));
         let auto_brightness_abort_handle = None::<AbortHandle>;

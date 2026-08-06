@@ -12,7 +12,10 @@
     },
     capabilities: [
         {
-            protocol: [ "fuchsia.ui.brightness.Control" ],
+            protocol: [
+                "fuchsia.ui.brightness.Control",
+                "fuchsia.ui.brightness.Reader",
+            ],
         },
     ],
     use: [
@@ -44,7 +47,10 @@
     ],
     expose: [
         {
-            protocol: "fuchsia.ui.brightness.Control",
+            protocol: [
+                "fuchsia.ui.brightness.Control",
+                "fuchsia.ui.brightness.Reader",
+            ],
             from: "self",
         },
     ],
