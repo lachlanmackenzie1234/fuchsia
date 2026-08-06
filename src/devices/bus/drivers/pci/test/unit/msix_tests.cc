@@ -117,21 +117,21 @@ TEST_F(PciCapabilityTests, MsixBarAccessTest) {
     ASSERT_EQ(0x2000u, msix.GetBarDataSize(bar1).value());
   }
 
-  // Different bars, Tbar should work but Pbar will be denied.
+  // Different bars, Tbar will work and Pbar (offset 0) will also report its full BAR size.
   {
     ConfigureMsixCapability(cfg, 1, 2, 0x1000, 0x0);
     MsixCapability msix(cfg, 0);
     ASSERT_OK(msix.Init(bar1, bar2));
     ASSERT_EQ(0x1000u, msix.GetBarDataSize(bar1).value());
-    ASSERT_STATUS(ZX_ERR_ACCESS_DENIED, msix.GetBarDataSize(bar2).status_value());
+    ASSERT_EQ(0x1000u, msix.GetBarDataSize(bar2).value());
   }
 
-  // Verify data sharing the same page is denied.
+  // Verify data sharing the same page is allowed and truncated based on the second section.
   {
     ConfigureMsixCapability(cfg, 1, 1, 0x800, 0x1000);
     MsixCapability msix(cfg, 0);
     ASSERT_OK(msix.Init(bar1, bar1));
-    ASSERT_STATUS(ZX_ERR_ACCESS_DENIED, msix.GetBarDataSize(bar1).status_value());
+    ASSERT_EQ(0x1000u, msix.GetBarDataSize(bar1).value());
   }
 
   // Ensure a device cannot access data when a table is not aligned to a page.

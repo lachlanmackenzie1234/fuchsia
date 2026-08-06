@@ -117,18 +117,14 @@ zx::result<size_t> MsixCapability::GetBarDataSize(const Bar& bar) const {
       continue;
     }
 
-    // If either of the tables are in the same page as the BAR data we cannot
-    // permit access to it due to VMO granularity being equal to a page.
-    if (offset < page_size) {
-      return zx::error(ZX_ERR_ACCESS_DENIED);
+    if (offset >= page_size) {
+      // Truncate the size of the bar from [0, size) to [0, offset) if size is
+      // larger, ensuring we cannot access it the table that shares this BAR.
+      // Round down to nearest page to handle situations where a table is not on a
+      // page boundary.
+      bar_size = std::min(bar_size, offset);
+      bar_size = (bar_size / page_size) * page_size;
     }
-
-    // Truncate the size of the bar from [0, size) to [0, offset) if size is
-    // larger, ensuring we cannot access it the table that shares this BAR.
-    // Round down to nearest page to handle situations where a table is not on a
-    // page boundary.
-    bar_size = std::min(bar_size, offset);
-    bar_size = (bar_size / page_size) * page_size;
   }
 
   return zx::ok(bar_size);
