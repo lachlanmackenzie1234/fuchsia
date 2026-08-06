@@ -62,7 +62,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.vreg.Service": "fuchsia.hardware.vreg.Service.ZirconTransport",
-                    "fuchsia.regulator.NAME": "\"vreg-pwm-little\""
+                    "fuchsia.NAME": "\"vreg-pwm-little\""
                 }
             }
         ]
@@ -75,7 +75,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.hardware.vreg.Service": "fuchsia.hardware.vreg.Service.ZirconTransport",
-                    "fuchsia.regulator.NAME": "\"vreg-pwm-big\""
+                    "fuchsia.NAME": "\"vreg-pwm-big\""
                 }
             }
         ]

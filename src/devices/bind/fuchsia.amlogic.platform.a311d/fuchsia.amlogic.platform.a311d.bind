@@ -144,7 +144,7 @@ uint GPIOE_PIN_ID {
     PIN_2 = 99,
 };
 
-extend string fuchsia.regulator.NAME {
+extend string fuchsia.NAME {
   PWM_VREG_LITTLE = "pwm_vreg_little",
   PWM_VREG_BIG = "pwm_vreg_big",
 };

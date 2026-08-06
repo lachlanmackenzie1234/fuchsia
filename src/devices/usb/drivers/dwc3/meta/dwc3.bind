@@ -77,5 +77,5 @@ optional parent "reset" {
 }
 
 optional parent "regulator" {
-  fuchsia.regulator.NAME == "dwc3-regulator";
+  fuchsia.NAME == "dwc3-regulator";
 }

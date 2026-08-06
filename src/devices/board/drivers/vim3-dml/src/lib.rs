@@ -185,13 +185,22 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
         "fuchsia.hardware.vreg.Service" => ServiceBindConfig {
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.regulator.NAME",
-                sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
-                value_type: RuleValueType::String,
-                destination: Destination::Both,
-                required: true,
-            }],
+            rules: &[
+                PropertyRule {
+                    bind_key: "fuchsia.regulator.NAME",
+                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
+                    value_type: RuleValueType::String,
+                    destination: Destination::Both,
+                    required: true,
+                },
+                PropertyRule {
+                    bind_key: "fuchsia.NAME",
+                    sources: &[ValueSource::ConstraintKey("name"), ValueSource::ResourceName],
+                    value_type: RuleValueType::String,
+                    destination: Destination::Both,
+                    required: true,
+                },
+            ],
             parent_key_sources: &[ValueSource::ResourceName, ValueSource::Template("vreg-{name}")],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
