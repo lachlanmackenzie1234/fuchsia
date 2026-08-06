@@ -199,7 +199,7 @@ group("rust-target-edits.prologue") {
 
 # Generate the full target spec from the base target and the edits.
 action("rust-custom-target") {
-  visibility = [ ":*" ]
+  visibility = [ "//zircon/kernel/*" ]
 
   script = "rust-custom-target.py"
 

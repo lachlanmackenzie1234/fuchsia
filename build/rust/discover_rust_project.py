@@ -17,6 +17,7 @@ import datetime
 import json
 import os
 import sys
+import typing as T
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
@@ -32,6 +33,32 @@ import bazel_rust_analyzer_utils
 _DEBUG = False
 _DEBUG_FILE = "/tmp/fuchsia_discover_rust_project.log"
 _DEBUG_RUST_PROJECT_JSON = "/tmp/fuchsia_discover_rust_project_last.json"
+
+
+def normalize_crate_target(crate: dict[str, T.Any]) -> None:
+    target = crate.get("target")
+    if not target:
+        return
+
+    # Non-standard target triples (such as Zircon kernel GN toolchain names
+    # e.g., "kernel_arm64.lk_debug_level_2") cause rustc --print cfg to fail
+    # when invoked by rust-analyzer. Convert them to valid Rust target triples.
+    if target.startswith("kernel_"):
+        for arg in crate.get("compiler_args", []):
+            if "--clang-target=" in arg:
+                clang_target = arg.split("--clang-target=")[1]
+                if clang_target.startswith("riscv64"):
+                    crate["target"] = "riscv64gc-unknown-fuchsia"
+                else:
+                    crate["target"] = clang_target
+                return
+
+        if "arm64" in target:
+            crate["target"] = "aarch64-unknown-fuchsia"
+        elif "x64" in target:
+            crate["target"] = "x86_64-unknown-fuchsia"
+        elif "riscv64" in target:
+            crate["target"] = "riscv64gc-unknown-fuchsia"
 
 
 def main() -> int:
@@ -57,6 +84,18 @@ def main() -> int:
             crate["is_workspace_member"] = not crate["label"].startswith(
                 "//third_party/rust_crates"
             )
+        normalize_crate_target(crate)
+
+        label = crate.get("label", "")
+        root_module = crate.get("root_module", "")
+        if "zircon/kernel" in label or "zircon/kernel" in root_module:
+            kernel_src_dir = str(args.workspace_dir / "zircon" / "kernel")
+            if "source" not in crate or crate["source"] is None:
+                crate["source"] = {"include_dirs": [], "exclude_dirs": []}
+            if kernel_src_dir not in crate["source"].get("include_dirs", []):
+                crate["source"].setdefault("include_dirs", []).append(
+                    kernel_src_dir
+                )
 
     build_dir_file = args.workspace_dir / ".fx-build-dir"
     build_dir = Path(build_dir_file.read_text().strip())

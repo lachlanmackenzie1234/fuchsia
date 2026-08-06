@@ -9,6 +9,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -24,11 +25,21 @@ from rust import (
 
 def possible_labels(t: dict[str, any], fuchsia_dir: str) -> set[str]:
     """all labels the user could have meant"""
-    return [
-        str(GnTarget(t["clippy_label"], fuchsia_dir)),
-        str(GnTarget(t["original_label"], fuchsia_dir)),
-        str(GnTarget(t["actual_label"], fuchsia_dir)),
-    ]
+    labels = set()
+    for key in ("clippy_label", "original_label", "actual_label"):
+        if key in t and t[key]:
+            gn_t = GnTarget(t[key], fuchsia_dir)
+            labels.add(str(gn_t))
+            # For Fuchsia target labels (such as Zircon kernel modules), GN
+            # attaches variant toolchain qualifiers (e.g.
+            # `(//zircon/kernel/switch/set/lk_debug_level_2:...)`).
+            # Adding the toolchain-stripped label allows user input like `fx
+            # clippy //zircon/kernel/bin:vmzircon.with-tests` or file-based
+            # target lookups to match without requiring explicit toolchain
+            # suffixes.
+            if t.get("target_is_fuchsia"):
+                labels.add(f"//{gn_t.label_path}:{gn_t.label_name}")
+    return labels
 
 
 def main():
@@ -69,11 +80,11 @@ def main():
                 if (
                     any(
                         pl.startswith(l[:-2])
-                        for pl in possible_labels(t, build_dir)
+                        for pl in possible_labels(t, args.fuchsia_dir)
                     )
                     if l.endswith("**")
                     else str(GnTarget(l, args.fuchsia_dir))
-                    in possible_labels(t, build_dir)
+                    in possible_labels(t, args.fuchsia_dir)
                 )
             ]
 
@@ -153,11 +164,78 @@ def fingerprint_diagnostic(lint):
     )
 
 
+_RESOLVED_PATH_CACHE = {}
+
+
+def resolve_generated_kernel_path(file_path):
+    """Resolves generated Zircon kernel module paths back to in-tree source files.
+
+    Zircon kernel Rust code relies on GN kernel_rust_mod() templates to produce
+    synthetic wrapper `.rs` files under `gen/`. These generated wrappers
+    textually pull in real in-tree source files via `include!()`,
+    `include_str!()`, or `include_bytes!()`.
+
+    When Clippy reports diagnostics against these generated `gen/` files, IDE
+    integrations (like VSCode flycheck) fail to locate the files in the VFS or
+    report incorrect line spans. This function inspects generated `.rs` wrapper
+    files for include macro directives to map diagnostic spans back to the
+    actual repository source files under `zircon/kernel/`.
+    """
+    if file_path in _RESOLVED_PATH_CACHE:
+        return _RESOLVED_PATH_CACHE[file_path]
+
+    abs_path = (
+        os.path.join(FUCHSIA_BUILD_DIR, file_path)
+        if not os.path.isabs(file_path)
+        else file_path
+    )
+    norm_path = os.path.normpath(abs_path)
+
+    res = norm_path
+    if "/gen/" in norm_path and norm_path.endswith(".rs"):
+        dir_path = os.path.dirname(norm_path)
+        candidates = [norm_path]
+        if os.path.exists(dir_path):
+            candidates.extend(
+                [
+                    os.path.join(dir_path, f)
+                    for f in os.listdir(dir_path)
+                    if f.endswith(".rs")
+                ]
+            )
+        for cand in candidates:
+            if os.path.isfile(cand):
+                try:
+                    with open(
+                        cand, "r", encoding="utf-8", errors="ignore"
+                    ) as f:
+                        content = f.read()
+                    includes = re.findall(
+                        r'include(?:_str|_bytes)?!\("([^"]+)"\);', content
+                    )
+                    for inc in includes:
+                        resolved_inc = os.path.normpath(
+                            os.path.join(os.path.dirname(cand), inc)
+                        )
+                        if "/gen/" not in resolved_inc and os.path.isfile(
+                            resolved_inc
+                        ):
+                            res = resolved_inc
+                            break
+                except Exception:
+                    pass
+            if res != norm_path:
+                break
+
+    rel_res = os.path.relpath(res)
+    _RESOLVED_PATH_CACHE[file_path] = rel_res
+    return rel_res
+
+
 # Rewrite paths in a diagnostic to be relative to the current directory.
 def fix_paths(lint):
-    fix = lambda path: os.path.relpath(os.path.join(FUCHSIA_BUILD_DIR, path))
     for span in lint["spans"]:
-        span["file_name"] = fix(span["file_name"])
+        span["file_name"] = resolve_generated_kernel_path(span["file_name"])
     lint["children"] = [fix_paths(child) for child in lint["children"]]
     return lint
 
