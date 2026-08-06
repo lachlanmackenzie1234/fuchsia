@@ -9,6 +9,8 @@
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <cmath>
+
 #include "chunk_input_stream.h"
 #include "codec_adapter_sw.h"
 #include "timestamp_extrapolator.h"
@@ -52,17 +54,20 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
       switch (channel_mode) {
         case fuchsia::media::SbcChannelMode::MONO:
         case fuchsia::media::SbcChannelMode::DUAL:
-          return part + static_cast<size_t>(ceil(static_cast<double>(params.s16NumOfBlocks) *
-                                                 static_cast<double>(channel_count()) *
-                                                 static_cast<double>(params.s16BitPool) / 8.0));
+          return part +
+                 static_cast<size_t>(std::ceil(static_cast<double>(params.s16NumOfBlocks) *
+                                               static_cast<double>(channel_count()) *
+                                               static_cast<double>(params.s16BitPool) / 8.0));
         case fuchsia::media::SbcChannelMode::JOINT_STEREO:
-          return part + static_cast<size_t>(ceil((static_cast<double>(params.s16NumOfSubBands) +
-                                                  static_cast<double>(params.s16NumOfBlocks) *
-                                                      static_cast<double>(params.s16BitPool)) /
-                                                 8.0));
+          return part +
+                 static_cast<size_t>(std::ceil((static_cast<double>(params.s16NumOfSubBands) +
+                                                static_cast<double>(params.s16NumOfBlocks) *
+                                                    static_cast<double>(params.s16BitPool)) /
+                                               8.0));
         case fuchsia::media::SbcChannelMode::STEREO:
-          return part + static_cast<size_t>(ceil(static_cast<double>(params.s16NumOfBlocks) *
-                                                 static_cast<double>(params.s16BitPool) / 8.0));
+          return part +
+                 static_cast<size_t>(std::ceil(static_cast<double>(params.s16NumOfBlocks) *
+                                               static_cast<double>(params.s16BitPool) / 8.0));
         default:
           FX_LOGS(FATAL) << "Channel mode enum became invalid value: "
                          << static_cast<int>(channel_mode);
