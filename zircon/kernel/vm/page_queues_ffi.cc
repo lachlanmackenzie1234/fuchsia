@@ -8,16 +8,21 @@
 
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
+
 #include "vm/page_queues.h"
 #include "vm/pmm.h"
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
 
-bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues, const void* page) {
+FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues,
+                                                           const void* page) {
   return queues->DebugPageIsWired(reinterpret_cast<const vm_page_t*>(page));
 }
 
-bool cpp_page_queues_debug_page_is_any_anonymous(const PageQueues* queues, const void* page) {
+FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_any_anonymous(const PageQueues* queues,
+                                                                   const void* page) {
   return queues->DebugPageIsAnyAnonymous(reinterpret_cast<const vm_page_t*>(page));
 }
 

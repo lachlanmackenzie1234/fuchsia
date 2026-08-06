@@ -6,11 +6,14 @@
 
 #include "vm/physical_page_borrowing_config_ffi.h"
 
+#include <kernel/ffi.h>
+
 #include "vm/physical_page_borrowing_config.h"
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
 
-bool cpp_set_loaning_enabled(bool enabled) {
+FFI_ALWAYS_INLINE bool cpp_set_loaning_enabled(bool enabled) {
   bool prev = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
   PhysicalPageBorrowingConfig::Get().set_loaning_enabled(enabled);
   return prev;

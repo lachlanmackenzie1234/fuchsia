@@ -8,22 +8,21 @@
 
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
+
 #include "test_helper.h"
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
 
-zx_status_t cpp_make_committed_pager_vmo(size_t num_pages, bool trap_dirty, bool resizable,
-                                         void** out_pages, VmObjectPaged** out_vmo) {
+FFI_ALWAYS_INLINE zx_status_t cpp_make_committed_pager_vmo(size_t num_pages, bool trap_dirty,
+                                                           bool resizable, void** out_pages,
+                                                           VmObjectPaged** out_vmo) {
   fbl::RefPtr<VmObjectPaged> vmo;
   zx_status_t status = vm_unittest::make_committed_pager_vmo(
       num_pages, trap_dirty, resizable, reinterpret_cast<vm_page_t**>(out_pages), &vmo);
-  if (status != ZX_OK) {
-    return status;
-  }
-  if (out_vmo) {
-    *out_vmo = fbl::ExportToRawPtr(&vmo);
-  }
-  return ZX_OK;
+  *out_vmo = fbl::ExportToRawPtr(&vmo);
+  return status;
 }
 
 }  // extern "C"
