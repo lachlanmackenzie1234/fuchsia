@@ -24,7 +24,7 @@ enum Subcommand {
     CreateSystem(CreateSystemArgs),
 }
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<()> {
     let args: Args = argh::from_env();
 

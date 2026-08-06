@@ -58,7 +58,7 @@ struct InterpolateArgs {
     to_mos_id: String,
 }
 
-#[fuchsia_async::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<()> {
     let args: MosToolArgs = argh::from_env();
 
