@@ -53,7 +53,7 @@ impl Connection {
 
         match self.state {
             State::Closed => Ok(ConnectionUpdateAction::RemoveEntry),
-            State::Untracked | State::Opening(_) | State::Established(_) => {
+            State::Untracked | State::SynSent(_) | State::Established(_) => {
                 Ok(ConnectionUpdateAction::NoAction)
             }
         }
@@ -88,7 +88,7 @@ enum State {
     /// Expected peer states:
     /// - Original: `SYN_SENT`
     /// - Reply: `SYN_RECEIVED` (upon receipt)
-    Opening(Opening),
+    SynSent(SynSent),
 
     /// The handshake has completed, save for the final ACK (i.e. the last `ACK`
     /// of `SYN`, `SYN/ACK`, `ACK`).
@@ -111,7 +111,7 @@ impl State {
         }
 
         Some(
-            Opening {
+            SynSent {
                 iss: segment.seq,
                 logical_len: segment.len(payload_len),
                 advertised_window_scale: segment.options.window_scale(),
@@ -143,7 +143,7 @@ impl State {
                 }
             }
             State::Closed => Duration::ZERO,
-            State::Opening(_) => MAXIMUM_SEGMENT_LIFETIME,
+            State::SynSent(_) => MAXIMUM_SEGMENT_LIFETIME,
             State::Established(PeerPair { original, reply }) => {
                 // If there is no data outstanding, make the timeout large, and
                 // otherwise small so we can purge the connection quickly if one
@@ -179,7 +179,7 @@ impl State {
         match self {
             State::Untracked => (State::Untracked, true),
             State::Closed => (State::Closed, true),
-            State::Opening(s) => s.update(segment, payload_len, dir),
+            State::SynSent(s) => s.update(segment, payload_len, dir),
             State::Established(peers) => {
                 update_for_established(peers.into_update_peers(dir), segment, payload_len)
             }
@@ -464,11 +464,11 @@ impl UpdatePeers {
     }
 }
 
-/// State for the Opening state.
+/// State for the SynSent state.
 ///
 /// State transitions for in-range segments by direction:
 /// - Original
-///   - SYN: Update data, stay in Opening
+///   - SYN: Update data, stay in SynSent
 ///   - SYN/ACK: Invalid
 ///   - RST: Invalid
 ///   - FIN: Invalid
@@ -480,7 +480,7 @@ impl UpdatePeers {
 ///   - FIN: Invalid
 ///   - ACK: Invalid
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Opening {
+struct SynSent {
     /// The ISS (initial send sequence number) for the original TCP stack.
     iss: SeqNum,
 
@@ -498,9 +498,9 @@ struct Opening {
     ///   is never scaled.
     window_size: WindowSize,
 }
-state_from_state_struct!(Opening);
+state_from_state_struct!(SynSent);
 
-impl Opening {
+impl SynSent {
     fn update(
         self,
         segment: &SegmentHeader,
@@ -535,7 +535,7 @@ impl Opening {
                 let seg_window_size = WindowSize::from_u32(u16::from(segment.wnd).into()).unwrap();
 
                 (
-                    Opening {
+                    SynSent {
                         iss: iss,
                         logical_len: u32::max(segment.len(payload_len), logical_len),
                         advertised_window_scale: advertised_window_scale,
@@ -717,7 +717,7 @@ fn update_for_established(
 
 #[cfg(test)]
 mod tests {
-    use super::{FinState, Opening, Peer, PeerPair, State};
+    use super::{FinState, Peer, PeerPair, State, SynSent};
 
     use assert_matches::assert_matches;
     use netstack3_base::{
@@ -753,8 +753,8 @@ mod tests {
     #[test_case(None)]
     #[test_case(Some(Control::FIN))]
     #[test_case(Some(Control::RST))]
-    fn opening_original_non_syn_segment(control: Option<Control>) {
-        let state = Opening {
+    fn syn_sent_original_non_syn_segment(control: Option<Control>) {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: 3,
             advertised_window_scale: None,
@@ -811,8 +811,8 @@ mod tests {
         }.into(),
         ..Default::default()
     }; "ack not allowed")]
-    fn opening_original_syn_not_retransmit(segment: SegmentHeader) {
-        let state = Opening {
+    fn syn_sent_original_syn_not_retransmit(segment: SegmentHeader) {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
@@ -827,8 +827,8 @@ mod tests {
     }
 
     #[test]
-    fn opening_original_syn_retransmit() {
-        let state = Opening {
+    fn syn_sent_original_syn_retransmit() {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
@@ -853,12 +853,12 @@ mod tests {
                 ORIGINAL_PAYLOAD_LEN + 10,
                 ConnectionDirection::Original
             ),
-            (State::Opening(s), true) => s
+            (State::SynSent(s), true) => s
         );
 
         assert_eq!(
             result,
-            Opening {
+            SynSent {
                 iss: ORIGINAL_ISS,
                 logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 10 + 1,
                 advertised_window_scale: WindowScale::new(ORIGINAL_WS),
@@ -869,8 +869,8 @@ mod tests {
 
     #[test_case(None)]
     #[test_case(Some(Control::FIN))]
-    fn opening_reply_non_syn_segment(control: Option<Control>) {
-        let state = Opening {
+    fn syn_sent_reply_non_syn_segment(control: Option<Control>) {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: None,
@@ -906,8 +906,8 @@ mod tests {
         None;
         "large invalid"
     )]
-    fn opening_reply_rst_segment(ack: SeqNum, new_state: Option<State>) {
-        let state = Opening {
+    fn syn_sent_reply_rst_segment(ack: SeqNum, new_state: Option<State>) {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: None,
@@ -934,8 +934,8 @@ mod tests {
     }
 
     #[test]
-    fn opening_reply_simultaneous_open() {
-        let state = Opening {
+    fn syn_sent_reply_simultaneous_open() {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
@@ -957,8 +957,8 @@ mod tests {
 
     #[test_case(ORIGINAL_ISS; "too low")]
     #[test_case(ORIGINAL_ISS + ORIGINAL_PAYLOAD_LEN + 2; "too high")]
-    fn opening_reply_syn_ack_not_in_range(ack: SeqNum) {
-        let state = Opening {
+    fn syn_sent_reply_syn_ack_not_in_range(ack: SeqNum) {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: None,
@@ -982,8 +982,8 @@ mod tests {
 
     #[test_case(None)]
     #[test_case(Some(WindowScale::new(REPLY_WS).unwrap()))]
-    fn opening_reply_syn_ack(reply_window_scale: Option<WindowScale>) {
-        let state = Opening {
+    fn syn_sent_reply_syn_ack(reply_window_scale: Option<WindowScale>) {
+        let state = SynSent {
             iss: ORIGINAL_ISS,
             logical_len: ORIGINAL_PAYLOAD_LEN as u32 + 1,
             advertised_window_scale: WindowScale::new(ORIGINAL_WS),
