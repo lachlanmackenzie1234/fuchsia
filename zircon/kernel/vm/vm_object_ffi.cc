@@ -101,4 +101,11 @@ uint64_t cpp_vm_object_user_id(const VmObject* vmo) { return vmo->user_id(); }
 
 uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo) { return vmo->parent_user_id(); }
 
+zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offset, uint64_t len, void* ctx,
+                                 cpp_vm_object_lookup_fn callback) {
+  return vmo->Lookup(offset, len, [ctx, callback](uint64_t offset, paddr_t pa) {
+    return callback(ctx, offset, pa);
+  });
+}
+
 }  // extern "C"

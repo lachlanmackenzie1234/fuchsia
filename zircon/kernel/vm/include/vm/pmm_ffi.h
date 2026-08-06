@@ -14,6 +14,8 @@
 
 __BEGIN_CDECLS
 
+void* cpp_paddr_to_vm_page(zx_paddr_t paddr);
+PageQueues* cpp_pmm_page_queues();
 zx_status_t cpp_pmm_alloc_page(uint32_t flags, void** out_page, zx_paddr_t* out_paddr);
 void cpp_pmm_free_page(void* page);
 

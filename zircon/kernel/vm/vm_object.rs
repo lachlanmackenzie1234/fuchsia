@@ -5,12 +5,14 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
+use crate::kernel::types::PAddr;
 use core::marker::{PhantomData, PhantomPinned};
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use kalloc::AllocError;
 use vm_object_bindings as bindings;
 use zx_status::Status;
+use zx_types::zx_status_t;
 
 pub use bindings::{Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint};
 
@@ -190,6 +192,58 @@ impl VmObject {
     pub fn parent_user_id(&self) -> u64 {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
         unsafe { bindings::cpp_vm_object_parent_user_id(self.as_raw()) }
+    }
+
+    /// execute lookup_fn on a given range of physical addresses within the vmo. Only pages that are
+    /// present and writable in this VMO will be enumerated. Any copy-on-write pages in our parent
+    /// will not be enumerated. The physical addresses given to the lookup_fn should not be retained
+    /// in any way unless the range has also been pinned by the caller. Offsets provided will be in
+    /// relation to the object being queried, even if pages are actually from a parent object where
+    /// this is a slice.
+    /// Ranges of length zero are considered invalid and will return
+    /// ZX_ERR_INVALID_ARGS. The lookup_fn can terminate iteration early by returning ZX_ERR_STOP.
+    pub fn lookup<T: Sized>(
+        &self,
+        offset: u64,
+        len: u64,
+        ctx: &mut T,
+        lookup_fn: fn(u64, PAddr, &mut T) -> Result<(), Status>,
+    ) -> Result<(), Status> {
+        struct LookupState<'a, T> {
+            ctx: &'a mut T,
+            lookup_fn: fn(u64, PAddr, &mut T) -> Result<(), Status>,
+        }
+
+        /// # Safety
+        ///
+        /// `ctx` must point to a valid `LookupState<'_, T>` created on the stack in `lookup`
+        /// that remains valid for the duration of the C++ FFI lookup callback.
+        unsafe extern "C" fn lookup_callback_shim<T>(
+            ctx: *mut core::ffi::c_void,
+            offset: u64,
+            paddr: u64,
+        ) -> zx_status_t {
+            // SAFETY: `ctx` is guaranteed by `cpp_vm_object_lookup` to be the non-null `ctx_ptr`
+            // passed from `lookup`, which points to a live `LookupState<'_, T>` on the caller's
+            // stack.
+            let state = unsafe { ctx.cast::<LookupState<'_, T>>().as_mut_unchecked() };
+            Status::result_into_raw((state.lookup_fn)(offset, paddr.into(), state.ctx))
+        }
+
+        let mut state = LookupState { ctx, lookup_fn };
+        let state_ptr: *mut LookupState<'_, T> = &mut state;
+        // Erase the Rust type so we can pass our context pointer through C++'s void* argument.
+        let ctx_ptr: *mut core::ffi::c_void = state_ptr.cast();
+        let status = unsafe {
+            bindings::cpp_vm_object_lookup(
+                self.as_raw(),
+                offset,
+                len,
+                ctx_ptr,
+                Some(lookup_callback_shim::<T>),
+            )
+        };
+        Status::ok(status)
     }
 }
 

@@ -6,6 +6,7 @@
 
 use crate::kernel::types::PAddr;
 use crate::vm::page::VmPagePtr;
+use crate::vm::page_queues::PageQueues;
 use pmm_bindings as bindings;
 use zx_status::Status;
 
@@ -33,4 +34,21 @@ pub fn alloc_page(flags: u32) -> Result<(VmPagePtr, PAddr), Status> {
 pub unsafe fn free_page(page: VmPagePtr) {
     // SAFETY: Caller guarantees `page` is a valid allocated PMM page.
     unsafe { bindings::cpp_pmm_free_page(page.as_raw()) };
+}
+
+/// Converts a physical address to a `VmPagePtr`.
+pub fn paddr_to_vm_page(paddr: PAddr) -> Option<VmPagePtr> {
+    let raw = unsafe { bindings::cpp_paddr_to_vm_page(paddr.0) };
+    // SAFETY: cpp_paddr_to_vm_page returns a valid VmPagePtr, or null.
+    unsafe { VmPagePtr::from_raw(raw) }
+}
+
+/// Returns the static `PageQueues` instance associated with the PMM.
+pub fn page_queues() -> &'static PageQueues {
+    // SAFETY: No preconditions.
+    let queues = unsafe { bindings::cpp_pmm_page_queues() };
+    let queues: *const PageQueues = queues.cast();
+    // SAFETY: `cpp_pmm_page_queues` returns a valid static pointer to the global PmmNode's
+    // PageQueues.
+    unsafe { queues.as_ref_unchecked() }
 }

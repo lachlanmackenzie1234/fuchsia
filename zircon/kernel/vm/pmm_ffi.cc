@@ -12,6 +12,10 @@
 
 extern "C" {
 
+void* cpp_paddr_to_vm_page(zx_paddr_t paddr) { return paddr_to_vm_page(paddr); }
+
+PageQueues* cpp_pmm_page_queues() { return pmm_page_queues(); }
+
 zx_status_t cpp_pmm_alloc_page(uint32_t flags, void** out_page, zx_paddr_t* out_paddr) {
   vm_page_t* page = nullptr;
   paddr_t paddr = 0;

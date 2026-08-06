@@ -23,6 +23,7 @@ pub struct VmObjectPaged {
 
 impl VmObjectPaged {
     pub const ALWAYS_PINNED: u32 = bindings::VmObjectPaged_kAlwaysPinned;
+    pub const RESIZABLE: u32 = bindings::VmObjectPaged_kResizable;
 
     /// Domain-specific conversion: returns raw FFI pointer for `VmObjectPaged`.
     pub fn as_raw(&self) -> *mut bindings::VmObjectPaged {

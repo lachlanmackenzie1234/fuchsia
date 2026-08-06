@@ -17,6 +17,8 @@
 
 __BEGIN_CDECLS
 
+typedef zx_status_t (*cpp_vm_object_lookup_fn)(void* ctx, uint64_t offset, uint64_t paddr);
+
 void* cpp_vm_object_get_ref_counted(const VmObject* vmo);
 void cpp_vm_object_free(VmObject* vmo);
 zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64_t offset, uint64_t len);
@@ -47,6 +49,8 @@ zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset, uint
 void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id);
 uint64_t cpp_vm_object_user_id(const VmObject* vmo);
 uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);
+zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offset, uint64_t len, void* ctx,
+                                 cpp_vm_object_lookup_fn callback);
 
 __END_CDECLS
 

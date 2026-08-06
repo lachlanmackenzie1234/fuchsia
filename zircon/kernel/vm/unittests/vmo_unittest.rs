@@ -10,9 +10,10 @@
 mod vmo_rs {
     use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_UNCACHED;
     use crate::vm::fault;
+    use crate::vm::page::VmPagePtr;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::pinned_vm_object::PinnedVmObject;
-    use crate::vm::pmm::{self, ALLOC_FLAG_ANY};
+    use crate::vm::pmm::{self, ALLOC_FLAG_ANY, paddr_to_vm_page};
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
@@ -26,6 +27,45 @@ mod vmo_rs {
     use zx_status::Status;
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
+
+    /// Helper that tests if all pages in a VMO in the specified range pass the given predicate.
+    ///
+    /// Yields only valid `VmPagePtr`s to the predicate.
+    fn all_pages_match<F>(vmo: &VmObject, offset: u64, len: u64, mut pred: F) -> bool
+    where
+        F: FnMut(VmPagePtr) -> bool,
+    {
+        let mut pred_matches = true;
+        let res = vmo.lookup(
+            offset,
+            len,
+            &mut (&mut pred, &mut pred_matches),
+            |_, pa, (pred, pred_matches)| {
+                let page = paddr_to_vm_page(pa).expect("paddr must map to vm_page");
+                if !pred(page) {
+                    **pred_matches = false;
+                    Err(Status::STOP)
+                } else {
+                    Err(Status::NEXT)
+                }
+            },
+        );
+        res.is_ok() && pred_matches
+    }
+
+    fn pages_in_wired_queue(vmo: &VmObject, offset: u64, len: u64) -> bool {
+        all_pages_match(vmo, offset, len, |page| {
+            // SAFETY: `all_pages_match` guarantees `page` is a valid `VmPagePtr`.
+            unsafe { pmm::page_queues().debug_page_is_wired(page) }
+        })
+    }
+
+    fn pages_in_any_anonymous_queue(vmo: &VmObject, offset: u64, len: u64) -> bool {
+        all_pages_match(vmo, offset, len, |page| {
+            // SAFETY: `all_pages_match` guarantees `page` is a valid `VmPagePtr`.
+            unsafe { pmm::page_queues().debug_page_is_any_anonymous(page) }
+        })
+    }
 
     /// Creates a vm object.
     #[test]
@@ -101,6 +141,74 @@ mod vmo_rs {
         drop(vmo);
         // SAFETY: vm_page was allocated via alloc_page above and is no longer referenced by vmo.
         unsafe { pmm::free_page(vm_page) };
+    }
+
+    /// Tests pinning and decommitting ranges in a Paged VMO.
+    #[test]
+    fn vmo_pin_test() {
+        // Creates paged VMOs, pins them, and tries operations that should unpin.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = PAGE_SIZE * 16;
+        for is_loaning_enabled in [false, true] {
+            let _loaning_guard = ScopedLoaningEnabled::new(is_loaning_enabled);
+
+            // vmobject creation
+            let vmo = unwrap_ok!(VmObjectPaged::create(
+                ALLOC_FLAG_ANY,
+                VmObjectPaged::RESIZABLE,
+                alloc_size
+            ));
+
+            // pinning out of range
+            expect_eq!(
+                Status::result_into_raw(vmo.commit_range_pinned(PAGE_SIZE, alloc_size, false)),
+                Status::OUT_OF_RANGE.into_raw()
+            );
+            // pinning range of len 0
+            expect_eq!(
+                Status::result_into_raw(vmo.commit_range_pinned(PAGE_SIZE, 0, false)),
+                Status::INVALID_ARGS.into_raw()
+            );
+
+            // pinning range
+            expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
+            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+
+            // decommitting pinned range
+            expect_eq!(
+                Status::result_into_raw(vmo.decommit_range(PAGE_SIZE, 3 * PAGE_SIZE)),
+                Status::BAD_STATE.into_raw()
+            );
+            // decommitting pinned range
+            expect_eq!(
+                Status::result_into_raw(vmo.decommit_range(PAGE_SIZE, PAGE_SIZE)),
+                Status::BAD_STATE.into_raw()
+            );
+            // decommitting pinned range
+            expect_eq!(
+                Status::result_into_raw(vmo.decommit_range(3 * PAGE_SIZE, PAGE_SIZE)),
+                Status::BAD_STATE.into_raw()
+            );
+
+            vmo.unpin(PAGE_SIZE, 3 * PAGE_SIZE);
+            expect_true!(pages_in_any_anonymous_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+
+            // decommitting unpinned range
+            expect_ok!(vmo.decommit_range(PAGE_SIZE, 3 * PAGE_SIZE));
+
+            // pinning range after decommit
+            expect_ok!(vmo.commit_range_pinned(PAGE_SIZE, 3 * PAGE_SIZE, false));
+            expect_true!(pages_in_wired_queue(&vmo, PAGE_SIZE, 3 * PAGE_SIZE));
+
+            // resizing pinned range
+            expect_eq!(Status::result_into_raw(vmo.resize(0)), Status::BAD_STATE.into_raw());
+
+            vmo.unpin(PAGE_SIZE, 3 * PAGE_SIZE);
+
+            // resizing unpinned range
+            expect_ok!(vmo.resize(0));
+        }
     }
 
     /// Tests parent merging and user ID updates when VMO hierarchies collapse.
