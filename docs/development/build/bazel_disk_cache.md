@@ -31,7 +31,7 @@ build directories on the same machine.
   them (including input contents) will automatically benefit from the
   cache too.
 
-* **Shared Accross Branches:** If you frequently switch between branches,
+* **Shared Across Branches:** If you frequently switch between branches,
   while using the same build directory, incremental builds will also
   benefit from the disk cache.
 
