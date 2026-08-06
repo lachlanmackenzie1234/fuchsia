@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::pin::Pin;
 use pin_init::{PinInit, pin_data, pin_init, pin_init_from_closure, pinned_drop};
 
-use crate::{LockToken, RawLock, RawMutex};
+use crate::{LockPolicy, LockToken, RawLock, RawMutex};
 use lockdep::LockClass;
 
 /// A safe, Zircon-compatible mutual exclusion lock supporting compile-time order validation.
@@ -35,9 +35,17 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
         })
     }
 
-    /// Acquires the lock and registers the active loop node.
+    /// Acquires the lock, using the default policy, and registers the active loop node.
     #[inline]
     pub fn lock(&self) -> impl PinInit<KMutexGuard<'_, Class, M>, core::convert::Infallible> {
+        KMutexGuard::new(self)
+    }
+
+    /// Acquires the lock, using the specified policy, and registers the active loop node.
+    #[inline]
+    pub fn lock_policy<P: LockPolicy<M>>(
+        &self,
+    ) -> impl PinInit<KMutexGuard<'_, Class, M, P>, core::convert::Infallible> {
         KMutexGuard::new(self)
     }
 
@@ -58,18 +66,23 @@ impl<Class: LockClass, M: RawLock> core::fmt::Debug for KMutex<Class, M> {
 /// inside the C++ loop detector active thread list.
 #[repr(C)]
 #[pin_data(PinnedDrop)]
-pub struct KMutexGuard<'a, Class: LockClass, M: RawLock = RawMutex> {
+pub struct KMutexGuard<
+    'a,
+    Class: LockClass,
+    M: RawLock = RawMutex,
+    P: LockPolicy<M> = <M as RawLock>::DefaultPolicy,
+> {
     mutex: &'a KMutex<Class, M>,
 
     #[pin]
     lock_entry: M::LockEntry,
 
-    state: M::GuardState,
+    state: P::GuardState,
 
     token: LockToken<'a, Class>,
 }
 
-impl<'a, Class: LockClass, M: RawLock> KMutexGuard<'a, Class, M> {
+impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, M, P> {
     /// Creates a new stack-pinned validation guard initialization block.
     pub fn new(mutex: &'a KMutex<Class, M>) -> impl PinInit<Self, core::convert::Infallible> {
         // SAFETY: The closure correctly initializes all fields of the allocated `KMutexGuard`
@@ -85,7 +98,7 @@ impl<'a, Class: LockClass, M: RawLock> KMutexGuard<'a, Class, M> {
                 let entry_addr = core::ptr::addr_of_mut!((*this).lock_entry);
                 core::ptr::write(entry_addr, M::LockEntry::default());
 
-                let state = mutex.mutex.acquire(entry_addr);
+                let state = P::acquire(&mutex.mutex, entry_addr);
 
                 let state_addr = core::ptr::addr_of_mut!((*this).state);
                 core::ptr::write(state_addr, state);
@@ -115,7 +128,9 @@ impl<'a, Class: LockClass, M: RawLock> KMutexGuard<'a, Class, M> {
 }
 
 #[pinned_drop]
-impl<'a, Class: LockClass, M: RawLock> PinnedDrop for KMutexGuard<'a, Class, M> {
+impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> PinnedDrop
+    for KMutexGuard<'a, Class, M, P>
+{
     // SAFETY: The stack slot `lock_entry` remains valid and pinned on the stack until this drop
     // block completes. Accessing the fields directly to release the raw lock and remove the
     // active list node is safe and correct under the current thread context.
@@ -123,7 +138,7 @@ impl<'a, Class: LockClass, M: RawLock> PinnedDrop for KMutexGuard<'a, Class, M> 
         unsafe {
             let me = self.get_unchecked_mut();
             let entry_addr = &mut me.lock_entry as *mut _;
-            me.mutex.mutex.release(entry_addr, me.state);
+            P::release(&me.mutex.mutex, entry_addr, me.state);
         }
     }
 }

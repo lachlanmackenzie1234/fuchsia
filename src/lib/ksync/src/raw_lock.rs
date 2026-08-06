@@ -4,6 +4,36 @@
 
 use pin_init::PinInit;
 
+/// Trait defining a policy for how a lock should be acquired and released. A given `RawLock` may
+/// have multiple policy implementations allowing a specific instance of a lock to be acquired, at
+/// different times, in different ways.
+pub trait LockPolicy<L: RawLock + ?Sized> {
+    /// State returned from lock acquisition and subsequently passed to lock release.
+    type GuardState: Default + Copy;
+
+    /// Acquires the raw synchronization lock under a type-level lock class.
+    ///
+    /// # Safety
+    ///
+    /// 1. The `entry` pointer must point to a valid, exclusive, stack-allocated `LockEntry` slot
+    ///    which will be registered in the thread's active list.
+    /// 2. The caller must ensure that the `entry` memory remains pinned on the stack and is not
+    ///    dropped or moved until the matching `release` call completes.
+    unsafe fn acquire(lock: &L, entry: *mut L::LockEntry) -> Self::GuardState;
+
+    /// Releases the raw synchronization lock, restoring the state.
+    ///
+    /// # Safety
+    ///
+    /// 1. The `entry` pointer must match the exact same stack slot pointer passed to the
+    ///    corresponding `acquire` call.
+    /// 2. The `state` parameter must match the exact same state value returned by the corresponding
+    ///    `acquire` call.
+    /// 3. The caller must guarantee that the current thread actually holds this lock (i.e. we are
+    ///    releasing a lock we currently own).
+    unsafe fn release(lock: &L, entry: *mut L::LockEntry, state: Self::GuardState);
+}
+
 /// Trait defining a raw, un-instrumented synchronization lock abstraction.
 ///
 /// Implementors of `RawLock` supply the platform-specific lock storage, in-place pinning
@@ -15,8 +45,8 @@ pub trait RawLock {
     /// Opaque stack entry storage type used by the lock validation loop detector (e.g. LockDep).
     type LockEntry: Default;
 
-    /// State returned from lock acquisition and subsequently passed to lock release.
-    type GuardState: Default + Copy;
+    /// Default policy that should be used when acquiring this lock.
+    type DefaultPolicy: LockPolicy<Self>;
 
     /// Returns a PinInit block to initialize the raw mutex in-place.
     ///
@@ -32,26 +62,4 @@ pub trait RawLock {
 
     /// Convert the raw mutex reference to a standard c_void pointer for FFI.
     fn as_mut_ptr(&self) -> *mut core::ffi::c_void;
-
-    /// Acquires the raw synchronization lock under a type-level lock class.
-    ///
-    /// # Safety
-    ///
-    /// 1. The `entry` pointer must point to a valid, exclusive, stack-allocated `LockEntry` slot
-    ///    which will be registered in the thread's active list.
-    /// 2. The caller must ensure that the `entry` memory remains pinned on the stack and is not
-    ///    dropped or moved until the matching `release` call completes.
-    unsafe fn acquire(&self, entry: *mut Self::LockEntry) -> Self::GuardState;
-
-    /// Releases the raw synchronization lock, restoring the state.
-    ///
-    /// # Safety
-    ///
-    /// 1. The `entry` pointer must match the exact same stack slot pointer passed to the
-    ///    corresponding `acquire` call.
-    /// 2. The `state` parameter must match the exact same state value returned by the corresponding
-    ///    `acquire` call.
-    /// 3. The caller must guarantee that the current thread actually holds this lock (i.e. we are
-    ///    releasing a lock we currently own).
-    unsafe fn release(&self, entry: *mut Self::LockEntry, state: Self::GuardState);
 }

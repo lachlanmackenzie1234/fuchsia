@@ -26,6 +26,14 @@ mod ksync_tests {
     }
 
     #[ksync::guarded]
+    struct GuardedSpinlockObj2 {
+        #[mutex]
+        mu: ksync::KMutex<ksync::RawSpinlock>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    #[ksync::guarded]
     struct GuardedCriticalMutexObj {
         #[mutex]
         mu: ksync::KMutex<ksync::RawCriticalMutex>,
@@ -127,6 +135,10 @@ mod ksync_tests {
             mu <- ksync::KMutex::init(),
             value: 100.into(),
         }));
+        stack_pin_init!(let obj2 = pin_init!(GuardedSpinlockObj2 {
+            mu <- ksync::KMutex::init(),
+            value: 100.into(),
+        }));
 
         {
             ksync::lock!(let mut guard = obj.lock_mu());
@@ -137,6 +149,13 @@ mod ksync_tests {
         {
             ksync::lock!(let guard = obj.lock_mu());
             expect_true!(*guard.value() == 101);
+        }
+        {
+            ksync::lock!(let guard = obj.mu.lock());
+            ksync::lock!(let guard2 = obj2.mu.lock_policy::<ksync::NoIrqSavePolicy>());
+            // Expect a no irq save policy guard to be strictly smaller than one that had to
+            // remember the irq state.
+            expect_true!(core::mem::size_of_val(&*guard2) < core::mem::size_of_val(&*guard));
         }
     }
 

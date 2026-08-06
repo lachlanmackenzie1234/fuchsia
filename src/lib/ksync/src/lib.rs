@@ -66,7 +66,7 @@ mod raw_userspace_brwlock;
 pub use kmutex::{KMutex, KMutexGuard};
 pub use lock_token::LockToken;
 pub use lockdep::{LockClass, LockClassRegistration};
-pub use raw_lock::RawLock;
+pub use raw_lock::{LockPolicy, RawLock};
 
 #[cfg(not(feature = "kernel"))]
 pub use raw_userspace_mutex::RawMutex;
@@ -77,7 +77,7 @@ pub type LockEntryStorage = ();
 #[cfg(feature = "kernel")]
 pub use raw_kernel_event::{KEvent, RawEvent};
 #[cfg(feature = "kernel")]
-pub use raw_spin_lock::{InterruptSavedState, RawSpinlock};
+pub use raw_spin_lock::{InterruptSavedState, IrqSavePolicy, NoIrqSavePolicy, RawSpinlock};
 #[cfg(feature = "kernel")]
 pub type KSpinlock<Class> = KMutex<Class, RawSpinlock>;
 #[cfg(any(feature = "kernel", test))]

@@ -117,6 +117,8 @@ void cpp_spinlock_destroy(LockPtr<SpinLock> lock);
 interrupt_saved_state_t cpp_spinlock_acquire_irqsave(LockPtr<SpinLock> lock, void* entry_storage);
 void cpp_spinlock_release_irqrestore(LockPtr<SpinLock> lock, void* entry_storage,
                                      interrupt_saved_state_t state);
+void cpp_spinlock_acquire_no_irqsave(LockPtr<SpinLock> lock, void* entry_storage);
+void cpp_spinlock_release_no_irqrestore(LockPtr<SpinLock> lock, void* entry_storage);
 void cpp_event_init(Event* event, bool initial);
 void cpp_event_destroy(Event* event);
 void cpp_event_signal(Event* event, zx_status_t wait_result);
@@ -263,6 +265,33 @@ FFI_ALWAYS_INLINE void cpp_spinlock_release_irqrestore(LockPtr<SpinLock> lock, v
   lock->lock().ReleaseIrqRestore(state);
 #else
   lock->ReleaseIrqRestore(state);
+#endif
+}
+
+FFI_ALWAYS_INLINE void cpp_spinlock_acquire_no_irqsave(LockPtr<SpinLock> lock, void* entry_storage)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+#if WITH_LOCK_DEP
+  if (entry_storage != nullptr) {
+    auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Acquire(entry);
+  }
+  lock->lock().Acquire();
+#else
+  lock->Acquire();
+#endif
+}
+
+FFI_ALWAYS_INLINE void cpp_spinlock_release_no_irqrestore(
+    LockPtr<SpinLock> lock, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
+#if WITH_LOCK_DEP
+  if (entry_storage != nullptr) {
+    auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
+    lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Release(entry);
+    entry->~AcquiredLockEntry();
+  }
+  lock->lock().Release();
+#else
+  lock->Release();
 #endif
 }
 
