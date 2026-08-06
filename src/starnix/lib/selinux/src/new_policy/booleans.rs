@@ -95,4 +95,22 @@ mod tests {
         boolean.serialize(&mut writer).expect("serialize ConditionalBoolean");
         assert_eq!(writer.as_slice(), &data);
     }
+
+    #[test]
+    fn test_conditional_booleans() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/conditional_policy");
+        let new_policy = NewPolicy::parse(policy_bytes).expect("parse conditional policy");
+        new_policy.validate().expect("validate conditional policy");
+
+        let booleans = new_policy.conditional_booleans();
+        let first = booleans.get_by_name(b"test_cond_first").expect("test_cond_first");
+        assert!(first.active());
+
+        let second = booleans.get_by_name(b"test_cond_second").expect("test_cond_second");
+        assert!(!second.active());
+
+        let third = booleans.get_by_name(b"test_cond_third").expect("test_cond_third");
+        assert!(third.active());
+    }
 }

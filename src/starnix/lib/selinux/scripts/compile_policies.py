@@ -375,6 +375,14 @@ _COMPOSITE_POLICY_PATHS = [
         ],
         "userspace_initial_context_policy",
     ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/conditional_policy.conf",
+        ],
+        "conditional_policy",
+    ),
 ]
 
 _HANDLE_UNKNOWN_POLICY_INPUTS = [

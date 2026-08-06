@@ -56,6 +56,43 @@ class FastbootTests(unittest.TestCase):
                 "but filtered policy contains", str(context.exception)
             )
 
+    def test_extract_statements(self) -> None:
+        policy = """\
+allow s0 s1: file read;
+if (secure_mode) { # comment with { brace
+    allow s0 s1: file write;
+} else {
+    deny s0 s1: file write;
+}
+allow s0 s2: file read;
+if (single_line) { # Block continues until }
+    allow s0 s3: file write;
+}
+if (single_line_inline) { allow s0 s4: file exec; }
+"""
+        statements = merge_policies.extract_statements(policy)
+        self.assertEqual(len(statements), 5)
+        self.assertEqual(statements[0], "allow s0 s1: file read;")
+        self.assertEqual(
+            statements[1],
+            "if (secure_mode) { # comment with { brace\n"
+            "    allow s0 s1: file write;\n"
+            "} else {\n"
+            "    deny s0 s1: file write;\n"
+            "}",
+        )
+        self.assertEqual(statements[2], "allow s0 s2: file read;")
+        self.assertEqual(
+            statements[3],
+            "if (single_line) { # Block continues until }\n"
+            "    allow s0 s3: file write;\n"
+            "}",
+        )
+        self.assertEqual(
+            statements[4],
+            "if (single_line_inline) { allow s0 s4: file exec; }",
+        )
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()

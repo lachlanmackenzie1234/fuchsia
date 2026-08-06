@@ -856,28 +856,6 @@ pub struct ConditionalNode {
     false_rules: AccessVectorRules,
 }
 
-impl ConditionalNode {
-    /// Returns whether this conditional node expression evaluated to active state in policy.
-    pub fn state(&self) -> u32 {
-        self.state
-    }
-
-    /// Returns the expression elements sequence.
-    pub fn expression_elements(&self) -> &[ConditionalExpressionElement] {
-        self.expression_elements.as_ref()
-    }
-
-    /// Returns the true-branch rules for this conditional node.
-    pub fn true_rules(&self) -> &AccessVectorRules {
-        &self.true_rules
-    }
-
-    /// Returns the false-branch rules for this conditional node.
-    pub fn false_rules(&self) -> &AccessVectorRules {
-        &self.false_rules
-    }
-}
-
 impl Validate for ConditionalNode {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
         self.expression_elements.validate(policy)?;
@@ -1068,5 +1046,24 @@ mod tests {
             err,
             ParseError::DuplicateAccessVectorRule { key: _, kind: RuleKind::Allow }
         ));
+    }
+
+    #[test]
+    fn test_conditional_nodes() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/conditional_policy");
+        let new_policy = NewPolicy::parse(policy_bytes).expect("parse conditional policy");
+        new_policy.validate().expect("validate conditional policy");
+
+        let nodes = new_policy.conditional_nodes();
+        assert_eq!(nodes.len(), 4);
+        assert_eq!(nodes[0].true_rules.av_rules().len(), 1);
+        assert_eq!(nodes[0].false_rules.av_rules().len(), 0);
+        assert_eq!(nodes[1].true_rules.av_rules().len(), 1);
+        assert_eq!(nodes[1].false_rules.av_rules().len(), 1);
+        assert_eq!(nodes[2].true_rules.av_rules().len(), 2);
+        assert_eq!(nodes[2].false_rules.av_rules().len(), 0);
+        assert_eq!(nodes[3].true_rules.av_rules().len(), 1);
+        assert_eq!(nodes[3].false_rules.av_rules().len(), 0);
     }
 }

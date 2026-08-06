@@ -188,7 +188,8 @@ impl NewPolicy {
     }
 
     /// Returns the list of conditional nodes.
-    pub fn conditional_nodes(&self) -> &[ConditionalNode] {
+    #[cfg(test)]
+    pub(crate) fn conditional_nodes(&self) -> &[ConditionalNode] {
         self.conditional_nodes.as_ref()
     }
 
@@ -211,7 +212,7 @@ impl NewPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::traits::{HasName, Parse, Serialize};
+    use crate::new_policy::traits::{Parse, Serialize};
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Parse, Serialize, Validate)]
     #[policy(wire_type = u32)]
@@ -247,65 +248,95 @@ mod tests {
         TestEnum::ValueOne.validate(&policy).unwrap();
     }
 
+    const TEST_POLICIES: &[(&str, &[u8])] = &[
+        ("selinux_testsuite", include_bytes!("../../testdata/policies/selinux_testsuite")),
+        ("emulator", include_bytes!("../../testdata/policies/emulator")),
+        (
+            "conditional_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/conditional_policy"),
+        ),
+        (
+            "minimal_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/minimal_policy"),
+        ),
+        (
+            "allow_fork_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/allow_fork_policy"),
+        ),
+        (
+            "class_defaults_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/class_defaults_policy"),
+        ),
+        (
+            "fs_test_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/fs_test_policy"),
+        ),
+        (
+            "genfscon_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy"),
+        ),
+        (
+            "handle_unknown_policy-allow",
+            include_bytes!(
+                "../../testdata/composite_policies/compiled/handle_unknown_policy-allow"
+            ),
+        ),
+        (
+            "handle_unknown_policy-deny",
+            include_bytes!("../../testdata/composite_policies/compiled/handle_unknown_policy-deny"),
+        ),
+        (
+            "handle_unknown_policy-reject",
+            include_bytes!(
+                "../../testdata/composite_policies/compiled/handle_unknown_policy-reject"
+            ),
+        ),
+        (
+            "range_transition_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/range_transition_policy"),
+        ),
+        (
+            "role_transition_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy"),
+        ),
+        (
+            "type_transition_policy",
+            include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy"),
+        ),
+    ];
+
     #[test]
-    fn test_real_policy_roundtrip() {
-        let policy_bytes = include_bytes!("../../testdata/policies/selinux_testsuite");
-        let new_policy = NewPolicy::parse(policy_bytes).unwrap();
-        new_policy.validate().unwrap();
+    fn test_all_compiled_policies_roundtrip() {
+        for (name, policy_bytes) in TEST_POLICIES {
+            let new_policy = NewPolicy::parse(policy_bytes)
+                .unwrap_or_else(|e| panic!("Failed to parse {name}: {e:?}"));
+            new_policy.validate().unwrap_or_else(|e| panic!("Failed to validate {name}: {e:?}"));
 
-        // Verify metadata basics
-        assert!(new_policy.policy_version() >= 30);
-        assert_eq!(new_policy.handle_unknown(), HandleUnknown::Allow);
+            let mut serialized = Vec::new();
+            new_policy
+                .serialize(&mut serialized)
+                .unwrap_or_else(|e| panic!("Failed to serialize {name}: {e:?}"));
+            assert_bytes_eq(&serialized, policy_bytes);
+        }
+    }
 
-        // Verify that we can query policy capabilities and permissive map
-        // (even if they are empty or have specific values in the test policy,
-        // we just verify the APIs exist and don't panic).
-        let _caps = new_policy.policy_capabilities();
-        let _permissive = new_policy.permissive_map();
-
-        // Verify common symbols are parsed
-        assert!(!new_policy.common_symbols().is_empty());
-        let common = &new_policy.common_symbols()[0];
-        assert!(!common.name().is_empty());
-        assert!(!common.permissions().is_empty());
-
-        // Verify classes are parsed
-        assert!(!new_policy.classes().is_empty());
-        let class = &new_policy.classes()[0];
-        assert!(!class.name().is_empty());
-
-        // Verify types are parsed
-        assert!(!new_policy.types().is_empty());
-        let t = &new_policy.types().iter().next().unwrap();
-        assert!(!t.name().is_empty());
-
-        // Verify users are parsed
-        assert!(!new_policy.users().is_empty());
-        let u = &new_policy.users()[0];
-        assert!(!u.name().is_empty());
-
-        // Verify conditional booleans are parsed
-        assert!(!new_policy.conditional_booleans().is_empty());
-        let b = &new_policy.conditional_booleans()[0];
-        assert!(!b.name().is_empty());
-
-        // Verify sensitivities are parsed
-        assert!(!new_policy.sensitivities().is_empty());
-        let s = &new_policy.sensitivities()[0];
-        assert!(!s.name().is_empty());
-
-        // Verify categories are parsed
-        assert!(!new_policy.categories().is_empty());
-        let c = &new_policy.categories()[0];
-        assert!(!c.name().is_empty());
-
-        // Verify conditional nodes are parsed
-        let _nodes = new_policy.conditional_nodes();
-
-        // Verify 100% byte-for-byte roundtrip fidelity
-        let mut serialized = Vec::new();
-        new_policy.serialize(&mut serialized).unwrap();
-        assert_eq!(serialized.len(), policy_bytes.len());
-        assert_eq!(serialized, policy_bytes);
+    fn assert_bytes_eq(left: &[u8], right: &[u8]) {
+        if left != right {
+            let min_len = std::cmp::min(left.len(), right.len());
+            for i in 0..min_len {
+                if left[i] != right[i] {
+                    let start = i.saturating_sub(8);
+                    let end = std::cmp::min(i + 16, min_len);
+                    panic!(
+                        "Byte mismatch at offset {i} (0x{i:x}): actual=0x{:02x} vs expected=0x{:02x}.\nActual   [{start}..{end}]: {:02x?}\nExpected [{start}..{end}]: {:02x?}",
+                        left[i],
+                        right[i],
+                        &left[start..end],
+                        &right[start..end]
+                    );
+                }
+            }
+            panic!("Length mismatch: actual={}, expected={}", left.len(), right.len());
+        }
     }
 }

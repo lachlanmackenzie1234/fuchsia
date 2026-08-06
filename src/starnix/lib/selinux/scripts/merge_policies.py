@@ -11,9 +11,8 @@
 #
 # Known limitations:
 # - All output policies are `# handle_unknown deny`;
-# - Conditionals are not supported: inputs must be a sequence of policy
-#   statements that are exactly one line each; empty lines and comment lines are
-#   also allowed.
+# - Conditionals are supported, assuming standard formatting where `if (...) {`
+#   begins on the initial line and matching `}` closes the statement block.
 
 import re
 import subprocess
@@ -58,6 +57,7 @@ _ORDERED_POLICY_STATEMENT_REGEXS = (
     "type_change[ \t\v]+[^ \t\v]+.*",
     "type_transition[ \t\v]+[^ \t\v]+[ \t\v]+[^ \t\v:]+([ \t\v]*:[ \t\v]*[^ \t\v]+)[ \t\v]+[^ \t\v]+[ \t\v]+.*",
     "range_transition[ \t\v]+[^ \t\v]+.*",
+    r"if[ \t\v]*\(.*",
     "role[ \t\v]+[^ \t\v]+",
     "role[ \t\v]+[^ \t\v]+[ \t\v]+.*",
     "attribute_role[ \t\v]+[^ \t\v]+.*",
@@ -75,13 +75,52 @@ _ORDERED_POLICY_STATEMENT_REGEXS = (
 )
 
 _ORDERED_POLICY_STATEMENT_PATTERNS = tuple(
-    (regex, re.compile(f"^{regex}$"))
+    (regex, re.compile(f"^{regex}$", re.DOTALL))
     for regex in _ORDERED_POLICY_STATEMENT_REGEXS
 )
 
 # Regular expression for empty/comment-only lines to check that all meaningful
 # lines matched a pattern.
 _WHITESPACE_OR_COMMENT_PATTERN = re.compile("^[ \t]*(#.*)?$")
+
+
+def extract_statements(content: str) -> list[str]:
+    """Parses text policy content into a list of atomic statement strings.
+    Multi-line `if (...) { ... } [else { ... }]` blocks are preserved intact as single entries,
+    while standard policy statements are split line by line.
+
+    For simplicity, we assume specific formatting of `if` statements in the policy files:
+    1. The initial brace `{` is in the same line as the `if` statement, and
+    2. Any `else` blocks start with the closing brace of the previous block.
+    """
+    statements = []
+    current_block = []
+    brace_count = 0
+
+    for line in content.splitlines():
+        # Strip comments to count braces accurately.
+        stripped = line.split("#", 1)[0].strip()
+
+        if current_block:
+            current_block.append(line)
+            brace_count += stripped.count("{") - stripped.count("}")
+            if brace_count <= 0:
+                statements.append("\n".join(current_block))
+                current_block = []
+                brace_count = 0
+        elif re.match(r"^if\s*\(", stripped) and "{" in stripped:
+            brace_count = stripped.count("{") - stripped.count("}")
+            if brace_count > 0:
+                current_block.append(line)
+            else:
+                statements.append(line)
+        else:
+            statements.append(line)
+
+    if current_block:
+        statements.append("\n".join(current_block))
+
+    return statements
 
 
 def _filter_lines(lines: Collection[str], pattern: re.Pattern) -> Sequence[str]:
@@ -127,8 +166,7 @@ def merge_text_policies(
     unsorted_input_lines = set()
     for input_path in input_file_paths:
         with open(input_path, mode="rt") as input_file:
-            # Use `splitlines()` to omit `\n`.
-            unsorted_input_lines.update(input_file.read().splitlines())
+            unsorted_input_lines.update(extract_statements(input_file.read()))
     input_lines = sorted(unsorted_input_lines)
 
     # Validate that no input lines attempted to create additional initial SIDs.
