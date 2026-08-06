@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
+use crate::input_device::{self, Handled, InputDeviceStatus, InputEvent};
 use crate::utils::{self, Position, Size};
 use crate::{Transport, metrics, mouse_binding};
 use anyhow::{Context, Error, format_err};
@@ -328,12 +328,6 @@ pub struct TouchBinding {
 
     /// Holds information about this device.
     device_descriptor: TouchDeviceDescriptor,
-
-    /// Touch device type of the touch device.
-    touch_device_type: TouchDeviceType,
-
-    /// Proxy to the device.
-    device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
 }
 
 #[async_trait]
@@ -376,26 +370,31 @@ impl TouchBinding {
         device_node: fuchsia_inspect::Node,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
-    ) -> Result<Self, Error> {
-        let (device_binding, mut inspect_status) =
-            Self::bind_device(device_proxy.clone(), device_id, input_event_sender, device_node)
-                .await?;
-        device_binding
-            .set_touchpad_mode(true)
+    ) -> Result<(Self, crate::dispatcher::TaskHandle<()>), Error> {
+        let (device_descriptor, touch_device_type, mut inspect_status) =
+            Self::bind_device(&device_proxy, device_id, device_node).await?;
+        Self::set_touchpad_mode(&device_proxy, touch_device_type, true)
             .await
             .with_context(|| format!("enabling touchpad mode for device {}", device_id))?;
         inspect_status.health_node.set_ok();
-        input_device::initialize_report_stream(
-            device_proxy,
-            device_binding.get_device_descriptor(),
-            device_binding.input_event_sender(),
+        let task = input_device::initialize_report_stream(
+            device_proxy.clone(),
+            match device_descriptor.clone() {
+                TouchDeviceDescriptor::TouchScreen(desc) => {
+                    input_device::InputDeviceDescriptor::TouchScreen(desc)
+                }
+                TouchDeviceDescriptor::Touchpad(desc) => {
+                    input_device::InputDeviceDescriptor::Touchpad(desc)
+                }
+            },
+            input_event_sender.clone(),
             inspect_status,
             metrics_logger,
             feature_flags,
             Self::process_reports,
         );
 
-        Ok(device_binding)
+        Ok((TouchBinding { event_sender: input_event_sender, device_descriptor }, task))
     }
 
     /// Binds the provided input device to a new instance of `Self`.
@@ -410,11 +409,10 @@ impl TouchBinding {
     /// If the device descriptor could not be retrieved, or the descriptor could not be parsed
     /// correctly.
     async fn bind_device(
-        device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
+        device_proxy: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
-    ) -> Result<(Self, InputDeviceStatus), Error> {
+    ) -> Result<(TouchDeviceDescriptor, TouchDeviceType, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
         let device_descriptor: fidl_next_fuchsia_input_report::DeviceDescriptor = match device_proxy
             .get_descriptor()
@@ -427,7 +425,7 @@ impl TouchBinding {
             }
         };
 
-        let touch_device_type = get_device_type(&device_proxy).await;
+        let touch_device_type = get_device_type(device_proxy).await;
 
         match device_descriptor.touch {
             Some(fidl_next_fuchsia_input_report::TouchDescriptor {
@@ -441,33 +439,29 @@ impl TouchBinding {
                     }),
                 ..
             }) => Ok((
-                TouchBinding {
-                    event_sender: input_event_sender,
-                    device_descriptor: match touch_device_type {
-                        TouchDeviceType::TouchScreen => {
-                            TouchDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
-                                device_id,
-                                contacts: contact_descriptors
-                                    .iter()
-                                    .map(TouchBinding::parse_contact_descriptor)
-                                    .filter_map(Result::ok)
-                                    .collect(),
-                            })
-                        }
-                        TouchDeviceType::WindowsPrecisionTouchpad => {
-                            TouchDeviceDescriptor::Touchpad(TouchpadDeviceDescriptor {
-                                device_id,
-                                contacts: contact_descriptors
-                                    .iter()
-                                    .map(TouchBinding::parse_contact_descriptor)
-                                    .filter_map(Result::ok)
-                                    .collect(),
-                            })
-                        }
-                    },
-                    touch_device_type,
-                    device_proxy,
+                match touch_device_type {
+                    TouchDeviceType::TouchScreen => {
+                        TouchDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
+                            device_id,
+                            contacts: contact_descriptors
+                                .iter()
+                                .map(TouchBinding::parse_contact_descriptor)
+                                .filter_map(Result::ok)
+                                .collect(),
+                        })
+                    }
+                    TouchDeviceType::WindowsPrecisionTouchpad => {
+                        TouchDeviceDescriptor::Touchpad(TouchpadDeviceDescriptor {
+                            device_id,
+                            contacts: contact_descriptors
+                                .iter()
+                                .map(TouchBinding::parse_contact_descriptor)
+                                .filter_map(Result::ok)
+                                .collect(),
+                        })
+                    }
                 },
+                touch_device_type,
                 input_device_status,
             )),
             descriptor => {
@@ -479,13 +473,17 @@ impl TouchBinding {
         }
     }
 
-    async fn set_touchpad_mode(&self, enable: bool) -> Result<(), Error> {
-        match self.touch_device_type {
+    async fn set_touchpad_mode(
+        device_proxy: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
+        touch_device_type: TouchDeviceType,
+        enable: bool,
+    ) -> Result<(), Error> {
+        match touch_device_type {
             TouchDeviceType::TouchScreen => Ok(()),
             TouchDeviceType::WindowsPrecisionTouchpad => {
                 // `get_feature_report` to only modify the input_mode and
                 // keep other feature as is.
-                let mut report = match self.device_proxy.get_feature_report().await? {
+                let mut report = match device_proxy.get_feature_report().await? {
                     Ok(res) => res.report,
                     Err(e) => return Err(format_err!("get_feature_report failed: {}", e)),
                 };
@@ -497,7 +495,7 @@ impl TouchBinding {
                             false => Some(fidl_next_fuchsia_input_report::TouchConfigurationInputMode::MouseCollection),
                         };
                 report.touch = Some(touch);
-                match self.device_proxy.set_feature_report(&report).await? {
+                match device_proxy.set_feature_report(&report).await? {
                     Ok(_) => {
                         // TODO(https://fxbug.dev/42056283): Remove log message.
                         log::info!("touchpad: set touchpad_enabled to {}", enable);
@@ -1312,7 +1310,7 @@ mod tests {
         // Create a `TouchBinding` to exercise its call to `SetFeatureReport`. But drop
         // the binding immediately, so that `set_feature_report_receiver.collect()`
         // does not hang.
-        TouchBinding::new(
+        let (_binding, _task) = TouchBinding::new(
             input_device_proxy,
             0,
             device_event_sender,
@@ -1380,7 +1378,7 @@ mod tests {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
 
-        let binding = TouchBinding::new(
+        let (binding, _task) = TouchBinding::new(
             input_device_proxy,
             0,
             device_event_sender,
@@ -1390,7 +1388,11 @@ mod tests {
         )
         .await
         .unwrap();
-        pretty_assertions::assert_eq!(binding.touch_device_type, expect_touch_device_type);
+        let actual_type = match binding.device_descriptor {
+            TouchDeviceDescriptor::TouchScreen(_) => TouchDeviceType::TouchScreen,
+            TouchDeviceDescriptor::Touchpad(_) => TouchDeviceType::WindowsPrecisionTouchpad,
+        };
+        pretty_assertions::assert_eq!(actual_type, expect_touch_device_type);
     }
 
     /// Returns an |fidl_fuchsia_input_report::DeviceDescriptor| for

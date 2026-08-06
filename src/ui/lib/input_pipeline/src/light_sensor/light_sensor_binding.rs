@@ -103,20 +103,15 @@ impl LightSensorBinding {
         device_node: fuchsia_inspect::Node,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
-    ) -> Result<Self, Error> {
-        let (device_binding, mut inspect_status) = Self::bind_device(
-            &device_proxy,
-            device_id,
-            input_event_sender,
-            device_node,
-            metrics_logger.clone(),
-        )
-        .await?;
+    ) -> Result<(Self, crate::dispatcher::TaskHandle<()>), Error> {
+        let (device_descriptor, mut inspect_status) =
+            Self::bind_device(&device_proxy, device_id, device_node, metrics_logger.clone())
+                .await?;
         inspect_status.health_node.set_ok();
-        input_device::initialize_report_stream(
+        let task = input_device::initialize_report_stream(
             device_proxy.clone(),
-            device_binding.get_device_descriptor(),
-            device_binding.input_event_sender(),
+            InputDeviceDescriptor::LightSensor(device_descriptor.clone()),
+            input_event_sender.clone(),
             inspect_status,
             metrics_logger,
             feature_flags,
@@ -139,7 +134,7 @@ impl LightSensorBinding {
             },
         );
 
-        Ok(device_binding)
+        Ok((LightSensorBinding { event_sender: input_event_sender, device_descriptor }, task))
     }
 
     /// Binds the provided input device to a new instance of `LightSensorBinding`.
@@ -147,7 +142,6 @@ impl LightSensorBinding {
     /// # Parameters
     /// - `device`: The device to use to initialize the binding.
     /// - `device_id`: The device ID being bound.
-    /// - `input_event_sender`: The channel to send new InputEvents to.
     /// - `device_node`: The inspect node for this device binding
     ///
     /// # Errors
@@ -156,10 +150,9 @@ impl LightSensorBinding {
     async fn bind_device(
         device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, crate::Transport>,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
-    ) -> Result<(Self, InputDeviceStatus), Error> {
+    ) -> Result<(LightSensorDeviceDescriptor, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
         let descriptor = match device.get_descriptor().await {
             Ok(descriptor) => descriptor.descriptor,
@@ -236,14 +229,11 @@ impl LightSensorBinding {
                         format_err!("missing sensor data in device")
                     })?;
                 Ok((
-                    LightSensorBinding {
-                        event_sender: input_event_sender,
-                        device_descriptor: LightSensorDeviceDescriptor {
-                            vendor_id: device_info.vendor_id.unwrap_or_default(),
-                            product_id: device_info.product_id.unwrap_or_default(),
-                            device_id,
-                            sensor_layout,
-                        },
+                    LightSensorDeviceDescriptor {
+                        vendor_id: device_info.vendor_id.unwrap_or_default(),
+                        product_id: device_info.product_id.unwrap_or_default(),
+                        device_id,
+                        sensor_layout,
                     },
                     input_device_status,
                 ))

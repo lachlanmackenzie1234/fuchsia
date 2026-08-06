@@ -42,5 +42,6 @@ use fidl_next_fuchsia_power_system as _;
 pub mod focus_listener;
 pub mod input_pipeline;
 pub mod metrics;
+pub mod task;
 
 pub use utils::{CursorMessage, Position, Size};

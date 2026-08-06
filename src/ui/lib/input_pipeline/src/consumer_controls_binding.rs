@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
+use crate::input_device::{self, Handled, InputDeviceStatus, InputEvent};
 use crate::{Transport, metrics, utils};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
@@ -145,27 +145,21 @@ impl ConsumerControlsBinding {
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
         is_injected: bool,
-    ) -> Result<Self, Error> {
-        let (device_binding, mut inspect_status) = Self::bind_device(
-            &device_proxy,
-            device_id,
-            input_event_sender,
-            device_node,
-            is_injected,
-        )
-        .await?;
+    ) -> Result<(Self, crate::dispatcher::TaskHandle<()>), Error> {
+        let (device_descriptor, mut inspect_status) =
+            Self::bind_device(&device_proxy, device_id, device_node, is_injected).await?;
         inspect_status.health_node.set_ok();
-        input_device::initialize_report_stream(
+        let task = input_device::initialize_report_stream(
             device_proxy,
-            device_binding.get_device_descriptor(),
-            device_binding.input_event_sender(),
+            input_device::InputDeviceDescriptor::ConsumerControls(device_descriptor.clone()),
+            input_event_sender.clone(),
             inspect_status,
             metrics_logger,
             feature_flags,
             Self::process_reports,
         );
 
-        Ok(device_binding)
+        Ok((ConsumerControlsBinding { event_sender: input_event_sender, device_descriptor }, task))
     }
 
     /// Binds the provided input device to a new instance of `Self`.
@@ -173,7 +167,6 @@ impl ConsumerControlsBinding {
     /// # Parameters
     /// - `device`: The device to use to initialize the binding.
     /// - `device_id`: The id of the connected device.
-    /// - `input_event_sender`: The channel to send new InputEvents to.
     /// - `device_node`: The inspect node for this device binding
     ///
     /// # Errors
@@ -182,10 +175,9 @@ impl ConsumerControlsBinding {
     async fn bind_device(
         device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
-        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
         is_injected: bool,
-    ) -> Result<(Self, InputDeviceStatus), Error> {
+    ) -> Result<(ConsumerControlsDeviceDescriptor, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
         let device_descriptor: fidl_next_fuchsia_input_report::DeviceDescriptor = match device
             .get_descriptor()
@@ -227,10 +219,7 @@ impl ConsumerControlsBinding {
                 is_injected,
             };
 
-        Ok((
-            ConsumerControlsBinding { event_sender: input_event_sender, device_descriptor },
-            input_device_status,
-        ))
+        Ok((device_descriptor, input_device_status))
     }
 
     /// Parses an [`InputReport`] into one or more [`InputEvent`]s. Sends the [`InputEvent`]s

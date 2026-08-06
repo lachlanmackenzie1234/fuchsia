@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
+use crate::input_device::{self, Handled, InputDeviceStatus, InputEvent};
 use crate::{Transport, metrics, utils};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
@@ -283,27 +283,22 @@ impl KeyboardBinding {
         device_node: fuchsia_inspect::Node,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
-    ) -> Result<Self, Error> {
-        let (device_binding, mut inspect_status) = Self::bind_device(
-            &device_proxy,
-            input_event_sender,
-            device_id,
-            device_node,
-            metrics_logger.clone(),
-        )
-        .await?;
+    ) -> Result<(Self, crate::dispatcher::TaskHandle<()>), Error> {
+        let (device_descriptor, mut inspect_status) =
+            Self::bind_device(&device_proxy, device_id, device_node, metrics_logger.clone())
+                .await?;
         inspect_status.health_node.set_ok();
-        input_device::initialize_report_stream(
+        let task = input_device::initialize_report_stream(
             device_proxy,
-            device_binding.get_device_descriptor(),
-            device_binding.input_event_sender(),
+            input_device::InputDeviceDescriptor::Keyboard(device_descriptor.clone()),
+            input_event_sender.clone(),
             inspect_status,
             metrics_logger.clone(),
             feature_flags,
             Self::process_reports,
         );
 
-        Ok(device_binding)
+        Ok((KeyboardBinding { event_sender: input_event_sender, device_descriptor }, task))
     }
 
     /// Converts a vector of keyboard keys to the appropriate [`fidl_ui_input3::Modifiers`] bitflags.
@@ -339,7 +334,6 @@ impl KeyboardBinding {
     ///
     /// # Parameters
     /// - `device`: The device to use to initialize the binding.
-    /// - `input_event_sender`: The channel to send new InputEvents to.
     /// - `device_id`: The device ID being bound.
     /// - `device_node`: The inspect node for this device binding
     ///
@@ -348,11 +342,10 @@ impl KeyboardBinding {
     /// correctly.
     async fn bind_device(
         device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
-        input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_id: u32,
         device_node: fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
-    ) -> Result<(Self, InputDeviceStatus), Error> {
+    ) -> Result<(KeyboardDeviceDescriptor, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
         let descriptor = match device.get_descriptor().await {
             Ok(descriptor) => descriptor.descriptor,
@@ -378,23 +371,20 @@ impl KeyboardBinding {
                 output: _,
                 ..
             }) => Ok((
-                KeyboardBinding {
-                    event_sender: input_event_sender,
-                    device_descriptor: KeyboardDeviceDescriptor {
-                        keys: keys3
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|k| utils::key_to_old(&k))
-                            .collect(),
-                        device_information: fidl_fuchsia_input_report::DeviceInformation {
-                            vendor_id: device_info.vendor_id,
-                            product_id: device_info.product_id,
-                            version: device_info.version,
-                            polling_rate: device_info.polling_rate,
-                            ..Default::default()
-                        },
-                        device_id,
+                KeyboardDeviceDescriptor {
+                    keys: keys3
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|k| utils::key_to_old(&k))
+                        .collect(),
+                    device_information: fidl_fuchsia_input_report::DeviceInformation {
+                        vendor_id: device_info.vendor_id,
+                        product_id: device_info.product_id,
+                        version: device_info.version,
+                        polling_rate: device_info.polling_rate,
+                        ..Default::default()
                     },
+                    device_id,
                 },
                 input_device_status,
             )),

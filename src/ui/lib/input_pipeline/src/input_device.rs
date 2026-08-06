@@ -381,7 +381,8 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
     metrics_logger: metrics::MetricsLogger,
     feature_flags: InputPipelineFeatureFlags,
     mut process_reports: InputDeviceProcessReportsFn,
-) where
+) -> crate::dispatcher::TaskHandle<()>
+where
     InputDeviceProcessReportsFn: 'static
         + Send
         + for<'de> FnMut(
@@ -451,7 +452,6 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
         // binding is no longer functional.
         log::warn!("initialize_report_stream exited - device binding no longer works");
     })
-    .detach();
 }
 
 /// Returns true if the device type of `input_device` matches `device_type`.
@@ -489,10 +489,10 @@ pub async fn get_device_binding(
     feature_flags: InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
     is_injected: bool,
-) -> Result<Box<dyn InputDeviceBinding>, Error> {
+) -> Result<(Box<dyn InputDeviceBinding>, crate::dispatcher::TaskHandle<()>), Error> {
     match device_type {
         InputDeviceType::ConsumerControls => {
-            let binding = consumer_controls_binding::ConsumerControlsBinding::new(
+            let (binding, task) = consumer_controls_binding::ConsumerControlsBinding::new(
                 device_proxy,
                 device_id,
                 input_event_sender,
@@ -502,10 +502,10 @@ pub async fn get_device_binding(
                 is_injected,
             )
             .await?;
-            Ok(Box::new(binding))
+            Ok((Box::new(binding), task))
         }
         InputDeviceType::Mouse => {
-            let binding = mouse_binding::MouseBinding::new(
+            let (binding, task) = mouse_binding::MouseBinding::new(
                 device_proxy,
                 device_id,
                 input_event_sender,
@@ -514,10 +514,10 @@ pub async fn get_device_binding(
                 metrics_logger,
             )
             .await?;
-            Ok(Box::new(binding))
+            Ok((Box::new(binding), task))
         }
         InputDeviceType::Touch => {
-            let binding = touch_binding::TouchBinding::new(
+            let (binding, task) = touch_binding::TouchBinding::new(
                 device_proxy,
                 device_id,
                 input_event_sender,
@@ -526,10 +526,10 @@ pub async fn get_device_binding(
                 metrics_logger,
             )
             .await?;
-            Ok(Box::new(binding))
+            Ok((Box::new(binding), task))
         }
         InputDeviceType::Keyboard => {
-            let binding = keyboard_binding::KeyboardBinding::new(
+            let (binding, task) = keyboard_binding::KeyboardBinding::new(
                 device_proxy,
                 device_id,
                 input_event_sender,
@@ -538,10 +538,10 @@ pub async fn get_device_binding(
                 metrics_logger,
             )
             .await?;
-            Ok(Box::new(binding))
+            Ok((Box::new(binding), task))
         }
         InputDeviceType::LightSensor => {
-            let binding = light_sensor_binding::LightSensorBinding::new(
+            let (binding, task) = light_sensor_binding::LightSensorBinding::new(
                 device_proxy,
                 device_id,
                 input_event_sender,
@@ -550,7 +550,7 @@ pub async fn get_device_binding(
                 metrics_logger,
             )
             .await?;
-            Ok(Box::new(binding))
+            Ok((Box::new(binding), task))
         }
     }
 }
