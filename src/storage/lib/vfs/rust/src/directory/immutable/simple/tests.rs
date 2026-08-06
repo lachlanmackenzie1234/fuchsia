@@ -783,28 +783,28 @@ async fn read_dirents_large_buffer() {
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     expected
-        .add(fio::DirentType::Directory, b".")
-        .add(fio::DirentType::Directory, b"etc")
-        .add(fio::DirentType::File, b"files")
-        .add(fio::DirentType::File, b"more")
-        .add(fio::DirentType::File, b"uname");
+        .add(fio::DirentType::Directory, ".")
+        .add(fio::DirentType::Directory, "etc")
+        .add(fio::DirentType::File, "files")
+        .add(fio::DirentType::File, "more")
+        .add(fio::DirentType::File, "uname");
     assert_read_dirents!(root, 1000, expected.into_vec());
 
     let etc_dir = open_directory(&root, "etc", fio::PERM_READABLE).await.unwrap();
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     expected
-        .add(fio::DirentType::Directory, b".")
-        .add(fio::DirentType::File, b"fstab")
-        .add(fio::DirentType::File, b"passwd")
-        .add(fio::DirentType::File, b"shells")
-        .add(fio::DirentType::Directory, b"ssh");
+        .add(fio::DirentType::Directory, ".")
+        .add(fio::DirentType::File, "fstab")
+        .add(fio::DirentType::File, "passwd")
+        .add(fio::DirentType::File, "shells")
+        .add(fio::DirentType::Directory, "ssh");
     assert_read_dirents!(etc_dir, 1000, expected.into_vec());
     let _ = &client;
     assert_close!(etc_dir);
 
     let ssh_dir = open_directory(&root, "etc/ssh", fio::PERM_READABLE).await.unwrap();
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
-    expected.add(fio::DirentType::Directory, b".").add(fio::DirentType::File, b"sshd_config");
+    expected.add(fio::DirentType::Directory, ".").add(fio::DirentType::File, "sshd_config");
     assert_read_dirents!(ssh_dir, 1000, expected.into_vec());
     let _ = &client;
     assert_close!(ssh_dir);
@@ -837,19 +837,19 @@ async fn read_dirents_small_buffer() {
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     // Entry header is 10 bytes + length of the name in bytes.
     // (10 + 1) = 11
-    expected.add(fio::DirentType::Directory, b".");
+    expected.add(fio::DirentType::Directory, ".");
     assert_read_dirents!(root, 11, expected.into_vec());
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     expected
         // (10 + 3) = 13
-        .add(fio::DirentType::Directory, b"etc")
+        .add(fio::DirentType::Directory, "etc")
         // 13 + (10 + 5) = 28
-        .add(fio::DirentType::File, b"files");
+        .add(fio::DirentType::File, "files");
     assert_read_dirents!(root, 28, expected.into_vec());
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
-    expected.add(fio::DirentType::File, b"more").add(fio::DirentType::File, b"uname");
+    expected.add(fio::DirentType::File, "more").add(fio::DirentType::File, "uname");
     assert_read_dirents!(root, 100, expected.into_vec());
 
     assert_read_dirents!(root, 100, vec![]);
@@ -906,11 +906,11 @@ async fn read_dirents_rewind() {
     // Entry header is 10 bytes + length of the name in bytes.
     expected
         // (10 + 1) = 11
-        .add(fio::DirentType::Directory, b".")
+        .add(fio::DirentType::Directory, ".")
         // 11 + (10 + 3) = 24
-        .add(fio::DirentType::Directory, b"etc")
+        .add(fio::DirentType::Directory, "etc")
         // 24 + (10 + 5) = 39
-        .add(fio::DirentType::File, b"files");
+        .add(fio::DirentType::File, "files");
     assert_read_dirents!(root, 39, expected.into_vec());
 
     let status = root.rewind().await.expect("rewind fidl error");
@@ -920,16 +920,16 @@ async fn read_dirents_rewind() {
     // Entry header is 10 bytes + length of the name in bytes.
     expected
         // (10 + 1) = 11
-        .add(fio::DirentType::Directory, b".")
+        .add(fio::DirentType::Directory, ".")
         // 11 + (10 + 3) = 24
-        .add(fio::DirentType::Directory, b"etc");
+        .add(fio::DirentType::Directory, "etc");
     assert_read_dirents!(root, 24, expected.into_vec());
 
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
     expected
-        .add(fio::DirentType::File, b"files")
-        .add(fio::DirentType::File, b"more")
-        .add(fio::DirentType::File, b"uname");
+        .add(fio::DirentType::File, "files")
+        .add(fio::DirentType::File, "more")
+        .add(fio::DirentType::File, "uname");
     assert_read_dirents!(root, 200, expected.into_vec());
 
     assert_read_dirents!(root, 100, vec![]);
@@ -991,7 +991,7 @@ async fn add_entry_too_long_error() {
     let scope = crate::execution_scope::ExecutionScope::new();
     let root = serve(dir, scope.clone(), fio::PERM_READABLE);
     let mut expected = DirentsSameInodeBuilder::new(fio::INO_UNKNOWN);
-    expected.add(fio::DirentType::Directory, b".");
+    expected.add(fio::DirentType::Directory, ".");
     assert_read_dirents!(root, 1000, expected.into_vec());
     let _ = &client;
     assert_close!(root);

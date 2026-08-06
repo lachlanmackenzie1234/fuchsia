@@ -8,10 +8,8 @@
 use crate::common::stricter_or_same_rights;
 use crate::directory::entry::EntryInfo;
 
-use byteorder::{LittleEndian, WriteBytesExt as _};
 use flex_fuchsia_io as fio;
 use static_assertions::assert_eq_size;
-use std::io::Write as _;
 use std::mem::size_of;
 #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "32")))]
 use zx_status::Status;
@@ -75,11 +73,11 @@ pub(crate) fn encode_dirent(
     entry: &EntryInfo,
     name: &str,
 ) -> bool {
-    let header_size = size_of::<u64>() + size_of::<u8>() + size_of::<u8>();
+    const HEADER_SIZE: usize = size_of::<u64>() + size_of::<u8>() + size_of::<u8>();
 
     assert_eq_size!(u64, usize);
 
-    if buf.len() + header_size + name.len() > max_bytes as usize {
+    if buf.len() + HEADER_SIZE + name.len() > max_bytes as usize {
         return false;
     }
 
@@ -100,13 +98,11 @@ pub(crate) fn encode_dirent(
         "Expecting to be able to store MAX_FILENAME ({}) in one byte.",
         fio::MAX_NAME_LENGTH
     );
-
-    buf.write_u64::<LittleEndian>(entry.inode())
-        .expect("out should be an in memory buffer that grows as needed");
-    buf.write_u8(name.len() as u8).expect("out should be an in memory buffer that grows as needed");
-    buf.write_u8(entry.type_().into_primitive())
-        .expect("out should be an in memory buffer that grows as needed");
-    buf.write_all(name.as_ref()).expect("out should be an in memory buffer that grows as needed");
+    buf.reserve(HEADER_SIZE + name.len());
+    buf.extend_from_slice(&entry.inode().to_le_bytes());
+    buf.push(name.len() as u8);
+    buf.push(entry.type_().into_primitive());
+    buf.extend_from_slice(name.as_bytes());
 
     true
 }

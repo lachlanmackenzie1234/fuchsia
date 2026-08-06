@@ -29,7 +29,6 @@ common_vfs_args = {
     "//src/storage/lib/trace",
     "//src/storage/lib/vfs/rust/name",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:byteorder",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:libc",

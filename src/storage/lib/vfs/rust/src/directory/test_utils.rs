@@ -8,10 +8,9 @@
 //! will have multiple assertions, it save a bit of typing to write `assert_something!(arg)`
 //! instead of `assert_something(arg).await`.
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use crate::directory::common::encode_dirent;
+use crate::directory::entry::EntryInfo;
 use flex_fuchsia_io as fio;
-use std::convert::TryInto as _;
-use std::io::Write;
 
 /// A helper to build the "expected" output for a `ReadDirents` call from the Directory protocol in
 /// fuchsia.io.
@@ -25,22 +24,11 @@ impl DirentsSameInodeBuilder {
         DirentsSameInodeBuilder { expected: vec![], inode }
     }
 
-    pub fn add(&mut self, type_: fio::DirentType, name: &[u8]) -> &mut Self {
+    pub fn add(&mut self, type_: fio::DirentType, name: &str) -> &mut Self {
         assert!(
-            name.len() <= fio::MAX_NAME_LENGTH as usize,
-            "Expected entry name should not exceed MAX_FILENAME ({}) bytes.\n\
-             Got: {:?}\n\
-             Length: {} bytes",
-            fio::MAX_NAME_LENGTH,
-            name,
-            name.len()
+            encode_dirent(&mut self.expected, u64::MAX, &EntryInfo::new(self.inode, type_), name),
+            "Failed to encode dirent for {name:?}"
         );
-
-        self.expected.write_u64::<LittleEndian>(self.inode).unwrap();
-        self.expected.write_u8(name.len().try_into().unwrap()).unwrap();
-        self.expected.write_u8(type_.into_primitive()).unwrap();
-        self.expected.write_all(name).unwrap();
-
         self
     }
 
