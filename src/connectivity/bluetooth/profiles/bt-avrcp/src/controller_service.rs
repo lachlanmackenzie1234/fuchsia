@@ -345,13 +345,10 @@ impl ControllerExtService {
     async fn handle_fidl_request(&self, request: ControllerExtRequest) -> Result<(), Error> {
         match request {
             ControllerExtRequest::IsConnected { responder } => {
-                println!("DEBUG: handle_fidl_request: IsConnected");
                 responder.send(self.controller.is_control_connected())?;
             }
             ControllerExtRequest::GetEventsSupported { responder } => {
-                println!("DEBUG: handle_fidl_request: GetEventsSupported");
                 let res = self.controller.get_supported_events().await;
-                println!("DEBUG: handle_fidl_request: GetEventsSupported result: {:?}", res);
                 match res {
                     Ok(events) => responder.send(Ok(&events
                         .iter()
@@ -408,9 +405,7 @@ pub fn spawn_ext_service(
     fasync::Task::spawn(
         async move {
             let mut acc = ControllerExtService { controller, fidl_stream };
-            println!("DEBUG: spawn_ext_service: calling acc.run()");
             let res = acc.run().await;
-            println!("DEBUG: spawn_ext_service: acc.run() returned {:?}", res);
             res?;
             Ok(())
         }

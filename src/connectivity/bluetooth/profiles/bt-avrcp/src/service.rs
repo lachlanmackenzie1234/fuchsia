@@ -80,10 +80,8 @@ where
                 let controller = get_controller_for_peer(peer_id, &mut sender).await?;
 
                 let _ = connect_tasks.spawn(async move {
-                    println!("DEBUG: [GetControllerForTarget] connect task spawned");
                     let client_stream = client.into_stream();
 
-                    println!("DEBUG: [GetControllerForTarget] waiting for control connection");
                     // Wait for control connection.
                     if let Err(e) = controller
                         .wait_for_control_connection()
@@ -94,15 +92,12 @@ where
                         })
                         .await
                     {
-                        println!("DEBUG: [GetControllerForTarget] control connection failed: {:?}", e);
                         warn!(peer_id:%, e:?; "Control connection timeout");
                         let _ = responder.send(Err(zx::Status::TIMED_OUT.into_raw()));
                         return;
                     }
-                    println!("DEBUG: [GetControllerForTarget] control connection established, spawning service");
                     // Controller can remain connected after PeerManager disconnects.
                     controller_service::spawn_service(controller, client_stream).detach();
-                    println!("DEBUG: [GetControllerForTarget] service spawned, sending Ok");
                     let _ = responder.send(Ok(()));
                 });
             }
