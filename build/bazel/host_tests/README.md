@@ -84,31 +84,17 @@ Hence, to define a Fuchsia-compatible host test in Bazel:
 Defining the `host_xxx_test()` target alone will **NOT** make it visible to
 `fx test` and, more importantly, to infra builders.
 
-To make a Bazel host test visible to `fx test` and infra builders:
+To make a Bazel host test visible to `fx test` and infra builders, write a
+`bazel_host_test_suite("bazel_tests")` target in GN that lists the Bazel labels
+of one or more Bazel host tests or suites, and add that target to a "tests"
+group in GN.
 
-1. Make the Bazel target reachable from `//:bazel_host_test_suites` in GN. This
-   can be achieved in a few ways:
-   - Write a `bazel_host_test_suite()` target in GN that lists the Bazel labels
-     of one or more Bazel host tests or suites.
-
-   - Add the Bazel test to a `test_suite` (in a `BUILD.bazel`) that is already
-     listed in a `bazel_host_test_suite()` (in a `BUILD.gn`).
-
-   - In rare cases, add the Bazel test directly to `default_host_tests` in
-     `//build/bazel/host_tests/BUILD.bazel`, if the test needs to be built for
-     **ALL** build configurations. These tests should be small, fast to run,
-     and critical to the build.
-
-2. Ensure `export_bazel_host_tests=true` is set in `args.gn`. For example, when
-   running `fx set`:
-
-   ```bash
-   fx set ... --args export_bazel_host_tests=true
-   ```
-
-After these steps, an entry for the test will appear in `out/default/tests.json`.
+This will cause an entry for the test to appear in `out/default/tests.json`.
 When in doubt, examine the content of this file after `fx set` or `fx gen`. The
 `label` field for Bazel tests begins with `@`.
+
+NOTE: Bazel tests will only show up in `tests.json` if the
+`export_bazel_host_tests` GN argument is `true`.
 
 During development, it is possible to build and run test targets once they are
 defined, before they are exported as described above. See the
@@ -176,10 +162,6 @@ _Pro Tip_: If you have RBE enabled in your `args.gn`, use `fx bazel test
 --config=remote --config=test <target_pattern>` to run your host tests on remote
 test bots. This will be noticeably slower but is a good way to verify that your
 tests are truly hermetic before running them on infra.
-
-Use `fx bazel test --config=host //build/bazel/host_tests` to run all reachable
-Bazel host tests locally in one go. This is useful when modifying build rules or
-macros that may affect many such targets.
 
 ### Infra testing
 

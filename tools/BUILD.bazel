@@ -13,5 +13,4 @@ test_suite(
         "//tools/check-licenses:tests",
         "//tools/whereiscl:host_tests",
     ],
-    visibility = ["//build/bazel/host_tests:__pkg__"],
 )

@@ -359,7 +359,7 @@ requires building the target first to ensure their content is correct.
 
 Example usage:
 
-    fx bazel-tool expand //build/bazel/host_tests -- --config=host
+    fx bazel-tool expand //tools/whereiscl:host_tests -- --config=host
 """
 
     @staticmethod

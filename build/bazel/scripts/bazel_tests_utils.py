@@ -7,6 +7,7 @@
 import json
 import os
 import sys
+import tempfile
 import typing as T
 from pathlib import Path
 
@@ -19,12 +20,14 @@ from build_utils import BazelLauncher, BazelPaths
 def generate_tests_json(
     bazel_paths: BazelPaths,
     command_runner: T.Optional[build_utils.CommandRunner] = None,
+    quiet: bool = True,
 ) -> tuple[list[dict[str, T.Any]], set[Path]]:
     """Generate a tests.json file corresponding to all Bazel host test targets
 
     Args:
         bazel_paths: The BazelPaths object to use for path resolution.
         command_runner: An optional CommandRunner instance.
+        quiet: Whether to print status updates.
 
     Returns:
         A pair of two values which are:
@@ -41,16 +44,38 @@ def generate_tests_json(
     bazel_launcher = BazelLauncher(bazel_paths.launcher, runner=command_runner)
     starlark_input = _SCRIPT_DIR / "../starlark/FuchsiaHostTestInfo.cquery"
 
-    ret = bazel_launcher.run_query(
-        "cquery",
-        [
-            "--config=host",
-            "--output=starlark",
-            f"--starlark:file={starlark_input}",
-            "tests(//build/bazel/host_tests)",
-        ],
-        False,
+    # Read the text file enumerating all the Bazel targets listed in
+    # `bazel_host_test_suite` GN targets.
+    bazel_host_test_suites_file = (
+        bazel_paths.ninja_build_dir / "bazel_host_test_suites.txt"
     )
+    if not bazel_host_test_suites_file.exists():
+        return [], {starlark_input}
+    suites = bazel_host_test_suites_file.read_text().splitlines()
+    if not suites:
+        # Skip running `bazel cquery` to get the full list of tests if no Bazel
+        # test suites are included in the build graph, to save time on regen.
+        return [], {starlark_input}
+
+    if not quiet:
+        print(
+            f"Running Bazel cquery to populate `tests.json` because there are Bazel tests "
+            f"({len(suites)} bazel_host_test_suite{'' if len(suites) == 1 else 's'}) in your GN graph."
+        )
+    with tempfile.NamedTemporaryFile(mode="w") as query_file:
+        query_file.write("tests(set(" + " ".join(suites) + "))")
+        query_file.flush()
+
+        ret = bazel_launcher.run_query(
+            "cquery",
+            [
+                "--config=host",
+                "--output=starlark",
+                f"--starlark:file={starlark_input}",
+                f"--query_file={query_file.name}",
+            ],
+            False,
+        )
     if ret.returncode != 0:
         raise RuntimeError(f"Failed to run bazel query: {ret.stderr}")
 
@@ -139,7 +164,7 @@ def generate_tests_json(
     if targets_missing_test_info:
         if len(targets_missing_test_info) == 1:
             raise RuntimeError(
-                f"Target '{targets_missing_test_info[0]}' in //build/bazel/host_tests is a test target "
+                f"Target '{targets_missing_test_info[0]}' included in the bazel_host_test_suites GN group is a test target "
                 f"but does not provide FuchsiaHostTestInfo. "
                 f"Wrap it with host_go_test(), host_rustc_test(), host_py_test(), or host_test()."
             )
@@ -148,7 +173,7 @@ def generate_tests_json(
                 f"  - {t}" for t in targets_missing_test_info
             )
             raise RuntimeError(
-                f"The following targets in //build/bazel/host_tests are test targets "
+                f"The following targets included in the bazel_host_test_suites GN group are test targets "
                 f"but do not provide FuchsiaHostTestInfo:\n{targets_list}\n"
                 f"Wrap them with host_go_test(), host_rustc_test(), host_py_test(), or host_test()."
             )

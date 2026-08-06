@@ -651,6 +651,7 @@ def main() -> int:
                 with_bazel_host_tests=args_json.get(
                     "export_bazel_host_tests", False
                 ),
+                quiet=args.quiet,
             )
         except RuntimeError as e:
             print(f"ERROR: failed to generate tests.json: {e}", file=sys.stderr)

@@ -21,6 +21,7 @@ def build_tests_json(
     build_dir: Path,
     with_bazel_host_tests: bool = False,
     command_runner: T.Optional[CommandRunner] = None,
+    quiet: bool = True,
 ) -> T.Set[Path]:
     """Generate the tests.json file.
 
@@ -40,6 +41,7 @@ def build_tests_json(
         build_dir: Fuchsia build directory.
         with_bazel_host_tests: Whether to export Bazel host tests.
         command_runner: Optional command runner to use for running bazel commands.
+        quiet: Whether to print status updates.
 
     Returns:
         A set of Path values for the input files read by this function.
@@ -116,7 +118,9 @@ def build_tests_json(
         # that BazelPaths.new() will find by walking up from build_dir.
         bazel_paths = build_utils.BazelPaths.new(build_dir=build_dir)
         bazel_tests_json, bazel_inputs = bazel_tests_utils.generate_tests_json(
-            bazel_paths, command_runner
+            bazel_paths,
+            command_runner,
+            quiet=quiet,
         )
         tests += bazel_tests_json
     else:

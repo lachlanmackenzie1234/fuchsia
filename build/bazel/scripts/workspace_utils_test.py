@@ -448,8 +448,6 @@ zoo2 = "non-false string"
             self._build_root
         )
 
-        EXPECTED_BAZEL_HOST_TEST_SUITES_BZL = """bazel_host_test_suites = ['//fake/test_suite:1', '//fake/test_suite:2']"""
-
         self.maxDiff = (
             None  # Ensure large dictionary differences are properly printed.
         )
@@ -471,10 +469,6 @@ zoo2 = "non-false string"
                 },
                 "vendor_alice_args.bzl": {
                     "content": EXPECTED_ALICE_ARGS_BZL,
-                    "type": "file",
-                },
-                "bazel_host_test_suites.bzl": {
-                    "content": EXPECTED_BAZEL_HOST_TEST_SUITES_BZL,
                     "type": "file",
                 },
             },
