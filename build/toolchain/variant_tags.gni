@@ -133,6 +133,10 @@ all_variant_tags = [
   # instrumentation library into the final executables.
   "heapdump",
 
+  # The `uses-shlibs` tag is used for variants that induce shared-library
+  # dependencies.
+  "uses-shlibs",
+
   # The `cfi` tag is used for instrumentation for Control Flow Integrety.
   "cfi",
 ]

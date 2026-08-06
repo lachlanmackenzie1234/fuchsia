@@ -523,6 +523,7 @@ declare_args() {
         "instrumentation-runtime",
         "kernel-excluded",
         "needs-compiler-abi",
+        "uses-shlibs",
       ]
     },
   ]

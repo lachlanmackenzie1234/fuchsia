@@ -114,7 +114,10 @@ rustc_binary("userboot-rust.executable") {
     "//third_party/rust_crates:zerocopy",
   ]
 
-  exclude_toolchain_tags = [ "uses-shadow" ]
+  exclude_toolchain_tags = [
+    "uses-shadow",
+    "uses-shlibs",
+  ]
 }
 
 rustc_binary("userboot-test-rust.executable") {
