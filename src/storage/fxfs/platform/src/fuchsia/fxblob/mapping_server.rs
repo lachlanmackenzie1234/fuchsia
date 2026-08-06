@@ -162,20 +162,10 @@ mod tests {
             let mut receiver = Receiver::<RawMappingCommand>::new(client_mapping, 256)
                 .expect("Failed to create the Receiver wrapper");
 
-            let pop_cmd = |receiver: &mut Receiver<RawMappingCommand>| loop {
-                match receiver.pop_reserve() {
-                    Ok(cmd) => break cmd,
-                    Err(zx::Status::SHOULD_WAIT) => {
-                        std::thread::sleep(std::time::Duration::from_millis(10))
-                    }
-                    Err(e) => panic!("pop_reserve failed: {:?}", e),
-                }
-            };
-
             // First Open Command
-            let cmd1_raw = pop_cmd(&mut receiver);
+            let cmd1_raw = receiver.peek().expect("peek failed");
             let cmd1 =
-                MappingCommand::try_from(cmd1_raw).expect("Failed to convert raw mapping command");
+                MappingCommand::try_from(*cmd1_raw).expect("Failed to convert raw mapping command");
 
             let (cmd1_offset, cmd1_blob_count, cmd1_metadata_count) = match cmd1 {
                 MappingCommand::Mappings { key, offset, metadata_count, blob_count } => {
@@ -189,7 +179,7 @@ mod tests {
 
             // Verify payload
             let total_extents = cmd1_blob_count + cmd1_metadata_count;
-            let buffer = receiver.payload_slice(cmd1_offset, total_extents * 8).to_vec();
+            let buffer = cmd1_raw.payload_slice(cmd1_offset, total_extents * 8).to_vec();
 
             let mut expected_payload = Vec::new();
             for val in Extents::encode_extents_iter(&data_extents)
@@ -198,16 +188,16 @@ mod tests {
                 expected_payload.extend_from_slice(&val.to_le_bytes());
             }
             assert_eq!(buffer, expected_payload);
-            receiver.pop_commit().expect("Failed pop_commit");
+            cmd1_raw.pop().expect("Failed pop_commit");
 
-            let cmd2_raw = pop_cmd(&mut receiver);
+            let cmd2_raw = receiver.peek().expect("peek failed");
             let cmd2 =
-                MappingCommand::try_from(cmd2_raw).expect("Failed to convert raw mapping command");
+                MappingCommand::try_from(*cmd2_raw).expect("Failed to convert raw mapping command");
             match cmd2 {
                 MappingCommand::CloseBlob { key } => assert_eq!(key, 1),
                 _ => panic!("Expected CloseBlob command"),
             };
-            receiver.pop_commit().expect("Failed pop_commit");
+            cmd2_raw.pop().expect("Failed pop_commit");
         });
 
         let server_task = async move {

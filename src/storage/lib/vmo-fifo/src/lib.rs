@@ -11,6 +11,7 @@ use signal::{
     EventSignal, SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1, SIG_SHUTDOWN, SIG_SPACE_AVAILABLE_0,
     SIG_SPACE_AVAILABLE_1,
 };
+use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicU64, Ordering};
 use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 use zerocopy::{FromBytes, IntoBytes, KnownLayout};
@@ -704,6 +705,65 @@ pub struct Receiver<T> {
     cached_read_index: u64,
 }
 
+pub struct Message<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> {
+    receiver: &'a mut Receiver<T>,
+    item: T,
+}
+
+impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> std::ops::Deref for Message<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.item
+    }
+}
+
+impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy + Debug> Debug for Message<'a, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.item, f)
+    }
+}
+
+impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> Message<'a, T> {
+    pub fn payload_slice(&self, vmo_offset: u32, len: u32) -> PtrByteSlice<'_> {
+        self.receiver.payload_slice(vmo_offset, len)
+    }
+
+    /// Commit the read, freeing the slot.
+    pub fn pop(self) -> Result<(), zx::Status> {
+        // Note that the `WAITER` flag in `read_index` may have been set by the writer if the queue
+        // became full, in which case the `compare_exchange_weak` will fail and we will retry. This
+        // case doesn't happen often, however, so we optimistically use `cached_read_index` to
+        // reduce the number of atomic loads for the common path.
+        let mut curr_read_head = State(self.receiver.cached_read_index);
+        loop {
+            let next_read_head = curr_read_head.clear_waiter_and_increment();
+            match self.receiver.inner.read_head_atomic().compare_exchange_weak(
+                curr_read_head.0,
+                next_read_head.0,
+                // `Ordering::Release`: ensure the reader has finished reading the old data from the
+                // VMO before the writer sees this new index and overwrites the slot.
+                Ordering::Release,
+                // `Ordering::Relaxed`: swap failed (most likely due to WAITER flag being modified -
+                // the reader didn't publish anything), so no memory barriers are needed before
+                // retrying.
+                Ordering::Relaxed,
+            ) {
+                Ok(prev_read_head) => {
+                    self.receiver.cached_read_index = next_read_head.index();
+                    // Wake the writer if they fell asleep waiting for a free slot.
+                    if State(prev_read_head).has_waiter() {
+                        let vmo = self.receiver.inner.mapping.vmo();
+                        self.receiver.inner.space_available.signal(vmo)?;
+                    }
+                    return Ok(());
+                }
+                Err(actual) => curr_read_head = State(actual),
+            }
+        }
+    }
+}
+
 impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
     pub fn new(vmo: zx::Vmo, capacity: u32) -> Result<Self, zx::Status> {
         Ok(Self { inner: SharedQueue::new(vmo, capacity)?, cached_read_index: 0 })
@@ -734,8 +794,8 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
         self.inner.vmo()
     }
 
-    /// Fetches the next message without incrementing the read index.
-    pub fn pop_reserve(&mut self) -> Result<T, zx::Status> {
+    /// Peek at the next message without incrementing the read index.
+    pub fn peek(&mut self) -> Result<Message<'_, T>, zx::Status> {
         let read_idx = self.cached_read_index;
 
         // `Ordering::Acquire`: guarantees the writer has finished writing the new data to the
@@ -749,7 +809,7 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
                 // sender has fully completed writing before we read. Furthermore, `T: FromBytes`
                 // ensures any arbitrary bits provided by Fxfs safely map to a valid Rust struct.
                 let msg = unsafe { std::ptr::read(slot_ptr) };
-                return Ok(msg);
+                return Ok(Message { receiver: self, item: msg });
             }
 
             // The queue is empty. Inform the writer that we are going to sleep and waiting for a
@@ -785,40 +845,6 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
                     }
                 }
                 Err(actual) => curr_write_head = State(actual),
-            }
-        }
-    }
-
-    /// Commit the read, freeing the slot.
-    pub fn pop_commit(&mut self) -> Result<(), zx::Status> {
-        // Note that the `WAITER` flag in `read_index` may have been set by the writer if the queue
-        // became full, in which case the `compare_exchange_weak` will fail and we will retry. This
-        // case doesn't happen often, however, so we optimistically use `cached_read_index` to
-        // reduce the number of atomic loads for the common path.
-        let mut curr_read_head = State(self.cached_read_index);
-        loop {
-            let next_read_head = curr_read_head.clear_waiter_and_increment();
-            match self.inner.read_head_atomic().compare_exchange_weak(
-                curr_read_head.0,
-                next_read_head.0,
-                // `Ordering::Release`: ensure the reader has finished reading the old data from the
-                // VMO before the writer sees this new index and overwrites the slot.
-                Ordering::Release,
-                // `Ordering::Relaxed`: swap failed (most likely due to WAITER flag being modified -
-                // the reader didn't publish anything), so no memory barriers are needed before
-                // retrying.
-                Ordering::Relaxed,
-            ) {
-                Ok(prev_read_head) => {
-                    self.cached_read_index = next_read_head.index();
-                    // Wake the writer if they fell asleep waiting for a free slot.
-                    if State(prev_read_head).has_waiter() {
-                        let vmo = self.inner.mapping.vmo();
-                        self.inner.space_available.signal(vmo)?;
-                    }
-                    return Ok(());
-                }
-                Err(actual) => curr_read_head = State(actual),
             }
         }
     }
@@ -884,15 +910,15 @@ mod tests {
         assert!(receiver.is_empty());
         assert!(!sender.is_full());
 
-        let msg = TestMessage { val: 42 };
-        sender.push(msg).expect("push failed");
+        let expected = TestMessage { val: 42 };
+        sender.push(expected).expect("push failed");
 
         assert!(!receiver.is_empty());
 
-        let popped = receiver.pop_reserve().expect("pop_reserve failed");
-        assert_eq!(popped, msg);
+        let next_msg = receiver.peek().expect("peek failed");
+        assert_eq!(*next_msg, expected);
 
-        receiver.pop_commit().expect("pop_commit failed");
+        next_msg.pop().expect("pop failed");
         assert!(receiver.is_empty());
     }
 
@@ -921,18 +947,18 @@ mod tests {
         // Allow time for the writer thread to fill the queue and fall asleep waiting for space.
         thread::sleep(Duration::from_millis(100));
 
-        let r1 = receiver.pop_reserve().expect("pop_reserve failed");
+        let r1 = receiver.peek().expect("peek failed");
         assert_eq!(r1.val, 1);
-        // Committing this pop frees a slot, waking the blocked sender.
-        receiver.pop_commit().expect("pop_commit failed");
+        // Pop frees a slot, waking the blocked sender.
+        r1.pop().expect("pop failed");
 
-        let r2 = receiver.pop_reserve().expect("pop_reserve failed");
+        let r2 = receiver.peek().expect("peek failed");
         assert_eq!(r2.val, 2);
-        receiver.pop_commit().expect("pop_commit failed");
+        r2.pop().expect("pop failed");
 
-        let r3 = receiver.pop_reserve().expect("pop_reserve failed");
+        let r3 = receiver.peek().expect("peek failed");
         assert_eq!(r3.val, 3);
-        receiver.pop_commit().expect("pop_commit failed");
+        r3.pop().expect("pop failed");
 
         handle.join().expect("writer thread panicked");
     }
@@ -970,16 +996,19 @@ mod tests {
         assert_eq!(sender.index(), 1);
 
         // Pop them and verify read_index also wraps around.
-        assert_eq!(receiver.pop_reserve().expect("pop_reserve failed").val, 10);
-        receiver.pop_commit().expect("pop_commit failed");
+        let next_msg = receiver.peek().expect("peek failed");
+        assert_eq!(next_msg.val, 10);
+        next_msg.pop().expect("pop failed");
         assert_eq!(receiver.index(), State::INDEX_MASK);
 
-        assert_eq!(receiver.pop_reserve().expect("pop_reserve failed").val, 20);
-        receiver.pop_commit().expect("pop_commit failed");
+        let next_msg = receiver.peek().expect("peek failed");
+        assert_eq!(next_msg.val, 20);
+        next_msg.pop().expect("pop failed");
         assert_eq!(receiver.index(), 0);
 
-        assert_eq!(receiver.pop_reserve().expect("pop_reserve failed").val, 30);
-        receiver.pop_commit().expect("pop_commit failed");
+        let next_msg = receiver.peek().expect("peek failed");
+        assert_eq!(next_msg.val, 30);
+        next_msg.pop().expect("pop failed");
         assert_eq!(receiver.index(), 1);
 
         assert!(receiver.is_empty());
@@ -997,7 +1026,7 @@ mod tests {
 
         let handle = std::thread::spawn(move || {
             // Receiver blocks because the queue is empty
-            receiver.pop_reserve()
+            assert_eq!(receiver.peek().unwrap_err(), zx::Status::CANCELED);
         });
 
         // Give the receiver thread a moment to block on wait()
@@ -1006,8 +1035,7 @@ mod tests {
         // Dropping sender should trigger shutdown
         drop(sender);
 
-        let result = handle.join().expect("thread panicked");
-        assert_eq!(result, Err(zx::Status::CANCELED));
+        handle.join().expect("thread panicked");
     }
 
     #[fuchsia::test]
@@ -1035,7 +1063,7 @@ mod tests {
         drop(receiver);
 
         let result = handle.join().expect("thread panicked");
-        assert_eq!(result, Err(zx::Status::CANCELED));
+        assert_eq!(result.unwrap_err(), zx::Status::CANCELED);
     }
 
     // Wire Protocol Struct - this is the struct sent to queue
@@ -1142,21 +1170,21 @@ mod tests {
         let standalone = TestCommand::NoPayload { val: 456 };
         sender.push(standalone.to_wire()).expect("push failed");
 
-        let msg1 = receiver.pop_reserve().expect("pop_reserve failed");
-        let app_msg1 = TestCommand::from_wire(msg1);
+        let msg1 = receiver.peek().expect("peek failed");
+        let app_msg1 = TestCommand::from_wire(*msg1);
         if let TestCommand::WithPayload { vmo_offset, len } = app_msg1 {
             assert_eq!(len, 10);
-            let read_data = receiver.payload_slice(vmo_offset, len);
+            let read_data = msg1.payload_slice(vmo_offset, len);
             assert_eq!(read_data.to_vec(), vec![0xAA; 10]);
         } else {
             panic!("Expected TestCommand::WithPayload");
         }
-        receiver.pop_commit().expect("pop_commit failed");
+        msg1.pop().expect("pop failed");
 
-        let msg2 = receiver.pop_reserve().expect("pop_reserve failed");
-        let app_msg2 = TestCommand::from_wire(msg2);
+        let msg2 = receiver.peek().expect("peek failed");
+        let app_msg2 = TestCommand::from_wire(*msg2);
         assert_eq!(app_msg2, TestCommand::NoPayload { val: 456 });
-        receiver.pop_commit().expect("pop_commit failed");
+        msg2.pop().expect("pop failed");
     }
 
     #[fuchsia::test]
@@ -1189,12 +1217,12 @@ mod tests {
 
             // This call will set the WAITER flag, go to sleep, sometimes wakes up with both data
             // and shutdown signals, and should successfully pop the payload.
-            let val = receiver.pop_reserve().expect("pop_reserve failed on race condition");
-            assert_eq!(val, 42);
-            receiver.pop_commit().expect("pop_commit failed");
+            let val = receiver.peek().expect("peek failed on race condition");
+            assert_eq!(*val, 42);
+            val.pop().expect("pop failed");
 
             // The queue is now genuinely empty and the peer has dropped.
-            assert_eq!(receiver.pop_reserve().unwrap_err(), zx::Status::CANCELED);
+            assert_eq!(receiver.peek().unwrap_err(), zx::Status::CANCELED);
 
             handle.join().unwrap();
         }
@@ -1225,9 +1253,9 @@ mod tests {
         };
         let pop_thread = std::thread::spawn(move || {
             thread::sleep(Duration::from_millis(5));
-            let msg = receiver.pop_reserve().expect("failed to pop_reserve message");
+            let msg = receiver.peek().expect("failed to peek message");
             assert_eq!(msg.val, 0); // we expect 0 to be popped since it was pushed first
-            receiver.pop_commit().expect("failed to pop_commit message");
+            msg.pop().expect("failed to pop message");
             receiver
         });
 
@@ -1235,9 +1263,9 @@ mod tests {
         let mut receiver = pop_thread.join().unwrap();
 
         for expected in [1, 2, 3, 42] {
-            let msg = receiver.pop_reserve().expect("failed to pop_reserve message");
+            let msg = receiver.peek().expect("failed to peek message");
             assert_eq!(msg.val, expected);
-            receiver.pop_commit().expect("failed to pop_commit message");
+            msg.pop().expect("failed to pop message");
         }
     }
 
@@ -1273,9 +1301,9 @@ mod tests {
         let pop_thread = std::thread::spawn(move || {
             // Give the reserve_task a tiny bit of time to yield
             thread::sleep(Duration::from_millis(5));
-            let msg = receiver.pop_reserve().expect("failed to pop_reserve message");
+            let msg = receiver.peek().expect("failed to peek message");
             assert_eq!(msg.val, 1);
-            receiver.pop_commit().expect("failed to pop_commit message");
+            msg.pop().expect("failed to pop message");
             receiver
         });
 
@@ -1283,9 +1311,9 @@ mod tests {
         let mut receiver = pop_thread.join().unwrap();
 
         // Pop the second item out
-        let msg = receiver.pop_reserve().expect("failed to pop_reserve message");
+        let msg = receiver.peek().expect("failed to peek message");
         assert_eq!(msg.val, 2);
-        receiver.pop_commit().expect("failed to pop_commit message");
+        msg.pop().expect("failed to pop message");
     }
 
     #[fuchsia::test]
@@ -1324,17 +1352,17 @@ mod tests {
 
             // Pop the 4 standalone messages we initially filled the queue with.
             for expected in 0..4 {
-                let msg = receiver.pop_reserve().expect("failed to pop_reserve message");
-                let app_msg = TestCommand::from_wire(msg);
+                let msg = receiver.peek().expect("failed to peek message");
+                let app_msg = TestCommand::from_wire(*msg);
                 assert!(matches!(app_msg, TestCommand::NoPayload { val } if val == expected));
-                receiver.pop_commit().expect("failed to pop_commit message");
+                msg.pop().expect("failed to pop message");
             }
 
             // Pop the actually pushed payload command to verify it.
-            let msg2 = receiver.pop_reserve().expect("failed to pop payload message");
-            let app_msg2 = TestCommand::from_wire(msg2);
+            let msg2 = receiver.peek().expect("failed to pop payload message");
+            let app_msg2 = TestCommand::from_wire(*msg2);
             assert!(matches!(app_msg2, TestCommand::WithPayload { .. }));
-            receiver.pop_commit().expect("failed to pop_commit message");
+            msg2.pop().expect("failed to pop message");
         });
 
         commit_task.await;
