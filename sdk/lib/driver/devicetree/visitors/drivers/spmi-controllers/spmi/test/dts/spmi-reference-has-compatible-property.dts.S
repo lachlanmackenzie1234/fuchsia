@@ -1,6 +1,6 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file
+// found in the LICENSE file.
 #include "sdk/lib/driver/devicetree/visitors/drivers/spmi-controllers/spmi/spmi.h"
 
 /dts-v1/;
