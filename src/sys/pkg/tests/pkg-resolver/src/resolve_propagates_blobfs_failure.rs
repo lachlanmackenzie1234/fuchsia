@@ -294,6 +294,7 @@ async fn assert_resolve_package_with_failing_blobfs_fails(
     assert_matches!(res, Err(fidl_fuchsia_pkg::ResolveError::Io));
 }
 
+// TODO(https://fxbug.dev/542690944): These have all been migrated.
 #[fuchsia::test]
 async fn fails_on_create_far_in_install_pkg() {
     let (blobfs, pkg) = make_mock_blobfs_with_failing_install_pkg(
