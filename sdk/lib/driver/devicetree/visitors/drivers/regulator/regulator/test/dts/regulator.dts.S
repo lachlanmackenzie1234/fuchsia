@@ -23,5 +23,6 @@
 	cpu-ctrl {
 		compatible = "cpu-ctrl";
 		regulators = <&vreg>;
+		regulator-functions = REGULATOR_FUNCTION;
 	};
 };
