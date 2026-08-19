@@ -26,6 +26,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# NOTE: The definitions in this file are too complex to be handled by
+# the bazel2gn tool, so use LINT checks to synchronize with BUILD.bazel
+# changes manually.
+
 if (is_fuchsia) {
   import("//build/components.gni")
 
@@ -45,6 +49,7 @@ config("curl_config") {
   defines = [ "CURL_NO_OLDIES" ]
 }
 
+# LINT.IfChange
 copy("copy_curl_config") {
   visibility = [ ":*" ]
   if (is_fuchsia) {
@@ -449,6 +454,8 @@ target(default_library_type, "libcurl") {
   public_configs = [ ":curl_config" ]
   configs += [ ":suppress_warnings" ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 config("suppress_warnings") {
   visibility = [ ":*" ]
