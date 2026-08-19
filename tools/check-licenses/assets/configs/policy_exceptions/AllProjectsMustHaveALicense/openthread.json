@@ -5,7 +5,8 @@
                 "bug": "TODO: b/missing",
                 "description": "Migrated from legacy _config.json",
                 "paths": [
-                    "third_party/openthread/third_party"
+                    "third_party/openthread/third_party",
+                    "third_party/openthread/third_party/mbedtls"
                 ]
             }
         ]
