@@ -26,6 +26,7 @@ go_binary_host_tool(
     name = "rfcmeta",
     embed = [":rfcmeta_lib"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
 )
 
 host_go_test(
