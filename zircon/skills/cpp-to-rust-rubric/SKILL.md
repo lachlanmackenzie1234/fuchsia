@@ -44,7 +44,8 @@ the port and **Reviewer agents** evaluating the port.
     rationale, and doc comments. All public traits, structs, enums, methods, and
     functions (except for #[syscall] definitions) MUST have Rustdoc (`///`)
     comments.  `unsafe` functions must include a `# Safety` section. All
-    `unsafe` blocks must have `// SAFETY:` comments.
+    `unsafe` blocks must have `// SAFETY:` comments. Inline documentation in C++
+    must be ported over to equivalent Rust code.
 8.  **Ergonomic Design & DRY**: Apply idiomatic Rust practices (derive macros,
     `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator) without
     breaking layout or safety requirements. Keep visibility as tight as possible
@@ -456,23 +457,31 @@ Reviewers and Coders must audit code against this checklist:
 ## 5. Subagent Workflow & Role Guidelines
 
 ### 5.1. Guidelines for Coder Subagent (`cpp-to-rust-coder`)
-1.  **Initial Audit**: Read all relevant C++ headers, source files, and
+1.  **Author In-Tree Files Directly**: You MUST create, update, and edit the
+    actual source files in the Fuchsia checkout using `write_to_file` and
+    `replace_file_content`. Writing code blocks in markdown reports, chat
+    messages, or artifact scratchpads does NOT count as an implementation.
+2.  **Initial Audit**: Read all relevant C++ headers, source files, and
     unit/fuzz test files.
-2.  **Apply Rubric**: Implement the Rust port following the patterns in Section
+3.  **Apply Rubric**: Implement the Rust port following the patterns in Section
     3 and avoiding anti-patterns in Section 4.
-3.  **Verify Build & Format**: Run `fx build` to confirm compilation, and run
+4.  **Verify Build & Format**: Run `fx build` to confirm compilation, and run
     `fx test` (or `k ut`) to verify test execution. Run `fx format-code`.
-4.  **Self-Check**: Audit your implementation against Section 4 (Common
+5.  **Self-Check**: Audit your implementation against Section 4 (Common
     Pitfalls) before reporting back.
 
 ### 5.2. Guidelines for Reviewer Subagent (`cpp-to-rust-reviewer`)
-1.  **Analyze C++ & Rust Implementations**: Conduct a side-by-side audit of
+1.  **Audit Real In-Tree Files**: You MUST inspect the actual modified files in
+    the repository and check `git diff`. Do NOT review an implementation plan or
+    markdown report in lieu of real files. If the target files have not been
+    created or modified in the workspace, reject the review immediately.
+2.  **Analyze C++ & Rust Implementations**: Conduct a side-by-side audit of
     APIs, data structures, safety, locking, test coverage, and fuzzing.
-2.  **Scrutinize Unsafe**: Actively question every `unsafe` block. Insist on
+3.  **Scrutinize Unsafe**: Actively question every `unsafe` block. Insist on
     safe Rust alternatives if possible. Ensure `// SAFETY:` comments are
     complete and accurate.
-3.  **Evaluate against Rubric**: Verify every item in Section 3 and Section 4.
-4.  **Generate Structured Review Report**: Produce a report with the following
+4.  **Evaluate against Rubric**: Verify every item in Section 3 and Section 4.
+5.  **Generate Structured Review Report**: Produce a report with the following
     format:
 
 ```markdown
