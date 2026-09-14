@@ -32,11 +32,14 @@ use starnix_uapi::arch32::{
     perf_event_sample_format_PERF_SAMPLE_CALLCHAIN, perf_event_sample_format_PERF_SAMPLE_ID,
     perf_event_sample_format_PERF_SAMPLE_IDENTIFIER, perf_event_sample_format_PERF_SAMPLE_IP,
     perf_event_sample_format_PERF_SAMPLE_PERIOD, perf_event_sample_format_PERF_SAMPLE_READ,
-    perf_event_sample_format_PERF_SAMPLE_TID, perf_event_sample_format_PERF_SAMPLE_TIME,
-    perf_event_type_PERF_RECORD_LOST, perf_event_type_PERF_RECORD_SAMPLE,
+    perf_event_sample_format_PERF_SAMPLE_REGS_USER,
+    perf_event_sample_format_PERF_SAMPLE_STACK_USER, perf_event_sample_format_PERF_SAMPLE_TID,
+    perf_event_sample_format_PERF_SAMPLE_TIME, perf_event_type_PERF_RECORD_LOST,
+    perf_event_type_PERF_RECORD_SAMPLE,
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::uapi::perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
     errno, error, from_status_like_fdio, perf_event_attr, perf_event_header,
@@ -508,7 +511,7 @@ impl FileOps for PerfEventFile {
 //    VMO write offset and update `data_head`, meaning failed writes are
 //    effectively skipped and not exposed to the reader.
 fn write_record_to_vmo(
-    perf_record_sample: PerfRecordSample,
+    perf_record_sample: PerfRecordSample<'_>,
     perf_data_vmo: &zx::Vmo,
     sample_type: u64,
     sample_id: u64,
@@ -575,6 +578,47 @@ fn write_record_to_vmo(
         // ips[nr] - list of ips, u64 per ip.
         for i in perf_record_sample.ips {
             sample.extend(i.to_ne_bytes());
+        }
+    }
+
+    // User registers (PERF_SAMPLE_REGS_USER): the ABI tag, then one u64 per
+    // bit set in attr.sample_regs_user, in perf register-index order.
+    // Readers request the mask for their own architecture -- a 64-bit reader
+    // requests the arm64 mask even when profiling 32-bit tasks (and relocates
+    // the PC from the PERF_REG_ARM64_PC index itself, matching the Linux
+    // kernel's behavior of capturing native registers).
+    // If the mask is 0 or the ABI is PERF_SAMPLE_REGS_ABI_NONE, no register
+    // values are output.
+    if (sample_type & perf_event_sample_format_PERF_SAMPLE_REGS_USER as u64) != 0 {
+        if perf_record_sample.regs_abi == perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE as u64
+            || perf_record_sample.sample_regs_user == 0
+            || perf_record_sample.regs.is_empty()
+        {
+            sample.extend((perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE as u64).to_ne_bytes());
+        } else {
+            sample.extend(perf_record_sample.regs_abi.to_ne_bytes());
+            sample.extend_from_slice(perf_record_sample.regs);
+        }
+    }
+
+    // User stack (PERF_SAMPLE_STACK_USER): size, the raw bytes starting at
+    // the sampled stack pointer, then the filled size. Readers overlay these
+    // bytes at the SP reported in REGS_USER, which is why the snapshot must
+    // begin exactly at it.
+    if (sample_type & perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64) != 0 {
+        let fixed_len = std::mem::size_of::<perf_event_header>() + sample.len() + 16;
+        let header_space = (u16::MAX as usize).saturating_sub(fixed_len) & !7;
+        let requested = (perf_record_sample.sample_stack_user as usize) & !7;
+        let dest_len = requested.min(header_space);
+
+        sample.extend((dest_len as u64).to_ne_bytes());
+        if dest_len > 0 {
+            let data_len = perf_record_sample.stack.len().min(dest_len) & !7;
+            sample.extend_from_slice(&perf_record_sample.stack[..data_len]);
+            // Pad the rest with zeros.
+            sample.resize(sample.len() + (dest_len - data_len), 0);
+            // dyn_size
+            sample.extend((data_len as u64).to_ne_bytes());
         }
     }
     // The remaining sample_type fields are not implemented.
@@ -694,14 +738,22 @@ fn write_circular(
     Ok(())
 }
 
+/// Represents a PERF_RECORD_SAMPLE payload to be serialized into the VMO ring buffer.
+/// Fields follow the perf ABI order: TID, TIME, ID, PERIOD, READ, CALLCHAIN, REGS_USER, STACK_USER.
 #[derive(Debug, Clone)]
-struct PerfRecordSample {
+struct PerfRecordSample<'a> {
     pid: Option<u32>,
     tid: Option<u32>,
     // Timestamp of when the sample was taken, for PERF_SAMPLE_TIME.
     time: zx::BootInstant,
     // Instruction pointers (currently this is the address). First one is `ip` param.
     ips: Vec<u64>,
+    regs: &'a [u8],
+    stack: &'a [u8],
+    // PERF_SAMPLE_REGS_ABI_32 (1) or PERF_SAMPLE_REGS_ABI_64 (2) for `regs`.
+    regs_abi: u64,
+    sample_regs_user: u64,
+    sample_stack_user: u64,
 }
 
 async fn set_up_profiler(
@@ -774,6 +826,8 @@ async fn stop_and_collect_samples(
     sample_id: u64,
     sample_period: u64,
     read_format: u64,
+    sample_regs_user: u64,
+    sample_stack_user: u64,
     koid_session: Option<&PidKoidSession>,
     vmo_write_offset: &mut u64,
 ) -> Result<(), Errno> {
@@ -838,6 +892,11 @@ async fn stop_and_collect_samples(
                             tid: Some(tid as u32),
                             time,
                             ips,
+                            regs: &[],
+                            stack: &[],
+                            regs_abi: perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE as u64,
+                            sample_regs_user,
+                            sample_stack_user,
                         };
                         let metadata = seq_lock_wrapper.get();
                         let bytes_written = write_record_to_vmo(
@@ -991,6 +1050,13 @@ pub fn sys_perf_event_open(
     // Other features will be added in the future (see below track_stubs).
     let perf_event_attrs: perf_event_attr = current_task.read_object(attr)?;
 
+    if (perf_event_attrs.sample_type & perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64) != 0
+    {
+        if perf_event_attrs.sample_stack_user % 8 != 0 {
+            return error!(EINVAL);
+        }
+    }
+
     if tid == -1 && cpu == -1 {
         return error!(EINVAL);
     }
@@ -1142,6 +1208,8 @@ pub fn sys_perf_event_open(
                             perf_event_file.sample_id,
                             sample_period_in_ticks,
                             perf_event_file.attr.read_format,
+                            perf_event_file.attr.sample_regs_user,
+                            perf_event_file.attr.sample_stack_user as u64,
                             pid_koid_session.as_ref(),
                             &mut vmo_write_offset,
                         )
@@ -1221,6 +1289,7 @@ mod tests {
     use crate::task::tracing::{TracePerformanceEventManager, ZirconIdentity};
     use fidl::endpoints::create_proxy;
     use fuchsia_async as fasync;
+    use starnix_uapi::uapi::perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32;
 
     #[::fuchsia::test]
     async fn test_stop_and_collect_samples_socket_full() {
@@ -1270,6 +1339,8 @@ mod tests {
             client,
             &seq_lock,
             &perf_data_vmo,
+            0,
+            0,
             0,
             0,
             0,
@@ -1374,6 +1445,8 @@ mod tests {
             0,
             0,
             0,
+            0,
+            0,
             Some(&session),
             &mut vmo_write_offset,
         );
@@ -1415,5 +1488,133 @@ mod tests {
             .read(&mut trailing_bytes, metadata.data_offset + expected_record_size)
             .unwrap();
         assert_eq!(trailing_bytes, [0u8; 24]);
+    }
+
+    #[::fuchsia::test]
+    async fn test_write_record_to_vmo_regs_and_stack() {
+        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let vmo_handle_copy =
+            perf_data_vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        // SAFETY: The test maintains exclusive write access to this VMO.
+        let seq_lock = unsafe { create_seq_lock(&vmo_handle_copy, ESTIMATED_MMAP_BUFFER_SIZE) };
+        let metadata = seq_lock.get();
+        let mut lost_events = 0;
+        let regs_data = [0x11u8; 16];
+        let stack_data = [0x22u8; 16];
+        let sample = PerfRecordSample {
+            pid: Some(10),
+            tid: Some(20),
+            time: zx::BootInstant::from_nanos(123_456_789),
+            ips: vec![0xdeadbeef],
+            regs: &regs_data,
+            stack: &stack_data,
+            regs_abi: perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32 as u64,
+            sample_regs_user: 3,
+            sample_stack_user: 16,
+        };
+        let sample_type = (perf_event_sample_format_PERF_SAMPLE_IP
+            | perf_event_sample_format_PERF_SAMPLE_TID
+            | perf_event_sample_format_PERF_SAMPLE_TIME
+            | perf_event_sample_format_PERF_SAMPLE_REGS_USER
+            | perf_event_sample_format_PERF_SAMPLE_STACK_USER) as u64;
+        let written = write_record_to_vmo(
+            sample,
+            &perf_data_vmo,
+            sample_type,
+            0,
+            0,
+            0,
+            0,
+            &metadata,
+            &mut lost_events,
+        );
+        assert!(written > 0);
+
+        let mut record_bytes = vec![0u8; written as usize];
+        perf_data_vmo.read(&mut record_bytes, metadata.data_offset).unwrap();
+
+        let record_type = u32::from_ne_bytes(record_bytes[0..4].try_into().unwrap());
+        assert_eq!(record_type, perf_event_type_PERF_RECORD_SAMPLE);
+        let misc = u16::from_ne_bytes(record_bytes[4..6].try_into().unwrap());
+        assert_eq!(misc, PERF_RECORD_MISC_USER as u16);
+        let size = u16::from_ne_bytes(record_bytes[6..8].try_into().unwrap());
+        assert_eq!(size as usize, written as usize);
+
+        let ip = u64::from_ne_bytes(record_bytes[8..16].try_into().unwrap());
+        assert_eq!(ip, 0xdeadbeef);
+
+        let pid = u32::from_ne_bytes(record_bytes[16..20].try_into().unwrap());
+        assert_eq!(pid, 10);
+        let tid = u32::from_ne_bytes(record_bytes[20..24].try_into().unwrap());
+        assert_eq!(tid, 20);
+
+        let time = u64::from_ne_bytes(record_bytes[24..32].try_into().unwrap());
+        assert_eq!(time, 123_456_789);
+
+        // REGS_USER: abi (8 bytes) + regs (16 bytes)
+        let abi = u64::from_ne_bytes(record_bytes[32..40].try_into().unwrap());
+        assert_eq!(abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32 as u64);
+        assert_eq!(&record_bytes[40..56], &regs_data);
+
+        // STACK_USER: dest_len (8 bytes) + data (16 bytes) + dyn_size (8 bytes)
+        let stack_len = u64::from_ne_bytes(record_bytes[56..64].try_into().unwrap());
+        assert_eq!(stack_len, 16);
+        assert_eq!(&record_bytes[64..80], &stack_data);
+        let dyn_size = u64::from_ne_bytes(record_bytes[80..88].try_into().unwrap());
+        assert_eq!(dyn_size, 16);
+    }
+
+    #[::fuchsia::test]
+    async fn test_write_record_to_vmo_regs_abi_none_when_empty() {
+        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let vmo_handle_copy =
+            perf_data_vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        // SAFETY: The test maintains exclusive write access to this VMO.
+        let seq_lock = unsafe { create_seq_lock(&vmo_handle_copy, ESTIMATED_MMAP_BUFFER_SIZE) };
+        let metadata = seq_lock.get();
+        let mut lost_events = 0;
+        let stack_data = [0x33u8; 8];
+        let sample = PerfRecordSample {
+            pid: Some(10),
+            tid: Some(20),
+            time: zx::BootInstant::from_nanos(999),
+            ips: vec![0x1000],
+            regs: &[],
+            stack: &stack_data,
+            regs_abi: perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE as u64,
+            sample_regs_user: 3,
+            sample_stack_user: 8,
+        };
+        let sample_type = (perf_event_sample_format_PERF_SAMPLE_IP
+            | perf_event_sample_format_PERF_SAMPLE_TID
+            | perf_event_sample_format_PERF_SAMPLE_TIME
+            | perf_event_sample_format_PERF_SAMPLE_REGS_USER
+            | perf_event_sample_format_PERF_SAMPLE_STACK_USER) as u64;
+        let written = write_record_to_vmo(
+            sample,
+            &perf_data_vmo,
+            sample_type,
+            0,
+            0,
+            0,
+            0,
+            &metadata,
+            &mut lost_events,
+        );
+        assert!(written > 0);
+
+        let mut record_bytes = vec![0u8; written as usize];
+        perf_data_vmo.read(&mut record_bytes, metadata.data_offset).unwrap();
+
+        // REGS_USER: abi (8 bytes) should be PERF_SAMPLE_REGS_ABI_NONE (0), and no regs follow.
+        let abi = u64::from_ne_bytes(record_bytes[32..40].try_into().unwrap());
+        assert_eq!(abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE as u64);
+
+        // STACK_USER immediately follows the ABI tag at offset 40.
+        let stack_len = u64::from_ne_bytes(record_bytes[40..48].try_into().unwrap());
+        assert_eq!(stack_len, 8);
+        assert_eq!(&record_bytes[48..56], &stack_data);
+        let dyn_size = u64::from_ne_bytes(record_bytes[56..64].try_into().unwrap());
+        assert_eq!(dyn_size, 8);
     }
 }
