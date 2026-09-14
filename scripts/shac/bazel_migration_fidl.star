@@ -2,6 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Defines SHAC checks for FIDL library migration from GN to Bazel.
+
+These checks are only needed until the migration from GN to Bazel is complete.
+"""
+
 load("./common.star", "os_exec")
 
 # FIDL library migration checks:
@@ -191,7 +196,7 @@ def _check_build_files(ctx, target_files):
             if attr == "name":
                 continue
 
-            # WORKAROUND: The `fidl_migration.star` regex parser does not support parsing
+            # WORKAROUND: The `bazel_migration_fidl.star` regex parser does not support parsing
             # dictionary values `{ ... }` from BUILD files. The `zither` attribute uses dictionaries
             # (e.g. `zither = { c = ... }`). The regex parser incorrectly extracts the dictionary keys
             # (`c`, `output_namespace`) as top-level attributes in GN, but fails to extract them in Bazel,
@@ -695,7 +700,7 @@ def _is_target_bazel_build_file(ctx, path, meta):
 
     return True
 
-def fidl_gn2bazel_migration_check(ctx):
+def _fidl_gn2bazel_migration_check(ctx):
     """Main check for FIDL migration from GN to Bazel."""
 
     target_files = []
@@ -746,5 +751,5 @@ def fidl_gn2bazel_migration_check(ctx):
     _check_bazel2gn_verification_inclusion(ctx, target_files)
     _check_sdk_fidl_list_inclusion(ctx, target_files)
 
-def register_fidl_migration_checks():
-    shac.register_check(shac.check(fidl_gn2bazel_migration_check))
+def register_bazel_migration_fidl_checks():
+    shac.register_check(shac.check(_fidl_gn2bazel_migration_check))

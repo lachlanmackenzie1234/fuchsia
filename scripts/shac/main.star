@@ -6,6 +6,8 @@
 
 # keep-sorted start
 load("./bazel.star", "register_bazel_checks")
+load("./bazel_migration.star", "register_bazel_migration_checks")
+load("./bazel_migration_fidl.star", "register_bazel_migration_fidl_checks")
 load("./cml.star", "register_cml_checks")
 load("./commit_msg.star", "register_commit_msg_checks")
 load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
@@ -14,7 +16,6 @@ load("./cpp.star", "register_cpp_checks")
 load("./dart.star", "register_dart_checks")
 load("./docs.star", "register_doc_checks")
 load("./fidl.star", "register_fidl_checks")
-load("./fidl_migration.star", "register_fidl_migration_checks")
 load("./gn.star", "gn_no_print")
 load("./go.star", "register_go_checks")
 load("./json.star", "register_json_checks")
@@ -160,13 +161,14 @@ def register_all_checks():
 
     # keeps-sorted start
     register_bazel_checks()
+    register_bazel_migration_checks()
+    register_bazel_migration_fidl_checks()
     register_cml_checks()
     register_commit_msg_checks()
     register_cpp_checks()
     register_dart_checks()
     register_doc_checks()
     register_fidl_checks()
-    register_fidl_migration_checks()
     register_go_checks()
     register_json_checks()
     register_license_project_checks()
