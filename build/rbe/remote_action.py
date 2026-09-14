@@ -638,6 +638,7 @@ def analyze_rbe_logs(
 _RBE_DOWNLOAD_STUB_IDENTIFIER = "# RBE download stub"
 _RBE_DOWNLOAD_STUB_HELP = "# run //build/rbe/dlwrap.py on this file to download"
 _RBE_DOWNLOAD_STUB_SUFFIX = ".dl-stub"
+_MAX_DOWNLOAD_STUB_SIZE_BYTES = 1024
 
 # Filesystem extended attribute for digests.
 # This should match the 'xattr_digest' value in build/rbe/fuchsia-reproxy.cfg.
@@ -862,10 +863,21 @@ def is_download_stub_file(
     path: Path, use_xattr: bool = _CAN_HAVE_XATTR
 ) -> bool:
     """Returns true if the path points to a download stub."""
-    if use_xattr:
-        return _RBE_XATTR_IS_STUB in os.listxattr(path)
-    else:
-        return _file_starts_with(path, _RBE_DOWNLOAD_STUB_IDENTIFIER)
+    try:
+        if use_xattr:
+            return _RBE_XATTR_IS_STUB in os.listxattr(path)
+        else:
+            # Download stubs are small text files (~300 bytes).
+            # Fast check: files larger than _MAX_DOWNLOAD_STUB_SIZE_BYTES or
+            # directories cannot be stubs.
+            st = os.stat(path)
+            if st.st_size > _MAX_DOWNLOAD_STUB_SIZE_BYTES or stat.S_ISDIR(
+                st.st_mode
+            ):
+                return False
+            return _file_starts_with(path, _RBE_DOWNLOAD_STUB_IDENTIFIER)
+    except OSError:
+        return False
 
 
 def undownload(path: Path, use_xattr: bool = _CAN_HAVE_XATTR) -> bool:
@@ -953,6 +965,20 @@ def download_from_stub_path(
             )
         return cl_utils.SubprocessResult(0)
 
+    ok_result = cl_utils.SubprocessResult(0)
+    if not stub_path.exists():
+        msg(f"Ignoring request to download nonexistent stub: {stub_path}")
+        return ok_result
+
+    # Quick check without lock: regular files will never become stubs.
+    # Avoid creating lock files and directories for non-stub files.
+    if not is_download_stub_file(stub_path, use_xattr=use_xattr):
+        if verbose:
+            msg(
+                f"    {stub_path} already exists as a normal file (not downloading)"
+            )
+        return ok_result
+
     # Use lock file to safely handle potentially concurrent
     # download requests to the same artifact.
     # If there are concurrent requests to download the same stub,
@@ -965,7 +991,6 @@ def download_from_stub_path(
     lock_file = Path(".dl-locks") / stub_path
     lock_file.parent.mkdir(parents=True, exist_ok=True)
     with cl_utils.BlockingFileLock(lock_file) as lock:
-        ok_result = cl_utils.SubprocessResult(0)
         if not stub_path.exists():
             msg(f"Ignoring request to download nonexistent stub: {stub_path}")
             return ok_result
@@ -2547,7 +2572,7 @@ def download_input_stub_paths_batch(
             msg("  Nothing to download.")
         return {}
 
-    if parallel:
+    if parallel and len(download_args) > 1:
         try:
             with multiprocessing.Pool(_MAX_CONCURRENT_DOWNLOADS) as pool:
                 statuses = pool.map(_download_input_for_mp, download_args)
@@ -2585,7 +2610,7 @@ def download_output_stub_infos_batch(
     if not download_args:
         return {}
 
-    if parallel:
+    if parallel and len(download_args) > 1:
         try:
             with multiprocessing.Pool(_MAX_CONCURRENT_DOWNLOADS) as pool:
                 statuses = pool.map(_download_output_for_mp, download_args)
