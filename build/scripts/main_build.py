@@ -544,6 +544,7 @@ class FuchsiaBuildContext(object):
         static_path: pathlib.Path | None = None,
         context_path: pathlib.Path | None = None,
         print_artifact_dir: bool = False,
+        ninja_error_logging_output: pathlib.Path | None = None,
     ) -> Iterable[str]:
         """Constructs and yields command-line arguments for executing fint_build.py.
 
@@ -552,6 +553,7 @@ class FuchsiaBuildContext(object):
             context_path: Path to the Fint context parameters textproto.
             print_artifact_dir: If True, appends the query flag to print the
               artifact directory path and exits instead of running the build.
+            ninja_error_logging_output: Path where Ninja should write its error logs (ninja_errors.json).
         """
         yield str(PYTHON_BIN)
         yield "-S"
@@ -569,15 +571,21 @@ class FuchsiaBuildContext(object):
         if print_artifact_dir:
             yield "--print-artifact-dir"
         else:
+            if ninja_error_logging_output:
+                yield "--ninja-error-logging-output"
+                yield str(ninja_error_logging_output)
             yield "--"
 
-    def fint_build_cmd(self) -> Iterable[str]:
+    def fint_build_cmd(
+        self, ninja_error_logging_output: pathlib.Path | None = None
+    ) -> Iterable[str]:
         """Constructs and yields command-line arguments for standard Fint build execution."""
         if not self.config.fint_params_path:
             return
         yield from self._fint_wrapper_cmd(
             static_path=self.config.fint_params_path,
             context_path=self.config.fint_context_path,
+            ninja_error_logging_output=ninja_error_logging_output,
         )
 
     @functools.cached_property
@@ -824,6 +832,11 @@ class BuildInvocation(object):
 
     # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_log_dir_structure)
 
+    @property
+    def ninja_errors_path(self) -> pathlib.Path:
+        """The path where Ninja-specific structured action failures are recorded."""
+        return self.log_dir / "ninja_errors.json"
+
     def top_build_command_prefix(self) -> Iterable[str]:
         """Construct the prefix command for the top-level wrapper."""
         context = self.context
@@ -1023,7 +1036,11 @@ class BuildInvocation(object):
         if command_type == "ninja":
             build_command = self._inject_ninja_args(build_command)
 
-        fint_cmd = list(context.fint_build_cmd())
+        fint_cmd = list(
+            context.fint_build_cmd(
+                ninja_error_logging_output=self.ninja_errors_path
+            )
+        )
         if fint_cmd:
             build_command = fint_cmd + list(build_command)
 
@@ -1043,10 +1060,13 @@ class BuildInvocation(object):
         """Return new build command with Ninja-specific flags injected in the right place."""
         ninja_log_dir = self.log_dir / "ninja_logs"
         mkdir(ninja_log_dir)
+
         # Record the set of inputs that triggered build actions.
         dirty_sources = ninja_log_dir / "ninja_dirty_sources.log"
         # Record action count metrics.
         action_metrics = ninja_log_dir / "ninja_action_metrics.json"
+        # Record structured action failures
+        error_logging_output = self.ninja_errors_path
 
         ninja_bin = build_command[0]
         remaining_args = build_command[1:]
@@ -1056,6 +1076,8 @@ class BuildInvocation(object):
             str(dirty_sources),
             "--action_metrics_output",
             str(action_metrics),
+            "--error_logging_output",
+            str(error_logging_output),
         ] + list(remaining_args)
 
 
