@@ -5,7 +5,10 @@
 #ifndef SRC_MEDIA_CODEC_CODECS_SW_LC3_CODEC_ADAPTER_LC3_H_
 #define SRC_MEDIA_CODEC_CODECS_SW_LC3_CODEC_ADAPTER_LC3_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <memory>
 
 // LC3 Specification v1.0 section 2.2 Encoder Interfaces.
 static constexpr uint16_t kMinExternalByteCount = 20;
