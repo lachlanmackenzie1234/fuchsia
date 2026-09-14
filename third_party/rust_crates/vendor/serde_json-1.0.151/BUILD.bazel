@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "serde_json",
     package_url = "https://github.com/serde-rs/json",
-    package_version = "1.0.149",
+    package_version = "1.0.151",
 )
 
 license(
@@ -86,13 +86,13 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.149",
+    version = "1.0.151",
     deps = [
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/vendor/indexmap-2.14.0:indexmap",
         "//third_party/rust_crates/vendor/itoa-1.0.18:itoa",
         "//third_party/rust_crates/vendor/serde_core-1.0.229:serde_core",
-        "//third_party/rust_crates/vendor/serde_json-1.0.149:build_script_build",
+        "//third_party/rust_crates/vendor/serde_json-1.0.151:build_script_build",
         "//third_party/rust_crates/vendor/zmij-1.0.21:zmij",
     ],
 )
@@ -156,7 +156,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "1.0.149",
+    version = "1.0.151",
     visibility = ["//visibility:private"],
 )
 
