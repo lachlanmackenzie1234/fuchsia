@@ -59,6 +59,10 @@ test_product_bundle("starnix_linux_vm_bundle") {
       package_target = "//src/virtualization/lib/guest_interaction/interactive_guest:interactive_guest_pkg"
     },
   ]
+
+  # Force the product bundle to show up in `product_bundles.json` so it can be
+  # used by the above product_bundle_test_group.
+  emit_metadata = true
 }
 
 # For use with the 'hermetic_test_package_labels' GN build argument.
