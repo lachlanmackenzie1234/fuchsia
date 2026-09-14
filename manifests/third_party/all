@@ -590,7 +590,7 @@
              path="third_party/pyjson5/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/dpranke/pyjson5"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="2154e31bbae71b6a8ae69e5e5a3350528825f0fc"/>
+             revision="66429118dcebb1dda7a2ddb3e87f661b904c7f96"/>
     <project name="third_party/pypng"
              path="third_party/pypng/src"
              remote="https://fuchsia.googlesource.com/third_party/gitlab.com/drj11/pypng"
