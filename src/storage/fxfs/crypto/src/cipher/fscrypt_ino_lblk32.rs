@@ -275,15 +275,15 @@ impl FscryptSoftwareInoLblk32FileCipher {
         }
     }
 
-    pub fn encrypt(&self, buffer: &mut [u8], tweak: u128) -> Result<(), Error> {
+    pub fn encrypt(&self, buffer: &mut [u8], mut tweak: u128) -> Result<(), Error> {
         fxfs_trace::duration!("encrypt", "len" => buffer.len());
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
-        let mut tweak = tweak;
 
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
-            self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
+            let mut block_tweak = tweak;
+            self.xts_key2.encrypt_block(block_tweak.as_mut_bytes().try_into().unwrap());
             self.xts_key1.encrypt_with_backend(XtsInPlaceProcessor::new(
-                Tweak(tweak),
+                Tweak(block_tweak),
                 MutPtrByteSlice::from(&mut block[..]),
             ));
             tweak += 1;
@@ -295,9 +295,10 @@ impl FscryptSoftwareInoLblk32FileCipher {
         fxfs_trace::duration!("decrypt", "len" => buffer.len());
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
-            self.xts_key2.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
+            let mut block_tweak = tweak;
+            self.xts_key2.encrypt_block(block_tweak.as_mut_bytes().try_into().unwrap());
             self.xts_key1.decrypt_with_backend(XtsInPlaceProcessor::new(
-                Tweak(tweak),
+                Tweak(block_tweak),
                 MutPtrByteSlice::from(&mut block[..]),
             ));
             tweak += 1;
