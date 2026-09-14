@@ -47,6 +47,7 @@ use starnix_uapi::{
 
 use crate::security::{self, TargetTaskType};
 use crate::task::Kernel;
+use crate::task::tracing::{LinuxIdentity, PidKoidSession};
 
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
 // Size of the VMO backing each event's metadata page and ring buffer; mmap
@@ -763,6 +764,7 @@ async fn stop_and_collect_samples(
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
+    koid_session: Option<&PidKoidSession>,
     vmo_write_offset: &mut u64,
 ) -> Result<(), Errno> {
     let seq_lock_wrapper = match seq_lock.get() {
@@ -807,9 +809,21 @@ async fn stop_and_collect_samples(
                 Ok(TraceRecord::Profiler(ProfilerRecord::Backtrace(backtrace))) => {
                     if let Some(seq_lock_wrapper) = seq_lock_wrapper {
                         let ips: Vec<u64> = backtrace.data;
-                        let pid = Some(backtrace.process.0 as u32);
-                        let tid = Some(backtrace.thread.0 as u32);
-                        let perf_record_sample = PerfRecordSample { pid, tid, ips };
+                        // Resolve the sampled koids to Linux pid/tid against the live
+                        // shared map (one read lock per record; collection is off the hot
+                        // path and a live read sees every thread that recorded itself
+                        // before it was sampled). If the sample cannot be resolved (e.g.
+                        // native Fuchsia thread or without a session), drop the sample.
+                        let Some(LinuxIdentity::Thread { pid, tid }) = koid_session.and_then(|s| {
+                            s.resolve_koids(
+                                zx::Koid::from_raw(backtrace.process.0),
+                                zx::Koid::from_raw(backtrace.thread.0),
+                            )
+                        }) else {
+                            continue;
+                        };
+                        let perf_record_sample =
+                            PerfRecordSample { pid: Some(pid as u32), tid: Some(tid as u32), ips };
                         let metadata = seq_lock_wrapper.get();
                         let bytes_written = write_record_to_vmo(
                             perf_record_sample,
@@ -1057,8 +1071,12 @@ pub fn sys_perf_event_open(
     let cloned_seq_lock = Arc::clone(&seq_lock);
     let mut vmo_write_offset = 0;
 
-    let closure = async move |_: &CurrentTask| {
+    let closure = async move |kthread_task: &CurrentTask| {
         let mut profiler_state: Option<(profiler::SessionProxy, fidl::AsyncSocket)> = None;
+        // Held while sampling is enabled so pid/koid mappings are recorded for the
+        // profiling session. Dropping it (including when this kthread exits with sampling
+        // still enabled) releases this file's interest in the shared manager.
+        let mut pid_koid_session: Option<PidKoidSession> = None;
 
         // This loop will wait for messages from the sender.
         while let Some((command, profiling_complete_receiver)) = receiver.next().await {
@@ -1066,6 +1084,11 @@ pub fn sys_perf_event_open(
                 IoctlOp::Enable => {
                     match set_up_profiler(zx_sample_period).await {
                         Ok((session_proxy, client)) => {
+                            // Record pid/koid mappings before the profiler starts sampling
+                            // so every sampled thread can be resolved. If starting the
+                            // profiler fails, dropping the unstored session ends the
+                            // recording interest automatically.
+                            let session = kthread_task.kernel().trace_event_manager.open();
                             let start_request = profiler::SessionStartRequest {
                                 buffer_results: Some(true),
                                 buffer_size_mb: Some(8 as u64),
@@ -1075,6 +1098,7 @@ pub fn sys_perf_event_open(
                                 log_warn!("Failed to start profiling: {}", e);
                             } else {
                                 profiler_state = Some((session_proxy, client));
+                                pid_koid_session = Some(session);
                             }
                         }
                         Err(e) => {
@@ -1101,6 +1125,7 @@ pub fn sys_perf_event_open(
                             perf_event_file.sample_type,
                             perf_event_file.sample_id,
                             sample_period_in_ticks,
+                            pid_koid_session.as_ref(),
                             &mut vmo_write_offset,
                         )
                         .await
@@ -1108,12 +1133,15 @@ pub fn sys_perf_event_open(
                             log_warn!("Failed to collect sample: {:?}", e);
                         }
                     }
+                    // Sampling is disabled: drop this file's recording session.
+                    pid_koid_session = None;
                     // Send notification anyway to unblock the ioctl caller.
                     let _ = profiling_complete_receiver.send(());
                 }
             }
         }
-        ()
+        // If the command channel closed with sampling still enabled (e.g. the perf event
+        // file was closed), dropping pid_koid_session here ends the recording interest.
     };
     let req = SpawnRequestBuilder::new()
         .with_debug_name("perf-event-sampler")
@@ -1173,6 +1201,7 @@ use crate::{fileops_impl_nonseekable, fileops_impl_noop_sync};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::tracing::{TracePerformanceEventManager, ZirconIdentity};
     use fidl::endpoints::create_proxy;
     use fuchsia_async as fasync;
 
@@ -1227,10 +1256,145 @@ mod tests {
             0,
             0,
             0,
+            None,
             &mut vmo_write_offset,
         );
 
         let ((), result) = futures::join!(mock_service, test_task);
         assert!(result.is_ok());
+    }
+
+    fn write_fxt_backtrace_record(
+        buf: &mut Vec<u8>,
+        ticks: u64,
+        process_koid: u64,
+        thread_koid: u64,
+        ips: &[u64],
+    ) {
+        let record_type: u64 = 10;
+        let sub_type: u64 = 2; // Backtrace
+        let thread_ref: u64 = 0; // Inline process and thread koid
+        let num_records: u64 = ips.len() as u64;
+        let flags: u64 = 0;
+        let size_words: u64 = 4 + num_records;
+
+        let header_val: u64 = (flags << 36)
+            | (num_records << 28)
+            | (thread_ref << 20)
+            | (sub_type << 16)
+            | (size_words << 4)
+            | record_type;
+
+        buf.extend_from_slice(&header_val.to_le_bytes());
+        buf.extend_from_slice(&ticks.to_le_bytes());
+        buf.extend_from_slice(&process_koid.to_le_bytes());
+        buf.extend_from_slice(&thread_koid.to_le_bytes());
+        for ip in ips {
+            buf.extend_from_slice(&ip.to_le_bytes());
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_stop_and_collect_samples_resolves_pid_tid() {
+        let (session_proxy, session_stream) = create_proxy::<profiler::SessionMarker>();
+        let (client_socket, server_socket) = zx::Socket::create_stream();
+
+        let mut socket_data = Vec::new();
+        socket_data.extend_from_slice(&FXT_MAGIC_BYTES);
+        // Mapped sample: process 1001, thread 1002 -> should resolve to pid 42, tid 43.
+        write_fxt_backtrace_record(&mut socket_data, 1000, 1001, 1002, &[0x12345678]);
+        // Unmapped sample: process 9999, thread 9998 -> should be dropped.
+        write_fxt_backtrace_record(&mut socket_data, 2000, 9999, 9998, &[0x87654321]);
+        server_socket.write(&socket_data).expect("failed to write FXT data to socket");
+
+        let mock_service = async move {
+            let mut session_stream = session_stream.into_stream();
+            let mut server_socket = Some(server_socket);
+            while let Some(Ok(request)) = session_stream.next().await {
+                match request {
+                    profiler::SessionRequest::Stop { responder } => {
+                        // Drop the server socket to signal EOF to the reader.
+                        drop(server_socket.take());
+                        let _ = responder.send(&profiler::SessionResult::default());
+                    }
+                    profiler::SessionRequest::Reset { responder } => {
+                        let _ = responder.send();
+                    }
+                    _ => {}
+                }
+            }
+        };
+
+        // Set up the pid/koid manager and register the mapping.
+        let manager = Arc::new(TracePerformanceEventManager::new(std::sync::Weak::new()));
+        let session = manager.open();
+        manager.record(
+            42,
+            43,
+            ZirconIdentity { process: zx::Koid::from_raw(1001), thread: zx::Koid::from_raw(1002) },
+        );
+
+        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let vmo_handle_copy =
+            perf_data_vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let seq_lock = OnceLock::new();
+        // SAFETY: The test maintains exclusive write access to this VMO.
+        let _ = seq_lock
+            .set(Ok(unsafe { create_seq_lock(&vmo_handle_copy, ESTIMATED_MMAP_BUFFER_SIZE) }));
+
+        let sample_type = (perf_event_sample_format_PERF_SAMPLE_IP
+            | perf_event_sample_format_PERF_SAMPLE_TID) as u64;
+        let mut vmo_write_offset = 0;
+        let client = fidl::AsyncSocket::from_socket(client_socket);
+
+        let test_task = stop_and_collect_samples(
+            session_proxy,
+            client,
+            &seq_lock,
+            &perf_data_vmo,
+            sample_type,
+            0,
+            0,
+            Some(&session),
+            &mut vmo_write_offset,
+        );
+
+        let ((), result) = futures::join!(mock_service, test_task);
+        assert!(result.is_ok());
+
+        // Header (8 bytes) + IP (8 bytes) + PID/TID (8 bytes) = 24 bytes.
+        let expected_record_size: u64 = 24;
+        assert_eq!(vmo_write_offset, expected_record_size);
+
+        let metadata = seq_lock.get().unwrap().as_ref().unwrap().get();
+        assert_eq!(metadata.data_head, expected_record_size);
+
+        let mut record_bytes = [0u8; 24];
+        perf_data_vmo.read(&mut record_bytes, metadata.data_offset).unwrap();
+
+        let record_type = u32::from_ne_bytes(record_bytes[0..4].try_into().unwrap());
+        assert_eq!(record_type, perf_event_type_PERF_RECORD_SAMPLE);
+
+        let misc = u16::from_ne_bytes(record_bytes[4..6].try_into().unwrap());
+        assert_eq!(misc, PERF_RECORD_MISC_KERNEL as u16);
+
+        let size = u16::from_ne_bytes(record_bytes[6..8].try_into().unwrap());
+        assert_eq!(size, expected_record_size as u16);
+
+        let ip = u64::from_ne_bytes(record_bytes[8..16].try_into().unwrap());
+        assert_eq!(ip, 0x12345678);
+
+        let pid = u32::from_ne_bytes(record_bytes[16..20].try_into().unwrap());
+        assert_eq!(pid, 42);
+
+        let tid = u32::from_ne_bytes(record_bytes[20..24].try_into().unwrap());
+        assert_eq!(tid, 43);
+
+        // Verify that unmapped sample was dropped and no extra bytes were written.
+        let mut trailing_bytes = [0u8; 24];
+        perf_data_vmo
+            .read(&mut trailing_bytes, metadata.data_offset + expected_record_size)
+            .unwrap();
+        assert_eq!(trailing_bytes, [0u8; 24]);
     }
 }
