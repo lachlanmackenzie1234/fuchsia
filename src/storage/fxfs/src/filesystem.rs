@@ -451,7 +451,11 @@ impl FxFilesystemBuilder {
         }
 
         let objects = Arc::new(ObjectManager::new(self.on_new_store));
-        let journal = Arc::new(Journal::new(objects.clone(), self.journal_options));
+        let journal = Arc::new(Journal::new(
+            objects.clone(),
+            self.journal_options,
+            self.options.hooks.clone(),
+        ));
 
         let image_builder_mode = self.options.image_builder_mode;
 

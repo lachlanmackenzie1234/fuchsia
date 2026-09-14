@@ -27,6 +27,7 @@ use crate::errors::FxfsError;
 use crate::filesystem::{
     ApplyContext, ApplyMode, FlushReason, ForceMajor, FxFilesystem, SyncOptions,
 };
+use crate::hooks::HooksHandle;
 use crate::log::*;
 use crate::lsm_tree::types::LayerIterator;
 use crate::object_handle::{ObjectHandle as _, ReadObjectHandle};
@@ -313,6 +314,7 @@ pub(super) fn journal_handle_options() -> HandleOptions {
 /// ability to have mutations that are to be applied atomically together.
 pub struct Journal {
     objects: Arc<ObjectManager>,
+    hooks: Arc<HooksHandle>,
     handle: OnceLock<DataObjectHandle<ObjectStore>>,
     super_block_manager: SuperBlockManager,
     inner: Mutex<Inner>,
@@ -354,6 +356,9 @@ struct Inner {
 
     // Disable compactions.
     disable_compactions: bool,
+
+    // When true, compactions are paused.
+    compactions_paused: bool,
 
     // True if compactions are running.
     compaction_running: bool,
@@ -506,10 +511,15 @@ impl<S: HandleOwner> JournalHandle for DataObjectHandle<S> {
 
 #[fxfs_trace::trace]
 impl Journal {
-    pub fn new(objects: Arc<ObjectManager>, options: JournalOptions) -> Journal {
+    pub fn new(
+        objects: Arc<ObjectManager>,
+        options: JournalOptions,
+        hooks: Arc<HooksHandle>,
+    ) -> Journal {
         let starting_checksum = rand::random_range(1..u64::MAX);
         Journal {
             objects: objects,
+            hooks,
             handle: OnceLock::new(),
             super_block_manager: SuperBlockManager::new(),
             inner: Mutex::new(Inner {
@@ -523,6 +533,7 @@ impl Journal {
                 terminate: false,
                 terminate_reason: None,
                 disable_compactions: false,
+                compactions_paused: false,
                 compaction_running: false,
                 sync_waker: None,
                 flushed_offset: 0,
@@ -1719,7 +1730,7 @@ impl Journal {
     /// Waits for there to be sufficient space in the journal.
     pub async fn check_journal_space(&self) -> Result<(), Error> {
         loop {
-            debug_assert_not_too_long!({
+            let listener = {
                 let inner = self.inner.lock();
                 if inner.terminate {
                     // If the flush error is set, this will never make progress, since we can't
@@ -1729,24 +1740,26 @@ impl Journal {
                         .as_ref()
                         .map(|e| format!("Journal closed with error: {:?}", e))
                         .unwrap_or_else(|| "Journal closed".to_string());
-                    break Err(anyhow!(FxfsError::JournalFlushError).context(context));
+                    return Err(anyhow!(FxfsError::JournalFlushError).context(context));
                 }
                 if self.objects.last_end_offset()
                     - inner.super_block_header.journal_checkpoint.file_offset
                     < inner.reclaim_size
                 {
-                    break Ok(());
+                    return Ok(());
                 }
                 if inner.image_builder_mode.is_some() {
-                    break Ok(());
+                    return Ok(());
                 }
                 if inner.disable_compactions {
-                    break Err(
+                    return Err(
                         anyhow!(FxfsError::JournalFlushError).context("Compactions disabled")
                     );
                 }
                 self.reclaim_event.listen()
-            });
+            };
+            self.hooks.on_waiting_for_journal_space();
+            debug_assert_not_too_long!(listener);
         }
     }
 
@@ -1852,6 +1865,7 @@ impl Journal {
                     if compact_fut.is_none()
                         && !inner.terminate
                         && !inner.disable_compactions
+                        && !inner.compactions_paused
                         && inner.image_builder_mode.is_none()
                         && journal_bytes > inner.reclaim_size / 2
                     {
@@ -2037,6 +2051,27 @@ impl Journal {
                 }
                 self.reclaim_event.listen()
             });
+        }
+    }
+
+    pub async fn pause_compactions(&self) {
+        loop {
+            debug_assert_not_too_long!({
+                let mut inner = self.inner.lock();
+                inner.compactions_paused = true;
+                if !inner.compaction_running {
+                    return;
+                }
+                self.reclaim_event.listen()
+            });
+        }
+    }
+
+    pub fn resume_compactions(&self) {
+        let mut inner = self.inner.lock();
+        inner.compactions_paused = false;
+        if let Some(waker) = inner.flush_waker.take() {
+            waker.wake();
         }
     }
 
