@@ -28,10 +28,11 @@ use starnix_uapi::arch32::{
     PERF_EVENT_IOC_DISABLE, PERF_EVENT_IOC_ENABLE, PERF_EVENT_IOC_ID,
     PERF_EVENT_IOC_MODIFY_ATTRIBUTES, PERF_EVENT_IOC_PAUSE_OUTPUT, PERF_EVENT_IOC_PERIOD,
     PERF_EVENT_IOC_QUERY_BPF, PERF_EVENT_IOC_REFRESH, PERF_EVENT_IOC_RESET, PERF_EVENT_IOC_SET_BPF,
-    PERF_EVENT_IOC_SET_FILTER, PERF_EVENT_IOC_SET_OUTPUT, PERF_RECORD_MISC_KERNEL,
+    PERF_EVENT_IOC_SET_FILTER, PERF_EVENT_IOC_SET_OUTPUT, PERF_RECORD_MISC_USER,
     perf_event_sample_format_PERF_SAMPLE_CALLCHAIN, perf_event_sample_format_PERF_SAMPLE_ID,
     perf_event_sample_format_PERF_SAMPLE_IDENTIFIER, perf_event_sample_format_PERF_SAMPLE_IP,
-    perf_event_sample_format_PERF_SAMPLE_PERIOD, perf_event_sample_format_PERF_SAMPLE_TID,
+    perf_event_sample_format_PERF_SAMPLE_PERIOD, perf_event_sample_format_PERF_SAMPLE_READ,
+    perf_event_sample_format_PERF_SAMPLE_TID, perf_event_sample_format_PERF_SAMPLE_TIME,
     perf_event_type_PERF_RECORD_LOST, perf_event_type_PERF_RECORD_SAMPLE,
 };
 use starnix_uapi::errors::Errno;
@@ -512,23 +513,13 @@ fn write_record_to_vmo(
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
+    read_format: u64,
     head: u64,
     metadata: &PerfMetadataValue,
     lost_events: &mut u64,
 ) -> u64 {
     let ring_buffer_size = metadata.data_size;
     if ring_buffer_size == 0 {
-        return 0;
-    }
-
-    // A sample with no instruction pointers cannot fill the ip/callchain
-    // fields below; drop it.
-    if perf_record_sample.ips.is_empty()
-        && (sample_type
-            & (perf_event_sample_format_PERF_SAMPLE_IP as u64
-                | perf_event_sample_format_PERF_SAMPLE_CALLCHAIN as u64))
-            != 0
-    {
         return 0;
     }
     // First, build record to determine its size (so that we can fill out `size` in header).
@@ -539,14 +530,20 @@ fn write_record_to_vmo(
     }
     // ip
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_IP as u64) != 0 {
-        sample.extend(perf_record_sample.ips[0].to_ne_bytes());
+        let ip = perf_record_sample.ips.first().copied().unwrap_or(0);
+        sample.extend(ip.to_ne_bytes());
     }
 
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_TID as u64) != 0 {
         // pid
-        sample.extend(perf_record_sample.pid.expect("missing pid").to_ne_bytes());
+        sample.extend(perf_record_sample.pid.unwrap_or(0).to_ne_bytes());
         // tid
-        sample.extend(perf_record_sample.tid.expect("missing tid").to_ne_bytes());
+        sample.extend(perf_record_sample.tid.unwrap_or(0).to_ne_bytes());
+    }
+
+    // time: when the sample was taken.
+    if (sample_type & perf_event_sample_format_PERF_SAMPLE_TIME as u64) != 0 {
+        sample.extend((perf_record_sample.time.into_nanos() as u64).to_ne_bytes());
     }
 
     // id
@@ -559,6 +556,18 @@ fn write_record_to_vmo(
         sample.extend(sample_period.to_ne_bytes());
     }
 
+    // read_format value.
+    if (sample_type & perf_event_sample_format_PERF_SAMPLE_READ as u64) != 0 {
+        if (read_format & perf_event_read_format_PERF_FORMAT_GROUP as u64) != 0 {
+            // Group reads start with the number of events followed by each
+            // event's value; only the timebase event exists.
+            sample.extend(1u64.to_ne_bytes());
+            sample.extend(0u64.to_ne_bytes());
+        } else {
+            sample.extend(0u64.to_ne_bytes());
+        }
+    }
+
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_CALLCHAIN as u64) != 0 {
         // nr
         sample.extend(perf_record_sample.ips.len().to_ne_bytes());
@@ -568,7 +577,7 @@ fn write_record_to_vmo(
             sample.extend(i.to_ne_bytes());
         }
     }
-    // The remaining data are not defined for now.
+    // The remaining sample_type fields are not implemented.
 
     // Now that we know the sample size, we can calculate the record size.
     // record_size = perf_event_header_size + sample_size.
@@ -593,13 +602,11 @@ fn write_record_to_vmo(
         return 0;
     };
 
-    track_stub!(
-        TODO("https://fxbug.dev/432501467"),
-        "[perf_event_open] determines whether the record is KERNEL or USER"
-    );
     let perf_event_header = perf_event_header {
+        // These are samples of user-space execution; readers take the
+        // sample's cpu mode from the misc bits.
         type_: perf_event_type_PERF_RECORD_SAMPLE,
-        misc: PERF_RECORD_MISC_KERNEL as u16,
+        misc: PERF_RECORD_MISC_USER as u16,
         size: record_size,
     };
 
@@ -691,6 +698,8 @@ fn write_circular(
 struct PerfRecordSample {
     pid: Option<u32>,
     tid: Option<u32>,
+    // Timestamp of when the sample was taken, for PERF_SAMPLE_TIME.
+    time: zx::BootInstant,
     // Instruction pointers (currently this is the address). First one is `ip` param.
     ips: Vec<u64>,
 }
@@ -764,6 +773,7 @@ async fn stop_and_collect_samples(
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
+    read_format: u64,
     koid_session: Option<&PidKoidSession>,
     vmo_write_offset: &mut u64,
 ) -> Result<(), Errno> {
@@ -822,8 +832,13 @@ async fn stop_and_collect_samples(
                         }) else {
                             continue;
                         };
-                        let perf_record_sample =
-                            PerfRecordSample { pid: Some(pid as u32), tid: Some(tid as u32), ips };
+                        let time = zx::BootInstant::from_nanos(backtrace.timestamp.max(0));
+                        let perf_record_sample = PerfRecordSample {
+                            pid: Some(pid as u32),
+                            tid: Some(tid as u32),
+                            time,
+                            ips,
+                        };
                         let metadata = seq_lock_wrapper.get();
                         let bytes_written = write_record_to_vmo(
                             perf_record_sample,
@@ -831,6 +846,7 @@ async fn stop_and_collect_samples(
                             sample_type,
                             sample_id,
                             sample_period,
+                            read_format,
                             *vmo_write_offset,
                             &metadata,
                             &mut lost_events,
@@ -1125,6 +1141,7 @@ pub fn sys_perf_event_open(
                             perf_event_file.sample_type,
                             perf_event_file.sample_id,
                             sample_period_in_ticks,
+                            perf_event_file.attr.read_format,
                             pid_koid_session.as_ref(),
                             &mut vmo_write_offset,
                         )
@@ -1256,6 +1273,7 @@ mod tests {
             0,
             0,
             0,
+            0,
             None,
             &mut vmo_write_offset,
         );
@@ -1355,6 +1373,7 @@ mod tests {
             sample_type,
             0,
             0,
+            0,
             Some(&session),
             &mut vmo_write_offset,
         );
@@ -1376,7 +1395,7 @@ mod tests {
         assert_eq!(record_type, perf_event_type_PERF_RECORD_SAMPLE);
 
         let misc = u16::from_ne_bytes(record_bytes[4..6].try_into().unwrap());
-        assert_eq!(misc, PERF_RECORD_MISC_KERNEL as u16);
+        assert_eq!(misc, PERF_RECORD_MISC_USER as u16);
 
         let size = u16::from_ne_bytes(record_bytes[6..8].try_into().unwrap());
         assert_eq!(size, expected_record_size as u16);
