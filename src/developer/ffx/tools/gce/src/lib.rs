@@ -8,8 +8,8 @@ use fho::{FfxTool, FhoEnvironment, Result};
 mod args;
 mod subtools;
 
-pub use args::{GceCommand, GceSubCommand, ListCommand, ShowCommand};
-pub use subtools::{ListTool, ShowTool};
+pub use args::{GceCommand, GceSubCommand, ListCommand, SerialCommand, ShowCommand};
+pub use subtools::{ListTool, SerialTool, ShowTool};
 
 impl ToolSuiteCommand for GceCommand {
     type SubCommand = GceSubCommand;
@@ -31,6 +31,7 @@ impl SubtoolSuite for GceSuite {
         Ok(match subcommand {
             GceSubCommand::List(cmd) => Subtool::new(ListTool::from_env(env, cmd).await?),
             GceSubCommand::Show(cmd) => Subtool::new(ShowTool::from_env(env, cmd).await?),
+            GceSubCommand::Serial(cmd) => Subtool::new(SerialTool::from_env(env, cmd).await?),
         })
     }
 }
@@ -62,6 +63,21 @@ mod tests {
                 assert_eq!(s.name, "test-vm");
             }
             _ => panic!("expected Show subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_parse_serial_command() {
+        let cmd =
+            GceCommand::from_args(&["gce"], &["serial", "test-vm", "--follow", "--port", "1"])
+                .expect("parsed serial");
+        match cmd.subcommand {
+            GceSubCommand::Serial(s) => {
+                assert_eq!(s.name, "test-vm");
+                assert!(s.follow);
+                assert_eq!(s.port, 1);
+            }
+            _ => panic!("expected Serial subcommand"),
         }
     }
 }

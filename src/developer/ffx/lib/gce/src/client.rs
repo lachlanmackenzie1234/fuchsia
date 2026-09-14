@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::models::{Instance, InstanceList};
+use crate::models::{Instance, InstanceList, SerialPortOutput};
 use anyhow::{Context, Result, bail};
 use fuchsia_hyper::{HttpsClient, new_https_client};
 use http_body_util::BodyExt;
@@ -66,12 +66,7 @@ impl GceClient {
         Ok(parsed)
     }
 
-    pub async fn get_instance(
-        &self,
-        project: &str,
-        zone: &str,
-        instance_name: &str,
-    ) -> Result<Instance> {
+    fn instance_url(&self, project: &str, zone: &str, instance_name: &str) -> Result<Url> {
         let mut url = self.base_url.clone();
         url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(&[
             "projects",
@@ -81,10 +76,35 @@ impl GceClient {
             "instances",
             instance_name,
         ]);
-        self.send_request(Method::GET, url, None).await
+        Ok(url)
     }
 
-    pub async fn list_instances(&self, project: &str, zone: &str) -> Result<Vec<Instance>> {
+    fn serial_port_output_url(
+        &self,
+        project: &str,
+        zone: &str,
+        instance_name: &str,
+        port: u32,
+        start: Option<i64>,
+    ) -> Result<Url> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(&[
+            "projects",
+            project,
+            "zones",
+            zone,
+            "instances",
+            instance_name,
+            "serialPort",
+        ]);
+        url.query_pairs_mut().append_pair("port", &port.to_string());
+        if let Some(s) = start {
+            url.query_pairs_mut().append_pair("start", &s.to_string());
+        }
+        Ok(url)
+    }
+
+    fn list_instances_url(&self, project: &str, zone: &str) -> Result<Url> {
         let mut url = self.base_url.clone();
         url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(&[
             "projects",
@@ -93,6 +113,33 @@ impl GceClient {
             zone,
             "instances",
         ]);
+        Ok(url)
+    }
+
+    pub async fn get_instance(
+        &self,
+        project: &str,
+        zone: &str,
+        instance_name: &str,
+    ) -> Result<Instance> {
+        let url = self.instance_url(project, zone, instance_name)?;
+        self.send_request(Method::GET, url, None).await
+    }
+
+    pub async fn get_serial_port_output(
+        &self,
+        project: &str,
+        zone: &str,
+        instance_name: &str,
+        port: u32,
+        start: Option<i64>,
+    ) -> Result<SerialPortOutput> {
+        let url = self.serial_port_output_url(project, zone, instance_name, port, start)?;
+        self.send_request(Method::GET, url, None).await
+    }
+
+    pub async fn list_instances(&self, project: &str, zone: &str) -> Result<Vec<Instance>> {
+        let url = self.list_instances_url(project, zone)?;
         let list: InstanceList = self.send_request(Method::GET, url, None).await?;
         Ok(list.items)
     }
@@ -103,16 +150,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_client_url_construction() {
+    fn test_list_instances_url_construction() {
         let client = GceClient::new("token123".to_string());
-        let mut url = client.base_url.clone();
-        url.path_segments_mut().unwrap().extend(&[
-            "projects",
-            "test-p",
-            "zones",
-            "test-z",
-            "instances",
-        ]);
+        let url = client.list_instances_url("test-p", "test-z").unwrap();
         assert_eq!(
             url.as_str(),
             "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances"
@@ -122,18 +162,28 @@ mod tests {
     #[test]
     fn test_get_instance_url_construction() {
         let client = GceClient::new("token123".to_string());
-        let mut url = client.base_url.clone();
-        url.path_segments_mut().unwrap().extend(&[
-            "projects",
-            "test-p",
-            "zones",
-            "test-z",
-            "instances",
-            "test-inst",
-        ]);
+        let url = client.instance_url("test-p", "test-z", "test-inst").unwrap();
         assert_eq!(
             url.as_str(),
             "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst"
+        );
+    }
+
+    #[test]
+    fn test_get_serial_port_output_url_construction() {
+        let client = GceClient::new("token123".to_string());
+        let url =
+            client.serial_port_output_url("test-p", "test-z", "test-inst", 1, Some(100)).unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst/serialPort?port=1&start=100"
+        );
+
+        let url_no_start =
+            client.serial_port_output_url("test-p", "test-z", "test-inst", 1, None).unwrap();
+        assert_eq!(
+            url_no_start.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst/serialPort?port=1"
         );
     }
 }

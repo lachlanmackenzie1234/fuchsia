@@ -63,6 +63,31 @@ pub struct InstanceList {
     pub items: Vec<Instance>,
 }
 
+/// Represents serial port output returned by GCE REST API.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialPortOutput {
+    #[serde(default)]
+    pub contents: String,
+    #[serde(default, deserialize_with = "deserialize_string_as_i64")]
+    pub start: i64,
+    #[serde(default, deserialize_with = "deserialize_string_as_i64")]
+    pub next: i64,
+}
+
+/// Deserializes an int64 field encoded as a decimal JSON string.
+///
+/// In the Google Compute Engine REST API, 64-bit integers (`start` and `next`)
+/// are returned as JSON decimal strings (e.g. `"1024"`) per protobuf-to-JSON mapping
+/// rules to prevent precision loss in JavaScript clients.
+fn deserialize_string_as_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse::<i64>().map_err(serde::de::Error::custom)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +128,20 @@ mod tests {
         let json_str = r#"{}"#;
         let list: InstanceList = serde_json::from_str(json_str).expect("parsed empty list");
         assert!(list.items.is_empty());
+    }
+
+    #[test]
+    fn test_serial_port_output_deserialization() {
+        let json_str = r#"{"contents": "world", "start": "10", "next": "20"}"#;
+        let spo: SerialPortOutput = serde_json::from_str(json_str).unwrap();
+        assert_eq!(spo.contents, "world");
+        assert_eq!(spo.start, 10);
+        assert_eq!(spo.next, 20);
+    }
+
+    #[test]
+    fn test_serial_port_output_rejects_numeric_literal() {
+        let json_int = r#"{"contents": "hello", "start": 0, "next": 10}"#;
+        assert!(serde_json::from_str::<SerialPortOutput>(json_int).is_err());
     }
 }
