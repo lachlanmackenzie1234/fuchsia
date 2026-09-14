@@ -47,6 +47,14 @@ class TestCommitMessageChecker(unittest.TestCase):
         findings = commit_msg_checker.check_commit_message(msg)
         self.assertEqual(findings, [])
 
+    def test_subject_line_too_long_exempt_autosquash(self) -> None:
+        for prefix in ("fixup!", "squash!", "amend!", "fixup! fixup!"):
+            with self.subTest(prefix=prefix):
+                long_subject = f"{prefix} Subject that is extremely long and exceeds the typical 65 character limit"
+                msg = f"{long_subject}\n\nBug: 1\nTest: 1"
+                findings = commit_msg_checker.check_commit_message(msg)
+                self.assertEqual(findings, [])
+
     def test_body_line_too_long_ignores_urls(self) -> None:
         long_url = "https://fuchsia.dev/" + "a" * 80
         msg = f"Subject line\n\nSee {long_url} for details.\n\nBug: 1\nTest: 1"
@@ -56,6 +64,17 @@ class TestCommitMessageChecker(unittest.TestCase):
     def test_quoted_revert_long_line_exempt(self) -> None:
         msg = (
             'Revert "Subject"\n\n' "> " + "a" * 80 + "\n\n" "Bug: 1\n" "Test: 1"
+        )
+        findings = commit_msg_checker.check_commit_message(msg)
+        self.assertEqual(findings, [])
+
+    def test_comment_long_line_exempt(self) -> None:
+        msg = (
+            "Subject line\n\n"
+            "Body line.\n\n"
+            "# " + "a" * 80 + "\n\n"
+            "Bug: 1\n"
+            "Test: 1\n"
         )
         findings = commit_msg_checker.check_commit_message(msg)
         self.assertEqual(findings, [])
