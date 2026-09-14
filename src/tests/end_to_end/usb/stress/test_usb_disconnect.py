@@ -189,7 +189,6 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
                 self.dut.ffx.notify_intentional_disconnect()
                 self.dut.ffx.run(
                     cmd=["target", "reboot", "--bootloader"],
-                    include_target_name=True,
                     log_status_on_failure=False,
                     timeout=15,
                 )
