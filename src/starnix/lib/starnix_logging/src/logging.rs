@@ -166,10 +166,14 @@ pub fn impossible_error(status: zx::Status) -> Errno {
 }
 
 pub fn set_zx_name(obj: &impl zx::AsHandleRef, name: impl AsRef<[u8]>) {
-    obj.as_handle_ref()
-        .set_name(&zx::Name::from_bytes_lossy(name.as_ref()))
-        .map_err(impossible_error)
-        .unwrap();
+    match obj.as_handle_ref().set_name(&zx::Name::from_bytes_lossy(name.as_ref())) {
+        // ZX_ERR_BAD_STATE occurs if the target thread has exited or is in the
+        // DYING/DEAD state. Allow it since the thread is in the process of tearing down.
+        Ok(()) | Err(zx::Status::BAD_STATE) => {}
+        Err(status) => {
+            impossible_error(status);
+        }
+    }
 }
 
 pub fn with_zx_name<O: zx::AsHandleRef>(obj: O, name: impl AsRef<[u8]>) -> O {
@@ -226,5 +230,50 @@ impl SyscallLogFilter {
     pub fn matches(&self, command: &TaskCommand) -> bool {
         let matcher = self.match_string.as_bytes();
         command.as_bytes().windows(matcher.len()).any(|w| w == matcher)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    unsafe extern "C" {
+        fn zx_thread_self() -> zx::sys::zx_handle_t;
+    }
+
+    #[test]
+    fn test_set_zx_name_on_terminated_thread() {
+        let mut terminated_thread = None;
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                terminated_thread = Some(
+                    #[allow(clippy::undocumented_unsafe_blocks)]
+                    unsafe {
+                        let thread = zx::Unowned::<zx::Thread>::from_raw_handle(zx_thread_self());
+                        thread.duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    }
+                    .unwrap(),
+                );
+            });
+        });
+        let terminated_thread = terminated_thread.expect("failed to obtain thread handle");
+        let _ = terminated_thread
+            .wait_one(zx::Signals::THREAD_TERMINATED, zx::MonotonicInstant::INFINITE);
+
+        // The scoped thread has terminated and is in ZX_THREAD_STATE_DEAD.
+        // In the Zircon microkernel, ThreadDispatcher::set_name returns ZX_ERR_BAD_STATE
+        // because core_thread_ is nullptr.
+        // Before fix: set_zx_name calls impossible_error(BAD_STATE) and panics.
+        // After fix: set_zx_name tolerates ZX_ERR_BAD_STATE and returns Ok(()).
+        set_zx_name(&terminated_thread, b"dead-thread-name");
+    }
+
+    #[test]
+    #[should_panic(expected = "encountered impossible error: BAD_HANDLE")]
+    #[allow(clippy::undocumented_unsafe_blocks)]
+    fn test_set_zx_name_invalid_handle_panics() {
+        let invalid =
+            unsafe { zx::Unowned::<zx::Thread>::from_raw_handle(zx::sys::ZX_HANDLE_INVALID) };
+        set_zx_name(&invalid, b"any-name");
     }
 }
