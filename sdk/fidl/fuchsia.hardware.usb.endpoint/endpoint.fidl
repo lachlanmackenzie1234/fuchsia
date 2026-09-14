@@ -83,10 +83,17 @@ type Completion = resource table {
     /// - `ZX_ERR_NOT_SUPPORTED`: The requested operation or feature is unsupported (e.g. the
     ///   request requires scatter-gather on an endpoint where `supports_scatter_gather` is
     ///   false, such as spanning non-contiguous physical pages or multiple buffer regions).
-    /// - `ZX_ERR_IO_NOT_PRESENT`: The device is no longer present.
+    /// - `ZX_ERR_IO_NOT_PRESENT`: The device is no longer present (e.g. physically
+    ///   disconnected or powered off). When received, callers should terminate
+    ///   transfer loops without re-queuing.
     /// - `ZX_ERR_INVALID_ARGS`: Invalid request parameters.
     /// - `ZX_ERR_BAD_STATE`: Driver is in an invalid state.
-    /// - `ZX_ERR_IO_REFUSED`: The device refused the transfer.
+    /// - `ZX_ERR_IO_REFUSED`: The device or controller refused or halted the
+    ///   transfer (e.g. the endpoint was halted/stalled by host
+    ///   `SET_FEATURE(ENDPOINT_HALT)` or hardware transfer abort). Buffers may be
+    ///   re-queued/recycled once the halt condition is cleared.
+    /// - `ZX_ERR_CANCELED`: The transfer was explicitly canceled by client software
+    ///   (e.g. via `CancelAll`).
     /// - `ZX_ERR_NO_MEMORY`: Memory allocation failed.
     /// - `ZX_ERR_INTERNAL`: Internal driver error.
     /// - `ZX_ERR_IO_MISSED_DEADLINE`: The transfer missed its deadline.

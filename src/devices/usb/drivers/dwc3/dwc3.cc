@@ -1645,7 +1645,7 @@ void Dwc3::CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& comple
     return;
   }
 
-  uep->server->CancelAll(ZX_ERR_IO_NOT_PRESENT);
+  uep->server->CancelAll(ZX_ERR_IO_REFUSED);
   completer.Reply(zx::ok());
 }
 
@@ -1728,7 +1728,7 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
 
 void Dwc3::EpServer::CancelAll(CancelAllCompleter::Sync& completer) {
   TRACE_DURATION("dwc3", "Dwc3::EpServer::CancelAll");
-  CancelAll(ZX_ERR_IO_NOT_PRESENT);
+  CancelAll(ZX_ERR_CANCELED);
   if (!dwc3_->controller_started_ ||
       (uep_->ep.transfer_state == Endpoint::TransferState::kIdle && active_reqs.empty())) {
     completer.Reply(zx::ok());
