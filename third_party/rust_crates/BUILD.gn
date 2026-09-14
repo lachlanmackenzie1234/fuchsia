@@ -628,11 +628,11 @@ group("eui48-1.1.0") {
 }
 
 group("event-listener") {
-  public_deps = [ ":event-listener-v5_4_1" ]
+  public_deps = [ ":event-listener-v5_4_2" ]
 }
 
-group("event-listener-5.4.1") {
-  public_deps = [ ":event-listener-v5_4_1" ]
+group("event-listener-5.4.2") {
+  public_deps = [ ":event-listener-v5_4_2" ]
 }
 
 group("fatfs") {
@@ -3955,7 +3955,7 @@ rustc_library("async-lock-v3_4_2") {
 
   deps = []
   deps += [ ":event-listener-strategy-v0_5_4" ]
-  deps += [ ":event-listener-v5_4_1" ]
+  deps += [ ":event-listener-v5_4_2" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []
@@ -3989,7 +3989,7 @@ rustc_library("async-notify-v0_3_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":event-listener-v5_4_1" ]
+  deps += [ ":event-listener-v5_4_2" ]
   deps += [ ":futures-core-v0_3_32" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
 
@@ -8986,26 +8986,25 @@ rustc_library("eui48-v1_1_0") {
   applicable_licenses = [ ":eui48-v1_1_0.license" ]
 }
 
-license("event-listener-v5_4_1.license") {
+license("event-listener-v5_4_2.license") {
   public_package_name = "event_listener"
   license_files = [
-    "//third_party/rust_crates/vendor/event-listener-5.4.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/event-listener-5.4.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/event-listener-5.4.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/event-listener-5.4.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("event-listener-v5_4_1") {
+rustc_library("event-listener-v5_4_2") {
   crate_name = "event_listener"
   source_root =
-      "//third_party/rust_crates/vendor/event-listener-5.4.1/src/lib.rs"
-  output_name = "event_listener-d20650aff37f322f"
+      "//third_party/rust_crates/vendor/event-listener-5.4.2/src/lib.rs"
+  output_name = "event_listener-873ab4341946f12"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":concurrent-queue-v2_5_0" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   if (!(current_cpu == "wasm32")) {
     deps += [ ":parking-v2_2_1" ]
@@ -9015,8 +9014,8 @@ rustc_library("event-listener-v5_4_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d20650aff37f322f",
-    "-Cextra-filename=-d20650aff37f322f",
+    "-Cmetadata=873ab4341946f12",
+    "-Cextra-filename=-873ab4341946f12",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"parking\"",
     "--cfg=feature=\"std\"",
@@ -9024,7 +9023,7 @@ rustc_library("event-listener-v5_4_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":event-listener-v5_4_1.license" ]
+  applicable_licenses = [ ":event-listener-v5_4_2.license" ]
 }
 
 license("event-listener-strategy-v0_5_4.license") {
@@ -9045,7 +9044,7 @@ rustc_library("event-listener-strategy-v0_5_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":event-listener-v5_4_1" ]
+  deps += [ ":event-listener-v5_4_2" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []

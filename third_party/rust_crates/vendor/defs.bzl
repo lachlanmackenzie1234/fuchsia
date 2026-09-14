@@ -354,7 +354,7 @@ _NORMAL_DEPENDENCIES = {
             "ecb": Label("//third_party/rust_crates/vendor/ecb-0.2.0:ecb"),
             "either": Label("//third_party/rust_crates/vendor/either-1.15.0:either"),
             "eui48": Label("//third_party/rust_crates/vendor/eui48-1.1.0:eui48"),
-            "event-listener": Label("//third_party/rust_crates/vendor/event-listener-5.4.1:event_listener"),
+            "event-listener": Label("//third_party/rust_crates/vendor/event-listener-5.4.2:event_listener"),
             "fatfs": Label("//third_party/rust_crates/vendor/fatfs-0.3.6:fatfs"),
             "figment": Label("//third_party/rust_crates/vendor/figment-0.10.19:figment"),
             "flate2": Label("//third_party/rust_crates/vendor/flate2-1.1.9:flate2"),
