@@ -34,6 +34,7 @@ type Config struct {
 	PolicyExceptions    map[string]map[string]RuleMetadata
 	AllowedLicenses     map[string]map[string]RuleMetadata
 	CopyrightExtensions map[string]bool
+	VirtualReadmeDir    func(projectPath string) string
 }
 
 // AddCopyrightExtension normalizes and adds a single file extension to CopyrightExtensions.

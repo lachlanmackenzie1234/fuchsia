@@ -118,11 +118,31 @@ func (c *MasterConfig) AssetRootFor(projectPath string) string {
 		fDir = resolveFuchsiaDir(c.FuchsiaDir)
 	}
 
-	cleanPath := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(projectPath)), "/")
-	isPrivate := (c != nil && c.IsPrivateProject(projectPath)) || (c == nil && (strings.HasPrefix(cleanPath, "vendor/") || cleanPath == "vendor"))
-	if isPrivate {
+	cleanPath := projectPath
+	if strings.HasPrefix(cleanPath, "//") {
+		cleanPath = strings.TrimPrefix(cleanPath, "//")
+	} else if filepath.IsAbs(cleanPath) {
+		if rel, err := filepath.Rel(fDir, cleanPath); err == nil && !strings.HasPrefix(rel, "..") {
+			cleanPath = rel
+		}
+	}
+	cleanPath = strings.TrimLeft(filepath.ToSlash(filepath.Clean(cleanPath)), "/")
+
+	// 1. Check if the project resides in a specific vendor repository (e.g. vendor/<name>/...)
+	parts := strings.Split(cleanPath, "/")
+	if len(parts) >= 2 && parts[0] == "vendor" && parts[1] != "" && parts[1] != "." && parts[1] != ".." {
+		vendorAssetDir := filepath.Join(fDir, "vendor", parts[1], "tools", "check-licenses", "assets")
+		if info, err := os.Stat(vendorAssetDir); err == nil && info.IsDir() {
+			return vendorAssetDir
+		}
+	}
+
+	// 2. Check if the project is private (via Jiri manifest metadata, package name, or vendor path)
+	if strings.HasPrefix(cleanPath, "vendor/") || cleanPath == "vendor" || c.IsPrivateProject(cleanPath) {
 		return filepath.Join(fDir, "vendor", "google", "tools", "check-licenses", "assets")
 	}
+
+	// 3. Default to the root open-source repository
 	return filepath.Join(fDir, "tools", "check-licenses", "assets")
 }
 

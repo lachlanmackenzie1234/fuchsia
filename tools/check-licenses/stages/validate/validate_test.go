@@ -318,7 +318,120 @@ func TestValidator_RunFailure_MissingReadme(t *testing.T) {
 	if !strings.Contains(errors[0].Issue, "Third-party project is missing a README.fuchsia file") {
 		t.Errorf("Expected error to contain missing readme issue description, got: %v", errors[0].Issue)
 	}
+	if !strings.Contains(errors[0].Issue, "Or add a virtual README to tools/check-licenses/assets/readmes/third_party/foo/README.fuchsia") {
+		t.Errorf("Expected error to contain public virtual README path, got: %s", errors[0].Issue)
+	}
 	assertFindingStructure(t, errors[0].Issue, true)
+}
+
+func TestValidator_RunFailure_MissingReadme_PrivateAndVendor(t *testing.T) {
+	fuchsiaDir := t.TempDir()
+
+	// 1. Private vendor project without custom resolver -> should suggest vendor/google/tools/check-licenses/assets/readmes
+	validatorDefault := NewValidator(fuchsiaDir, Config{})
+	inChan := make(chan pipeline.ClassifiedFile, 1)
+	inChan <- pipeline.ClassifiedFile{
+		Path:          filepath.Join(fuchsiaDir, "vendor/google/secret/LICENSE"),
+		ProjectRoot:   filepath.Join(fuchsiaDir, "vendor/google/secret"),
+		IsLicenseFile: true,
+		HasReadme:     false,
+		Matches:       []pipeline.LicenseMatch{{SPDXID: "Apache-2.0", MatchType: "Approved"}},
+	}
+	close(inChan)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	outChan, err := validatorDefault.Run(ctx, inChan)
+	if err != nil {
+		t.Fatalf("Failed to run validator: %v", err)
+	}
+
+	var errors []pipeline.ComplianceError
+	for err := range outChan {
+		errors = append(errors, err)
+	}
+
+	if len(errors) != 1 {
+		t.Fatalf("Expected 1 error, got %d", len(errors))
+	}
+	expectedPrivateMsg := "Or add a virtual README to vendor/google/tools/check-licenses/assets/readmes/vendor/google/secret/README.fuchsia"
+	if !strings.Contains(errors[0].Issue, expectedPrivateMsg) {
+		t.Errorf("Expected error to contain %q, got: %s", expectedPrivateMsg, errors[0].Issue)
+	}
+	if got := validatorDefault.virtualReadmeDir("//vendor/google/secret"); got != "vendor/google/tools/check-licenses/assets/readmes" {
+		t.Errorf("virtualReadmeDir('//vendor/google/secret') = %q, want vendor/google assets", got)
+	}
+	if got := validatorDefault.virtualReadmeDir("//third_party/foo"); got != "tools/check-licenses/assets/readmes" {
+		t.Errorf("virtualReadmeDir('//third_party/foo') = %q, want public assets", got)
+	}
+
+	// 2. Custom VirtualReadmeDir resolver (e.g. for Jiri private projects in prebuilt/ or partner vendor repos)
+	validatorCustom := NewValidator(fuchsiaDir, Config{
+		VirtualReadmeDir: func(projectPath string) string {
+			if strings.HasPrefix(projectPath, "prebuilt/internal/") {
+				return "vendor/google/tools/check-licenses/assets/readmes"
+			}
+			if strings.HasPrefix(projectPath, "vendor/partner/") {
+				return "vendor/partner/tools/check-licenses/assets/readmes"
+			}
+			return "tools/check-licenses/assets/readmes"
+		},
+	})
+
+	inChan2 := make(chan pipeline.ClassifiedFile, 2)
+	inChan2 <- pipeline.ClassifiedFile{
+		Path:          filepath.Join(fuchsiaDir, "prebuilt/internal/firmware/LICENSE"),
+		ProjectRoot:   filepath.Join(fuchsiaDir, "prebuilt/internal/firmware"),
+		IsLicenseFile: true,
+		HasReadme:     false,
+		Matches:       []pipeline.LicenseMatch{{SPDXID: "Apache-2.0", MatchType: "Approved"}},
+	}
+	inChan2 <- pipeline.ClassifiedFile{
+		Path:          filepath.Join(fuchsiaDir, "vendor/partner/pkg/LICENSE"),
+		ProjectRoot:   filepath.Join(fuchsiaDir, "vendor/partner/pkg"),
+		IsLicenseFile: true,
+		HasReadme:     false,
+		Matches:       []pipeline.LicenseMatch{{SPDXID: "Apache-2.0", MatchType: "Approved"}},
+	}
+	close(inChan2)
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel2()
+
+	outChan2, err := validatorCustom.Run(ctx2, inChan2)
+	if err != nil {
+		t.Fatalf("Failed to run validator: %v", err)
+	}
+
+	var errors2 []pipeline.ComplianceError
+	for err := range outChan2 {
+		errors2 = append(errors2, err)
+	}
+
+	if len(errors2) != 2 {
+		t.Fatalf("Expected 2 errors, got %d", len(errors2))
+	}
+
+	expectedPrebuiltMsg := "Or add a virtual README to vendor/google/tools/check-licenses/assets/readmes/prebuilt/internal/firmware/README.fuchsia"
+	expectedPartnerMsg := "Or add a virtual README to vendor/partner/tools/check-licenses/assets/readmes/vendor/partner/pkg/README.fuchsia"
+
+	foundPrebuilt := false
+	foundPartner := false
+	for _, e := range errors2 {
+		if strings.Contains(e.Issue, expectedPrebuiltMsg) {
+			foundPrebuilt = true
+		}
+		if strings.Contains(e.Issue, expectedPartnerMsg) {
+			foundPartner = true
+		}
+	}
+	if !foundPrebuilt {
+		t.Errorf("Expected to find error with %q", expectedPrebuiltMsg)
+	}
+	if !foundPartner {
+		t.Errorf("Expected to find error with %q", expectedPartnerMsg)
+	}
 }
 
 func TestAddCopyrightToBytes_ShebangAndLineEndings(t *testing.T) {

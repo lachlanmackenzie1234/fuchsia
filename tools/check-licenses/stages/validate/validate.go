@@ -291,6 +291,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 				relProjRoot = filepath.ToSlash(relProjRoot)
 				if !v.isPolicyExceptionAllowed(PolicyNoReadme, relProjRoot) {
 					metrics.ValidationErrors.Inc(PolicyNoReadme)
+					virtualReadmeDir := v.virtualReadmeDir(relProjRoot)
 					err := pipeline.ComplianceError{
 						CheckName: PolicyNoReadme,
 						Project:   proj,
@@ -303,12 +304,12 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 								"Remediation:\n"+
 								"  To fix this:\n"+
 								"    - Add a README.fuchsia to %s/README.fuchsia\n"+
-								"    - Or add a virtual README to tools/check-licenses/assets/readmes/%s/README.fuchsia\n"+
+								"    - Or add a virtual README to %s/%s/README.fuchsia\n"+
 								"    - Or allow an exception by running:\n"+
 								"        fx check-licenses policy add -bug BUG_ID AllProjectsMustHaveAReadme %s\n\n"+
 								"Documentation:\n"+
 								"  https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata",
-							relProjRoot, relProjRoot, relProjRoot, relProjRoot),
+							relProjRoot, relProjRoot, virtualReadmeDir, relProjRoot, relProjRoot),
 					}
 					select {
 					case <-ctx.Done():
@@ -361,4 +362,15 @@ func isAllowed(targetMap map[string]map[string]RuleMetadata, key, targetPath str
 		}
 	}
 	return false
+}
+
+func (v *Validator) virtualReadmeDir(projectPath string) string {
+	if v.Config.VirtualReadmeDir != nil {
+		return v.Config.VirtualReadmeDir(projectPath)
+	}
+	cleanPath := strings.TrimPrefix(projectPath, "//")
+	if strings.HasPrefix(cleanPath, "vendor/") || cleanPath == "vendor" {
+		return "vendor/google/tools/check-licenses/assets/readmes"
+	}
+	return "tools/check-licenses/assets/readmes"
 }
