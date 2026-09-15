@@ -608,4 +608,74 @@ TEST(CodecAdapterLc3EncoderTest, ProcessInputChunkDataValidationAndUnalignedInpu
       static_cast<int>(min_output_size));
 }
 
+TEST(CodecAdapterLc3DecoderTest, SamplingFrequency44100HzPreservedInOutputFormat) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Sampling_Frequency 0x07 (44.1 kHz), Frame_Duration 0x01 (10 ms), 1 ch, 40 bytes.
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x07,                    // Sampling_Frequency: 44.1 kHz
+      0x02, 0x02, 0x01,                    // Frame_Duration: 10 ms
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation: LF
+      0x03, 0x04, 0x00, 0x28               // Octets_Per_Codec_Frame: 40
+  };
+
+  ASSERT_EQ(decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes))),
+            TestCodecAdapterLc3Decoder::kOk);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+
+  // liblc3 uses 480 samples per 10ms frame for 44.1 kHz, so MinOutputBufferSize is 480 * 2 = 960 B.
+  EXPECT_EQ(decoder.MinOutputBufferSize(), 960u);
+  // Output format details must report the actual PCM sample rate (44100 Hz), not coerced 48000 Hz.
+  auto [out_format, min_size] = decoder.OutputFormatDetails();
+  EXPECT_EQ(out_format.domain().audio().uncompressed().pcm().frames_per_second, 44100u);
+}
+
+TEST(CodecAdapterLc3EncoderTest, TimestampExtrapolatorUsesTrueSampleRateFor44100Hz) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_domain()->audio().uncompressed().pcm().frames_per_second = 44100;
+  format_details.set_timebase(1'000'000'000ull);  // 1 second in ns
+  ASSERT_EQ(encoder.ProcessFormatDetails(format_details), TestCodecAdapterLc3Encoder::kOk);
+
+  // For 44.1 kHz 10ms nominal frame, liblc3 encodes 480 samples per frame (InputChunkSize = 960 B).
+  // At 44,100 samples/sec, 480 samples lasts 480 / 44100 s = 10,884,353 ns (~10.884 ms).
+  const size_t chunk_size = encoder.InputChunkSize();
+  EXPECT_EQ(chunk_size, 960u);
+
+  auto extrapolator = encoder.CreateTimestampExtrapolator(format_details);
+  extrapolator.Inform(0, 0);
+  auto extrapolated = extrapolator.Extrapolate(chunk_size);
+  ASSERT_TRUE(extrapolated.has_value());
+  EXPECT_EQ(*extrapolated, 480ull * 1'000'000'000ull / 44100ull);
+}
+
+TEST(CodecAdapterLc3EncoderTest, TimestampExtrapolatorUsesFourBytesPerSampleFor24BitAudio) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_domain()->audio().uncompressed().pcm().bits_per_sample = 24;
+  format_details.set_timebase(1'000'000'000ull);  // 1 second in ns
+  ASSERT_EQ(encoder.ProcessFormatDetails(format_details), TestCodecAdapterLc3Encoder::kOk);
+
+  // For 48 kHz 10ms frame, liblc3 encodes 480 samples per frame. Since 24-bit PCM
+  // (LC3_PCM_FORMAT_S24) uses 4-byte (int32_t) words in memory, InputChunkSize is 480 * 4 = 1920 B.
+  const size_t chunk_size = encoder.InputChunkSize();
+  EXPECT_EQ(chunk_size, 1920u);
+
+  // One 1920-byte chunk at 48 kHz (480 samples) must advance the timestamp by 10 ms (10,000,000
+  // ns), not 13.333 ms (which would happen if bits_per_sample / 8 == 3 bytes/sample were used).
+  auto extrapolator = encoder.CreateTimestampExtrapolator(format_details);
+  extrapolator.Inform(0, 0);
+  auto extrapolated = extrapolator.Extrapolate(chunk_size);
+  ASSERT_TRUE(extrapolated.has_value());
+  EXPECT_EQ(*extrapolated, 10'000'000ull);
+}
+
 }  // namespace

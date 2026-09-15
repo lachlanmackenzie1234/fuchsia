@@ -52,6 +52,11 @@ std::pair<uint8_t, std::vector<uint8_t>> ProcessLTVParam(const std::vector<uint8
   return std::make_pair(key, std::move(value));
 }
 
+// According to LC3 Specification v1.0 section 2.1, when the sampling frequency of the
+// signal is 44.1 kHz, liblc3 uses the 48 kHz internal rate and frame length (480 samples
+// for 10 ms frame interval, 360 samples for 7.5 ms frame interval).
+constexpr int LibLc3SampleRateHz(int sr_hz) { return (sr_hz == 44100) ? 48000 : sr_hz; }
+
 // Assigned Numbers section 6.12.5.1 Sampling_Frequency.
 // Get the sampling frequency in Hz from the raw LTV parameter value.
 // If the sampling frequency is not one of the acceptable values, return nullopt.
@@ -71,9 +76,7 @@ std::optional<int> GetSamplingFrequencyHz(const std::vector<uint8_t>& raw_bytes)
   } else if (value == 0x06) {
     sr_hz = 32000;
   } else if (value == 0x07) {
-    // According to LC3 Specification v1.0 section 2.1, when the sampling frequency of the
-    // input signal is 44.1 kHz, the same frame length is used as for 48 kHz.
-    sr_hz = 48000;
+    sr_hz = 44100;
   } else if (value == 0x08) {
     sr_hz = 48000;
   } else {
@@ -249,7 +252,8 @@ int CodecAdapterLc3Decoder::ProcessInputChunkData(const uint8_t* input_data, siz
   int nch = static_cast<int>(codec_params_->channels.size());
   int bytes_produced = 0;
   const int num_expected_output_bytes =
-      lc3_frame_samples(codec_params_->dt_us, codec_params_->sr_hz) * kNumBytesPerPcmSample;
+      lc3_frame_samples(codec_params_->dt_us, LibLc3SampleRateHz(codec_params_->sr_hz)) *
+      kNumBytesPerPcmSample;
 
   for (int ich = 0; ich < nch; ++ich) {
     ZX_DEBUG_ASSERT(output_buffer_size >=
@@ -302,7 +306,8 @@ size_t CodecAdapterLc3Decoder::MinOutputBufferSize() {
   // Total size of an output audio data frame is specified by:
   // The session configured number of channels, the frame size in samples, and
   // the configured decoder PCM bits per audio sample.
-  int frame_samples = lc3_frame_samples(codec_params_->dt_us, codec_params_->sr_hz);
+  int frame_samples =
+      lc3_frame_samples(codec_params_->dt_us, LibLc3SampleRateHz(codec_params_->sr_hz));
   ZX_DEBUG_ASSERT(frame_samples > 0);
   return codec_params_->channels.size() * static_cast<size_t>(frame_samples) *
          kNumBytesPerPcmSample;
@@ -410,7 +415,7 @@ CodecAdapterLc3Decoder::InputLoopStatus CodecAdapterLc3Decoder::ProcessFormatDet
 
   std::vector<Lc3CodecContainer<lc3_decoder_t>> decoders;
   decoders.reserve(num_channels);
-  auto decoder_size = lc3_decoder_size(frame_us, sampling_freq);
+  auto decoder_size = lc3_decoder_size(frame_us, LibLc3SampleRateHz(sampling_freq));
 
   // Set up a decoder for each channel to account for multi-channeled interleaved audio.
   for (int i = 0; i < num_channels; ++i) {
@@ -418,7 +423,7 @@ CodecAdapterLc3Decoder::InputLoopStatus CodecAdapterLc3Decoder::ProcessFormatDet
         [&frame_us, &sampling_freq](void* mem) {
           // Sets up and returns the pointer to the decoder struct. The pointer has the same value
           // as `mem`.
-          return lc3_setup_decoder(frame_us, sampling_freq, 0, mem);
+          return lc3_setup_decoder(frame_us, LibLc3SampleRateHz(sampling_freq), 0, mem);
         },
         decoder_size);
   }

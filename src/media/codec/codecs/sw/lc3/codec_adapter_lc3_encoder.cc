@@ -221,6 +221,8 @@ fuchsia::sysmem::BufferCollectionConstraints CodecAdapterLc3Encoder::BufferColle
 
 size_t CodecAdapterLc3Encoder::InputChunkSize() {
   ZX_DEBUG_ASSERT(codec_params_);
+  // CreateEncoderParams supports LC3_PCM_FORMAT_S16 and LC3_PCM_FORMAT_S24,
+  // which are 2 and 4 bytes per sample respectively.
   size_t num_bytes_per_sample = (codec_params_->fmt == LC3_PCM_FORMAT_S16) ? 2 : 4;
 
   // LC3 Spec v1.0 section 2.2. Encoder Interfaces.
@@ -247,16 +249,21 @@ TimestampExtrapolator CodecAdapterLc3Encoder::CreateTimestampExtrapolator(
   ZX_DEBUG_ASSERT(codec_params_);
 
   if (format_details.has_timebase()) {
-    auto& input_format = format_details.domain().audio().uncompressed().pcm();
-    // Bytes per second is sampling frequency * number_of_channels * bytes_per_sample.
-    // Note that we use codec_params_->sr_hz instead of input_format.frames_per_second here
-    // because when the sampling frequency of the input signal is 44.1 kHz, we coerce it
-    // into 48 kHz per the spec.
-    // Note that this results in the slightly longer actual frame duration of 10.884 ms for the 10
-    // ms frame interval and of 8.16 ms for the 7.5 ms frame interval. See LC3 specification v1.0
-    // section 2.1 for more details.
-    const size_t bytes_per_second = input_format.channel_map.size() * codec_params_->sr_hz *
-                                    (input_format.bits_per_sample / 8ull);
+    const auto& input_format = format_details.domain().audio().uncompressed().pcm();
+    // CreateEncoderParams supports LC3_PCM_FORMAT_S16 and LC3_PCM_FORMAT_S24,
+    // which are 2 and 4 bytes per sample respectively. We can't use
+    // input_format.bits_per_sample / 8 as num_bytes_per_sample because 24 in
+    // bits_per_sample means 4 bytes per sample not 3.
+    size_t num_bytes_per_sample = (codec_params_->fmt == LC3_PCM_FORMAT_S16) ? 2 : 4;
+    // Bytes per second is input PCM sampling frequency * number_of_channels * bytes_per_sample.
+    // Note that when the input signal is 44.1 kHz, liblc3 uses the 48 kHz frame sample count
+    // (480 samples for 10 ms nominal interval, 360 samples for 7.5 ms nominal interval) via
+    // codec_params_->sr_hz in InputChunkSize(). Dividing that 480-sample chunk size by
+    // input_format.frames_per_second (44.1 kHz) yields the actual frame duration of 10.884 ms
+    // (or 8.16 ms for 7.5 ms interval) per LC3 specification v1.0 section 2.1.
+    const size_t bytes_per_second = static_cast<size_t>(codec_params_->num_channels) *
+                                    static_cast<size_t>(input_format.frames_per_second) *
+                                    num_bytes_per_sample;
     return TimestampExtrapolator(format_details.timebase(), bytes_per_second);
   }
   return TimestampExtrapolator();
