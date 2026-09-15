@@ -437,8 +437,10 @@ fn generate_simple_bind_rules(bind: &DmlBind) -> Result<String, anyhow::Error> {
         content.push_str(&generate_simple_bind_statements(bind)?);
 
         let mut last_had_trigger = false;
+        let num_alts = alternatives.len();
         for (i, alt) in alternatives.iter().enumerate() {
-            let trigger_opt = get_trigger(alt)?;
+            let is_last = i == num_alts - 1 && num_alts > 1;
+            let trigger_opt = if is_last { None } else { get_trigger(alt)? };
             let has_trigger = trigger_opt.is_some();
 
             if i == 0 {
@@ -693,7 +695,7 @@ mod tests {
         let content = generate_bind_file("my_driver", &bind, &[], "2025").unwrap();
 
         assert!(content.contains("// Copyright 2025 The Fuchsia Authors. All rights reserved."));
-        let expected = "if fuchsia.BIND_PLATFORM_DEV_VID == 125 {\n    true;\n} else if fuchsia.COMPATIBLE == \"fuchsia,my-compat\" {\n    true;\n} else {\n    false;\n}";
+        let expected = "if fuchsia.BIND_PLATFORM_DEV_VID == 125 {\n    true;\n} else {\n    fuchsia.COMPATIBLE == \"fuchsia,my-compat\";\n}";
         assert!(content.contains(expected), "Expected:\n{}\n\nGot:\n{}", expected, content);
     }
 
@@ -911,7 +913,7 @@ mod tests {
             ..Default::default()
         };
         let content = generate_bind_file("pci_driver", &bind, &[], "2026").unwrap();
-        assert!(content.contains("if fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL {\n    fuchsia.BIND_PCI_DID == 0x1234;\n} else if fuchsia.BIND_PCI_CLASS == 0x02 {\n    fuchsia.BIND_PCI_SUBCLASS == 0x00;\n} else {\n    false;\n}"));
+        assert!(content.contains("if fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL {\n    fuchsia.BIND_PCI_DID == 0x1234;\n} else {\n    fuchsia.BIND_PCI_CLASS == 0x02;\n    fuchsia.BIND_PCI_SUBCLASS == 0x00;\n}"));
     }
 
     #[test]
@@ -938,7 +940,7 @@ mod tests {
             ..Default::default()
         };
         let content = generate_bind_file("usb_driver", &bind, &[], "2026").unwrap();
-        assert!(content.contains("if fuchsia.BIND_USB_VID == fuchsia.usb.BIND_USB_VID.GOOGLE {\n    fuchsia.BIND_USB_PID == 0x1234;\n} else if fuchsia.BIND_USB_PID == 0x5678 {\n    fuchsia.BIND_USB_CLASS == 0x03;\n} else {\n    false;\n}"));
+        assert!(content.contains("if fuchsia.BIND_USB_VID == fuchsia.usb.BIND_USB_VID.GOOGLE {\n    fuchsia.BIND_USB_PID == 0x1234;\n} else {\n    fuchsia.BIND_USB_PID == 0x5678;\n    fuchsia.BIND_USB_CLASS == 0x03;\n}"));
     }
 
     #[test]
@@ -986,7 +988,8 @@ mod tests {
             ..Default::default()
         };
         let content = generate_bind_file("node_driver", &bind, &[], "2026").unwrap();
-        assert!(content.contains("if fuchsia.NAME == \"node-a\" {\n    fuchsia.BIND_PLATFORM_DEV_VID == 1;\n} else if fuchsia.NAME == \"node-b\" {\n    fuchsia.BIND_PLATFORM_DEV_VID == 2;\n} else {\n    false;\n}"));
+        let expected = "if fuchsia.NAME == \"node-a\" {\n    fuchsia.BIND_PLATFORM_DEV_VID == 1;\n} else {\n    fuchsia.BIND_PLATFORM_DEV_VID == 2;\n    fuchsia.NAME == \"node-b\";\n}";
+        assert!(content.contains(expected), "Expected:\n{}\n\nGot:\n{}", expected, content);
     }
 
     #[test]
@@ -1050,6 +1053,7 @@ mod tests {
             ..Default::default()
         };
         let content = generate_bind_file("acpi_driver", &bind, &[], "2026").unwrap();
-        assert!(content.contains("if fuchsia.acpi.HID == \"PNP0C0A\" {\n    fuchsia.BIND_PLATFORM_DEV_VID == 10;\n} else if fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.I2C {\n    fuchsia.BIND_PLATFORM_DEV_VID == 20;\n} else {\n    false;\n}"));
+        let expected = "if fuchsia.acpi.HID == \"PNP0C0A\" {\n    fuchsia.BIND_PLATFORM_DEV_VID == 10;\n} else {\n    fuchsia.BIND_PLATFORM_DEV_VID == 20;\n    fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.I2C;\n}";
+        assert!(content.contains(expected), "Expected:\n{}\n\nGot:\n{}", expected, content);
     }
 }
