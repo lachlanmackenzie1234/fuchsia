@@ -110,6 +110,103 @@ impl Namespace {
         node.mount = Some(mount).into();
         Some(node)
     }
+
+    pub fn pivot_root(
+        self: &Arc<Namespace>,
+        current_root: &NamespaceNode,
+        new_root: &NamespaceNode,
+        put_old: &NamespaceNode,
+    ) -> Result<(), Errno> {
+        debug_assert!(new_root.entry.node.is_dir());
+        debug_assert!(put_old.entry.node.is_dir());
+
+        let new_root_mount = new_root.mount.as_ref().ok_or_else(|| errno!(EINVAL))?;
+        let current_root_mount = current_root.mount.as_ref().ok_or_else(|| errno!(EINVAL))?;
+        let put_old_mount = put_old.mount.as_ref().ok_or_else(|| errno!(EINVAL))?;
+
+        let current_root_mountpoint =
+            current_root_mount.mountpoint().ok_or_else(|| errno!(EINVAL))?;
+        let new_root_mountpoint = new_root_mount.mountpoint().ok_or_else(|| errno!(EINVAL))?;
+
+        if Arc::ptr_eq(new_root_mount, current_root_mount)
+            || Arc::ptr_eq(put_old_mount, current_root_mount)
+        {
+            return error!(EBUSY);
+        }
+
+        let current_root_mount = current_root.mount_if_root()?;
+        let new_root_mount = new_root.mount_if_root()?;
+
+        if !new_root.is_descendant_of(current_root) {
+            return error!(EINVAL);
+        }
+        if !put_old.is_descendant_of(new_root) {
+            return error!(EINVAL);
+        }
+
+        let kernel = self.kernel();
+        let mounts_guard = kernel.mounts_lock();
+
+        // Retain mounts and mountpoint entries so that any drops triggered by
+        // unlinking or reparenting under `mounts_guard` are deferred until after
+        // the spinlock is released, preventing blocking operations while holding
+        // the lock.
+        let new_root_parent = mounts_guard.retain(
+            new_root_mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount"),
+        );
+        mounts_guard.retain(&new_root_mountpoint.entry);
+
+        if new_root_mount.peer_group().is_some() || new_root_parent.peer_group().is_some() {
+            return error!(EINVAL);
+        }
+
+        if put_old_mount.peer_group().is_some() {
+            return error!(EINVAL);
+        }
+
+        if current_root_mount.peer_group().is_some() {
+            return error!(EINVAL);
+        }
+
+        let current_root_parent = mounts_guard.retain(
+            current_root_mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount"),
+        );
+        mounts_guard.retain(&current_root_mountpoint.entry);
+        if current_root_parent.peer_group().is_some() {
+            return error!(EINVAL);
+        }
+
+        // Retain the remaining mounts and entries involved in the pivot before
+        // detaching and attaching them below.
+        mounts_guard.retain(current_root_mount);
+        mounts_guard.retain(new_root_mount);
+        mounts_guard.retain(put_old_mount);
+        mounts_guard.retain(&put_old.entry);
+
+        // 1. Detach new_root_mount from its parent.
+        new_root_parent
+            .remove_submount_internal(&mounts_guard, &new_root_mountpoint.mount_hash_key())?;
+        new_root_mount.relations.set_mountpoint(&mounts_guard, None);
+
+        // 2. Place new_root_mount where current_root_mount was.
+        current_root_parent
+            .remove_submount_internal(&mounts_guard, &current_root_mountpoint.mount_hash_key())?;
+        current_root_mount.relations.set_mountpoint(&mounts_guard, None);
+        current_root_parent.create_submount(
+            &mounts_guard,
+            &current_root_mountpoint.entry,
+            WhatSubmount::Existing(Arc::clone(new_root_mount)),
+        )?;
+
+        // 3. Attach current_root_mount to put_old.
+        put_old_mount.create_submount(
+            &mounts_guard,
+            &put_old.entry,
+            WhatSubmount::Existing(Arc::clone(current_root_mount)),
+        )?;
+
+        Ok(())
+    }
 }
 
 impl FsNodeOps for Arc<Namespace> {

@@ -16,11 +16,12 @@ use crate::vfs::pipe::{PipeFileObject, new_pipe};
 use crate::vfs::timer::TimerFile;
 use crate::vfs::{
     AccessCheck, DirectoryMode, DirentSink64, EpollFileObject, FallocMode, FdFlags, FdNumber,
-    FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext,
-    Mount, NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget,
-    StatxFlags, SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind,
+    FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsContext, FsStr, FsString,
+    LookupContext, Mount, NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags,
+    SeekTarget, StatxFlags, SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind,
     ValueOrSize, WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, splice,
 };
+use fuchsia_rcu::RcuReadScope;
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{EventHandlerReadyQueueLock, LockDepMutex};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -28,6 +29,7 @@ use starnix_types::time::{
     duration_from_poll_timeout, duration_from_timespec, time_from_timespec, timespec_from_duration,
 };
 use starnix_types::user_buffer::UserBuffer;
+use starnix_uapi::arc_key::PtrKey;
 use starnix_uapi::auth::{
     CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, CAP_LEASE, CAP_SYS_ADMIN, CAP_WAKE_ALARM, Capabilities,
     Credentials, PTRACE_MODE_ATTACH_REALCREDS,
@@ -66,7 +68,7 @@ use starnix_uapi::{
     aio_context_t, errno, error, io_event, iocb, off_t, pid_t, pollfd, pselect6_sigmask, sigset_t,
     statx, timespec, uapi, uid_t,
 };
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::marker::PhantomData;
 use std::sync::Arc;
 use zerocopy::{Immutable, IntoBytes};
@@ -1894,6 +1896,55 @@ pub fn sys_umount2(
     security::sb_umount(current_task, &target, unmount_flags)?;
 
     target.unmount(unmount_flags)
+}
+
+pub fn sys_pivot_root(
+    current_task: &CurrentTask,
+    new_root_addr: UserCString,
+    put_old_addr: UserCString,
+) -> Result<(), Errno> {
+    security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
+
+    let new_root =
+        lookup_at(current_task, FdNumber::AT_FDCWD, new_root_addr, LookupFlags::directory())?;
+    let put_old =
+        lookup_at(current_task, FdNumber::AT_FDCWD, put_old_addr, LookupFlags::directory())?;
+
+    let old_root = current_task.fs().root();
+    let namespace = current_task.fs().namespace();
+
+    namespace.pivot_root(&old_root, &new_root, &put_old)?;
+
+    let mut seen_fs = HashSet::<PtrKey<FsContext>>::new();
+    let current_fs = current_task.fs();
+    current_fs.update_root_after_pivot(&old_root, &new_root);
+    seen_fs.insert(PtrKey::from(&*current_fs));
+
+    let mut target_fs = Vec::new();
+    let scope = RcuReadScope::new();
+    let thread_groups = current_task.kernel().pids.get_thread_groups(&scope);
+    // Note: There is a race condition here if another task forks without CLONE_FS
+    // concurrently with pivot_root. The child's FsContext may be initialized with
+    // `old_root` before being registered in `pids`, and if this loop does not observe
+    // the new task, its root will not be updated. Linux has a similar race condition
+    // when tasks are created concurrently with pivot_root.
+    for tg in thread_groups {
+        for task in tg.read().tasks() {
+            if let Ok(task_fs) = task.fs() {
+                if Arc::ptr_eq(&task_fs.namespace(), &namespace) {
+                    if seen_fs.insert(PtrKey::from(&*task_fs)) {
+                        target_fs.push(task_fs);
+                    }
+                }
+            }
+        }
+    }
+
+    for fs in target_fs {
+        fs.update_root_after_pivot(&old_root, &new_root);
+    }
+
+    Ok(())
 }
 
 pub fn sys_eventfd2(current_task: &CurrentTask, value: u32, flags: u32) -> Result<FdNumber, Errno> {

@@ -574,25 +574,8 @@
                 "PingSockets/Fixture.Bind/ICMPv6_socket_V6MulticastLinkLocalAllRouters",
 
                 // pivot_root_test
-                "PivotRootTest.WithoutCapability",
-                "PivotRootTest.OnSharedPutOldMountpoint",
-                "PivotRootTest.NotDir",
-                "PivotRootTest.NewRootNotAMountpoint",
-                "PivotRootTest.OnSharedNewRoot",
-                "PivotRootTest.Success",
-                "PivotRootTest.OnSharedNewRootParent",
-                "PivotRootTest.PutOldNotUnderNewRoot",
-                "PivotRootTest.CurrentRootNotAMountPoint",
-                "PivotRootTest.NotExist",
-                "PivotRootTest.NewRootOnRootMount",
-                "PivotRootTest.DotDot",
-                "PivotRootTest.CreatesNewRoot",
-                "PivotRootTest.OnRootFS",
-                "PivotRootTest.ChangesCwdForAllProcesses",
-                "PivotRootTest.MovesOldRoot",
                 "PivotRootTest.LockedNewRootFails",
                 "PivotRootTest.OldRootUnlocked",
-                "PivotRootTest.UnreachableNewRootFails",
 
                 // prctl_setuid_test
                 "PrctlKeepCapsSetuidTest.NoKeepCapsAfterNewUserNamespace",

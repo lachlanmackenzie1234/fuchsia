@@ -167,7 +167,6 @@
 
                 // Needs /proc/sys/fs/pipe-user-pages-soft
                 "pipe15",
-                "pivot_root01",
                 "prctl01",
                 "prctl02",
                 "prctl10",
