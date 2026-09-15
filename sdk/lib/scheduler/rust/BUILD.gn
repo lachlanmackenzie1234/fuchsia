@@ -4,17 +4,19 @@
 
 import("//build/rust/rustc_library.gni")
 
-rustc_library("rust") {
-  edition = "2024"
-  name = "fuchsia_scheduler"
-  sources = [ "src/lib.rs" ]
+if (is_fuchsia) {
+  rustc_library("rust") {
+    edition = "2024"
+    name = "fuchsia_scheduler"
+    sources = [ "src/lib.rs" ]
 
-  deps = [
-    "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fuchsia-component/client",
-    "//src/lib/fuchsia-runtime",
-    "//src/lib/fuchsia-sync",
-    "//third_party/rust_crates:anyhow",
-  ]
+    deps = [
+      "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_rust",
+      "//sdk/rust/zx",
+      "//src/lib/fuchsia-component/client",
+      "//src/lib/fuchsia-runtime",
+      "//src/lib/fuchsia-sync",
+      "//third_party/rust_crates:anyhow",
+    ]
+  }
 }
