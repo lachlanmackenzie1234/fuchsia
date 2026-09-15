@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/config"
-	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/config"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
 )
 
 // ReconstructCommand scans raw args to find -bug and -desc flags and their values,
@@ -86,11 +86,11 @@ func ReconstructCommand(commandPath string, args []string, placeholders []string
 	return cmdBuilder.String(), misplacedFlags
 }
 
-func findProjectBasename(fuchsiaDir, targetPath string, config *v2config.MasterConfig) string {
-	if config != nil {
-		return config.FindProjectBasename(targetPath)
+func findProjectBasename(fuchsiaDir, targetPath string, cfg *config.MasterConfig) string {
+	if cfg != nil {
+		return cfg.FindProjectBasename(targetPath)
 	}
-	return v2config.NewMasterConfig(fuchsiaDir).FindProjectBasename(targetPath)
+	return config.NewMasterConfig(fuchsiaDir).FindProjectBasename(targetPath)
 }
 
 // ResolveAndValidatePath normalizes the fuchsia root and ensures the given input path
@@ -140,7 +140,7 @@ type InputContext struct {
 	FuchsiaDir string
 	RelPath    string
 	AbsPath    string
-	Config     *v2config.MasterConfig
+	Config     *config.MasterConfig
 }
 
 // LoadInputContext normalizes the input path within the Fuchsia workspace and loads the v2 MasterConfig.
@@ -150,7 +150,7 @@ func LoadInputContext(fuchsiaDirFlag, inputPath string) (*InputContext, error) {
 		return nil, err
 	}
 	absPath := filepath.Join(absFuchsia, relPath)
-	builder := v2config.NewBuilder(absFuchsia)
+	builder := config.NewBuilder(absFuchsia)
 	if err := builder.Assemble(); err != nil {
 		return nil, fmt.Errorf("failed to assemble configuration: %w", err)
 	}
@@ -172,13 +172,13 @@ func (ic *InputContext) ResolveProjectRoot(inputPath string) (string, error) {
 	if _, err := os.Stat(absPath); err != nil {
 		return "", fmt.Errorf("path does not exist: %s", inputPath)
 	}
-	grouper := v2boundary.NewGrouper(fuchsiaDir, ic.Config.Boundary)
+	grouper := boundary.NewGrouper(fuchsiaDir, ic.Config.Boundary)
 	return grouper.ResolveProjectRoot(absPath), nil
 }
 
 // UpdateConfigFile reads, mutates, and writes back a ConfigFile.
-func UpdateConfigFile(destFile string, mutate func(*v2config.ConfigFile)) error {
-	var cfg v2config.ConfigFile
+func UpdateConfigFile(destFile string, mutate func(*config.ConfigFile)) error {
+	var cfg config.ConfigFile
 	if data, err := os.ReadFile(destFile); err == nil {
 		json.Unmarshal(data, &cfg)
 	}

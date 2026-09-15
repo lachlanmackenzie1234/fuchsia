@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/subcommands"
 
-	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/report"
 )
 
@@ -433,7 +433,7 @@ func TestBelongsToProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	grouper := v2boundary.NewGrouper(fuchsiaDir, v2boundary.Config{})
+	grouper := boundary.NewGrouper(fuchsiaDir, boundary.Config{})
 
 	tests := []struct {
 		name        string
