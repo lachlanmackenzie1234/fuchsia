@@ -480,6 +480,7 @@ _NORMAL_DEPENDENCIES = {
             "strsim": Label("//third_party/rust_crates/vendor/strsim-0.11.1:strsim"),
             "strum": Label("//third_party/rust_crates/vendor/strum-0.28.0:strum"),
             "tempfile": Label("//third_party/rust_crates/vendor/tempfile-3.27.0:tempfile"),
+            "termcolor": Label("//third_party/rust_crates/vendor/termcolor-1.4.1:termcolor"),
             "termion": Label("//third_party/rust_crates/vendor/termion-4.0.6:termion"),
             "test-case": Label("//third_party/rust_crates/vendor/test-case-3.3.1:test_case"),
             "textwrap": Label("//third_party/rust_crates/vendor/textwrap-0.16.2:textwrap"),

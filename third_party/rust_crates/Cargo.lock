@@ -2079,6 +2079,7 @@ dependencies = [
  "tar",
  "tempfile",
  "term_grid",
+ "termcolor",
  "termion",
  "test-case",
  "textwrap",
@@ -5329,7 +5330,6 @@ checksum = "85d04ae642154220ef00ee82c36fb07853c10a4f2a0ca6719f9991211d2eb959"
 dependencies = [
  "chrono",
  "log",
- "termcolor",
 ]
 
 [[package]]
@@ -5539,7 +5539,7 @@ dependencies = [
 
 [[package]]
 name = "termcolor"
-version = "1.1.2"
+version = "1.4.1"
 dependencies = [
  "winapi-util",
 ]

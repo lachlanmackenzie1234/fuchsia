@@ -2396,6 +2396,14 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+group("termcolor") {
+  public_deps = [ ":termcolor-v1_4_1" ]
+}
+
+group("termcolor-1.4.1") {
+  public_deps = [ ":termcolor-v1_4_1" ]
+}
+
 group("termion") {
   public_deps = [ ":termion-v4_0_6" ]
 }
@@ -21869,7 +21877,6 @@ rustc_library("simplelog-v0_10_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":termcolor-v1_1_2" ]
   deps += [ ":chrono-v0_4_45" ]
   deps += [ ":log-v0_4_29" ]
 
@@ -21879,8 +21886,6 @@ rustc_library("simplelog-v0_10_2") {
     "--cap-lints=allow",
     "-Cmetadata=21aad7a3c5a1179d",
     "-Cextra-filename=-21aad7a3c5a1179d",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"termcolor\"",
   ]
 
   visibility = [ ":*" ]
@@ -22824,16 +22829,16 @@ rustc_library("term_grid-v0_2_0") {
   applicable_licenses = [ ":term_grid-v0_2_0.license" ]
 }
 
-license("termcolor-v1_1_2.license") {
+license("termcolor-v1_4_1.license") {
   public_package_name = "termcolor"
   license_files =
       [ "//third_party/rust_crates/ask2patch/termcolor/LICENSE-MIT" ]
 }
 
-rustc_library("termcolor-v1_1_2") {
+rustc_library("termcolor-v1_4_1") {
   crate_name = "termcolor"
   source_root = "//third_party/rust_crates/ask2patch/termcolor/src/lib.rs"
-  output_name = "termcolor-8a22f3c4f465f166"
+  output_name = "termcolor-f1a6a7c23697dbc8"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -22848,13 +22853,13 @@ rustc_library("termcolor-v1_1_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8a22f3c4f465f166",
-    "-Cextra-filename=-8a22f3c4f465f166",
+    "-Cmetadata=f1a6a7c23697dbc8",
+    "-Cextra-filename=-f1a6a7c23697dbc8",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":termcolor-v1_1_2.license" ]
+  applicable_licenses = [ ":termcolor-v1_4_1.license" ]
 }
 
 license("termion-v4_0_6.license") {

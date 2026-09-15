@@ -368,7 +368,6 @@ skip_updating = [
     "tar",
     "tempfile",
     "term",
-    "termcolor",
     "term_grid",
     "termion",
     "termios",

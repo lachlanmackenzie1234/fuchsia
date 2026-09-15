@@ -237,7 +237,7 @@ sha2 = "0.11.0"
 sha2-0_10 = { package = "sha2", version = "0.10.9" }
 # TODO(https://fxbug.dev/385403698): add a visibility allowlist to prevent unintended usage when
 # targetting fuchsia.
-simplelog = "0.10.2"
+simplelog = { version = "0.10.2", default-features = false }
 siphasher = "1.0.2"
 slab = "0.4.12"
 smallvec = {version= "1.15.2", features = ["const_generics", "const_new", "union"]}
@@ -248,6 +248,7 @@ strsim = "0.11.1"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 tempfile = "3.2"
+termcolor = "1.4.1"
 termion = "4.0.6"
 test-case = "3.3.1"
 textwrap = { version = "0.16.2", default-features = false }

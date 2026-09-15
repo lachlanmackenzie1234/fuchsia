@@ -3085,6 +3085,18 @@ alias(
 )
 
 alias(
+    name = "termcolor-1.4.1",
+    actual = "//third_party/rust_crates/ask2patch/termcolor:termcolor",
+    tags = ["manual"],
+)
+
+alias(
+    name = "termcolor",
+    actual = "//third_party/rust_crates/ask2patch/termcolor:termcolor",
+    tags = ["manual"],
+)
+
+alias(
     name = "termion-4.0.6",
     actual = "//third_party/rust_crates/vendor/termion-4.0.6:termion",
     tags = ["manual"],
