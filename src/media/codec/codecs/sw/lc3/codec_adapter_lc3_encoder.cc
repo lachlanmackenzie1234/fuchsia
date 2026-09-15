@@ -7,6 +7,7 @@
 #include <lib/media/codec_impl/codec_port.h>
 #include <lib/media/codec_impl/log.h>
 
+#include <cstring>
 #include <unordered_set>
 
 #include <safemath/safe_math.h>
@@ -147,7 +148,7 @@ CodecAdapterLc3Encoder::InputLoopStatus CodecAdapterLc3Encoder::ProcessFormatDet
   return kOk;
 }
 
-// Encode input buffer of 16 byte size to produce one byte of output data.
+// Encode one frame of interleaved PCM input samples across all channels into LC3 output bytes.
 int CodecAdapterLc3Encoder::ProcessInputChunkData(const uint8_t* input_data, size_t input_data_size,
                                                   uint8_t* output_buffer,
                                                   size_t output_buffer_size) {
@@ -157,6 +158,24 @@ int CodecAdapterLc3Encoder::ProcessInputChunkData(const uint8_t* input_data, siz
   }
 
   const lc3_pcm_format pcm_fmt = codec_params_->fmt;
+  const size_t required_alignment =
+      (pcm_fmt == LC3_PCM_FORMAT_S16) ? alignof(int16_t) : alignof(int32_t);
+  const uint8_t* aligned_input = input_data;
+  if (reinterpret_cast<uintptr_t>(input_data) % required_alignment != 0) {
+    // ChunkInputStream passes input_packet.data_at_offset() directly when a packet has at least
+    // InputChunkSize() unread bytes. Because client-supplied packets can have arbitrary
+    // start_offset or valid_length_bytes (which can leave subsequent chunks at unaligned byte
+    // offsets within a packet buffer), input_data is not guaranteed to be aligned to
+    // int16_t/int32_t. Copy unaligned input chunk data to an aligned scratch buffer to avoid
+    // Undefined Behavior when liblc3 dereferences sample pointers in lc3_encode().
+    const size_t num_words = (input_data_size + sizeof(int32_t) - 1) / sizeof(int32_t);
+    if (codec_params_->aligned_input_scratch.size() < num_words) {
+      codec_params_->aligned_input_scratch.resize(num_words);
+    }
+    std::memcpy(codec_params_->aligned_input_scratch.data(), input_data, input_data_size);
+    aligned_input = reinterpret_cast<const uint8_t*>(codec_params_->aligned_input_scratch.data());
+  }
+
   int nch = codec_params_->num_channels;
   uint8_t* buffer = output_buffer;
 
@@ -169,8 +188,8 @@ int CodecAdapterLc3Encoder::ProcessInputChunkData(const uint8_t* input_data, siz
     // In the case of 24 bits per input sample, we pad each sample to 32 bits with low 8 bits zero.
     const void* pcm =
         (pcm_fmt == LC3_PCM_FORMAT_S16)
-            ? static_cast<const void*>(reinterpret_cast<const int16_t*>(input_data) + ich)
-            : static_cast<const void*>(reinterpret_cast<const int32_t*>(input_data) + ich);
+            ? static_cast<const void*>(reinterpret_cast<const int16_t*>(aligned_input) + ich)
+            : static_cast<const void*>(reinterpret_cast<const int32_t*>(aligned_input) + ich);
     if (lc3_encode(codec_params_->encoders[ich].GetCodec(), pcm_fmt, pcm, nch,
                    codec_params_->nbytes, buffer) != 0) {
       return -1;

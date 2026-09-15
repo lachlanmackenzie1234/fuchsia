@@ -233,7 +233,7 @@ std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterLc3Decoder::OutputF
   return {std::move(format_details), MinOutputBufferSize()};
 }
 
-// Decode input buffer of 16 byte size to produce one byte of output data.
+// Decode one frame of LC3 compressed input bytes across all channels into interleaved PCM samples.
 int CodecAdapterLc3Decoder::ProcessInputChunkData(const uint8_t* input_data, size_t input_data_size,
                                                   uint8_t* output_buffer,
                                                   size_t output_buffer_size) {
@@ -243,6 +243,7 @@ int CodecAdapterLc3Decoder::ProcessInputChunkData(const uint8_t* input_data, siz
   }
 
   const uint8_t* input = input_data;
+  ZX_DEBUG_ASSERT(reinterpret_cast<uintptr_t>(output_buffer) % alignof(int16_t) == 0);
   int16_t* out_pcm = reinterpret_cast<int16_t*>(output_buffer);
 
   int nch = static_cast<int>(codec_params_->channels.size());
@@ -255,8 +256,10 @@ int CodecAdapterLc3Decoder::ProcessInputChunkData(const uint8_t* input_data, siz
                     static_cast<size_t>(bytes_produced + num_expected_output_bytes));
 
     // We always decode the output as 16-bit PCM audio data.
+    // lc3_decode returns 0 on normal decode, 1 when Packet Loss Concealment (PLC) synthesized
+    // concealed audio for a corrupted frame, and < 0 on invalid parameters.
     if (lc3_decode(codec_params_->decoders[ich].GetCodec(), input, codec_params_->nbytes,
-                   LC3_PCM_FORMAT_S16, out_pcm + ich, nch) != 0) {
+                   LC3_PCM_FORMAT_S16, out_pcm + ich, nch) < 0) {
       return -1;
     }
     bytes_produced += num_expected_output_bytes;

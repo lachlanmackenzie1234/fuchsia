@@ -434,6 +434,9 @@ TEST(CodecAdapterLc3DecoderTest, ProcessInputChunkDataBufferSizeValidation) {
   EXPECT_EQ(
       decoder.ProcessInputChunkData(input.data(), input_size, output.data(), min_output_size - 1),
       -1);
+  // Zeroed input triggers liblc3 Packet Loss Concealment (return code 1) and succeeds.
+  EXPECT_EQ(decoder.ProcessInputChunkData(input.data(), input_size, output.data(), output.size()),
+            static_cast<int>(min_output_size));
 }
 
 TEST(CodecAdapterLc3EncoderTest, ValidFormatDetailsSucceeds) {
@@ -574,27 +577,35 @@ TEST(CodecAdapterLc3EncoderTest, MidstreamFormatChangeRejected) {
       << "Actual message: " << events.last_fail_message();
 }
 
-TEST(CodecAdapterLc3EncoderTest, ProcessInputChunkDataBufferSizeValidation) {
+TEST(CodecAdapterLc3EncoderTest, ProcessInputChunkDataValidationAndUnalignedInput) {
   std::mutex lock;
   FakeCodecAdapterEvents events;
   TestCodecAdapterLc3Encoder encoder(lock, &events);
 
   auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_domain()->audio().uncompressed().pcm().bits_per_sample = 24;
   ASSERT_EQ(encoder.ProcessFormatDetails(format_details), TestCodecAdapterLc3Encoder::kOk);
 
   const size_t input_size = encoder.InputChunkSize();
   const size_t min_output_size = encoder.MinOutputBufferSize();
-  std::vector<uint8_t> input(input_size, 0);
+
+  // Allocate extra padding so input_storage.data() + 1 is guaranteed misaligned for int32_t.
+  std::vector<uint8_t> input_storage(input_size + 4, 0);
+  const uint8_t* unaligned_input = input_storage.data() + 1;
   std::vector<uint8_t> output(min_output_size, 0);
 
   // Mismatched input_data_size should return -1.
   EXPECT_EQ(
-      encoder.ProcessInputChunkData(input.data(), input_size - 1, output.data(), output.size()),
+      encoder.ProcessInputChunkData(unaligned_input, input_size - 1, output.data(), output.size()),
       -1);
   // Undersized output_buffer_size should return -1.
+  EXPECT_EQ(encoder.ProcessInputChunkData(unaligned_input, input_size, output.data(),
+                                          min_output_size - 1),
+            -1);
+  // Valid unaligned input chunk should succeed via aligned scratch buffer copy.
   EXPECT_EQ(
-      encoder.ProcessInputChunkData(input.data(), input_size, output.data(), min_output_size - 1),
-      -1);
+      encoder.ProcessInputChunkData(unaligned_input, input_size, output.data(), output.size()),
+      static_cast<int>(min_output_size));
 }
 
 }  // namespace
