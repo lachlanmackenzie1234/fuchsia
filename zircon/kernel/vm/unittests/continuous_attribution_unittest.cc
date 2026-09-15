@@ -528,9 +528,61 @@ bool continuous_attribution_tracker_reclaim_page() {
 
   EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
-  ASSERT_OK(vmo->DebugGetCowPages()->EvictLoanedPage(committed_page, 0));
+  // Only pages in an isolate queue can be reclaimed, so move the page there as the scanner would.
+  pmm_page_queues()->MoveToReclaimDontNeed(committed_page);
+
+  VmCowReclaimResult result = vmo->DebugGetCowPages()->ReclaimPage(
+      committed_page, 0, VmCowPages::EvictionAction::FollowHint, nullptr);
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_EQ(1u, result.value().num_pages);
 
   EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+
+  END_TEST;
+}
+
+// TODO(https://fxbug.dev/549880387): Convert to Rust.
+// Test that the populated slots count is decremented when a loaned page is evicted from
+// VmCowPages.
+bool continuous_attribution_tracker_evict_loaned_page() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  const bool loaning_was_enabled = PhysicalPageBorrowingConfig::Get().is_loaning_enabled();
+  PhysicalPageBorrowingConfig::Get().set_loaning_enabled(true);
+  auto cleanup = fit::defer([loaning_was_enabled] {
+    PhysicalPageBorrowingConfig::Get().set_loaning_enabled(loaning_was_enabled);
+  });
+
+  // Provide a place for ReplacePageWithLoaned to borrow from.
+  fbl::RefPtr<VmObjectPaged> contiguous_vmo;
+  ASSERT_OK(VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, kPageSize, /*alignment_log2=*/0,
+                                            &contiguous_vmo));
+  ASSERT_OK(contiguous_vmo->DecommitRange(0, kPageSize));
+
+  vm_page_t *committed_page;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_partially_committed_pager_vmo(3, /*committed_pages=*/1, /*trap_dirty=*/false,
+                                               /*resizable=*/false, false, &committed_page, &vmo));
+
+  fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+  ASSERT_OK(cow_pages->ReplacePageWithLoaned(committed_page, /*offset=*/0));
+
+  vm_page_t *loaned_page = vmo->DebugGetPage(0);
+  ASSERT_NONNULL(loaned_page);
+  ASSERT_TRUE(loaned_page->is_loaned());
+
+  EXPECT_EQ(1u, cow_pages->DebugGetPopulatedSlotsCount());
+
+  ASSERT_OK(cow_pages->EvictLoanedPage(loaned_page, 0));
+
+  EXPECT_EQ(0u, cow_pages->DebugGetPopulatedSlotsCount());
 
   END_TEST;
 }
@@ -1135,6 +1187,7 @@ VM_UNITTEST(continuous_attribution_tracker_zero_pager_clone)
 VM_UNITTEST(continuous_attribution_tracker_require_move_page)
 VM_UNITTEST(continuous_attribution_tracker_hidden_no_parent_content)
 VM_UNITTEST(continuous_attribution_tracker_reclaim_page)
+VM_UNITTEST(continuous_attribution_tracker_evict_loaned_page)
 VM_UNITTEST(continuous_attribution_tracker_zero_page_compression)
 VM_UNITTEST(continuous_attribution_tracker_zero_page_deduplication)
 VM_UNITTEST(continuous_attribution_tracker_release_hidden)
