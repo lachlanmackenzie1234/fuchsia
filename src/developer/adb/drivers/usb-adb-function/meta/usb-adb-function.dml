@@ -13,10 +13,10 @@
     ],
     bind: {
       protocol: "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
-      rules: {
-        "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
-        "fuchsia.BIND_USB_PROTOCOL": "fuchsia.google.platform.usb.BIND_USB_PROTOCOL.ADB",
-        "fuchsia.BIND_USB_SUBCLASS": "fuchsia.google.platform.usb.BIND_USB_SUBCLASS.ADB",
+      usb: {
+        class: "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
+        subclass: "fuchsia.google.platform.usb.BIND_USB_SUBCLASS.ADB",
+        protocol: "fuchsia.google.platform.usb.BIND_USB_PROTOCOL.ADB",
       },
     },
   },

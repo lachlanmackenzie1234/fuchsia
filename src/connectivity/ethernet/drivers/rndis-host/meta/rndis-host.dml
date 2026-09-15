@@ -11,10 +11,10 @@
     default_dispatcher_opts: [ "allow_sync_calls" ],
     bind: {
       protocol: "fuchsia.usb.BIND_PROTOCOL.INTERFACE",
-      rules: {
-        "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.WIRELESS",
-        "fuchsia.BIND_USB_PROTOCOL": "fuchsia.usb.wireless.BIND_USB_PROTOCOL.MISC_RNDIS",
-        "fuchsia.BIND_USB_SUBCLASS": "fuchsia.usb.wireless.BIND_USB_SUBCLASS.MISC",
+      usb: {
+        class: "fuchsia.usb.BIND_USB_CLASS.WIRELESS",
+        subclass: "fuchsia.usb.wireless.BIND_USB_SUBCLASS.MISC",
+        protocol: "fuchsia.usb.wireless.BIND_USB_PROTOCOL.MISC_RNDIS",
       },
     },
   },

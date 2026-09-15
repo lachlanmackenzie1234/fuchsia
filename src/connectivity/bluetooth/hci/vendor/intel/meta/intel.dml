@@ -15,9 +15,9 @@
     ],
     bind: {
       protocol: "fuchsia.bluetooth.BIND_PROTOCOL.TRANSPORT",
-      rules: {
-        "fuchsia.BIND_USB_VID": "fuchsia.usb.BIND_USB_VID.INTEL",
-        "fuchsia.BIND_USB_PID": [
+      usb: {
+        vid: "fuchsia.usb.BIND_USB_VID.INTEL",
+        pid: [
           "0x07dc",
           "0x0a2a",
           "0x0aa7",

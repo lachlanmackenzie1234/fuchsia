@@ -17,11 +17,11 @@
       primary: true,
       bind: {
         service: "fuchsia.hardware.pci.Service",
-        pci_interface: "1",
-        rules: {
-          "fuchsia.BIND_PCI_DID": "fuchsia.pci.BIND_PCI_DID.RTL8111",
-          "fuchsia.BIND_PCI_VID": "fuchsia.pci.BIND_PCI_VID.REALTEK"
-        }
+        pci: {
+          vid: "fuchsia.pci.BIND_PCI_VID.REALTEK",
+          did: "fuchsia.pci.BIND_PCI_DID.RTL8111",
+          interface: "1",
+        },
       }
     },
     {

@@ -24,9 +24,7 @@
       name: "my-clock",
       service: "fuchsia.hardware.clock.Service",
       requirements: {
-        rules: {
-          "fuchsia.NAME": "\"my-clock\""
-        }
+        match_name: true,
       }
     }
   ]

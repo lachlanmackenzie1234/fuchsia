@@ -25,18 +25,14 @@
       service: "fuchsia.hardware.clock.Service",
       name: "clock-sensor",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"clock-sensor\"",
-        },
+        match_name: true,
       },
     },
     {
       service: "fuchsia.hardware.gpio.Service",
       name: "gpio-reset",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"gpio-reset\"",
-        },
+        match_name: true,
       },
     },
     {
@@ -60,18 +56,14 @@
       service: "fuchsia.hardware.gpio.Service",
       name: "gpio-vana",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"gpio-vana\"",
-        },
+        match_name: true,
       },
     },
     {
       service: "fuchsia.hardware.gpio.Service",
       name: "gpio-vdig",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"gpio-vdig\"",
-        },
+        match_name: true,
       },
     },
     {

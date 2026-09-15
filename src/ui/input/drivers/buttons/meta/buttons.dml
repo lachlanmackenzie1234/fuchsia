@@ -43,50 +43,40 @@
       name: "mic-mute",
       availability: "optional",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"mic-mute\""
-        }
-      }
+        match_name: true,
+      },
     },
     {
       service: "fuchsia.hardware.gpio.Service",
       name: "volume-up",
       availability: "optional",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"volume-up\""
-        }
-      }
+        match_name: true,
+      },
     },
     {
       service: "fuchsia.hardware.gpio.Service",
       name: "volume-down",
       availability: "optional",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"volume-down\""
-        }
-      }
+        match_name: true,
+      },
     },
     {
       service: "fuchsia.hardware.gpio.Service",
       name: "volume-both",
       availability: "optional",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"volume-both\""
-        }
-      }
+        match_name: true,
+      },
     },
     {
       service: "fuchsia.hardware.gpio.Service",
       name: "power",
       availability: "optional",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"power\""
-        }
-      }
+        match_name: true,
+      },
     },
     {
       service: "fuchsia.hardware.pin.PinStatesService",

@@ -10,6 +10,36 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct PciBind {
+    pub vid: Option<Value>,
+    pub did: Option<Value>,
+    pub class: Option<Value>,
+    pub subclass: Option<Value>,
+    pub interface: Option<Value>,
+    pub revision: Option<Value>,
+    pub topo: Option<Value>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct UsbBind {
+    pub vid: Option<Value>,
+    pub pid: Option<Value>,
+    pub class: Option<Value>,
+    pub subclass: Option<Value>,
+    pub protocol: Option<Value>,
+    #[serde(alias = "interface")]
+    pub interface_number: Option<Value>,
+    pub bind_protocol: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct AcpiBind {
+    pub hid: Option<Value>,
+    pub first_cid: Option<Value>,
+    pub bus_type: Option<Value>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct BindPrimary {
     pub node: String,
     pub compat: Option<Value>,
@@ -20,14 +50,13 @@ pub struct BindPrimary {
     pub service: Option<String>,
     pub banjo: Option<String>,
     pub transport: Option<String>,
+    pub pci: Option<PciBind>,
+    pub usb: Option<UsbBind>,
+    pub acpi: Option<AcpiBind>,
+    pub node_name: Option<Value>,
+    pub match_name: Option<bool>,
     pub one_of: Option<Vec<DmlBind>>,
     pub rules: Option<HashMap<String, Value>>,
-    #[serde(rename = "pci_class")]
-    pub pci_class: Option<String>,
-    #[serde(rename = "pci_subclass")]
-    pub pci_subclass: Option<String>,
-    #[serde(rename = "pci_interface")]
-    pub pci_interface: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Default)]
@@ -40,15 +69,14 @@ pub struct DmlBind {
     pub pid: Option<Value>,
     pub did: Option<Value>,
     pub compat: Option<Value>,
+    pub pci: Option<PciBind>,
+    pub usb: Option<UsbBind>,
+    pub acpi: Option<AcpiBind>,
+    pub node_name: Option<Value>,
+    pub match_name: Option<bool>,
     pub primary: Option<BindPrimary>,
     pub one_of: Option<Vec<DmlBind>>,
     pub rules: Option<HashMap<String, Value>>,
-    #[serde(rename = "pci_class")]
-    pub pci_class: Option<String>,
-    #[serde(rename = "pci_subclass")]
-    pub pci_subclass: Option<String>,
-    #[serde(rename = "pci_interface")]
-    pub pci_interface: Option<String>,
     #[serde(alias = "name")]
     pub composite_name: Option<String>,
 }
@@ -500,5 +528,34 @@ mod tests {
         // child_d should be included exactly once because of the processed cache
         let child_names: Vec<String> = input.children.iter().map(|c| c.name.clone()).collect();
         assert_eq!(child_names, vec!["child_d"]);
+    }
+
+    #[test]
+    fn test_dml_schema_is_valid_json() {
+        let schema_str = include_str!("../dml.schema.json");
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(schema_str);
+        assert!(parsed.is_ok(), "dml.schema.json is not valid JSON: {:?}", parsed.err());
+        let val = parsed.unwrap();
+        assert_eq!(
+            val.get("$schema").and_then(|v| v.as_str()),
+            Some("http://json-schema.org/draft-07/schema#")
+        );
+        let defs = val
+            .get("definitions")
+            .and_then(|v| v.as_object())
+            .expect("missing definitions in schema");
+        for key in [
+            "PciBind",
+            "UsbBind",
+            "AcpiBind",
+            "DmlBind",
+            "Program",
+            "UseEntry",
+            "BoardChild",
+            "BoardOffer",
+            "MetadataMapping",
+        ] {
+            assert!(defs.contains_key(key), "Missing key definition '{}' in dml.schema.json", key);
+        }
     }
 }

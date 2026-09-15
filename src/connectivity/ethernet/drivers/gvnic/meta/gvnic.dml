@@ -22,10 +22,10 @@
       primary: true,
       bind: {
         service: "fuchsia.hardware.pci.Service",
-        rules: {
-          "fuchsia.BIND_PCI_DID": "0x0042",
-          "fuchsia.BIND_PCI_VID": "fuchsia.pci.BIND_PCI_VID.GOOGLE"
-        }
+        pci: {
+          vid: "fuchsia.pci.BIND_PCI_VID.GOOGLE",
+          did: "0x0042",
+        },
       }
     },
     {

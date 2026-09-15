@@ -25,8 +25,8 @@
       primary: true,
       bind: {
         banjo: "fuchsia.acpi.BIND_PROTOCOL.DEVICE",
-        rules: {
-          "fuchsia.acpi.HID": "PNP0C0A"
+        acpi: {
+          hid: "PNP0C0A"
         }
       }
     }

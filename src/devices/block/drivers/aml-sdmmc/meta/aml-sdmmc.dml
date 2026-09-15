@@ -50,9 +50,7 @@
       availability: "optional",
       name: "gpio-reset",
       bind: {
-        rules: {
-          "fuchsia.NAME": "\"gpio-reset\"",
-        },
+        match_name: true,
       },
     },
     {

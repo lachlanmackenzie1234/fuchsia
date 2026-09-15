@@ -15,10 +15,10 @@
     colocate: "true",
     bind: {
       protocol: "fuchsia.usb.BIND_PROTOCOL.DEVICE",
-      rules: {
-        "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.WIRELESS",
-        "fuchsia.BIND_USB_PROTOCOL": "fuchsia.usb.wireless.BIND_USB_PROTOCOL.BLUETOOTH",
-        "fuchsia.BIND_USB_SUBCLASS": "fuchsia.usb.wireless.BIND_USB_SUBCLASS.MISC",
+      usb: {
+        class: "fuchsia.usb.BIND_USB_CLASS.WIRELESS",
+        subclass: "fuchsia.usb.wireless.BIND_USB_SUBCLASS.MISC",
+        protocol: "fuchsia.usb.wireless.BIND_USB_PROTOCOL.BLUETOOTH",
       },
     },
   },
