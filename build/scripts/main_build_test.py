@@ -613,6 +613,25 @@ class BuildInvocationTest(MainBuildTestBase):
             self.assertEqual(env["BUILDBUCKET_BUILDER"], "fuchsia-builder")
             self.assertEqual(env["SWARMING_TASK_ID"], "616a9bc24f0")
 
+    def test_get_build_env_forward_rs_variables(self) -> None:
+        context = self.create_context()
+        context.env = {
+            "USER": "fuchsia-user",
+            "RS_rs_instance": "projects/fuchsia-infra/instances/default_instance",
+            "RS_cas_instance": "projects/fuchsia-infra/instances/default_instance",
+        }
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(
+                env["RS_rs_instance"],
+                "projects/fuchsia-infra/instances/default_instance",
+            )
+            self.assertEqual(
+                env["RS_cas_instance"],
+                "projects/fuchsia-infra/instances/default_instance",
+            )
+
     def test_get_build_env_no_status(self) -> None:
         context = self.create_context(status=False)
         context.env = {"TERM": "xterm"}

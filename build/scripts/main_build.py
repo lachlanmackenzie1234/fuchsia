@@ -997,8 +997,17 @@ class BuildInvocation(object):
             build_env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"] = socket_str
         # LINT.ThenChange(
         #   //build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars,
-        #   //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_socket_env_vars
+        #   //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_socket_env_vars,
+        #   //build/resultstore/fuchsia-rsproxy-wrap.sh:rs_service_env_vars
         # )
+
+        # Forward ResultStore/CAS instance names passed from the parent
+        # environment/recipe.
+        # LINT.IfChange(rs_instance_env_vars)
+        for var in ("RS_rs_instance", "RS_cas_instance"):
+            if var in self.context.env:
+                build_env[var] = self.context.env[var]
+        # LINT.ThenChange(//build/resultstore/fuchsia-rsproxy-wrap.sh:rs_instance_env_vars)
 
         return build_env
 
