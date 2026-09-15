@@ -1003,8 +1003,6 @@ def main() -> int:
 
     # Detect when to use remote service endpoint overrides from infra.
     for config_arg, env_var, bazel_flag in (
-        ("sponge", "BAZEL_sponge_socket_path", "--bes_proxy"),
-        ("sponge_infra", "BAZEL_sponge_socket_path", "--bes_proxy"),
         ("resultstore", "BAZEL_resultstore_socket_path", "--bes_proxy"),
         ("resultstore_infra", "BAZEL_resultstore_socket_path", "--bes_proxy"),
         ("remote", "BAZEL_rbe_socket_path", "--remote_proxy"),
@@ -1017,9 +1015,7 @@ def main() -> int:
 
     siblings_link_template: str = ""
     for config_arg in bazel_config_args:
-        if "sponge" in config_arg:
-            siblings_link_template = "http://sponge/invocations/"
-        elif "resultstore" in config_arg:
+        if "resultstore" in config_arg:
             siblings_link_template = "http://go/fxbtx/"
 
     jobs = None
