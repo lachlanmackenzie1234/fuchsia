@@ -23,6 +23,22 @@ _Note: Some crates may be located under `ask2patch`, `fork`, or `intree` instead
 
 For other third-party dependencies (e.g. googletest, re2, boringssl), `bazel2gn` translates targets according to [`//build/tools/bazel2gn/third_party_target_map.json`](//build/tools/bazel2gn/third_party_target_map.json).
 
+## Test Migration for `rustc_library()` target
+
+In Bazel, the `rustc_library()` target creates a sub-target named `{target_name}_test` when the `with_host_unit_tests` or `with_unit_tests` attribute is set to `True`.
+
+- **If all dependencies in `test_deps` are migrated to Bazel:**
+  1. Register `{target_name}_test` in Bazel:
+      * For `//src/developer/ffx/lib/*` libraries, add `//src/developer/ffx/lib/<name>:{target_name}_test` to Bazel `//src/developer/ffx:tests`, and add `"<name>"` to `tests_migrated_ffx_libraries` within `//src/developer/ffx/lib/ffx_libraries_list.gni`.
+      * For other rustc libraries, highlight to the user.
+  2. Clean up `BUILD.gn` file:
+      * Remove `:{target_name}_test` from `group("tests")` in `BUILD.gn`.
+      * If `group("tests")` has no remaining dependencies, delete `group("tests")` and remove `":tests"` from the top-level library group.
+
+- **If any dependency in `test_deps` is NOT yet migrated to Bazel:**
+  * **Keep** `with_host_unit_tests = True` (or `with_unit_tests = True`) and `test_deps` on `rustc_library()` in `BUILD.bazel` so that `bazel2gn` continues syncing `with_unit_tests = true` to `BUILD.gn`.
+  * **Do not** add `{target_name}_test` to Bazel test suites or add the library name to the `tests_migrated_ffx_libraries` list, and **keep** `group("tests")` in `BUILD.gn` so the tests continue running in GN.
+
 ## Example
 
 ```gn
