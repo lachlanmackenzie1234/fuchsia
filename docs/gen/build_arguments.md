@@ -81,7 +81,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:776
+From //build/config/BUILDCONFIG.gn:787
 
 ### allowed_test_device_types
 
@@ -4077,7 +4077,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:534
+From //build/config/BUILDCONFIG.gn:545
 
 ### fat_lto_objects
 
@@ -4769,7 +4769,7 @@ LINT.IfChange(in_default_toolchain)
 
 **Current value (from the default):** `true`
 
-From //build/config/BUILDCONFIG.gn:46
+From //build/config/BUILDCONFIG.gn:57
 
 ### include_account_in_fvm
 
@@ -5206,7 +5206,7 @@ Each element of the list is one variant, which is a scope defining:
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:286
+From //build/config/BUILDCONFIG.gn:297
 
 ### link_rbe_check
 
@@ -5382,6 +5382,22 @@ product in a multi-product build is not desired.
 **Current value (from the default):** `""`
 
 From //build/images/args.gni:79
+
+### max_build_concurrency
+
+Upper bound on the build concurrency (-j) that `fx build` picks
+automatically. Zero means no upper bound.
+
+The automatic value is derived from the host CPU count, which assumes the
+CPU is the scarcest resource. Environments where that does not hold can
+lower it here; for example a FUSE-backed workspace exhausts file
+descriptors long before it saturates a high-core host.
+
+An explicit -j on the command line is always honored as-is.
+
+**Current value (from the default):** `0`
+
+From //build/config/BUILDCONFIG.gn:47
 
 ### max_log_disk_usage
 
@@ -8837,7 +8853,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:766
+From //build/config/BUILDCONFIG.gn:777
 
 ### select_variant_canonical
 
@@ -8847,7 +8863,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:771
+From //build/config/BUILDCONFIG.gn:782
 
 ### select_variant_shortcuts
 
@@ -8924,7 +8940,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:541
+From //build/config/BUILDCONFIG.gn:552
 
 ### skip_buildtools_check
 
@@ -9265,7 +9281,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:953
+From //build/config/BUILDCONFIG.gn:964
 
 ### truncate_build_info_commit_date
 
@@ -9773,7 +9789,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:970
+From //build/config/BUILDCONFIG.gn:981
 
 ### zircon_tracelog
 
