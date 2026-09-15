@@ -159,7 +159,7 @@ impl FlatlandEnvironment {
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::protocol::<flatland::FlatlandMarker>())
+                    .capability(Capability::protocol::<flatland::FlatlandFactoryMarker>())
                     .capability(Capability::protocol::<flatland::FlatlandDisplayMarker>())
                     .capability(Capability::protocol::<pointerinjector::RegistryMarker>())
                     .from(&scenic)
