@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::models::{Instance, InstanceList, SerialPortOutput};
+use crate::models::{Instance, InstanceList, Operation, SerialPortOutput};
 use anyhow::{Context, Result, bail};
 use fuchsia_hyper::{HttpsClient, new_https_client};
 use http_body_util::BodyExt;
 use hyper::{Method, Request};
 use serde::de::DeserializeOwned;
+use std::time::Duration;
 use url::Url;
 
 const COMPUTE_BASE: &str = "https://compute.googleapis.com/compute/v1";
@@ -143,6 +144,100 @@ impl GceClient {
         let list: InstanceList = self.send_request(Method::GET, url, None).await?;
         Ok(list.items)
     }
+
+    fn stop_instance_url(&self, project: &str, zone: &str, instance_name: &str) -> Result<Url> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(&[
+            "projects",
+            project,
+            "zones",
+            zone,
+            "instances",
+            instance_name,
+            "stop",
+        ]);
+        Ok(url)
+    }
+
+    fn zone_operation_url(&self, project: &str, zone: &str, op_name: &str) -> Result<Url> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(&[
+            "projects",
+            project,
+            "zones",
+            zone,
+            "operations",
+            op_name,
+        ]);
+        Ok(url)
+    }
+
+    pub async fn delete_instance(
+        &self,
+        project: &str,
+        zone: &str,
+        instance_name: &str,
+    ) -> Result<Operation> {
+        let url = self.instance_url(project, zone, instance_name)?;
+        self.send_request(Method::DELETE, url, None).await
+    }
+
+    pub async fn stop_instance(
+        &self,
+        project: &str,
+        zone: &str,
+        instance_name: &str,
+    ) -> Result<Operation> {
+        let url = self.stop_instance_url(project, zone, instance_name)?;
+        self.send_request(Method::POST, url, None).await
+    }
+
+    pub async fn get_zone_operation(
+        &self,
+        project: &str,
+        zone: &str,
+        op_name: &str,
+    ) -> Result<Operation> {
+        let url = self.zone_operation_url(project, zone, op_name)?;
+        self.send_request(Method::GET, url, None).await
+    }
+
+    async fn wait_for_operation<F, Fut>(&self, mut get_op: F) -> Result<()>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<Operation>>,
+    {
+        loop {
+            let op = get_op().await?;
+
+            if let Some(err) = op.error {
+                let err_msg = err
+                    .errors
+                    .into_iter()
+                    .map(|e| {
+                        format!("{}: {}", e.code.unwrap_or_default(), e.message.unwrap_or_default())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!("Operation failed: {}", err_msg);
+            }
+
+            if op.status.as_deref() == Some("DONE") {
+                return Ok(());
+            }
+
+            fuchsia_async::Timer::new(Duration::from_secs(2)).await;
+        }
+    }
+
+    pub async fn wait_for_zone_operation(
+        &self,
+        project: &str,
+        zone: &str,
+        op_name: &str,
+    ) -> Result<()> {
+        self.wait_for_operation(|| self.get_zone_operation(project, zone, op_name)).await
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +279,36 @@ mod tests {
         assert_eq!(
             url_no_start.as_str(),
             "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst/serialPort?port=1"
+        );
+    }
+
+    #[test]
+    fn test_stop_instance_url_construction() {
+        let client = GceClient::new("token123".to_string());
+        let url = client.stop_instance_url("test-p", "test-z", "test-inst").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst/stop"
+        );
+    }
+
+    #[test]
+    fn test_delete_instance_url_construction() {
+        let client = GceClient::new("token123".to_string());
+        let url = client.instance_url("test-p", "test-z", "test-inst").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst"
+        );
+    }
+
+    #[test]
+    fn test_get_zone_operation_url_construction() {
+        let client = GceClient::new("token123".to_string());
+        let url = client.zone_operation_url("test-p", "test-z", "operation-123").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/operations/operation-123"
         );
     }
 }

@@ -8,4 +8,6 @@ pub mod models;
 
 pub use client::GceClient;
 pub use context::{GceContext, get_serial_endpoint};
-pub use models::{Instance, InstanceList, NetworkInterface, SerialPortOutput};
+pub use models::{
+    Instance, InstanceList, NetworkInterface, Operation, SerialPortOutput, StopResult,
+};

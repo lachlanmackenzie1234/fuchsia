@@ -12,6 +12,7 @@ rustc_library("lib") {
 
   deps = [
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/gce:lib",
     "//src/developer/ffx/lib/writer:lib",
@@ -32,6 +33,7 @@ rustc_library("lib") {
     "src/subtools/mod.rs",
     "src/subtools/serial.rs",
     "src/subtools/show.rs",
+    "src/subtools/stop.rs",
   ]
 }
 

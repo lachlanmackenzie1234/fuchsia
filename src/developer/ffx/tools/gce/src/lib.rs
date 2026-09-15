@@ -8,8 +8,8 @@ use fho::{FfxTool, FhoEnvironment, Result};
 mod args;
 mod subtools;
 
-pub use args::{GceCommand, GceSubCommand, ListCommand, SerialCommand, ShowCommand};
-pub use subtools::{ListTool, SerialTool, ShowTool};
+pub use args::{GceCommand, GceSubCommand, ListCommand, SerialCommand, ShowCommand, StopCommand};
+pub use subtools::{ListTool, SerialTool, ShowTool, StopTool};
 
 impl ToolSuiteCommand for GceCommand {
     type SubCommand = GceSubCommand;
@@ -32,6 +32,7 @@ impl SubtoolSuite for GceSuite {
             GceSubCommand::List(cmd) => Subtool::new(ListTool::from_env(env, cmd).await?),
             GceSubCommand::Show(cmd) => Subtool::new(ShowTool::from_env(env, cmd).await?),
             GceSubCommand::Serial(cmd) => Subtool::new(SerialTool::from_env(env, cmd).await?),
+            GceSubCommand::Stop(cmd) => Subtool::new(StopTool::from_env(env, cmd).await?),
         })
     }
 }
@@ -79,5 +80,23 @@ mod tests {
             }
             _ => panic!("expected Serial subcommand"),
         }
+    }
+
+    #[test]
+    fn test_parse_stop_command() {
+        let cmd =
+            GceCommand::from_args(&["gce"], &["stop", "my-vm", "--keep"]).expect("parsed stop");
+        match cmd.subcommand {
+            GceSubCommand::Stop(s) => {
+                assert_eq!(s.name, "my-vm");
+                assert!(s.keep);
+            }
+            _ => panic!("expected Stop subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stop_command_requires_name() {
+        assert!(GceCommand::from_args(&["gce"], &["stop"]).is_err());
     }
 }

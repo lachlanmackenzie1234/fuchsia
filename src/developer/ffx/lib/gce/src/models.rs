@@ -88,6 +88,52 @@ where
     s.parse::<i64>().map_err(serde::de::Error::custom)
 }
 
+/// Represents a GCE asynchronous operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Operation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<OperationError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationError {
+    #[serde(default)]
+    pub errors: Vec<OperationErrorItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationErrorItem {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// Result returned by `ffx gce stop` in machine-readable output format.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StopResult {
+    pub name: String,
+    pub project: String,
+    pub zone: String,
+    pub action: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +189,34 @@ mod tests {
     fn test_serial_port_output_rejects_numeric_literal() {
         let json_int = r#"{"contents": "hello", "start": 0, "next": 10}"#;
         assert!(serde_json::from_str::<SerialPortOutput>(json_int).is_err());
+    }
+
+    #[test]
+    fn test_operation_deserialization() {
+        let json = r#"{
+            "id": "123456789",
+            "name": "operation-123",
+            "status": "DONE",
+            "targetLink": "https://www.googleapis.com/compute/v1/projects/my-proj/zones/us-central1-a/instances/test-vm"
+        }"#;
+
+        let op: Operation = serde_json::from_str(json).expect("deserialize operation");
+        assert_eq!(op.name.as_deref(), Some("operation-123"));
+        assert_eq!(op.status.as_deref(), Some("DONE"));
+    }
+
+    #[test]
+    fn test_stop_result_serialization() {
+        let result = StopResult {
+            name: "test-vm".to_string(),
+            project: "test-proj".to_string(),
+            zone: "us-central1-a".to_string(),
+            action: "stopped".to_string(),
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize stop result");
+        assert!(json.contains("\"action\":\"stopped\""));
+        let parsed: StopResult = serde_json::from_str(&json).expect("deserialize stop result");
+        assert_eq!(parsed, result);
     }
 }
