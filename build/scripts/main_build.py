@@ -94,6 +94,7 @@ class FuchsiaBuildConfig(object):
       dry_run: if True, execute in dry-run mode
       status: if True, show build status metrics
       auth_mode: "auto", "user", "machine", or "none" (RBE/ResultStore auth)
+      max_concurrency: upper bound on the automatically chosen -j, 0 for none
       fint_params_path: path to Fint static parameters if Fint wrapping is triggered
       fint_context_path: path to Fint context parameters if Fint wrapping is triggered
       output_metadata_json: path to write the structured metadata JSON of build artifacts
@@ -109,6 +110,7 @@ class FuchsiaBuildConfig(object):
     dry_run: bool
     auth_mode: str
     status: bool = True
+    max_concurrency: int = 0
     fint_params_path: pathlib.Path | None = None
     fint_context_path: pathlib.Path | None = None
     output_metadata_json: pathlib.Path | None = None
@@ -133,6 +135,7 @@ class FuchsiaBuildConfig(object):
             fint_context_path=args.fint_context_path,
             output_metadata_json=args.output_metadata_json,
             auth_mode=args.auth_mode,
+            max_concurrency=args.max_concurrency,
             remote_proxy_socket=args.remote_proxy_socket,
             resultstore_proxy_socket=args.resultstore_proxy_socket,
         )
@@ -236,7 +239,8 @@ def get_cpu_count() -> int:
     return os.cpu_count() or 1
 
 
-def choose_concurrency(rbe_enabled: bool) -> int:
+def rbe_cpu_concurrency(rbe_enabled: bool) -> int:
+    """Computes the build concurrency (-j) supported by the host CPU."""
     cpus = get_cpu_count()
     if rbe_enabled:
         # The recommendation from the Goma team is to use 10*cpu-count for C++.
@@ -694,7 +698,11 @@ class FuchsiaBuildContext(object):
 
     @property
     def concurrency(self) -> int:
-        return choose_concurrency(self.rbe_enabled)
+        """The -j value to use, the minimum over all limiting factors."""
+        factors = [rbe_cpu_concurrency(self.rbe_enabled)]
+        if self.config.max_concurrency > 0:
+            factors.append(self.config.max_concurrency)
+        return min(factors)
 
     @functools.cached_property
     def loas_type(self) -> str:
@@ -1409,6 +1417,13 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         choices=["auto", "user", "machine", "none"],
         default="auto",
         help="Specify RBE/ResultStore authentication mode (auto, user, machine, or none; default: auto).",
+    )
+
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=0,
+        help="Upper bound on the automatically chosen -j value, or 0 for no bound. Ignored when -j is passed explicitly.",
     )
 
     parser.add_argument("--verbose", action="store_true")

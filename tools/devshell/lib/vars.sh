@@ -1205,6 +1205,9 @@ function fx-run-build-command {
     "--resultstore=${RESULTSTORE_ENABLED}"
     "--profile=${BUILD_PROFILE_ENABLED}"
     "--tui=${TUI_ENABLED:-0}"
+
+    # MAX_BUILD_CONCURRENCY comes from fx.config, written by `gn gen`.
+    "--max-concurrency=${MAX_BUILD_CONCURRENCY:-0}"
   )
   if [[ "${print_full_cmd}" == "true" ]]; then
     args+=("--verbose")

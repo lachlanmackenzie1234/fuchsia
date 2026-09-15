@@ -173,6 +173,21 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             _ = context.rbe_enabled
         self.assertEqual(str(cm.exception), "missing file")
 
+    def test_concurrency_capped(self) -> None:
+        context = self.create_context(rbe=True, max_concurrency=64)
+        with mock.patch.object(main_build, "get_cpu_count", return_value=96):
+            self.assertEqual(context.concurrency, 64)
+
+    def test_concurrency_cap_does_not_raise_concurrency(self) -> None:
+        context = self.create_context(rbe=True, max_concurrency=64)
+        with mock.patch.object(main_build, "get_cpu_count", return_value=4):
+            self.assertEqual(context.concurrency, 40)
+
+    def test_concurrency_uncapped(self) -> None:
+        context = self.create_context(rbe=True)
+        with mock.patch.object(main_build, "get_cpu_count", return_value=96):
+            self.assertEqual(context.concurrency, 960)
+
     def test_parse_properties(self) -> None:
         test_cases = [
             ("key=value\n", {"key": "value"}),
@@ -936,17 +951,17 @@ class CheckRbeEnvVarsTest(unittest.TestCase):
         self.assertIn("RBE_BAR, RBE_FOO", output)
 
 
-class ChooseConcurrencyTest(unittest.TestCase):
+class RbeCpuConcurrencyTest(unittest.TestCase):
     def test_local(self) -> None:
         with mock.patch.object(main_build, "get_cpu_count", return_value=8):
             self.assertEqual(
-                main_build.choose_concurrency(rbe_enabled=False), 8
+                main_build.rbe_cpu_concurrency(rbe_enabled=False), 8
             )
 
     def test_rbe(self) -> None:
         with mock.patch.object(main_build, "get_cpu_count", return_value=8):
             self.assertEqual(
-                main_build.choose_concurrency(rbe_enabled=True), 80
+                main_build.rbe_cpu_concurrency(rbe_enabled=True), 80
             )
 
 
@@ -1111,6 +1126,26 @@ class PrepareFunctionsTest(MainBuildTestBase):
         with self.assertRaises(main_build.BuildConfigurationError) as cm:
             main_build.new_ninja_build_command_execution(context, ["-j"])
         self.assertEqual(str(cm.exception), "-j requires an argument")
+
+    def test_ninja_concurrency_cap(self) -> None:
+        context = self.create_context(rbe=True, max_concurrency=64)
+        with mock.patch.object(main_build, "get_cpu_count", return_value=96):
+            with self.mock_invocation_context():
+                exec_info = main_build.new_ninja_build_command_execution(
+                    context, ["default"]
+                )
+                j_idx = exec_info.full_command.index("-j")
+                self.assertEqual(exec_info.full_command[j_idx + 1], "64")
+
+    def test_ninja_explicit_j_overrides_cap(self) -> None:
+        context = self.create_context(rbe=True, max_concurrency=64)
+        with mock.patch.object(main_build, "get_cpu_count", return_value=96):
+            with self.mock_invocation_context():
+                exec_info = main_build.new_ninja_build_command_execution(
+                    context, ["-j", "128", "default"]
+                )
+                j_idx = exec_info.full_command.index("-j")
+                self.assertEqual(exec_info.full_command[j_idx + 1], "128")
 
 
 class CheckShellCommandTest(unittest.TestCase):
