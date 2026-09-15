@@ -112,16 +112,8 @@ License File: %s
 	}
 }
 
-func TestGrouper_VirtualReadmeWithPackageManifest(t *testing.T) {
+func TestGrouper_PackageManifestSubprojects(t *testing.T) {
 	fuchsiaDir := t.TempDir()
-
-	virtualReadmePath := filepath.Join(fuchsiaDir, "virtual_readmes", "golibs_README.fuchsia")
-	if err := os.MkdirAll(filepath.Dir(virtualReadmePath), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(virtualReadmePath, []byte("Name: golibs\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
 
 	golibsDir := filepath.Join(fuchsiaDir, "third_party", "golibs")
 	if err := os.MkdirAll(golibsDir, 0755); err != nil {
@@ -150,9 +142,6 @@ require (
 		fuchsiaDir,
 		Config{
 			BarrierPaths: map[string]bool{"third_party": true},
-			OutOfTreeReadmes: map[string]string{
-				filepath.Join("third_party", "golibs"): virtualReadmePath,
-			},
 		},
 	)
 
@@ -193,6 +182,127 @@ require (
 	}
 }
 
+func TestGrouper_BarrierExceptions(t *testing.T) {
+	fuchsiaDir := t.TempDir()
+
+	golibsDir := filepath.Join(fuchsiaDir, "third_party", "golibs")
+	if err := os.MkdirAll(golibsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	goModContent := "module foo\n\ngo 1.23\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\n"
+	if err := os.WriteFile(filepath.Join(golibsDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(golibsDir, "imports.go"), []byte("package golibs\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgDir := filepath.Join(golibsDir, "vendor", "github.com", "pkg", "errors")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "LICENSE"), []byte("BSD"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	grouper := NewGrouper(
+		fuchsiaDir,
+		Config{
+			BarrierPaths: map[string]bool{
+				"third_party":               true,
+				"third_party/golibs/vendor": true,
+			},
+			BarrierExceptions: map[string]bool{
+				"third_party/golibs": true,
+			},
+		},
+	)
+
+	inChan := make(chan pipeline.RawPath, 20)
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "go.mod"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "go.sum"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "imports.go"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "BUILD.gn"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "BUILD.bazel"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "OWNERS"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "update.sh"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(golibsDir, "vendor", "modules.txt"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(pkgDir, "LICENSE"), IsDir: false}
+	close(inChan)
+
+	outChan, err := grouper.Run(context.Background(), inChan)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	groups := make(map[string][]string)
+	for p := range outChan {
+		rel, _ := filepath.Rel(fuchsiaDir, p.RootPath)
+		for _, f := range p.Files {
+			relFile, _ := filepath.Rel(fuchsiaDir, f.Path)
+			groups[rel] = append(groups[rel], filepath.ToSlash(relFile))
+		}
+	}
+
+	// 1. Container files in third_party/golibs bubble up to repository root "."
+	rootFiles, hasRoot := groups["."]
+	if !hasRoot {
+		t.Fatalf("Expected repository root '.' project for golibs container files, got groups: %v", groups)
+	}
+	for _, expected := range []string{
+		"third_party/golibs/go.mod",
+		"third_party/golibs/imports.go",
+		"third_party/golibs/BUILD.gn",
+		"third_party/golibs/vendor/modules.txt",
+	} {
+		found := false
+		for _, rf := range rootFiles {
+			if rf == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected root file %s in root group, but not found", expected)
+		}
+	}
+
+	// 2. Vendored package has its own project group
+	relPkg, _ := filepath.Rel(fuchsiaDir, pkgDir)
+	pkgFiles, hasPkg := groups[filepath.ToSlash(relPkg)]
+	if !hasPkg {
+		t.Fatalf("Expected project group for %s, got groups: %v", relPkg, groups)
+	}
+	if len(pkgFiles) != 1 || pkgFiles[0] != "third_party/golibs/vendor/github.com/pkg/errors/LICENSE" {
+		t.Errorf("Unexpected files in pkg group: %v", pkgFiles)
+	}
+
+	// 3. ResolveProjectRoot on container file and dir resolves to repository root fuchsiaDir
+	importsFile := filepath.Join(golibsDir, "imports.go")
+	if gotRoot := grouper.ResolveProjectRoot(importsFile); gotRoot != fuchsiaDir {
+		t.Errorf("ResolveProjectRoot(%q) = %q, want %q", importsFile, gotRoot, fuchsiaDir)
+	}
+	if gotRoot := grouper.ResolveProjectRoot(golibsDir); gotRoot != fuchsiaDir {
+		t.Errorf("ResolveProjectRoot(%q) = %q, want %q", golibsDir, gotRoot, fuchsiaDir)
+	}
+
+	// 4. BelongsToProject on container file
+	if !grouper.BelongsToProject(importsFile, "") {
+		t.Errorf("Expected imports.go to belong to root project")
+	}
+	if grouper.BelongsToProject(importsFile, "third_party/golibs") {
+		t.Errorf("Expected imports.go NOT to belong to third_party/golibs")
+	}
+
+	// 5. BelongsToProject on vendored file
+	pkgLicense := filepath.Join(pkgDir, "LICENSE")
+	if !grouper.BelongsToProject(pkgLicense, "third_party/golibs/vendor/github.com/pkg/errors") {
+		t.Errorf("Expected pkg LICENSE to belong to vendored pkg project")
+	}
+	if grouper.BelongsToProject(pkgLicense, "third_party/golibs") {
+		t.Errorf("Expected pkg LICENSE NOT to belong to container third_party/golibs")
+	}
+}
 func TestGrouper_ResolveProjectRootAndFindReadme(t *testing.T) {
 	fuchsiaDir := t.TempDir()
 
@@ -325,5 +435,68 @@ func TestGrouper_ResolveProjectRootAndFindReadme(t *testing.T) {
 	}
 	if !grouper.BelongsToProject(srcFile, fuchsiaDir) {
 		t.Errorf("Expected 1st-party srcFile to belong to absolute fuchsiaDir")
+	}
+}
+
+func TestGrouper_DartSubpackages(t *testing.T) {
+	fuchsiaDir := t.TempDir()
+
+	pkgDir := filepath.Join(fuchsiaDir, "third_party", "dart-pkg", "pub", "dwds")
+	debugExtDir := filepath.Join(pkgDir, "debug_extension")
+	debugExtMv3Dir := filepath.Join(pkgDir, "debug_extension_mv3")
+
+	for _, d := range []string{pkgDir, debugExtDir, debugExtMv3Dir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "pubspec.yaml"), []byte("name: dwds\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "LICENSE"), []byte("BSD"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	grouper := NewGrouper(
+		fuchsiaDir,
+		Config{
+			BarrierPaths: map[string]bool{
+				"third_party":              true,
+				"third_party/dart-pkg/pub": true,
+			},
+		},
+	)
+
+	inChan := make(chan pipeline.RawPath, 10)
+	inChan <- pipeline.RawPath{Path: filepath.Join(pkgDir, "pubspec.yaml"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(pkgDir, "LICENSE"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(debugExtDir, "pubspec.yaml"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(debugExtMv3Dir, "pubspec.yaml"), IsDir: false}
+	close(inChan)
+
+	outChan, err := grouper.Run(context.Background(), inChan)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var projects []string
+	for p := range outChan {
+		rel, _ := filepath.Rel(fuchsiaDir, p.RootPath)
+		projects = append(projects, filepath.ToSlash(rel))
+	}
+
+	expected := []string{"third_party/dart-pkg/pub/dwds"}
+	if len(projects) != 1 || projects[0] != expected[0] {
+		t.Fatalf("Expected projects %v, got %v", expected, projects)
+	}
+
+	// Verify ResolveProjectRoot and BelongsToProject for Dart subpackages
+	debugExtFile := filepath.Join(debugExtDir, "pubspec.yaml")
+	expectedDwdsRoot := filepath.Join(fuchsiaDir, "third_party", "dart-pkg", "pub", "dwds")
+	if gotRoot := grouper.ResolveProjectRoot(debugExtFile); gotRoot != expectedDwdsRoot {
+		t.Errorf("ResolveProjectRoot(%q) = %q, want %q", debugExtFile, gotRoot, expectedDwdsRoot)
+	}
+	if !grouper.BelongsToProject(debugExtFile, "third_party/dart-pkg/pub/dwds") {
+		t.Errorf("Expected debug_extension/pubspec.yaml to belong to dwds project")
 	}
 }

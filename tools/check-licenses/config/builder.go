@@ -215,7 +215,10 @@ func (b *Builder) parseConfigFile(path string) error {
 			return fmt.Errorf("validation error in %s: a 'bug' field is required to track this exception", path)
 		}
 		for _, p := range barrier.Paths {
-			b.Config.Boundary.BarrierPaths[p] = true
+			b.Config.Boundary.BarrierPaths[filepath.ToSlash(filepath.Clean(strings.TrimPrefix(p, "//")))] = true
+		}
+		for _, p := range barrier.Exceptions {
+			b.Config.Boundary.BarrierExceptions[filepath.ToSlash(filepath.Clean(strings.TrimPrefix(p, "//")))] = true
 		}
 	}
 

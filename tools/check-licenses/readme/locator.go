@@ -53,7 +53,6 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 			if bestMatch != nil {
 				return bestMatch, bestPath, nil
 			}
-			return nil, "", fmt.Errorf("boundary metadata failed to parse")
 		}
 
 		parent := filepath.Dir(dir)
@@ -118,13 +117,16 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 		foundReadmePaths = append(foundReadmePaths, physReadme)
 	}
 
-	// Always check for package manifests (e.g. go.mod, Cargo.toml, pubspec.yaml)
-	// which may define sub-projects or serve as project boundaries.
-	for _, name := range []string{"go.mod", "Cargo.toml", "pubspec.yaml"} {
-		possiblePath := filepath.Join(dir, name)
-		if _, err := os.Stat(possiblePath); err == nil {
-			foundReadmePaths = append(foundReadmePaths, possiblePath)
-			break
+	// If neither virtual nor physical README.fuchsia exists, check fallback manifests
+	if len(foundReadmePaths) == 0 {
+		for _, name := range []string{"go.mod", "Cargo.toml", "pubspec.yaml"} {
+			possiblePath := filepath.Join(dir, name)
+			if _, err := os.Stat(possiblePath); err == nil {
+				if !IsManifestSubpackage(possiblePath, fuchsiaDir) {
+					foundReadmePaths = append(foundReadmePaths, possiblePath)
+					break
+				}
+			}
 		}
 	}
 
@@ -152,20 +154,16 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 	}
 
 	if len(foundReadmePaths) > 0 {
-		var allReadmes []*Readme
-		var bestPath string
-		for _, p := range foundReadmePaths {
-			rootReadmes, subReadmes, parseErr := ParseAnyMetadata(p)
-			if parseErr == nil {
-				if bestPath == "" {
-					bestPath = p
-				}
-				allReadmes = append(allReadmes, rootReadmes...)
-				allReadmes = append(allReadmes, subReadmes...)
+		// Out-of-tree virtual README is added first and takes priority.
+		bestPath := foundReadmePaths[0]
+		rootReadmes, subReadmes, parseErr := ParseAnyMetadata(bestPath)
+		if parseErr == nil {
+			var allReadmes []*Readme
+			allReadmes = append(allReadmes, rootReadmes...)
+			allReadmes = append(allReadmes, subReadmes...)
+			if len(allReadmes) > 0 {
+				return true, bestPath, allReadmes, nil
 			}
-		}
-		if len(allReadmes) > 0 {
-			return true, bestPath, allReadmes, nil
 		}
 	}
 
@@ -234,6 +232,58 @@ func MatchReadme(allReadmes []*Readme, bestPath, absPath, fuchsiaDir string, out
 		return bestMatch
 	}
 
-	// Fallback to the first parsed readme if no best match found!
-	return allReadmes[0]
+	// Fallback to the first parsed readme if no best match found and it represents the root directory.
+	if len(allReadmes) > 0 {
+		loc := filepath.Clean(allReadmes[0].Location)
+		if loc == "" || loc == "." {
+			return allReadmes[0]
+		}
+	}
+	return nil
+}
+
+// IsManifestSubpackage returns true if the manifest resides in a known subpackage directory
+// (such as tests, benchmarks, examples, doc, or debug extensions) rather than marking an independent project boundary.
+func IsManifestSubpackage(manifestPath, fuchsiaDir string) bool {
+	relPath, err := filepath.Rel(fuchsiaDir, manifestPath)
+	if err != nil {
+		return false
+	}
+	slashRel := filepath.ToSlash(relPath)
+	slash := "/" + slashRel
+	isThirdParty := strings.Contains(slash, "/third_party/") || strings.Contains(slash, "/vendor/")
+	isPrebuilt := strings.Contains(slash, "/prebuilt/")
+	if !isThirdParty || isPrebuilt {
+		return true
+	}
+
+	if strings.HasPrefix(slashRel, "third_party/go/src/") {
+		return true
+	}
+
+	dir := filepath.Dir(slashRel)
+	parts := strings.Split(dir, "/")
+	minDepth := 1
+	if strings.HasPrefix(slashRel, "third_party/dart-pkg/pub/") ||
+		strings.HasPrefix(slashRel, "third_party/rust_crates/vendor/") ||
+		strings.HasPrefix(slashRel, "third_party/rust_crates/forks/") {
+		minDepth = 3
+	}
+	for i, part := range parts {
+		if i > minDepth {
+			switch part {
+			case "example", "examples", "benchmark", "benchmarks", "test", "tests",
+				"interop", "debug_extension", "debug_extension_mv3", "doc", "docs", "tools", "misc":
+				return true
+			}
+		}
+	}
+
+	if strings.HasPrefix(slashRel, "third_party/rust_crates/mirrors/") {
+		if len(parts) > 4 { // third_party / rust_crates / mirrors / <repo> (4 parts)
+			return true
+		}
+	}
+
+	return false
 }

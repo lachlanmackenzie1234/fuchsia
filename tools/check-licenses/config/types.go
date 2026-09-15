@@ -316,6 +316,7 @@ type BarrierEntry struct {
 	Bug         string   `json:"bug,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Paths       []string `json:"paths"`
+	Exceptions  []string `json:"exceptions,omitempty"`
 }
 
 type AllowlistEntry struct {
