@@ -1092,6 +1092,17 @@ pub enum SymlinkMode {
     NoFollow,
 }
 
+/// The `DirectoryMode` enum encodes whether a lookup requires the target to be a directory.
+#[derive(Default, PartialEq, Eq, Copy, Clone, Debug)]
+pub enum DirectoryMode {
+    /// The target of the path resolution can be any file type.
+    #[default]
+    AllowAny,
+
+    /// The target of the path resolution must be a directory.
+    MustBeDirectory,
+}
+
 /// The maximum number of symlink traversals that can be made during path resolution.
 pub const MAX_SYMLINK_FOLLOWS: u8 = 40;
 
@@ -1114,9 +1125,9 @@ pub struct LookupContext {
     /// Whether the result of the lookup must be a directory.
     ///
     /// For example, if the path ends with a `/` or if userspace passes
-    /// O_DIRECTORY. This flag can be set to true if the lookup encounters a
+    /// O_DIRECTORY. This flag can be set if the lookup encounters a
     /// symlink that ends with a `/`.
-    pub must_be_directory: bool,
+    pub directory_mode: DirectoryMode,
 
     /// Resolve flags passed to `openat2`. Empty if the lookup originated in any other syscall.
     pub resolve_flags: ResolveFlags,
@@ -1144,21 +1155,26 @@ impl LookupContext {
         LookupContext {
             symlink_mode,
             remaining_follows: MAX_SYMLINK_FOLLOWS,
-            must_be_directory: false,
+            directory_mode: DirectoryMode::default(),
             resolve_flags: ResolveFlags::empty(),
             resolve_base: ResolveBase::None,
         }
     }
 
-    pub fn with(&self, symlink_mode: SymlinkMode) -> LookupContext {
-        LookupContext { symlink_mode, resolve_base: self.resolve_base.clone(), ..*self }
+    pub fn with(&self, symlink_mode: SymlinkMode, directory_mode: DirectoryMode) -> LookupContext {
+        LookupContext {
+            symlink_mode,
+            directory_mode,
+            resolve_base: self.resolve_base.clone(),
+            ..*self
+        }
     }
 
     pub fn update_for_path(&mut self, path: &FsStr) {
         if path.last() == Some(&b'/') {
             // The last path element must resolve to a directory. This is because a trailing slash
             // was found in the path.
-            self.must_be_directory = true;
+            self.directory_mode = DirectoryMode::MustBeDirectory;
             // If the last path element is a symlink, we should follow it.
             // See https://pubs.opengroup.org/onlinepubs/9699919799/xrat/V4_xbd_chap03.html#tag_21_03_00_75
             self.symlink_mode = SymlinkMode::Follow;
@@ -1378,7 +1394,7 @@ impl NamespaceNode {
         current_task: &CurrentTask,
         name: &FsStr,
         kind: UnlinkKind,
-        must_be_directory: bool,
+        directory_mode: DirectoryMode,
     ) -> Result<(), Errno> {
         if DirEntry::is_reserved_name(name) {
             match kind {
@@ -1395,7 +1411,7 @@ impl NamespaceNode {
                 UnlinkKind::NonDirectory => error!(ENOTDIR),
             }
         } else {
-            self.entry.unlink(current_task, &self.mount, name, kind, must_be_directory)
+            self.entry.unlink(current_task, &self.mount, name, kind, directory_mode)
         }
     }
 
@@ -1506,7 +1522,9 @@ impl NamespaceNode {
                     return error!(EXDEV);
                 }
 
-                if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
+                if context.directory_mode == DirectoryMode::MustBeDirectory
+                    && !current_namespace_node.entry.node.is_dir()
+                {
                     return error!(ENOTDIR);
                 }
                 basenames = &basenames[1..];
@@ -1531,7 +1549,9 @@ impl NamespaceNode {
                     return error!(EXDEV);
                 }
 
-                if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
+                if context.directory_mode == DirectoryMode::MustBeDirectory
+                    && !current_namespace_node.entry.node.is_dir()
+                {
                     return error!(ENOTDIR);
                 }
 
@@ -1563,7 +1583,9 @@ impl NamespaceNode {
                     return error!(EXDEV);
                 }
 
-                if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
+                if context.directory_mode == DirectoryMode::MustBeDirectory
+                    && !current_namespace_node.entry.node.is_dir()
+                {
                     return error!(ENOTDIR);
                 }
 
@@ -2191,8 +2213,8 @@ mod test {
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::namespace::DeviceId;
     use crate::vfs::{
-        CallbackSymlinkNode, FsNodeInfo, LookupContext, MountInfo, Namespace, NamespaceNode,
-        RenameFlags, SymlinkMode, SymlinkTarget, UnlinkKind, WhatToMount,
+        CallbackSymlinkNode, DirectoryMode, FsNodeInfo, LookupContext, MountInfo, Namespace,
+        NamespaceNode, RenameFlags, SymlinkMode, SymlinkTarget, UnlinkKind, WhatToMount,
     };
     use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::{errno, mode};
@@ -2379,20 +2401,30 @@ mod test {
             // Trying to unlink from ns1 should fail.
             assert_eq!(
                 ns1.root()
-                    .unlink(&current_task, "foo".into(), UnlinkKind::Directory, false)
+                    .unlink(
+                        &current_task,
+                        "foo".into(),
+                        UnlinkKind::Directory,
+                        DirectoryMode::AllowAny
+                    )
                     .unwrap_err(),
                 errno!(EBUSY),
             );
 
             // But unlinking from ns2 should succeed.
             ns2.root()
-                .unlink(&current_task, "foo".into(), UnlinkKind::Directory, false)
+                .unlink(&current_task, "foo".into(), UnlinkKind::Directory, DirectoryMode::AllowAny)
                 .expect("unlink failed");
 
             // And it should no longer show up in ns1.
             assert_eq!(
                 ns1.root()
-                    .unlink(&current_task, "foo".into(), UnlinkKind::Directory, false)
+                    .unlink(
+                        &current_task,
+                        "foo".into(),
+                        UnlinkKind::Directory,
+                        DirectoryMode::AllowAny
+                    )
                     .unwrap_err(),
                 errno!(ENOENT),
             );

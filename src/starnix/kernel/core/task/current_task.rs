@@ -18,9 +18,9 @@ use crate::task::{
     TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
-    AccessCheck, FdFlags, FdNumber, FdTable, FileHandle, FileMapping, FileWriteGuardMode,
-    FsContext, FsStr, LookupContext, LookupVec, MAX_SYMLINK_FOLLOWS, NamespaceNode,
-    OpenAccessCheck, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
+    AccessCheck, DirectoryMode, FdFlags, FdNumber, FdTable, FileHandle, FileMapping,
+    FileWriteGuardMode, FsContext, FsStr, LookupContext, LookupVec, MAX_SYMLINK_FOLLOWS,
+    NamespaceNode, OpenAccessCheck, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
@@ -724,15 +724,14 @@ impl CurrentTask {
         flags: OpenFlags,
     ) -> Result<(NamespaceNode, bool), Errno> {
         context.update_for_path(path);
-        let mut parent_content = context.with(SymlinkMode::Follow);
+        let mut parent_content = context.with(SymlinkMode::Follow, context.directory_mode);
         let (parent, basename) = self.lookup_parent(&mut parent_content, dir, path)?;
         context.remaining_follows = parent_content.remaining_follows;
 
         let must_create = flags.contains(OpenFlags::CREAT) && flags.contains(OpenFlags::EXCL);
 
         // Lookup the child, without following a symlink or expecting it to be a directory.
-        let mut child_context = context.with(SymlinkMode::NoFollow);
-        child_context.must_be_directory = false;
+        let mut child_context = context.with(SymlinkMode::NoFollow, DirectoryMode::AllowAny);
 
         match parent.lookup_child(self, &mut child_context, basename) {
             Ok(name) => {
@@ -796,7 +795,7 @@ impl CurrentTask {
                 }
             }
             Err(e) if e == errno!(ENOENT) && flags.contains(OpenFlags::CREAT) => {
-                if context.must_be_directory {
+                if context.directory_mode == DirectoryMode::MustBeDirectory {
                     return error!(EISDIR);
                 }
                 Ok((
@@ -893,7 +892,11 @@ impl CurrentTask {
         let mut context = LookupContext {
             symlink_mode,
             remaining_follows: MAX_SYMLINK_FOLLOWS,
-            must_be_directory: flags.contains(OpenFlags::DIRECTORY),
+            directory_mode: if flags.contains(OpenFlags::DIRECTORY) {
+                DirectoryMode::MustBeDirectory
+            } else {
+                DirectoryMode::AllowAny
+            },
             resolve_flags,
             resolve_base,
         };
@@ -941,7 +944,7 @@ impl CurrentTask {
                 if flags.contains(OpenFlags::DIRECT) {
                     return error!(EINVAL);
                 }
-            } else if context.must_be_directory {
+            } else if context.directory_mode == DirectoryMode::MustBeDirectory {
                 return error!(ENOTDIR);
             }
 
