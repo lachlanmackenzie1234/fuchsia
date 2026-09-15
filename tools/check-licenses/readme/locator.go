@@ -49,51 +49,10 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 		}
 
 		if isBoundary {
-			var bestMatch *Readme
-			var bestReadmePath string = bestPath
-			bestPrefixLength := -1
-
-			// Path of the file relative to the README's logical directory
-			logicalDir := filepath.Dir(bestPath)
-			for logPath, physPath := range outOfTreeReadmes {
-				if physPath == bestPath {
-					logicalDir = filepath.Join(fuchsiaDir, logPath)
-					break
-				}
-			}
-			if strings.HasSuffix(filepath.ToSlash(bestPath), "assets/readmes/README.fuchsia") {
-				logicalDir = fuchsiaDir
-			}
-
-			relToFile, relErr := filepath.Rel(logicalDir, absPath)
-			if relErr == nil {
-				for _, r := range allReadmes {
-					loc := filepath.Clean(r.Location)
-					if loc == "" || loc == "." {
-						if bestPrefixLength < 0 {
-							bestMatch = r
-							bestPrefixLength = 0
-						}
-					} else {
-						if strings.HasPrefix(relToFile, loc+"/") || relToFile == loc {
-							if len(loc) > bestPrefixLength {
-								bestMatch = r
-								bestPrefixLength = len(loc)
-							}
-						}
-					}
-				}
-			}
-
+			bestMatch := MatchReadme(allReadmes, bestPath, absPath, fuchsiaDir, outOfTreeReadmes)
 			if bestMatch != nil {
-				return bestMatch, bestReadmePath, nil
+				return bestMatch, bestPath, nil
 			}
-
-			// Fallback to the first parsed readme if no best match found!
-			if len(allReadmes) > 0 {
-				return allReadmes[0], bestReadmePath, nil
-			}
-
 			return nil, "", fmt.Errorf("boundary metadata failed to parse")
 		}
 
@@ -229,4 +188,52 @@ func ResolveProjectRoot(r *Readme, readmePath, fuchsiaDir string, outOfTreeReadm
 		logicalRoot = filepath.Join(logicalRoot, r.Location)
 	}
 	return logicalRoot
+}
+
+// MatchReadme matches a specific file or directory path (absPath) against a slice of Readmes discovered for bestPath.
+func MatchReadme(allReadmes []*Readme, bestPath, absPath, fuchsiaDir string, outOfTreeReadmes map[string]string) *Readme {
+	if len(allReadmes) == 0 {
+		return nil
+	}
+	var bestMatch *Readme
+	bestPrefixLength := -1
+
+	// Path of the file relative to the README's logical directory
+	logicalDir := filepath.Dir(bestPath)
+	for logPath, physPath := range outOfTreeReadmes {
+		if physPath == bestPath {
+			logicalDir = filepath.Join(fuchsiaDir, logPath)
+			break
+		}
+	}
+	if strings.HasSuffix(filepath.ToSlash(bestPath), "assets/readmes/README.fuchsia") {
+		logicalDir = fuchsiaDir
+	}
+
+	relToFile, relErr := filepath.Rel(logicalDir, absPath)
+	if relErr == nil {
+		for _, r := range allReadmes {
+			loc := filepath.Clean(r.Location)
+			if loc == "" || loc == "." {
+				if bestPrefixLength < 0 {
+					bestMatch = r
+					bestPrefixLength = 0
+				}
+			} else {
+				if strings.HasPrefix(relToFile, loc+"/") || relToFile == loc {
+					if len(loc) > bestPrefixLength {
+						bestMatch = r
+						bestPrefixLength = len(loc)
+					}
+				}
+			}
+		}
+	}
+
+	if bestMatch != nil {
+		return bestMatch
+	}
+
+	// Fallback to the first parsed readme if no best match found!
+	return allReadmes[0]
 }

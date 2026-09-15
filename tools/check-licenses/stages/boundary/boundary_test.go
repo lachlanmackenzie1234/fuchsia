@@ -192,3 +192,138 @@ require (
 		t.Errorf("Expected files %v, got %v", expectedPaths, actualPaths)
 	}
 }
+
+func TestGrouper_ResolveProjectRootAndFindReadme(t *testing.T) {
+	fuchsiaDir := t.TempDir()
+
+	// 1. Root virtual README
+	virtualDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "readmes")
+	if err := os.MkdirAll(virtualDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	rootVirtualReadme := filepath.Join(virtualDir, "README.fuchsia")
+	if err := os.WriteFile(rootVirtualReadme, []byte("Name: Fuchsia\nFirst Party: yes\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. third_party/foo with README.fuchsia
+	fooDir := filepath.Join(fuchsiaDir, "third_party", "foo")
+	if err := os.MkdirAll(filepath.Join(fooDir, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	fooReadme := filepath.Join(fooDir, "README.fuchsia")
+	if err := os.WriteFile(fooReadme, []byte("Name: foo\nLicense: MIT\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. third_party/new_foo WITHOUT README.fuchsia
+	newFooDir := filepath.Join(fuchsiaDir, "third_party", "new_foo", "nested", "deep")
+	if err := os.MkdirAll(newFooDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	newFooFile := filepath.Join(newFooDir, "foo.cc")
+	if err := os.WriteFile(newFooFile, []byte("int foo() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. src/first_party file
+	srcDir := filepath.Join(fuchsiaDir, "src", "lib")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcFile := filepath.Join(srcDir, "lib.cc")
+	if err := os.WriteFile(srcFile, []byte("int lib() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. prebuilt/third_party/orphan WITHOUT README
+	orphanDir := filepath.Join(fuchsiaDir, "prebuilt", "third_party", "orphan")
+	if err := os.MkdirAll(orphanDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	orphanFile := filepath.Join(orphanDir, "tool")
+	if err := os.WriteFile(orphanFile, []byte("binary\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	grouper := NewGrouper(
+		fuchsiaDir,
+		Config{
+			BarrierPaths: map[string]bool{
+				"third_party":          true,
+				"prebuilt":             true,
+				"prebuilt/third_party": true,
+			},
+			OutOfTreeReadmes: map[string]string{},
+		},
+	)
+
+	// Case 1: third_party/foo with README
+	if root := grouper.ResolveProjectRoot(filepath.Join(fooDir, "sub", "file.cc")); root != fooDir {
+		t.Errorf("Expected root %s, got %s", fooDir, root)
+	}
+	r, p, err := grouper.FindProjectReadme(filepath.Join(fooDir, "sub", "file.cc"))
+	if err != nil || r == nil || p != fooReadme {
+		t.Errorf("Expected FindProjectReadme to return foo README, got r=%v, p=%s, err=%v", r, p, err)
+	}
+
+	// Case 2: third_party/new_foo WITHOUT README (behind barrier)
+	expectedNewFooRoot := filepath.Join(fuchsiaDir, "third_party", "new_foo")
+	if root := grouper.ResolveProjectRoot(newFooFile); root != expectedNewFooRoot {
+		t.Errorf("Expected root %s for file in barrier dir without README, got %s", expectedNewFooRoot, root)
+	}
+	r, p, err = grouper.FindProjectReadme(newFooFile)
+	if err != nil || r != nil || p != "" {
+		t.Errorf("Expected FindProjectReadme to return nil for file behind barrier without README, got r=%v, p=%s, err=%v", r, p, err)
+	}
+
+	// Case 3: Direct directory target on third_party/new_foo
+	if root := grouper.ResolveProjectRoot(expectedNewFooRoot); root != expectedNewFooRoot {
+		t.Errorf("Expected root %s for directory behind barrier without README, got %s", expectedNewFooRoot, root)
+	}
+	r, p, err = grouper.FindProjectReadme(expectedNewFooRoot)
+	if err != nil || r != nil || p != "" {
+		t.Errorf("Expected FindProjectReadme to return nil for directory behind barrier without README, got r=%v, p=%s, err=%v", r, p, err)
+	}
+
+	// Case 4: First-party file (no barrier) resolves to fuchsiaDir and root virtual README
+	if root := grouper.ResolveProjectRoot(srcFile); root != fuchsiaDir {
+		t.Errorf("Expected root %s for 1st-party file, got %s", fuchsiaDir, root)
+	}
+	r, p, err = grouper.FindProjectReadme(srcFile)
+	if err != nil || r == nil || p != rootVirtualReadme {
+		t.Errorf("Expected FindProjectReadme to return root virtual README for 1st-party file, got r=%v, p=%s, err=%v", r, p, err)
+	}
+
+	// Case 5: prebuilt/third_party/orphan WITHOUT README
+	if root := grouper.ResolveProjectRoot(orphanFile); root != orphanDir {
+		t.Errorf("Expected root %s for orphan prebuilt tool, got %s", orphanDir, root)
+	}
+	r, p, err = grouper.FindProjectReadme(orphanFile)
+	if err != nil || r != nil || p != "" {
+		t.Errorf("Expected FindProjectReadme to return nil for orphan prebuilt tool, got r=%v, p=%s, err=%v", r, p, err)
+	}
+
+	// Case 6: BelongsToProject checks with barrier-aware logic
+	if !grouper.BelongsToProject(newFooFile, "third_party/new_foo") {
+		t.Errorf("Expected newFooFile to belong to third_party/new_foo")
+	}
+	if !grouper.BelongsToProject(newFooFile, "//third_party/new_foo") {
+		t.Errorf("Expected newFooFile to belong to //third_party/new_foo")
+	}
+	if !grouper.BelongsToProject(newFooFile, expectedNewFooRoot) {
+		t.Errorf("Expected newFooFile to belong to absolute expectedNewFooRoot")
+	}
+	if grouper.BelongsToProject(newFooFile, "") {
+		t.Errorf("Expected newFooFile NOT to belong to root workspace")
+	}
+	if !grouper.BelongsToProject(srcFile, "") {
+		t.Errorf("Expected 1st-party srcFile to belong to root workspace")
+	}
+	if !grouper.BelongsToProject(srcFile, "//") {
+		t.Errorf("Expected 1st-party srcFile to belong to //")
+	}
+	if !grouper.BelongsToProject(srcFile, fuchsiaDir) {
+		t.Errorf("Expected 1st-party srcFile to belong to absolute fuchsiaDir")
+	}
+}

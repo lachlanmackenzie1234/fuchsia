@@ -188,6 +188,11 @@ func TestValidator_Run(t *testing.T) {
 				hasMissingCopyrightErr = true
 			} else if e.FilePath == filepath.Join(fuchsiaDir, "src", "sub", "__init__.py") {
 				hasMissingInitCopyrightErr = true
+				if len(e.Replacements) != 1 {
+					t.Errorf("Expected 1 replacement for missing copyright, got %d", len(e.Replacements))
+				} else if !strings.Contains(e.Replacements[0], "The Fuchsia Authors") || !strings.Contains(e.Replacements[0], "print('hello')") {
+					t.Errorf("Replacement content unexpected: %q", e.Replacements[0])
+				}
 			} else {
 				t.Errorf("Unexpected missing copyright error for file: %s", e.FilePath)
 			}
@@ -313,4 +318,37 @@ func TestValidator_RunFailure_MissingReadme(t *testing.T) {
 		t.Errorf("Expected error to contain missing readme issue description, got: %v", errors[0].Issue)
 	}
 	assertFindingStructure(t, errors[0].Issue, true)
+}
+
+func TestAddCopyrightToBytes_ShebangAndLineEndings(t *testing.T) {
+	// 1. Unix line endings with shebang
+	unixContent := []byte("#!/usr/bin/env python\nprint('hello')\n")
+	resUnix, err := AddCopyrightToBytes("foo.py", unixContent)
+	if err != nil {
+		t.Fatalf("AddCopyrightToBytes failed: %v", err)
+	}
+	expectedShebangUnix := "#!/usr/bin/env python\n# Copyright"
+	if !strings.HasPrefix(string(resUnix), expectedShebangUnix) {
+		t.Errorf("Expected Unix shebang prefix, got: %s", string(resUnix)[:50])
+	}
+	if strings.Contains(string(resUnix), "\r") {
+		t.Errorf("Expected no carriage return in Unix output")
+	}
+
+	// 2. Windows CRLF line endings with shebang
+	crlfContent := []byte("#!/usr/bin/env bash\r\necho hi\r\n")
+	resCrlf, err := AddCopyrightToBytes("script.sh", crlfContent)
+	if err != nil {
+		t.Fatalf("AddCopyrightToBytes failed: %v", err)
+	}
+	expectedShebangCrlf := "#!/usr/bin/env bash\r\n# Copyright"
+	if !strings.HasPrefix(string(resCrlf), expectedShebangCrlf) {
+		t.Errorf("Expected CRLF shebang prefix, got: %q", string(resCrlf)[:50])
+	}
+	// Check that there are no standalone \n (all newlines must be \r\n)
+	s := string(resCrlf)
+	sWithoutCrlf := strings.ReplaceAll(s, "\r\n", "")
+	if strings.Contains(sWithoutCrlf, "\n") || strings.Contains(sWithoutCrlf, "\r") {
+		t.Errorf("Expected all line breaks in CRLF content to be \\r\\n")
+	}
 }
