@@ -22,7 +22,7 @@ mod reader;
 pub mod super_block;
 mod writer;
 
-use crate::checksum::{Checksum, Checksums, ChecksumsV38};
+use crate::checksum::{Checksum, Checksums};
 use crate::errors::FxfsError;
 use crate::filesystem::{
     ApplyContext, ApplyMode, FlushReason, ForceMajor, FxFilesystem, SyncOptions,
@@ -45,10 +45,8 @@ use crate::object_store::journal::writer::JournalWriter;
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::transaction::{
-    AllocatorMutation, LockKey, Mutation, MutationV40, MutationV41, MutationV43, MutationV46,
-    MutationV47, MutationV49, MutationV50, MutationV54, MutationV55, MutationV56, MutationV57,
-    ObjectMutationIterator, ObjectStoreMutation, Options, TRANSACTION_MAX_JOURNAL_USAGE,
-    Transaction, lock_keys,
+    AllocatorMutation, LockKey, Mutation, MutationV56, MutationV57, ObjectMutationIterator,
+    ObjectStoreMutation, Options, TRANSACTION_MAX_JOURNAL_USAGE, Transaction, lock_keys,
 };
 use crate::object_store::{
     AssocObj, AttributeId, DataObjectHandle, Extent, HandleOptions, HandleOwner, INVALID_OBJECT_ID,
@@ -56,9 +54,7 @@ use crate::object_store::{
 };
 use crate::range::RangeExt;
 use crate::round::round_div;
-use crate::serialized_types::{
-    LATEST_VERSION, Migrate, Version, Versioned, migrate_nodefault, migrate_to_version,
-};
+use crate::serialized_types::{LATEST_VERSION, Migrate, Version, Versioned, migrate_to_version};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use core::iter::Iterator;
 use event_listener::Event;
@@ -164,143 +160,6 @@ pub enum JournalRecordV56 {
     Discard(u64),
     DidFlushDevice(u64),
     DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Migrate, Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV56)]
-pub enum JournalRecordV55 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV55 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV55)]
-#[migrate_nodefault]
-pub enum JournalRecordV54 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV54 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV54)]
-#[migrate_nodefault]
-pub enum JournalRecordV50 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV50 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38, bool),
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV50)]
-pub enum JournalRecordV49 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV49 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38, bool),
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV49)]
-pub enum JournalRecordV47 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV47 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38, bool),
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV47)]
-pub enum JournalRecordV46 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV46 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38, bool),
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV46)]
-pub enum JournalRecordV43 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV43 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38, bool),
-}
-
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV43)]
-pub enum JournalRecordV42 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV41 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38, bool),
-}
-
-#[derive(Serialize, Deserialize, TypeFingerprint, Versioned)]
-pub enum JournalRecordV41 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV41 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38),
-}
-
-impl From<JournalRecordV41> for JournalRecordV42 {
-    fn from(record: JournalRecordV41) -> Self {
-        match record {
-            JournalRecordV41::EndBlock => Self::EndBlock,
-            JournalRecordV41::Mutation { object_id, mutation } => {
-                Self::Mutation { object_id, mutation: mutation.into() }
-            }
-            JournalRecordV41::Commit => Self::Commit,
-            JournalRecordV41::Discard(offset) => Self::Discard(offset),
-            JournalRecordV41::DidFlushDevice(offset) => Self::DidFlushDevice(offset),
-            JournalRecordV41::DataChecksums(range, sums) => {
-                // At the time of writing the only extents written by real systems are CoW extents
-                // so the new bool is always true.
-                Self::DataChecksums(range, sums, true)
-            }
-        }
-    }
-}
-
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(JournalRecordV41)]
-pub enum JournalRecordV40 {
-    EndBlock,
-    Mutation { object_id: u64, mutation: MutationV40 },
-    Commit,
-    Discard(u64),
-    DidFlushDevice(u64),
-    DataChecksums(Range<u64>, ChecksumsV38),
 }
 
 pub(super) fn journal_handle_options() -> HandleOptions {

@@ -64,7 +64,6 @@ use fxfs_crypto::{
     CipherHolder, Crypt, JournalCipher, JournalXtsCipher, KeyPurpose, ObjectType, StreamCipher,
     UnwrappedKey, WrappingKeyId, key_to_cipher,
 };
-use fxfs_macros::{Migrate, migrate_to_version};
 use rand::RngCore;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
@@ -81,8 +80,8 @@ pub use extent::Extent;
 pub use extent_record::{ExtentMode, ExtentValue};
 pub use object_record::{
     AttributeId, AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue,
-    FsverityMetadata, FxfsKey, FxfsKeyV40, FxfsKeyV49, ObjectAttributes, ObjectKey, ObjectKeyData,
-    ObjectKind, ObjectValue, ProjectProperty, RootDigest,
+    FsverityMetadata, FxfsKey, FxfsKeyV49, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind,
+    ObjectValue, ProjectProperty, RootDigest,
 };
 pub use project_id::{ProjectId, ProjectIdExt};
 pub use transaction::Mutation;
@@ -183,58 +182,6 @@ impl Default for LastObjectIdInfo {
     fn default() -> Self {
         LastObjectIdInfo::Unencrypted { id: 0 }
     }
-}
-
-#[derive(Default, Serialize, Deserialize, TypeFingerprint, Versioned)]
-pub struct StoreInfoV49 {
-    guid: [u8; 16],
-    last_object_id: u64,
-    layers: Vec<u64>,
-    root_directory_object_id: u64,
-    graveyard_directory_object_id: u64,
-    object_count: u64,
-    mutations_key: Option<FxfsKeyV49>,
-    mutations_cipher_offset: u64,
-    encrypted_mutations_object_id: u64,
-    object_id_key: Option<FxfsKeyV49>,
-    internal_directory_object_id: u64,
-}
-
-impl From<StoreInfoV49> for StoreInfoV52 {
-    fn from(value: StoreInfoV49) -> Self {
-        Self {
-            guid: value.guid,
-            last_object_id: if let Some(key) = value.object_id_key {
-                LastObjectIdInfo::Encrypted { id: value.last_object_id, key: key }
-            } else {
-                LastObjectIdInfo::Unencrypted { id: value.last_object_id }
-            },
-            layers: value.layers,
-            root_directory_object_id: value.root_directory_object_id,
-            graveyard_directory_object_id: value.graveyard_directory_object_id,
-            object_count: value.object_count,
-            mutations_key: value.mutations_key,
-            mutations_cipher_offset: value.mutations_cipher_offset,
-            encrypted_mutations_object_id: value.encrypted_mutations_object_id,
-            internal_directory_object_id: value.internal_directory_object_id,
-        }
-    }
-}
-
-#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
-#[migrate_to_version(StoreInfoV49)]
-pub struct StoreInfoV40 {
-    guid: [u8; 16],
-    last_object_id: u64,
-    layers: Vec<u64>,
-    root_directory_object_id: u64,
-    graveyard_directory_object_id: u64,
-    object_count: u64,
-    mutations_key: Option<FxfsKeyV40>,
-    mutations_cipher_offset: u64,
-    encrypted_mutations_object_id: u64,
-    object_id_key: Option<FxfsKeyV40>,
-    internal_directory_object_id: u64,
 }
 
 impl StoreInfo {
@@ -348,33 +295,6 @@ impl std::fmt::Debug for EncryptedMutations {
 }
 
 impl Versioned for EncryptedMutations {
-    fn max_serialized_size() -> Option<u64> {
-        Some(MAX_ENCRYPTED_MUTATIONS_SIZE as u64)
-    }
-}
-
-impl From<EncryptedMutationsV40> for EncryptedMutationsV49 {
-    fn from(value: EncryptedMutationsV40) -> Self {
-        EncryptedMutationsV49 {
-            transactions: value.transactions,
-            data: value.data,
-            mutations_key_roll: value
-                .mutations_key_roll
-                .into_iter()
-                .map(|(offset, key)| (offset, key.into()))
-                .collect(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, TypeFingerprint)]
-pub struct EncryptedMutationsV40 {
-    transactions: Vec<(JournalCheckpointV32, u64)>,
-    data: Vec<u8>,
-    mutations_key_roll: Vec<(usize, FxfsKeyV40)>,
-}
-
-impl Versioned for EncryptedMutationsV40 {
     fn max_serialized_size() -> Option<u64> {
         Some(MAX_ENCRYPTED_MUTATIONS_SIZE as u64)
     }

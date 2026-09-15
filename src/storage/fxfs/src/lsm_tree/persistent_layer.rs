@@ -69,9 +69,7 @@ use crate::lsm_tree::types::{
 use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
 use crate::object_store::caching_object_handle::{CHUNK_SIZE, CachedChunk, CachingObjectHandle};
 use crate::object_store::extent::MIN_BLOCK_SIZE;
-use crate::serialized_types::{
-    LATEST_VERSION, REMOVE_ITEM_SEQUENCE_VERSION, Version, Versioned, VersionedLatest,
-};
+use crate::serialized_types::{LATEST_VERSION, Version, Versioned, VersionedLatest};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -356,9 +354,6 @@ impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
             self.value_deserialized = true;
             let value = V::deserialize_from_version(self.buffer.by_ref(), self.layer.version)
                 .context("Corrupt layer (value)")?;
-            if self.layer.version.major < REMOVE_ITEM_SEQUENCE_VERSION {
-                self.buffer.read_u64::<LittleEndian>().context("Corrupt layer (seq)")?;
-            }
             Ok(Some(Item { key, value }))
         } else {
             Ok(None)
