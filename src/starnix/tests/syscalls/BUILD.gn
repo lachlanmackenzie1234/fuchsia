@@ -18,3 +18,14 @@ group("linux_vm_tests") {
     # "rust:linux_vm_tests",
   ]
 }
+
+group("unified_syscall_deps") {
+  testonly = true
+  deps = [
+    # go/keep-sorted start
+    "cpp:syscall_test_deps",
+    "rust:syscall_test_deps",
+
+    # go/keep-sorted end
+  ]
+}
