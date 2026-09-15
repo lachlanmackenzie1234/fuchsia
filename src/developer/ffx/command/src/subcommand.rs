@@ -204,17 +204,16 @@ impl ToolSuite for ExternalSubToolSuite {
 
         // Pass the same command line to each of the external subcommands which
         // prints the json encoded args info.
-        let mut argv = vec!["ffx".to_string()];
-        let env_args = self
-            .context
-            .env_args()
-            .map_err(|e| bug!("Failed to serialize environment context arguments: {e}"))?;
-        argv.extend(env_args);
-        argv.extend(["--machine".to_string(), "json".to_string(), "--help".to_string()]);
-
-        let cmdline = FfxCommandLine::from_args_for_help(&argv).bug_context("cmd line for help")?;
+        let argv = vec![
+            "ffx".to_string(),
+            "--machine".to_string(),
+            "json".to_string(),
+            "--help".to_string(),
+        ];
 
         for tool in &self.command_list().await {
+            let cmdline =
+                FfxCommandLine::from_args_for_help(&argv).bug_context("cmd line for help")?;
             let mut c = std::process::Command::new(
                 &tool.path.clone().ok_or(bug!("could not get tool path"))?,
             );
@@ -620,198 +619,6 @@ mod tests {
 
         assert!(cmd.is_some(), "Expected external command to be found");
         assert_eq!(cmd.unwrap().path, executable)
-    }
-
-    #[fuchsia::test]
-    async fn test_get_args_info_with_no_environment() {
-        use ffx_config::environment::ExecutableKind;
-        use std::os::unix::fs::PermissionsExt;
-
-        let test_env = ffx_config::test_init().expect("test init");
-        let context =
-            EnvironmentContext::no_context(ExecutableKind::Test, Default::default(), None, true)
-                .unwrap();
-
-        let subtool_path = test_env.isolate_root.path().join("ffx-sample1");
-        let metadata_path = test_env.isolate_root.path().join("ffx-sample1.json");
-        let script = r#"#!/bin/sh
-for arg in "$@"; do
-    if [ "$arg" = "--no-environment" ]; then
-        echo '{"name":"sample1","description":"desc","examples":[],"flags":[],"notes":[],"commands":[],"positionals":[],"error_codes":[]}'
-        exit 0
-    fi
-done
-echo '{"type":"user","code":1,"message":"Paths error: cannot find home directory"}'
-exit 1
-"#;
-        fs::write(&subtool_path, script).expect("write mock subtool");
-        let mut perms = fs::metadata(&subtool_path).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&subtool_path, perms).unwrap();
-
-        let metadata = FhoToolMetadata::new("sample1", "desc");
-        let file = File::create(&metadata_path).expect("creating subtool metadata");
-        serde_json::to_writer(file, &metadata).expect("Writing subtool metadata");
-
-        let subtool_manifest = test_env.isolate_root.path().join("subtools.json");
-        let contents = vec![SubToolManifestEntry {
-            category: "internal".into(),
-            executable: subtool_path.clone(),
-            executable_metadata: metadata_path.clone(),
-            name: "ffx-sample1".into(),
-        }];
-        fs::write(&subtool_manifest, serde_json::to_string(&contents).expect("serialized data"))
-            .expect("subtool manifest written");
-
-        let suite = ExternalSubToolSuite::with_tools_manifest(context, subtool_manifest);
-        let args_info = suite.get_args_info().await.expect("get_args_info should succeed");
-        assert_eq!(args_info.commands.len(), 1);
-        assert_eq!(args_info.commands[0].name, "sample1");
-    }
-
-    #[fuchsia::test]
-    async fn test_get_args_info_with_isolate_dir() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let test_env = ffx_config::test_init().expect("test init");
-
-        let subtool_path = test_env.isolate_root.path().join("ffx-sample1");
-        let metadata_path = test_env.isolate_root.path().join("ffx-sample1.json");
-        let script = r#"#!/bin/sh
-prev=""
-for arg in "$@"; do
-    if [ "$prev" = "--isolate-dir" ]; then
-        echo '{"name":"sample1","description":"desc","examples":[],"flags":[],"notes":[],"commands":[],"positionals":[],"error_codes":[]}'
-        exit 0
-    fi
-    prev="$arg"
-done
-echo '{"type":"user","code":1,"message":"Missing --isolate-dir"}'
-exit 1
-"#;
-        fs::write(&subtool_path, script).expect("write mock subtool");
-        let mut perms = fs::metadata(&subtool_path).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&subtool_path, perms).unwrap();
-
-        let metadata = FhoToolMetadata::new("sample1", "desc");
-        let file = File::create(&metadata_path).expect("creating subtool metadata");
-        serde_json::to_writer(file, &metadata).expect("Writing subtool metadata");
-
-        let subtool_manifest = test_env.isolate_root.path().join("subtools.json");
-        let contents = vec![SubToolManifestEntry {
-            category: "internal".into(),
-            executable: subtool_path.clone(),
-            executable_metadata: metadata_path.clone(),
-            name: "ffx-sample1".into(),
-        }];
-        fs::write(&subtool_manifest, serde_json::to_string(&contents).expect("serialized data"))
-            .expect("subtool manifest written");
-
-        let suite =
-            ExternalSubToolSuite::with_tools_manifest(test_env.context.clone(), subtool_manifest);
-        let args_info = suite.get_args_info().await.expect("get_args_info should succeed");
-        assert_eq!(args_info.commands.len(), 1);
-        assert_eq!(args_info.commands[0].name, "sample1");
-    }
-
-    #[fuchsia::test]
-    async fn test_get_args_info_with_strict() {
-        use ffx_config::environment::ExecutableKind;
-        use std::os::unix::fs::PermissionsExt;
-
-        let test_env = ffx_config::test_init().expect("test init");
-        let context = EnvironmentContext::strict(ExecutableKind::Test, Default::default()).unwrap();
-
-        let subtool_path = test_env.isolate_root.path().join("ffx-sample1");
-        let metadata_path = test_env.isolate_root.path().join("ffx-sample1.json");
-        let script = r#"#!/bin/sh
-for arg in "$@"; do
-    if [ "$arg" = "--strict" ]; then
-        echo '{"name":"sample1","description":"desc","examples":[],"flags":[],"notes":[],"commands":[],"positionals":[],"error_codes":[]}'
-        exit 0
-    fi
-done
-echo '{"type":"user","code":1,"message":"Missing --strict"}'
-exit 1
-"#;
-        fs::write(&subtool_path, script).expect("write mock subtool");
-        let mut perms = fs::metadata(&subtool_path).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&subtool_path, perms).unwrap();
-
-        let metadata = FhoToolMetadata::new("sample1", "desc");
-        let file = File::create(&metadata_path).expect("creating subtool metadata");
-        serde_json::to_writer(file, &metadata).expect("Writing subtool metadata");
-
-        let subtool_manifest = test_env.isolate_root.path().join("subtools.json");
-        let contents = vec![SubToolManifestEntry {
-            category: "internal".into(),
-            executable: subtool_path.clone(),
-            executable_metadata: metadata_path.clone(),
-            name: "ffx-sample1".into(),
-        }];
-        fs::write(&subtool_manifest, serde_json::to_string(&contents).expect("serialized data"))
-            .expect("subtool manifest written");
-
-        let suite = ExternalSubToolSuite::with_tools_manifest(context, subtool_manifest);
-        let args_info = suite.get_args_info().await.expect("get_args_info should succeed");
-        assert_eq!(args_info.commands.len(), 1);
-        assert_eq!(args_info.commands[0].name, "sample1");
-    }
-
-    #[fuchsia::test]
-    async fn test_get_args_info_with_env() {
-        use ffx_config::environment::ExecutableKind;
-        use std::os::unix::fs::PermissionsExt;
-
-        let test_env = ffx_config::test_init().expect("test init");
-        let env_file = test_env.isolate_root.path().join("custom_env.json");
-        let context = EnvironmentContext::no_context(
-            ExecutableKind::Test,
-            Default::default(),
-            Some(env_file.clone()),
-            false,
-        )
-        .unwrap();
-
-        let subtool_path = test_env.isolate_root.path().join("ffx-sample1");
-        let metadata_path = test_env.isolate_root.path().join("ffx-sample1.json");
-        let script = r#"#!/bin/sh
-prev=""
-for arg in "$@"; do
-    if [ "$prev" = "--env" ]; then
-        echo '{"name":"sample1","description":"desc","examples":[],"flags":[],"notes":[],"commands":[],"positionals":[],"error_codes":[]}'
-        exit 0
-    fi
-    prev="$arg"
-done
-echo '{"type":"user","code":1,"message":"Missing --env"}'
-exit 1
-"#;
-        fs::write(&subtool_path, script).expect("write mock subtool");
-        let mut perms = fs::metadata(&subtool_path).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&subtool_path, perms).unwrap();
-
-        let metadata = FhoToolMetadata::new("sample1", "desc");
-        let file = File::create(&metadata_path).expect("creating subtool metadata");
-        serde_json::to_writer(file, &metadata).expect("Writing subtool metadata");
-
-        let subtool_manifest = test_env.isolate_root.path().join("subtools.json");
-        let contents = vec![SubToolManifestEntry {
-            category: "internal".into(),
-            executable: subtool_path.clone(),
-            executable_metadata: metadata_path.clone(),
-            name: "ffx-sample1".into(),
-        }];
-        fs::write(&subtool_manifest, serde_json::to_string(&contents).expect("serialized data"))
-            .expect("subtool manifest written");
-
-        let suite = ExternalSubToolSuite::with_tools_manifest(context, subtool_manifest);
-        let args_info = suite.get_args_info().await.expect("get_args_info should succeed");
-        assert_eq!(args_info.commands.len(), 1);
-        assert_eq!(args_info.commands[0].name, "sample1");
     }
 
     #[test]
