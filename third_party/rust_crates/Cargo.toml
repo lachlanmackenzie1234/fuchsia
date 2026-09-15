@@ -149,7 +149,7 @@ itertools = "0.14"
 itoa = "1.0"
 json5format = "0.2.6"
 libc = { version = "0.2.189", features = ["extra_traits"] }
-libm = "0.2.15"
+libm = "0.2.16"
 linked-hash-map = "0.5.6"
 lock_api = { version = "0.4.14", features = ["serde"] }
 log = { version = "0.4.29", features = ["kv", "std"] }
@@ -466,7 +466,6 @@ errno = { path = "forks/errno-0.3.14" }
 fatfs = { path = "forks/fatfs" }
 fuse3 = { path = "forks/fuse3" }
 libc = { path = "forks/libc-0.2.189" }
-libm = { path = "forks/libm" }
 nix_0_29_0 = { package = "nix", path = "forks/nix-0.29.0" }
 nom-language = { package = "nom-language", path = "forks/nom-language-0.1.0" }
 notify = { path = "forks/notify" }
@@ -803,9 +802,23 @@ rustflags = [
 [gn.package.libc."0.2.189".platform."cfg(target_os = \"freebsd\")"]
 rustflags = ["--cfg=freebsd11"]
 
-[gn.package.libm."0.2.15"]
-# It is a fork:
-uses_fuchsia_license = true
+[gn.package.libm."0.2.16"]
+# Mirrors the cfgs that build.rs/configure.rs would emit. Only `arch_enabled`
+# applies to us: it is gated on the default `arch` feature with
+# `force-soft-floats` off, and enables the SSE2/NEON implementations of sqrt,
+# fma and rint. The remaining cfgs are gated on unstable features
+# (`intrinsics_enabled`, `f16_enabled`, `f128_enabled`), are unreferenced
+# outside of upstream's own tests (`optimizations_enabled`, `assert_no_panic`),
+# or can never be true for our targets (`x86_no_sse`, 32-bit x86 without SSE).
+rustflags = [
+  "--cfg=arch_enabled",
+]
+# Math routines are hot in the callers that pull this in, so optimize them
+# accordingly.
+configs = [
+  "//third_party/rust_crates/configs/release:optimize_speed",
+  "//third_party/rust_crates/configs/balanced:optimize_moderate",
+]
 
 # Loom has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.

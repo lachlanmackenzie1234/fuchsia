@@ -1459,14 +1459,14 @@ alias(
 )
 
 alias(
-    name = "libm-0.2.15",
-    actual = "//third_party/rust_crates/forks/libm:libm",
+    name = "libm-0.2.16",
+    actual = "//third_party/rust_crates/vendor/libm-0.2.16:libm",
     tags = ["manual"],
 )
 
 alias(
     name = "libm",
-    actual = "//third_party/rust_crates/forks/libm:libm",
+    actual = "//third_party/rust_crates/vendor/libm-0.2.16:libm",
     tags = ["manual"],
 )
 

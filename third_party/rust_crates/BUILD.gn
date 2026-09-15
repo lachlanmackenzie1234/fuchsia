@@ -1046,11 +1046,11 @@ group("libc-0.2.189") {
 }
 
 group("libm") {
-  public_deps = [ ":libm-v0_2_15" ]
+  public_deps = [ ":libm-v0_2_16" ]
 }
 
-group("libm-0.2.15") {
-  public_deps = [ ":libm-v0_2_15" ]
+group("libm-0.2.16") {
+  public_deps = [ ":libm-v0_2_16" ]
 }
 
 group("linked-hash-map") {
@@ -11543,7 +11543,7 @@ rustc_library("humansize-v2_1_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":libm-v0_2_15" ]
+  deps += [ ":libm-v0_2_16" ]
 
   rustenv = []
 
@@ -12837,29 +12837,40 @@ rustc_library("libc-v0_2_189") {
   applicable_licenses = [ ":libc-v0_2_189.license" ]
 }
 
-rustc_library("libm-v0_2_15") {
+license("libm-v0_2_16.license") {
+  public_package_name = "libm"
+  license_files = [ "//third_party/rust_crates/vendor/libm-0.2.16/LICENSE.txt" ]
+}
+
+rustc_library("libm-v0_2_16") {
   crate_name = "libm"
-  source_root = "//third_party/rust_crates/forks/libm/src/lib.rs"
-  output_name = "libm-826204f4c2a2d438"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/libm-0.2.16/src/lib.rs"
+  output_name = "libm-e53335973f2e45c0"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
+  configs += [
+    "//third_party/rust_crates/configs/release:optimize_speed",
+    "//third_party/rust_crates/configs/balanced:optimize_moderate",
+  ]
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":static_assertions-v1_1_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=826204f4c2a2d438",
-    "-Cextra-filename=-826204f4c2a2d438",
+    "-Cmetadata=e53335973f2e45c0",
+    "-Cextra-filename=-e53335973f2e45c0",
+    "--cfg=feature=\"arch\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=arch_enabled",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+  applicable_licenses = [ ":libm-v0_2_16.license" ]
 }
 
 license("linked-hash-map-v0_5_6.license") {
@@ -14517,9 +14528,9 @@ rustc_library("num-bigint-dig-v0_8_6") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":libm-v0_2_15" ]
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":libm-v0_2_16" ]
   deps += [ ":num-integer-v0_1_46" ]
   deps += [ ":num-iter-v0_1_45" ]
   deps += [ ":num-traits-v0_2_19" ]
@@ -14848,7 +14859,7 @@ rustc_library("num-traits-v0_2_19") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":libm-v0_2_15" ]
+  deps += [ ":libm-v0_2_16" ]
 
   rustenv = []
 
