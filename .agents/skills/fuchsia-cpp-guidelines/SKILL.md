@@ -1,9 +1,9 @@
 ---
-name: cpp-code-review
+name: fuchsia-cpp-guidelines
 description: How to do a code review of Fuchsia C++ code
 ---
 
-# C++ code review
+# Fuchsia C++ Review Guidelines
 
 ## When to use this skill
 

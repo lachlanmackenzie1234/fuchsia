@@ -1,9 +1,9 @@
 ---
-name: code-review-tool
+name: fuchsia-gerrit-cli
 description: Guide for using fx gh (Gerrit CLI) to interact with code reviews.
 ---
 
-# Using fx gh for Gerrit Code Reviews
+# Fuchsia Gerrit CLI (fx gh)
 
 ## Overview
 

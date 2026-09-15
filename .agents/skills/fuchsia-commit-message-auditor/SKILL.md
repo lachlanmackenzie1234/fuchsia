@@ -1,5 +1,5 @@
 ---
-name: commit-auditor
+name: fuchsia-commit-message-auditor
 description: >
   Audits and formats commit messages and staged diffs for Fuchsia against
   style guides, formatting limits, and diff hygiene. Use when asked to audit,
