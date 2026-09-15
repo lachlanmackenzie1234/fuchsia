@@ -22,6 +22,12 @@ unsafe extern "C" {
         entry: extern "C" fn(*mut c_void) -> i32,
         arg: *mut c_void,
     ) -> *mut Thread;
+    fn cpp_thread_create_with_priority(
+        name: *const c_char,
+        entry: extern "C" fn(*mut c_void) -> i32,
+        arg: *mut c_void,
+        priority: i32,
+    ) -> *mut Thread;
     fn cpp_thread_create_with_profile(
         name_ptr: *const c_char,
         name_len: usize,
@@ -215,6 +221,25 @@ pub unsafe fn create(
     unsafe { ThreadPtr::from_raw(thread) }.ok_or(Status::NO_MEMORY)
 }
 
+/// Kernel thread priority levels matching Zircon C++ definitions in `<kernel/thread.h>`.
+pub const LOW_PRIORITY: i32 = 8;
+pub const DEFAULT_PRIORITY: i32 = 16;
+pub const HIGH_PRIORITY: i32 = 24;
+
+/// Creates a new kernel thread with the specified priority.
+///
+/// # Safety
+///
+/// The caller must ensure that `entry` and `arg` are safe to run on a new thread.
+pub unsafe fn create_with_priority(
+    name: *const c_char,
+    entry: extern "C" fn(*mut c_void) -> i32,
+    arg: *mut c_void,
+    priority: i32,
+) -> Result<ThreadPtr, Status> {
+    let thread = unsafe { cpp_thread_create_with_priority(name, entry, arg, priority) };
+    unsafe { ThreadPtr::from_raw(thread) }.ok_or(Status::NO_MEMORY)
+}
 /// Creates a new thread with the given base profile.
 ///
 /// # Safety

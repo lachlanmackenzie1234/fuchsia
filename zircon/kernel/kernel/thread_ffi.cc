@@ -42,6 +42,9 @@ static_assert(THREAD_DEATH == 7);
 // LINT.ThenChange(//zircon/kernel/kernel/scheduler_state.rs:ThreadStateKind)
 
 Thread* cpp_thread_create_default(const char* name, thread_start_routine entry, void* arg);
+FFI_ALWAYS_INLINE Thread* cpp_thread_create_with_priority(const char* name,
+                                                          thread_start_routine entry, void* arg,
+                                                          int priority);
 void cpp_scheduler_state_base_profile_init_fair(
     ffi::Uninitialized<SchedulerState::BaseProfile>* out_profile, int priority, bool inheritable);
 Thread* cpp_thread_create_with_profile(const char* name_ptr, size_t name_len,
@@ -80,6 +83,13 @@ bool cpp_thread_is_in_restricted_mode(Thread* thread);
 FFI_ALWAYS_INLINE Thread* cpp_thread_create_default(const char* name, thread_start_routine entry,
                                                     void* arg) {
   return Thread::Create(name, entry, arg, DEFAULT_PRIORITY);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_thread_create_with_priority(const char* name,
+                                                          thread_start_routine entry, void* arg,
+                                                          int priority) {
+  return Thread::Create(name, entry, arg, priority);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
