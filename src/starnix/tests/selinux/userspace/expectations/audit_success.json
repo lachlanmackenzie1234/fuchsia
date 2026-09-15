@@ -1700,6 +1700,36 @@
             ]
         },
         {
+            "name": "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedAppendWithoutFileAppend",
+            "audit_expectations": [
+                "avc:  denied  { append } for path=\"/tmp/proc_test_file_J5y3Dj\" dev=\"tmpfs\" ino=10 scontext=test_u:test_r:test_pidfd_deny_file_append_t:s0 tcontext=test_u:object_r:test_pidfd_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFdUse",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=\"/tmp/proc_test_file_hkU1r8\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_pidfd_deny_fd_use_t:s0 tcontext=test_u:test_r:test_pidfd_target_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFileRead",
+            "audit_expectations": [
+                "avc:  denied  { read } for path=\"/tmp/proc_test_file_WaVF4a\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_pidfd_deny_file_read_t:s0 tcontext=test_u:object_r:test_pidfd_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFileWrite",
+            "audit_expectations": [
+                "avc:  denied  { write } for path=\"/tmp/proc_test_file_Be6FHd\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:test_pidfd_deny_file_write_t:s0 tcontext=test_u:object_r:test_pidfd_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutPtrace",
+            "audit_expectations": [
+                "avc:  denied  { ptrace } for scontext=test_u:test_r:test_pidfd_deny_ptrace_t:s0 tcontext=test_u:test_r:test_pidfd_target_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
             "name": "PipeTest.LabeledFromTask",
             "audit_expectations": [
                 "avc:  denied  { getattr } for name=\"\" dev=\"pipefs\" ino=879 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=fifo_file permissive=1"
