@@ -1002,16 +1002,37 @@ def main() -> int:
         bazel_test_args += [f"--test_output={args.test_output}"]
 
     # Detect when to use remote service endpoint overrides from infra.
-    for config_arg, env_var, bazel_flag in (
-        ("resultstore", "BAZEL_resultstore_socket_path", "--bes_proxy"),
-        ("resultstore_infra", "BAZEL_resultstore_socket_path", "--bes_proxy"),
-        ("remote", "BAZEL_rbe_socket_path", "--remote_proxy"),
-        ("remote_cache_only", "BAZEL_rbe_socket_path", "--remote_proxy"),
-    ):
-        if f"--config={config_arg}" in bazel_config_args:
-            env_value = os.environ.get(env_var)
-            if env_value:
-                bazel_config_args += [f"{bazel_flag}=unix://{env_value}"]
+    # TODO(https://fxbug.dev/450234102): Deprecate legacy BAZEL_*_socket_path after recipes migrate to main_build.py.
+    # LINT.IfChange(bazel_socket_env_vars)
+    SERVICE_SOCKET_MAP = [
+        (
+            ["resultstore", "resultstore_infra"],
+            [
+                "FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH",
+                "BAZEL_resultstore_socket_path",  # legacy fallback
+            ],
+            "--bes_proxy",
+        ),
+        (
+            ["remote", "remote_cache_only"],
+            [
+                "FX_INTERNAL_BAZEL_RBE_SOCKET_PATH",
+                "BAZEL_rbe_socket_path",  # legacy fallback
+            ],
+            "--remote_proxy",
+        ),
+    ]
+    # LINT.ThenChange(//build/scripts/main_build.py:bazel_socket_env_vars)
+    for config_args, env_vars, bazel_flag in SERVICE_SOCKET_MAP:
+        if any(
+            f"--config={config_arg}" in bazel_config_args
+            for config_arg in config_args
+        ):
+            for env_var in env_vars:
+                env_value = os.environ.get(env_var)
+                if env_value:
+                    bazel_config_args += [f"{bazel_flag}=unix://{env_value}"]
+                    break
 
     siblings_link_template: str = ""
     for config_arg in bazel_config_args:

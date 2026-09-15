@@ -995,7 +995,10 @@ class BuildInvocation(object):
             build_env["RS_rs_service"] = f"unix://{socket_str}"
             # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel resultstore traffic
             build_env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"] = socket_str
-        # LINT.ThenChange(//build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars)
+        # LINT.ThenChange(
+        #   //build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars,
+        #   //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_socket_env_vars
+        # )
 
         return build_env
 
