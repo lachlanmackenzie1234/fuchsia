@@ -223,6 +223,10 @@ class AccessPoint:
             self.ssh.run("stop hostapd")
         except CalledProcessError:
             self.log.info("No hostapd running")
+        try:
+            self.ssh.run("killall dhcpd")
+        except CalledProcessError:
+            self.log.info("No dhcpd running")
         # Bring down all wireless interfaces
         for iface in self.wlan:
             WLAN_DOWN = f"ip link set {iface} down"
