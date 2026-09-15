@@ -176,6 +176,266 @@ TEST(CodecAdapterLc3DecoderTest, OutOfRangeOctetsPerCodecFrameRejected) {
       << "Actual message: " << events.last_fail_message();
 }
 
+TEST(CodecAdapterLc3DecoderTest, ValidOobBytesWithUnknownLtvParamSucceeds) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Valid 16-byte LTV configuration plus optional/unknown LTV parameter (e.g.
+  // Codec_Frame_Blocks_Per_SDU = 0x05).
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x03, 0x04, 0x00, 0x28,              // Octets_Per_Codec_Frame
+      0x02, 0x05, 0x01                     // Optional Codec_Frame_Blocks_Per_SDU
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kOk);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+}
+
+TEST(CodecAdapterLc3DecoderTest, TruncatedAudioChannelAllocationRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Audio_Channel_Allocation with LTV length 2 (1 byte value instead of 4).
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,             // Sampling_Frequency
+      0x02, 0x02, 0x01,             // Frame_Duration
+      0x02, 0x03, 0x00,             // Truncated Audio_Channel_Allocation (len=2)
+      0x03, 0x04, 0x00, 0x28,       // Valid Octets_Per_Codec_Frame
+      0x04, 0x99, 0x00, 0x00, 0x00  // Unknown LTV param to pad to >= 16B
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Audio_Channel_Allocation"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, TruncatedOctetsPerCodecFrameRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Octets_Per_Codec_Frame with LTV length 2 (1 byte value instead of 2).
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x02, 0x04, 0x28,                    // Truncated Octets_Per_Codec_Frame (len=2)
+      0x01, 0x99                           // Unknown param to pad to 16B
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Octets_Per_Codec_Frame"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, TruncatedSamplingFrequencyRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Sampling_Frequency with LTV length 1 (0 value bytes).
+  std::vector<uint8_t> oob_bytes = {
+      0x01, 0x01,                          // Truncated Sampling_Frequency (len=1)
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x03, 0x04, 0x00, 0x28,              // Octets_Per_Codec_Frame
+      0x01, 0x99                           // Padding to >= 16B
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Sampling_Frequency"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, TruncatedFrameDurationRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Frame_Duration with LTV length 1 (0 value bytes).
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x01, 0x02,                          // Truncated Frame_Duration (len=1)
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x03, 0x04, 0x00, 0x28,              // Octets_Per_Codec_Frame
+      0x01, 0x99                           // Padding to >= 16B
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Frame_Duration"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, ZeroLengthLtvEntryAtEndRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Valid LTVs followed by a trailing 0x00 length byte at the very end of oob_bytes.
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x03, 0x04, 0x00, 0x28,              // Octets_Per_Codec_Frame
+      0x00                                 // len == 0 at final byte
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("invalid LTV length"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, LtvLengthExceedsRemainingBufferRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Final LTV claims length 10 when only 3 bytes remain.
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x0a, 0x04, 0x00, 0x28               // len=10 exceeds buffer
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("invalid LTV length"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, DuplicateLtvParameterKeyRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Duplicate Sampling_Frequency (key 0x01) entries.
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency #1
+      0x02, 0x01, 0x08,                    // Sampling_Frequency #2 (duplicate)
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x03, 0x04, 0x00, 0x28               // Octets_Per_Codec_Frame
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("duplicate LTV parameter key"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, ZeroAudioChannelAllocationRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // Audio_Channel_Allocation = 0x00000000 (0 channels).
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x00,  // Audio_Channel_Allocation = 0
+      0x03, 0x04, 0x00, 0x28               // Octets_Per_Codec_Frame
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Audio_Channel_Allocation"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, IncompleteRequiredLtvParamsRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  // oob_bytes >= 16 bytes (padded with unknown LTV key 0x05), missing Octets_Per_Codec_Frame
+  // (0x04).
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x04, 0x05, 0x01, 0x00, 0x00         // Unknown param to pad to >= 16B
+  };
+
+  auto status = decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes)));
+  EXPECT_EQ(status, TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("incomplete"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, MidstreamFormatChangeRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency
+      0x02, 0x02, 0x01,                    // Frame_Duration
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation
+      0x03, 0x04, 0x00, 0x28               // Octets_Per_Codec_Frame
+  };
+
+  ASSERT_EQ(decoder.ProcessFormatDetails(MakeLc3FormatDetails(oob_bytes)),
+            TestCodecAdapterLc3Decoder::kOk);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+
+  // A second ProcessFormatDetails call on an active stream should fail the codec.
+  EXPECT_EQ(decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes))),
+            TestCodecAdapterLc3Decoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Midstream input format change"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3DecoderTest, ProcessInputChunkDataBufferSizeValidation) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Decoder decoder(lock, &events);
+
+  std::vector<uint8_t> oob_bytes = {
+      0x02, 0x01, 0x08,                    // Sampling_Frequency: 48 kHz
+      0x02, 0x02, 0x01,                    // Frame_Duration: 10 ms
+      0x05, 0x03, 0x00, 0x00, 0x00, 0x01,  // Audio_Channel_Allocation: 1 ch
+      0x03, 0x04, 0x00, 0x28               // Octets_Per_Codec_Frame: 40 bytes
+  };
+  ASSERT_EQ(decoder.ProcessFormatDetails(MakeLc3FormatDetails(std::move(oob_bytes))),
+            TestCodecAdapterLc3Decoder::kOk);
+
+  const size_t input_size = decoder.InputChunkSize();
+  const size_t min_output_size = decoder.MinOutputBufferSize();
+  std::vector<uint8_t> input(input_size, 0);
+  std::vector<uint8_t> output(min_output_size, 0);
+
+  // Mismatched input_data_size should return -1.
+  EXPECT_EQ(
+      decoder.ProcessInputChunkData(input.data(), input_size - 1, output.data(), output.size()),
+      -1);
+  // Undersized output_buffer_size should return -1.
+  EXPECT_EQ(
+      decoder.ProcessInputChunkData(input.data(), input_size, output.data(), min_output_size - 1),
+      -1);
+}
+
 TEST(CodecAdapterLc3EncoderTest, ValidFormatDetailsSucceeds) {
   std::mutex lock;
   FakeCodecAdapterEvents events;
@@ -219,6 +479,122 @@ TEST(CodecAdapterLc3EncoderTest, OutOfRangeEncoderNbytesRejected) {
   EXPECT_EQ(events.fail_codec_count(), 1u);
   EXPECT_NE(events.last_fail_message().find("Byte count"), std::string::npos)
       << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3EncoderTest, EmptyChannelMapRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_domain()->audio().uncompressed().pcm().channel_map.clear();
+
+  auto status = encoder.ProcessFormatDetails(format_details);
+  EXPECT_EQ(status, TestCodecAdapterLc3Encoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Unsupported channel count"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3EncoderTest, ExcessiveChannelMapRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_domain()->audio().uncompressed().pcm().channel_map.assign(
+      kMaxChannelCount + 1, fuchsia::media::AudioChannelId::LF);
+
+  auto status = encoder.ProcessFormatDetails(format_details);
+  EXPECT_EQ(status, TestCodecAdapterLc3Encoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Unsupported channel count"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3EncoderTest, MissingNbytesRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_encoder_settings()->lc3().clear_nbytes();
+
+  auto status = encoder.ProcessFormatDetails(format_details);
+  EXPECT_EQ(status, TestCodecAdapterLc3Encoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Byte count"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3EncoderTest, MissingFrameDurationRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_encoder_settings()->lc3().clear_frame_duration();
+
+  auto status = encoder.ProcessFormatDetails(format_details);
+  EXPECT_EQ(status, TestCodecAdapterLc3Encoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("frame duration"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3EncoderTest, InvalidFrameDurationRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  format_details.mutable_encoder_settings()->lc3().set_frame_duration(
+      static_cast<fuchsia::media::Lc3FrameDuration>(99));
+
+  auto status = encoder.ProcessFormatDetails(format_details);
+  EXPECT_EQ(status, TestCodecAdapterLc3Encoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("frame duration"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3EncoderTest, MidstreamFormatChangeRejected) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  ASSERT_EQ(encoder.ProcessFormatDetails(MakeValidLc3EncoderFormatDetails()),
+            TestCodecAdapterLc3Encoder::kOk);
+  EXPECT_EQ(events.fail_codec_count(), 0u);
+
+  EXPECT_EQ(encoder.ProcessFormatDetails(MakeValidLc3EncoderFormatDetails()),
+            TestCodecAdapterLc3Encoder::kShouldTerminate);
+  EXPECT_EQ(events.fail_codec_count(), 1u);
+  EXPECT_NE(events.last_fail_message().find("Midstream input format change"), std::string::npos)
+      << "Actual message: " << events.last_fail_message();
+}
+
+TEST(CodecAdapterLc3EncoderTest, ProcessInputChunkDataBufferSizeValidation) {
+  std::mutex lock;
+  FakeCodecAdapterEvents events;
+  TestCodecAdapterLc3Encoder encoder(lock, &events);
+
+  auto format_details = MakeValidLc3EncoderFormatDetails();
+  ASSERT_EQ(encoder.ProcessFormatDetails(format_details), TestCodecAdapterLc3Encoder::kOk);
+
+  const size_t input_size = encoder.InputChunkSize();
+  const size_t min_output_size = encoder.MinOutputBufferSize();
+  std::vector<uint8_t> input(input_size, 0);
+  std::vector<uint8_t> output(min_output_size, 0);
+
+  // Mismatched input_data_size should return -1.
+  EXPECT_EQ(
+      encoder.ProcessInputChunkData(input.data(), input_size - 1, output.data(), output.size()),
+      -1);
+  // Undersized output_buffer_size should return -1.
+  EXPECT_EQ(
+      encoder.ProcessInputChunkData(input.data(), input_size, output.data(), min_output_size - 1),
+      -1);
 }
 
 }  // namespace
