@@ -252,6 +252,7 @@ kernel_rust_mod("kernel-rs") {
     "relaxed_atomic.rs",
     "restricted.rs",
     "restricted_state.rs",
+    "scheduler_state.rs",
     "stats.rs",
     "thread.rs",
     "timer.rs",

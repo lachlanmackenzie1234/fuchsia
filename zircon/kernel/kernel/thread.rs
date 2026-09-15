@@ -12,6 +12,7 @@ use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 
 use crate::kernel::restricted_state::RestrictedState;
+use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
 use crate::vm::vm_aspace::VmAspace;
 
 #[allow(improper_ctypes)]
@@ -20,6 +21,13 @@ unsafe extern "C" {
         name: *const c_char,
         entry: extern "C" fn(*mut c_void) -> i32,
         arg: *mut c_void,
+    ) -> *mut Thread;
+    fn cpp_thread_create_with_profile(
+        name_ptr: *const c_char,
+        name_len: usize,
+        entry: extern "C" fn(*mut c_void) -> i32,
+        arg: *mut c_void,
+        profile: *const SchedulerStateBaseProfile,
     ) -> *mut Thread;
     fn cpp_thread_resume(thread: *mut Thread);
     fn cpp_thread_join(
@@ -204,6 +212,29 @@ pub unsafe fn create(
     arg: *mut c_void,
 ) -> Result<ThreadPtr, Status> {
     let thread = unsafe { cpp_thread_create_default(name, entry, arg) };
+    unsafe { ThreadPtr::from_raw(thread) }.ok_or(Status::NO_MEMORY)
+}
+
+/// Creates a new thread with the given base profile.
+///
+/// # Safety
+///
+/// The caller must ensure that `entry` and `arg` are safe to run on a new thread.
+pub unsafe fn create_with_profile(
+    name: &[u8],
+    entry: extern "C" fn(*mut c_void) -> i32,
+    arg: *mut c_void,
+    profile: &SchedulerStateBaseProfile,
+) -> Result<ThreadPtr, Status> {
+    let thread = unsafe {
+        cpp_thread_create_with_profile(
+            name.as_ptr() as *const c_char,
+            name.len(),
+            entry,
+            arg,
+            profile,
+        )
+    };
     unsafe { ThreadPtr::from_raw(thread) }.ok_or(Status::NO_MEMORY)
 }
 

@@ -14,6 +14,7 @@ pub mod percpu;
 pub mod relaxed_atomic;
 pub mod restricted;
 pub mod restricted_state;
+pub mod scheduler_state;
 pub mod stats;
 pub mod thread;
 pub mod timer;
