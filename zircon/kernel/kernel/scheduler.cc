@@ -1690,7 +1690,7 @@ void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
   // thread. Always consume the processor idle time, even if an energy model is
   // not set, to avoid accumulating excessive idle time and triggering the
   // assert when an energy model is finally set.
-  const SchedDuration idle_processor_time_ns{IdlePowerThread::TakeProcessorIdleTime()};
+  const SchedDuration idle_processor_time_ns{TakeProcessorIdleTime()};
   DEBUG_ASSERT_MSG(
       idle_processor_time_ns <= actual_runtime_ns,
       "idle_processor_time_ns=%" PRId64 " actual_runtime_ns=%" PRId64 " current_thread=%s",

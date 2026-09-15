@@ -135,11 +135,12 @@ void IdlePowerThread::FlushAndHalt() {
 int IdlePowerThread::Run(void* arg) {
   const cpu_num_t cpu_num = arch_curr_cpu_num();
   IdlePowerThread& this_idle_power_thread = percpu::GetCurrent().idle_power_thread;
+  Scheduler& this_scheduler = percpu::GetCurrent().scheduler;
 
   // The accumulated idle time should always be reset to zero when a CPU comes online. Make sure
   // that CPU hotplug does not leave this member in an inconsistent state with respect to the
   // scheduler bookkeeping when this thread is revived after going offline.
-  DEBUG_ASSERT(this_idle_power_thread.processor_idle_time_ns_ == 0);
+  DEBUG_ASSERT(this_scheduler.processor_idle_time() == 0);
 
   for (;;) {
     // Disable preemption and interrupts to avoid races between idle power thread requests, handling
@@ -188,7 +189,7 @@ int IdlePowerThread::Run(void* arg) {
 
           // Clear any accumulated idle time to ensure consistency with runtime vs. idle time
           // asserts in the scheduler when the CPU goes back online.
-          this_idle_power_thread.processor_idle_time_ns_ = 0;
+          this_scheduler.ResetProcessorIdleTime();
 
           // Updating the state and signaling the complete event is handled by
           // mp_unplug_current_cpu() when it calls FlushAndHalt().
@@ -244,18 +245,12 @@ int IdlePowerThread::Run(void* arg) {
         ArchIdlePowerThread::EnterIdleState();
         const zx_instant_mono_t idle_finish_time = current_mono_time();
 
-        this_idle_power_thread.processor_idle_time_ns_ += idle_finish_time - idle_start_time;
+        this_scheduler.AddProcessorIdleTime(SchedDuration{idle_finish_time - idle_start_time});
       }
 
       // END WARNING: Pending preemptions is safe again.
     }
   }
-}
-
-zx_duration_mono_t IdlePowerThread::TakeProcessorIdleTime() {
-  zx_duration_mono_t idle_time_ns = 0;
-  ktl::swap(idle_time_ns, percpu::GetCurrent().idle_power_thread.processor_idle_time_ns_);
-  return idle_time_ns;
 }
 
 IdlePowerThread::TransitionResult IdlePowerThread::TransitionFromTo(State expected_state,

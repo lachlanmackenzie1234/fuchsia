@@ -35,6 +35,7 @@
 #include <kernel/thread.h>
 #include <kernel/wait.h>
 #include <ktl/algorithm.h>
+#include <ktl/atomic.h>
 #include <ktl/optional.h>
 #include <ktl/span.h>
 #include <ktl/utility.h>
@@ -511,6 +512,19 @@ class Scheduler {
   }
   static cpu_mask_t PeekIdleMask() { return idle_schedulers_.load(ktl::memory_order_relaxed); }
   static bool PeekIsIdle(cpu_num_t cpu) { return (PeekIdleMask() & cpu_num_to_mask(cpu)) != 0; }
+
+  // Accumulates processor idle time.
+  void AddProcessorIdleTime(SchedDuration idle_time) {
+    processor_idle_time_ns_.fetch_add(idle_time.raw_value(), ktl::memory_order_relaxed);
+  }
+
+  // Clears any accumulated processor idle time.
+  void ResetProcessorIdleTime() { processor_idle_time_ns_.store(0, ktl::memory_order_relaxed); }
+
+  // Returns the accumulated processor idle time for assertions/diagnostics.
+  SchedDuration processor_idle_time() const {
+    return SchedDuration{processor_idle_time_ns_.load(ktl::memory_order_relaxed)};
+  }
 
   // Reschedules the given CPU mask, applying any updated bookkeeping that may
   // affect the currently running threads on those CPUs.
@@ -1119,6 +1133,11 @@ class Scheduler {
                                         SchedDuration actual_runtime_ns)
       TA_REQ(current_thread->get_lock(), queue_lock_);
 
+  // Returns and resets the accumulated processor idle time.
+  SchedDuration TakeProcessorIdleTime() {
+    return SchedDuration{processor_idle_time_ns_.exchange(0, ktl::memory_order_relaxed)};
+  }
+
   // Utilities to scale up or down the given value by the performance scale of the CPU.
   template <typename T>
   inline T ScaleUp(T value) const TA_REQ(queue_lock_);
@@ -1454,6 +1473,9 @@ class Scheduler {
   // The system time since the last update to the global virtual time.
   TA_GUARDED(queue_lock_)
   SchedTime last_update_time_ns_{0};
+
+  // Accumulates the time spent in a lower-power idle state since the last reschedule.
+  ktl::atomic<zx_duration_mono_t> processor_idle_time_ns_{0};
 
   // The system time that the current time slice started.
   SchedTime start_of_current_time_slice_ns_{0};
