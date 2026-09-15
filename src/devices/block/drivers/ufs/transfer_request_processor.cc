@@ -431,9 +431,11 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
     completion_status = ZX_ERR_TIMED_OUT;
   } else if (request_slot.data_vmo->is_valid() && request_slot.is_read &&
              request_slot.dma_length > 0) {
-    // Invalidate the cache so the read data is visible to the CPU.
-    completion_status = request_slot.data_vmo->op_range(
-        ZX_VMO_OP_CACHE_INVALIDATE, request_slot.dma_offset, request_slot.dma_length, nullptr, 0);
+    // Clean and invalidate the cache so that the next CPU read picks up data written to main memory
+    // by the controller (discarding any speculative CPU prefetches during DMA).
+    completion_status =
+        request_slot.data_vmo->op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, request_slot.dma_offset,
+                                        request_slot.dma_length, nullptr, 0);
     if (completion_status != ZX_OK) {
       fdf::error("Failed to invalidate cache for data VMO: {}",
                  zx_status_get_string(completion_status));
