@@ -78,7 +78,7 @@ fbl::StringBuffer<kTaPathLength> BuildTaPath(const optee::Uuid& ta_uuid) {
 
 zx_status_t ConvertOpteeToZxResult(fidl::AnyArena& allocator, uint32_t optee_return_code,
                                    uint32_t optee_return_origin,
-                                   fuchsia_tee::wire ::OpResult* zx_result) {
+                                   fuchsia_tee::wire::OpResult* zx_result) {
   ZX_DEBUG_ASSERT(zx_result != nullptr);
 
   // Do a quick check of the return origin to make sure we can map it to one
@@ -210,6 +210,15 @@ zx::result<fidl::ClientEnd<fio::Directory>> RecursivelyWalkDirectories(
   return zx::ok(std::move(current_dir));
 }
 
+// UUID of the Amlogic Provisioning Trusted Application.
+// This TA multiplexes factory and runtime commands. We restrict access to factory commands
+// (WRITE_EFUSE and DEC_HASH) for this TA.
+const optee::Uuid kProvisioningTaUuid(0xd83c3c4a, 0x9e8d, 0x4e4e,
+                                      {0xad, 0x30, 0x9d, 0x40, 0xe1, 0x37, 0xf6, 0x89});
+
+constexpr uint32_t kProvisionCmdIdWriteEfuse = 0;
+constexpr uint32_t kProvisionCmdDecHash = 3;
+
 }  // namespace
 
 namespace optee {
@@ -298,6 +307,17 @@ void OpteeClient::InvokeCommand(
     result.set_return_origin(fuchsia_tee::wire::ReturnOrigin::kCommunication);
     completer.Reply(result);
     return;
+  }
+
+  if (application_uuid_ == kProvisioningTaUuid) {
+    if (request->command_id == kProvisionCmdIdWriteEfuse ||
+        request->command_id == kProvisionCmdDecHash) {
+      LOG(ERROR, "command %" PRIu32 " is not allowed for provisioning TA", request->command_id);
+      result.set_return_code(allocator, TEEC_ERROR_ACCESS_DENIED);
+      result.set_return_origin(fuchsia_tee::wire::ReturnOrigin::kCommunication);
+      completer.Reply(result);
+      return;
+    }
   }
 
   auto create_result = InvokeCommandMessage::TryCreate(

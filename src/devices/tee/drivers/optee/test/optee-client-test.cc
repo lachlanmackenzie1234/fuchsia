@@ -42,6 +42,9 @@ namespace frpmb = fuchsia_hardware_rpmb;
 constexpr fuchsia_tee::wire::Uuid kOpteeOsUuid = {
     0x486178E0, 0xE7F8, 0x11E3, {0xBC, 0x5E, 0x00, 0x02, 0xA5, 0xD5, 0xC5, 0x1B}};
 
+constexpr fuchsia_tee::wire::Uuid kProvisioningTaUuid = {
+    0xd83c3c4a, 0x9e8d, 0x4e4e, {0xad, 0x30, 0x9d, 0x40, 0xe1, 0x37, 0xf6, 0x89}};
+
 class OpteeClientTestBase : public OpteeControllerBase, public zxtest::Test {
  public:
   static const size_t kMaxParamCount = 4;
@@ -195,6 +198,52 @@ TEST_F(OpteeClientTest, OpenSessionsClosedOnClientUnbind) {
   optee_client = nullptr;
 
   EXPECT_TRUE(open_sessions().empty());
+}
+
+TEST_F(OpteeClientTest, ProvisioningTaCommandFiltering) {
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_tee::Application>::Create();
+  auto optee_client = std::make_unique<OpteeClient>(
+      this, fidl::ClientEnd<fuchsia_tee_manager::Provider>(), optee::Uuid{kProvisioningTaUuid});
+
+  fidl::BindServer(loop_.dispatcher(), std::move(server_end), optee_client.get());
+
+  fidl::WireSyncClient<fuchsia_tee::Application> fidl_client(std::move(client_end));
+  fidl::VectorView<fuchsia_tee::wire::Parameter> parameter_set;
+  auto open_res = fidl_client->OpenSession2(std::move(parameter_set));
+  EXPECT_OK(open_res.status());
+  uint32_t session_id = open_res.value().session_id;
+
+  // Command 0 (WRITE_EFUSE) should be blocked
+  {
+    fidl::VectorView<fuchsia_tee::wire::Parameter> parameter_set;
+    auto res = fidl_client->InvokeCommand(session_id, 0, std::move(parameter_set));
+    EXPECT_OK(res.status());
+    EXPECT_EQ(res.value().op_result.return_code(), TEEC_ERROR_ACCESS_DENIED);
+  }
+
+  // Command 3 (DEC_HASH) should be blocked
+  {
+    fidl::VectorView<fuchsia_tee::wire::Parameter> parameter_set;
+    auto res = fidl_client->InvokeCommand(session_id, 3, std::move(parameter_set));
+    EXPECT_OK(res.status());
+    EXPECT_EQ(res.value().op_result.return_code(), TEEC_ERROR_ACCESS_DENIED);
+  }
+
+  // Command 1 (KEY_STORE) should be allowed (and return NOT_IMPLEMENTED from mock)
+  {
+    fidl::VectorView<fuchsia_tee::wire::Parameter> parameter_set;
+    auto res = fidl_client->InvokeCommand(session_id, 1, std::move(parameter_set));
+    EXPECT_OK(res.status());
+    EXPECT_EQ(res.value().op_result.return_code(), TEEC_ERROR_NOT_IMPLEMENTED);
+  }
+
+  // Command 2 (KEY_QUERY) should be allowed (and return NOT_IMPLEMENTED from mock)
+  {
+    fidl::VectorView<fuchsia_tee::wire::Parameter> parameter_set;
+    auto res = fidl_client->InvokeCommand(session_id, 2, std::move(parameter_set));
+    EXPECT_OK(res.status());
+    EXPECT_EQ(res.value().op_result.return_code(), TEEC_ERROR_NOT_IMPLEMENTED);
+  }
 }
 
 class FakeRpmb : public fidl::WireServer<frpmb::Rpmb> {
