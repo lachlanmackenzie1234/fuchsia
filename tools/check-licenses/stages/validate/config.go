@@ -4,7 +4,10 @@
 
 package validate
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // Policy checks that are validated against the configuration.
 const (
@@ -67,11 +70,23 @@ func IsValidPolicy(name string) bool {
 	return validPolicyChecks[name]
 }
 
-// ValidPolicies returns a list of all valid policy check names.
+// ValidPolicies returns a sorted list of all valid policy check names.
 func ValidPolicies() []string {
 	policies := make([]string, 0, len(validPolicyChecks))
 	for k := range validPolicyChecks {
 		policies = append(policies, k)
 	}
+	sort.Strings(policies)
 	return policies
+}
+
+// IsProjectScopePolicy returns true if the policy check applies to an entire project
+// directory rather than an individual file.
+func IsProjectScopePolicy(name string) bool {
+	switch name {
+	case PolicyNoLicense, PolicyNoReadme:
+		return true
+	default:
+		return false
+	}
 }

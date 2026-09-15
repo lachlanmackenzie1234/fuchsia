@@ -7,6 +7,7 @@ package validate
 import (
 	"context"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -350,5 +351,41 @@ func TestAddCopyrightToBytes_ShebangAndLineEndings(t *testing.T) {
 	sWithoutCrlf := strings.ReplaceAll(s, "\r\n", "")
 	if strings.Contains(sWithoutCrlf, "\n") || strings.Contains(sWithoutCrlf, "\r") {
 		t.Errorf("Expected all line breaks in CRLF content to be \\r\\n")
+	}
+}
+
+func TestIsProjectScopePolicy(t *testing.T) {
+	if !IsProjectScopePolicy(PolicyNoLicense) {
+		t.Errorf("Expected PolicyNoLicense to be project-scoped")
+	}
+	if !IsProjectScopePolicy(PolicyNoReadme) {
+		t.Errorf("Expected PolicyNoReadme to be project-scoped")
+	}
+	if IsProjectScopePolicy(PolicyUnrecognizedLicense) {
+		t.Errorf("Expected PolicyUnrecognizedLicense NOT to be project-scoped")
+	}
+	if IsProjectScopePolicy(PolicyFuchsiaCopyright) {
+		t.Errorf("Expected PolicyFuchsiaCopyright NOT to be project-scoped")
+	}
+	if IsProjectScopePolicy("UnknownPolicy") {
+		t.Errorf("Expected UnknownPolicy NOT to be project-scoped")
+	}
+}
+
+func TestIsValidPolicy(t *testing.T) {
+	for _, p := range ValidPolicies() {
+		if !IsValidPolicy(p) {
+			t.Errorf("Expected IsValidPolicy(%q) to be true", p)
+		}
+	}
+	if IsValidPolicy("NonExistentPolicy") {
+		t.Errorf("Expected IsValidPolicy('NonExistentPolicy') to be false")
+	}
+}
+
+func TestValidPolicies_Sorted(t *testing.T) {
+	policies := ValidPolicies()
+	if !sort.StringsAreSorted(policies) {
+		t.Errorf("Expected ValidPolicies() to be sorted, got: %v", policies)
 	}
 }

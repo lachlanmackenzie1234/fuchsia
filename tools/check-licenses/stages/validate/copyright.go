@@ -75,14 +75,16 @@ var CommentPrefixes = map[string]string{
 	".c": "//", ".cc": "//", ".cpp": "//", ".h": "//", ".hh": "//", ".hpp": "//",
 	".inc": "//", ".go": "//", ".rs": "//", ".dart": "//", ".java": "//", ".js": "//",
 	".kt": "//", ".m": "//", ".cml": "//", ".fidl": "//", ".d": "//", ".dat": "//",
+	".ts": "//", ".tsx": "//", ".css": "//", ".proto": "//", ".S": "//",
 	// Script/Config-style comments
-	".py": "#", ".sh": "#", ".gn": "#", ".gni": "#", ".gyp": "#", ".gypi": "#",
+	".py": "#", ".sh": "#", ".bash": "#", ".zsh": "#", ".pl": "#", ".rb": "#",
+	".gn": "#", ".gni": "#", ".gyp": "#", ".gypi": "#",
 	".merkle": "#", ".ac": "#", ".am": "#", ".yaml": "#", ".yml": "#", ".toml": "#",
-	".bzl": "#", ".bazel": "#",
+	".bzl": "#", ".bazel": "#", ".mk": "#",
 	// Assembly
 	".asm": ";",
 	// Windows Batch
-	".bat": "rem",
+	".bat": "rem", ".cmd": "rem",
 }
 
 // AddCopyright analyzes a file and returns its content with a Fuchsia copyright header prepended.

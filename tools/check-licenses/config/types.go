@@ -315,8 +315,10 @@ const (
 
 type RuleMetadata = validate.RuleMetadata
 
-var ValidPolicyChecks = map[string]bool{
-	PolicyCheckAllLicenseTextsMustBeRecognized:                     true,
-	PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders: true,
-	PolicyCheckAllProjectsMustHaveALicense:                         true,
-}
+var ValidPolicyChecks = func() map[string]bool {
+	m := make(map[string]bool)
+	for _, p := range validate.ValidPolicies() {
+		m[p] = true
+	}
+	return m
+}()
