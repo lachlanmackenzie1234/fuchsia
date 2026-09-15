@@ -320,6 +320,7 @@ kernel_rust_mod("arch-x86-rs") {
     "//src/lib/kalloc",
     "//src/lib/kprint",
     "//src/lib/ksync",
+    "//src/lib/lazy_init:lazy_init_rs",
     "//src/lib/regio",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
