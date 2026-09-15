@@ -27,7 +27,7 @@ def _should_run_full_validate(affected_files):
 
     return False
 
-def _license_project(ctx):
+def _check_licenses(ctx):
     """Runs `check-licenses` to verify repository license compliance.
 
     Args:
@@ -87,5 +87,5 @@ def _license_project(ctx):
             message = "License compliance check failed:\n{}".format(message),
         )
 
-def register_license_project_checks():
-    shac.register_check(shac.check(_license_project))
+def register_check_licenses_checks():
+    shac.register_check(shac.check(_check_licenses))
