@@ -39,7 +39,10 @@ use starnix_uapi::arch32::{
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::uapi::perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE;
+use starnix_uapi::uapi::{
+    perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64,
+    perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE,
+};
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
     errno, error, from_status_like_fdio, perf_event_attr, perf_event_header,
@@ -921,6 +924,154 @@ async fn stop_and_collect_samples(
                         }
                     }
                 }
+                Ok(TraceRecord::LargeBlob(large_blob)) => {
+                    if let Some(seq_lock_wrapper) = seq_lock_wrapper {
+                        // The DWARF strategy delivers each sample as a
+                        // "stack_sample" blob: [u64 regs_size][regs bytes]
+                        // followed by memory chunks of [u64 base][u64 size]
+                        // [bytes] (see the profiler's StackSampler).
+                        if large_blob.name != "stack_sample" {
+                            continue;
+                        }
+                        let Some(blob_metadata) = large_blob.metadata else {
+                            continue;
+                        };
+                        let bytes = &large_blob.bytes;
+                        if bytes.len() < 8 {
+                            continue;
+                        }
+                        let regs_size =
+                            u64::from_ne_bytes(bytes[0..8].try_into().unwrap()) as usize;
+                        let mut offset = 8;
+                        if regs_size == 0 || bytes.len() < offset + regs_size {
+                            continue;
+                        }
+
+                        // 33 u64 general registers (r0-r29, lr, sp, pc), with
+                        // cpsr following them in the zircon thread state.
+                        // Register state of other widths (e.g. an x86_64
+                        // thread state) is not supported and skipped by this
+                        // size check.
+                        const REGS_BYTES: usize = 33 * 8;
+                        if regs_size < REGS_BYTES + 8 {
+                            continue;
+                        }
+                        #[cfg(target_arch = "aarch64")]
+                        let is_32bit = {
+                            let cpsr = u64::from_ne_bytes(
+                                bytes[offset + REGS_BYTES..offset + REGS_BYTES + 8]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                            (cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK)
+                                == zx::sys::ZX_REG_CPSR_ARCH_32_MASK
+                        };
+                        #[cfg(not(target_arch = "aarch64"))]
+                        let is_32bit = false;
+
+                        let mut regs = bytes[offset..offset + REGS_BYTES].to_vec();
+                        offset += regs_size;
+
+                        if is_32bit {
+                            // Zircon reports the AArch32 PC in the pc slot
+                            // (index 32). 64-bit readers take it from there,
+                            // per the Linux compat layout (AArch32 R0-R14
+                            // arrive in x0-x14); mirror it into the arm32 R15
+                            // slot (index 15) too for 32-bit readers, which
+                            // only consume indices 0-15 -- x15 carries no
+                            // meaningful value for AArch32 state.
+                            let pc_bytes = regs[256..264].to_vec();
+                            regs[120..128].copy_from_slice(&pc_bytes);
+                        }
+
+                        let sp = if is_32bit {
+                            // The arm32 stack pointer is R13.
+                            u64::from_ne_bytes(regs[104..112].try_into().unwrap())
+                        } else {
+                            u64::from_ne_bytes(regs[248..256].try_into().unwrap())
+                        };
+                        let pc = u64::from_ne_bytes(regs[256..264].try_into().unwrap());
+
+                        // Select the memory chunk that contains the sampled
+                        // stack pointer and trim it to start exactly there:
+                        // readers overlay the STACK_USER bytes at the SP
+                        // reported in REGS_USER. The blob can carry several
+                        // captures (the thread-state stack, the
+                        // restricted-state struct, and a restricted-SP
+                        // stack); selecting by SP keeps the registers and the
+                        // stack bytes coherent.
+                        let mut stack: &[u8] = &[];
+                        while offset + 16 <= bytes.len() {
+                            let chunk_base =
+                                u64::from_ne_bytes(bytes[offset..offset + 8].try_into().unwrap());
+                            offset += 8;
+                            let chunk_size =
+                                u64::from_ne_bytes(bytes[offset..offset + 8].try_into().unwrap());
+                            offset += 8;
+                            if offset + chunk_size as usize > bytes.len() {
+                                break;
+                            }
+                            let data = &bytes[offset..offset + chunk_size as usize];
+                            offset += chunk_size as usize;
+                            if stack.is_empty() && chunk_base <= sp && sp < chunk_base + chunk_size
+                            {
+                                stack = &data[(sp - chunk_base) as usize..];
+                            }
+                        }
+                        if stack.is_empty() {
+                            // No capture covers the sampled SP; the sample
+                            // cannot be unwound.
+                            continue;
+                        }
+
+                        let Some(LinuxIdentity::Thread { pid, tid }) = koid_session.and_then(|s| {
+                            s.resolve_koids(
+                                zx::Koid::from_raw(blob_metadata.process.0),
+                                zx::Koid::from_raw(blob_metadata.thread.0),
+                            )
+                        }) else {
+                            continue;
+                        };
+                        let time = zx::BootInstant::from_nanos(blob_metadata.timestamp.max(0));
+                        let regs_abi = if is_32bit {
+                            perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32 as u64
+                        } else {
+                            perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64
+                        };
+                        let perf_record_sample = PerfRecordSample {
+                            pid: Some(pid as u32),
+                            tid: Some(tid as u32),
+                            time,
+                            ips: vec![pc],
+                            regs: &regs,
+                            stack,
+                            regs_abi,
+                            sample_regs_user,
+                            sample_stack_user,
+                        };
+                        let metadata = seq_lock_wrapper.get();
+                        let bytes_written = write_record_to_vmo(
+                            perf_record_sample,
+                            perf_data_vmo,
+                            sample_type,
+                            sample_id,
+                            sample_period,
+                            read_format,
+                            *vmo_write_offset,
+                            &metadata,
+                            &mut lost_events,
+                        );
+                        // Publish data_head after writing; set_value's
+                        // release-ordered stores make the record contents
+                        // visible to a reader that observes the new head.
+                        if bytes_written > 0 {
+                            *vmo_write_offset += bytes_written;
+                            let mut metadata = seq_lock_wrapper.get();
+                            metadata.data_head = *vmo_write_offset;
+                            seq_lock_wrapper.set_value(metadata);
+                        }
+                    }
+                }
                 Ok(_) => {}
                 Err(e) => {
                     log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
@@ -1289,7 +1440,6 @@ mod tests {
     use crate::task::tracing::{TracePerformanceEventManager, ZirconIdentity};
     use fidl::endpoints::create_proxy;
     use fuchsia_async as fasync;
-    use starnix_uapi::uapi::perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32;
 
     #[::fuchsia::test]
     async fn test_stop_and_collect_samples_socket_full() {
@@ -1562,6 +1712,55 @@ mod tests {
         assert_eq!(&record_bytes[64..80], &stack_data);
         let dyn_size = u64::from_ne_bytes(record_bytes[80..88].try_into().unwrap());
         assert_eq!(dyn_size, 16);
+    }
+
+    #[::fuchsia::test]
+    async fn test_write_record_to_vmo_regs_abi_64() {
+        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
+        let vmo_handle_copy =
+            perf_data_vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        // SAFETY: The test maintains exclusive write access to this VMO.
+        let seq_lock = unsafe { create_seq_lock(&vmo_handle_copy, ESTIMATED_MMAP_BUFFER_SIZE) };
+        let metadata = seq_lock.get();
+        let mut lost_events = 0;
+        let regs_data = [0x44u8; 16];
+        let stack_data = [0x55u8; 16];
+        let sample = PerfRecordSample {
+            pid: Some(10),
+            tid: Some(20),
+            time: zx::BootInstant::from_nanos(123_456_789),
+            ips: vec![0xdeadbeef],
+            regs: &regs_data,
+            stack: &stack_data,
+            regs_abi: perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64,
+            sample_regs_user: 3,
+            sample_stack_user: 16,
+        };
+        let sample_type = (perf_event_sample_format_PERF_SAMPLE_IP
+            | perf_event_sample_format_PERF_SAMPLE_TID
+            | perf_event_sample_format_PERF_SAMPLE_TIME
+            | perf_event_sample_format_PERF_SAMPLE_REGS_USER
+            | perf_event_sample_format_PERF_SAMPLE_STACK_USER) as u64;
+        let written = write_record_to_vmo(
+            sample,
+            &perf_data_vmo,
+            sample_type,
+            0,
+            0,
+            0,
+            0,
+            &metadata,
+            &mut lost_events,
+        );
+        assert!(written > 0);
+
+        let mut record_bytes = vec![0u8; written as usize];
+        perf_data_vmo.read(&mut record_bytes, metadata.data_offset).unwrap();
+
+        // REGS_USER: abi (8 bytes) + regs (16 bytes)
+        let abi = u64::from_ne_bytes(record_bytes[32..40].try_into().unwrap());
+        assert_eq!(abi, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64 as u64);
+        assert_eq!(&record_bytes[40..56], &regs_data);
     }
 
     #[::fuchsia::test]
