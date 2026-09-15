@@ -70,6 +70,14 @@ TEST_F(ManagedUsbPeripheralTest, BosDescriptorVersionHandling) {
   setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
   setup.b_request = USB_REQ_GET_DESCRIPTOR;
 
+  uint16_t orig_bcd_usb = 0;
+  this->dut().RunInDriverContext(
+      [&](UsbPeripheral& driver) { orig_bcd_usb = le16toh(driver.device_desc().bcd_usb); });
+  auto restore_bcd_usb = fit::defer([this, orig_bcd_usb]() {
+    this->dut().RunInDriverContext(
+        [orig_bcd_usb](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(orig_bcd_usb); });
+  });
+
   // 1. USB 2.0 (0x0200) without BOS capabilities must stall GET_DESCRIPTOR(BOS).
   this->dut().RunInDriverContext(
       [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_2_0); });
@@ -144,6 +152,106 @@ TEST_F(ManagedUsbPeripheralTest, BosDescriptorVersionHandling) {
     ASSERT_TRUE(res_windex->is_error());
     EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, res_windex->error_value());
   }
+}
+
+TEST_F(ManagedUsbPeripheralTest, GetBosDescriptor) {
+  // Validates standard GET_DESCRIPTOR request for the Binary Device Object Store
+  // (BOS, USB_DT_BOS) descriptor per USB 3.2 Specification Section 9.6.2.
+  // Validates that the returned descriptor has valid header length, descriptor type USB_DT_BOS,
+  // matching total length (wTotalLength), and correct device capability count.
+  uint16_t orig_bcd_usb = 0;
+  this->dut().RunInDriverContext(
+      [&](UsbPeripheral& driver) { orig_bcd_usb = le16toh(driver.device_desc().bcd_usb); });
+  auto restore_bcd_usb = fit::defer([this, orig_bcd_usb]() {
+    this->dut().RunInDriverContext(
+        [orig_bcd_usb](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(orig_bcd_usb); });
+  });
+
+  this->dut().RunInDriverContext(
+      [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_3_1); });
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_DESCRIPTOR;
+  setup.w_value = (USB_DT_BOS << 8) | 0;
+  setup.w_index = 0;
+  setup.w_length = sizeof(usb_bos_descriptor_t);
+
+  fidl::Arena arena;
+  auto result = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(result->is_ok());
+
+  auto& desc = result->value()->read;
+  ASSERT_EQ(desc.size(), sizeof(usb_bos_descriptor_t));
+  EXPECT_EQ(desc[0], sizeof(usb_bos_descriptor_t));
+  EXPECT_EQ(desc[1], USB_DT_BOS);
+  usb_bos_descriptor_t bos_desc;
+  std::memcpy(&bos_desc, desc.data(), sizeof(bos_desc));
+  EXPECT_EQ(le16toh(bos_desc.w_total_length), sizeof(usb_bos_descriptor_t));
+  EXPECT_EQ(bos_desc.b_num_device_caps, 0);
+}
+
+TEST_F(ManagedUsbPeripheralTest, GetLanguageTableStringDescriptor) {
+  // Validates standard GET_DESCRIPTOR request for String Descriptor Index 0 (Language Table)
+  // per USB 2.0 Specification Section 9.6.7. Returns array of supported LANGIDs (0x0409 English
+  // US). Validates descriptor length, string descriptor type, and default English language ID.
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_DESCRIPTOR;
+  setup.w_value = (USB_DT_STRING << 8) | 0;
+  setup.w_index = 0;
+  setup.w_length = 256;
+
+  fidl::Arena arena;
+  auto result = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(result->is_ok());
+
+  auto& desc = result->value()->read;
+  ASSERT_EQ(desc.size(), 4u);
+  EXPECT_EQ(desc[0], 4);
+  EXPECT_EQ(desc[1], USB_DT_STRING);
+  // Default language is English (United States) - 0x0409 (little-endian: 0x09, 0x04).
+  EXPECT_EQ(desc[2], 0x09);
+  EXPECT_EQ(desc[3], 0x04);
+}
+
+TEST_F(ManagedUsbPeripheralTest, DISABLED_GetStatusEndpointZeroInWhenUnconfigured) {
+  // What this test validates/protects:
+  // Validates that GET_STATUS addressed to Endpoint 0 IN (wIndex = 0x80) is valid
+  // and returns 2 bytes of zero status even before the device is configured, per
+  // USB 2.0 Specification Section 9.3.4 and Table 9-3 (the default control pipe is
+  // always accessible in both directions).
+  //
+  // Why this test is currently disabled:
+  // In UsbPeripheral::CommonControl (USB_RECIP_ENDPOINT), the driver checks:
+  //     uint8_t ep_addr = static_cast<uint8_t>(index);
+  //     if (ep_addr != 0 && configuration_ == 0) return zx::error(ZX_ERR_BAD_STATE);
+  // For EP0 IN (ep_addr = 0x80), ep_addr != 0 evaluates to true, so the driver incorrectly
+  // treats the control endpoint IN pipe as a non-control endpoint and stalls with ZX_ERR_BAD_STATE
+  // when configuration_ == 0.
+  //
+  // What is required for this test to pass:
+  // UsbPeripheral::CommonControl must check `(ep_addr & USB_ENDPOINT_NUM_MASK) != 0` instead of
+  // `ep_addr != 0` when verifying that non-control endpoints require an active configuration.
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_STATUS;
+  setup.w_value = 0;
+  setup.w_index = 0x80;  // EP 0 IN
+  setup.w_length = 2;
+
+  fidl::Arena arena;
+  auto result = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(result->is_ok());
+  auto& resp = result->value()->read;
+  ASSERT_EQ(resp.size(), 2u);
+  EXPECT_EQ(resp[0], 0);
+  EXPECT_EQ(resp[1], 0);
 }
 
 TEST_F(UsbPeripheralReadyTest, InspectMetrics) {
@@ -335,6 +443,101 @@ TEST_F(UsbPeripheralReadyTest, DisconnectHostWhenAlreadyPeripheralReady) {
     comp.Signal();
   });
   ASSERT_OK(comp.Wait(zx::sec(5)));
+}
+
+TEST_F(UsbPeripheralReadyTest, GetConfigurationDescriptor) {
+  // Validates standard GET_DESCRIPTOR request for the Configuration Descriptor (USB_DT_CONFIG)
+  // and its subordinate descriptors (Interface and Endpoint) per USB 2.0 Specification
+  // Section 9.4.3 and Section 9.6.3.
+  // Validates configuration header fields, total returned length (wTotalLength), number of
+  // interfaces, and subordinate interface descriptor type and index.
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_DESCRIPTOR;
+  setup.w_value = (USB_DT_CONFIG << 8) | 0;
+  setup.w_index = 0;
+  setup.w_length = 256;
+
+  fidl::Arena arena;
+  auto result = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(result->is_ok());
+
+  auto& desc = result->value()->read;
+  ASSERT_GE(desc.size(),
+            sizeof(usb_configuration_descriptor_t) + sizeof(usb_interface_descriptor_t));
+  ASSERT_EQ(desc[0], sizeof(usb_configuration_descriptor_t));
+  ASSERT_EQ(desc[1], USB_DT_CONFIG);
+  usb_configuration_descriptor_t config_desc;
+  std::memcpy(&config_desc, desc.data(), sizeof(config_desc));
+  EXPECT_EQ(le16toh(config_desc.w_total_length), desc.size());
+  EXPECT_GE(config_desc.b_num_interfaces, 1);
+  size_t config_len = config_desc.b_length;
+  ASSERT_LE(config_len + sizeof(usb_interface_descriptor_t), desc.size());
+  usb_interface_descriptor_t intf_desc;
+  std::memcpy(&intf_desc, desc.data() + config_len, sizeof(intf_desc));
+  EXPECT_EQ(intf_desc.b_length, sizeof(usb_interface_descriptor_t));
+  EXPECT_EQ(intf_desc.b_descriptor_type, USB_DT_INTERFACE);
+  EXPECT_EQ(intf_desc.b_interface_number, 0);
+}
+
+TEST_F(UsbPeripheralReadyTest, GetDeviceDescriptor) {
+  // Validates standard GET_DESCRIPTOR request for the Device Descriptor (USB_DT_DEVICE)
+  // per USB 2.0 Specification Section 9.4.3 & Section 9.6.1.
+  // Validates descriptor header length, USB specification release number (bcdUSB), EP0
+  // max packet size (64 bytes), and configuration count.
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_DESCRIPTOR;
+  setup.w_value = (USB_DT_DEVICE << 8) | 0;
+  setup.w_index = 0;
+  setup.w_length = sizeof(usb_device_descriptor_t);
+
+  fidl::Arena arena;
+  auto result = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(result->is_ok());
+
+  auto& desc = result->value()->read;
+  ASSERT_EQ(desc.size(), sizeof(usb_device_descriptor_t));
+  EXPECT_EQ(desc[0], sizeof(usb_device_descriptor_t));
+  EXPECT_EQ(desc[1], USB_DT_DEVICE);
+  usb_device_descriptor_t dev_desc;
+  std::memcpy(&dev_desc, desc.data(), sizeof(dev_desc));
+  EXPECT_EQ(le16toh(dev_desc.bcd_usb), USB_2_0);
+  EXPECT_EQ(dev_desc.b_max_packet_size0, 64);
+  EXPECT_GE(dev_desc.b_num_configurations, 1);
+}
+
+TEST_F(UsbPeripheralReadyTest, GetDeviceQualifierDescriptor) {
+  // Validates standard GET_DESCRIPTOR request for the Device Qualifier Descriptor
+  // (USB_DT_DEVICE_QUALIFIER) per USB 2.0 Specification Section 9.4.3 & Section 9.6.2.
+  // Validates qualifier header length, bcdUSB version, reserved byte setting, and
+  // available alternate-speed configuration count.
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_DESCRIPTOR;
+  setup.w_value = (USB_DT_DEVICE_QUALIFIER << 8) | 0;
+  setup.w_index = 0;
+  setup.w_length = sizeof(usb_device_qualifier_descriptor_t);
+
+  fidl::Arena arena;
+  auto result = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(result->is_ok());
+
+  auto& desc = result->value()->read;
+  ASSERT_EQ(desc.size(), sizeof(usb_device_qualifier_descriptor_t));
+  EXPECT_EQ(desc[0], sizeof(usb_device_qualifier_descriptor_t));
+  EXPECT_EQ(desc[1], USB_DT_DEVICE_QUALIFIER);
+  usb_device_qualifier_descriptor_t qualifier;
+  std::memcpy(&qualifier, desc.data(), sizeof(qualifier));
+  EXPECT_EQ(le16toh(qualifier.bcd_usb), USB_2_0);
+  EXPECT_EQ(qualifier.b_reserved, 0);
+  EXPECT_GE(qualifier.b_num_configurations, 1);
 }
 
 TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
@@ -1333,6 +1536,155 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, ConfiguredGetStatusTests) {
     EXPECT_EQ(res_get2->value()->read[0], 0);  // cleared
     EXPECT_EQ(res_get2->value()->read[1], 0);
   }
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_SetConfigurationClearsEndpointHalt) {
+  // What this test validates/protects:
+  // Validates that calling SET_CONFIGURATION resets the halt status of all endpoints
+  // to not halted, as mandated by USB 2.0 Specification Section 9.4.7:
+  // "The SetConfiguration() request... causes the halt status of each endpoint to be
+  // reset to not halted".
+  //
+  // Why this test is currently disabled:
+  // UsbPeripheral maintains `stalled_eps_` which is only cleared via explicit CLEAR_FEATURE
+  // (ENDPOINT_HALT) or ClearFunctions(). UsbPeripheral::SetConfiguration() does not clear
+  // `stalled_eps_` or reset endpoint halt states upon configuration selection.
+  //
+  // What is required for this test to pass:
+  // UsbPeripheral::SetConfiguration() must clear `stalled_eps_` and clear halt status on
+  // all function endpoints when selecting a configuration.
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Transition to configured state (configuration 1).
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 1,
+        .w_index = 0,
+        .w_length = 0,
+    };
+    fidl::Arena arena;
+    auto res = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+  }
+
+  // Set endpoint halt on EP 0x81.
+  {
+    fdescriptor::wire::UsbSetup set_halt = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_SET_FEATURE,
+        .w_value = USB_ENDPOINT_HALT,
+        .w_index = 0x81,
+        .w_length = 0,
+    };
+    fidl::Arena arena;
+    auto res_set = dci().buffer(arena)->Control(set_halt, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_set.ok()) << res_set.FormatDescription();
+    ASSERT_TRUE(res_set->is_ok());
+  }
+
+  // Verify endpoint 0x81 is halted via GET_STATUS.
+  fdescriptor::wire::UsbSetup get_status = {
+      .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+      .b_request = USB_REQ_GET_STATUS,
+      .w_value = 0,
+      .w_index = 0x81,
+      .w_length = 2,
+  };
+  {
+    fidl::Arena arena;
+    auto res_get = dci().buffer(arena)->Control(get_status, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_get.ok()) << res_get.FormatDescription();
+    ASSERT_TRUE(res_get->is_ok());
+    ASSERT_EQ(res_get->value()->read.size(), 2u);
+    EXPECT_EQ(res_get->value()->read[0], 1);  // halted
+    EXPECT_EQ(res_get->value()->read[1], 0);
+  }
+
+  // Re-issue SET_CONFIGURATION (configuration 1).
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 1,
+        .w_index = 0,
+        .w_length = 0,
+    };
+    fidl::Arena arena;
+    auto res = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+  }
+
+  // Verify endpoint halt was cleared by SET_CONFIGURATION per USB 2.0 § 9.4.7.
+  {
+    fidl::Arena arena;
+    auto res_get = dci().buffer(arena)->Control(get_status, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_get.ok()) << res_get.FormatDescription();
+    ASSERT_TRUE(res_get->is_ok());
+    ASSERT_EQ(res_get->value()->read.size(), 2u);
+    EXPECT_EQ(res_get->value()->read[0], 0);  // halt must be cleared
+    EXPECT_EQ(res_get->value()->read[1], 0);
+  }
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_GetInterfaceReturnsCurrentAlternateSetting) {
+  // What this test validates/protects:
+  // Validates standard GET_INTERFACE (bRequest = 0x0A) request for an active interface
+  // per USB 2.0 Specification Section 9.4.4. A device must return a 1-byte value specifying
+  // the current alternate setting for the specified interface.
+  //
+  // Why this test is currently disabled:
+  // UsbPeripheral::CommonControl currently does not handle USB_REQ_GET_INTERFACE (0x0A)
+  // in its USB_RECIP_INTERFACE switch arm, and function drivers do not intercept standard
+  // interface requests, causing this request to fail with ZX_ERR_NOT_SUPPORTED or STALL.
+  //
+  // What is required for this test to pass:
+  // UsbPeripheral::CommonControl must implement USB_REQ_GET_INTERFACE under USB_RECIP_INTERFACE
+  // and query or return the active alternate setting for the requested interface number.
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Transition to configured state.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 1,
+        .w_index = 0,
+        .w_length = 0,
+    };
+    fidl::Arena arena;
+    auto res = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+  }
+
+  fdescriptor::wire::UsbSetup setup = {
+      .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE,
+      .b_request = USB_REQ_GET_INTERFACE,
+      .w_value = 0,
+      .w_index = 0,  // Interface 0
+      .w_length = 1,
+  };
+  fidl::Arena arena;
+  auto result = dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(result->is_ok());
+  auto& resp = result->value()->read;
+  ASSERT_EQ(resp.size(), 1u);
+  EXPECT_EQ(resp[0], 0);  // Alternate setting 0
 }
 
 TEST_F(UnmanagedUsbPeripheralReadyTest, StartControllerFailsFromDci) {
