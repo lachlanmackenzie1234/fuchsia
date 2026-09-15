@@ -1,11 +1,11 @@
 error[E0277]: repetition contains no interpolated value that is an iterator
- --> tests/ui/does-not-have-iter.rs:4:5
+ --> tests/ui/does-not-have-iter-interpolated.rs:8:5
   |
-4 |     quote!(#(a b)*);
-  |     ^^^^^^^^^^^^^^^ none of the values interpolated inside this repetition are iterable
+8 |     quote!(#(#nonrep)*);
+  |     ^^^^^^^^^^^^^^^^^^^ none of the values interpolated inside this repetition are iterable
   |
-help: the trait `quote::__private::CheckHasIterator<true>` is not implemented for `quote::__private::HasIterator<false>`
-      but it is implemented for `quote::__private::HasIterator<true>`
+help: the trait `quote::__private::CheckHasIterator<true>` is not implemented for `HasIterator<false>`
+      but it is implemented for `HasIterator<true>`
  --> src/runtime.rs
   |
   | impl CheckHasIterator<true> for HasIterator<true> {}
