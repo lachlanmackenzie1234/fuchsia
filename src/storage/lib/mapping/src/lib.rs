@@ -12,9 +12,10 @@ pub mod testing;
 
 pub use extents::{Extent, Extents, ExtentsIterator};
 pub use file::{
-    DecodedBlobMetadata, DeliveryHandler, File, Files, NoopDeliveryHandler,
+    DecodedBlobMetadata, DeliveryHandler, File, Files, NoopDeliveryHandler, Transform,
     process_mapping_command, read_blob_metadata,
 };
+pub use fxfs_crypto::Cipher;
 pub use page_request::{NullPageRequest, PageRequest};
 pub use pager::{PagerThread, run_pager_loop};
 pub use protocol::{
