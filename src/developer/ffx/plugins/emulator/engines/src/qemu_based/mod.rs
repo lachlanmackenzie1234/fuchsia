@@ -19,7 +19,6 @@ use ffx_emulator_common::config::EMU_START_TIMEOUT;
 use ffx_emulator_common::tuntap::{TAP_INTERFACE_NAME, tap_ready};
 use ffx_emulator_common::{config, dump_log_to_out, host_is_mac, process};
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
-use ffx_ssh::SshKeyFiles;
 use ffx_target::{KnockError, TargetInfoQuery};
 use fho::{FfxContext, Result, bug, return_bug, return_user_error, user_error};
 use fuchsia_async::Timer;
@@ -211,14 +210,17 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                         } else {
                             None
                         };
-                        Self::embed_boot_data(
+                        let serial_number = match &emu_config.runtime.serial_number {
+                            SerialMode::Enabled(serial) => Some(serial.as_str()),
+                            _ => None,
+                        };
+                        ffx_uefi_disk::embed_boot_data(
                             &env,
                             input_path,
                             &output_path,
-                            kernel_cmdline,
-                            emu_config.runtime.serial_number.clone(),
+                            kernel_cmdline.as_deref(),
+                            serial_number,
                         )
-                        .await
                         .map_err(|e| bug!("cannot embed boot data: {e}"))?;
                         log::debug!(
                             "Staging {input_path:?} into {output_path:?} and embedding SSH keys",
@@ -396,7 +398,6 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     .arch(emu_config.device.cpu.architecture)
                     .cmdline(&zedboot_cmdline_path)
                     .output_path(&gpt_image_path)
-                    .mkfs_msdosfs_path(&get_host_tool(env, "mkfs-msdosfs")?)
                     .product_bundle(product_path)
                     .resize(gpt::DEFAULT_EMU_DISK_SIZE)
                     .use_fxfs(true)
@@ -433,89 +434,6 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                 str::from_utf8(&resize_result.stderr).map_err(|e| bug!("{e}"))?
             );
         }
-        Ok(())
-    }
-
-    /// embed_boot_data adds relevant data for the interaction between the booted VM and ffx.
-    /// Currently, these are:
-    /// - Authorized_keys for ssh access to the zbi boot image file.
-    /// - mdns_info if present. This mdns configuration is read by Fuchsia mdns service and used
-    ///   instead of the default configuration.
-    /// - kernel commandline if present. This is currently needed for GPT images to pass kernel
-    ///   parameters, as zedboot is not passing them through.
-    async fn embed_boot_data(
-        ctx: &EnvironmentContext,
-        src: &PathBuf,
-        dest: &PathBuf,
-        cmdline: Option<String>,
-        serial_number: SerialMode,
-    ) -> Result<()> {
-        let zbi_tool = get_host_tool(ctx, config::ZBI_HOST_TOOL)
-            .map_err(|e| bug!("ZBI tool is missing: {e}"))?;
-        let ssh_keys = SshKeyFiles::load(ctx)
-            .map_err(|e| bug!("Error finding ssh authorized_keys file: {e}"))?;
-        ssh_keys
-            .create_keys_if_needed(false)
-            .map_err(|e| bug!("Error creating ssh keys if needed: {e}"))?;
-        let auth_keys = ssh_keys.authorized_keys.display().to_string();
-        if !ssh_keys.authorized_keys.exists() {
-            return_bug!(
-                "No authorized_keys found to configure emulator. {} does not exist.",
-                auth_keys
-            );
-        }
-        if src == dest {
-            return_bug!("source and dest zbi paths cannot be the same.");
-        }
-
-        let replace_str = format!("data/ssh/authorized_keys={}", auth_keys);
-
-        let mut zbi_command = Command::new(zbi_tool);
-        zbi_command.arg("-o").arg(dest).arg("--replace").arg(src).arg("-e").arg(replace_str);
-
-        // Embed the authorized_keys as bootloader file. This ensures that the key file will be
-        // persisted in /data/ssh, and after an `fx ota` of a GPT image the ssh connection
-        // continues to work in subsequent boots.
-        let btfl = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
-        ffx_uefi_disk::authorized_keys_to_boot_loader_file(&ssh_keys.authorized_keys, btfl.path())?;
-        zbi_command.arg("--type=bootloader_file").arg(btfl.path());
-
-        // Lazy tempfile creation to avoid unnecessary disk I/O when features are disabled/unused.
-        // We bind the NamedTempFiles to variables prefixed with "_" in the outer scope to indicate
-        // they are used solely for their RAII side-effects (file deletion upon dropping), while
-        // extending their lifetimes to persist until the end of the function.
-        let _cmdline_file = if let Some(c) = cmdline {
-            let file = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
-            fs::write(&file, c).map_err(|e| bug!("{e}"))?;
-            zbi_command.arg("--type=cmdline").arg(file.path());
-            Some(file)
-        } else {
-            None
-        };
-
-        // Note: For ZBI boots, the emulator injects the serial number here as a ZBI boot item.
-        // If the serial number is explicitly disabled or legacy, we do not inject it.
-        let _serial_file = if let SerialMode::Enabled(serial) = &serial_number {
-            let file = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
-            fs::write(&file, serial).map_err(|e| bug!("{e}"))?;
-            zbi_command.arg("--type=SERIAL_NUMBER").arg(file.path());
-            Some(file)
-        } else {
-            None
-        };
-
-        // added last.
-        zbi_command.arg("--type=entropy:64").arg("/dev/urandom");
-
-        let zbi_command_output = zbi_command.output().map_err(|e| bug!("{e}"))?;
-
-        if !zbi_command_output.status.success() {
-            return_bug!(
-                "Error embedding boot data: {}",
-                str::from_utf8(&zbi_command_output.stderr).map_err(|e| bug!("{e}"))?
-            );
-        }
-
         Ok(())
     }
 
@@ -1767,14 +1685,7 @@ pub(crate) mod tests {
         };
         let dest = root_dir.join("dest.zbi");
 
-        <TestEngine as QemuBasedEngine>::embed_boot_data(
-            &env.context,
-            &src,
-            &dest,
-            None,
-            SerialMode::Uninitialized,
-        )
-        .await?;
+        ffx_uefi_disk::embed_boot_data(&env.context, &src, &dest, None, None)?;
 
         Ok(())
     }
@@ -1799,14 +1710,7 @@ pub(crate) mod tests {
         };
         let dest = root_dir.join("dest.zbi");
 
-        <TestEngine as QemuBasedEngine>::embed_boot_data(
-            &env.context,
-            &src,
-            &dest,
-            Some("kernel.boot=yes".into()),
-            SerialMode::Uninitialized,
-        )
-        .await?;
+        ffx_uefi_disk::embed_boot_data(&env.context, &src, &dest, Some("kernel.boot=yes"), None)?;
 
         Ok(())
     }
@@ -1831,14 +1735,7 @@ pub(crate) mod tests {
         };
         let dest = root_dir.join("dest.zbi");
 
-        <TestEngine as QemuBasedEngine>::embed_boot_data(
-            &env.context,
-            &src,
-            &dest,
-            None,
-            SerialMode::Enabled("TESTSERIAL".into()),
-        )
-        .await?;
+        ffx_uefi_disk::embed_boot_data(&env.context, &src, &dest, None, Some("TESTSERIAL"))?;
 
         Ok(())
     }

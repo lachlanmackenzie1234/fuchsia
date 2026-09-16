@@ -94,6 +94,14 @@ impl FuchsiaFullDiskImageBuilder {
             return Ok(());
         }
 
+        let mkfs_msdosfs = match self.mkfs_msdosfs_path {
+            Some(path) => Some(to_utf8_path_buf(path, "mkfs-msdosfs")?),
+            None => {
+                let tool = ffx_config::get_host_tool(context, "mkfs-msdosfs")
+                    .map_err(|e| user_error!("cannot locate mkfs-msdosfs tool: {e}"))?;
+                Some(to_utf8_path_buf(tool, "mkfs-msdosfs")?)
+            }
+        };
         let vbmeta = to_opt_utf8_path_buf(self.vbmeta, "vbmeta")?;
         let cmd = MakeFuchsiaVolCmd {
             abr_size: ABR_SIZE,
@@ -101,7 +109,7 @@ impl FuchsiaFullDiskImageBuilder {
             cmdline: to_opt_utf8_path_buf(self.cmdline, "cmdline")?,
             disk_path: to_utf8_path_buf(self.output_path, "image output")?,
             efi_size: EFI_SIZE,
-            mkfs_msdosfs: to_opt_utf8_path_buf(self.mkfs_msdosfs_path, "mkfs-msdosfs")?,
+            mkfs_msdosfs,
             product_bundle: to_opt_utf8_path_buf(self.product_bundle, "product bundle")?,
             resize: self.resize,
             use_fxfs: self.use_fxfs,

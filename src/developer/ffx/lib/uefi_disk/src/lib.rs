@@ -8,7 +8,9 @@ mod boot_data;
 mod builder;
 mod vbmeta;
 
-pub use boot_data::{SSH_BOOTLOADER_FILE_NAME, authorized_keys_to_boot_loader_file};
+pub use boot_data::{
+    SSH_BOOTLOADER_FILE_NAME, authorized_keys_to_boot_loader_file, embed_boot_data,
+};
 pub use builder::{
     DEFAULT_EMU_DISK_SIZE, DEFAULT_ZEDBOOT_CMDLINE, FuchsiaFullDiskImageBuilder,
     write_zedboot_cmdline,
