@@ -256,6 +256,11 @@ int IdlePowerThread::Run(void* arg) {
 IdlePowerThread::TransitionResult IdlePowerThread::TransitionFromTo(State expected_state,
                                                                     State target_state,
                                                                     zx_instant_mono_t timeout_at) {
+  // Unsignal any stale completion signals from previous transitions that may have timed out or
+  // aborted early. If a stale signal were left pending, WaitDeadline below would return
+  // immediately before the target CPU begins processing the transition, racing with concurrent wake
+  // events that modify state.target and causing premature cancellation.
+  complete_.Unsignal();
   // Attempt to move from the expected state to the transitional state.
   StateMachine expected{.current = expected_state, .target = expected_state};
   const StateMachine transitional{.current = expected_state, .target = target_state};
