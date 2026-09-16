@@ -702,6 +702,29 @@ class BuildInvocationTest(MainBuildTestBase):
             self.assertNotIn("RS_rs_instance", env)
             self.assertNotIn("RS_cas_instance", env)
 
+    def test_get_build_env_homeless_fallback(self) -> None:
+        context = self.create_context()
+        context.env = {"USER": "fuchsia-user"}
+        with self.mock_invocation_context() as (mock_mkdir, mock_write):
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["HOME"], str(invocation.temp_home))
+            mock_mkdir.assert_any_call(invocation.temp_home)
+
+    def test_get_build_env_home_preserved_without_creating_temp_home(
+        self,
+    ) -> None:
+        context = self.create_context()
+        context.env = {"USER": "fuchsia-user", "HOME": "/my/custom/home"}
+        with self.mock_invocation_context() as (mock_mkdir, mock_write):
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["HOME"], "/my/custom/home")
+            expected_temp_home = invocation.log_dir / ".home"
+            # Verify that the expected temporary home was never created on disk
+            for call in mock_mkdir.call_args_list:
+                self.assertNotEqual(call[0][0], expected_temp_home)
+
     def test_get_build_env_no_status(self) -> None:
         context = self.create_context(status=False)
         context.env = {"TERM": "xterm"}

@@ -891,6 +891,20 @@ class BuildInvocation(object):
 
     # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_log_dir_structure)
 
+    @functools.cached_property
+    def temp_home(self) -> pathlib.Path:
+        """Returns a temporary fallback directory to use as $HOME.
+
+        This is intended solely as an ephemeral, non-persistent workaround to
+        support user-less, home-less environments (such as sandboxed infra
+        containers in b/559830870) where $HOME is not set and the current UID
+        does not have an entry in /etc/passwd (preventing standard tool lookups
+        from falling back successfully).
+        """
+        path = self.log_dir / ".home"
+        mkdir(path)
+        return path
+
     @property
     def ninja_errors_path(self) -> pathlib.Path:
         """The path where Ninja-specific structured action failures are recorded."""
@@ -951,6 +965,8 @@ class BuildInvocation(object):
             "PATH": self.context.env.get(
                 "PATH", ""
             ),  # passed through. The ninja actions should invoke tools without relying on PATH.
+            # Ensure HOME is defined to support user-less/home-less environments (b/559830870)
+            "HOME": self.context.env.get("HOME") or str(self.temp_home),
             # By default, also show the number of actively running actions.
             "NINJA_STATUS": self.context.env.get(
                 "NINJA_STATUS", "[%f/%t][%p/%w](%r) "
