@@ -339,6 +339,120 @@ mod vmpl_rs {
         free_pages(test_pages);
     }
 
+    fn vmpl_page_gap_iter_test_body(pages: &[Option<VmPagePtr>], count: usize, stop_idx: usize) {
+        let mut list = VmPageList::new();
+        for (i, page_opt) in pages.iter().enumerate().take(count) {
+            if let Some(page) = page_opt {
+                assert!(add_page(&mut list, *page, (i as u64) * PAGE_SIZE));
+            }
+        }
+
+        let idx = core::cell::Cell::new(0usize);
+        let s = list.for_every_page_and_gap_in_range(
+            0,
+            (count as u64) * PAGE_SIZE,
+            |p, off| {
+                let cur = idx.get();
+                if off != (cur as u64) * PAGE_SIZE || !p.is_page() || pages[cur] != Some(p.page()) {
+                    return Status::BAD_STATE;
+                }
+                if cur == stop_idx {
+                    return Status::STOP;
+                }
+                idx.set(cur + 1);
+                Status::NEXT
+            },
+            |gap_start, gap_end| {
+                let mut o = gap_start;
+                while o < gap_end {
+                    let cur = idx.get();
+                    if o != (cur as u64) * PAGE_SIZE || pages[cur].is_some() {
+                        return Status::BAD_STATE;
+                    }
+                    if cur == stop_idx {
+                        return Status::STOP;
+                    }
+                    idx.set(cur + 1);
+                    o += PAGE_SIZE;
+                }
+                Status::NEXT
+            },
+        );
+        assert_eq!(s, Ok(()));
+        assert_eq!(stop_idx, idx.get());
+
+        let mut free_list = fbl::Vector::<VmPagePtr>::new();
+        list.remove_all_content(|mut p| {
+            if p.is_page() {
+                free_list.push_back(p.release_page()).expect("vector push");
+            }
+        });
+        assert!(list.is_empty());
+    }
+
+    /// Tests `for_every_page_and_gap_in_range` against all lists of size 4.
+    #[test]
+    fn vmpl_page_gap_iter_test() {
+        const COUNT: usize = 4;
+        let pages = get_pages::<COUNT>();
+
+        let mut page_list: [Option<VmPagePtr>; COUNT] = [None; COUNT];
+        for i in 0..COUNT {
+            for j in 0..(1 << COUNT) {
+                for k in 0..COUNT {
+                    if (j & (1 << k)) != 0 {
+                        page_list[k] = Some(pages[k]);
+                    } else {
+                        page_list[k] = None;
+                    }
+                }
+                vmpl_page_gap_iter_test_body(&page_list, COUNT, i);
+            }
+        }
+
+        free_pages(pages);
+    }
+
+    /// Tests that stopping early in `for_every_page_and_gap_in_range` skips trailing gaps.
+    #[test]
+    fn vmpl_skip_last_gap_test() {
+        let mut list = VmPageList::new();
+        let (test_page, _paddr) = unwrap_ok!(pmm::alloc_page(0), "pmm alloc page");
+
+        expect_true!(add_page(&mut list, test_page, PAGE_SIZE));
+
+        let mut saw_gap_start = 0;
+        let mut saw_gap_end = 0;
+        let mut gaps_seen = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            PAGE_SIZE * 3,
+            |_slot, _offset| Status::STOP,
+            |gap_start, gap_end| {
+                saw_gap_start = gap_start;
+                saw_gap_end = gap_end;
+                gaps_seen += 1;
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+
+        // Validate we saw one gap, and it was the correct gap.
+        expect_eq!(1, gaps_seen);
+        expect_eq!(0, saw_gap_start);
+        expect_eq!(PAGE_SIZE, saw_gap_end);
+
+        let mut free_list = fbl::Vector::<VmPagePtr>::new();
+        list.remove_all_content(|mut p| {
+            if p.is_page() {
+                free_list.push_back(p.release_page()).expect("vector push");
+            }
+        });
+        expect_true!(list.is_empty());
+        // SAFETY: `test_page` was removed from `list`.
+        unsafe { pmm::free_page(test_page) };
+    }
+
     /// Tests BatchInserter sequential and out-of-order allocations.
     #[test]
     fn vmpl_batch_inserter_test() {
@@ -480,6 +594,87 @@ mod vmpl_rs {
         pl.remove_all_content(|_| {});
     }
 
+    /// Interval [1, 3] in a single page list node.
+    #[test]
+    fn vmpl_interval_single_node_test() {
+        let mut list = VmPageList::new();
+
+        let expected_start = 1;
+        let expected_end = 3;
+        let size = VmPageListNode::PAGE_FAN_OUT as u64;
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        let mut start = 0;
+        let mut end = 0;
+        let res = list.for_every_page(|p, off| {
+            if !(p.is_interval_start() || p.is_interval_end()) {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() {
+                start = off;
+            } else if p.is_interval_end() {
+                end = off;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(expected_start * PAGE_SIZE, start);
+        expect_eq!(expected_end * PAGE_SIZE, end);
+
+        let expected_gaps = [0, expected_start, expected_end + 1, size];
+        let mut gaps = [0u64; 4];
+        let mut index = 0;
+        start = 0;
+        end = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() {
+                    start = off;
+                } else if p.is_interval_end() {
+                    end = off;
+                }
+                Status::NEXT
+            },
+            |begin, end_gap| {
+                if index < 4 {
+                    gaps[index] = begin;
+                    gaps[index + 1] = end_gap;
+                    index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+
+        expect_eq!(expected_start * PAGE_SIZE, start);
+        expect_eq!(expected_end * PAGE_SIZE, end);
+
+        expect_eq!(4, index);
+        for i in 0..index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
     /// Tests multi-node interval spanning across 3 nodes with unpopulated middle node.
     #[test]
     fn vmpl_interval_multiple_nodes_test() {
@@ -519,6 +714,292 @@ mod vmpl_rs {
         expect_true!(valid);
         expect_eq!(expected_start * PAGE_SIZE, start);
         expect_eq!(expected_end * PAGE_SIZE, end);
+
+        let expected_gaps = [0, expected_start, expected_end + 1, size];
+        let mut gaps = [0u64; 4];
+        let mut index = 0;
+        start = 0;
+        end = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() {
+                    start = off;
+                } else if p.is_interval_end() {
+                    end = off;
+                }
+                Status::NEXT
+            },
+            |begin, end_gap| {
+                if index < 4 {
+                    gaps[index] = begin;
+                    gaps[index + 1] = end_gap;
+                    index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+
+        expect_eq!(expected_start * PAGE_SIZE, start);
+        expect_eq!(expected_end * PAGE_SIZE, end);
+
+        expect_eq!(4, index);
+        for i in 0..index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests `for_every_page_and_gap_in_range` with partial interval range traversals.
+    #[test]
+    fn vmpl_interval_traversal_test() {
+        let mut list = VmPageList::new();
+
+        // Interval spanning across 3 nodes, with the middle one unpopulated.
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // End traversal partway into the interval.
+        // Should only see the gap before the interval start.
+        let expected_gaps = [0, expected_start];
+        let mut gaps = [0u64; 2];
+        let mut index = 0;
+        let mut start = 0;
+        let mut end = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            (expected_end - 1) * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() {
+                    start = off;
+                } else if p.is_interval_end() {
+                    end = off;
+                }
+                Status::NEXT
+            },
+            |begin, end_gap| {
+                if index < 2 {
+                    gaps[index] = begin;
+                    gaps[index + 1] = end_gap;
+                    index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+
+        expect_eq!(expected_start * PAGE_SIZE, start);
+        // We should not have seen the end of the interval.
+        expect_eq!(0, end);
+
+        expect_eq!(2, index);
+        for i in 0..index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        // Start traversal partway into the interval.
+        // Should only see the gap after the interval end.
+        let expected_gaps2 = [expected_end + 1, size];
+        index = 0;
+        start = 0;
+        end = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            (expected_start + 1) * PAGE_SIZE,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() {
+                    start = off;
+                } else if p.is_interval_end() {
+                    end = off;
+                }
+                Status::NEXT
+            },
+            |begin, end_gap| {
+                if index < 2 {
+                    gaps[index] = begin;
+                    gaps[index + 1] = end_gap;
+                    index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+
+        // We should not have seen the start of the interval.
+        expect_eq!(0, start);
+        expect_eq!(expected_end * PAGE_SIZE, end);
+
+        expect_eq!(2, index);
+        for i in 0..index {
+            expect_eq!(expected_gaps2[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        // Start traversal partway into the interval, and also end before the interval end.
+        // Should not see any gaps or pages either.
+        index = 0;
+        start = 0;
+        end = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            (expected_start + 1) * PAGE_SIZE,
+            (expected_end - 1) * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() {
+                    start = off;
+                } else if p.is_interval_end() {
+                    end = off;
+                }
+                Status::NEXT
+            },
+            |begin, end_gap| {
+                if index < 2 {
+                    gaps[index] = begin;
+                    gaps[index + 1] = end_gap;
+                    index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+
+        expect_eq!(0, start);
+        expect_eq!(0, end);
+        expect_eq!(0, index);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests adding intervals to the left and right of an existing interval and merging them.
+    #[test]
+    fn vmpl_interval_merge_test() {
+        let mut list = VmPageList::new();
+
+        // Interval [7, 12].
+        let expected_start = 7;
+        let expected_end = 12;
+        let size = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Add intervals to the left and right of the existing interval and verify that they are
+        // merged into a single interval.
+        let new_expected_start = 3;
+        let new_expected_end = 20;
+        expect_gt!(size, new_expected_end);
+        // Interval [3, 6].
+        expect_ok!(list.add_zero_interval(
+            new_expected_start * PAGE_SIZE,
+            expected_start * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+        // Interval [13, 20].
+        expect_ok!(list.add_zero_interval(
+            (expected_end + 1) * PAGE_SIZE,
+            (new_expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        let mut start = 0;
+        let mut end = 0;
+        let res = list.for_every_page(|p, off| {
+            if !(p.is_interval_start() || p.is_interval_end()) {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() {
+                start = off;
+            } else if p.is_interval_end() {
+                end = off;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(new_expected_start * PAGE_SIZE, start);
+        expect_eq!(new_expected_end * PAGE_SIZE, end);
+
+        let expected_gaps = [0, new_expected_start, new_expected_end + 1, size];
+        let mut gaps = [0u64; 4];
+        let mut index = 0;
+        start = 0;
+        end = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() {
+                    start = off;
+                } else if p.is_interval_end() {
+                    end = off;
+                }
+                Status::NEXT
+            },
+            |begin, end_gap| {
+                if index < 4 {
+                    gaps[index] = begin;
+                    gaps[index + 1] = end_gap;
+                    index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+
+        expect_eq!(new_expected_start * PAGE_SIZE, start);
+        expect_eq!(new_expected_end * PAGE_SIZE, end);
+
+        expect_eq!(4, index);
+        for i in 0..index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
 
         list.remove_all_content(|_| {});
     }
