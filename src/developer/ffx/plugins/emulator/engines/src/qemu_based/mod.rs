@@ -8,9 +8,7 @@
 use crate::arg_templates::process_flag_template;
 use crate::qemu_based::comms::{QemuSocket, spawn_pipe_thread};
 use crate::show_output;
-use assembled_system::vbmeta::FUCHSIA_HASH_DESCRIPTOR_NAME;
 use async_trait::async_trait;
-use camino::Utf8Path;
 use emulator_instance::{
     AccelerationMode, ConsoleType, DiskImage, EmulatorConfiguration, EngineState, GuestConfig,
     NetworkingMode, Ramdisk, RamdiskKind, SerialMode,
@@ -39,7 +37,6 @@ use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 use std::{env, str};
 use tempfile::NamedTempFile;
-use vbmeta::VBMeta;
 
 pub(crate) fn make_absolute_path(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
@@ -237,13 +234,12 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                                 Some(DiskImage::Gpt(_)),
                             ) => {
                                 let vbmeta_out_path = instance_root.join("zircon.vbmeta");
-                                Self::generate_vbmeta(
-                                    &zbi_key_file,
-                                    &zbi_key_metadata_file,
+                                ffx_uefi_disk::generate_vbmeta(
+                                    zbi_key_file,
+                                    zbi_key_metadata_file,
                                     &output_path,
                                     &vbmeta_out_path,
-                                )
-                                .await?;
+                                )?;
                                 vbmeta_path = Some(vbmeta_out_path);
                             }
                             (zbi_key_file, zbi_key_metadata_file, Some(DiskImage::Gpt(_))) => {
@@ -402,12 +398,12 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     .output_path(&gpt_image_path)
                     .mkfs_msdosfs_path(&get_host_tool(env, "mkfs-msdosfs")?)
                     .product_bundle(product_path)
-                    .resize(gpt::DEFAULT_IMAGE_SIZE)
+                    .resize(gpt::DEFAULT_EMU_DISK_SIZE)
                     .use_fxfs(true)
                     .vbmeta(vbmeta_path)
                     .zbi(updated_guest.ramdisk.map(|ramdisk| ramdisk.path));
                 log::debug!("Building image with {image:#?}");
-                image.build(&env).await?;
+                image.build(&env)?;
             }
             // Since the one multi-partition GPT image is passed to qemu, no kernel and zbi images
             // are required to boot the emulator.
@@ -481,10 +477,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         // persisted in /data/ssh, and after an `fx ota` of a GPT image the ssh connection
         // continues to work in subsequent boots.
         let btfl = NamedTempFile::new().map_err(|e| bug!("{e}"))?;
-        Self::authorized_keys_to_boot_loader_file(
-            &ssh_keys.authorized_keys,
-            &btfl.path().to_path_buf(),
-        )?;
+        ffx_uefi_disk::authorized_keys_to_boot_loader_file(&ssh_keys.authorized_keys, btfl.path())?;
         zbi_command.arg("--type=bootloader_file").arg(btfl.path());
 
         // Lazy tempfile creation to avoid unnecessary disk I/O when features are disabled/unused.
@@ -523,53 +516,6 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             );
         }
 
-        Ok(())
-    }
-
-    // prepare the SSH key as boot loader file
-    fn authorized_keys_to_boot_loader_file(src: &PathBuf, dst: &PathBuf) -> Result<()> {
-        let mut v = Vec::new();
-        let name = "ssh.authorized_keys";
-        let authorized_keys = fs::read(src).map_err(|e| bug!("{e}"))?;
-
-        // The format for the boot loader files is described in
-        // https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/zbi-format/include/lib/zbi-format/zbi.h;l=229-237;drc=64cdcbf06860ab1f19b85b3c221debcadcae3b5d
-        v.push(name.len().try_into().map_err(|_| {
-            bug!("Invalid length for boot file name: {} cannot be converted to u8", name.len())
-        })?);
-        v.extend(name.as_bytes());
-        v.extend(authorized_keys);
-
-        fs::write(&dst, v).map_err(|e| bug!("{e}"))
-    }
-
-    // generate_vbmeta creates a signed vbmeta file for a given key, metadata and ZBI file
-    async fn generate_vbmeta(
-        key_path: &PathBuf,
-        metadata_path: &PathBuf,
-        zbi_path: &PathBuf,
-        dest: &PathBuf,
-    ) -> Result<()> {
-        let parent = dest.parent().ok_or_else(|| user_error!("Invalid destination path"))?;
-        let outdir =
-            Utf8Path::from_path(parent).ok_or_else(|| user_error!("Non-UTF8 parent path"))?;
-        let file_stem = dest
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| user_error!("Invalid destination file stem"))?;
-
-        let key_path_utf8 =
-            Utf8Path::from_path(key_path).ok_or_else(|| user_error!("Non-UTF8 key path"))?;
-        let metadata_path_utf8 = Utf8Path::from_path(metadata_path)
-            .ok_or_else(|| user_error!("Non-UTF8 metadata path"))?;
-        let zbi_path_utf8 =
-            Utf8Path::from_path(zbi_path).ok_or_else(|| user_error!("Non-UTF8 ZBI path"))?;
-
-        VBMeta::builder(file_stem, key_path_utf8)
-            .key_metadata(metadata_path_utf8)
-            .hash_descriptor(FUCHSIA_HASH_DESCRIPTOR_NAME, zbi_path_utf8)
-            .construct(outdir)
-            .map_err(|e| user_error!("Failed to generate VBMeta image: {e}"))?;
         Ok(())
     }
 
@@ -1916,10 +1862,10 @@ pub(crate) mod tests {
         let Some(Ramdisk { path: zbi, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
             panic!("No ZBI path");
         };
-        let dest = root.join("dest.zbi");
+        let dest = root.join("dest.vbmeta");
 
-        <TestEngine as QemuBasedEngine>::generate_vbmeta(&key_path, &metadata_path, &zbi, &dest)
-            .await?;
+        ffx_uefi_disk::generate_vbmeta(&key_path, &metadata_path, &zbi, &dest)?;
+        assert!(dest.exists());
 
         Ok(())
     }
@@ -1941,10 +1887,7 @@ pub(crate) mod tests {
         fs::write(&keyfile, testkey).expect("write test key file");
         let bootloaderfile = tempdir.join("btfl");
 
-        <TestEngine as QemuBasedEngine>::authorized_keys_to_boot_loader_file(
-            &keyfile,
-            &bootloaderfile,
-        )?;
+        ffx_uefi_disk::authorized_keys_to_boot_loader_file(&keyfile, &bootloaderfile)?;
 
         let v = fs::read(&bootloaderfile).unwrap();
         assert_eq!(
