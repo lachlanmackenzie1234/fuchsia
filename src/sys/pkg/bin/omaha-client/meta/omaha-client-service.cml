@@ -24,6 +24,10 @@
     ],
     use: [
         {
+            storage: "data",
+            path: "/data",
+        },
+        {
             protocol: [
                 "fuchsia.cobalt.SystemDataUpdater",
                 "fuchsia.feedback.ComponentDataRegister",
@@ -35,7 +39,6 @@
                 // capability.
                 "fuchsia.power.CollaborativeRebootInitiator",
                 "fuchsia.power.internal.CollaborativeRebootScheduler",
-                "fuchsia.stash.Store2",
                 "fuchsia.update.CommitStatusProvider",
                 "fuchsia.update.installer.Installer",
             ],

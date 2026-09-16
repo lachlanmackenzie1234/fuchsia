@@ -49,7 +49,7 @@
             to: "#omaha-client-service",
         },
         {
-            protocol: "fuchsia.stash.Store2",
+            storage: "data",
             from: "parent",
             to: "#omaha-client-service",
         },
