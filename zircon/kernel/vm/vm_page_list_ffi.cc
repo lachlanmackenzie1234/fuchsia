@@ -132,6 +132,12 @@ cpp_vm_page_list_btree_cursor_next(VmPageListBtreeCursor* cursor) {
   return entry;
 }
 
+FFI_ALWAYS_INLINE VmPageListBtreeNodeEntry
+cpp_vm_page_list_btree_cursor_prev(VmPageListBtreeCursor* cursor) {
+  --cursor->iter;
+  return unwrap_entry<VmPageListBtreeNodeEntry>(cursor->iter);
+}
+
 FFI_ALWAYS_INLINE void cpp_vm_page_list_btree_const_cursor_init(VmPageListBtreeConstCursor* cursor,
                                                                 const VmPageListBtree* tree) {
   cursor->iter = tree->begin();

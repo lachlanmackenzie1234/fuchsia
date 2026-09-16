@@ -11,10 +11,11 @@ mod vmpl_rs {
     use crate::vm::page::VmPagePtr;
     use crate::vm::pmm;
     use crate::vm::vm_page_list::{
-        BatchInserter, IntervalHandling, ReferenceValue, VmPageList, VmPageListNode, VmPageOrMarker,
+        BatchInserter, IntervalHandling, ReferenceValue, VmPageList, VmPageListNode,
+        VmPageOrMarker, ZeroRangeDirtyState,
     };
     use page::SIZE as PAGE_SIZE_USIZE;
-    use unittest::{expect_eq, expect_false, expect_ok, expect_true, unwrap_ok};
+    use unittest::{expect_eq, expect_false, expect_gt, expect_ok, expect_true, unwrap_ok};
     use zx_status::Status;
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
@@ -392,5 +393,133 @@ mod vmpl_rs {
         expect_true!(pl.any_owned_pages_or_intervals_in_range(0, PAGE_SIZE));
 
         pl.remove_all_content(|_| {});
+    }
+
+    /// Tests adding a single page zero interval.
+    #[test]
+    fn vmpl_add_zero_interval_single_page_test() {
+        let mut pl = VmPageList::new();
+
+        expect_false!(pl.is_offset_in_zero_interval(0));
+        let res = pl.add_zero_interval(0, PAGE_SIZE, ZeroRangeDirtyState::Dirty);
+        expect_ok!(res);
+
+        expect_true!(pl.is_offset_in_zero_interval(0));
+        expect_false!(pl.is_offset_in_zero_interval(PAGE_SIZE));
+
+        let slot = pl.lookup(0).unwrap();
+        expect_true!(slot.is_interval_slot());
+        expect_true!(slot.is_interval_zero());
+        expect_true!(slot.zero_interval_dirty_state() == ZeroRangeDirtyState::Dirty);
+
+        pl.remove_all_content(|_| {});
+    }
+
+    /// Tests adding adjacent zero intervals and automatic range coalescing.
+    #[test]
+    fn vmpl_add_zero_interval_coalesce_test() {
+        let mut pl = VmPageList::new();
+        let span = VmPageListNode::NODE_SPAN_BYTES;
+
+        // Add left interval [0, 64 KiB)
+        expect_ok!(pl.add_zero_interval(0, span, ZeroRangeDirtyState::Dirty));
+        // Add right interval [128 KiB, 192 KiB)
+        expect_ok!(pl.add_zero_interval(span * 2, span * 3, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(pl.lookup(0).unwrap().is_interval_start());
+        expect_true!(pl.lookup(span - PAGE_SIZE).unwrap().is_interval_end());
+        expect_true!(pl.lookup(span * 2).unwrap().is_interval_start());
+        expect_true!(pl.lookup(span * 3 - PAGE_SIZE).unwrap().is_interval_end());
+
+        // Add middle bridging interval [64 KiB, 128 KiB)
+        expect_ok!(pl.add_zero_interval(span, span * 2, ZeroRangeDirtyState::Dirty));
+
+        // Now intervals should be coalesced into a single interval [0, 192 KiB)
+        expect_true!(pl.lookup(0).unwrap().is_interval_start());
+        expect_true!(pl.lookup(span * 3 - PAGE_SIZE).unwrap().is_interval_end());
+        // The old boundary sentinels should have been cleaned up
+        expect_true!(pl.lookup(span - PAGE_SIZE).is_none_or(|p| p.is_empty()));
+        expect_true!(pl.lookup(span).is_none_or(|p| p.is_empty()));
+        expect_true!(pl.lookup(span * 2 - PAGE_SIZE).is_none_or(|p| p.is_empty()));
+        expect_true!(pl.lookup(span * 2).is_none_or(|p| p.is_empty()));
+
+        // Check query methods across the entire coalesced range
+        for off in [0, 4096, span, span + 4096, span * 2, span * 3 - PAGE_SIZE] {
+            expect_true!(pl.is_offset_in_zero_interval(off));
+        }
+        expect_false!(pl.is_offset_in_zero_interval(span * 3));
+
+        pl.remove_all_content(|_| {});
+    }
+
+    /// Tests multi-node zero interval creation and boundary sentinels.
+    #[test]
+    fn vmpl_multi_node_zero_interval_test() {
+        let mut pl = VmPageList::new();
+        let span = VmPageListNode::NODE_SPAN_BYTES;
+
+        // Multi-node interval spanning [0, 128 KiB) (2 nodes)
+        expect_ok!(pl.add_zero_interval(0, span * 2, ZeroRangeDirtyState::Dirty));
+        let start_off = 0;
+        let end_off = span * 2 - PAGE_SIZE;
+
+        let start_slot = pl.lookup(start_off).unwrap();
+        expect_true!(start_slot.is_interval_start());
+        expect_true!(start_slot.is_interval_zero());
+
+        let end_slot = pl.lookup(end_off).unwrap();
+        expect_true!(end_slot.is_interval_end());
+        expect_true!(end_slot.is_interval_zero());
+
+        // Offsets within the range are in the interval
+        expect_true!(pl.is_offset_in_zero_interval(start_off));
+        expect_true!(pl.is_offset_in_zero_interval(span));
+        expect_true!(pl.is_offset_in_zero_interval(end_off));
+        expect_false!(pl.is_offset_in_zero_interval(span * 2));
+
+        pl.remove_all_content(|_| {});
+    }
+
+    /// Tests multi-node interval spanning across 3 nodes with unpopulated middle node.
+    #[test]
+    fn vmpl_interval_multiple_nodes_test() {
+        let mut list = VmPageList::new();
+
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        let mut start = 0;
+        let mut end = 0;
+        let mut valid = true;
+        let res = list.for_every_page(|p, off| {
+            if !(p.is_interval_start() || p.is_interval_end()) {
+                valid = false;
+            }
+            if !p.is_zero_interval_dirty() {
+                valid = false;
+            }
+            if p.is_interval_start() {
+                start = off;
+            } else if p.is_interval_end() {
+                end = off;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_true!(valid);
+        expect_eq!(expected_start * PAGE_SIZE, start);
+        expect_eq!(expected_end * PAGE_SIZE, end);
+
+        list.remove_all_content(|_| {});
     }
 }

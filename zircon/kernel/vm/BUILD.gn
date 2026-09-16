@@ -792,6 +792,7 @@ kernel_bindgen_crate("vm-page-list-bindings") {
     "cpp_vm_page_list_btree_cursor_get",
     "cpp_vm_page_list_btree_cursor_init",
     "cpp_vm_page_list_btree_cursor_next",
+    "cpp_vm_page_list_btree_cursor_prev",
     "cpp_vm_page_list_btree_destroy",
     "cpp_vm_page_list_btree_erase_at",
     "cpp_vm_page_list_btree_find",

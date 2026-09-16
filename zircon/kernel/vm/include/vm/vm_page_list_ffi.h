@@ -93,6 +93,7 @@ void cpp_vm_page_list_btree_erase_at(VmPageListBtree* tree, VmPageListBtreeCurso
 void cpp_vm_page_list_btree_cursor_default_init(VmPageListBtreeCursor* cursor);
 void cpp_vm_page_list_btree_cursor_init(VmPageListBtreeCursor* cursor, VmPageListBtree* tree);
 VmPageListBtreeNodeEntry cpp_vm_page_list_btree_cursor_next(VmPageListBtreeCursor* cursor);
+VmPageListBtreeNodeEntry cpp_vm_page_list_btree_cursor_prev(VmPageListBtreeCursor* cursor);
 
 void cpp_vm_page_list_btree_const_cursor_init(VmPageListBtreeConstCursor* cursor,
                                               const VmPageListBtree* tree);
