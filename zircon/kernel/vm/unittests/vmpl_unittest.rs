@@ -1350,4 +1350,825 @@ mod vmpl_rs {
         // SAFETY: `page` was removed from `list`.
         unsafe { pmm::free_page(page) };
     }
+    /// Tests populating all slots across a 5-node interval.
+    #[test]
+    fn vmpl_interval_populate_full_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 1;
+        let expected_end = 4 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 5 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Populate the entire interval.
+        expect_ok!(list.populate_slots_in_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE
+        ));
+
+        let mut next_off = expected_start * PAGE_SIZE;
+        // We should only see interval slots.
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_interval_slot() {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if off != next_off {
+                return Status::OUT_OF_RANGE;
+            }
+            next_off += PAGE_SIZE;
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!((expected_end + 1) * PAGE_SIZE, next_off);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests populating slots in the middle of a multi-node interval.
+    #[test]
+    fn vmpl_interval_populate_partial_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Populate some slots in the middle of the interval.
+        let slot_start = expected_start + 2;
+        let slot_end = expected_end - 2;
+        expect_gt!(slot_end, slot_start);
+        expect_ok!(
+            list.populate_slots_in_interval(slot_start * PAGE_SIZE, (slot_end + 1) * PAGE_SIZE)
+        );
+
+        let expected_intervals = [
+            expected_start * PAGE_SIZE,
+            (slot_start - 1) * PAGE_SIZE,
+            (slot_end + 1) * PAGE_SIZE,
+            expected_end * PAGE_SIZE,
+        ];
+        let mut intervals = [0u64; 4];
+        let mut interval_index = 0;
+        let mut slot = slot_start * PAGE_SIZE;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_interval() {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() || p.is_interval_end() {
+                if p.is_interval_start() && interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_end() && interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+                return Status::NEXT;
+            }
+            if off != slot {
+                return Status::BAD_STATE;
+            }
+            slot += PAGE_SIZE;
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!((slot_end + 1) * PAGE_SIZE, slot);
+        expect_eq!(4, interval_index);
+        expect_true!(expected_intervals == intervals);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests populating slots beginning at the start of an interval.
+    #[test]
+    fn vmpl_interval_populate_start_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Populate some slots beginning at the start of the interval.
+        let slot_start = expected_start;
+        let slot_end = expected_end - 2;
+        expect_gt!(slot_end, slot_start);
+        expect_ok!(
+            list.populate_slots_in_interval(slot_start * PAGE_SIZE, (slot_end + 1) * PAGE_SIZE)
+        );
+
+        let expected_intervals = [(slot_end + 1) * PAGE_SIZE, expected_end * PAGE_SIZE];
+        let mut intervals = [0u64; 2];
+        let mut interval_index = 0;
+        let mut slot = slot_start * PAGE_SIZE;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_interval() {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() || p.is_interval_end() {
+                if p.is_interval_start() && interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_end() && interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+                return Status::NEXT;
+            }
+            if off != slot {
+                return Status::BAD_STATE;
+            }
+            slot += PAGE_SIZE;
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!((slot_end + 1) * PAGE_SIZE, slot);
+        expect_eq!(2, interval_index);
+        expect_true!(expected_intervals == intervals);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests populating slots ending at the end of an interval.
+    #[test]
+    fn vmpl_interval_populate_end_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Populate some slots ending at the end of the interval.
+        let slot_start = expected_start + 2;
+        let slot_end = expected_end;
+        expect_gt!(slot_end, slot_start);
+        expect_ok!(
+            list.populate_slots_in_interval(slot_start * PAGE_SIZE, (slot_end + 1) * PAGE_SIZE)
+        );
+
+        let expected_intervals = [expected_start * PAGE_SIZE, (slot_start - 1) * PAGE_SIZE];
+        let mut intervals = [0u64; 2];
+        let mut interval_index = 0;
+        let mut slot = slot_start * PAGE_SIZE;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_interval() {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() || p.is_interval_end() {
+                if p.is_interval_start() && interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_end() && interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+                return Status::NEXT;
+            }
+            if off != slot {
+                return Status::BAD_STATE;
+            }
+            slot += PAGE_SIZE;
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!((slot_end + 1) * PAGE_SIZE, slot);
+        expect_eq!(2, interval_index);
+        expect_true!(expected_intervals == intervals);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests populating a single slot, idempotency, and returning it with return_interval_slot.
+    #[test]
+    fn vmpl_interval_populate_slot_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Populate a single slot in the interval.
+        let single_slot = expected_end - 3;
+        expect_ok!(
+            list.populate_slots_in_interval(single_slot * PAGE_SIZE, (single_slot + 1) * PAGE_SIZE)
+        );
+
+        let expected_intervals = [
+            expected_start * PAGE_SIZE,
+            (single_slot - 1) * PAGE_SIZE,
+            (single_slot + 1) * PAGE_SIZE,
+            expected_end * PAGE_SIZE,
+        ];
+        let mut intervals = [0u64; 4];
+        let mut interval_index = 0;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_interval() {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() || p.is_interval_end() {
+                if p.is_interval_start() && interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_end() && interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+                return Status::NEXT;
+            }
+            if off != single_slot * PAGE_SIZE {
+                return Status::BAD_STATE;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(4, interval_index);
+        expect_true!(expected_intervals == intervals);
+
+        // Try to populate a slot over a single sentinel. This should be a no-op.
+        expect_ok!(
+            list.populate_slots_in_interval(single_slot * PAGE_SIZE, (single_slot + 1) * PAGE_SIZE)
+        );
+        interval_index = 0;
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_interval() {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() || p.is_interval_end() {
+                if p.is_interval_start() && interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_end() && interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+                return Status::NEXT;
+            }
+            if off != single_slot * PAGE_SIZE {
+                return Status::BAD_STATE;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(4, interval_index);
+        expect_true!(expected_intervals == intervals);
+
+        // Try to return the single slot that we populated. This should return the interval to its
+        // original state.
+        list.return_interval_slot(single_slot * PAGE_SIZE);
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !(p.is_interval_start() || p.is_interval_end()) {
+                return Status::BAD_STATE;
+            }
+            if !p.is_zero_interval_dirty() {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() && off != expected_start * PAGE_SIZE {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_end() && off != expected_end * PAGE_SIZE {
+                return Status::BAD_STATE;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests awaiting clean length handling when splitting an interval.
+    #[test]
+    fn vmpl_awaiting_clean_split_test() {
+        let mut list = VmPageList::new();
+        let start = PAGE_SIZE;
+        let end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        expect_gt!(size, end);
+        expect_ok!(list.add_zero_interval(start, end + PAGE_SIZE, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size));
+
+        // Set awaiting clean length.
+        let expected_len = end - start + PAGE_SIZE;
+        list.lookup_mut(start).unwrap().set_zero_interval_awaiting_clean_length(expected_len);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Split the interval in the middle.
+        let mid = end - 2 * PAGE_SIZE;
+        expect_ok!(list.populate_slots_in_interval(mid, mid + PAGE_SIZE));
+
+        // Awaiting clean length remains unchanged.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(0, list.lookup(mid).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(0, list.lookup(mid + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length());
+
+        // Split the interval at the end.
+        expect_ok!(list.populate_slots_in_interval(end, end + PAGE_SIZE));
+
+        // Awaiting clean length remains unchanged.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(0, list.lookup(mid).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(0, list.lookup(mid + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(0, list.lookup(end).unwrap().zero_interval_awaiting_clean_length());
+
+        // Split the interval at the start.
+        expect_ok!(list.populate_slots_in_interval(start, start + PAGE_SIZE));
+
+        // Awaiting clean length now moves to the new start.
+        expect_eq!(PAGE_SIZE, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            expected_len - PAGE_SIZE,
+            list.lookup(start + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(0, list.lookup(mid).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(0, list.lookup(mid + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(0, list.lookup(end).unwrap().zero_interval_awaiting_clean_length());
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests restoring awaiting clean length when returning a split slot.
+    #[test]
+    fn vmpl_awaiting_clean_return_slot_test() {
+        let mut list = VmPageList::new();
+        let start = PAGE_SIZE;
+        let end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        expect_gt!(size, end);
+        expect_ok!(list.add_zero_interval(start, end + PAGE_SIZE, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size));
+
+        // Set awaiting clean length.
+        let expected_len = end - start + PAGE_SIZE;
+        list.lookup_mut(start).unwrap().set_zero_interval_awaiting_clean_length(expected_len);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Split the interval at the start.
+        expect_ok!(list.populate_slots_in_interval(start, start + PAGE_SIZE));
+
+        // Awaiting clean length now moves to the new start.
+        expect_eq!(PAGE_SIZE, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            expected_len - PAGE_SIZE,
+            list.lookup(start + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the populated slot.
+        list.return_interval_slot(start);
+
+        // Awaiting clean length is now restored.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests returning multiple split slots and verifying awaiting clean length merges.
+    #[test]
+    fn vmpl_awaiting_clean_return_slots_test() {
+        let mut list = VmPageList::new();
+        let start = PAGE_SIZE;
+        let end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        expect_gt!(size, end);
+        expect_ok!(list.add_zero_interval(start, end + PAGE_SIZE, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size));
+
+        // Set awaiting clean length.
+        let expected_len = end - start + PAGE_SIZE;
+        list.lookup_mut(start).unwrap().set_zero_interval_awaiting_clean_length(expected_len);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Split the start multiple times, so that all the resultant slots have non-zero awaiting
+        // clean lengths.
+        expect_ok!(list.populate_slots_in_interval(start, start + PAGE_SIZE));
+        expect_ok!(list.populate_slots_in_interval(start + PAGE_SIZE, start + 2 * PAGE_SIZE));
+        expect_ok!(list.populate_slots_in_interval(start + 2 * PAGE_SIZE, start + 3 * PAGE_SIZE));
+
+        // Verify awaiting clean lengths.
+        expect_eq!(PAGE_SIZE, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            PAGE_SIZE,
+            list.lookup(start + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            PAGE_SIZE,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            expected_len - 3 * PAGE_SIZE,
+            list.lookup(start + 3 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the first slot. This will combine the first two slots into an interval.
+        list.return_interval_slot(start);
+        expect_true!(list.lookup(start).unwrap().is_interval_start());
+        expect_true!(list.lookup(start + PAGE_SIZE).unwrap().is_interval_end());
+
+        // Verify awaiting clean lengths.
+        expect_eq!(
+            2 * PAGE_SIZE,
+            list.lookup(start).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            PAGE_SIZE,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            expected_len - 3 * PAGE_SIZE,
+            list.lookup(start + 3 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the third slot. This will merge all the intervals and return everything to the
+        // original state.
+        list.return_interval_slot(start + 2 * PAGE_SIZE);
+        // Awaiting clean length is restored.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        let res = list.for_every_page(|p, off| {
+            if p.is_interval_start() {
+                if off != start {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            if p.is_interval_end() {
+                if off != end {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            Status::BAD_STATE
+        });
+        expect_ok!(res);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests populate_slots_in_interval with awaiting clean length and restoring slots.
+    #[test]
+    fn vmpl_awaiting_clean_populate_slots_test() {
+        let mut list = VmPageList::new();
+        let start = PAGE_SIZE;
+        let end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        expect_gt!(size, end);
+        expect_ok!(list.add_zero_interval(start, end + PAGE_SIZE, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size));
+
+        // Set awaiting clean length.
+        let expected_len = end - start + PAGE_SIZE;
+        list.lookup_mut(start).unwrap().set_zero_interval_awaiting_clean_length(expected_len);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Populate some slots at the start.
+        expect_ok!(list.populate_slots_in_interval(start, start + 3 * PAGE_SIZE));
+
+        // Verify awaiting clean lengths.
+        expect_eq!(PAGE_SIZE, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            PAGE_SIZE,
+            list.lookup(start + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            PAGE_SIZE,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            expected_len - 3 * PAGE_SIZE,
+            list.lookup(start + 3 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the first slot. This will combine the first two slots into an interval.
+        list.return_interval_slot(start);
+        expect_true!(list.lookup(start).unwrap().is_interval_start());
+        expect_true!(list.lookup(start + PAGE_SIZE).unwrap().is_interval_end());
+
+        // Verify awaiting clean lengths.
+        expect_eq!(
+            2 * PAGE_SIZE,
+            list.lookup(start).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            PAGE_SIZE,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            expected_len - 3 * PAGE_SIZE,
+            list.lookup(start + 3 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the third slot. This will merge all the intervals and return everything to the
+        // original state.
+        list.return_interval_slot(start + 2 * PAGE_SIZE);
+        // Awaiting clean length is restored.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        let res = list.for_every_page(|p, off| {
+            if p.is_interval_start() {
+                if off != start {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            if p.is_interval_end() {
+                if off != end {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            Status::BAD_STATE
+        });
+        expect_ok!(res);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests intersecting awaiting clean length with slot populate and return.
+    #[test]
+    fn vmpl_awaiting_clean_intersecting_test() {
+        let mut list = VmPageList::new();
+        let start = PAGE_SIZE;
+        let end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        expect_gt!(size, end);
+        expect_ok!(list.add_zero_interval(start, end + PAGE_SIZE, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size));
+
+        // Set awaiting clean length to only a portion of the interval.
+        let expected_len = 2 * PAGE_SIZE;
+        list.lookup_mut(start).unwrap().set_zero_interval_awaiting_clean_length(expected_len);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Populate some slots at the start, some of them within the awaiting clean length, and some
+        // outside.
+        expect_ok!(list.populate_slots_in_interval(start, start + 3 * PAGE_SIZE));
+
+        // Verify awaiting clean lengths.
+        expect_eq!(PAGE_SIZE, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            PAGE_SIZE,
+            list.lookup(start + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + 3 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the first slot. This will combine the first two slots into an interval.
+        list.return_interval_slot(start);
+        expect_true!(list.lookup(start).unwrap().is_interval_start());
+        expect_true!(list.lookup(start + PAGE_SIZE).unwrap().is_interval_end());
+
+        // Verify awaiting clean lengths.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            0,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + 3 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the third slot. This will merge all the intervals and return everything to the
+        // original state.
+        list.return_interval_slot(start + 2 * PAGE_SIZE);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        let res = list.for_every_page(|p, off| {
+            if p.is_interval_start() {
+                if off != start {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            if p.is_interval_end() {
+                if off != end {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            Status::BAD_STATE
+        });
+        expect_ok!(res);
+
+        // Populate a slot again, but starting partway into the interval.
+        expect_ok!(list.populate_slots_in_interval(start + PAGE_SIZE, start + 2 * PAGE_SIZE));
+
+        // The start's awaiting clean length should remain unchanged.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        // The awaiting clean length for the populated slot and the remaining interval is 0.
+        expect_eq!(
+            0,
+            list.lookup(start + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
+
+        // Return the slot. This should return to the original state.
+        list.return_interval_slot(start + PAGE_SIZE);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        let res = list.for_every_page(|p, off| {
+            if p.is_interval_start() {
+                if off != start {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            if p.is_interval_end() {
+                if off != end {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            Status::BAD_STATE
+        });
+        expect_ok!(res);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests non-intersecting awaiting clean length with slot populate and return.
+    #[test]
+    fn vmpl_awaiting_clean_non_intersecting_test() {
+        let mut list = VmPageList::new();
+        let start = PAGE_SIZE;
+        let end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        expect_gt!(size, end);
+        expect_ok!(list.add_zero_interval(start, end + PAGE_SIZE, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size));
+
+        // Set awaiting clean length to only a portion of the interval.
+        let expected_len = 2 * PAGE_SIZE;
+        list.lookup_mut(start).unwrap().set_zero_interval_awaiting_clean_length(expected_len);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Populate some slots that do not intersect with the awaiting clean length.
+        expect_ok!(list.populate_slots_in_interval(
+            start + expected_len,
+            start + expected_len + 3 * PAGE_SIZE
+        ));
+
+        // Verify awaiting clean lengths.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            0,
+            list.lookup(start + expected_len).unwrap().zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + expected_len + PAGE_SIZE)
+                .unwrap()
+                .zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + expected_len + 2 * PAGE_SIZE)
+                .unwrap()
+                .zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + expected_len + 3 * PAGE_SIZE)
+                .unwrap()
+                .zero_interval_awaiting_clean_length()
+        );
+
+        // Return the first slot. This will merge the first two slots back into the interval.
+        list.return_interval_slot(start + expected_len);
+        expect_true!(list.lookup(start + expected_len + PAGE_SIZE).unwrap().is_interval_end());
+
+        // Verify awaiting clean lengths.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        expect_eq!(
+            0,
+            list.lookup(start + expected_len + 2 * PAGE_SIZE)
+                .unwrap()
+                .zero_interval_awaiting_clean_length()
+        );
+        expect_eq!(
+            0,
+            list.lookup(start + expected_len + 3 * PAGE_SIZE)
+                .unwrap()
+                .zero_interval_awaiting_clean_length()
+        );
+
+        // Return the third slot. This will merge all the intervals and return everything to the
+        // original state.
+        list.return_interval_slot(start + expected_len + 2 * PAGE_SIZE);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        let res = list.for_every_page(|p, off| {
+            if p.is_interval_start() {
+                if off != start {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            if p.is_interval_end() {
+                if off != end {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            Status::BAD_STATE
+        });
+        expect_ok!(res);
+
+        // Populate a slot again, this time at the end.
+        expect_ok!(list.populate_slots_in_interval(end, end + PAGE_SIZE));
+
+        // The start's awaiting clean length should remain unchanged.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        // The awaiting clean length for the populated slot is 0.
+        expect_eq!(0, list.lookup(end).unwrap().zero_interval_awaiting_clean_length());
+
+        // Return the slot. This should return to the original state.
+        list.return_interval_slot(end);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+        let res = list.for_every_page(|p, off| {
+            if p.is_interval_start() {
+                if off != start {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            if p.is_interval_end() {
+                if off != end {
+                    return Status::BAD_STATE;
+                }
+                return Status::NEXT;
+            }
+            Status::BAD_STATE
+        });
+        expect_ok!(res);
+
+        list.remove_all_content(|_| {});
+    }
 }

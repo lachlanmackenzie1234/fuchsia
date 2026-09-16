@@ -2157,6 +2157,262 @@ impl VmPageList {
         Ok(())
     }
 
+    /// Populates individual interval slots in the range [start_offset, end_offset) that falls
+    /// inside a sparse interval. The intent of this function is to allow the caller to prepare the
+    /// range for overwriting (replacing with pages) by populating the required slots upfront, so
+    /// that slot lookup does not fail after this call. Essentially simulates interval splits
+    /// (lookup_or_allocate_check_for_interval) for every offset in the specified range, but does so
+    /// more efficiently, instead of having to search the tree repeatedly for every single offset.
+    pub fn populate_slots_in_interval(
+        &mut self,
+        start_offset: u64,
+        end_offset: u64,
+    ) -> Result<(), Status> {
+        debug_assert!(start_offset.is_multiple_of(page::SIZE as u64));
+        debug_assert!(end_offset.is_multiple_of(page::SIZE as u64));
+        debug_assert!(end_offset > start_offset);
+        let page_size = page::SIZE as u64;
+        // Change the end_offset to an inclusive offset for convenience.
+        let end_offset = end_offset - page_size;
+
+        if cfg!(debug_assertions) {
+            // The start_offset and end_offset should lie in an interval.
+            debug_assert!(self.is_offset_in_interval(start_offset));
+            debug_assert!(self.is_offset_in_interval(end_offset));
+            // All the remaining offsets should be empty and lie in the same interval. So we should
+            // find no pages or gaps in the range:
+            // [start_offset + page_size, end_offset - page_size].
+            if start_offset + page_size < end_offset {
+                let status = self.for_every_page_and_gap_in_range(
+                    start_offset + page_size,
+                    end_offset,
+                    |_, _| Status::BAD_STATE,
+                    |_, _| Status::BAD_STATE,
+                );
+                debug_assert!(status.is_ok());
+            }
+        }
+
+        // First allocate slots at start_offset and end_offset, splitting the interval around them
+        // if required. If any of the subsequent operations fail, we should return these interval
+        // slots. This function should either be able to populate all the slots requested, or the
+        // interval should be returned to its original state before the call.
+        let (start_slot, is_start_in_interval) =
+            self.lookup_or_allocate_check_for_interval(start_offset, true);
+        if start_slot.is_none() {
+            return Err(Status::NO_MEMORY);
+        }
+        debug_assert!(is_start_in_interval);
+        let start_dirty_state = {
+            let start_slot_ref = start_slot.unwrap();
+            debug_assert!(start_slot_ref.is_interval_slot());
+            start_slot_ref.zero_interval_dirty_state()
+        };
+        // If only asked to populate single slot, nothing more to do.
+        if start_offset == end_offset {
+            return Ok(());
+        }
+
+        let (end_slot, is_end_in_interval) =
+            self.lookup_or_allocate_check_for_interval(end_offset, true);
+        if end_slot.is_none() {
+            // Return the start slot before returning.
+            self.return_interval_slot(start_offset);
+            return Err(Status::NO_MEMORY);
+        }
+        debug_assert!(is_end_in_interval);
+        {
+            let end_slot_ref = end_slot.unwrap();
+            debug_assert!(end_slot_ref.is_interval_slot());
+            // We only support zero intervals and the start and end dirty state should match.
+            debug_assert!(start_dirty_state == end_slot_ref.zero_interval_dirty_state());
+        }
+
+        // If there are no more empty slots to consider between start and end, return early.
+        if end_offset == start_offset + page_size {
+            return Ok(());
+        }
+
+        // Now we need to walk all page offsets from start_offset to end_offset and convert them all
+        // to interval slots. Before we can do that, we will first allocate any page list nodes
+        // required in the middle. After splitting the interval around start_offset, we know that
+        // the node containing |start_offset + page_size| will be populated in order for it to hold
+        // the interval start sentinel at that offset. Similarly, we know that the node containing
+        // |end_offset - page_size| will be populated. So all the unpopulated nodes (if any) will
+        // lie between these two nodes.
+        let first_node_offset = VmPageListNode::node_offset(start_offset + page_size);
+        let first_node_index = VmPageListNode::node_index(start_offset + page_size);
+        let last_node_offset = VmPageListNode::node_offset(end_offset - page_size);
+        let last_node_index = VmPageListNode::node_index(end_offset - page_size);
+        debug_assert!(last_node_offset >= first_node_offset);
+        if last_node_offset > first_node_offset + VmPageListNode::NODE_SPAN_BYTES {
+            let first_unpopulated = first_node_offset + VmPageListNode::NODE_SPAN_BYTES;
+            let last_unpopulated = last_node_offset - VmPageListNode::NODE_SPAN_BYTES;
+            let mut node_off = first_unpopulated;
+            while node_off <= last_unpopulated {
+                // SAFETY: `self.list.get()` is a valid pointer. Passing null cursor inserts
+                // without a hint.
+                let node_ptr = unsafe {
+                    bindings::cpp_vm_page_list_btree_insert(
+                        self.list.get(),
+                        node_off,
+                        core::ptr::null_mut(),
+                    )
+                };
+                if node_ptr.is_null() {
+                    // If allocating a new node fails, clean up all the new nodes we might have
+                    // installed until this point, which is all the empty nodes starting at
+                    // first_unpopulated to before the node that failed.
+                    let mut cleanup_off = first_unpopulated;
+                    while cleanup_off < node_off {
+                        let cleanup_cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+                        // SAFETY: `self.list.get()` and `cleanup_cursor.get()` are valid pointers.
+                        let cleanup_ptr = unsafe {
+                            bindings::cpp_vm_page_list_btree_find(
+                                self.list.get(),
+                                cleanup_off,
+                                cleanup_cursor.get(),
+                            )
+                        };
+                        if !cleanup_ptr.is_null() {
+                            // SAFETY: `self.list.get()` and `cleanup_cursor.get()` are valid.
+                            unsafe {
+                                bindings::cpp_vm_page_list_btree_erase_at(
+                                    self.list.get(),
+                                    cleanup_cursor.get(),
+                                );
+                            }
+                        }
+                        cleanup_off += VmPageListNode::NODE_SPAN_BYTES;
+                    }
+                    // Also return the start and end slots that we split above.
+                    self.return_interval_slot(start_offset);
+                    self.return_interval_slot(end_offset);
+                    return Err(Status::NO_MEMORY);
+                }
+                node_off += VmPageListNode::NODE_SPAN_BYTES;
+            }
+        }
+
+        // Now that all allocations have succeeded, we know that the rest of the operation cannot
+        // fail. Walk all offsets after start_offset and before end_offset, overwriting all the
+        // slots as interval slots.
+        let mut node_offset = first_node_offset;
+        let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+        // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
+        let node_ptr = unsafe {
+            bindings::cpp_vm_page_list_btree_find(self.list.get(), node_offset, cursor.get())
+        };
+        // This has to emulate calls to lookup_or_allocate_check_for_interval for all slots in the
+        // range, which includes retaining awaiting_clean_length. After the start_slot split, the
+        // slot following it might contain a non-zero awaiting_clean_length for the interval
+        // following it, this needs to be "shifted" to the slot after the last one we populate,
+        // adjusting for all the populated slots we encounter in the middle.
+        //
+        // For example, if we were populating 3 slots starting at the interval start, whose
+        // awaiting_clean_length was 5 pages, the awaiting_clean_lengths for the 3 slots and the
+        // remaining interval at the end of the call should be (in pages): [1, 1, 1, 2]
+        // If awaiting_clean_length had initially been 2, we would instead have: [1, 1, 0, 0]
+        let mut awaiting_clean_len = {
+            // SAFETY: `node_ptr` is non-null and valid.
+            let first_node = unsafe { node_ptr.cast::<VmPageListNode>().as_ref_unchecked() };
+            first_node.lookup(first_node_index).zero_interval_awaiting_clean_length()
+        };
+
+        while node_offset <= last_node_offset {
+            // SAFETY: `cursor.get()` is a valid pointer.
+            let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+            debug_assert!(!entry.node.is_null());
+            debug_assert_eq!(entry.offset, node_offset);
+            // SAFETY: `entry.node` is non-null and valid.
+            let node = unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() };
+            let start_idx = if node_offset == first_node_offset { first_node_index } else { 0 };
+            let end_idx = if node_offset == last_node_offset {
+                last_node_index
+            } else {
+                VmPageListNode::PAGE_FAN_OUT - 1
+            };
+            for index in start_idx..=end_idx {
+                let cur = node.lookup_mut(index);
+                *cur = VmPageOrMarker::zero_interval(SentinelType::Slot, start_dirty_state);
+                if awaiting_clean_len > 0 {
+                    cur.set_zero_interval_awaiting_clean_length(page_size);
+                    awaiting_clean_len -= page_size;
+                }
+            }
+            // Advance cursor to next node.
+            // SAFETY: `cursor.get()` is a valid pointer.
+            let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+            node_offset += VmPageListNode::NODE_SPAN_BYTES;
+        }
+
+        if awaiting_clean_len > 0 {
+            // Set awaiting_clean_length for the last populated slot too.
+            if let Some(mut end_ref) = self.lookup_mut(end_offset) {
+                end_ref.set_zero_interval_awaiting_clean_length(page_size);
+            }
+            awaiting_clean_len -= page_size;
+            // If there is still a remaining awaiting_clean_length, carry it over to the interval
+            // next to the last slot, if there is one.
+            if awaiting_clean_len > 0
+                && let Some(mut next_ref) = self.lookup_mut(end_offset + page_size)
+                && (next_ref.is_interval_start() || next_ref.is_interval_slot())
+            {
+                let old_len = next_ref.zero_interval_awaiting_clean_length();
+                next_ref.set_zero_interval_awaiting_clean_length(core::cmp::max(
+                    old_len,
+                    awaiting_clean_len,
+                ));
+            }
+        }
+
+        if cfg!(debug_assertions) {
+            // All offsets in the range [start_offset, end_offset] should contain interval slots.
+            let mut next_off = start_offset;
+            let status =
+                self.for_every_page_in_range(start_offset, end_offset + page_size, |p, off| {
+                    if off != next_off || !p.is_interval_slot() {
+                        return Status::BAD_STATE;
+                    }
+                    next_off += page_size;
+                    Status::NEXT
+                });
+            debug_assert!(status.is_ok());
+        }
+
+        Ok(())
+    }
+
+    /// Helper to return an unused interval slot so that it can be merged back into the interval it
+    /// was populated/split from.
+    pub fn return_interval_slot(&mut self, offset: u64) {
+        // We should be able to lookup a pre-existing interval slot.
+        let slot = self.lookup_or_allocate_internal(offset);
+        debug_assert!(slot.is_some());
+        let slot = slot.unwrap();
+        debug_assert!(slot.is_interval_slot());
+
+        // We only support zero intervals for now. If more interval types are added in the future,
+        // handle them here.
+        debug_assert!(slot.is_interval_zero());
+        let dirty_state = slot.zero_interval_dirty_state();
+        let awaiting_clean_len = slot.zero_interval_awaiting_clean_length();
+        // Temporarily empty the slot and then add a zero interval back in at the same spot using
+        // add_zero_interval, which will ensure that the slot is merged to the left and/or right as
+        // applicable. We don't need to return the empty slot here because we're asking
+        // add_zero_interval_internal to reuse the existing slot.
+        *slot = VmPageOrMarker::empty();
+        let status = self.add_zero_interval_internal(
+            offset,
+            offset + page::SIZE as u64,
+            dirty_state,
+            awaiting_clean_len,
+            true,
+        );
+        // We are reusing an existing slot, so we cannot fail with NO_MEMORY.
+        debug_assert!(status.is_ok());
+    }
+
     /// Walk the page tree, calling the passed in function on every tree node.
     pub fn for_every_page<F>(&self, per_page_func: F) -> Result<(), Status>
     where
