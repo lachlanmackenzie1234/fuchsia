@@ -309,7 +309,9 @@ impl FscryptSoftwareInoLblk32FileCipher {
 
 #[cfg(test)]
 mod tests {
-    use super::{FscryptInoLblk32DirCipher, UnwrappedKey};
+    use super::{
+        BLOCK_SIZE, FscryptInoLblk32DirCipher, FscryptSoftwareInoLblk32FileCipher, UnwrappedKey,
+    };
     use crate::Cipher;
     use crate::cipher::fscrypt_test_data;
     use fscrypt::proxy_filename::ProxyFilename;
@@ -524,5 +526,57 @@ mod tests {
                 file.target
             );
         }
+    }
+
+    #[test]
+    fn test_software_file_cipher_multi_block() {
+        let key = UnwrappedKey::new((0..64).collect());
+        let cipher = FscryptSoftwareInoLblk32FileCipher::new(&key);
+        let base_tweak: u128 = 0x1234_5678;
+
+        // Create a 3-block buffer with distinct data per block.
+        let mut multi_block_buf = Vec::with_capacity(3 * BLOCK_SIZE);
+        for i in 0..3u8 {
+            multi_block_buf.extend(std::iter::repeat_n(i + 1, BLOCK_SIZE));
+        }
+        let original_plaintext = multi_block_buf.clone();
+
+        // Encrypt all 3 blocks in a single call.
+        cipher.encrypt(&mut multi_block_buf, base_tweak).expect("multi-block encrypt failed");
+
+        // Encrypting each block individually with its respective tweak (base_tweak + i) must
+        // produce identical ciphertext for every block. Note that testing encrypt followed by
+        // decrypt on the same multi-block buffer would NOT catch a bug where both encrypt and
+        // decrypt compute the wrong tweak sequence across loop iterations.
+        for i in 0..3 {
+            let mut single_block =
+                original_plaintext[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE].to_vec();
+            cipher
+                .encrypt(&mut single_block, base_tweak + i as u128)
+                .expect("single-block encrypt failed");
+            assert_eq!(
+                &multi_block_buf[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE],
+                &single_block[..],
+                "Ciphertext mismatch at block {i}"
+            );
+        }
+
+        // Verify that decrypting each block individually from the multi-block ciphertext restores
+        // the original plaintext.
+        for i in 0..3 {
+            let mut single_block = multi_block_buf[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE].to_vec();
+            cipher
+                .decrypt(&mut single_block, base_tweak + i as u128)
+                .expect("single-block decrypt failed");
+            assert_eq!(
+                &single_block[..],
+                &original_plaintext[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE],
+                "Single-block decrypt mismatch at block {i}"
+            );
+        }
+
+        // Verify multi-block decrypt restores all blocks at once.
+        cipher.decrypt(&mut multi_block_buf, base_tweak).expect("multi-block decrypt failed");
+        assert_eq!(multi_block_buf, original_plaintext);
     }
 }
