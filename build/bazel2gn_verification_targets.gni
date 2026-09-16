@@ -106,6 +106,7 @@ bazel2gn_verification_targets = [
   "//src/lib/fsl:verify_bazel2gn",
   "//src/lib/fuchsia-async-macro:verify_bazel2gn",
   "//src/lib/fuchsia-async:verify_bazel2gn",
+  "//src/lib/fuchsia-fs:verify_bazel2gn",
   "//src/lib/fuchsia-hyper:verify_bazel2gn",
   "//src/lib/fuchsia-lockfile:verify_bazel2gn",
   "//src/lib/fuchsia-runtime:verify_bazel2gn",
