@@ -12,6 +12,15 @@ llvm_libc_source_set("math") {
   functions = [
     "fabs",
     "fabsf",
+    "ldexp",
+    "ldexpf",
+    "ldexpl",
+    "scalbln",
+    "scalblnf",
+    "scalblnl",
+    "scalbn",
+    "scalbnf",
+    "scalbnl",
     "sqrt",
     "sqrtf",
   ]
