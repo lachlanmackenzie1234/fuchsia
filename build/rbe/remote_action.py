@@ -2566,6 +2566,9 @@ def download_input_stub_paths_batch(
         # args for _download_input_for_mp
         (stub_path, downloader, working_dir_abs, verbose, use_xattr)
         for stub_path in stub_paths
+        if is_download_stub_file(
+            working_dir_abs / stub_path, use_xattr=use_xattr
+        )
     ]
     if not download_args:
         if verbose:
