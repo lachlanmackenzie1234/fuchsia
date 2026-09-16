@@ -1474,7 +1474,7 @@ class Scheduler {
   TA_GUARDED(queue_lock_)
   SchedTime last_update_time_ns_{0};
 
-  // Accumulates the time spent in a lower-power idle state since the last reschedule.
+  // Accumulates the time spent in an idle state since the last reschedule.
   ktl::atomic<zx_duration_mono_t> processor_idle_time_ns_{0};
 
   // The system time that the current time slice started.
