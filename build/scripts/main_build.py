@@ -657,7 +657,7 @@ class FuchsiaBuildContext(object):
 
     @property
     def check_loas_script(self) -> pathlib.Path:
-        return self.source_dir / "build/rbe/check_loas_restrictions.sh"
+        return self.source_dir / "build/auth/check_loas_restrictions.sh"
 
     @property
     def top_build_wrapper(self) -> pathlib.Path:

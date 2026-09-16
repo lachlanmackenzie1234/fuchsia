@@ -318,7 +318,7 @@ function auth_subcommand() {
 # Returns 0 (success) if LOAS credentials are unrestricted.
 # Returns non-zero if credentials are restricted or some other error occurred.
 function check_loas_restrictions() {
-  local -r check_loas_script="${FUCHSIA_DIR}/build/rbe/check_loas_restrictions.sh"
+  local -r check_loas_script="${FUCHSIA_DIR}/build/auth/check_loas_restrictions.sh"
   [[ -r "$check_loas_script" ]] || {
     fx-error "Script not found: $check_loas_script"
     return 1

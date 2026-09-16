@@ -115,7 +115,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         self.assertEqual(context.rbe_config_json, build_dir / "rbe_config.json")
         self.assertEqual(
             context.check_loas_script,
-            source_dir / "build/rbe/check_loas_restrictions.sh",
+            source_dir / "build/auth/check_loas_restrictions.sh",
         )
         self.assertEqual(
             context.top_build_wrapper,

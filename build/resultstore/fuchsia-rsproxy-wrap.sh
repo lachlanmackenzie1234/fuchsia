@@ -18,7 +18,7 @@ readonly SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 readonly FUCHSIA_DIR="$(readlink -f "$SCRIPT_DIR/../..")"
 source "${FUCHSIA_DIR}/tools/devshell/lib/platform.sh"
 
-readonly check_loas_script="${FUCHSIA_DIR}/build/rbe/check_loas_restrictions.sh"
+readonly check_loas_script="${FUCHSIA_DIR}/build/auth/check_loas_restrictions.sh"
 
 # rsclient install path is set in manifests/prebuilts
 readonly PREBUILT_RSCLIENT_DIR="${FUCHSIA_DIR}/prebuilt/rsclient/$HOST_PLATFORM"

@@ -40,7 +40,7 @@ readonly gcertauth_config="$script_dir"/fuchsia-reproxy-gcertauth.cfg
 
 readonly PREBUILT_SUBDIR="$PREBUILT_OS"-"$PREBUILT_ARCH"
 
-readonly check_loas_script="$script_dir"/check_loas_restrictions.sh
+readonly check_loas_script="$project_root"/build/auth/check_loas_restrictions.sh
 readonly build_summary_script="$script_dir"/build_summary.py
 
 # location of reclient binaries relative to output directory where build is run
