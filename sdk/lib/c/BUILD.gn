@@ -288,8 +288,7 @@ if (current_toolchain == default_toolchain) {
 
     # TODO(https://fxbug.dev/42055641): Ensure all of libc uses libcalls into the hwasan
     # runtime for storing frame record info.
-    if (!is_gcc && toolchain_variant.tags + [ "hwasan" ] - [ "hwasan" ] !=
-                   toolchain_variant.tags) {
+    if (is_fuchsia_hwasan && !is_gcc) {
       cflags = [
         "-mllvm",
         "-hwasan-record-stack-history=libcall",
@@ -304,6 +303,11 @@ if (current_toolchain == default_toolchain) {
         "-mllvm",
         "-hwasan-instrument-with-calls=1",
       ]
+
+      # The instrumented libc++.a doesn't use those same backend switches, so
+      # we can't risk calling into anything there.  Any non-header libc++
+      # dependencies will have to be provided hermetically in libc.
+      ldflags = [ "-nostdlib++" ]
     }
   }
 
