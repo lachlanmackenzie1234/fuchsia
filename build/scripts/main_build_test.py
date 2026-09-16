@@ -164,6 +164,59 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                         env=context.env,
                     )
 
+    def test_loas_type_unrestricted_when_cred_helper_accessible(self) -> None:
+        context = self.create_context()
+        context.env = {"FOO": "BAR"}
+        with mock.patch.object(
+            main_build.FuchsiaBuildContext,
+            "needs_auth",
+            new_callable=mock.PropertyMock,
+            return_value=True,
+        ), mock.patch.object(main_build, "has_loas", return_value=True):
+
+            def mock_is_executable(path: pathlib.Path) -> bool:
+                # Both the check_loas_script and BAZEL_CRED_HELPER are accessible
+                return True
+
+            with mock.patch.object(
+                main_build, "is_executable", side_effect=mock_is_executable
+            ):
+                with mock.patch.object(
+                    subprocess,
+                    "check_output",
+                    return_value="unrestricted\n",
+                ):
+                    self.assertEqual(context.loas_type, "unrestricted")
+
+    def test_loas_type_downgraded_when_cred_helper_inaccessible(self) -> None:
+        context = self.create_context()
+        context.env = {"FOO": "BAR"}
+        with mock.patch.object(
+            main_build.FuchsiaBuildContext,
+            "needs_auth",
+            new_callable=mock.PropertyMock,
+            return_value=True,
+        ), mock.patch.object(main_build, "has_loas", return_value=True):
+
+            def mock_is_executable(path: pathlib.Path) -> bool:
+                # The check_loas_script is executable, but BAZEL_CRED_HELPER is not
+                return str(path) != str(main_build.BAZEL_CRED_HELPER)
+
+            with mock.patch.object(
+                main_build, "is_executable", side_effect=mock_is_executable
+            ):
+                with mock.patch.object(
+                    subprocess,
+                    "check_output",
+                    return_value="unrestricted\n",
+                ):
+                    with mock.patch.object(main_build, "msg") as mock_msg:
+                        self.assertEqual(context.loas_type, "restricted")
+                        mock_msg.assert_any_call(
+                            f"WARNING: Bazel credential helper on SrcFS is not accessible: {main_build.BAZEL_CRED_HELPER}",
+                            file=mock.ANY,
+                        )
+
     def test_rbe_settings_missing_throws(self) -> None:
         context = self.create_context(rbe=None)
         self.mock_read_json.side_effect = main_build.BuildConfigurationError(

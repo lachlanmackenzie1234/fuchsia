@@ -68,6 +68,9 @@ def ts_msg(
 
 GLOBAL_RESULTSTORE_CONFIG = pathlib.Path(".fx/config/resultstore")
 LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
+BAZEL_CRED_HELPER = pathlib.Path(
+    "/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper"
+)
 
 
 @dataclasses.dataclass
@@ -755,7 +758,26 @@ class FuchsiaBuildContext(object):
                     )
                     lines = output.strip().splitlines()
                     if lines:
-                        return lines[-1]
+                        loas_type = lines[-1]
+                        if loas_type == "unrestricted":
+                            # In corporate environments, an unrestricted LOAS type implies we can use
+                            # Bazel's gcert credential helper. However, if that helper is not executable or
+                            # accessible (e.g. on new systems, cloudtops with unmounted SrcFS, or due to
+                            # specific subdirectory permission/ACL restrictions), any attempt to run Bazel
+                            # with --config=gcertauth will fail immediately with permission denied.
+                            # In these circumstances, we gracefully downgrade to "restricted" mode to fall
+                            # back to local gcloud Application Default Credentials (ADC).
+                            if not is_executable(BAZEL_CRED_HELPER):
+                                msg(
+                                    f"WARNING: Bazel credential helper on SrcFS is not accessible: {BAZEL_CRED_HELPER}",
+                                    file=sys.stderr,
+                                )
+                                msg(
+                                    "WARNING: Gracefully falling back to restricted (local gcloud/ADC) mode.",
+                                    file=sys.stderr,
+                                )
+                                return "restricted"
+                        return loas_type
                 except subprocess.CalledProcessError:
                     pass
             return "skip"
