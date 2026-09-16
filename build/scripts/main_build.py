@@ -100,6 +100,9 @@ class FuchsiaBuildConfig(object):
       output_metadata_json: path to write the structured metadata JSON of build artifacts
       remote_proxy_socket: path to the local RBE proxy socket if passed via CLI
       resultstore_proxy_socket: path to the local ResultStore/BES proxy socket if passed via CLI
+      resultstore_instance: the target ResultStore instance name
+      cas_instance: the target CAS instance name
+      rbe_instance: the target RBE instance name
     """
 
     rbe: bool | None
@@ -116,6 +119,9 @@ class FuchsiaBuildConfig(object):
     output_metadata_json: pathlib.Path | None = None
     remote_proxy_socket: pathlib.Path | None = None
     resultstore_proxy_socket: pathlib.Path | None = None
+    resultstore_instance: str | None = None
+    cas_instance: str | None = None
+    rbe_instance: str | None = None
 
     @staticmethod
     def from_args(
@@ -138,6 +144,9 @@ class FuchsiaBuildConfig(object):
             max_concurrency=args.max_concurrency,
             remote_proxy_socket=args.remote_proxy_socket,
             resultstore_proxy_socket=args.resultstore_proxy_socket,
+            resultstore_instance=args.resultstore_instance,
+            cas_instance=args.cas_instance,
+            rbe_instance=args.rbe_instance,
         )
 
 
@@ -340,6 +349,26 @@ def load_user_preference(path: pathlib.Path) -> str | None:
         elif val == "0":
             return "none"
     return None
+
+
+def gcp_instance_name(value: str) -> str:
+    """Validates and returns a 4-component GCP instance name.
+
+    Expected format: 'projects/<project-id>/instances/<instance-name>'
+    """
+    parts = value.split("/")
+    if (
+        len(parts) != 4
+        or parts[0] != "projects"
+        or parts[2] != "instances"
+        or not parts[1]
+        or not parts[3]
+    ):
+        raise argparse.ArgumentTypeError(
+            f"Invalid instance format '{value}'. "
+            "Expected format: 'projects/<project-id>/instances/<instance-name>'"
+        )
+    return value
 
 
 def str_to_bool(value: str) -> bool:
@@ -1001,13 +1030,20 @@ class BuildInvocation(object):
         #   //build/resultstore/fuchsia-rsproxy-wrap.sh:rs_service_env_vars
         # )
 
-        # Forward ResultStore/CAS instance names passed from the parent
-        # environment/recipe.
+        # Forward ResultStore/CAS instance names passed from CLI arguments.
+        # These RS_ variables directly drive/influence the rsproxy daemon.
         # LINT.IfChange(rs_instance_env_vars)
-        for var in ("RS_rs_instance", "RS_cas_instance"):
-            if var in self.context.env:
-                build_env[var] = self.context.env[var]
+        if self.context.config.resultstore_instance:
+            build_env[
+                "RS_rs_instance"
+            ] = self.context.config.resultstore_instance
+        if self.context.config.cas_instance:
+            build_env["RS_cas_instance"] = self.context.config.cas_instance
         # LINT.ThenChange(//build/resultstore/fuchsia-rsproxy-wrap.sh:rs_instance_env_vars)
+
+        # Forward RBE instance name passed from CLI arguments.
+        if self.context.config.rbe_instance:
+            build_env["RBE_instance"] = self.context.config.rbe_instance
 
         return build_env
 
@@ -1471,6 +1507,24 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         type=pathlib.Path,
         default=None,
         help="Path to the local ResultStore/BES proxy socket.",
+    )
+    parser.add_argument(
+        "--resultstore-instance",
+        type=gcp_instance_name,
+        default=None,
+        help="Specify the target ResultStore instance name (format: projects/<project-id>/instances/<instance-name>).",
+    )
+    parser.add_argument(
+        "--cas-instance",
+        type=gcp_instance_name,
+        default=None,
+        help="Specify the target CAS instance name (format: projects/<project-id>/instances/<instance-name>).",
+    )
+    parser.add_argument(
+        "--rbe-instance",
+        type=gcp_instance_name,
+        default=None,
+        help="Specify the target RBE instance name (format: projects/<project-id>/instances/<instance-name>).",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)

@@ -614,12 +614,12 @@ class BuildInvocationTest(MainBuildTestBase):
             self.assertEqual(env["SWARMING_TASK_ID"], "616a9bc24f0")
 
     def test_get_build_env_forward_rs_variables(self) -> None:
-        context = self.create_context()
-        context.env = {
-            "USER": "fuchsia-user",
-            "RS_rs_instance": "projects/fuchsia-infra/instances/default_instance",
-            "RS_cas_instance": "projects/fuchsia-infra/instances/default_instance",
-        }
+        context = self.create_context(
+            resultstore_instance="projects/fuchsia-infra/instances/default_instance",
+            cas_instance="projects/fuchsia-infra/instances/default_instance",
+            rbe_instance="projects/fuchsia-infra/instances/default_instance",
+        )
+        context.env = {"USER": "fuchsia-user"}
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
             env = invocation.get_build_env()
@@ -631,6 +631,23 @@ class BuildInvocationTest(MainBuildTestBase):
                 env["RS_cas_instance"],
                 "projects/fuchsia-infra/instances/default_instance",
             )
+            self.assertEqual(
+                env["RBE_instance"],
+                "projects/fuchsia-infra/instances/default_instance",
+            )
+
+    def test_get_build_env_no_forward_rs_variables_from_env(self) -> None:
+        context = self.create_context()
+        context.env = {
+            "USER": "fuchsia-user",
+            "RS_rs_instance": "projects/fuchsia-infra/instances/default_instance",
+            "RS_cas_instance": "projects/fuchsia-infra/instances/default_instance",
+        }
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertNotIn("RS_rs_instance", env)
+            self.assertNotIn("RS_cas_instance", env)
 
     def test_get_build_env_no_status(self) -> None:
         context = self.create_context(status=False)
@@ -938,6 +955,32 @@ class FindFuchsiaDirTest(unittest.TestCase):
         with mock.patch.object(pathlib.Path, "exists", return_value=False):
             with self.assertRaises(ValueError):
                 main_build.find_fuchsia_dir(pathlib.Path("/tmp/only/two"))
+
+
+class GcpInstanceNameTest(unittest.TestCase):
+    def test_valid_instance_name(self) -> None:
+        self.assertEqual(
+            main_build.gcp_instance_name(
+                "projects/my-project/instances/default"
+            ),
+            "projects/my-project/instances/default",
+        )
+
+    def test_invalid_instance_name_raises(self) -> None:
+        for invalid in (
+            "",
+            "projects",
+            "projects/my-project",
+            "projects/my-project/instances",
+            "projects/my-project/instances/",
+            "my-project/instances/default",
+            "projects/instances/default",
+            "projects/my-project/default",
+            "projects/my-project/instances/default/",
+            "projects/my-project/instances/default/extra",
+        ):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                main_build.gcp_instance_name(invalid)
 
 
 class StrToBoolTest(unittest.TestCase):
