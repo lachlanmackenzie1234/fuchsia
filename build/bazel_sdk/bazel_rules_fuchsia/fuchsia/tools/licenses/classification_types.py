@@ -5,9 +5,9 @@
 
 import dataclasses
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from hashlib import md5
-from typing import Any, Callable, ClassVar, Collection, Dict, List
+from typing import Any, Callable, ClassVar, Collection, Dict, List, Tuple
 
 from fuchsia.tools.licenses.common_types import *
 from fuchsia.tools.licenses.spdx_types import *
@@ -798,6 +798,57 @@ class LicensesClassifications:
             assert license_id not in new, f"{license_id} already exists"
             new[license_id] = license_classification
         return dataclasses.replace(self, classifications_by_id=new)
+
+    def replace_classifications(
+        self, to_replace: List[LicenseClassification]
+    ) -> "LicensesClassifications":
+        new = self.classifications_by_id.copy()
+        for license_classification in to_replace:
+            new[license_classification.license_id] = license_classification
+        return dataclasses.replace(self, classifications_by_id=new)
+
+    @staticmethod
+    def select_majority_identifications(
+        runs: List[List[IdentifiedSnippet]],
+    ) -> Tuple[List[IdentifiedSnippet], int]:
+        """Selects the majority identification result across multiple runs.
+
+        Returns a tuple of (winning_snippets, vote_count).
+        In case of a tie (e.g. 1-1-1 across 3 runs), prefers runs without
+        [UNIDENTIFIED] snippets, then higher total confidence.
+        """
+        assert runs, "runs must not be empty"
+
+        def snippet_key(s: IdentifiedSnippet) -> Tuple[Any, ...]:
+            return (
+                s.identified_as,
+                s.confidence,
+                s.start_line,
+                s.end_line,
+                tuple(sorted(s.conditions)),
+            )
+
+        def run_key(snippets: List[IdentifiedSnippet]) -> Tuple[Any, ...]:
+            return tuple(snippet_key(s) for s in snippets)
+
+        counts = Counter(run_key(r) for r in runs)
+        snippets_by_key = {}
+        for r in runs:
+            k = run_key(r)
+            if k not in snippets_by_key:
+                snippets_by_key[k] = r
+
+        def rank_key(k: Tuple[Any, ...]) -> Tuple[int, int, float]:
+            vote_count = counts[k]
+            has_unidentified = any(
+                s[0] == IdentifiedSnippet.UNIDENTIFIED_IDENTIFICATION for s in k
+            )
+            non_unidentified_score = 0 if has_unidentified else 1
+            total_confidence = sum(float(s[1]) for s in k)
+            return (vote_count, non_unidentified_score, total_confidence)
+
+        best_key = max(snippets_by_key.keys(), key=rank_key)
+        return snippets_by_key[best_key], counts[best_key]
 
     def add_licenses_information(self, spdx_index: SpdxIndex):
         return self._transform_each_classification(
