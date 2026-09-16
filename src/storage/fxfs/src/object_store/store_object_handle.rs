@@ -493,7 +493,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         &self,
         buf: BufferRef<'_>,
         device_offset: u64,
-        crypt_ctx: Option<(u32, u8)>,
+        crypt_ctx: Option<(u64, u8)>,
         flags: WriteFlags,
     ) -> Result<MaybeChecksums, Error> {
         if self.trace() {

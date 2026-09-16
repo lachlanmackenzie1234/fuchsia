@@ -1972,7 +1972,7 @@ mod tests {
             fn supports_inline_encryption(&self) -> bool {
                 self.0.supports_inline_encryption()
             }
-            fn crypt_ctx(&self, ino: u64, attr: u64, offset: u64) -> Option<(u32, u8)> {
+            fn crypt_ctx(&self, ino: u64, attr: u64, offset: u64) -> Option<(u64, u8)> {
                 self.0.crypt_ctx(ino, attr, offset)
             }
         }

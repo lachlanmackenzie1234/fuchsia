@@ -101,7 +101,7 @@ pub trait Cipher: std::fmt::Debug + Send + Sync {
 
     /// If this cipher type supports inline encryption, returns the (dun, slot) value.
     /// Else returns None.
-    fn crypt_ctx(&self, ino: u64, attribute_id: u64, file_offset: u64) -> Option<(u32, u8)>;
+    fn crypt_ctx(&self, ino: u64, attribute_id: u64, file_offset: u64) -> Option<(u64, u8)>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

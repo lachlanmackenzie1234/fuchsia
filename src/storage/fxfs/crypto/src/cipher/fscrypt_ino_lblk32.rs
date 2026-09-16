@@ -86,7 +86,7 @@ impl Cipher for FscryptInoLblk32DirCipher {
         false
     }
 
-    fn crypt_ctx(&self, _ino: u64, _attribute_id: u64, _file_offset: u64) -> Option<(u32, u8)> {
+    fn crypt_ctx(&self, _ino: u64, _attribute_id: u64, _file_offset: u64) -> Option<(u64, u8)> {
         None
     }
 }
@@ -252,11 +252,11 @@ impl Cipher for FscryptInoLblk32FileCipher {
         true
     }
 
-    fn crypt_ctx(&self, ino: u64, _attribute_id: u64, file_offset: u64) -> Option<(u32, u8)> {
+    fn crypt_ctx(&self, ino: u64, _attribute_id: u64, file_offset: u64) -> Option<(u64, u8)> {
         assert_eq!(file_offset % BLOCK_SIZE as u64, 0);
         let block_num = file_offset / BLOCK_SIZE as u64;
         let tweak = self.tweak(ino, block_num);
-        Some((tweak, self.slot))
+        Some((tweak as u64, self.slot))
     }
 }
 

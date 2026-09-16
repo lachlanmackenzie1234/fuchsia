@@ -495,7 +495,7 @@ zx_status_t Server::ProcessReadWriteRequest(BlockFifoRequest* request) {
     // If the request is larger than the maximum transfer size or spans multiple mapping extents,
     // split it up into a collection of smaller block messages.
     uint64_t vmo_offset = request->vmo_offset;
-    uint32_t dun = request->dun;
+    uint64_t dun = request->dun;
     return SubmitSplitRequest(
         request, chunks, do_postflush,
         [this, request, iobuf, &vmo_offset, &dun](

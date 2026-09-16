@@ -1586,7 +1586,8 @@ impl Operation {
                         options,
                     } => {
                         let mut options = *options;
-                        options.inline_crypto.dun += max;
+                        options.inline_crypto.dun =
+                            options.inline_crypto.dun.wrapping_add(max as u64);
                         Operation::Read {
                             device_block_offset: orig_offset + max as u64,
                             block_count: rem,
@@ -1603,7 +1604,8 @@ impl Operation {
                         options,
                     } => {
                         let mut options = *options;
-                        options.inline_crypto.dun += max;
+                        options.inline_crypto.dun =
+                            options.inline_crypto.dun.wrapping_add(max as u64);
                         Operation::Write {
                             device_block_offset: orig_offset + max as u64,
                             block_count: rem,

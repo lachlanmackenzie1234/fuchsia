@@ -126,7 +126,7 @@ impl Cipher for FxfsCipher {
         false
     }
 
-    fn crypt_ctx(&self, _ino: u64, _attribute_id: u64, _file_offset: u64) -> Option<(u32, u8)> {
+    fn crypt_ctx(&self, _ino: u64, _attribute_id: u64, _file_offset: u64) -> Option<(u64, u8)> {
         None
     }
 }
