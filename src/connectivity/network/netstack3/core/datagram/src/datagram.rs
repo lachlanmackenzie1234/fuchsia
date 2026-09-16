@@ -3323,6 +3323,10 @@ pub enum SendToError<SE: Error> {
     /// The socket is not writeable.
     #[error("socket not writeable")]
     NotWriteable,
+    /// An error was encountered while trying to bind a local address for an
+    /// unbound socket.
+    #[error("local address error: {0}")]
+    LocalAddress(#[from] LocalAddressError),
     /// There was a problem with the remote address relating to its zone.
     #[error("problem with zone of remote address: {0}")]
     Zone(#[from] ZonedAddressError),
@@ -4297,12 +4301,12 @@ where
         remote_ip: Option<ZonedAddr<SpecifiedAddr<I::Addr>, DatagramApiDeviceId<C>>>,
         remote_identifier: <S::AddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
         body: B,
-    ) -> Result<(), Either<LocalAddressError, SendToError<S::SerializeError>>> {
+    ) -> Result<(), SendToError<S::SerializeError>> {
         let (core_ctx, bindings_ctx) = self.contexts();
         core_ctx.with_socket_state_mut(id, |core_ctx, state| {
             match listen_inner(core_ctx, bindings_ctx, state, id, None, None) {
                 Ok(()) | Err(Either::Left(ExpectedUnboundError)) => (),
-                Err(Either::Right(e)) => return Err(Either::Left(e)),
+                Err(Either::Right(e)) => return Err(SendToError::LocalAddress(e)),
             };
             let SocketState { inner, ip_options, sharing: _ } = state;
             let state = match inner {
@@ -4337,7 +4341,7 @@ where
                 DualStackRemoteIp::<I, _>::new(remote_ip.clone()),
             ) {
                 (MaybeDualStack::NotDualStack(_), DualStackRemoteIp::OtherStack(_)) => {
-                    return Err(Either::Right(SendToError::RemoteUnexpectedlyMapped));
+                    return Err(SendToError::RemoteUnexpectedlyMapped);
                 }
                 (MaybeDualStack::NotDualStack(nds), DualStackRemoteIp::ThisStack(remote_ip)) => {
                     match state {
@@ -4399,11 +4403,11 @@ where
                         (
                             DualStackListenerIpAddr::ThisStack(_),
                             DualStackRemoteIp::OtherStack(_),
-                        ) => return Err(Either::Right(SendToError::RemoteUnexpectedlyMapped)),
+                        ) => return Err(SendToError::RemoteUnexpectedlyMapped),
                         (
                             DualStackListenerIpAddr::OtherStack(_),
                             DualStackRemoteIp::ThisStack(_),
-                        ) => return Err(Either::Right(SendToError::RemoteUnexpectedlyNonMapped)),
+                        ) => return Err(SendToError::RemoteUnexpectedlyNonMapped),
                         (
                             DualStackListenerIpAddr::ThisStack(ListenerIpAddr { addr, identifier }),
                             DualStackRemoteIp::ThisStack(remote_ip),
@@ -4485,14 +4489,12 @@ where
                             (
                                 DualStackConnState::ThisStack(_),
                                 DualStackRemoteIp::OtherStack(_),
-                            ) => return Err(Either::Right(SendToError::RemoteUnexpectedlyMapped)),
+                            ) => return Err(SendToError::RemoteUnexpectedlyMapped),
                             (
                                 DualStackConnState::OtherStack(_),
                                 DualStackRemoteIp::ThisStack(_),
                             ) => {
-                                return Err(Either::Right(
-                                    SendToError::RemoteUnexpectedlyNonMapped,
-                                ));
+                                return Err(SendToError::RemoteUnexpectedlyNonMapped);
                             }
                             (
                                 DualStackConnState::ThisStack(state),
@@ -4563,7 +4565,7 @@ where
 
             if let Some(Shutdown { send: shutdown_write, receive: _ }) = shutdown {
                 if *shutdown_write {
-                    return Err(Either::Right(SendToError::NotWriteable));
+                    return Err(SendToError::NotWriteable);
                 }
             }
 
@@ -4580,7 +4582,6 @@ where
                     )
                 }
             }
-            .map_err(Either::Right)
         })
     }
 
@@ -6041,7 +6042,7 @@ mod test {
 
         assert_matches!(
             api.send_to(&socket, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), 1234, body,),
-            Err(Either::Right(SendToError::CreateAndSend(_)))
+            Err(SendToError::CreateAndSend(_))
         );
         assert_matches!(api.get_info(&socket), SocketInfo::Listener(_));
     }

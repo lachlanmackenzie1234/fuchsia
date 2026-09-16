@@ -394,26 +394,14 @@ impl IntoErrno for UdpSendError {
 #[derive(Error, Debug)]
 pub(crate) enum UdpSendToError {
     #[error(transparent)]
-    LocalAddress(#[from] LocalAddressError),
-    #[error(transparent)]
     Core(#[from] udp::SendToError),
     #[error(transparent)]
     PendingDatagramSocketError(#[from] PendingDatagramSocketError),
 }
 
-impl From<Either<LocalAddressError, udp::SendToError>> for UdpSendToError {
-    fn from(value: Either<LocalAddressError, udp::SendToError>) -> Self {
-        match value {
-            Either::Left(e) => e.into(),
-            Either::Right(e) => e.into(),
-        }
-    }
-}
-
 impl IntoErrno for UdpSendToError {
     fn to_errno(&self) -> fidl_fuchsia_posix::Errno {
         match self {
-            UdpSendToError::LocalAddress(err) => err.to_errno(),
             UdpSendToError::Core(err) => err.to_errno(),
             UdpSendToError::PendingDatagramSocketError(err) => err.to_errno(),
         }
@@ -827,10 +815,7 @@ where
     type RemoteIdentifier = u16;
     type SocketInfo = SocketInfo<I::Addr, WeakDeviceId<BindingsCtx>>;
     type SendError = core_socket::SendError<packet_formats::error::ParseError>;
-    type SendToError = either::Either<
-        LocalAddressError,
-        core_socket::SendToError<packet_formats::error::ParseError>,
-    >;
+    type SendToError = core_socket::SendToError<packet_formats::error::ParseError>;
     type DscpAndEcnError = NotSupportedError;
 
     fn create_unbound(
@@ -1192,6 +1177,7 @@ where
     fn to_errno(&self) -> fposix::Errno {
         match self {
             core_socket::SendToError::NotWriteable => fposix::Errno::Epipe,
+            core_socket::SendToError::LocalAddress(err) => err.to_errno(),
             core_socket::SendToError::SendBufferFull => fposix::Errno::Eagain,
             core_socket::SendToError::InvalidLength => fposix::Errno::Emsgsize,
             core_socket::SendToError::Zone(err) => err.to_errno(),

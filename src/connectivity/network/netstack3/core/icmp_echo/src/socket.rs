@@ -1042,10 +1042,7 @@ where
             >,
         >,
         body: B,
-    ) -> Result<
-        (),
-        either::Either<LocalAddressError, datagram::SendToError<packet_formats::error::ParseError>>,
-    > {
+    ) -> Result<(), datagram::SendToError<packet_formats::error::ParseError>> {
         self.datagram().send_to(id, remote_ip, (), body)
     }
 

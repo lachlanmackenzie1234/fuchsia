@@ -1994,11 +1994,15 @@ impl<
 }
 
 /// An error encountered while sending a UDP packet to an alternate address.
-#[derive(Error, Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Error, Debug, PartialEq)]
 pub enum SendToError {
     /// The socket is not writeable.
     #[error("not writeable")]
     NotWriteable,
+    /// An error was encountered while trying to bind a local address for an
+    /// unbound socket.
+    #[error("local address error: {0}")]
+    LocalAddress(#[from] LocalAddressError),
     /// An error was encountered while trying to create a temporary IP socket
     /// to use for the send operation.
     #[error("could not create a temporary connection socket: {0}")]
@@ -2838,10 +2842,10 @@ where
         >,
         remote_port: UdpRemotePort,
         body: B,
-    ) -> Result<(), Either<LocalAddressError, SendToError>> {
+    ) -> Result<(), SendToError> {
         // Match Linux's behavior and verify the remote port is set.
         match remote_port {
-            UdpRemotePort::Unset => return Err(Either::Right(SendToError::RemotePortUnset)),
+            UdpRemotePort::Unset => return Err(SendToError::RemotePortUnset),
             UdpRemotePort::Set(_) => {}
         }
 
@@ -2849,28 +2853,23 @@ where
         self.datagram().send_to(id, remote_ip, remote_port, body).map_err(|e| {
             self.core_ctx().increment_both(id, |c| &c.tx_error);
             match e {
-                Either::Left(e) => Either::Left(e),
-                Either::Right(e) => {
-                    let err = match e {
-                        datagram::SendToError::SerializeError(err) => match err {
-                            UdpSerializeError::RemotePortUnset => SendToError::RemotePortUnset,
-                        },
-                        datagram::SendToError::NotWriteable => SendToError::NotWriteable,
-                        datagram::SendToError::SendBufferFull => SendToError::SendBufferFull,
-                        datagram::SendToError::InvalidLength => SendToError::InvalidLength,
-                        datagram::SendToError::Zone(e) => SendToError::Zone(e),
-                        datagram::SendToError::CreateAndSend(e) => match e {
-                            IpSockCreateAndSendError::Send(e) => SendToError::Send(e),
-                            IpSockCreateAndSendError::Create(e) => SendToError::CreateSock(e),
-                        },
-                        datagram::SendToError::RemoteUnexpectedlyMapped => {
-                            SendToError::RemoteUnexpectedlyMapped
-                        }
-                        datagram::SendToError::RemoteUnexpectedlyNonMapped => {
-                            SendToError::RemoteUnexpectedlyNonMapped
-                        }
-                    };
-                    Either::Right(err)
+                datagram::SendToError::LocalAddress(e) => SendToError::LocalAddress(e),
+                datagram::SendToError::SerializeError(err) => match err {
+                    UdpSerializeError::RemotePortUnset => SendToError::RemotePortUnset,
+                },
+                datagram::SendToError::NotWriteable => SendToError::NotWriteable,
+                datagram::SendToError::SendBufferFull => SendToError::SendBufferFull,
+                datagram::SendToError::InvalidLength => SendToError::InvalidLength,
+                datagram::SendToError::Zone(e) => SendToError::Zone(e),
+                datagram::SendToError::CreateAndSend(e) => match e {
+                    IpSockCreateAndSendError::Send(e) => SendToError::Send(e),
+                    IpSockCreateAndSendError::Create(e) => SendToError::CreateSock(e),
+                },
+                datagram::SendToError::RemoteUnexpectedlyMapped => {
+                    SendToError::RemoteUnexpectedlyMapped
+                }
+                datagram::SendToError::RemoteUnexpectedlyNonMapped => {
+                    SendToError::RemoteUnexpectedlyNonMapped
                 }
             }
         })
@@ -4692,7 +4691,7 @@ mod tests {
                     Buf::new(Vec::new(), ..),
                 )
                 .map_err(
-                    |e| assert_matches!(e, Either::Right(SendToError::NotWriteable) => NotWriteableError)
+                    |e| assert_matches!(e, SendToError::NotWriteable => NotWriteableError)
                 ),
                 None => api.send(
                     id,
@@ -6794,7 +6793,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result.map_err(|err| assert_matches!(err, Either::Right(e) => e)), expected);
+        assert_eq!(result, expected);
     }
 
     #[test_case(true; "connected")]
@@ -6856,10 +6855,7 @@ mod tests {
             )
         };
 
-        assert_matches!(
-            result,
-            Err(Either::Right(SendToError::Zone(ZonedAddressError::DeviceZoneMismatch)))
-        );
+        assert_matches!(result, Err(SendToError::Zone(ZonedAddressError::DeviceZoneMismatch)));
     }
 
     #[test_case(None; "removes implicit")]
