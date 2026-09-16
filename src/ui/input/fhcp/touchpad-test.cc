@@ -32,7 +32,29 @@ struct Touchpad {
 };
 zx::result<Touchpad> ConnectToTouchpad();
 
-void WaitForTouchAndRelease(fidl::WireSyncClient<fir::InputReportsReader>& client,
+class TouchpadEventHandler : public fidl::WireSyncEventHandler<fir::InputReportsReaderV2> {
+ public:
+  using Callback =
+      fit::function<void(fidl::WireEvent<fir::InputReportsReaderV2::OnInputReports>* event)>;
+
+  explicit TouchpadEventHandler(Callback callback = nullptr) : callback_(std::move(callback)) {}
+
+  void OnInputReports(fidl::WireEvent<fir::InputReportsReaderV2::OnInputReports>* event) override {
+    last_report_stamp = event->last_report_stamp;
+    if (callback_) {
+      callback_(event);
+    }
+  }
+  void handle_unknown_event(
+      fidl::UnknownEventMetadata<fir::InputReportsReaderV2> metadata) override {}
+
+  uint64_t last_report_stamp = 0;
+
+ private:
+  Callback callback_;
+};
+
+void WaitForTouchAndRelease(fidl::WireSyncClient<fir::InputReportsReaderV2>& client,
                             Midpoints midpoints, Quadrant desired_quadrant);
 zx_status_t RunWithTimeout(zx::duration timeout, fit::closure f);
 
@@ -48,12 +70,13 @@ TEST(TouchpadTests, AreaCoverage) {
 
   ConfigureTouchEvents(input_device_client);
 
-  // Get the InputReportsReader client from the InputDevice protocol.
-  auto endpoints = fidl::Endpoints<fir::InputReportsReader>::Create();
-  ASSERT_EQ(ZX_OK,
-            input_device_client->GetInputReportsReader(std::move(endpoints.server)).status());
+  // Get the InputReportsReaderV2 client from the InputDevice protocol.
+  auto endpoints = fidl::Endpoints<fir::InputReportsReaderV2>::Create();
+  auto get_reader_result = input_device_client->GetInputReportsReaderV2(
+      std::move(endpoints.server), static_cast<uint16_t>(fir::wire::kMaxDeviceReportCount));
+  ASSERT_TRUE(get_reader_result.ok()) << get_reader_result.FormatDescription();
 
-  auto reader_client = fidl::WireSyncClient<fir::InputReportsReader>(std::move(endpoints.client));
+  auto reader_client = fidl::WireSyncClient<fir::InputReportsReaderV2>(std::move(endpoints.client));
 
   // The test itself - check for touches in each corner.
   //
@@ -98,42 +121,55 @@ const char* GetQuadrantName(Quadrant q) {
   }
 }
 
-void WaitForRelease(fidl::WireSyncClient<fir::InputReportsReader>& client) {
+void WaitForRelease(fidl::WireSyncClient<fir::InputReportsReaderV2>& client) {
   // Wait for the touch to be released (indicated by an empty contacts vector).
   while (true) {
-    auto result = client->ReadInputReports();
-    ASSERT_EQ(ZX_OK, result.status());
-    for (fir::wire::InputReport& report : result->value()->reports) {
-      ASSERT_TRUE(report.has_touch());
-      if (report.touch().contacts().empty()) {
-        fhcp::PrintManualTestingMessage("Release detected.");
-        return;
-      }
+    bool released = false;
+    TouchpadEventHandler handler(
+        [&](fidl::WireEvent<fir::InputReportsReaderV2::OnInputReports>* event) {
+          for (const fir::wire::InputReport& report : event->reports) {
+            ASSERT_TRUE(report.has_touch());
+            if (report.touch().contacts().empty()) {
+              fhcp::PrintManualTestingMessage("Release detected.");
+              released = true;
+              return;
+            }
+          }
+        });
+    auto result = client.HandleOneEvent(handler);
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_TRUE(client->AcknowledgeReports(handler.last_report_stamp).ok());
+    if (released) {
+      return;
     }
   }
 }
 
-void WaitForTouch(fidl::WireSyncClient<fir::InputReportsReader>& client, Midpoints midpoints,
+void WaitForTouch(fidl::WireSyncClient<fir::InputReportsReaderV2>& client, Midpoints midpoints,
                   Quadrant desired_quadrant) {
-  auto result = client->ReadInputReports();
-  ASSERT_EQ(ZX_OK, result.status());
+  bool touch_detected = false;
+  TouchpadEventHandler handler(
+      [&](fidl::WireEvent<fir::InputReportsReaderV2::OnInputReports>* event) {
+        ASSERT_FALSE(event->reports.empty()) << "No input reports received.";
+        for (const fir::wire::InputReport& report : event->reports) {
+          ASSERT_TRUE(report.has_touch());
+          ASSERT_FALSE(report.touch().contacts().empty());
+          const fir::wire::ContactInputReport& contact_report = report.touch().contacts()[0];
+          Quadrant quadrant = GetQuadrant(contact_report, midpoints);
+          ASSERT_EQ(quadrant, desired_quadrant)
+              << "Touch expected in the " << GetQuadrantName(desired_quadrant)
+              << " but detected in the " << GetQuadrantName(quadrant);
+          touch_detected = true;
+        }
+      });
 
-  ASSERT_FALSE(result->value()->reports.empty()) << "No input reports received.";
-
-  // Wait for a touch event. We ensure that all reports in the FIDL response contain valid touch
-  // reports in the expected quadrant.
-  for (fir::wire::InputReport& report : result->value()->reports) {
-    ASSERT_TRUE(report.has_touch());
-    ASSERT_FALSE(report.touch().contacts().empty());
-    const fir::wire::ContactInputReport& contact_report = report.touch().contacts()[0];
-    Quadrant quadrant = GetQuadrant(contact_report, midpoints);
-    ASSERT_EQ(quadrant, desired_quadrant)
-        << "Touch expected in the " << GetQuadrantName(desired_quadrant) << " but detected in the "
-        << GetQuadrantName(quadrant);
-  }
+  auto result = client.HandleOneEvent(handler);
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  ASSERT_TRUE(client->AcknowledgeReports(handler.last_report_stamp).ok());
+  ASSERT_TRUE(touch_detected);
 }
 
-void WaitForTouchAndRelease(fidl::WireSyncClient<fir::InputReportsReader>& client,
+void WaitForTouchAndRelease(fidl::WireSyncClient<fir::InputReportsReaderV2>& client,
                             Midpoints midpoints, Quadrant desired_quadrant) {
   fhcp::PrintManualTestingMessage("\n\n*** Please touch the %s corner of the touchpad and hold.",
                                   GetQuadrantName(desired_quadrant));
