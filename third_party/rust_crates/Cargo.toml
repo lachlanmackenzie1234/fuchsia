@@ -158,7 +158,7 @@ macro_rules_attribute = "0.2.2"
 maplit = "1.0"
 maybe-owned = "0.3.4"
 md-5 = "0.11.0"
-memchr = "2.8.0"
+memchr = "2.8.3"
 memoffset = "0.9.1"
 mockall = "0.15"
 munge = "0.4.4"
@@ -1367,7 +1367,7 @@ reviewed_features = [
 deps = [
   ":bytes-v1_12_1",
   ":libc-v0_2_189",
-  ":memchr-v2_8_0",
+  ":memchr-v2_8_3",
   ":mio-v1_2_1",
   ":num_cpus-v1_17_0",
   ":signal-hook-registry-v1_4_8",

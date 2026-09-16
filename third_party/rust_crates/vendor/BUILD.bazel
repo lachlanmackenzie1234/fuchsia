@@ -1579,7 +1579,7 @@ alias(
 )
 
 alias(
-    name = "memchr-2.8.0",
+    name = "memchr-2.8.3",
     actual = "//third_party/rust_crates/ask2patch/memchr:memchr",
     tags = ["manual"],
 )

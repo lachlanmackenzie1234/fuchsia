@@ -402,7 +402,7 @@ _NORMAL_DEPENDENCIES = {
             "maplit": Label("//third_party/rust_crates/vendor/maplit-1.0.2:maplit"),
             "maybe-owned": Label("//third_party/rust_crates/vendor/maybe-owned-0.3.4:maybe_owned"),
             "md-5": Label("//third_party/rust_crates/vendor/md-5-0.11.0:md5"),
-            "memchr": Label("//third_party/rust_crates/vendor/memchr-2.8.0:memchr"),
+            "memchr": Label("//third_party/rust_crates/vendor/memchr-2.8.3:memchr"),
             "memoffset": Label("//third_party/rust_crates/vendor/memoffset-0.9.1:memoffset"),
             "mockall": Label("//third_party/rust_crates/vendor/mockall-0.15.0:mockall"),
             "munge": Label("//third_party/rust_crates/vendor/munge-0.4.4:munge"),
