@@ -218,24 +218,11 @@ TEST_F(ManagedUsbPeripheralTest, GetLanguageTableStringDescriptor) {
   EXPECT_EQ(desc[3], 0x04);
 }
 
-TEST_F(ManagedUsbPeripheralTest, DISABLED_GetStatusEndpointZeroInWhenUnconfigured) {
-  // What this test validates/protects:
+TEST_F(ManagedUsbPeripheralTest, GetStatusEndpointZeroInWhenUnconfigured) {
   // Validates that GET_STATUS addressed to Endpoint 0 IN (wIndex = 0x80) is valid
   // and returns 2 bytes of zero status even before the device is configured, per
   // USB 2.0 Specification Section 9.3.4 and Table 9-3 (the default control pipe is
   // always accessible in both directions).
-  //
-  // Why this test is currently disabled:
-  // In UsbPeripheral::CommonControl (USB_RECIP_ENDPOINT), the driver checks:
-  //     uint8_t ep_addr = static_cast<uint8_t>(index);
-  //     if (ep_addr != 0 && configuration_ == 0) return zx::error(ZX_ERR_BAD_STATE);
-  // For EP0 IN (ep_addr = 0x80), ep_addr != 0 evaluates to true, so the driver incorrectly
-  // treats the control endpoint IN pipe as a non-control endpoint and stalls with ZX_ERR_BAD_STATE
-  // when configuration_ == 0.
-  //
-  // What is required for this test to pass:
-  // UsbPeripheral::CommonControl must check `(ep_addr & USB_ENDPOINT_NUM_MASK) != 0` instead of
-  // `ep_addr != 0` when verifying that non-control endpoints require an active configuration.
   fdescriptor::wire::UsbSetup setup;
   setup.bm_request_type = USB_DIR_IN | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD;
   setup.b_request = USB_REQ_GET_STATUS;
@@ -1538,21 +1525,11 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, ConfiguredGetStatusTests) {
   }
 }
 
-TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_SetConfigurationClearsEndpointHalt) {
-  // What this test validates/protects:
+TEST_F(UnmanagedUsbPeripheralReadyTest, SetConfigurationClearsEndpointHalt) {
   // Validates that calling SET_CONFIGURATION resets the halt status of all endpoints
   // to not halted, as mandated by USB 2.0 Specification Section 9.4.7:
   // "The SetConfiguration() request... causes the halt status of each endpoint to be
   // reset to not halted".
-  //
-  // Why this test is currently disabled:
-  // UsbPeripheral maintains `stalled_eps_` which is only cleared via explicit CLEAR_FEATURE
-  // (ENDPOINT_HALT) or ClearFunctions(). UsbPeripheral::SetConfiguration() does not clear
-  // `stalled_eps_` or reset endpoint halt states upon configuration selection.
-  //
-  // What is required for this test to pass:
-  // UsbPeripheral::SetConfiguration() must clear `stalled_eps_` and clear halt status on
-  // all function endpoints when selecting a configuration.
   usb_peripheral_config::Config config;
   config.functions() = {"test"};
   StartDriverWithConfig(config);
@@ -1635,20 +1612,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_SetConfigurationClearsEndpointH
   }
 }
 
-TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_GetInterfaceReturnsCurrentAlternateSetting) {
-  // What this test validates/protects:
+TEST_F(UnmanagedUsbPeripheralReadyTest, GetInterfaceReturnsCurrentAlternateSetting) {
   // Validates standard GET_INTERFACE (bRequest = 0x0A) request for an active interface
   // per USB 2.0 Specification Section 9.4.4. A device must return a 1-byte value specifying
   // the current alternate setting for the specified interface.
-  //
-  // Why this test is currently disabled:
-  // UsbPeripheral::CommonControl currently does not handle USB_REQ_GET_INTERFACE (0x0A)
-  // in its USB_RECIP_INTERFACE switch arm, and function drivers do not intercept standard
-  // interface requests, causing this request to fail with ZX_ERR_NOT_SUPPORTED or STALL.
-  //
-  // What is required for this test to pass:
-  // UsbPeripheral::CommonControl must implement USB_REQ_GET_INTERFACE under USB_RECIP_INTERFACE
-  // and query or return the active alternate setting for the requested interface number.
   usb_peripheral_config::Config config;
   config.functions() = {"test"};
   StartDriverWithConfig(config);
@@ -1685,6 +1652,94 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_GetInterfaceReturnsCurrentAlter
   auto& resp = result->value()->read;
   ASSERT_EQ(resp.size(), 1u);
   EXPECT_EQ(resp[0], 0);  // Alternate setting 0
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, SetInterfaceClearsEndpointHalt) {
+  // Validates standard SET_INTERFACE (bRequest = 0x0B) request for an interface
+  // per USB 2.0 Specification Section 9.4.5:
+  // "A SetInterface request for an interface resets the halt status of each endpoint
+  // associated with that interface to not halted."
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Transition to configured state (configuration 1).
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_SET_CONFIGURATION,
+        .w_value = 1,
+        .w_index = 0,
+        .w_length = 0,
+    };
+    auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+  }
+
+  // Set endpoint halt on EP 0x81 (allocated to interface 0).
+  {
+    fdescriptor::wire::UsbSetup set_halt = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+        .b_request = USB_REQ_SET_FEATURE,
+        .w_value = USB_ENDPOINT_HALT,
+        .w_index = 0x81,
+        .w_length = 0,
+    };
+    auto res_set = dci()->Control(set_halt, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_set.ok()) << res_set.FormatDescription();
+    ASSERT_TRUE(res_set->is_ok());
+  }
+
+  // Verify endpoint 0x81 is halted via GET_STATUS.
+  fdescriptor::wire::UsbSetup get_status = {
+      .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
+      .b_request = USB_REQ_GET_STATUS,
+      .w_value = 0,
+      .w_index = 0x81,
+      .w_length = 2,
+  };
+  {
+    auto res_get = dci()->Control(get_status, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_get.ok()) << res_get.FormatDescription();
+    ASSERT_TRUE(res_get->is_ok());
+    ASSERT_EQ(res_get->value()->read.size(), 2u);
+    EXPECT_EQ(res_get->value()->read[0], 1);  // halted
+    EXPECT_EQ(res_get->value()->read[1], 0);
+  }
+
+  // Issue SET_INTERFACE for Interface 0, Alternate Setting 0.
+  {
+    fdescriptor::wire::UsbSetup set_iface = {
+        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE,
+        .b_request = USB_REQ_SET_INTERFACE,
+        .w_value = 0,  // Alternate setting 0
+        .w_index = 0,  // Interface 0
+        .w_length = 0,
+    };
+    auto res_iface = dci()->Control(set_iface, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_iface.ok()) << res_iface.FormatDescription();
+    ASSERT_TRUE(res_iface->is_ok());
+  }
+
+  // Verify endpoint halt was cleared by SET_INTERFACE per USB 2.0 § 9.4.5.
+  {
+    auto res_get = dci()->Control(get_status, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_get.ok()) << res_get.FormatDescription();
+    ASSERT_TRUE(res_get->is_ok());
+    ASSERT_EQ(res_get->value()->read.size(), 2u);
+    EXPECT_EQ(res_get->value()->read[0], 0);  // halt must be cleared
+    EXPECT_EQ(res_get->value()->read[1], 0);
+  }
+
+  // Verify that mock DCI EndpointClearStall was invoked for hardware halt clearing.
+  this->dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    const auto& clear_stalls = env.dci().clear_stalls();
+    EXPECT_NE(std::find(clear_stalls.begin(), clear_stalls.end(), 0x81), clear_stalls.end());
+  });
 }
 
 TEST_F(UnmanagedUsbPeripheralReadyTest, StartControllerFailsFromDci) {
