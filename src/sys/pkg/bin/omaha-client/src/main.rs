@@ -98,13 +98,8 @@ async fn main_inner() -> Result<(), Error> {
     let installer = installer::FuchsiaInstaller::new(Rc::clone(&app_set));
 
     // Storage
-    let storage_dir = fuchsia_fs::directory::open_in_namespace(
-        "/data",
-        fuchsia_fs::PERM_READABLE | fuchsia_fs::PERM_WRITABLE,
-    )
-    .context("failed to open /data for storage")?;
-    let storage = storage::AtomicStorage::new(storage_dir).await;
-    let storage_ref = Rc::new(Mutex::new(storage));
+    let stash = storage::Stash::new("omaha-client").await;
+    let stash_ref = Rc::new(Mutex::new(stash));
 
     // Policy
     let mut policy_engine_builder = policy::FuchsiaPolicyEngineBuilder::new_from_config(config)
@@ -132,7 +127,7 @@ async fn main_inner() -> Result<(), Error> {
         installer,
         timer::FuchsiaTimer,
         metrics_reporter,
-        Rc::clone(&storage_ref),
+        Rc::clone(&stash_ref),
         platform_config.clone(),
         Rc::clone(&app_set),
         cup_handler,
@@ -145,7 +140,7 @@ async fn main_inner() -> Result<(), Error> {
     // Serve FIDL API
     let fidl = fidl::FidlServer::new(
         state_machine_control,
-        storage_ref,
+        stash_ref,
         app_set,
         apps_node,
         state_node,

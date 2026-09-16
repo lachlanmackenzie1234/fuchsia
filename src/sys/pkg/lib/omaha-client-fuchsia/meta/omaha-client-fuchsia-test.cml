@@ -13,6 +13,10 @@
             url: "fuchsia-pkg://fuchsia.com/omaha-client-fuchsia-tests#meta/test-driver.cm",
         },
         {
+            name: "stash2",
+            url: "fuchsia-pkg://fuchsia.com/omaha-client-fuchsia-tests#meta/stash2.cm",
+        },
+        {
             name: "shutdown_shim",
             url: "fuchsia-pkg://fuchsia.com/omaha-client-fuchsia-tests#meta/shutdown-shim.cm",
         },
@@ -22,6 +26,12 @@
         },
     ],
     offer: [
+        {
+            storage: "data",
+            from: "parent",
+            to: "#stash2",
+        },
+
         // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
         // the tests don't actually make https connections and so don't need any certs, so we can
         // just give them an empty file instead of making them a system test and giving them the
@@ -83,6 +93,11 @@
                 "fuchsia.posix.socket.Provider",
             ],
             from: "#netstack",
+            to: "#test_driver",
+        },
+        {
+            protocol: [ "fuchsia.stash.Store2" ],
+            from: "#stash2",
             to: "#test_driver",
         },
         {

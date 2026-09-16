@@ -24,6 +24,11 @@
             to: "#system-update",
         },
         {
+            protocol: "fuchsia.stash.Store2",
+            from: "#stash2",
+            to: "#system-update",
+        },
+        {
             protocol: [
                 "fuchsia.net.name.Lookup",
                 "fuchsia.posix.socket.Provider",

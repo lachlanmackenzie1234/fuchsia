@@ -60,6 +60,7 @@ use tempfile::TempDir;
 const OMAHA_CLIENT_CML: &str = "#meta/omaha-client-service.cm";
 const SYSTEM_UPDATER_CML: &str = "#meta/system-updater.cm";
 const SYSTEM_UPDATE_COMMITTER_CML: &str = "#meta/system-update-committer.cm";
+const STASH_CML: &str = "#meta/stash2.cm";
 const APP_ID: &str = "integration-test-appid";
 
 struct Mounts {
@@ -357,12 +358,13 @@ impl TestEnvBuilder {
             )
             .await
             .unwrap();
+        let stash2 = builder.add_child("stash2", STASH_CML, ChildOptions::new()).await.unwrap();
         builder
             .add_route(
                 Route::new()
                     .capability(Capability::storage("data"))
                     .from(Ref::parent())
-                    .to(&omaha_client_service),
+                    .to(&stash2),
             )
             .await
             .unwrap();
@@ -421,7 +423,8 @@ impl TestEnvBuilder {
                     .capability(Capability::protocol::<fidl_fuchsia_logger::LogSinkMarker>())
                     .from(Ref::parent())
                     .to(&omaha_client_service)
-                    .to(&system_update_committer),
+                    .to(&system_update_committer)
+                    .to(&stash2),
             )
             .await
             .unwrap();
@@ -475,6 +478,15 @@ impl TestEnvBuilder {
                     .capability(Capability::protocol::<fupdate_verify::HealthVerificationMarker>())
                     .from(&fake_capabilities)
                     .to(&system_update_committer),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol_by_name("fuchsia.stash.Store2"))
+                    .from(&stash2)
+                    .to(&omaha_client_service),
             )
             .await
             .unwrap();

@@ -22,6 +22,7 @@
                 "fuchsia.power.CollaborativeRebootInitiator",
                 "fuchsia.power.internal.CollaborativeRebootScheduler",
                 "fuchsia.process.Launcher",
+                "fuchsia.stash.Store2",
                 "fuchsia.update.channelcontrol.ChannelControl",
             ],
         },
