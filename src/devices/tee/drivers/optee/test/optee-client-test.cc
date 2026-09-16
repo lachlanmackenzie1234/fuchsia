@@ -20,8 +20,11 @@
 #include <stdlib.h>
 #include <zircon/types.h>
 
+#include <chrono>
 #include <memory>
 #include <set>
+#include <thread>
+#include <vector>
 
 #include <ddktl/suspend-txn.h>
 #include <tee-client-api/tee-client-types.h>
@@ -1075,6 +1078,50 @@ TEST_F(OpteeClientTestWaitQueue, SleepWakeup) {
   status = sync_completion_wait(&completion, ZX_TIME_INFINITE);
   EXPECT_OK(status);
   EXPECT_EQ(invoke_done_cnt_, 3);
+  EXPECT_EQ(this->WaitQueueSize(), 0);
+}
+
+TEST_F(OpteeClientTestWaitQueue, DirectConcurrentWaiters) {
+  constexpr uint64_t kKey = 42;
+  constexpr int kNumWaiters = 5;
+  std::vector<std::thread> threads;
+  std::atomic<int> ready_waiters{0};
+  std::atomic<int> completed_waiters{0};
+
+  for (int i = 0; i < kNumWaiters; ++i) {
+    threads.push_back(std::thread([this, &ready_waiters, &completed_waiters]() {
+      ready_waiters++;
+      this->WaitQueueWait(kKey);
+      completed_waiters++;
+    }));
+  }
+
+  // Wait for all threads to start.
+  while (ready_waiters < kNumWaiters) {
+    std::this_thread::yield();
+  }
+  // Give them a little more time to enter Wait()
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  // The wait queue should now have 1 key.
+  EXPECT_EQ(this->WaitQueueSize(), 1);
+
+  // Signal them one by one.
+  for (int i = 0; i < kNumWaiters; ++i) {
+    EXPECT_EQ(completed_waiters, i);
+    this->WaitQueueSignal(kKey);
+    // Wait for the signaled thread to finish.
+    while (completed_waiters < i + 1) {
+      std::this_thread::yield();
+    }
+  }
+
+  // All threads should have completed.
+  for (auto &t : threads) {
+    t.join();
+  }
+
+  EXPECT_EQ(completed_waiters, kNumWaiters);
   EXPECT_EQ(this->WaitQueueSize(), 0);
 }
 
