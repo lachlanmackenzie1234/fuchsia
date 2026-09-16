@@ -32,7 +32,7 @@ mod vmpl_rs {
     }
 
     fn add_page(pl: &mut VmPageList, page: VmPagePtr, offset: u64) -> bool {
-        let (slot, is_interval) = pl.lookup_or_allocate(offset, IntervalHandling::NoIntervals);
+        let (slot, is_interval) = pl.lookup_or_allocate(offset, IntervalHandling::SplitInterval);
         let Some(slot) = slot else {
             return false;
         };
@@ -45,7 +45,7 @@ mod vmpl_rs {
     }
 
     fn add_marker(pl: &mut VmPageList, offset: u64) -> bool {
-        let (slot, is_interval) = pl.lookup_or_allocate(offset, IntervalHandling::NoIntervals);
+        let (slot, is_interval) = pl.lookup_or_allocate(offset, IntervalHandling::SplitInterval);
         let Some(slot) = slot else {
             return false;
         };
@@ -58,7 +58,7 @@ mod vmpl_rs {
     }
 
     fn add_reference(pl: &mut VmPageList, ref_val: ReferenceValue, offset: u64) -> bool {
-        let (slot, is_interval) = pl.lookup_or_allocate(offset, IntervalHandling::NoIntervals);
+        let (slot, is_interval) = pl.lookup_or_allocate(offset, IntervalHandling::SplitInterval);
         let Some(slot) = slot else {
             return false;
         };
@@ -1002,5 +1002,352 @@ mod vmpl_rs {
         }
 
         list.remove_all_content(|_| {});
+    }
+
+    /// Adding a page in the interval should split the interval.
+    #[test]
+    fn vmpl_interval_add_page_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        let (page, _paddr) = unwrap_ok!(pmm::alloc_page(0), "pmm alloc page");
+        let page_offset = VmPageListNode::PAGE_FAN_OUT as u64;
+        expect_true!(add_page(&mut list, page, page_offset * PAGE_SIZE));
+
+        let expected_intervals = [
+            expected_start * PAGE_SIZE,
+            (page_offset - 1) * PAGE_SIZE,
+            (page_offset + 1) * PAGE_SIZE,
+            expected_end * PAGE_SIZE,
+        ];
+        let mut intervals = [0u64; 4];
+        let mut interval_index = 0;
+        let mut page_off = 0;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !(p.is_interval_start() || p.is_interval_end() || p.is_page()) {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() {
+                if interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+            } else if p.is_interval_end() {
+                if interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+            } else if p.is_page() {
+                page_off = off;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(4, interval_index);
+        expect_true!(expected_intervals == intervals);
+        expect_eq!(page_offset * PAGE_SIZE, page_off);
+
+        let mut free_list = fbl::Vector::<VmPagePtr>::new();
+        list.remove_all_content(|mut p| {
+            if p.is_page() {
+                free_list.push_back(p.release_page()).expect("vector push");
+            }
+        });
+        expect_eq!(1, free_list.len());
+
+        // SAFETY: `page` was removed from `list`.
+        unsafe { pmm::free_page(page) };
+    }
+
+    /// 3 page interval such that adding a page in the middle creates two distinct slots.
+    #[test]
+    fn vmpl_interval_add_page_slots_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 0;
+        let expected_end = 2;
+        let size = VmPageListNode::PAGE_FAN_OUT as u64;
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        let (page, _paddr) = unwrap_ok!(pmm::alloc_page(0), "pmm alloc page");
+        let page_offset = 1;
+        expect_true!(add_page(&mut list, page, page_offset * PAGE_SIZE));
+
+        let expected_intervals = [expected_start * PAGE_SIZE, expected_end * PAGE_SIZE];
+        let mut intervals = [0u64; 2];
+        let mut interval_index = 0;
+        let mut page_off = 0;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !(p.is_interval_slot() || p.is_page()) {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_slot() {
+                intervals[interval_index] = off;
+                interval_index += 1;
+            } else if p.is_page() {
+                page_off = off;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(2, interval_index);
+        expect_true!(expected_intervals == intervals);
+        expect_eq!(page_offset * PAGE_SIZE, page_off);
+
+        let mut free_list = fbl::Vector::<VmPagePtr>::new();
+        list.remove_all_content(|mut p| {
+            if p.is_page() {
+                free_list.push_back(p.release_page()).expect("vector push");
+            }
+        });
+        expect_eq!(1, free_list.len());
+
+        // SAFETY: `page` was removed from `list`.
+        unsafe { pmm::free_page(page) };
+    }
+
+    /// Tests adding pages at the start of an interval.
+    #[test]
+    fn vmpl_interval_add_page_start_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 0;
+        let expected_end = 2;
+        let size = VmPageListNode::PAGE_FAN_OUT as u64;
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        let pages = get_pages::<2>();
+
+        // Add a page at the start of the interval.
+        expect_true!(add_page(&mut list, pages[0], expected_start * PAGE_SIZE));
+
+        let expected_intervals = [(expected_start + 1) * PAGE_SIZE, expected_end * PAGE_SIZE];
+        let mut intervals = [0u64; 2];
+        let mut interval_index = 0;
+        let mut page_off = size * PAGE_SIZE;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !(p.is_interval_start() || p.is_interval_end() || p.is_page()) {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() {
+                if interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+            } else if p.is_interval_end() {
+                if interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+            } else if p.is_page() {
+                page_off = off;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(2, interval_index);
+        expect_true!(expected_intervals == intervals);
+        expect_eq!(expected_start * PAGE_SIZE, page_off);
+
+        // Add another page at the start of the new interval.
+        expect_true!(add_page(&mut list, pages[1], (expected_start + 1) * PAGE_SIZE));
+
+        let expected_page_offsets = [expected_start * PAGE_SIZE, (expected_start + 1) * PAGE_SIZE];
+        let mut page_offsets = [0u64; 2];
+        let mut page_index = 0;
+        interval_index = 0;
+        let mut interval_slot = 0;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !(p.is_interval_slot() || p.is_page()) {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_slot() {
+                interval_slot = off;
+                interval_index += 1;
+            } else if p.is_page() {
+                page_offsets[page_index] = off;
+                page_index += 1;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(1, interval_index);
+        expect_eq!(expected_end * PAGE_SIZE, interval_slot);
+        expect_eq!(2, page_index);
+        expect_true!(expected_page_offsets == page_offsets);
+
+        list.remove_all_content(|mut p| {
+            if p.is_page() {
+                let _ = p.release_page();
+            }
+        });
+        free_pages(pages);
+    }
+
+    /// Tests adding pages at the end of an interval.
+    #[test]
+    fn vmpl_interval_add_page_end_test() {
+        let mut list = VmPageList::new();
+        let expected_start = 0;
+        let expected_end = 2;
+        let size = VmPageListNode::PAGE_FAN_OUT as u64;
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        let pages = get_pages::<2>();
+
+        // Add a page at the end of the interval.
+        expect_true!(add_page(&mut list, pages[0], expected_end * PAGE_SIZE));
+
+        let expected_intervals = [expected_start * PAGE_SIZE, (expected_end - 1) * PAGE_SIZE];
+        let mut intervals = [0u64; 2];
+        let mut interval_index = 0;
+        let mut page_off = 0;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !(p.is_interval_start() || p.is_interval_end() || p.is_page()) {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_start() {
+                if interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+            } else if p.is_interval_end() {
+                if interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                intervals[interval_index] = off;
+                interval_index += 1;
+            } else if p.is_page() {
+                page_off = off;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(2, interval_index);
+        expect_true!(expected_intervals == intervals);
+        expect_eq!(expected_end * PAGE_SIZE, page_off);
+
+        // Add another page at the end of the new interval.
+        expect_true!(add_page(&mut list, pages[1], (expected_end - 1) * PAGE_SIZE));
+
+        let expected_page_offsets = [(expected_end - 1) * PAGE_SIZE, expected_end * PAGE_SIZE];
+        let mut page_offsets = [0u64; 2];
+        let mut page_index = 0;
+        interval_index = 0;
+        let mut interval_slot = 0;
+
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !(p.is_interval_slot() || p.is_page()) {
+                return Status::BAD_STATE;
+            }
+            if p.is_interval_slot() {
+                interval_slot = off;
+                interval_index += 1;
+            } else if p.is_page() {
+                page_offsets[page_index] = off;
+                page_index += 1;
+            }
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(1, interval_index);
+        expect_eq!(expected_start * PAGE_SIZE, interval_slot);
+        expect_eq!(2, page_index);
+        expect_true!(expected_page_offsets == page_offsets);
+
+        list.remove_all_content(|mut p| {
+            if p.is_page() {
+                let _ = p.release_page();
+            }
+        });
+        free_pages(pages);
+    }
+
+    /// Tests replacing a single-page interval slot with a page.
+    #[test]
+    fn vmpl_interval_replace_slot_test() {
+        let mut list = VmPageList::new();
+        let expected_interval = 0;
+        let size = VmPageListNode::PAGE_FAN_OUT as u64;
+        expect_ok!(list.add_zero_interval(
+            expected_interval * PAGE_SIZE,
+            (expected_interval + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        let mut interval_off = size * PAGE_SIZE;
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_interval_slot() {
+                return Status::BAD_STATE;
+            }
+            interval_off = off;
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(expected_interval * PAGE_SIZE, interval_off);
+
+        // Add a page in the interval slot.
+        let (page, _paddr) = unwrap_ok!(pmm::alloc_page(0), "pmm alloc page");
+        expect_true!(add_page(&mut list, page, expected_interval * PAGE_SIZE));
+
+        let mut page_off = size * PAGE_SIZE;
+        let res = list.for_every_page_in_range(0, size * PAGE_SIZE, |p, off| {
+            if !p.is_page() {
+                return Status::BAD_STATE;
+            }
+            page_off = off;
+            Status::NEXT
+        });
+        expect_ok!(res);
+        expect_eq!(expected_interval * PAGE_SIZE, page_off);
+
+        list.remove_all_content(|mut p| {
+            if p.is_page() {
+                let _ = p.release_page();
+            }
+        });
+        // SAFETY: `page` was removed from `list`.
+        unsafe { pmm::free_page(page) };
     }
 }

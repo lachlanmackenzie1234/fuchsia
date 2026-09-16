@@ -80,6 +80,7 @@ VmPageListBtreeNodeEntry cpp_vm_page_list_btree_cursor_get(const VmPageListBtree
 
 // Allocates a new VmPageListNode and inserts it at `node_offset` using `cursor` as an iterator
 // hint. Updates `cursor` to point to the newly inserted node.
+// If `cursor` is null, inserts without a hint.
 // Returns the newly allocated node pointer, or nullptr on allocation failure.
 void* cpp_vm_page_list_btree_insert(VmPageListBtree* tree, uint64_t node_offset,
                                     VmPageListBtreeCursor* cursor);

@@ -1247,8 +1247,11 @@ impl VmPageList {
     ) -> (Option<&mut VmPageOrMarker>, bool) {
         match interval_handling {
             IntervalHandling::NoIntervals => (self.lookup_or_allocate_internal(offset), false),
-            IntervalHandling::CheckForInterval | IntervalHandling::SplitInterval => {
-                todo!("Interval handling is not supported yet");
+            IntervalHandling::CheckForInterval => {
+                self.lookup_or_allocate_check_for_interval(offset, false)
+            }
+            IntervalHandling::SplitInterval => {
+                self.lookup_or_allocate_check_for_interval(offset, true)
             }
         }
     }
@@ -1295,6 +1298,335 @@ impl VmPageList {
         let node_ref: &mut VmPageListNode =
             unsafe { node_ptr.cast::<VmPageListNode>().as_mut_unchecked() };
         Some(node_ref.lookup_mut(index))
+    }
+
+    /// Similar to `lookup_or_allocate_internal` but also checks if `offset` falls in a sparse page
+    /// interval, returning true via the bool in the tuple if it does, along with the slot. Also
+    /// splits the interval around `offset` if `split_interval` is set to true. This allows the
+    /// caller to freely manipulate the slot at `offset` similar to `lookup_or_allocate`. If
+    /// `offset` is found in an interval, but `split_interval` was false, no `VmPageOrMarker` is
+    /// returned, as it is not safe to manipulate any slot in an interval without also splitting the
+    /// interval around it.
+    ///
+    /// In other words, the return values fall into three categories:
+    ///  1. `(Some(page), false)`: `offset` does not lie in an interval. `page` is the required
+    ///     slot.
+    ///  2. `(Some(page), true)`: `offset` lies in an interval and `split_interval` was true. `page`
+    ///     is the required slot. The interval has been correctly split around the slot, so `page`
+    ///     can be treated similar to any non-interval type.
+    ///  3. `(None, true)`: `offset` lies in an interval but `split_interval` was false. No slot is
+    ///     returned.
+    ///
+    /// Splitting the interval would look as follows. If the interval previously was:
+    ///  `[start, end)` where `start < offset < end`.
+    /// After the split we would have three intervals:
+    ///  `[start, offset) [offset, offset + page::SIZE) [offset + page::SIZE, end)`
+    /// The middle interval containing `offset` spans only a single page, i.e. `offset` is an
+    /// `SentinelType::Slot`, which can now be manipulated independently.
+    fn lookup_or_allocate_check_for_interval(
+        &mut self,
+        offset: u64,
+        split_interval: bool,
+    ) -> (Option<&mut VmPageOrMarker>, bool) {
+        // Find the node that would contain this offset.
+        let node_offset = VmPageListNode::node_offset(offset);
+        let node_index = VmPageListNode::node_index(offset);
+        if node_offset >= Self::MAX_SIZE {
+            return (None, false);
+        }
+
+        // If the node containing offset is populated, the lower bound will return that node. If not
+        // populated, it will return the next populated node.
+        //
+        // The overall intent with this function is to keep the number of tree lookups similar to
+        // lookup_or_allocate for both empty and non-empty slots. So we hold on to the looked up
+        // node and walk left or right in the tree only if required. The same principle is followed
+        // for traversal within a node as well; the ordering of operations is chosen such that we
+        // can exit the traversal as soon as possible or avoid it entirely.
+        let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+        // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
+        let entry = unsafe {
+            bindings::cpp_vm_page_list_btree_lower_bound(self.list.get(), node_offset, cursor.get())
+        };
+
+        // The slot that will eventually hold offset.
+        let mut slot: *mut VmPageOrMarker = core::ptr::null_mut();
+
+        // If offset falls in an interval, this will hold the dirty state of the interval that
+        // offset is found in. It will be used to mint new sentinel values if we were also asked to
+        // split the interval.
+        let mut found_interval_dirty_state = ZeroRangeDirtyState::Untracked;
+        let mut is_in_interval = false;
+
+        // For the offset to lie in an interval, it is going to have an interval end so we should
+        // have found some valid node if the offset falls in an interval. If we could not find a
+        // valid node, we know that offset cannot lie in an interval, so skip the check.
+        if !entry.node.is_null() {
+            let node_ptr = entry.node.cast::<VmPageListNode>();
+            if entry.offset == node_offset {
+                // We found the node containing offset. Get the slot.
+                let pages_ptr =
+                    unsafe { core::ptr::addr_of_mut!((*node_ptr).pages).cast::<VmPageOrMarker>() };
+                slot = unsafe { pages_ptr.add(node_index) };
+                // Short circuit the is_offset_in_interval_helper call below if the slot itself is
+                // an interval sentinel. This is purely an optimization, and it would be okay to
+                // call is_offset_in_interval_helper for this case too.
+                // SAFETY: `slot` is non-null and valid.
+                if unsafe { (*slot).is_interval() } {
+                    is_in_interval = true;
+                    found_interval_dirty_state = unsafe { (*slot).zero_interval_dirty_state() };
+                }
+            }
+
+            if !is_in_interval {
+                // SAFETY: `entry.node` is non-null and points to a valid `VmPageListNode`.
+                let node = unsafe { entry.node.cast::<VmPageListNode>().as_ref_unchecked() };
+                if let Some(interval) =
+                    Self::is_offset_in_interval_helper(offset, entry.offset, node)
+                {
+                    is_in_interval = true;
+                    debug_assert!(interval.is_interval());
+                    found_interval_dirty_state = interval.zero_interval_dirty_state();
+                }
+            }
+
+            // If we are in an interval but cannot split it, we cannot return a slot. The caller
+            // should not be able to manipulate the slot freely without correctly handling the
+            // interval(s) around it.
+            if is_in_interval && !split_interval {
+                return (None, true);
+            }
+        }
+
+        // We won't have a valid slot if the node we looked up did not contain the required offset.
+        if slot.is_null() {
+            // Allocate the node that would contain offset and then get the slot.
+            // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
+            let node_ptr = unsafe {
+                bindings::cpp_vm_page_list_btree_insert(self.list.get(), node_offset, cursor.get())
+            };
+            if node_ptr.is_null() {
+                return (None, is_in_interval);
+            }
+            let node_ptr = node_ptr.cast::<VmPageListNode>();
+            let pages_ptr =
+                unsafe { core::ptr::addr_of_mut!((*node_ptr).pages).cast::<VmPageOrMarker>() };
+            slot = unsafe { pages_ptr.add(node_index) };
+        }
+
+        // If offset does not lie in an interval, or if the slot is already a single page interval,
+        // there is nothing more to be done. Return the slot.
+        // SAFETY: `slot` is non-null and valid.
+        if !is_in_interval || unsafe { (*slot).is_interval_slot() } {
+            // We currently only support zero intervals.
+            debug_assert!(!is_in_interval || unsafe { (*slot).is_interval_zero() });
+            // SAFETY: `slot` is non-null and valid for the lifetime of `&mut self`.
+            return (Some(unsafe { &mut *slot }), is_in_interval);
+        }
+
+        // If we reached here, we know that we are in an interval and we need to split it in order
+        // to return the required slot.
+        debug_assert!(is_in_interval && split_interval);
+
+        // Depending on whether the slot is empty or not, we might need to insert a new interval
+        // start, a new interval end, or both. Figure out which slots are needed first.
+        //  - If the slot is empty, we need to insert an end to the left, a start to the right and a
+        //    single page interval slot at offset. So we need both a new start and a new end.
+        //  - If the slot is populated, since we know that offset falls in an interval, it could
+        //    only be an interval start or an interval end. We will either need a new start or a new
+        //    end but not both.
+        let mut need_new_end = true;
+        let mut need_new_start = true;
+        // SAFETY: `slot` is non-null and valid.
+        if unsafe { (*slot).is_interval_start() } {
+            // We can move the interval start to the right, and replace the old start with a slot.
+            // Don't need a new end.
+            need_new_end = false;
+        } else if unsafe { (*slot).is_interval_end() } {
+            // We can move the interval end to the left, and replace the old end with a slot. Don't
+            // need a new start.
+            need_new_start = false;
+        }
+
+        // Now find the previous and next slots as needed for the new end and new start
+        // respectively.
+        // Note that the node allocations below are mutually exclusive. If we allocate the previous
+        // node, we won't need to allocate the next node and vice versa, since the allocation logic
+        // depends on the value of node_index. So if the required node allocation fails, all the
+        // cleanup that's required is returning the slot at offset if it is empty, as we might have
+        // allocated a new node previously to hold offset.
+        let mut new_end: *mut VmPageOrMarker = core::ptr::null_mut();
+        if need_new_end {
+            if node_index > 0 {
+                // The previous slot is in the same node.
+                // SAFETY: `slot` is non-null and node_index > 0, so slot.sub(1) points to a valid
+                // slot in the same node.
+                new_end = unsafe { slot.sub(1) };
+            } else {
+                // The previous slot is in the node to the left. We might need to allocate a new
+                // node to the left if it does not exist. Try to walk left and see if we find the
+                // previous node we're looking for.
+                let prev_node_offset = node_offset - VmPageListNode::NODE_SPAN_BYTES;
+                // SAFETY: `cursor.get()` is a valid pointer pointing to current node.
+                let prev_entry =
+                    unsafe { bindings::cpp_vm_page_list_btree_cursor_prev(cursor.get()) };
+                // We are here because slot was either an empty slot inside an interval or it was an
+                // interval end. Additionally, the slot was the left-most slot in its node, which
+                // means we are guaranteed to find a node to the left which holds the start of the
+                // interval.
+                debug_assert!(!prev_entry.node.is_null());
+                if prev_entry.offset == prev_node_offset {
+                    let prev_node = prev_entry.node.cast::<VmPageListNode>();
+                    // SAFETY: `prev_node` is non-null.
+                    let pages_ptr = unsafe {
+                        core::ptr::addr_of_mut!((*prev_node).pages).cast::<VmPageOrMarker>()
+                    };
+                    new_end = unsafe { pages_ptr.add(VmPageListNode::PAGE_FAN_OUT - 1) };
+                } else {
+                    debug_assert!(prev_entry.offset < prev_node_offset);
+                    // SAFETY: `self.list.get()` is a valid pointer. Passing null cursor inserts
+                    // without a hint.
+                    let node_ptr = unsafe {
+                        bindings::cpp_vm_page_list_btree_insert(
+                            self.list.get(),
+                            prev_node_offset,
+                            core::ptr::null_mut(),
+                        )
+                    };
+                    if node_ptr.is_null() {
+                        // SAFETY: `slot` is non-null.
+                        if unsafe { (*slot).is_empty() } {
+                            self.return_empty_slot(offset);
+                        }
+                        return (None, true);
+                    }
+                    let node_ptr = node_ptr.cast::<VmPageListNode>();
+                    // SAFETY: `node_ptr` is non-null.
+                    let pages_ptr = unsafe {
+                        core::ptr::addr_of_mut!((*node_ptr).pages).cast::<VmPageOrMarker>()
+                    };
+                    new_end = unsafe { pages_ptr.add(VmPageListNode::PAGE_FAN_OUT - 1) };
+                }
+            }
+            debug_assert!(!new_end.is_null());
+        }
+
+        let mut new_start: *mut VmPageOrMarker = core::ptr::null_mut();
+        if need_new_start {
+            if node_index < VmPageListNode::PAGE_FAN_OUT - 1 {
+                // The next slot is in the same node.
+                // SAFETY: `slot` is non-null and node_index < PAGE_FAN_OUT - 1, so slot.add(1)
+                // points to a valid slot in the same node.
+                new_start = unsafe { slot.add(1) };
+            } else {
+                // The next slot is in the node to the right. We might need to allocate a new node
+                // to the right if it does not exist. Try to walk right and see if we find the next
+                // node we're looking for.
+                let next_node_offset = node_offset + VmPageListNode::NODE_SPAN_BYTES;
+                // SAFETY: `cursor.get()` is a valid pointer pointing to current node.
+                let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+                let next_entry =
+                    unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+                // We are here because slot was either empty or it was an interval start.
+                // Additionally, the slot was the right-most slot in its node, which means we are
+                // guaranteed to find a node to the right which holds the end of the interval.
+                debug_assert!(!next_entry.node.is_null());
+                if next_entry.offset == next_node_offset {
+                    let next_node = next_entry.node.cast::<VmPageListNode>();
+                    // SAFETY: `next_node` is non-null.
+                    new_start = unsafe {
+                        core::ptr::addr_of_mut!((*next_node).pages).cast::<VmPageOrMarker>()
+                    };
+                } else {
+                    debug_assert!(next_entry.offset > next_node_offset);
+                    // SAFETY: `self.list.get()` is a valid pointer. Passing null cursor inserts
+                    // without a hint.
+                    let node_ptr = unsafe {
+                        bindings::cpp_vm_page_list_btree_insert(
+                            self.list.get(),
+                            next_node_offset,
+                            core::ptr::null_mut(),
+                        )
+                    };
+                    if node_ptr.is_null() {
+                        // SAFETY: `slot` is non-null.
+                        if unsafe { (*slot).is_empty() } {
+                            self.return_empty_slot(offset);
+                        }
+                        return (None, true);
+                    }
+                    let node_ptr = node_ptr.cast::<VmPageListNode>();
+                    // SAFETY: `node_ptr` is non-null.
+                    new_start = unsafe {
+                        core::ptr::addr_of_mut!((*node_ptr).pages).cast::<VmPageOrMarker>()
+                    };
+                }
+            }
+            debug_assert!(!new_start.is_null());
+        }
+
+        // Now that we've looked up the relevant slots after performing any required allocations,
+        // make the actual change. Install new end and start sentinels on the left and right of
+        // offset respectively.
+        if !new_start.is_null() {
+            // SAFETY: `new_start` is non-null and valid.
+            let new_start_ref = unsafe { &mut *new_start };
+            if new_start_ref.is_interval_end() {
+                // If an interval was ending at the next slot, change it into a Slot sentinel.
+                new_start_ref.change_interval_sentinel(SentinelType::Slot);
+            } else {
+                debug_assert!(new_start_ref.is_empty());
+                *new_start_ref =
+                    VmPageOrMarker::zero_interval(SentinelType::Start, found_interval_dirty_state);
+            }
+        }
+        if !new_end.is_null() {
+            // SAFETY: `new_end` is non-null and valid.
+            let end_slot_ref = unsafe { &mut *new_end };
+            if end_slot_ref.is_interval_start() {
+                // If an interval was starting at the previous slot, change it into a Slot sentinel.
+                end_slot_ref.change_interval_sentinel(SentinelType::Slot);
+            } else {
+                debug_assert!(end_slot_ref.is_empty());
+                *end_slot_ref =
+                    VmPageOrMarker::zero_interval(SentinelType::End, found_interval_dirty_state);
+            }
+        }
+
+        // Finally, install a slot sentinel at offset.
+        // SAFETY: `slot` is non-null and valid for the lifetime of `&mut self`.
+        let slot_ref = unsafe { &mut *slot };
+        if slot_ref.is_empty() {
+            *slot_ref =
+                VmPageOrMarker::zero_interval(SentinelType::Slot, found_interval_dirty_state);
+        } else {
+            debug_assert!(slot_ref.is_interval_start() || slot_ref.is_interval_end());
+            // If we're overwriting the start or end sentinel, carry over any relevant state
+            // information to the rest of the interval that remains (if required).
+            //
+            // For zero intervals, this means preserving any non-zero awaiting_clean_length in the
+            // start sentinel. We only need to do this if the zero interval is being split at the
+            // start. This is an optimization to avoid having to potentially walk to another node
+            // to find the relevant start to update. So the awaiting_clean_length can be larger
+            // than the length of the resultant interval; the caller will take that into account
+            // and carry over larger awaiting_clean_lengths across multiple intervals if they
+            // exist. (See related comment in VmCowPages::WritebackEndLocked.)
+            if slot_ref.is_interval_start() {
+                let awaiting_clean_len = slot_ref.zero_interval_awaiting_clean_length();
+                if awaiting_clean_len > page::SIZE as u64 {
+                    debug_assert!(!new_start.is_null());
+                    // SAFETY: `new_start` is non-null when `slot_ref.is_interval_start()`.
+                    let new_start_ref = unsafe { &mut *new_start };
+                    new_start_ref.set_zero_interval_awaiting_clean_length(
+                        awaiting_clean_len - page::SIZE as u64,
+                    );
+                    slot_ref.set_zero_interval_awaiting_clean_length(page::SIZE as u64);
+                }
+            }
+            slot_ref.change_interval_sentinel(SentinelType::Slot);
+        }
+
+        (Some(slot_ref), true)
     }
 
     /// Returns a slot that was empty after `lookup_or_allocate`, and that the caller did not end up

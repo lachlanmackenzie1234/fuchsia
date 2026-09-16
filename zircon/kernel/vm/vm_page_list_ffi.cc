@@ -101,9 +101,13 @@ FFI_ALWAYS_INLINE void* cpp_vm_page_list_btree_insert(VmPageListBtree* tree, uin
     return nullptr;
   }
   VmPageListNode* raw_ptr = pl.get();
-  cursor->iter = tree->insert(cursor->iter, node_offset, ktl::move(pl));
-  if (!cursor->iter.IsValid()) {
+  auto hint = cursor ? cursor->iter : VmPageListBtree::iterator{};
+  auto iter = tree->insert(hint, node_offset, ktl::move(pl));
+  if (!iter.IsValid()) {
     return nullptr;
+  }
+  if (cursor) {
+    cursor->iter = iter;
   }
   return raw_ptr;
 }
