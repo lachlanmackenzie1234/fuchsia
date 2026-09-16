@@ -10,7 +10,6 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Set
-from typing.re import Pattern as re_Pattern
 
 
 @dataclasses.dataclass(frozen=True)
@@ -56,7 +55,7 @@ class _ExtractedLicense:
         name: str = input["name"].lower()
 
         # Remove version suffix which is common in rust crates in the legacy SPDX
-        version_suffix_pattern = re.compile("-[\d.]+")
+        version_suffix_pattern = re.compile(r"-[\d.]+")
         version_suffix_match = version_suffix_pattern.search(name)
         if version_suffix_match:
             name = name[0 : version_suffix_match.start()]
@@ -119,7 +118,7 @@ class _ExtractedLicense:
 
 
 # License path patterns that are expected to be missing
-_expected_missing: List[re_Pattern] = [
+_expected_missing: List[re.Pattern[str]] = [
     re.compile(s)
     for s in [
         # COPYING and UNLICENSE files are not rust licenses
