@@ -154,7 +154,9 @@ if [[ "$enable_resultstore" == 0 ]]; then
 fi
 # LINT.ThenChange(//build/scripts/main_build.py:resultstore_ninja_env_vars)
 
-rsproxy_options=()
+rsproxy_options=(
+  --project_id=fuchsia
+)
 
 # rsproxy configuration:
 #
