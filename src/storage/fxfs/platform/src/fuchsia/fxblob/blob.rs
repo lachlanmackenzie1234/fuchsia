@@ -13,7 +13,6 @@ use crate::fuchsia::pager::{
     MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
 use crate::fuchsia::volume::{FxVolume, READ_AHEAD_SIZE};
-use crate::fxblob::atomic_vec::AtomicBitVec;
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use delivery_blob::compression::{CompressionAlgorithm, CompressionInfo};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
@@ -31,6 +30,7 @@ use fxfs::object_store::{AttributeId, DataObjectHandle, ObjectDescriptor, StoreO
 use fxfs::round::round_down;
 use fxfs_macros::ToWeakNode;
 use mapping::Extent as MappingExtent;
+use refaults_vmo::AtomicBitVec;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

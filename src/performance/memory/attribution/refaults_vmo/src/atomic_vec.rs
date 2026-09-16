@@ -1,4 +1,4 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@ impl AtomicBitVec {
     pub fn new(nbits: u64) -> Self {
         let nwords = nbits.div_ceil(BITS);
         let storage = (0..nwords).map(|_| AtomicU64::new(0)).collect();
-        Self { storage: storage, nbits }
+        Self { storage, nbits }
     }
 
     /// Sets the bits between `start_bit` (included) and `end_bit` (excluded), and returns the
@@ -44,12 +44,10 @@ impl AtomicBitVec {
         counter.into()
     }
 
-    #[cfg(test)]
     pub fn len(&self) -> u64 {
         self.nbits
     }
 
-    #[cfg(test)]
     pub fn get(&self) -> Vec<bool> {
         let fetch = |bit: u64| {
             let word = bit / BITS;
@@ -62,8 +60,7 @@ impl AtomicBitVec {
     fn get_mask(start_bit: u64, end_bit: u64) -> u64 {
         let left_mask = u64::MAX << start_bit;
         let right_mask = u64::MAX >> (BITS - end_bit);
-        let mask = left_mask & right_mask;
-        mask
+        left_mask & right_mask
     }
 }
 
@@ -108,7 +105,7 @@ mod tests {
 
         // Set bits and check they were not set before.
         assert_eq!(vec.test_and_set_range(10, 20), 0);
-        // Check there are set now.
+        // Check they are set now.
         assert_eq!(vec.test_and_set_range(10, 20), 10);
 
         // Check another range, partially overlapping.
