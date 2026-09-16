@@ -227,10 +227,13 @@ impl FxBlob {
         let supplied_count = self.chunks_supplied.test_and_set_range(first_chunk, last_chunk);
 
         if supplied_count > 0 {
+            // The counter is expressed in pages, and chunks are a multiple of the page size.  The
+            // last chunk of a blob may be partial, in which case this slightly overestimates.
+            let pages_per_chunk = chunk_size / zx::system_get_page_size() as u64;
             self.handle
                 .owner()
                 .blob_resupplied_count()
-                .increment(supplied_count, Ordering::Relaxed);
+                .increment(supplied_count * pages_per_chunk, Ordering::Relaxed);
         }
     }
 
@@ -1111,7 +1114,9 @@ mod tests {
             ));
             Epoch::global().barrier().await;
 
-            assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 2);
+            // Two chunks were resupplied, and the counter is expressed in pages.
+            let pages_per_chunk = READ_AHEAD_SIZE / zx::system_get_page_size() as u64;
+            assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 2 * pages_per_chunk);
         }
 
         fixture.close().await;
