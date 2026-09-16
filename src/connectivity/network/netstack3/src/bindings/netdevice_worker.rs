@@ -67,7 +67,7 @@ impl MaybeContiguousBuffer for RxBuffer {
             }
             let slice = &mut vec[..frame_length];
             let read_len = buf.io().read_at(0, slice);
-            debug_assert_eq!(read_len, frame_length);
+            assert_eq!(read_len, frame_length);
             Some(BufferSlice::Linearized(slice))
         }
     }
