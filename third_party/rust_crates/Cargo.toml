@@ -520,6 +520,13 @@ remove_cfgs = [
 ]
 add_cfgs = []
 
+# The min_publish_age (given in days) is intended to ensure a minimum bake time
+# for new crates. Note that the first run of 'fx update-rustc-third-party'
+# after adding this config will cause it to take O(minutes) to fetch all the
+# timestamps for the vendored crates over the network. For subsequent runs, the
+# slowdown is barely noticeable.
+min_publish_age = 14
+
 require_licenses = true
 
 #################################################################################
