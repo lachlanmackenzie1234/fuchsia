@@ -68,6 +68,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/lib/metrics:verify_bazel2gn",
   "//src/developer/ffx/lib/netext:verify_bazel2gn",
   "//src/developer/ffx/lib/port_picker:verify_bazel2gn",
+  "//src/developer/ffx/lib/safe_string:verify_bazel2gn",
   "//src/developer/ffx/lib/sdk:verify_bazel2gn",
   "//src/developer/ffx/lib/timeout:verify_bazel2gn",
   "//src/developer/ffx/lib/version:verify_bazel2gn",

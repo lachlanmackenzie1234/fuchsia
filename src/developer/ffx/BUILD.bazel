@@ -35,6 +35,7 @@ test_suite(
         "//src/developer/ffx/lib/metrics:lib_test",
         "//src/developer/ffx/lib/netext:lib_test",
         "//src/developer/ffx/lib/port_picker:lib_test",
+        "//src/developer/ffx/lib/safe_string:lib_test",
         "//src/developer/ffx/lib/traceable_error:lib_test",
         "//src/developer/ffx/lib/version:lib_test",
     ],

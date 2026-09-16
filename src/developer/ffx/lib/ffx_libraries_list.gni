@@ -73,6 +73,7 @@ tests_migrated_ffx_libraries = [
   "metrics",
   "netext",
   "port_picker",
+  "safe_string",
   "traceable_error",
   "version",
 
