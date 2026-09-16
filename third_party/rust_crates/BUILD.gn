@@ -300,11 +300,11 @@ group("bt-vcs-0.0.1") {
 }
 
 group("bumpalo") {
-  public_deps = [ ":bumpalo-v3_20_2" ]
+  public_deps = [ ":bumpalo-v3_20_3" ]
 }
 
-group("bumpalo-3.20.2") {
-  public_deps = [ ":bumpalo-v3_20_2" ]
+group("bumpalo-3.20.3") {
+  public_deps = [ ":bumpalo-v3_20_3" ]
 }
 
 group("byteorder") {
@@ -5311,18 +5311,18 @@ rustc_library("bt-vcs-v0_0_1") {
   applicable_licenses = [ ":bt-vcs-v0_0_1.license" ]
 }
 
-license("bumpalo-v3_20_2.license") {
+license("bumpalo-v3_20_3.license") {
   public_package_name = "bumpalo"
   license_files = [
-    "//third_party/rust_crates/vendor/bumpalo-3.20.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bumpalo-3.20.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/bumpalo-3.20.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bumpalo-3.20.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("bumpalo-v3_20_2") {
+rustc_library("bumpalo-v3_20_3") {
   crate_name = "bumpalo"
-  source_root = "//third_party/rust_crates/vendor/bumpalo-3.20.2/src/lib.rs"
-  output_name = "bumpalo-fbaaf0bdfee750f7"
+  source_root = "//third_party/rust_crates/vendor/bumpalo-3.20.3/src/lib.rs"
+  output_name = "bumpalo-7cb26df299896b0f"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -5334,15 +5334,15 @@ rustc_library("bumpalo-v3_20_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fbaaf0bdfee750f7",
-    "-Cextra-filename=-fbaaf0bdfee750f7",
+    "-Cmetadata=7cb26df299896b0f",
+    "-Cextra-filename=-7cb26df299896b0f",
     "--cfg=feature=\"collections\"",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":bumpalo-v3_20_2.license" ]
+  applicable_licenses = [ ":bumpalo-v3_20_3.license" ]
 }
 
 license("bytecheck-v0_8_2.license") {
