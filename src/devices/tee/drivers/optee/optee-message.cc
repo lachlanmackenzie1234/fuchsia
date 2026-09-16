@@ -39,6 +39,9 @@ zx_status_t Message::TryInitializeParameters(
     switch (zx_param.Which()) {
       case fuchsia_tee::wire::Parameter::Tag::kNone:
         optee_param.attribute = MessageParam::kAttributeTypeNone;
+        // Zero-initialize the payload to prevent leaking stale data if the TEE
+        // later changes the attribute type to something else (e.g. Value).
+        optee_param.payload = {};
         break;
       case fuchsia_tee::wire::Parameter::Tag::kValue:
         status = TryInitializeValue(zx_param.value(), &optee_param);
