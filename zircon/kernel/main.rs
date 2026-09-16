@@ -9,10 +9,6 @@
 // TODO(https://fxbug.dev/539292628): Allow dead code during the initial Rust
 // conversion process.
 #![allow(dead_code)]
-// Test dependencies are passed into the kernel crate when building `vmzircon.with-tests`,
-// but test modules are gated on `#[cfg(ktest)]`, which is disabled in switchsets
-// such as `lk_debug_level_0`.
-#![allow(unused_crate_dependencies)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(clippy::new_without_default)]

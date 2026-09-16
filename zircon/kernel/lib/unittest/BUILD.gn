@@ -71,7 +71,7 @@ kernel_rust_mod("user-memory-rs") {
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
   if (current_cpu == "arm64") {
-    deps += [ "//zircon/kernel/arch/arm64:arch-arm64-vm-bindings" ]
+    test_deps = [ "//zircon/kernel/arch/arm64:arch-arm64-vm-bindings" ]
   }
 }
 
