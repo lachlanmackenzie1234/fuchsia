@@ -271,29 +271,38 @@ void OpteeClient::OpenSession2(OpenSession2RequestView request,
     return;
   }
 
-  LOG(TRACE, "OpenSession returned 0x%" PRIx32 " 0x%" PRIx32 " 0x%" PRIx32, call_code,
-      message.return_code(), message.return_origin());
+  const uint32_t return_code = message.return_code();
+  const uint32_t return_origin = message.return_origin();
+  const uint32_t session_id = message.session_id();
 
-  if (ConvertOpteeToZxResult(allocator, message.return_code(), message.return_origin(), &result) !=
-      ZX_OK) {
+  LOG(TRACE, "OpenSession returned 0x%" PRIx32 " 0x%" PRIx32 " 0x%" PRIx32, call_code, return_code,
+      return_origin);
+
+  if (ConvertOpteeToZxResult(allocator, return_code, return_origin, &result) != ZX_OK) {
     completer.Reply(kInvalidSession, result);
     return;
   }
 
   fidl::VectorView<fuchsia_tee::wire::Parameter> out_parameters;
   if (message.CreateOutputParameterSet(allocator, &out_parameters) != ZX_OK) {
-    // Since we failed to parse the output parameters, let's close the session and report error.
-    // It is okay that the session id is not in the session list.
-    CloseSession(message.session_id());
+    if (return_code == TEEC_SUCCESS) {
+      // Since we failed to parse the output parameters, let's close the session and report error.
+      // It is okay that the session id is not in the session list.
+      CloseSession(session_id);
+    }
     result.set_return_code(allocator, TEEC_ERROR_COMMUNICATION);
     result.set_return_origin(fuchsia_tee::wire::ReturnOrigin::kCommunication);
     completer.Reply(kInvalidSession, result);
     return;
   }
   result.set_parameter_set(allocator, out_parameters);
-  open_sessions_.insert(message.session_id());
 
-  completer.Reply(message.session_id(), result);
+  if (return_code == TEEC_SUCCESS) {
+    open_sessions_.insert(session_id);
+    completer.Reply(session_id, result);
+  } else {
+    completer.Reply(kInvalidSession, result);
+  }
 }
 
 void OpteeClient::InvokeCommand(
@@ -351,11 +360,13 @@ void OpteeClient::InvokeCommand(
     return;
   }
 
-  LOG(TRACE, "InvokeCommand returned 0x%" PRIx32 " 0x%" PRIx32 " 0x%" PRIx32, call_code,
-      message.return_code(), message.return_origin());
+  const uint32_t return_code = message.return_code();
+  const uint32_t return_origin = message.return_origin();
 
-  if (ConvertOpteeToZxResult(allocator, message.return_code(), message.return_origin(), &result) !=
-      ZX_OK) {
+  LOG(TRACE, "InvokeCommand returned 0x%" PRIx32 " 0x%" PRIx32 " 0x%" PRIx32, call_code,
+      return_code, return_origin);
+
+  if (ConvertOpteeToZxResult(allocator, return_code, return_origin, &result) != ZX_OK) {
     completer.Reply(result);
     return;
   }
@@ -395,8 +406,11 @@ zx_status_t OpteeClient::CloseSession(uint32_t session_id) {
     open_sessions_.erase(session_id);
   }
 
-  LOG(TRACE, "CloseSession returned %" PRIx32 " %" PRIx32 " %" PRIx32, call_code,
-      message.return_code(), message.return_origin());
+  const uint32_t return_code = message.return_code();
+  const uint32_t return_origin = message.return_origin();
+
+  LOG(TRACE, "CloseSession returned 0x%" PRIx32 " 0x%" PRIx32 " 0x%" PRIx32, call_code, return_code,
+      return_origin);
   return ZX_OK;
 }
 
