@@ -6,15 +6,18 @@ use anyhow::{Context, Error, bail, format_err};
 use argh::{ArgsInfo, FromArgs};
 use cobalt_registry_proto::cobalt::CobaltRegistry;
 use cobalt_registry_proto::cobalt::metric_definition::MetricType as CobaltMetricType;
+use fidl_fuchsia_diagnostics::Selector;
 use prost::Message;
 use sampler_config::MetricType as SamplerMetricType;
-use sampler_config::assembly::MergedSamplerConfig;
+use sampler_config::assembly::{MergedSamplerConfig, ProjectTemplate};
+use sampler_config::runtime::ProjectConfig as SamplerProjectConfig;
+use selectors::SelectorDisplayOptions;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const FUCHSIA_CUSTOMER_ID: u32 = 1;
 
@@ -45,31 +48,45 @@ pub struct MergeConfigsCommand {
 pub fn main() -> Result<(), Error> {
     let args: MergeConfigsCommand = argh::from_env();
 
-    let mut config = MergedSamplerConfig::default();
-
+    let mut project_configs = Vec::new();
     for project_config_path in args.project_config {
-        config.project_configs.push(read_file(project_config_path)?);
+        let parsed = read_file(&project_config_path)?;
+        project_configs.push((project_config_path, parsed));
     }
+    let mut fire_project_templates = Vec::new();
     for project_template_path in args.fire_project_template {
-        config.fire_project_templates.push(read_file(project_template_path)?);
+        let parsed = read_file(&project_template_path)?;
+        fire_project_templates.push((project_template_path, parsed));
     }
+    let mut fire_component_configs = Vec::new();
     for component_config_path in args.fire_component_config {
-        config.fire_component_configs.push(read_file(component_config_path)?);
+        let parsed = read_file(&component_config_path)?;
+        fire_component_configs.push(parsed);
     }
 
     if let Some(cobalt_registry_path) = args.cobalt_registry {
         let registry_bytes = std::fs::read(&cobalt_registry_path).with_context(|| {
             format!("Failed to read cobalt registry from {:?}", cobalt_registry_path)
         })?;
-        validate(&registry_bytes, &config)?;
+        validate(&registry_bytes, &project_configs, &fire_project_templates)?;
     }
+
+    let config = MergedSamplerConfig {
+        project_configs: project_configs.into_iter().map(|(_, c)| c).collect(),
+        fire_project_templates: fire_project_templates.into_iter().map(|(_, t)| t).collect(),
+        fire_component_configs,
+    };
 
     write_file(args.output, config)?;
 
     Ok(())
 }
 
-fn validate(registry_bytes: &[u8], config: &MergedSamplerConfig) -> Result<(), Error> {
+fn validate(
+    registry_bytes: &[u8],
+    project_configs: &[(PathBuf, SamplerProjectConfig)],
+    fire_project_templates: &[(PathBuf, ProjectTemplate)],
+) -> Result<(), Error> {
     let registry = CobaltRegistry::decode(registry_bytes)
         .context("Failed to decode CobaltRegistry protobuf")?;
 
@@ -86,39 +103,68 @@ fn validate(registry_bytes: &[u8], config: &MergedSamplerConfig) -> Result<(), E
     let mut cobalt_projects = HashMap::new();
     for project in &customer.projects {
         let metrics_by_id: HashMap<u32, _> = project.metrics.iter().map(|m| (m.id, m)).collect();
-        cobalt_projects.insert(project.project_id, metrics_by_id);
+        cobalt_projects.insert(project.project_id, (&project.project_name, metrics_by_id));
     }
 
     // Validate standard projects
-    for project in &config.project_configs {
+    for (path, project) in project_configs {
         let project_id = *project.project_id;
-        let cobalt_metrics = cobalt_projects.get(&project_id).ok_or_else(|| {
-            format_err!("Sampler project_id {} not found in Cobalt registry", project_id)
+        let (project_name, cobalt_metrics) = cobalt_projects.get(&project_id).ok_or_else(|| {
+            format_err!(
+                "In {}: Sampler project_id {} not found in Cobalt registry",
+                path.display(),
+                project_id
+            )
         })?;
 
         for dataset in &project.data_sets {
             for metric in &dataset.metrics {
                 let metric_id = *metric.metric_id;
+                let selector_context = format_selectors_context(&metric.selectors);
                 let cobalt_metric = cobalt_metrics.get(&metric_id).ok_or_else(|| {
                     format_err!(
-                        "Metric ID {} in project {} not found in Cobalt registry",
+                        "In {}: Metric ID {} not found in Cobalt project {} ({}){}",
+                        path.display(),
                         metric_id,
-                        project_id
+                        project_id,
+                        project_name,
+                        selector_context
                     )
                 })?;
 
-                verify_metric_type(metric.metric_type, cobalt_metric.metric_type).map_err(|e| {
-                    format_err!(
-                        "Metric type mismatch for project {project_id} metric {metric_id}: {e}"
-                    )
-                })?;
+                verify_metric_type(metric.metric_type, cobalt_metric.metric_type).map_err(
+                    |e| {
+                        format_err!(
+                            "In {}: Metric type mismatch for metric {} ({}) in project {} ({}): {}{}",
+                            path.display(),
+                            metric_id,
+                            cobalt_metric.metric_name,
+                            project_id,
+                            project_name,
+                            e,
+                            selector_context
+                        )
+                    },
+                )?;
 
-                let expected_dims = cobalt_metric.metric_dimensions.len();
+                let expected_dim_names: Vec<&str> =
+                    cobalt_metric.metric_dimensions.iter().map(|d| d.dimension.as_str()).collect();
                 let actual_dims = metric.event_codes.len();
-                if actual_dims > expected_dims {
+                if actual_dims > expected_dim_names.len() {
+                    let actual_codes: Vec<u32> = metric.event_codes.iter().map(|c| c.0).collect();
                     bail!(
-                        "Dimension count mismatch for project {project_id} metric {metric_id}: \
-                         Sampler config has {actual_dims} event_codes, but Cobalt defines {expected_dims} metric_dimensions"
+                        "In {}: Dimension count mismatch for metric {} ({}) in project {} ({}): \
+                         Sampler config has {} event_codes ({:?}), but Cobalt defines {} dimension(s): {:?}{}",
+                        path.display(),
+                        metric_id,
+                        cobalt_metric.metric_name,
+                        project_id,
+                        project_name,
+                        actual_dims,
+                        actual_codes,
+                        expected_dim_names.len(),
+                        expected_dim_names,
+                        selector_context
                     );
                 }
             }
@@ -126,36 +172,63 @@ fn validate(registry_bytes: &[u8], config: &MergedSamplerConfig) -> Result<(), E
     }
 
     // Validate FIRE project templates
-    for template in &config.fire_project_templates {
+    for (path, template) in fire_project_templates {
         let project_id = *template.project_id;
-        let cobalt_metrics = cobalt_projects.get(&project_id).ok_or_else(|| {
-            format_err!("FIRE template project_id {} not found in Cobalt registry", project_id)
+        let (project_name, cobalt_metrics) = cobalt_projects.get(&project_id).ok_or_else(|| {
+            format_err!(
+                "In {}: FIRE template project_id {} not found in Cobalt registry",
+                path.display(),
+                project_id
+            )
         })?;
 
         for metric in &template.metrics {
             let metric_id = *metric.metric_id;
+            let selector_context = format_template_selectors_context(&metric.selectors);
             let cobalt_metric = cobalt_metrics.get(&metric_id).ok_or_else(|| {
                 format_err!(
-                    "FIRE Metric ID {} in project {} not found in Cobalt registry",
+                    "In {}: FIRE Metric ID {} not found in Cobalt project {} ({}){}",
+                    path.display(),
                     metric_id,
-                    project_id
+                    project_id,
+                    project_name,
+                    selector_context
                 )
             })?;
 
             verify_metric_type(metric.metric_type, cobalt_metric.metric_type).map_err(|e| {
                 format_err!(
-                    "Metric type mismatch for FIRE project {project_id} metric {metric_id}: {e}"
+                    "In {}: Metric type mismatch for FIRE metric {} ({}) in project {} ({}): {}{}",
+                    path.display(),
+                    metric_id,
+                    cobalt_metric.metric_name,
+                    project_id,
+                    project_name,
+                    e,
+                    selector_context
                 )
             })?;
 
             // In FIRE templates, component ID is injected as dimension 0, so event_codes.len() + 1
-            let expected_dims = cobalt_metric.metric_dimensions.len();
+            let expected_dim_names: Vec<&str> =
+                cobalt_metric.metric_dimensions.iter().map(|d| d.dimension.as_str()).collect();
             let actual_dims = metric.event_codes.len() + 1;
-            if actual_dims > expected_dims {
+            if actual_dims > expected_dim_names.len() {
+                let actual_codes: Vec<u32> = metric.event_codes.iter().map(|c| c.0).collect();
                 bail!(
-                    "Dimension mismatch for FIRE project {project_id} metric {metric_id}: \
-                     Sampler has {} (+1 for component) = {actual_dims}, Cobalt expects {expected_dims}",
-                    metric.event_codes.len()
+                    "In {}: Dimension count mismatch for FIRE metric {} ({}) in project {} ({}): \
+                     Sampler has {} event_codes ({:?}) + 1 for component = {actual_dims}, \
+                     but Cobalt defines {} dimension(s): {:?}{}",
+                    path.display(),
+                    metric_id,
+                    cobalt_metric.metric_name,
+                    project_id,
+                    project_name,
+                    metric.event_codes.len(),
+                    actual_codes,
+                    expected_dim_names.len(),
+                    expected_dim_names,
+                    selector_context
                 );
             }
         }
@@ -179,15 +252,36 @@ fn verify_metric_type(sampler_type: SamplerMetricType, cobalt_type_raw: i32) -> 
     Ok(())
 }
 
-fn read_file<T: DeserializeOwned>(path: PathBuf) -> anyhow::Result<T> {
-    let file = File::open(path)?;
+fn format_selectors_context(selectors: &[Selector]) -> String {
+    let strs: Vec<_> = selectors
+        .iter()
+        .filter_map(|s| {
+            selectors::selector_to_string(s, SelectorDisplayOptions::never_wrap_in_quotes()).ok()
+        })
+        .collect();
+    if strs.is_empty() { String::new() } else { format!("\n  Selector: {}", strs.join(", ")) }
+}
+
+fn format_template_selectors_context(selectors: &[String]) -> String {
+    if selectors.is_empty() {
+        String::new()
+    } else {
+        format!("\n  Selector: {}", selectors.join(", "))
+    }
+}
+
+fn read_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> anyhow::Result<T> {
+    let file =
+        File::open(path.as_ref()).with_context(|| format!("Failed to open {:?}", path.as_ref()))?;
     let mut reader = BufReader::new(file);
-    let result: T = serde_json5::from_reader(&mut reader)?;
+    let result: T = serde_json5::from_reader(&mut reader)
+        .with_context(|| format!("Failed to parse JSON5 from {:?}", path.as_ref()))?;
     Ok(result)
 }
 
 fn write_file<T: Serialize>(path: PathBuf, value: T) -> anyhow::Result<()> {
-    let file = File::create(path)?;
+    let file =
+        File::create(&path).with_context(|| format!("Failed to create output file {:?}", path))?;
     let mut writer = BufWriter::new(file);
     serde_json5::to_writer(&mut writer, &value)?;
     writer.flush()?;
@@ -256,8 +350,9 @@ mod tests {
         let registry = make_test_registry();
         let bytes = registry.encode_to_vec();
 
-        let config = MergedSamplerConfig {
-            project_configs: vec![SamplerProjectConfig {
+        let project_configs = vec![(
+            PathBuf::from("test/project.json5"),
+            SamplerProjectConfig {
                 project_id: ProjectId(10),
                 data_sets: vec![DataSetConfig {
                     poll_rate_sec: 60,
@@ -269,22 +364,24 @@ mod tests {
                         upload_once: false,
                     }],
                 }],
-            }],
-            fire_project_templates: vec![sampler_config::assembly::ProjectTemplate {
+            },
+        )];
+        let fire_templates = vec![(
+            PathBuf::from("test/fire.json5"),
+            ProjectTemplate {
                 project_id: ProjectId(10),
                 poll_rate_sec: 60,
                 metrics: vec![MetricTemplate {
                     metric_id: MetricId(101),
                     metric_type: SamplerMetricType::IntHistogram,
-                    event_codes: vec![EventCode(2)], // +1 dimension for component = 2 dimensions
+                    event_codes: vec![EventCode(2)],
                     selectors: vec![],
                     upload_once: false,
                 }],
-            }],
-            fire_component_configs: vec![],
-        };
+            },
+        )];
 
-        assert!(validate(&bytes, &config).is_ok());
+        assert!(validate(&bytes, &project_configs, &fire_templates).is_ok());
     }
 
     #[test]
@@ -292,16 +389,15 @@ mod tests {
         let registry = make_test_registry();
         let bytes = registry.encode_to_vec();
 
-        let config = MergedSamplerConfig {
-            project_configs: vec![SamplerProjectConfig {
-                project_id: ProjectId(999),
-                data_sets: vec![],
-            }],
-            ..Default::default()
-        };
+        let project_configs = vec![(
+            PathBuf::from("test/bad_project.json5"),
+            SamplerProjectConfig { project_id: ProjectId(999), data_sets: vec![] },
+        )];
 
-        let err = validate(&bytes, &config).unwrap_err();
-        assert!(err.to_string().contains("project_id 999 not found"));
+        let err = validate(&bytes, &project_configs, &[]).unwrap_err();
+        assert!(
+            err.to_string().contains("In test/bad_project.json5: Sampler project_id 999 not found")
+        );
     }
 
     #[test]
@@ -309,8 +405,10 @@ mod tests {
         let registry = make_test_registry();
         let bytes = registry.encode_to_vec();
 
-        let config = MergedSamplerConfig {
-            project_configs: vec![SamplerProjectConfig {
+        let selector = selectors::parse_verbose("core/foo:root:bar").unwrap();
+        let project_configs = vec![(
+            PathBuf::from("test/bad_metric.json5"),
+            SamplerProjectConfig {
                 project_id: ProjectId(10),
                 data_sets: vec![DataSetConfig {
                     poll_rate_sec: 60,
@@ -318,16 +416,19 @@ mod tests {
                         metric_id: MetricId(999),
                         metric_type: SamplerMetricType::Occurrence,
                         event_codes: vec![EventCode(1)],
-                        selectors: vec![],
+                        selectors: vec![selector],
                         upload_once: false,
                     }],
                 }],
-            }],
-            ..Default::default()
-        };
+            },
+        )];
 
-        let err = validate(&bytes, &config).unwrap_err();
-        assert!(err.to_string().contains("Metric ID 999 in project 10 not found"));
+        let err = validate(&bytes, &project_configs, &[]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(
+            "In test/bad_metric.json5: Metric ID 999 not found in Cobalt project 10 (test_project)"
+        ));
+        assert!(msg.contains("Selector: core/foo:root:bar"));
     }
 
     #[test]
@@ -335,25 +436,25 @@ mod tests {
         let registry = make_test_registry();
         let bytes = registry.encode_to_vec();
 
-        let config = MergedSamplerConfig {
-            project_configs: vec![SamplerProjectConfig {
+        let project_configs = vec![(
+            PathBuf::from("test/bad_type.json5"),
+            SamplerProjectConfig {
                 project_id: ProjectId(10),
                 data_sets: vec![DataSetConfig {
                     poll_rate_sec: 60,
                     metrics: vec![MetricConfig {
                         metric_id: MetricId(100),
-                        metric_type: SamplerMetricType::Integer, // Cobalt has Occurrence!
+                        metric_type: SamplerMetricType::Integer,
                         event_codes: vec![EventCode(1)],
                         selectors: vec![],
                         upload_once: false,
                     }],
                 }],
-            }],
-            ..Default::default()
-        };
+            },
+        )];
 
-        let err = validate(&bytes, &config).unwrap_err();
-        assert!(err.to_string().contains("Metric type mismatch"));
+        let err = validate(&bytes, &project_configs, &[]).unwrap_err();
+        assert!(err.to_string().contains("In test/bad_type.json5: Metric type mismatch for metric 100 (test_occurrence) in project 10 (test_project): Sampler specified Integer, Cobalt defines Occurrence"));
     }
 
     #[test]
@@ -361,25 +462,25 @@ mod tests {
         let registry = make_test_registry();
         let bytes = registry.encode_to_vec();
 
-        let config = MergedSamplerConfig {
-            project_configs: vec![SamplerProjectConfig {
+        let project_configs = vec![(
+            PathBuf::from("test/bad_dims.json5"),
+            SamplerProjectConfig {
                 project_id: ProjectId(10),
                 data_sets: vec![DataSetConfig {
                     poll_rate_sec: 60,
                     metrics: vec![MetricConfig {
                         metric_id: MetricId(100),
                         metric_type: SamplerMetricType::Occurrence,
-                        event_codes: vec![EventCode(1), EventCode(2)], // Cobalt expects 1!
+                        event_codes: vec![EventCode(1), EventCode(2)],
                         selectors: vec![],
                         upload_once: false,
                     }],
                 }],
-            }],
-            ..Default::default()
-        };
+            },
+        )];
 
-        let err = validate(&bytes, &config).unwrap_err();
-        assert!(err.to_string().contains("Dimension count mismatch"));
+        let err = validate(&bytes, &project_configs, &[]).unwrap_err();
+        assert!(err.to_string().contains("In test/bad_dims.json5: Dimension count mismatch for metric 100 (test_occurrence) in project 10 (test_project): Sampler config has 2 event_codes ([1, 2]), but Cobalt defines 1 dimension(s): [\"dim1\"]"));
     }
 
     #[test]
@@ -387,23 +488,25 @@ mod tests {
         let registry = make_test_registry();
         let bytes = registry.encode_to_vec();
 
-        let config = MergedSamplerConfig {
-            fire_project_templates: vec![sampler_config::assembly::ProjectTemplate {
+        let fire_templates = vec![(
+            PathBuf::from("test/bad_fire.json5"),
+            ProjectTemplate {
                 project_id: ProjectId(10),
                 poll_rate_sec: 60,
                 metrics: vec![MetricTemplate {
                     metric_id: MetricId(101),
                     metric_type: SamplerMetricType::IntHistogram,
                     event_codes: vec![EventCode(1), EventCode(2)], // 2 + 1 component = 3 > 2 in Cobalt
-                    selectors: vec![],
+                    selectors: vec!["core/fire:root:val".to_string()],
                     upload_once: false,
                 }],
-            }],
-            ..Default::default()
-        };
+            },
+        )];
 
-        let err = validate(&bytes, &config).unwrap_err();
-        assert!(err.to_string().contains("Dimension mismatch for FIRE project 10"));
+        let err = validate(&bytes, &[], &fire_templates).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("In test/bad_fire.json5: Dimension count mismatch for FIRE metric 101 (test_fire_histogram) in project 10 (test_project): Sampler has 2 event_codes ([1, 2]) + 1 for component = 3, but Cobalt defines 2 dimension(s): [\"component\", \"reason\"]"));
+        assert!(msg.contains("Selector: core/fire:root:val"));
     }
 
     #[test]
@@ -415,8 +518,9 @@ mod tests {
         // FIRE template metric 101 has 2 dimensions in Cobalt, but Sampler specifies 0 event codes
         // (+1 for component = 1 dimension).
         // Both should be allowed since actual_dims <= expected_dims.
-        let config = MergedSamplerConfig {
-            project_configs: vec![SamplerProjectConfig {
+        let project_configs = vec![(
+            PathBuf::from("test/fewer_dims.json5"),
+            SamplerProjectConfig {
                 project_id: ProjectId(10),
                 data_sets: vec![DataSetConfig {
                     poll_rate_sec: 60,
@@ -428,8 +532,11 @@ mod tests {
                         upload_once: false,
                     }],
                 }],
-            }],
-            fire_project_templates: vec![sampler_config::assembly::ProjectTemplate {
+            },
+        )];
+        let fire_templates = vec![(
+            PathBuf::from("test/fewer_fire_dims.json5"),
+            ProjectTemplate {
                 project_id: ProjectId(10),
                 poll_rate_sec: 60,
                 metrics: vec![MetricTemplate {
@@ -439,10 +546,9 @@ mod tests {
                     selectors: vec![],
                     upload_once: false,
                 }],
-            }],
-            fire_component_configs: vec![],
-        };
+            },
+        )];
 
-        assert!(validate(&bytes, &config).is_ok());
+        assert!(validate(&bytes, &project_configs, &fire_templates).is_ok());
     }
 }
