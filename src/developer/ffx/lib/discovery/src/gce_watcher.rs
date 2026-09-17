@@ -7,10 +7,13 @@ use crate::error::Error;
 use crate::events::{TargetHandle, TargetState};
 use crate::instance_watcher::{InstanceSource, InstanceWatcher, is_pid_running};
 use addr::TargetAddr;
+use ffx_config::EnvironmentContext;
 use futures::channel::mpsc::UnboundedSender;
 use serde::{Deserialize, Serialize};
+use std::io::{BufWriter, Write as _};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct GceInstanceData {
@@ -34,12 +37,15 @@ impl GceInstanceData {
         is_pid_running(self.pid)
     }
 
-    /// Terminates the local background SSH tunnel process for this instance, if running.
+    /// Terminates the local background SSH tunnel process group for this instance, if running.
     pub fn terminate(&self) {
         if self.pid != 0 {
-            if let Ok(raw_pid) = self.pid.try_into() {
-                let p = nix::unistd::Pid::from_raw(raw_pid);
-                let _ = nix::sys::signal::kill(p, Some(nix::sys::signal::Signal::SIGTERM));
+            if let Ok(raw_pid) = i32::try_from(self.pid) {
+                let pgid = nix::unistd::Pid::from_raw(-raw_pid);
+                if nix::sys::signal::kill(pgid, Some(nix::sys::signal::Signal::SIGTERM)).is_err() {
+                    let p = nix::unistd::Pid::from_raw(raw_pid);
+                    let _ = nix::sys::signal::kill(p, Some(nix::sys::signal::Signal::SIGTERM));
+                }
             }
         }
     }
@@ -60,9 +66,15 @@ impl GceInstanceData {
     }
 }
 
-pub fn read_instance_file(path: &Path) -> Option<GceInstanceData> {
-    let content = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
+fn read_instance_file(path: &Path) -> Result<Option<GceInstanceData>, std::io::Error> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let data = serde_json::from_str(&content)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(Some(data))
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -268,24 +280,72 @@ impl Instance {
         root.join(self.to_file_name())
     }
 
-    /// Reads instance data from the state file in `root`.
-    pub fn read(&self, root: &Path) -> Option<GceInstanceData> {
-        read_instance_file(&self.to_path(root))
+    /// Reads instance data from the configured GCE instance directory.
+    pub fn read(
+        &self,
+        ctx: &EnvironmentContext,
+    ) -> Result<Option<GceInstanceData>, std::io::Error> {
+        let root = instance_root(ctx)?;
+        read_instance_file(&self.to_path(&root))
+    }
+
+    /// Writes instance data to the state file in the configured GCE instance directory, creating the directory if needed.
+    pub fn write(
+        &self,
+        ctx: &EnvironmentContext,
+        data: &GceInstanceData,
+    ) -> Result<(), std::io::Error> {
+        let root = instance_root(ctx)?;
+        write_file_atomically(&self.to_path(&root), |writer| {
+            serde_json::to_writer_pretty(writer, data)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        })
     }
 
     /// Stops the background SSH tunnel for this instance and removes its state file.
-    pub fn stop(&self, root: &Path) -> Result<(), std::io::Error> {
-        let path = self.to_path(root);
-        if let Some(instance) = read_instance_file(&path) {
+    pub fn stop(&self, ctx: &EnvironmentContext) -> Result<(), std::io::Error> {
+        let root = instance_root(ctx)?;
+        let path = self.to_path(&root);
+        let read_res = read_instance_file(&path);
+        if let Ok(Some(instance)) = &read_res {
             instance.terminate();
         }
-        if let Err(e) = std::fs::remove_file(&path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(e);
-            }
-        }
-        Ok(())
+        let remove_res = match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        };
+        read_res?;
+        remove_res
     }
+}
+
+/// Writes a file atomically by creating a temporary file in the target's parent directory,
+/// invoking `write_fn` with a [`BufWriter`], flushing and syncing the underlying file,
+/// and atomically renaming it to `path`.
+pub fn write_file_atomically<F, E>(path: &Path, write_fn: F) -> Result<(), E>
+where
+    F: FnOnce(&mut BufWriter<&mut NamedTempFile>) -> Result<(), E>,
+    E: From<std::io::Error>,
+{
+    let parent = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    std::fs::create_dir_all(parent)?;
+    let mut temp_file = NamedTempFile::new_in(parent)?;
+    {
+        let mut writer = BufWriter::new(&mut temp_file);
+        write_fn(&mut writer)?;
+        writer.flush()?;
+    }
+    temp_file.as_file_mut().sync_all()?;
+    temp_file.persist(path).map_err(|e| E::from(e.error))?;
+    Ok(())
+}
+
+fn instance_root(ctx: &EnvironmentContext) -> Result<PathBuf, std::io::Error> {
+    ctx.get::<PathBuf, _>(ffx_config::keys::GCE_INSTANCE_ROOT_DIR).map_err(std::io::Error::other)
 }
 
 impl std::fmt::Display for Instance {
@@ -306,6 +366,7 @@ pub fn get_all_gce_targets(instance_root: &Path) -> Vec<TargetHandle> {
     GceSource.get_all_targets(instance_root).into_iter().map(|(_, h)| h).collect()
 }
 
+#[derive(Debug)]
 pub struct GceSource;
 
 impl InstanceSource for GceSource {
@@ -318,12 +379,18 @@ impl InstanceSource for GceSource {
     }
 
     fn read_target_handle(&self, _instance_root: &Path, path: &Path) -> Option<TargetHandle> {
-        read_instance_file(path)?.to_target_handle()
+        read_instance_file(path).ok()??.to_target_handle()
     }
 }
 
 pub struct GceWatcher {
     _watcher: InstanceWatcher,
+}
+
+impl std::fmt::Debug for GceWatcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GceWatcher").finish_non_exhaustive()
+    }
 }
 
 impl GceWatcher {
@@ -336,6 +403,16 @@ impl GceWatcher {
         })?;
         Ok(Self { _watcher: watcher })
     }
+
+    pub fn from_context(
+        ctx: &EnvironmentContext,
+        sender: UnboundedSender<TargetEvent>,
+    ) -> Result<Self, Error> {
+        let root: PathBuf = ctx
+            .get(ffx_config::keys::GCE_INSTANCE_ROOT_DIR)
+            .map_err(|e| Error::GceWatcher { path: PathBuf::new(), err: e.to_string() })?;
+        Self::new(root, sender)
+    }
 }
 
 #[cfg(test)]
@@ -343,7 +420,7 @@ mod tests {
     use super::*;
     use futures::StreamExt;
 
-    #[test]
+    #[fuchsia::test]
     fn test_read_instance_file_and_to_target_handle() {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("test-project_us-central1-a_my-test-vm.json");
@@ -357,7 +434,7 @@ mod tests {
         });
         std::fs::write(&file_path, serde_json::to_string(&data).unwrap()).unwrap();
 
-        let instance = read_instance_file(&file_path).expect("instance parsed");
+        let instance = read_instance_file(&file_path).unwrap().expect("instance parsed");
         assert_eq!(instance.instance_name, "my-test-vm");
         assert_eq!(instance.ssh_port, 2222);
         assert_eq!(instance.serial_number.as_deref(), Some("GC-TESTSERIAL"));
@@ -375,7 +452,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_stopped_instance_returns_none() {
         let data = GceInstanceData {
             instance_name: "dead-vm".to_string(),
@@ -437,12 +514,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_stop_instance() {
+    #[fuchsia::test]
+    async fn test_stop_instance() {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        let file_path = root.join("test-proj_us-central1-a_test-stop.json");
-        let mut child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::GCE_INSTANCE_ROOT_DIR, temp.path().to_str().unwrap())
+            .build()
+            .expect("test env");
+        let file_path = temp.path().join("test-proj_us-central1-a_test-stop.json");
+        let mut child = std::process::Command::new("/bin/sleep").arg("60").spawn().unwrap();
         let child_pid = child.id();
 
         let data = serde_json::json!({
@@ -455,20 +535,46 @@ mod tests {
         std::fs::write(&file_path, serde_json::to_string(&data).unwrap()).unwrap();
 
         let instance = Instance::new("test-proj", "us-central1-a", "test-stop").unwrap();
-        assert!(instance.read(root).is_some());
-        instance.stop(root).unwrap();
-        assert!(instance.read(root).is_none());
+        assert!(instance.read(&env.context).unwrap().is_some());
+        instance.stop(&env.context).unwrap();
+        assert!(instance.read(&env.context).unwrap().is_none());
         assert!(!file_path.exists());
 
         let _ = child.wait();
     }
 
-    #[test]
+    #[fuchsia::test]
+    async fn test_write_and_read_instance() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("nested_root");
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::GCE_INSTANCE_ROOT_DIR, root.to_str().unwrap())
+            .build()
+            .expect("test env");
+        let instance = Instance::new("test-proj", "us-central1-a", "test-write").unwrap();
+        let data = GceInstanceData {
+            instance_name: "test-write".to_string(),
+            project: "test-proj".to_string(),
+            zone: "us-central1-a".to_string(),
+            pid: 12345,
+            ssh_port: 2222,
+            reverse_ports: vec![8083],
+            serial_number: Some("GC-123".to_string()),
+        };
+
+        instance.write(&env.context, &data).unwrap();
+        assert!(instance.to_path(&root).exists());
+
+        let read_data = instance.read(&env.context).unwrap().expect("instance read");
+        assert_eq!(read_data, data);
+    }
+
+    #[fuchsia::test]
     fn test_instance_new_invalid_name() {
         assert!(Instance::new("test-proj", "us-central1-a", "invalid_name").is_err());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_validate_name() {
         assert_eq!(Instance::validate_name("fuchsia-gce-vm"), Ok(()));
         assert_eq!(Instance::validate_name("a"), Ok(()));
@@ -515,7 +621,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_instance_id_from_path() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
@@ -616,7 +722,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_instance_validation() {
         let valid = Instance::new("my-project", "us-central1-a", "my-vm");
         assert!(valid.is_ok());
@@ -673,7 +779,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_instance_methods_and_paths() {
         let inst = Instance::new("proj-1", "us-west1-b", "fuchsia-dev").unwrap();
         assert_eq!(inst.to_file_stem(), "proj-1_us-west1-b_fuchsia-dev");
@@ -725,5 +831,21 @@ mod tests {
 
         let outside = Path::new("/other/path/proj-1_us-west1-b_fuchsia-dev.json");
         assert_eq!(Instance::from_path(instance_root, outside), Err(InstanceError::NotInRoot));
+    }
+
+    #[fuchsia::test]
+    fn test_instance_stop_removes_corrupt_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::GCE_INSTANCE_ROOT_DIR, temp.path().to_str().unwrap())
+            .build()
+            .unwrap();
+        let inst = Instance::new("my-project", "us-central1-a", "corrupt-vm").unwrap();
+        let path = inst.to_path(temp.path());
+        std::fs::write(&path, b"corrupted non-json data").unwrap();
+        assert!(path.exists());
+
+        assert!(inst.stop(&env.context).is_err());
+        assert!(!path.exists());
     }
 }

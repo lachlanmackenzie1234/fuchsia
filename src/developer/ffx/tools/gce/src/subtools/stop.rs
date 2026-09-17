@@ -11,7 +11,6 @@ use ffx_gce::models::StopResult;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool, Result, return_user_error, user_error};
 use std::io::Write;
-use std::path::PathBuf;
 
 #[derive(FfxTool)]
 pub struct StopTool {
@@ -36,10 +35,8 @@ impl FfxMain for StopTool {
         let instance = gce_watcher::Instance::new(&gce.project, &gce.zone, &self.cmd.name)
             .map_err(|e| user_error!("{e}"))?;
 
-        if let Ok(instance_root) =
-            gce.env_context.get::<PathBuf, _>(ffx_config::keys::GCE_INSTANCE_ROOT_DIR)
-        {
-            let _ = instance.stop(&instance_root);
+        if let Err(e) = gce.stop_tunnel(&instance.name) {
+            log::warn!("Failed to stop local SSH tunnel for '{}': {e}", instance.name);
         }
 
         let action = if self.cmd.keep {
