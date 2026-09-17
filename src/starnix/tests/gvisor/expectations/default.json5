@@ -10,7 +10,7 @@
             ],
         },
         {
-            include: "//third_party/gvisor_syscall_tests/expects/netstack3/all.json5",
+            include: "//third_party/gvisor_syscall_tests/expects/all.json5",
         },
         {
             type: "expect_pass",
