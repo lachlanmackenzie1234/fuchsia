@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 mod bti;
+pub mod buffer_chain;
 mod bus_transaction_initiator_dispatcher;
 mod bus_transaction_initiator_dispatcher_ffi;
 mod counter_dispatcher;
@@ -64,6 +65,7 @@ mod vm_object_dispatcher_ffi;
 mod wait_signal_observer;
 
 pub use bti::{IOMMU_FLAG_PERM_EXECUTE, IOMMU_FLAG_PERM_READ, IOMMU_FLAG_PERM_WRITE};
+pub use buffer_chain::BufferChain;
 pub use bus_transaction_initiator_dispatcher::BusTransactionInitiatorDispatcher;
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
