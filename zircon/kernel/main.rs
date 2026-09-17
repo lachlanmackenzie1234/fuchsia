@@ -12,6 +12,7 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(clippy::new_without_default)]
+#![cfg_attr(target_arch = "x86_64", feature(sanitize))]
 
 #[allow(unused_imports)]
 #[macro_use]
