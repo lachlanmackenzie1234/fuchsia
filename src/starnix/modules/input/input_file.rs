@@ -656,6 +656,10 @@ impl FileOps for InputFile {
                         let buffer_bytes_count =
                             ((request_with_params >> 16) & ((1 << 14) - 1)) as usize;
 
+                        if buffer_bytes_count == 0 {
+                            return Ok(SUCCESS);
+                        }
+
                         // Zero out the entire user buffer in case the user reads too much.
                         // Probably not needed, but I don't think it hurts.
                         current_task.zero(user_addr, buffer_bytes_count)?;
@@ -664,8 +668,10 @@ impl FileOps for InputFile {
                         // Copy all bytes from device name if the buffer is large enough.
                         // If not, copy one less than the buffer size, to leave space
                         // for the final NUL.
-                        let to_copy_bytes_count =
-                            std::cmp::min(device_name_as_bytes.len(), buffer_bytes_count - 1);
+                        let to_copy_bytes_count = std::cmp::min(
+                            device_name_as_bytes.len(),
+                            buffer_bytes_count.saturating_sub(1),
+                        );
                         current_task.write_memory(
                             user_addr,
                             &device_name_as_bytes[..to_copy_bytes_count],

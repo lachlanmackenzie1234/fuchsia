@@ -2592,4 +2592,32 @@ mod test {
         })
         .await;
     }
+
+    #[::fuchsia::test]
+    async fn eviocgname_zero_buffer_length_succeeds() {
+        spawn_kernel_and_run(async move |current_task| {
+            let inspector = fuchsia_inspect::Inspector::default();
+            let touch_device = InputDevice::new_touch(700, 1200, &inspector.root());
+            let file =
+                touch_device.open_test(&current_task).expect("Failed to open touch input file");
+
+            let user_addr = starnix_core::testing::map_memory(
+                &current_task,
+                starnix_uapi::user_address::UserAddress::default(),
+                4096,
+            );
+
+            // EVIOCGNAME with 0 buffer length should return SUCCESS and not panic or write memory.
+            let res = file.ioctl(&current_task, uapi::EVIOCGNAME_0, user_addr.into());
+            assert_eq!(res, Ok(starnix_syscalls::SUCCESS));
+
+            // EVIOCGNAME with non-zero buffer length should succeed and return bytes written.
+            let name_req = uapi::EVIOCGNAME_0 | (256 << 16);
+            let res = file.ioctl(&current_task, name_req, user_addr.into());
+            assert!(res.is_ok());
+            let bytes_written = res.unwrap().value() as usize;
+            assert!(bytes_written > 0);
+        })
+        .await;
+    }
 }

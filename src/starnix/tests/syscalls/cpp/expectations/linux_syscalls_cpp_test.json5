@@ -110,6 +110,7 @@
                 "InputTest.DevicePropertiesMatchTouchProperties",
                 "InputTest.DeviceCanBeRegisteredWithEpoll",
                 "InputTest.DevicePropertiesMatchMouseWheelProperties",
+                "InputTest.GetDeviceName",
 
                 // TODO(https://fxbug.dev/494326733)
                 "LoopTest.BlkGetSize",

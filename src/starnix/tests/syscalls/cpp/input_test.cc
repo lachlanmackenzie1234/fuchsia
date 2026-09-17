@@ -470,4 +470,25 @@ TEST(InputTest, DeviceCanBeRegisteredWithEpoll) {
   ASSERT_EQ(0, epoll_wait(epoll_fd.get(), event_buf, 1, 0));
 }
 
+TEST(InputTest, GetDeviceName) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (getuid() != 0) {
+    GTEST_SKIP() << "Can only be run as root.";
+  }
+
+  auto fd = GetInputFile(kTouchInputMinor);
+  ASSERT_TRUE(fd.is_valid());
+
+  // Getting the device name with zero buffer length must succeed and return 0 bytes without
+  // underflowing.
+  ASSERT_EQ(0, ioctl(fd.get(), EVIOCGNAME(0), nullptr))
+      << "get name with 0 length failed: " << strerror(errno);
+
+  // Getting the device name with non-zero buffer must succeed and return the name.
+  char buf[256] = {};
+  int ret = ioctl(fd.get(), EVIOCGNAME(sizeof(buf)), buf);
+  ASSERT_GT(ret, 0) << "get name failed: " << strerror(errno);
+  EXPECT_GT(strlen(buf), 0u);
+}
+
 }  // namespace
