@@ -45,6 +45,7 @@ class SamplerImpl : public fidl::testing::WireTestBase<fuchsia_memory_sampler::S
   }
 #endif
 
+  void Close() { binding_.Unbind(); }
   zx::socket& socket() { return socket_; }
 
  private:
@@ -329,6 +330,56 @@ TEST(RecorderTest, ForgetAllocationFidlFallback) {
   recorder.MaybeForgetAllocation(kTestAddress);
 
   loop.RunUntilIdle();
+}
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+TEST(RecorderTest, DisconnectsOnSocketPeerClosed) {
+  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
+  async_dispatcher_t* dispatcher = loop.dispatcher();
+  auto endpoints = fidl::CreateEndpoints<fuchsia_memory_sampler::Sampler>();
+  SamplerImpl sampler{dispatcher, std::move(endpoints->server)};
+
+  auto recorder = memory_sampler::Recorder::CreateRecorderForTesting(
+      fidl::SyncClient{std::move(endpoints->client)}, GetSamplerThatAlwaysSamples);
+
+  loop.RunUntilIdle();
+  ASSERT_TRUE(sampler.socket().is_valid());
+  EXPECT_FALSE(recorder.is_disabled());
+
+  // Close the server end of the socket.
+  sampler.socket().reset();
+
+  // Next allocation triggers socket write, detects ZX_ERR_PEER_CLOSED, and disconnects.
+  recorder.MaybeRecordAllocation(kTestAddress, kTestSize);
+  EXPECT_TRUE(recorder.is_disabled());
+
+  // Subsequent allocation/deallocation calls should be no-ops and not crash.
+  recorder.MaybeRecordAllocation(kTestAddress, kTestSize);
+  recorder.MaybeForgetAllocation(kTestAddress);
+  EXPECT_TRUE(recorder.is_disabled());
+}
+#endif
+
+TEST(RecorderTest, DisconnectsOnFidlPeerClosed) {
+  auto endpoints = fidl::CreateEndpoints<fuchsia_memory_sampler::Sampler>();
+  // Close the server end of the FIDL channel immediately.
+  endpoints->server.reset();
+
+  auto recorder = memory_sampler::Recorder::CreateRecorderForTesting(
+      fidl::SyncClient{std::move(endpoints->client)}, GetSamplerThatAlwaysSamples,
+      /*use_socket=*/false);
+
+  EXPECT_FALSE(recorder.is_disabled());
+
+  // Next allocation triggers fallback FIDL call, detects channel error, and disconnects without
+  // asserting.
+  recorder.MaybeRecordAllocation(kTestAddress, kTestSize);
+  EXPECT_TRUE(recorder.is_disabled());
+
+  // Subsequent allocation/deallocation calls should be no-ops and not crash.
+  recorder.MaybeRecordAllocation(kTestAddress, kTestSize);
+  recorder.MaybeForgetAllocation(kTestAddress);
+  EXPECT_TRUE(recorder.is_disabled());
 }
 
 }  // namespace

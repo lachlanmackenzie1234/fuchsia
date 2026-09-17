@@ -12,6 +12,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/zx/socket.h>
 
+#include <atomic>
 #include <unordered_set>
 
 #include <fbl/macros.h>
@@ -59,6 +60,12 @@ class Recorder {
   // The average count of bytes allocated between two samples.
   static constexpr size_t kSamplingIntervalBytes = static_cast<size_t>(128 * 1024);
 
+  // Returns true if the recorder has disconnected from the profiler.
+  bool is_disabled() const { return is_disabled_.load(std::memory_order_relaxed); }
+
+  // Disconnects the recorder from the profiler and disables all subsequent recording.
+  void Disconnect() __TA_EXCLUDES(&lock_);
+
  private:
   Recorder(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client, zx::socket socket,
            std::function<PoissonSampler &()> get_poisson_sampler);
@@ -67,6 +74,7 @@ class Recorder {
   fbl::Mutex lock_;
   fidl::SyncClient<fuchsia_memory_sampler::Sampler> client_ __TA_GUARDED(&lock_);
   zx::socket socket_;
+  std::atomic<bool> is_disabled_{false};
   std::unordered_set<void *> recorded_allocations_ __TA_GUARDED(&lock_);
   std::function<PoissonSampler &()> GetPoissonSampler;
 

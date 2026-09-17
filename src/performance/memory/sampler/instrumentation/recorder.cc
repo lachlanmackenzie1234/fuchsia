@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <unordered_set>
 #include <vector>
 
 #include <fbl/auto_lock.h>
@@ -67,7 +68,7 @@ void Recorder::InitSingletonOnce() {
   recorder->SetModulesInfo();
 
   // Only set the singleton once all allocations are done, to avoid a deadlock.
-  singleton.store(recorder);
+  singleton.store(recorder, std::memory_order_release);
 }
 
 Recorder* Recorder::Get() {
@@ -76,7 +77,30 @@ Recorder* Recorder::Get() {
   return singleton.load();
 }
 
-Recorder* Recorder::GetIfReady() { return singleton.load() == nullptr ? nullptr : Get(); }
+Recorder* Recorder::GetIfReady() { return singleton.load(std::memory_order_acquire); }
+
+void Recorder::Disconnect() {
+  if (bool expected = false;
+      !is_disabled_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+    return;
+  }
+
+  if (this == singleton.load(std::memory_order_relaxed)) {
+    singleton.store(nullptr, std::memory_order_release);
+  }
+
+  // Release the tracked allocations, but do so outside of `lock_`: clearing
+  // the set frees one node per entry, and this runs inside an allocator hook
+  // on an arbitrary application thread. Swapping the set out under the lock is
+  // O(1), and the nodes are then freed once `stale_allocations` goes out of
+  // scope, without any other thread waiting on us.
+  std::unordered_set<void*> stale_allocations;
+  {
+    fbl::AutoLock lock(&lock_);
+    client_ = {};
+    stale_allocations.swap(recorded_allocations_);
+  }
+}
 
 // Profiling every single allocation has a large impact on the
 // performance of the instrumented process. Sampling allocation
@@ -84,6 +108,10 @@ Recorder* Recorder::GetIfReady() { return singleton.load() == nullptr ? nullptr 
 // allocations, reducing the overhead while hopefully capturing enough
 // relevant data to be useful.
 void Recorder::MaybeRecordAllocation(void* address, size_t size) {
+  if (is_disabled_.load(std::memory_order_relaxed)) {
+    return;
+  }
+
   if (!GetPoissonSampler().ShouldSampleAllocation(size))
     return;
 
@@ -97,6 +125,9 @@ void Recorder::MaybeRecordAllocation(void* address, size_t size) {
 }
 
 void Recorder::RecordAllocation(void* address, size_t size) {
+  if (is_disabled_.load(std::memory_order_relaxed)) {
+    return;
+  }
   uint64_t pc_buffer[kMaxStackFramesLength]{0};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
 
@@ -113,32 +144,72 @@ void Recorder::RecordAllocation(void* address, size_t size) {
     auto datagram = fuchsia_memory_sampler::SamplerDatagram::WithRecordAllocation(std::move(event));
     fit::result encoded = fidl::Persist(datagram);
     if (encoded.is_ok()) {
-      socket_.write(0, encoded->data(), encoded->size(), nullptr);
+      zx_status_t status = socket_.write(0, encoded->data(), encoded->size(), nullptr);
+      if (status == ZX_ERR_PEER_CLOSED) {
+        Disconnect();
+      }
     }
     return;
   }
 
   // Fallback FIDL path
+  bool is_peer_closed = false;
   {
     fbl::AutoLock lock(&lock_);
-    auto result = client_->RecordAllocation(event);
-    ZX_ASSERT(result.is_ok());
+    if (!client_.is_valid()) {
+      return;
+    }
+    zx_signals_t signals = 0;
+    if (client_.client_end().channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(),
+                                                &signals) == ZX_OK &&
+        (signals & ZX_CHANNEL_PEER_CLOSED)) {
+      is_peer_closed = true;
+    } else {
+      auto result = client_->RecordAllocation(event);
+      if (result.is_error()) {
+        is_peer_closed = true;
+      }
+    }
+  }
+  if (is_peer_closed) {
+    Disconnect();
   }
 #else
+  bool is_peer_closed = false;
   {
     fbl::AutoLock lock(&lock_);
-    auto result = client_->RecordAllocation({{
-        .address = std::optional{reinterpret_cast<uint64_t>(address)},
-        .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>(
-            {{.stack_frames = std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)}}}),
-        .size = std::optional<uint64_t>{size},
-    }});
-    ZX_ASSERT(result.is_ok());
+    if (!client_.is_valid()) {
+      return;
+    }
+    zx_signals_t signals = 0;
+    if (client_.client_end().channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(),
+                                                &signals) == ZX_OK &&
+        (signals & ZX_CHANNEL_PEER_CLOSED)) {
+      is_peer_closed = true;
+    } else {
+      auto result = client_->RecordAllocation({{
+          .address = std::optional{reinterpret_cast<uint64_t>(address)},
+          .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>(
+              {{.stack_frames =
+                    std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)}}}),
+          .size = std::optional<uint64_t>{size},
+      }});
+      if (result.is_error()) {
+        is_peer_closed = true;
+      }
+    }
+  }
+  if (is_peer_closed) {
+    Disconnect();
   }
 #endif
 }
 
 void Recorder::MaybeForgetAllocation(void* address) {
+  if (is_disabled_.load(std::memory_order_relaxed)) {
+    return;
+  }
+
   {
     fbl::AutoLock lock(&lock_);
     auto allocation = recorded_allocations_.find(address);
@@ -152,6 +223,9 @@ void Recorder::MaybeForgetAllocation(void* address) {
 }
 
 void Recorder::ForgetAllocation(void* address) {
+  if (is_disabled_.load(std::memory_order_relaxed)) {
+    return;
+  }
   uint64_t pc_buffer[kMaxStackFramesLength]{0};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
 
@@ -168,26 +242,61 @@ void Recorder::ForgetAllocation(void* address) {
         fuchsia_memory_sampler::SamplerDatagram::WithRecordDeallocation(std::move(event));
     fit::result encoded = fidl::Persist(datagram);
     if (encoded.is_ok()) {
-      socket_.write(0, encoded->data(), encoded->size(), nullptr);
+      zx_status_t status = socket_.write(0, encoded->data(), encoded->size(), nullptr);
+      if (status == ZX_ERR_PEER_CLOSED) {
+        Disconnect();
+      }
     }
     return;
   }
 
   // Fallback FIDL path
+  bool is_peer_closed = false;
   {
     fbl::AutoLock lock(&lock_);
-    auto result = client_->RecordDeallocation(event);
-    ZX_ASSERT(result.is_ok());
+    if (!client_.is_valid()) {
+      return;
+    }
+    zx_signals_t signals = 0;
+    if (client_.client_end().channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(),
+                                                &signals) == ZX_OK &&
+        (signals & ZX_CHANNEL_PEER_CLOSED)) {
+      is_peer_closed = true;
+    } else {
+      auto result = client_->RecordDeallocation(event);
+      if (result.is_error()) {
+        is_peer_closed = true;
+      }
+    }
+  }
+  if (is_peer_closed) {
+    Disconnect();
   }
 #else
+  bool is_peer_closed = false;
   {
     fbl::AutoLock lock(&lock_);
-    auto result = client_->RecordDeallocation(
-        {{.address = std::optional{reinterpret_cast<uint64_t>(address)},
-          .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>{
-              {{.stack_frames =
-                    std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)}}}}}});
-    ZX_ASSERT(result.is_ok());
+    if (!client_.is_valid()) {
+      return;
+    }
+    zx_signals_t signals = 0;
+    if (client_.client_end().channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(),
+                                                &signals) == ZX_OK &&
+        (signals & ZX_CHANNEL_PEER_CLOSED)) {
+      is_peer_closed = true;
+    } else {
+      auto result = client_->RecordDeallocation(
+          {{.address = std::optional{reinterpret_cast<uint64_t>(address)},
+            .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>{
+                {{.stack_frames =
+                      std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)}}}}}});
+      if (result.is_error()) {
+        is_peer_closed = true;
+      }
+    }
+  }
+  if (is_peer_closed) {
+    Disconnect();
   }
 #endif
 }
