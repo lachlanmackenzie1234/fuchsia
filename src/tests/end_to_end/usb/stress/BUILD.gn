@@ -42,6 +42,20 @@ if (is_host) {
     timeout_secs = 600
   }
 
+  python_mobly_test("usb_disconnect_stress_test") {
+    main_source = "test_usb_disconnect.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    params = {
+      num_usb_disconnects = 100
+    }
+    local_config_source = "UsbDisconnectTestbed.yaml"
+    environments = [ iris_env ]
+    timeout_secs = 7200
+  }
+
   python_mobly_test("cdc_stress_test") {
     main_source = "test_cdc_stress.py"
     libraries = [
@@ -128,6 +142,7 @@ group("tests") {
     ":adb_random_stress_test($host_toolchain)",
     ":adb_root_unroot_stress_test($host_toolchain)",
     ":cdc_stress_test($host_toolchain)",
+    ":usb_disconnect_stress_test($host_toolchain)",
     ":usb_disconnect_test($host_toolchain)",
     ":usb_fastboot_loop_test($host_toolchain)",
     ":usb_virtual_disconnect_test($host_toolchain)",
