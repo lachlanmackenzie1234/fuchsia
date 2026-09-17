@@ -106,53 +106,61 @@ fn validate(
         cobalt_projects.insert(project.project_id, (&project.project_name, metrics_by_id));
     }
 
+    let mut errors = Vec::new();
+
     // Validate standard projects
     for (path, project) in project_configs {
         let project_id = *project.project_id;
-        let (project_name, cobalt_metrics) = cobalt_projects.get(&project_id).ok_or_else(|| {
-            format_err!(
-                "In {}: Sampler project_id {} not found in Cobalt registry",
-                path.display(),
-                project_id
-            )
-        })?;
+        let (project_name, cobalt_metrics) = match cobalt_projects.get(&project_id) {
+            Some((name, metrics)) => (*name, metrics),
+            None => {
+                errors.push(format!(
+                    "In {}: Sampler project_id {} not found in Cobalt registry",
+                    path.display(),
+                    project_id
+                ));
+                continue;
+            }
+        };
 
         for dataset in &project.data_sets {
             for metric in &dataset.metrics {
                 let metric_id = *metric.metric_id;
                 let selector_context = format_selectors_context(&metric.selectors);
-                let cobalt_metric = cobalt_metrics.get(&metric_id).ok_or_else(|| {
-                    format_err!(
-                        "In {}: Metric ID {} not found in Cobalt project {} ({}){}",
-                        path.display(),
-                        metric_id,
-                        project_id,
-                        project_name,
-                        selector_context
-                    )
-                })?;
-
-                verify_metric_type(metric.metric_type, cobalt_metric.metric_type).map_err(
-                    |e| {
-                        format_err!(
-                            "In {}: Metric type mismatch for metric {} ({}) in project {} ({}): {}{}",
+                let cobalt_metric = match cobalt_metrics.get(&metric_id) {
+                    Some(m) => m,
+                    None => {
+                        errors.push(format!(
+                            "In {}: Metric ID {} not found in Cobalt project {} ({}){}",
                             path.display(),
                             metric_id,
-                            cobalt_metric.metric_name,
                             project_id,
                             project_name,
-                            e,
                             selector_context
-                        )
-                    },
-                )?;
+                        ));
+                        continue;
+                    }
+                };
+
+                if let Err(e) = verify_metric_type(metric.metric_type, cobalt_metric.metric_type) {
+                    errors.push(format!(
+                        "In {}: Metric type mismatch for metric {} ({}) in project {} ({}): {}{}",
+                        path.display(),
+                        metric_id,
+                        cobalt_metric.metric_name,
+                        project_id,
+                        project_name,
+                        e,
+                        selector_context
+                    ));
+                }
 
                 let expected_dim_names: Vec<&str> =
                     cobalt_metric.metric_dimensions.iter().map(|d| d.dimension.as_str()).collect();
                 let actual_dims = metric.event_codes.len();
                 if actual_dims > expected_dim_names.len() {
                     let actual_codes: Vec<u32> = metric.event_codes.iter().map(|c| c.0).collect();
-                    bail!(
+                    errors.push(format!(
                         "In {}: Dimension count mismatch for metric {} ({}) in project {} ({}): \
                          Sampler config has {} event_codes ({:?}), but Cobalt defines {} dimension(s): {:?}{}",
                         path.display(),
@@ -165,7 +173,7 @@ fn validate(
                         expected_dim_names.len(),
                         expected_dim_names,
                         selector_context
-                    );
+                    ));
                 }
             }
         }
@@ -174,30 +182,38 @@ fn validate(
     // Validate FIRE project templates
     for (path, template) in fire_project_templates {
         let project_id = *template.project_id;
-        let (project_name, cobalt_metrics) = cobalt_projects.get(&project_id).ok_or_else(|| {
-            format_err!(
-                "In {}: FIRE template project_id {} not found in Cobalt registry",
-                path.display(),
-                project_id
-            )
-        })?;
+        let (project_name, cobalt_metrics) = match cobalt_projects.get(&project_id) {
+            Some((name, metrics)) => (*name, metrics),
+            None => {
+                errors.push(format!(
+                    "In {}: FIRE template project_id {} not found in Cobalt registry",
+                    path.display(),
+                    project_id
+                ));
+                continue;
+            }
+        };
 
         for metric in &template.metrics {
             let metric_id = *metric.metric_id;
             let selector_context = format_template_selectors_context(&metric.selectors);
-            let cobalt_metric = cobalt_metrics.get(&metric_id).ok_or_else(|| {
-                format_err!(
-                    "In {}: FIRE Metric ID {} not found in Cobalt project {} ({}){}",
-                    path.display(),
-                    metric_id,
-                    project_id,
-                    project_name,
-                    selector_context
-                )
-            })?;
+            let cobalt_metric = match cobalt_metrics.get(&metric_id) {
+                Some(m) => m,
+                None => {
+                    errors.push(format!(
+                        "In {}: FIRE Metric ID {} not found in Cobalt project {} ({}){}",
+                        path.display(),
+                        metric_id,
+                        project_id,
+                        project_name,
+                        selector_context
+                    ));
+                    continue;
+                }
+            };
 
-            verify_metric_type(metric.metric_type, cobalt_metric.metric_type).map_err(|e| {
-                format_err!(
+            if let Err(e) = verify_metric_type(metric.metric_type, cobalt_metric.metric_type) {
+                errors.push(format!(
                     "In {}: Metric type mismatch for FIRE metric {} ({}) in project {} ({}): {}{}",
                     path.display(),
                     metric_id,
@@ -206,8 +222,8 @@ fn validate(
                     project_name,
                     e,
                     selector_context
-                )
-            })?;
+                ));
+            }
 
             // In FIRE templates, component ID is injected as dimension 0, so event_codes.len() + 1
             let expected_dim_names: Vec<&str> =
@@ -215,7 +231,7 @@ fn validate(
             let actual_dims = metric.event_codes.len() + 1;
             if actual_dims > expected_dim_names.len() {
                 let actual_codes: Vec<u32> = metric.event_codes.iter().map(|c| c.0).collect();
-                bail!(
+                errors.push(format!(
                     "In {}: Dimension count mismatch for FIRE metric {} ({}) in project {} ({}): \
                      Sampler has {} event_codes ({:?}) + 1 for component = {actual_dims}, \
                      but Cobalt defines {} dimension(s): {:?}{}",
@@ -229,12 +245,23 @@ fn validate(
                     expected_dim_names.len(),
                     expected_dim_names,
                     selector_context
-                );
+                ));
             }
         }
     }
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        let count = errors.len();
+        let formatted_errors = errors
+            .iter()
+            .enumerate()
+            .map(|(i, err)| format!("{}. {}", i + 1, err))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        bail!("{count} validation error(s) found in Sampler configs:\n\n{formatted_errors}")
+    }
 }
 
 fn verify_metric_type(sampler_type: SamplerMetricType, cobalt_type_raw: i32) -> Result<(), Error> {
@@ -550,5 +577,50 @@ mod tests {
         )];
 
         assert!(validate(&bytes, &project_configs, &fire_templates).is_ok());
+    }
+
+    #[test]
+    fn test_multiple_errors_accumulated() {
+        let registry = make_test_registry();
+        let bytes = registry.encode_to_vec();
+
+        let project_configs = vec![
+            (
+                PathBuf::from("test/bad_project1.json5"),
+                SamplerProjectConfig { project_id: ProjectId(999), data_sets: vec![] },
+            ),
+            (
+                PathBuf::from("test/bad_project2.json5"),
+                SamplerProjectConfig {
+                    project_id: ProjectId(10),
+                    data_sets: vec![DataSetConfig {
+                        poll_rate_sec: 60,
+                        metrics: vec![
+                            MetricConfig {
+                                metric_id: MetricId(100),
+                                metric_type: SamplerMetricType::Integer, // mismatch
+                                event_codes: vec![EventCode(1)],
+                                selectors: vec![],
+                                upload_once: false,
+                            },
+                            MetricConfig {
+                                metric_id: MetricId(999), // unknown metric
+                                metric_type: SamplerMetricType::Occurrence,
+                                event_codes: vec![],
+                                selectors: vec![],
+                                upload_once: false,
+                            },
+                        ],
+                    }],
+                },
+            ),
+        ];
+
+        let err = validate(&bytes, &project_configs, &[]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("3 validation error(s) found in Sampler configs:"));
+        assert!(msg.contains("1. In test/bad_project1.json5: Sampler project_id 999 not found"));
+        assert!(msg.contains("2. In test/bad_project2.json5: Metric type mismatch"));
+        assert!(msg.contains("3. In test/bad_project2.json5: Metric ID 999 not found"));
     }
 }
