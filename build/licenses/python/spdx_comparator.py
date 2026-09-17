@@ -9,7 +9,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any
 
 
 @dataclasses.dataclass(frozen=True)
@@ -35,7 +35,7 @@ class _ExtractedLicense:
         )
 
     @staticmethod
-    def from_json_dict(input: Dict[str, Any]) -> "_ExtractedLicense":
+    def from_json_dict(input: dict[str, Any]) -> "_ExtractedLicense":
         # Example SPDX license dict:
         # {
         #     "name": "Bar Pkg",
@@ -118,7 +118,7 @@ class _ExtractedLicense:
 
 
 # License path patterns that are expected to be missing
-_expected_missing: List[re.Pattern[str]] = [
+_expected_missing: list[re.Pattern[str]] = [
     re.compile(s)
     for s in [
         # COPYING and UNLICENSE files are not rust licenses
@@ -145,14 +145,14 @@ class SpdxComparator:
     current_file: Path
     legacy_file: Path
 
-    all: Set[_ExtractedLicense] = dataclasses.field(default_factory=set)
-    in_both: Set[_ExtractedLicense] = dataclasses.field(default_factory=set)
-    in_both_but_different: Dict[
+    all: set[_ExtractedLicense] = dataclasses.field(default_factory=set)
+    in_both: set[_ExtractedLicense] = dataclasses.field(default_factory=set)
+    in_both_but_different: dict[
         _ExtractedLicense, _ExtractedLicense
     ] = dataclasses.field(default_factory=dict)
-    added: Set[_ExtractedLicense] = dataclasses.field(default_factory=set)
-    missing: Set[_ExtractedLicense] = dataclasses.field(default_factory=set)
-    expected_missing: Set[_ExtractedLicense] = dataclasses.field(
+    added: set[_ExtractedLicense] = dataclasses.field(default_factory=set)
+    missing: set[_ExtractedLicense] = dataclasses.field(default_factory=set)
+    expected_missing: set[_ExtractedLicense] = dataclasses.field(
         default_factory=set
     )
 
@@ -188,7 +188,7 @@ class SpdxComparator:
                     self.expected_missing.add(lic)
                     self.missing.remove(lic)
 
-    def _read_spdx_licenses(self, path: Path | str) -> Set[_ExtractedLicense]:
+    def _read_spdx_licenses(self, path: Path | str) -> set[_ExtractedLicense]:
         with open(path, "r") as spdx_file:
             spdx_doc = json.load(spdx_file)
             output = set()

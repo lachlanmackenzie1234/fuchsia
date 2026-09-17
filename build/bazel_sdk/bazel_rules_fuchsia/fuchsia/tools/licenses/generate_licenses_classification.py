@@ -23,11 +23,11 @@ def _log(*kwargs):
 
 def _prepare_license_files(
     license_files_dir: str, spdx_doc: SpdxDocument
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Extract license texts in the spdx_doc into separate files"""
 
     # Reuse files with duplicate license texts to speed up classification
-    file_by_unique_text: Dict[str, str] = {}
+    file_by_unique_text: dict[str, str] = {}
 
     license_files_by_id = {}
 
@@ -55,7 +55,7 @@ def _invoke_identify_license(
     identify_license_path: str,
     identify_license_output_path: str,
     license_files_dir: str,
-    license_files_by_id: Dict[str, str],
+    license_files_by_id: dict[str, str],
 ) -> LicensesClassifications:
     """Invokes identify_license tool, returning an LicensesClassifications."""
 
@@ -114,8 +114,8 @@ Error=`{result.stderr}`"""
 
 def _get_failing_license_files(
     classification: LicensesClassifications,
-    license_files_by_id: Dict[str, str],
-) -> List[str]:
+    license_files_by_id: dict[str, str],
+) -> list[str]:
     """Returns a sorted list of unique file paths for licenses that failed verification or were unidentified."""
     failing_files = set()
     for license_id, lic_class in classification.classifications_by_id.items():
@@ -135,7 +135,7 @@ def _invoke_identify_license_single_file(
     identify_license_path: str,
     file_path: str,
     output_json_path: str,
-) -> List[IdentifiedSnippet]:
+) -> list[IdentifiedSnippet]:
     """Invokes identify_license on a single file and returns its IdentifiedSnippets."""
     command = [
         identify_license_path,
@@ -193,8 +193,8 @@ def _invoke_identify_license_single_file(
 
 def _retry_failing_files(
     raw_classification: LicensesClassifications,
-    failing_files: List[str],
-    license_files_by_id: Dict[str, str],
+    failing_files: list[str],
+    license_files_by_id: dict[str, str],
     identify_license_path: str,
     identify_license_output_path: str,
     num_retries: int = 3,
@@ -291,7 +291,7 @@ Details:
     return classifications.add_classifications(extra_classifications)
 
 
-def _load_override_rules(rule_paths: List[str]) -> ConditionOverrideRuleSet:
+def _load_override_rules(rule_paths: list[str]) -> ConditionOverrideRuleSet:
     rules = []
     for p in rule_paths:
         rule_set = ConditionOverrideRuleSet.from_json(p)
@@ -301,8 +301,8 @@ def _load_override_rules(rule_paths: List[str]) -> ConditionOverrideRuleSet:
 
 def _apply_policy_and_overrides(
     classification: LicensesClassifications,
-    policy_override_rules_file_paths: List[str],
-    allowed_conditions: List[str],
+    policy_override_rules_file_paths: list[str],
+    allowed_conditions: list[str],
 ) -> LicensesClassifications:
     if policy_override_rules_file_paths:
         override_rules = _load_override_rules(policy_override_rules_file_paths)
@@ -320,7 +320,7 @@ def _apply_policy_and_overrides(
 def _verification_error_message(
     classifications: LicensesClassifications, preamble_file_path
 ) -> str:
-    message: List[str] = [
+    message: list[str] = [
         "ERROR: Licenses verification failed. See following details."
     ]
 

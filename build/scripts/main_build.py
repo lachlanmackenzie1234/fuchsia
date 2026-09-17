@@ -32,7 +32,8 @@ import subprocess
 import sys
 import time
 import uuid
-from typing import Any, Iterable, Sequence, TextIO
+from collections.abc import Iterable, Sequence
+from typing import Any, TextIO
 
 import signal_utils
 

@@ -18,8 +18,9 @@ import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any
 from unittest import mock
 
 import main_build

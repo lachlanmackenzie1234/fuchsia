@@ -151,7 +151,7 @@ class GeneratedWorkspaceFiles(object):
 
     def __init__(self) -> None:
         self._files: dict[str, T.Any] = {}
-        self._file_hasher: T.Optional[FileHasherType] = None
+        self._file_hasher: FileHasherType | None = None
         self._input_files: set[Path] = set()
 
     def set_file_hasher(self, file_hasher: FileHasherType) -> None:
@@ -317,7 +317,7 @@ def record_fuchsia_workspace(
     fuchsia_dir: Path,
     gn_output_dir: Path,
     git_bin_path: Path,
-    log: T.Optional[T.Callable[[str], None]] = None,
+    log: T.Callable[[str], None] | None = None,
 ) -> None:
     """Record generated entries for the Fuchsia workspace and helper files.
 
@@ -612,7 +612,7 @@ def record_fuchsia_workspace(
 def generate_fuchsia_workspace(
     fuchsia_dir: Path,
     build_dir: Path,
-    log: T.Optional[T.Callable[[str], None]] = None,
+    log: T.Callable[[str], None] | None = None,
 ) -> set[Path]:
     """Generate the Fuchsia Bazel workspace and associated files.
 

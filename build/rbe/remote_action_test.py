@@ -13,8 +13,9 @@ import os
 import sys
 import tempfile
 import unittest
+from collections.abc import Collection, Sequence
 from pathlib import Path
-from typing import Any, Collection, Dict, Sequence, Tuple
+from typing import Any
 from unittest import mock
 
 import cl_utils
@@ -81,14 +82,14 @@ def _paths(items: Collection[Any]) -> Collection[Path]:
 
 
 def _fake_download_output(
-    packed_args: Tuple[
+    packed_args: tuple[
         remote_action.DownloadStubInfo,
         remotetool.RemoteTool,
         Path,
         bool,
         bool,
     ],
-) -> Tuple[Path, cl_utils.SubprocessResult]:
+) -> tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_output_for_mp.
     # defined because multiprocessing cannot serialize mocks
     stub_info, downloader, working_dir_abs, verbose, use_xattr = packed_args
@@ -97,14 +98,14 @@ def _fake_download_output(
 
 
 def _fake_download_output_fail(
-    packed_args: Tuple[
+    packed_args: tuple[
         remote_action.DownloadStubInfo,
         remotetool.RemoteTool,
         Path,
         bool,
         bool,
     ],
-) -> Tuple[Path, cl_utils.SubprocessResult]:
+) -> tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_output_for_mp.
     # defined because multiprocessing cannot serialize mocks
     stub_info, downloader, working_dir_abs, verbose, use_xattr = packed_args
@@ -113,14 +114,14 @@ def _fake_download_output_fail(
 
 
 def _fake_download_input(
-    packed_args: Tuple[
+    packed_args: tuple[
         Path,
         remotetool.RemoteTool,
         Path,
         bool,
         bool,
     ],
-) -> Tuple[Path, cl_utils.SubprocessResult]:
+) -> tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_input_for_mp.
     # defined because multiprocessing cannot serialize mocks
     stub_path, downloader, working_dir_abs, verbose, use_xattr = packed_args
@@ -129,14 +130,14 @@ def _fake_download_input(
 
 
 def _fake_download_input_fail(
-    packed_args: Tuple[
+    packed_args: tuple[
         Path,
         remotetool.RemoteTool,
         Path,
         bool,
         bool,
     ],
-) -> Tuple[Path, cl_utils.SubprocessResult]:
+) -> tuple[Path, cl_utils.SubprocessResult]:
     # For mocking remote_action._download_input_for_mp.
     # defined because multiprocessing cannot serialize mocks
     stub_path, downloader, working_dir_abs, verbose, use_xattr = packed_args
@@ -571,8 +572,8 @@ class FakeReproxyLogEntry(remote_action.ReproxyLogEntry):
     def __init__(self, **kwargs: Any):
         self._execution_id: str
         self._action_digest: str
-        self._output_file_digests: Dict[Path, str]
-        self._output_directory_digests: Dict[Path, str]
+        self._output_file_digests: dict[Path, str]
+        self._output_directory_digests: dict[Path, str]
         self._completion_status: str
         # intentionally does not call super().__init__(), but instead
         # sets property attributes.
@@ -592,11 +593,11 @@ class FakeReproxyLogEntry(remote_action.ReproxyLogEntry):
         return self._action_digest
 
     @property
-    def output_file_digests(self) -> Dict[Path, str]:
+    def output_file_digests(self) -> dict[Path, str]:
         return self._output_file_digests
 
     @property
-    def output_directory_digests(self) -> Dict[Path, str]:
+    def output_directory_digests(self) -> dict[Path, str]:
         return self._output_directory_digests
 
     @property
@@ -3664,7 +3665,7 @@ remote_metadata: {{
 
     def _setup_update_stub_test(
         self, tdp: Path, output_contents: str | None = None
-    ) -> Tuple[remote_action.RemoteAction, FakeReproxyLogEntry]:
+    ) -> tuple[remote_action.RemoteAction, FakeReproxyLogEntry]:
         exec_root = tdp
         build_dir = Path("build-out")
         self.working_dir = exec_root / build_dir
