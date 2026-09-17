@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "chacha20",
     package_url = "https://github.com/RustCrypto/stream-ciphers",
-    package_version = "0.10.0",
+    package_version = "0.10.2",
 )
 
 license(
@@ -75,7 +75,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.10.0",
+    version = "0.10.2",
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
         "//third_party/rust_crates/vendor/cipher-0.5.2:cipher",

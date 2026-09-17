@@ -360,11 +360,11 @@ group("cfg-if-1.0.4") {
 }
 
 group("chacha20") {
-  public_deps = [ ":chacha20-v0_10_0" ]
+  public_deps = [ ":chacha20-v0_10_2" ]
 }
 
-group("chacha20-0.10.0") {
-  public_deps = [ ":chacha20-v0_10_0" ]
+group("chacha20-0.10.2") {
+  public_deps = [ ":chacha20-v0_10_2" ]
 }
 
 group("chrono") {
@@ -5755,18 +5755,18 @@ rustc_library("cfg-if-v1_0_4") {
   applicable_licenses = [ ":cfg-if-v1_0_4.license" ]
 }
 
-license("chacha20-v0_10_0.license") {
+license("chacha20-v0_10_2.license") {
   public_package_name = "chacha20"
   license_files = [
-    "//third_party/rust_crates/vendor/chacha20-0.10.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/chacha20-0.10.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/chacha20-0.10.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/chacha20-0.10.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("chacha20-v0_10_0") {
+rustc_library("chacha20-v0_10_2") {
   crate_name = "chacha20"
-  source_root = "//third_party/rust_crates/vendor/chacha20-0.10.0/src/lib.rs"
-  output_name = "chacha20-eb5ea7c07310216e"
+  source_root = "//third_party/rust_crates/vendor/chacha20-0.10.2/src/lib.rs"
+  output_name = "chacha20-8d83beee61657839"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -5783,15 +5783,15 @@ rustc_library("chacha20-v0_10_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=eb5ea7c07310216e",
-    "-Cextra-filename=-eb5ea7c07310216e",
+    "-Cmetadata=8d83beee61657839",
+    "-Cextra-filename=-8d83beee61657839",
     "--cfg=feature=\"cipher\"",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":chacha20-v0_10_0.license" ]
+  applicable_licenses = [ ":chacha20-v0_10_2.license" ]
 }
 
 license("chrono-v0_4_45.license") {

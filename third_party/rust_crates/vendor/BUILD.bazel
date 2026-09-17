@@ -523,14 +523,14 @@ alias(
 )
 
 alias(
-    name = "chacha20-0.10.0",
-    actual = "//third_party/rust_crates/vendor/chacha20-0.10.0:chacha20",
+    name = "chacha20-0.10.2",
+    actual = "//third_party/rust_crates/vendor/chacha20-0.10.2:chacha20",
     tags = ["manual"],
 )
 
 alias(
     name = "chacha20",
-    actual = "//third_party/rust_crates/vendor/chacha20-0.10.0:chacha20",
+    actual = "//third_party/rust_crates/vendor/chacha20-0.10.2:chacha20",
     tags = ["manual"],
 )
 
