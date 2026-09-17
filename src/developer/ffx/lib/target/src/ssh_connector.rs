@@ -280,7 +280,6 @@ impl SshConnector {
             input: Box::new(stdin),
             errors: errors_receiver,
             main_task,
-            ssh_host_address: None,
         })
     }
 }
