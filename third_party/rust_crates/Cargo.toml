@@ -48,7 +48,7 @@ base64 = "0.22.1"
 bincode = "1.3.3"
 bit-set = "0.10.0"
 bit-vec = { version = "0.9.1", features = [ "serde" ] }
-bitfield = "0.19.4"
+bitfield = "0.19.5"
 bitflags = { version = "2.13.0", features = ["serde", "std"] }
 blocking = "1.6.2"
 bstr = { version = "1.12.1", default-features = false, features = [ "std" ] }
@@ -454,7 +454,6 @@ windows-sys-0_61_2 = { package = "windows-sys", path = "empty/windows-sys-0.61.2
 ### Forks: vendored crates whose code doesn't match the upstream version
 # keep-sorted start
 anes = { path = "forks/anes-0.1.6" }
-bitfield-macros = { path = "forks/bitfield-macros" }
 bt-bap = { path = "forks/bluetooth/bt-bap" }
 bt-bass = { path = "forks/bluetooth/bt-bass" }
 bt-broadcast-assistant = { path = "forks/bluetooth/bt-broadcast-assistant" }

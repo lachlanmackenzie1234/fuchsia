@@ -67,7 +67,7 @@ impl Parse for BitfieldPosition {
 
 enum FieldTy {
     Bool,
-    Type(Type),
+    Type(Box<Type>),
     None,
 }
 
@@ -75,7 +75,7 @@ impl FieldTy {
     fn as_type(&self) -> Option<Type> {
         match self {
             FieldTy::Bool => Some(syn::parse_str("bool").unwrap()),
-            FieldTy::Type(ty) => Some(ty.clone()),
+            FieldTy::Type(ty) => Some(*ty.clone()),
             FieldTy::None => None,
         }
     }
@@ -85,8 +85,8 @@ impl FieldTy {
     }
 }
 
-impl From<Option<Type>> for FieldTy {
-    fn from(value: Option<Type>) -> Self {
+impl From<Option<Box<Type>>> for FieldTy {
+    fn from(value: Option<Box<Type>>) -> Self {
         match value {
             Some(ty) => FieldTy::Type(ty),
             None => FieldTy::None,
@@ -201,8 +201,8 @@ impl Parse for BitfieldField {
 }
 
 enum BitfieldFieldLine {
-    NewDefaultType(Type),
-    Field(BitfieldField),
+    NewDefaultType(Box<Type>),
+    Field(Box<BitfieldField>),
 }
 
 impl Parse for BitfieldFieldLine {
@@ -234,7 +234,7 @@ impl BitfieldFieldLines {
                     if field.ty.is_none() {
                         field.ty = default_ty.clone().into();
                     }
-                    result.push(field)
+                    result.push(*field)
                 }
             }
         }
@@ -474,7 +474,7 @@ fn generate_getters(fields: &[BitfieldField]) -> proc_macro2::TokenStream {
                         let ty_into = field.ty_into().unwrap();
                         let (return_ty, last_line) = if field.try_into {
                             (
-                                quote!{Result<#ty_into, <#ty_into as TryFrom<#ty>>::Error>}, 
+                                quote!{Result<#ty_into, <#ty_into as TryFrom<#ty>>::Error>},
                                 quote!{::bitfield::TryInto::try_into(raw_value)}
                             )
                         } else {

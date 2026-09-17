@@ -34,7 +34,6 @@ skip_updating = [
     "base64",
     "base64ct",
     "bincode",
-    "bitfield",
     "bitflags",
     "bit-set",
     "bit-vec",

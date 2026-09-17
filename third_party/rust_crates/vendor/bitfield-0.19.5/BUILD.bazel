@@ -8,7 +8,7 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
-load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
     default_package_metadata = [
@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "bitfield-macros",
+    package_name = "bitfield",
     package_url = "https://github.com/dzamlo/rust-bitfield",
-    package_version = "0.19.4",
+    package_version = "0.19.5",
 )
 
 license(
@@ -34,8 +34,8 @@ license(
     license_text = "LICENSE-APACHE",
 )
 
-rust_proc_macro(
-    name = "bitfield_macros",
+rust_library(
+    name = "bitfield",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -54,12 +54,15 @@ rust_proc_macro(
     ),
     crate_root = "src/lib.rs",
     edition = "2021",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor/bitfield-macros-0.19.5:bitfield_macros",
+    ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=bitfield-macros",
+        "crate-name=bitfield",
         "manual",
         "noclippy",
         "norustfmt",
@@ -71,10 +74,5 @@ rust_proc_macro(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.19.4",
-    deps = [
-        "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
-        "//third_party/rust_crates/vendor/quote-1.0.47:quote",
-        "//third_party/rust_crates/vendor/syn-2.0.119:syn",
-    ],
+    version = "0.19.5",
 )
