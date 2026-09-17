@@ -46,6 +46,10 @@ FFI_ALWAYS_INLINE void cpp_pmm_node_free_list(PmmNode* node, VmPageDoublyLinkedL
   node->FreeList(list, delay_reuse);
 }
 
+FFI_ALWAYS_INLINE VmCompression* cpp_pmm_node_get_page_compression(PmmNode* node) {
+  return node->GetPageCompression();
+}
+
 FFI_ALWAYS_INLINE uint64_t cpp_pmm_node_count_free_pages(const PmmNode* node) {
   return node->CountFreePages();
 }

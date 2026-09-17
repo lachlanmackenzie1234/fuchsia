@@ -21,6 +21,7 @@ source_set("vm") {
     "compression.cc",
     "compression_ffi.cc",
     "compressor.cc",
+    "compressor_ffi.cc",
     "debug_compressor.cc",
     "discardable_vmo_tracker.cc",
     "discardable_vmo_tracker_ffi.cc",
@@ -390,6 +391,7 @@ kernel_bindgen_crate("pmm-node-bindings") {
     "cpp_pmm_node_alloc_pages",
     "cpp_pmm_node_free_page",
     "cpp_pmm_node_free_list",
+    "cpp_pmm_node_get_page_compression",
     "cpp_pmm_node_count_free_pages",
     "cpp_pmm_node_count_loaned_free_pages",
     "cpp_pmm_node_count_loan_cancelled_pages",
@@ -433,11 +435,11 @@ kernel_bindgen_crate("pmm-node-bindings") {
     "PmmChecker",
     "AutounsignalEvent",
     "Event",
+    "VmCompression",
     "VmCowPages",
     "VmPageDoublyLinkedList",
   ]
   opaque_types = [
-    "VmCompression",
     "fbl::RefPtr",
     "ktl::atomic",
     "std::atomic",
@@ -454,6 +456,7 @@ kernel_bindgen_crate("pmm-node-bindings") {
     "PmmNode_AllocFailure_Type",
   ]
   deps = [
+    ":compression-bindings",
     ":evictor-bindings",
     ":page-bindings",
     ":page-queues-bindings",
@@ -466,6 +469,7 @@ kernel_bindgen_crate("pmm-node-bindings") {
   edition = "2024"
   raw_lines = [
     "#![no_std]",
+    "pub use compression_bindings::VmCompression;",
     "pub use event_bindings::{AutounsignalEvent, Event};",
     "pub use evictor_bindings::Evictor;",
     "pub use page_bindings::vm_page_t;",
@@ -880,6 +884,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_writeback_begin",
     "cpp_vm_object_writeback_end",
     "cpp_vm_object_reclamation_event_count",
+    "cpp_vm_object_detach_source",
     "cpp_vm_object_take_pages",
     "cpp_vm_object_supply_pages",
     "cpp_vm_object_read_user",
@@ -1023,18 +1028,42 @@ kernel_bindgen_crate("compression-bindings") {
     "cpp_vmcompression_destroy",
     "cpp_vmcompression_free",
     "cpp_vmcompression_get_ref_counted",
+    "cpp_vmcompression_acquire_compressor",
+    "cpp_vmcompression_compressor_guard_destroy",
+    "cpp_vmcompression_compressor_guard_get",
   ]
-  type_allowlist = [ "VmCompression" ]
-  opaque_types = [ "VmCompression" ]
+  type_allowlist = [
+    "VmCompression",
+    "VmCompression_CompressorGuard",
+  ]
+  opaque_types = [
+    "VmCompression",
+    "VmCompression_CompressorGuard",
+  ]
   function_blocklist = [ "VmCompression_.*" ]
+
+  # These are listed individually rather than as "VmCompression_.*" because a
+  # wildcard would also block VmCompression_CompressorGuard, which is
+  # allowlisted above.
   type_blocklist = [
-    "VmCompression_.*",
+    "VmCompression_CompressedRef",
+    "VmCompression_CompressResult",
+    "VmCompression_FailTag",
+    "VmCompression_PageAndMetadata",
+    "VmCompression_Stats",
+    "VmCompression_ZeroTag",
+    "VmCompressor",
     "vm_page_t",
     "zx_status_t",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
-  raw_lines = [ "#![no_std]" ]
+  deps = [ ":compressor-bindings" ]
+
+  raw_lines = [
+    "#![no_std]",
+    "pub use compressor_bindings::VmCompressor;",
+  ]
   expect_lints = []
 }
 
@@ -1048,6 +1077,7 @@ kernel_bindgen_crate("compressor-bindings") {
   edition = "2024"
   notice_year = 2026
 
+  function_allowlist = [ "cpp_vmcompressor_arm" ]
   type_allowlist = [ "VmCompressor" ]
   opaque_types = [ "VmCompressor" ]
   function_blocklist = [ "VmCompressor_.*" ]
@@ -1058,7 +1088,12 @@ kernel_bindgen_crate("compressor-bindings") {
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
-  raw_lines = [ "#![no_std]" ]
+  deps = [ "//sdk/rust/zx-types" ]
+
+  raw_lines = [
+    "#![no_std]",
+    "use zx_types::zx_status_t;",
+  ]
   expect_lints = []
 }
 
@@ -1089,7 +1124,9 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_deferred_ops_construct",
     "cpp_vm_cow_pages_deferred_ops_destroy",
     "cpp_vm_cow_pages_add_new_pages_locked",
+    "cpp_vm_cow_pages_zero_pages_locked",
     "cpp_vm_cow_pages_debug_get_populated_slots_count",
+    "cpp_vm_cow_pages_debug_is_parent_content",
   ]
   type_allowlist = [
     "DirtyState",
@@ -1108,6 +1145,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   ]
   type_blocklist = [
     "DiscardableVmoTracker",
+    "MultiPageRequest",
     "PmmOptDelayReuse",
     "VmCompressor",
     "VmCompressor_CompressedRef",
@@ -1158,6 +1196,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     ":compressor-bindings",
     ":discardable-vmo-tracker-bindings",
     ":page-bindings",
+    ":page-source-bindings",
     ":pmm-bindings",
     "//sdk/rust/zx-types",
   ]
@@ -1167,6 +1206,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "pub use compressor_bindings::VmCompressor;",
     "use discardable_vmo_tracker_bindings::DiscardableVmoTracker;",
     "use page_bindings::vm_page_t;",
+    "use page_source_bindings::MultiPageRequest;",
     "pub use pmm_bindings::{PmmOptDelayReuse, VmPageDoublyLinkedList};",
     "use zx_types::zx_status_t;",
   ]
@@ -1263,6 +1303,7 @@ kernel_bindgen_crate("test-helper-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_change_vmo_high_priority_count",
     "cpp_fill_region",
     "cpp_make_committed_pager_vmo",
     "cpp_make_partially_committed_pager_vmo",
@@ -1271,7 +1312,6 @@ kernel_bindgen_crate("test-helper-bindings") {
     "cpp_test_rand",
     "cpp_test_region",
     "cpp_verify_continuous_attribution_bytes",
-    "cpp_verify_private_attribution_counts",
   ]
   type_blocklist = [
     "AttributionCounts",

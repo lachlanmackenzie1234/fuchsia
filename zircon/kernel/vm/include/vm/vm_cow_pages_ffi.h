@@ -48,7 +48,12 @@ zx_status_t cpp_vm_cow_pages_add_new_pages_locked(VmCowPages* cow, uint64_t star
                                                   VmPageDoublyLinkedList* pages,
                                                   VmCowPages::CanOverwriteSlot overwrite, bool zero,
                                                   VmCowPages::DeferredOps* deferred);
+zx_status_t cpp_vm_cow_pages_zero_pages_locked(VmCowPages* cow, VmCowRange range, bool dirty_track,
+                                               VmCowPages::DeferredOps* deferred,
+                                               MultiPageRequest* page_request,
+                                               uint64_t* out_zeroed_bytes);
 uint32_t cpp_vm_cow_pages_debug_get_populated_slots_count(const VmCowPages* cow);
+bool cpp_vm_cow_pages_debug_is_parent_content(const VmCowPages* cow, uint64_t offset);
 
 __END_CDECLS
 

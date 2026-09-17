@@ -13,6 +13,7 @@ use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
+use core::num::NonZeroI64;
 use fbl::RefPtr;
 use rand::RngCore;
 use rand::rand_core::impls;
@@ -155,6 +156,17 @@ pub fn make_private_attribution_counts(uncompressed: u64, compressed: u64) -> At
     }
     // SAFETY: `cpp_make_private_attribution_counts` certainly wrote out the attribution counts.
     unsafe { counts.assume_init() }
+}
+
+/// Changes `vmo`'s high priority count by `delta`, taking care of the prepare and locking steps
+/// required by the C++ `PriorityChanger`.
+///
+/// The count may never go negative, so callers must only subtract what they have already added,
+/// and must remove any additions before `vmo` is destroyed. Violating either trips a kernel
+/// `DEBUG_ASSERT`.
+pub fn change_vmo_high_priority_count(vmo: &VmObjectPaged, delta: NonZeroI64) {
+    // SAFETY: `vmo.as_raw()` points to a live `VmObjectPaged`.
+    unsafe { bindings::cpp_change_vmo_high_priority_count(vmo.as_raw(), delta.get()) }
 }
 
 /// fill a region of memory with a pattern based on the address of the region

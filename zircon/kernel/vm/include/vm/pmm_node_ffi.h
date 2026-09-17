@@ -29,6 +29,7 @@ FFI_ALWAYS_INLINE void cpp_pmm_node_free_page(PmmNode* node, vm_page_t* page,
                                               PmmOptDelayReuse delay_reuse);
 FFI_ALWAYS_INLINE void cpp_pmm_node_free_list(PmmNode* node, VmPageDoublyLinkedList* list,
                                               PmmOptDelayReuse delay_reuse);
+FFI_ALWAYS_INLINE VmCompression* cpp_pmm_node_get_page_compression(PmmNode* node);
 FFI_ALWAYS_INLINE uint64_t cpp_pmm_node_count_free_pages(const PmmNode* node);
 FFI_ALWAYS_INLINE uint64_t cpp_pmm_node_count_loaned_free_pages(const PmmNode* node);
 FFI_ALWAYS_INLINE uint64_t cpp_pmm_node_count_loan_cancelled_pages(const PmmNode* node);

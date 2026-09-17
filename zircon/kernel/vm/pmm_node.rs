@@ -1032,6 +1032,21 @@ impl PmmNode {
     pub fn page_queues(&self) -> &PageQueues {
         &self.page_queues
     }
+
+    /// Retrieve any page compression instance. If this returns `Some` then the returned value
+    /// will not change and the result can be cached.
+    pub fn get_page_compression(&self) -> Option<&VmCompression> {
+        // SAFETY: `self.as_raw()` points to a live `PmmNode`.
+        let raw = unsafe { bindings::cpp_pmm_node_get_page_compression(self.as_raw()) };
+        if raw.is_null() {
+            None
+        } else {
+            // SAFETY: `SetPageCompression` refuses to replace an instance once one has been set,
+            // so the `RefPtr` held by this `PmmNode` is never dropped or reassigned, and the
+            // instance stays alive for at least as long as this borrow of the node.
+            Some(unsafe { &*raw.cast::<VmCompression>() })
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
