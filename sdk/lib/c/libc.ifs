@@ -1380,7 +1380,6 @@ Symbols:
   - { Name: wcstoul, Type: Func }
   - { Name: wcstoull, Type: Func }
   - { Name: wcstoumax, Type: Func }
-  - { Name: wcswcs, Type: Func }
   - { Name: wcswidth, Type: Func }
   - { Name: wcsxfrm, Type: Func }
   - { Name: wctob, Type: Func }
