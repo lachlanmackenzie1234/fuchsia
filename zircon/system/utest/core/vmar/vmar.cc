@@ -3591,4 +3591,23 @@ TEST(Vmar, FaultBeyondStreamSizeForceWritable) {
   }
 }
 
+// Tests that zx_vmar_op_range rejects ranges beyond stream size when vmo_offset exceeds
+// stream size.
+TEST(Vmar, RangeOpStreamSizeWraparound) {
+  const size_t page_size = zx_system_get_page_size();
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(page_size, ZX_VMO_UNBOUNDED, &vmo));
+
+  zx_vaddr_t map_addr;
+  ASSERT_OK(zx::vmar::root_self()->map(
+      ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS, 0,
+      vmo, page_size * 2, page_size, &map_addr));
+
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE,
+            zx::vmar::root_self()->op_range(ZX_VMAR_OP_DONT_NEED, map_addr, page_size, nullptr, 0));
+
+  EXPECT_OK(zx::vmar::root_self()->unmap(map_addr, page_size));
+}
+
 }  // namespace
