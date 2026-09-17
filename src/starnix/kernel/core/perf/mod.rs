@@ -72,6 +72,11 @@ const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 16 * 1024 * 1024;
 const LOST_RECORD_SIZE: u64 = 24;
 // FXT magic bytes (little endian).
 const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
+// Register indices in the profiler's register capture block.
+const AARCH64_REG_PC: usize = 32;
+const AARCH64_REG_SP: usize = 31;
+const AARCH32_REG_R15: usize = 15; // AArch32 PC
+const AARCH32_REG_R13: usize = 13; // AArch32 SP
 
 mod event;
 pub use event::{TraceEvent, TraceEventQueue, TraceEventQueueList};
@@ -980,17 +985,23 @@ async fn stop_and_collect_samples(
                             // slot (index 15) too for 32-bit readers, which
                             // only consume indices 0-15 -- x15 carries no
                             // meaningful value for AArch32 state.
-                            let pc_bytes = regs[256..264].to_vec();
-                            regs[120..128].copy_from_slice(&pc_bytes);
+                            let pc_offset = AARCH64_REG_PC * 8;
+                            let pc_bytes = regs[pc_offset..pc_offset + 8].to_vec();
+                            let r15_offset = AARCH32_REG_R15 * 8;
+                            regs[r15_offset..r15_offset + 8].copy_from_slice(&pc_bytes);
                         }
 
                         let sp = if is_32bit {
                             // The arm32 stack pointer is R13.
-                            u64::from_ne_bytes(regs[104..112].try_into().unwrap())
+                            let r13_offset = AARCH32_REG_R13 * 8;
+                            u64::from_ne_bytes(regs[r13_offset..r13_offset + 8].try_into().unwrap())
                         } else {
-                            u64::from_ne_bytes(regs[248..256].try_into().unwrap())
+                            let sp_offset = AARCH64_REG_SP * 8;
+                            u64::from_ne_bytes(regs[sp_offset..sp_offset + 8].try_into().unwrap())
                         };
-                        let pc = u64::from_ne_bytes(regs[256..264].try_into().unwrap());
+                        let pc_offset = AARCH64_REG_PC * 8;
+                        let pc =
+                            u64::from_ne_bytes(regs[pc_offset..pc_offset + 8].try_into().unwrap());
 
                         // Select the memory chunk that contains the sampled
                         // stack pointer and trim it to start exactly there:
