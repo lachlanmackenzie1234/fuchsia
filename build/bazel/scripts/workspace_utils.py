@@ -1453,6 +1453,10 @@ def generate_fuchsia_platform_sysroot_repository(
     )
 
     fuchsia_dir = build_utils.find_fuchsia_dir(build_dir)
+    # Symlink the root LICENSE file so the sysroot package can reference it.
+    build_utils.force_symlink(
+        repository_dir / "LICENSE", fuchsia_dir / "LICENSE"
+    )
     module_content = dedent(
         f"""\
         module(name = "{repository_name}")
@@ -1463,6 +1467,7 @@ def generate_fuchsia_platform_sysroot_repository(
             path = "{fuchsia_dir}/build/bazel_sdk/fuchsia_rules_common",
         )
         bazel_dep(name = "platforms", version = "1.1.0")
+        bazel_dep(name = "rules_license", version = "1.0.0")
         """
     )
     load_block = dedent(
@@ -1470,7 +1475,8 @@ def generate_fuchsia_platform_sysroot_repository(
         load(
             "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
             "fuchsia_unstripped_binary",
-        )"""
+        )
+        load("@rules_license//rules:license.bzl", "license")"""
     )
     dist_targets_str = "\n\n".join(dist_targets)
 
@@ -1483,6 +1489,14 @@ def generate_fuchsia_platform_sysroot_repository(
         f"""# AUTO-GENERATED - DO NOT EDIT
 
 {load_block}
+
+package(default_applicable_licenses = [":license"])
+
+license(
+    name = "license",
+    license_kinds = ["@rules_license//licenses/spdx:BSD-2-Clause"],
+    license_text = "LICENSE",
+)
 
 exports_files(["sysroot/empty"])
 
