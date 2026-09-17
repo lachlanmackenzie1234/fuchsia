@@ -225,7 +225,7 @@ function test_bazel_rbe() {
           --config=resultstore \
           "${auth_config_args[@]}" \
           --build_event_upload_max_retries=1 \
-          --bes_timeout=3s \
+          --bes_timeout=10s \
           --bes_upload_mode=wait_for_upload_complete \
           :all
   )
