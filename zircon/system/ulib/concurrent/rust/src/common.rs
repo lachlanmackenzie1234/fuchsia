@@ -3,43 +3,56 @@
 // found in the LICENSE file.
 
 /// An enumeration of various synchronization options to use when performing
-/// memory transfer operations (such as to and from a sequence lock's payload or
-/// during well-defined copy operations).
+/// memory transfer operations with `well_defined_copy_to` / `well_defined_copy_from`.
 ///
-/// # Options
+/// # AcqRelOps
+/// Use either `Ordering::Acquire` (`CopyFrom`) or `Ordering::Release` (`CopyTo`)
+/// on every atomic load/store operation during the transfer to/from the shared
+/// buffer.
 ///
-/// * **AcqRelOps**: Use either `Ordering::Acquire` (reading the payload / `CopyFrom`)
-///   or `Ordering::Release` (writing the payload / `CopyTo`) on every atomic load/store
-///   operation during the transfer to/from the shared buffer.
-/// * **Fence**: Use either an `Ordering::Acquire` thread fence (reading the payload /
-///   `CopyFrom`) after the transfer operation, or an `Ordering::Release` thread
-///   fence (writing the payload / `CopyTo`) before the operation, and `Ordering::Relaxed`
-///   for each of the atomic load/store operations during the transfer.
-/// * **None**: Simply use `Ordering::Relaxed` for each of the atomic load/store
-///   operations during the transfer. Do not actually introduce any explicit
-///   synchronization behavior.
+/// # Fence
+/// Use either an `Ordering::Acquire` thread fence (`CopyFrom`) after the transfer
+/// operation, or an `Ordering::Release` (`CopyTo`) thread fence before the
+/// operation, and `Ordering::Relaxed` for each of the atomic load/store
+/// operations during the transfer.
 ///
-/// WARNING: Use cases for the `None` transfer mode tend to be unusual. Users
-/// will almost always want some form of synchronization to take place during
-/// their transfers. One example of where it may be appropriate to use
-/// `SyncOpt::None` might be a situation where users are attempting to observe
-/// the state of more than one object while inside of a sequence lock read
-/// transaction, and the user has decided that it is better to use a thread
-/// fence than to use acquire semantics on each element transferred. Such a
-/// sequence might look something like this:
+/// # None
+/// Simply use `Ordering::Relaxed` for each of the atomic load/store
+/// operations during the transfer. Do not actually introduce any
+/// explicit synchronization behavior.
 ///
-/// ```cpp
-/// Foo foo1, foo2;
-/// Bar bar1, bar2;
-/// ...
-/// WellDefinedCopyFrom<SyncOpt::None, alignof(Foo)>(&foo1, &src_foo1, sizeof(foo1));
-/// WellDefinedCopyFrom<SyncOpt::None, alignof(Foo)>(&foo2, &src_foo2, sizeof(foo2));
-/// WellDefinedCopyFrom<SyncOpt::None, alignof(Foo)>(&bar1, &src_bar1, sizeof(bar1));
-/// WellDefinedCopyFrom<SyncOpt::Fence, alignof(Foo)>(&bar2, &src_bar2, sizeof(bar2));
+/// WARNING: Use cases for this transfer mode tend to be unusual. Users will almost
+/// always want some form of synchronization to take place during their
+/// transfers. One example of where it may be appropriate to use `SyncOpt::None`
+/// might be a situation where users are attempting to observe the state of more
+/// than one object while inside of a sequence lock read transaction, and the
+/// user has decided that it is better to use a thread fence than to use acquire
+/// semantics on each element transferred. Such a sequence might look something
+/// like this:
+///
 /// ```
-///
-/// TODO: Translate this example ot Rust once a Rust analog to WellDefinedCopyFrom
-/// exists in Rust.
+/// # use concurrent::{WellDefinedCopyable, SYNC_OPT_FENCE, SYNC_OPT_NONE};
+/// # use zerocopy::{FromBytes, Immutable, IntoBytes};
+/// # #[derive(Copy, Clone, Default, FromBytes, IntoBytes, Immutable)]
+/// # #[repr(C, align(8))]
+/// # struct Foo(u64);
+/// # #[derive(Copy, Clone, Default, FromBytes, IntoBytes, Immutable)]
+/// # #[repr(C, align(8))]
+/// # struct Bar(u64);
+/// # let src_foo1 = WellDefinedCopyable::new(Foo::default());
+/// # let src_foo2 = WellDefinedCopyable::new(Foo::default());
+/// # let src_bar1 = WellDefinedCopyable::new(Bar::default());
+/// # let src_bar2 = WellDefinedCopyable::new(Bar::default());
+/// let mut foo1 = Foo::default();
+/// let mut foo2 = Foo::default();
+/// let mut bar1 = Bar::default();
+/// let mut bar2 = Bar::default();
+/// // ...
+/// src_foo1.read::<SYNC_OPT_NONE>(&mut foo1);
+/// src_foo2.read::<SYNC_OPT_NONE>(&mut foo2);
+/// src_bar1.read::<SYNC_OPT_NONE>(&mut bar1);
+/// src_bar2.read::<SYNC_OPT_FENCE>(&mut bar2);
+/// ```
 ///
 /// Note that it is the _last_ transfer operation which includes the fence. In
 /// the case of a `CopyTo` operation (when publishing data) it would be the _first_
@@ -53,12 +66,6 @@ pub enum SyncOpt {
 }
 
 impl SyncOpt {
-    /// Converts a `u8` discriminant to a [`SyncOpt`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `val` is not a valid [`SyncOpt`] discriminant (`SYNC_OPT_ACQ_REL_OPS`,
-    /// `SYNC_OPT_FENCE`, or `SYNC_OPT_NONE`).
     pub const fn from_u8(val: u8) -> Self {
         match val {
             SYNC_OPT_ACQ_REL_OPS => SyncOpt::AcqRelOps,
@@ -69,9 +76,6 @@ impl SyncOpt {
     }
 }
 
-// Const generic parameters cannot be user defined enumerations without the
-// unstable `adt_const_params` feature, which the Fuchsia build disallows, so
-// `SeqLock` is parameterized by these `SyncOpt` discriminants instead.
 pub const SYNC_OPT_ACQ_REL_OPS: u8 = SyncOpt::AcqRelOps as u8;
 pub const SYNC_OPT_FENCE: u8 = SyncOpt::Fence as u8;
 pub const SYNC_OPT_NONE: u8 = SyncOpt::None as u8;

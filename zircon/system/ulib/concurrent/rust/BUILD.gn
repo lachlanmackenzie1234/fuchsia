@@ -9,10 +9,15 @@ rustc_library("concurrent") {
   edition = "2024"
   sources = [
     "src/common.rs",
+    "src/copy.rs",
     "src/lib.rs",
     "src/seqlock.rs",
+    "src/seqlock_payload.rs",
   ]
-  deps = [ "//src/lib/zr" ]
+  deps = [
+    "//src/lib/zr",
+    "//third_party/rust_crates:zerocopy",
+  ]
   with_unit_tests = true
 
   if (is_kernel) {
