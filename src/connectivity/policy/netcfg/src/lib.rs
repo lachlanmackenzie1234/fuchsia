@@ -1050,7 +1050,7 @@ impl<'a> NetCfg<'a> {
             interface::InterfaceNamingConfig::from_naming_rules(interface_naming_policy);
         let telemetry_node = inspector.root().create_child(TELEMETRY_INSPECT_NODE_NAME);
         let netpol_networks_service = network::NetpolNetworksService::default()
-            .with_inspect(&telemetry_node, "operations")
+            .with_inspect(&telemetry_node, "operations", &telemetry_node, "network_registry")
             .context("failed to initialize network registry inspect")?;
 
         Ok(NetCfg {

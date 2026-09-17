@@ -398,6 +398,75 @@ impl RegisteredNetworks {
                 .collect()
         }
     }
+
+    fn update_inspect(&self, node: &fuchsia_inspect::Node) {
+        node.clear_recorded();
+
+        if let Some(default_network) = &self.default_network {
+            node.record_string("default_network", default_network.to_string());
+        }
+
+        if let Some(starnix_default) = &self.starnix_default {
+            node.record_string("starnix_default", starnix_default.to_string());
+        }
+
+        let mut sorted_networks: Vec<_> = self.networks.iter().collect();
+        sorted_networks.sort_by_key(|(id, _)| *id);
+
+        for (network_id, properties) in sorted_networks {
+            let network_node_name = match network_id {
+                NetworkId::Fuchsia(InterfaceId(id)) => format!("fuchsia_{id}"),
+                NetworkId::Delegated(InterfaceId(id)) => {
+                    format!("delegated_{id}")
+                }
+            };
+
+            node.record_child(network_node_name, |net_node| {
+                if let Some(name) = &properties.name {
+                    net_node.record_string("name", name);
+                }
+                if let Some(network_type) = &properties.network_type {
+                    net_node.record_string("network_type", network_type.as_str());
+                }
+                if let Some(connectivity_state) = &properties.connectivity_state {
+                    net_node.record_string("connectivity_state", connectivity_state.as_str());
+                }
+            });
+        }
+    }
+}
+
+trait NetworkTypeInspectExt {
+    fn as_str(&self) -> &'static str;
+}
+
+impl NetworkTypeInspectExt for fnp_socketproxy::NetworkType {
+    fn as_str(&self) -> &'static str {
+        match self {
+            fnp_socketproxy::NetworkType::Unknown => "Unknown",
+            fnp_socketproxy::NetworkType::Ethernet => "Ethernet",
+            fnp_socketproxy::NetworkType::Wifi => "Wifi",
+            fnp_socketproxy::NetworkType::Bluetooth => "Bluetooth",
+            fnp_socketproxy::NetworkType::Cellular => "Cellular",
+            fnp_socketproxy::NetworkType::__SourceBreaking { .. } => "Unknown",
+        }
+    }
+}
+
+trait ConnectivityStateInspectExt {
+    fn as_str(&self) -> &'static str;
+}
+
+impl ConnectivityStateInspectExt for fnp_socketproxy::ConnectivityState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            fnp_socketproxy::ConnectivityState::NoConnectivity => "NoConnectivity",
+            fnp_socketproxy::ConnectivityState::LocalConnectivity => "LocalConnectivity",
+            fnp_socketproxy::ConnectivityState::PartialConnectivity => "PartialConnectivity",
+            fnp_socketproxy::ConnectivityState::FullConnectivity => "FullConnectivity",
+            fnp_socketproxy::ConnectivityState::__SourceBreaking { .. } => "Unknown",
+        }
+    }
 }
 
 /// Helper trait for building property update lists based on a client's registration.
@@ -897,16 +966,40 @@ pub struct NetpolNetworksService {
 
     // Inspect metrics for operations
     metrics: OperationsMetrics,
+    // Inspect node for network topology & properties
+    networks_inspect_node: Option<fuchsia_inspect::Node>,
 }
 
 impl NetpolNetworksService {
-    pub fn with_inspect(
+    pub fn with_operations_inspect(
         mut self,
         parent: &fuchsia_inspect::Node,
         name: impl AsRef<str>,
     ) -> Result<Self, fuchsia_inspect_derive::AttachError> {
         self.metrics = OperationsMetrics::default().with_inspect(parent, name)?;
         Ok(self)
+    }
+
+    pub fn with_network_registry_inspect(
+        mut self,
+        parent: &fuchsia_inspect::Node,
+        name: impl AsRef<str>,
+    ) -> Self {
+        let network_registry_node = parent.create_child(name.as_ref());
+        self.network_registry.update_inspect(&network_registry_node);
+        self.networks_inspect_node = Some(network_registry_node);
+        self
+    }
+
+    pub fn with_inspect(
+        self,
+        telemetry_parent: &fuchsia_inspect::Node,
+        operations_name: impl AsRef<str>,
+        networks_parent: &fuchsia_inspect::Node,
+        networks_name: impl AsRef<str>,
+    ) -> Result<Self, fuchsia_inspect_derive::AttachError> {
+        let service = self.with_operations_inspect(telemetry_parent, operations_name)?;
+        Ok(service.with_network_registry_inspect(networks_parent, networks_name))
     }
 
     pub fn set_telemetry(&mut self, telemetry: TelemetrySender) {
@@ -1492,6 +1585,9 @@ impl NetpolNetworksService {
         if default_changed.is_some() {
             self.metrics.delegated.as_mut().default_network_id =
                 self.network_registry.starnix_default.map(|id| id.get().get() as u32);
+        }
+        if let Some(networks_node) = &self.networks_inspect_node {
+            self.network_registry.update_inspect(networks_node);
         }
 
         if let UpdateApplied::None = event {
@@ -2820,7 +2916,7 @@ mod tests {
         let inspector = fuchsia_inspect::Inspector::default();
         let telemetry_node = inspector.root().create_child("telemetry");
         let mut service = NetpolNetworksService::default()
-            .with_inspect(&telemetry_node, "operations")
+            .with_inspect(&telemetry_node, "operations", &telemetry_node, "network_registry")
             .expect("failed to initialize inspect");
         inspector.root().record(telemetry_node);
 
@@ -3041,6 +3137,172 @@ mod tests {
                             removes: contains { successes: 1u64, errors: 1u64 },
                         }
                     }
+                }
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_network_registry_inspect() {
+        const FUCHSIA_ID_2: NetworkId = NetworkId::Fuchsia(ID_2);
+        const DELEGATED_ID_100: NetworkId =
+            NetworkId::Delegated(InterfaceId(NonZeroU64::new(100).unwrap()));
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let telemetry_node = inspector.root().create_child("telemetry");
+        let mut service = NetpolNetworksService::default()
+            .with_inspect(&telemetry_node, "operations", &telemetry_node, "network_registry")
+            .expect("failed to initialize inspect");
+        inspector.root().record(telemetry_node);
+
+        // Initial check: empty network_registry node
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: {}
+                }
+            }
+        );
+
+        // Add a Fuchsia network (ID_2)
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                FUCHSIA_ID_2,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added: true,
+                    name: Some("wlan0".to_string()),
+                    network_type: Some(fnp_socketproxy::NetworkType::Wifi),
+                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    ..Default::default()
+                }),
+            ))
+            .await;
+
+        // Add a Delegated network (ID 100)
+        let mut marks = fnet::Marks::default();
+        marks.mark_1 = Some(100);
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_100,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added: true,
+                    marks: Some(marks.clone()),
+                    name: Some("eth0".to_string()),
+                    network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
+                    ..Default::default()
+                }),
+            ))
+            .await;
+
+        // Make Delegated network Starnix default
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_100,
+                NetworkUpdate::MakeDefault,
+            ))
+            .await;
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: {
+                        default_network: "fuchsia:2",
+                        starnix_default: "delegated:100",
+                        fuchsia_2: {
+                            name: "wlan0",
+                            network_type: "Wifi",
+                            connectivity_state: "FullConnectivity",
+                        },
+                        delegated_100: {
+                            name: "eth0",
+                            network_type: "Ethernet",
+                            connectivity_state: "LocalConnectivity",
+                        },
+                    }
+                }
+            }
+        );
+
+        // Update Delegated network properties (change connectivity_state and name)
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_100,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added: false,
+                    marks: Some(marks),
+                    name: Some("eth0_updated".to_string()),
+                    network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    ..Default::default()
+                }),
+            ))
+            .await;
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: {
+                        default_network: "fuchsia:2",
+                        starnix_default: "delegated:100",
+                        fuchsia_2: {
+                            name: "wlan0",
+                            network_type: "Wifi",
+                            connectivity_state: "FullConnectivity",
+                        },
+                        delegated_100: {
+                            name: "eth0_updated",
+                            network_type: "Ethernet",
+                            connectivity_state: "FullConnectivity",
+                        },
+                    }
+                }
+            }
+        );
+
+        // Remove the Fuchsia network (ID_2).
+        // Default network should now fall back to the delegated network.
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(FUCHSIA_ID_2, NetworkUpdate::Remove))
+            .await;
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: {
+                        default_network: "delegated:100",
+                        starnix_default: "delegated:100",
+                        delegated_100: {
+                            name: "eth0_updated",
+                            network_type: "Ethernet",
+                            connectivity_state: "FullConnectivity",
+                        },
+                    }
+                }
+            }
+        );
+
+        // Unset Starnix default and remove Delegated network.
+        // network_registry node should now be completely empty.
+        service.update(NetworkRegistryUpdate::UnsetDefaultNetwork).await;
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(DELEGATED_ID_100, NetworkUpdate::Remove))
+            .await;
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: {}
                 }
             }
         );
