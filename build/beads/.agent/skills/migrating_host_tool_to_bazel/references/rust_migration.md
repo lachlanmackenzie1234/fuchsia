@@ -11,6 +11,20 @@ Only key field differences are listed here. Standard fields like `sources` -> `s
 | `output_name`            | `crate_name`                  | The crate name used for linking and resulting binary name. |
 | `with_unit_tests = true` | `with_host_unit_tests = True` | Set to `True` to enable host unit tests.                   |
 | `features`               | `crate_features`              | Features enabled for this crate.                           |
+| `lint_config`            | `lint_config`                 | Target-specific lints config. Same label on both sides.    |
+
+A GN target written as `configs += [ "//build/config/rust/lints:X" ]` should be
+migrated to `lint_config = "//build/config/rust/lints:X"` in Bazel. Note that
+`lint_config` takes a single label, so a target that needs several lints configs
+still has to use `configs` in GN and cannot be migrated as-is.
+
+> **Note:** GN *appends* `lint_config` to the lint configs the `rustc_*()`
+> templates already apply, while Bazel *replaces* the macro default with it. The
+> configs under `//build/config/rust/lints` are defined to compensate, so both
+> spellings produce the same rustc flags for the library target. The generated
+> Bazel unit test target does pick up the production lints where GN would only
+> apply the default ones, so tests are slightly over-linted in Bazel.
+
 
 ### Third-Party Dependencies
 

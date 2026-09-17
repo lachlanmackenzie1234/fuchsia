@@ -191,6 +191,7 @@ template("rustc_test_internal") {
                              "exclude_toolchain_tags",
                              "features",
                              "inputs",
+                             "lint_config",
                              "output_dir",
                              "proc_macro_deps",
                              "public_deps",

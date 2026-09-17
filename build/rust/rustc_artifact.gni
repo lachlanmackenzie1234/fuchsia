@@ -75,6 +75,16 @@ import("//build/toolchain/rbe.gni")
 #   disable_clippy (optional)
 #     Don't run clippy on this target.
 #
+#   lint_config (optional)
+#     Label of a config with target-specific Rust lints, appended on top of the
+#     lint configs applied to every Rust target.
+#
+#     This mirrors the `lint_config` attribute on the Bazel rustc_*() macros so
+#     that bazel2gn can pass it through unchanged. NOTE the semantics differ:
+#     here the config is *appended* to the defaults, while in Bazel it
+#     *replaces* the macro default. The configs under //build/config/rust/lints
+#     are defined so that both spellings produce the same rustc flags.
+#
 #   emit_tool_path (optional)
 #     Exclude this target from tool_paths.json.
 #
@@ -237,6 +247,11 @@ template("rustc_artifact") {
         configs += [ "//build/config/rust/lints:clippy_warn_production" ]
       }
 
+      # Add the target-specific lints config, if any, on top of the defaults.
+      if (defined(invoker.lint_config)) {
+        configs += [ invoker.lint_config ]
+      }
+
       # rustdoc should not be data_dep'd for third party crates
       include_rustdoc_first_party = true
 
@@ -268,6 +283,7 @@ template("rustc_artifact") {
                [
                  "original_target_name",
                  "disable_clippy",
+                 "lint_config",
                ])
   }
 

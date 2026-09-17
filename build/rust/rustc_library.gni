@@ -277,6 +277,7 @@ template("rustc_library") {
                              "enforce_source_listing",
                              "features",
                              "inputs",
+                             "lint_config",
                              "output_dir",
                              "output_name",
                              "output_prefix_override",

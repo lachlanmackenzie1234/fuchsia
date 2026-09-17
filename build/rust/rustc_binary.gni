@@ -306,6 +306,7 @@ template("rustc_binary") {
                              "features",
                              "inputs",
                              "link_args",
+                             "lint_config",
                              "output_dir",
                              "output_extension",
                              "pool",

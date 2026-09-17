@@ -179,6 +179,7 @@ template("rustc_macro") {
                                "enforce_source_listing",
                                "features",
                                "inputs",
+                               "lint_config",
                                "output_dir",
                                "output_name",
                                "proc_macro_deps",
