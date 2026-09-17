@@ -2740,7 +2740,7 @@ mod tests {
         .await
         .expect("replace_child failed");
         transaction.commit().await.unwrap();
-        store.tombstone_object(object.object_id(), Options::default()).await.unwrap();
+        store.tombstone_object(object.object_id(), Options::default(), None).await.unwrap();
 
         crate::fsck::fsck(fs.clone()).await.unwrap();
 

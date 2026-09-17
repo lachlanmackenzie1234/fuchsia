@@ -28,7 +28,7 @@ use futures::channel::oneshot;
 use futures::stream::{self, FusedStream, Stream};
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use fxfs::errors::FxfsError;
-use fxfs::filesystem::{self, SyncOptions};
+use fxfs::filesystem::{self, SyncOptions, TruncateGuard};
 use fxfs::future_with_guard::FutureWithGuard;
 use fxfs::log::*;
 use fxfs::object_store::directory::Directory;
@@ -505,18 +505,18 @@ impl FxVolume {
     ///
     /// This must be called *after committing* a transaction which deletes the last reference to
     /// |object_id|, since before that point, new connections could be established.
-    pub(super) async fn maybe_purge_file(&self, object_id: u64) -> Result<(), Error> {
+    pub(super) async fn maybe_purge_file(
+        &self,
+        object_id: u64,
+        truncate_guard: Option<&TruncateGuard<'_>>,
+    ) -> Result<(), Error> {
         if let Some(node) = self.cache.get(object_id) {
             node.clone().mark_to_be_purged();
             return Ok(());
         }
         // If this fails, the graveyard should clean it up on next mount.
-        self.store
-            .tombstone_object(
-                object_id,
-                Options { borrow_metadata_space: true, ..Default::default() },
-            )
-            .await?;
+        let txn_options = Options { borrow_metadata_space: true, ..Default::default() };
+        self.store.tombstone_object(object_id, txn_options, truncate_guard).await?;
         Ok(())
     }
 

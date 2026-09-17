@@ -1390,6 +1390,19 @@ impl ObjectStore {
         object_id: u64,
         delta: i64,
     ) -> Result<bool, Error> {
+        self.adjust_refs_impl(transaction, object_id, delta, true).await
+    }
+
+    /// Adjusts the reference count for a given object.  If the reference count reaches zero and
+    /// `add_to_graveyard` is true, the object is moved into the graveyard.  Returns whether the
+    /// reference count reached zero.
+    pub async fn adjust_refs_impl(
+        &self,
+        transaction: &mut Transaction<'_>,
+        object_id: u64,
+        delta: i64,
+        add_to_graveyard: bool,
+    ) -> Result<bool, Error> {
         let mut mutation = self.txn_get_object_mutation(transaction, object_id).await?;
         let refs = if let ObjectValue::Object {
             kind:
@@ -1406,16 +1419,19 @@ impl ObjectStore {
             bail!(FxfsError::NotFile);
         };
         if *refs == 0 {
-            self.add_to_graveyard(transaction, object_id);
+            if add_to_graveyard {
+                self.add_to_graveyard(transaction, object_id);
 
-            // We might still need to adjust the reference count if delta was something other than
-            // -1.
-            if delta != -1 {
-                *refs = 1;
-                transaction.add(self.store_object_id, Mutation::ObjectStore(mutation));
+                // We might still need to adjust the reference count if delta was something other
+                // than -1.
+                if delta != -1 {
+                    *refs = 1;
+                    transaction.add(self.store_object_id, Mutation::ObjectStore(mutation));
+                }
+
+                // Otherwise, we don't commit the mutation as we want to keep reference count as 1
+                // for objects in graveyard.
             }
-            // Otherwise, we don't commit the mutation as we want to keep reference count as 1 for
-            // objects in graveyard.
             Ok(true)
         } else {
             transaction.add(self.store_object_id, Mutation::ObjectStore(mutation));
@@ -1423,11 +1439,13 @@ impl ObjectStore {
         }
     }
 
-    // Purges an object that is in the graveyard.
+    /// Purges an object that is in the graveyard. If a truncate guard is not provided, one will be
+    /// acquired.
     pub async fn tombstone_object(
         &self,
         object_id: u64,
         txn_options: Options<'_>,
+        truncate_guard: Option<&TruncateGuard<'_>>,
     ) -> Result<(), Error> {
         debug_assert!(
             self.tree.exists(&ObjectKey::object(object_id)).await?,
@@ -1443,9 +1461,17 @@ impl ObjectStore {
             "Tombstoning object not in graveyard"
         );
         self.key_manager.remove(object_id).await;
-        let fs = self.filesystem();
-        let truncate_guard = fs.truncate_guard(self.store_object_id, object_id).await;
-        self.trim_or_tombstone(object_id, true, txn_options, &truncate_guard).await
+        let _fs;
+        let _guard;
+        let truncate_guard = match truncate_guard {
+            Some(guard) => guard,
+            None => {
+                _fs = self.filesystem();
+                _guard = _fs.truncate_guard(self.store_object_id, object_id).await;
+                &_guard
+            }
+        };
+        self.trim_or_tombstone(object_id, true, txn_options, truncate_guard).await
     }
 
     /// Trim extents beyond the end of a file for all attributes.  This will remove the entry from
@@ -3026,6 +3052,15 @@ impl JournalingObject for ObjectStore {
                             let info = &mut self.store_info.lock();
                             let object_count = &mut info.as_mut().unwrap().object_count;
                             *object_count = object_count.saturating_sub(1);
+                            if !context.mode.is_replay() {
+                                // Evict the object's keys from `key_manager` when applying the
+                                // tombstone mutation at commit time (rather than when building the
+                                // transaction). This ensures keys are cleaned up for both
+                                // single-transaction purges and graveyard tombstones, while
+                                // ensuring uncommitted transactions that get rolled back have no
+                                // side effects on `key_manager`.
+                                let _ = self.key_manager.remove(item.key.object_id);
+                            }
                         }
                         if !context.mode.is_replay()
                             && matches!(
@@ -3694,7 +3729,10 @@ mod tests {
             child.object_id()
         };
 
-        root_store.tombstone_object(child_id, Options::default()).await.expect("tombstone failed");
+        root_store
+            .tombstone_object(child_id, Options::default(), None)
+            .await
+            .expect("tombstone failed");
 
         // Let fsck check allocations.
         fsck(fs.clone()).await.expect("fsck failed");
@@ -3730,7 +3768,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
         assert!(store.key_manager.get(child.object_id()).await.unwrap().is_some());
         store
-            .tombstone_object(child.object_id(), Options::default())
+            .tombstone_object(child.object_id(), Options::default(), None)
             .await
             .expect("tombstone_object failed");
         assert!(store.key_manager.get(child.object_id()).await.unwrap().is_none());
@@ -3766,7 +3804,10 @@ mod tests {
             child.object_id()
         };
 
-        root_store.tombstone_object(child_id, Options::default()).await.expect("tombstone failed");
+        root_store
+            .tombstone_object(child_id, Options::default(), None)
+            .await
+            .expect("tombstone failed");
         {
             let layers = root_store.tree.layer_set();
             let mut merger = layers.merger();

@@ -854,7 +854,7 @@ mod tests {
             transaction.commit().await.expect("commit failed");
             fs.object_manager()
                 .root_parent_store()
-                .tombstone_object(object_id, Options::default())
+                .tombstone_object(object_id, Options::default(), None)
                 .await
                 .expect("tombstone failed");
         }
@@ -1212,7 +1212,7 @@ mod tests {
         transaction.commit().await.expect("commit failed");
 
         store
-            .tombstone_object(handle.object_id(), Options::default())
+            .tombstone_object(handle.object_id(), Options::default(), None)
             .await
             .expect("tombstone failed");
 

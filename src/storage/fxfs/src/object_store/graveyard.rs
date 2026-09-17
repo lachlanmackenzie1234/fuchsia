@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::FxfsError;
+use crate::filesystem::TruncateGuard;
 use crate::log::*;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
@@ -129,7 +130,7 @@ impl Graveyard {
                     let res = if let Some(attribute_id) = attribute_id {
                         self.tombstone_attribute(store_id, object_id, attribute_id).await
                     } else {
-                        self.tombstone_object(store_id, object_id).await
+                        self.tombstone_object(store_id, object_id, None).await
                     };
                     if let Err(e) = res {
                         error!(
@@ -233,7 +234,12 @@ impl Graveyard {
 
     /// Immediately tombstones (discards) an object in the graveyard.
     /// NB: Code should generally use |queue_tombstone| instead.
-    pub async fn tombstone_object(&self, store_id: u64, object_id: u64) -> Result<(), Error> {
+    pub async fn tombstone_object(
+        &self,
+        store_id: u64,
+        object_id: u64,
+        truncate_guard: Option<&TruncateGuard<'_>>,
+    ) -> Result<(), Error> {
         let store = self
             .object_manager
             .store(store_id)
@@ -252,7 +258,7 @@ impl Graveyard {
         } else {
             Options { borrow_metadata_space: true, ..Default::default() }
         };
-        store.tombstone_object(object_id, options).await
+        store.tombstone_object(object_id, options, truncate_guard).await
     }
 
     /// Immediately tombstones (discards) and attribute in the graveyard.

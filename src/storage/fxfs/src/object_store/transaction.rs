@@ -950,6 +950,12 @@ impl<'a> Transaction<'a> {
         self.fs.lock_manager().downgrade_locks(&self.txn_locks);
         Ok(())
     }
+
+    /// Prepares to commit by upgrading transaction locks to write locks and waiting for active
+    /// readers to finish.
+    pub async fn commit_prepare(&self) {
+        self.fs.lock_manager().commit_prepare(self).await;
+    }
 }
 
 impl Drop for Transaction<'_> {
@@ -1328,6 +1334,13 @@ impl LockManager {
             {
                 let mut locks = self.locks.lock();
                 let entry = locks.keys.get_mut(lock).unwrap();
+                // Callers may invoke `Transaction::commit_prepare` explicitly before committing
+                // (e.g. to upgrade locks and verify invariants after disk I/O has finished).
+                // Skipping keys already in `LockState::WriteLock` makes `commit_prepare`
+                // idempotent when called again during `commit_transaction`.
+                if entry.state == LockState::WriteLock {
+                    continue;
+                }
                 assert_eq!(entry.state, LockState::Locked);
 
                 if entry.read_count == 0 {
