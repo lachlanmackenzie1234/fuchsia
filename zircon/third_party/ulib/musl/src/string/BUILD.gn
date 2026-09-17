@@ -295,11 +295,7 @@ source_set("wcs") {
   visibility = [ ":*" ]
 
   deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
-  sources = [
-    "wcscasecmp.c",
-    "wcsncasecmp.c",
-    "wcswcs.c",
-  ]
+  sources = [ "wcswcs.c" ]
 
   if (zircon_toolchain != false) {
     configs -= [ "//build/config:symbol_visibility_hidden" ]
