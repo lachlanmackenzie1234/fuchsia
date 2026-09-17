@@ -60,18 +60,8 @@ group("common") {
   ]
 }
 
-fuchsia_driver_dml("goodix-gt6853-cpp-dml") {
-  dml = "meta/goodix-gt6853-cpp.dml"
-  driver_name = "goodix-gt6853-cpp"
-}
-
-fuchsia_driver_dml("goodix-gt6853-rust-dml") {
-  dml = "meta/goodix-gt6853-rust.dml"
-  driver_name = "goodix-gt6853-rust"
-}
-
 driver_bind_rules("goodix-gt6853-bind") {
-  dml_label = ":goodix-gt6853-cpp-dml"
+  rules = "meta/goodix-gt6853.bind"
   tests = "meta/goodix-gt6853-bind-test.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -158,21 +148,15 @@ fuchsia_rust_driver("driver-rust") {
 fuchsia_driver_component("component-cpp") {
   info = "meta/goodix-gt6853-module-info.json"
   component_name = "goodix-gt6853"
-  dml_label = ":goodix-gt6853-cpp-dml"
-  deps = [
-    ":driver-cpp",
-    ":goodix-gt6853-bind",
-  ]
+  manifest = "meta/goodix-gt6853-cpp.cml"
+  deps = [ ":driver-cpp" ]
 }
 
 fuchsia_driver_component("component-rust") {
   info = "meta/goodix-gt6853-module-info.json"
   component_name = "goodix-gt6853"
-  dml_label = ":goodix-gt6853-rust-dml"
-  deps = [
-    ":driver-rust",
-    ":goodix-gt6853-bind",
-  ]
+  manifest = "meta/goodix-gt6853-rust.cml"
+  deps = [ ":driver-rust" ]
 }
 
 group("component") {

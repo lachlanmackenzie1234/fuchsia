@@ -5,13 +5,8 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
-fuchsia_driver_dml("usb-audio-dml") {
-  dml = "meta/usb-audio.dml"
-  driver_name = "usb-audio"
-}
-
 driver_bind_rules("usb_audio_bind") {
-  dml_label = ":usb-audio-dml"
+  rules = "meta/usb-audio.bind"
   bind_output = "usb-audio.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
@@ -97,12 +92,9 @@ fuchsia_driver_component("usb-audio") {
     "//src/media/audio/drivers",
   ]
   component_name = "usb-audio"
-  deps = [
-    ":usb-audio-driver",
-    ":usb_audio_bind",
-  ]
+  deps = [ ":usb-audio-driver" ]
   info = "meta/usb-audio-info.json"
-  dml_label = ":usb-audio-dml"
+  manifest = "meta/usb-audio.cml"
 }
 
 fuchsia_driver_package("package") {
