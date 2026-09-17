@@ -14,20 +14,8 @@ declare_args() {
   virtio_gpu_display_flavor = "cpp"
 }
 
-fuchsia_driver_dml("virtio-gpu-display-cpp-dml") {
-  dml = "meta/virtio-gpu-display-cpp.dml"
-  golden_bind = "meta/virtio-gpu-display.bind"
-  driver_name = "virtio-gpu-display-cpp"
-}
-
-fuchsia_driver_dml("virtio-gpu-display-rust-dml") {
-  dml = "meta/virtio-gpu-display-rust.dml"
-  golden_bind = "meta/virtio-gpu-display.bind"
-  driver_name = "virtio-gpu-display-rust"
-}
-
 driver_bind_rules("virtio-gpu-display-bind") {
-  dml_label = ":virtio-gpu-display-cpp-dml"
+  rules = "meta/virtio-gpu-display.bind"
   bind_output = "virtio-gpu-display.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -188,14 +176,14 @@ fuchsia_rust_driver("driver-rust") {
 fuchsia_driver_component("component-cpp") {
   component_name = "virtio-gpu-display"
   info = "meta/virtio-gpu-display-info.json"
-  dml_label = ":virtio-gpu-display-cpp-dml"
+  manifest = "meta/virtio-gpu-display-cpp.cml"
   deps = [ ":driver-cpp" ]
 }
 
 fuchsia_driver_component("component-rust") {
   component_name = "virtio-gpu-display"
   info = "meta/virtio-gpu-display-info.json"
-  dml_label = ":virtio-gpu-display-rust-dml"
+  manifest = "meta/virtio-gpu-display-rust.cml"
   deps = [ ":driver-rust" ]
 }
 

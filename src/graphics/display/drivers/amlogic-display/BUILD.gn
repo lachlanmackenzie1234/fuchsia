@@ -8,13 +8,8 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 import("//build/zbi/kernel_cmdline.gni")
 
-fuchsia_driver_dml("amlogic-display-dml") {
-  dml = "meta/amlogic-display.dml"
-  driver_name = "amlogic-display"
-}
-
 driver_bind_rules("amlogic_display_bind") {
-  dml_label = ":amlogic-display-dml"
+  rules = "meta/amlogic-display.bind"
   bind_output = "amlogic-display.bindbc"
   tests = "meta/bind-tests.json"
   deps = [

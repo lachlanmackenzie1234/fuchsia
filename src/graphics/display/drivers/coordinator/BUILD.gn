@@ -7,13 +7,8 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
-fuchsia_driver_dml("coordinator-dml") {
-  dml = "meta/coordinator.dml"
-  driver_name = "coordinator"
-}
-
 driver_bind_rules("coordinator_bind") {
-  dml_label = ":coordinator-dml"
+  rules = "meta/coordinator.bind"
   bind_output = "display-coordinator.bindbc"
   tests = "meta/bind_tests.json"
   deps = [ "//src/devices/bind/fuchsia" ]
