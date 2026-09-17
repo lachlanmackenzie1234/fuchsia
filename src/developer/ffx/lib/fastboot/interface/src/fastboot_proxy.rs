@@ -219,7 +219,7 @@ async fn handle_command<T: AsyncRead + AsyncWrite + Unpin>(
     timeout: Duration,
 ) -> Result<(), FastbootError> {
     match send_with_timeout(ctx.clone(), cmd.clone(), interface, timeout).await? {
-        Reply::Okay(m) if m == "" => Ok(()),
+        Reply::Okay(_) => Ok(()),
         Reply::Fail(message) => {
             Err(FlashError::StreamFailed { command: cmd.clone(), message }.into())
         }
@@ -242,7 +242,7 @@ async fn wait_for_ack<T: AsyncRead + AsyncWrite + Unpin>(
     timeout: Duration,
 ) -> Result<(), fastboot::FastbootError> {
     match read_and_log_info_with_timeout(interface, timeout).await {
-        Ok(Reply::Okay(msg)) if msg == "" => Ok(()),
+        Ok(Reply::Okay(_)) => Ok(()),
         Ok(reply) => log_err(UnexpectedReply { reply }, progress_listener).await,
         Err(err) => log_err(CouldNotVerifyUpload(err.into()), progress_listener).await,
     }
@@ -1406,6 +1406,43 @@ mod test {
         );
 
         assert!(var_server.recv().await.is_none());
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_stream_non_empty_okay_replies() -> Result<()> {
+        let mut test_transport = TestTransport::new();
+        test_transport.extend([
+            Reply::Data(4),
+            Reply::Okay("0.005s".to_string()), // Non-empty download ack
+            Reply::Okay("flashed ok".to_string()), // Non-empty stream-flash ack
+            Reply::Okay("filled ok".to_string()), // Non-empty stream-fill ack
+        ]);
+
+        let mut fastboot_client = FastbootProxy::<TestTransport> {
+            target_id: "foo".to_string(),
+            interface: Some(test_transport),
+            interface_factory: Box::new(TestTransportFactory {}),
+            ctx: FastbootContext::new(),
+        };
+
+        let (progress_tx, mut progress_rx) = mpsc::channel(4);
+
+        let flash_cmd = StreamCommand {
+            offset_bytes: 0,
+            op: StreamOp::Flash { data: bytes::Bytes::from_static(&[1, 2, 3, 4]), crc32: 0x1234 },
+        };
+        fastboot_client.stream("zircon_a", flash_cmd, &progress_tx, Duration::seconds(1)).await?;
+
+        let fill_cmd =
+            StreamCommand { offset_bytes: 4, op: StreamOp::Fill { val: 0, length_bytes: 4096 } };
+        fastboot_client.stream("zircon_a", fill_cmd, &progress_tx, Duration::seconds(1)).await?;
+
+        assert_eq!(progress_rx.recv().await, Some(UploadProgress::OnProgress { bytes_written: 4 }));
+        assert_eq!(
+            progress_rx.recv().await,
+            Some(UploadProgress::OnProgress { bytes_written: 4100 })
+        );
         Ok(())
     }
 }
