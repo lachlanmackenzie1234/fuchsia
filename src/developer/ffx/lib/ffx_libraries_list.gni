@@ -66,6 +66,7 @@ if (is_linux) {
 
 tests_migrated_ffx_libraries = [
   # keep-sorted start
+  "arg_parsing",
   "buildid",
   "compat_info",
   "daemonize",
@@ -75,6 +76,7 @@ tests_migrated_ffx_libraries = [
   "netext",
   "port_picker",
   "safe_string",
+  "termio",
   "traceable_error",
   "version",
 
