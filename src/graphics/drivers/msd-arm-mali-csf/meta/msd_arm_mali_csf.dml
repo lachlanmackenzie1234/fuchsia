@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    name: "bind",
+    composite_name: "mali_csf",
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/driver.so",
-        bind: "meta/bind/bind.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     use: [
         {
-            service: [ "fuchsia.hardware.platform.device.Service" ],
+            name: "pdev",
+            primary: true,
+            bind: { compat: "arm,mali-valhall" },
         },
     ],
 }
