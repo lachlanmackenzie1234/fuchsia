@@ -151,8 +151,11 @@ int IdlePowerThread::Run(void* arg) {
     AutoPreemptDisabler preempt_disabled;
     InterruptDisableGuard interrupt_disable;
 
-    const StateMachine state = this_idle_power_thread.state_.load(ktl::memory_order_acquire);
+    StateMachine state = this_idle_power_thread.state_.load(ktl::memory_order_acquire);
+    bool state_changed = false;
+    bool transition_success = false;
     if (state.target != state.current) {
+      state_changed = true;
       ktrace::Scope trace = KTRACE_CPU_BEGIN_SCOPE_ENABLE(
           kEnableRunloopTracing, "kernel:sched", "transition",
           ("from", ToInternedString(state.current)), ("to", ToInternedString(state.target)));
@@ -168,18 +171,28 @@ int IdlePowerThread::Run(void* arg) {
           // to the desired state.
           StateMachine expected = state;
           const StateMachine desired = {.current = state.target, .target = state.target};
-          const bool success = this_idle_power_thread.CompareExchangeState(expected, desired);
-          if (success) {
+          transition_success = this_idle_power_thread.CompareExchangeState(expected, desired);
+          if (transition_success) {
             DEBUG_ASSERT_MSG(desired.current == desired.target, "current=%s target=%s",
                              ToString(desired.current), ToString(desired.target));
+            state = desired;
             UpdateMonotonicClock(cpu_num, desired);
-
           } else {
             DEBUG_ASSERT_MSG(expected == kSuspendToWakeup || expected == kWakeup,
                              "current=%s target=%s", ToString(expected.current),
                              ToString(expected.target));
+            state = expected;
           }
-          this_idle_power_thread.complete_.Signal();
+          // Do not signal completion when the boot CPU transitions to Suspend. The boot CPU is
+          // suspended last and should not prematurely signal completion to
+          // TransitionAllActiveToSuspend() before actually entering suspension. If preemption is
+          // pending, the boot CPU will abort entering suspend and loop; delaying the signal allows
+          // WaitDeadline() in TransitionFromTo() to observe the canceled state (e.g. Wakeup) on the
+          // next transition and return ZX_ERR_CANCELED, or timeout if the canceled state is not
+          // observed.
+          if (state.current != State::Suspend || cpu_num != BOOT_CPU_ID) {
+            this_idle_power_thread.complete_.Signal();
+          }
           break;
         }
 
@@ -204,10 +217,15 @@ int IdlePowerThread::Run(void* arg) {
       // If the power thread just transitioned to Active or Wakeup, reschedule to ensure that the
       // run queue is evaluated. Otherwise, this thread may continue to run the idle loop until the
       // next IPI.
-      if (state.target == State::Active || state.target == State::Wakeup) {
+      if (state.current == State::Active || state.current == State::Wakeup) {
         Thread::Current::Reschedule();
       }
-    } else {
+    }
+
+    const bool should_suspend_or_idle =
+        !state_changed || (transition_success && state.current == State::Suspend);
+
+    if (should_suspend_or_idle) {
       DEBUG_ASSERT(arch_ints_disabled());
       DEBUG_ASSERT(!Thread::Current::Get()->preemption_state().PreemptIsEnabled());
 
