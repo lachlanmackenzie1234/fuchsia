@@ -153,7 +153,7 @@ impl SshConnector {
             cmd.stderr.take().expect("process should have stderr"),
         );
         match ffx_ssh::parse::parse_ssh_output(&mut stdout, &mut stderr, &self.env_context).await {
-            Ok((addr, _overnet_id)) => {
+            Ok((_addr, _overnet_id)) => {
                 let stdin = cmd.stdin.take().expect("process should have stdin");
                 let stderr = stderr.lines();
                 let (error_sender, errors_receiver) = async_channel::unbounded();
@@ -166,7 +166,6 @@ impl SshConnector {
                     input: Box::new(stdin),
                     errors: errors_receiver,
                     main_task,
-                    ssh_host_address: Some(addr),
                 }))
             }
             Err(e) => Ok(Err(e)),

@@ -126,7 +126,6 @@ impl FidlPipe {
 
         let device_address = connector.device_address();
         let (error_sender, error_queue) = async_channel::unbounded();
-        let host_ssh_address = overnet_connection.as_ref().and_then(|x| x.ssh_host_address.clone());
 
         let (node, overnet_task) = if let Some(overnet_connection) = overnet_connection {
             let node = overnet_core::Router::new(None)?;
@@ -188,7 +187,7 @@ impl FidlPipe {
                 task: Some(main_task),
                 error_queue,
                 device_address,
-                host_ssh_address,
+                host_ssh_address: None,
                 is_terminated,
             },
             node,
