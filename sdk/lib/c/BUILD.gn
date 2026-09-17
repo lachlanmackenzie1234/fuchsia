@@ -39,6 +39,7 @@ libc_components = [
   "stdlib",
   "threads",
   "wchar",
+  "wctype",
   "zircon",
 ]
 
@@ -100,7 +101,11 @@ group("unittests") {
 # compiled into libc or just into unit test code.
 config("llvm-libc.config") {
   visibility = [ "./*" ]
-  defines = [ "LIBC_COPT_USE_C_ASSERT=1" ]
+  defines = [
+    "LIBC_ENABLE_CONSTEXPR=1",
+    "LIBC_COPT_USE_C_ASSERT=1",
+    "LIBC_CONF_WCTYPE_MODE=LIBC_WCTYPE_MODE_UTF8",
+  ]
   include_dirs = [
     ".",
 
