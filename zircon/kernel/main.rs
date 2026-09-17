@@ -49,6 +49,9 @@ pub mod debuglog_rs;
 #[path = "lib/ktrace/src/mod.rs"]
 pub mod ktrace_rs;
 
+#[path = "lib/page_cache/page_cache.rs"]
+pub mod page_cache;
+
 #[path = "lib/persistent-debuglog/persistent_debuglog.rs"]
 pub mod persistent_debuglog_rs;
 
