@@ -115,18 +115,22 @@ void Recorder::MaybeRecordAllocation(void* address, size_t size) {
   if (!GetPoissonSampler().ShouldSampleAllocation(size))
     return;
 
-  // Store the address of the allocation.
-  {
-    fbl::AutoLock lock(&lock_);
-    recorded_allocations_.emplace(address);
+  if (!RecordAllocation(address, size)) {
+    return;
   }
 
-  RecordAllocation(address, size);
+  // Store the address of the allocation if still active.
+  {
+    fbl::AutoLock lock(&lock_);
+    if (!is_disabled_.load(std::memory_order_relaxed)) {
+      recorded_allocations_.emplace(address);
+    }
+  }
 }
 
-void Recorder::RecordAllocation(void* address, size_t size) {
+bool Recorder::RecordAllocation(void* address, size_t size) {
   if (is_disabled_.load(std::memory_order_relaxed)) {
-    return;
+    return false;
   }
   uint64_t pc_buffer[kMaxStackFramesLength]{0};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
@@ -145,19 +149,29 @@ void Recorder::RecordAllocation(void* address, size_t size) {
     fit::result encoded = fidl::Persist(datagram);
     if (encoded.is_ok()) {
       zx_status_t status = socket_.write(0, encoded->data(), encoded->size(), nullptr);
+      if (status == ZX_OK) {
+        return true;
+      }
       if (status == ZX_ERR_PEER_CLOSED) {
         Disconnect();
+      } else if (status == ZX_ERR_SHOULD_WAIT) {
+        if (!peer_signaled_.exchange(true, std::memory_order_relaxed)) {
+          if (socket_.signal_peer(0, ZX_USER_SIGNAL_0) == ZX_ERR_PEER_CLOSED) {
+            Disconnect();
+          }
+        }
       }
     }
-    return;
+    return false;
   }
 
   // Fallback FIDL path
   bool is_peer_closed = false;
+  bool is_ok = false;
   {
     fbl::AutoLock lock(&lock_);
     if (!client_.is_valid()) {
-      return;
+      return false;
     }
     zx_signals_t signals = 0;
     if (client_.client_end().channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(),
@@ -168,18 +182,23 @@ void Recorder::RecordAllocation(void* address, size_t size) {
       auto result = client_->RecordAllocation(event);
       if (result.is_error()) {
         is_peer_closed = true;
+      } else {
+        is_ok = true;
       }
     }
   }
   if (is_peer_closed) {
     Disconnect();
+    return false;
   }
+  return is_ok;
 #else
   bool is_peer_closed = false;
+  bool is_ok = false;
   {
     fbl::AutoLock lock(&lock_);
     if (!client_.is_valid()) {
-      return;
+      return false;
     }
     zx_signals_t signals = 0;
     if (client_.client_end().channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(),
@@ -196,12 +215,16 @@ void Recorder::RecordAllocation(void* address, size_t size) {
       }});
       if (result.is_error()) {
         is_peer_closed = true;
+      } else {
+        is_ok = true;
       }
     }
   }
   if (is_peer_closed) {
     Disconnect();
+    return false;
   }
+  return is_ok;
 #endif
 }
 
@@ -245,6 +268,12 @@ void Recorder::ForgetAllocation(void* address) {
       zx_status_t status = socket_.write(0, encoded->data(), encoded->size(), nullptr);
       if (status == ZX_ERR_PEER_CLOSED) {
         Disconnect();
+      } else if (status == ZX_ERR_SHOULD_WAIT) {
+        if (!peer_signaled_.exchange(true, std::memory_order_relaxed)) {
+          if (socket_.signal_peer(0, ZX_USER_SIGNAL_0) == ZX_ERR_PEER_CLOSED) {
+            Disconnect();
+          }
+        }
       }
     }
     return;

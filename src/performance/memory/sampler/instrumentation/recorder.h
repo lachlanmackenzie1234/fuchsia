@@ -67,6 +67,12 @@ class Recorder {
   void Disconnect() __TA_EXCLUDES(&lock_);
 
  private:
+  // Grants tests access to internal state. Unlike
+  // `CreateRecorderForTesting`, which only constructs an instance, the state
+  // tests need to manipulate here is an implementation detail that should not
+  // become part of this class' API.
+  friend struct RecorderTestPeer;
+
   Recorder(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client, zx::socket socket,
            std::function<PoissonSampler &()> get_poisson_sampler);
   // Initializes the singleton into statically-allocated storage.
@@ -75,12 +81,13 @@ class Recorder {
   fidl::SyncClient<fuchsia_memory_sampler::Sampler> client_ __TA_GUARDED(&lock_);
   zx::socket socket_;
   std::atomic<bool> is_disabled_{false};
+  std::atomic<bool> peer_signaled_{false};
   std::unordered_set<void *> recorded_allocations_ __TA_GUARDED(&lock_);
   std::function<PoissonSampler &()> GetPoissonSampler;
 
   // Records an allocation's address and size and communicates it to
-  // the profiler.
-  void RecordAllocation(void *address, size_t size) __TA_EXCLUDES(&lock_);
+  // the profiler. Returns true if the allocation was successfully recorded.
+  bool RecordAllocation(void *address, size_t size) __TA_EXCLUDES(&lock_);
   // Records a deallocation's address and communicates it to the
   // profiler.
   void ForgetAllocation(void *address) __TA_EXCLUDES(&lock_);
