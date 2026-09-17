@@ -22,6 +22,8 @@
 import("../mesa.gni")
 
 config("common_config") {
+  configs = [ "//build/config:Wno-unterminated-string-initialization" ]
+
   mesa_version = read_file("$mesa_source_root/VERSION", "trim string")
 
   defines = [

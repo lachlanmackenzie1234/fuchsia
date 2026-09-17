@@ -804,10 +804,6 @@ config("default_warnings") {
   }
 
   configs = [
-    # TODO(https://fxbug.dev/415133536): Disable "-Wunterminated-string-initialization"
-    # until all instances are fixed.
-    ":Wno-unterminated-string-initialization",
-
     # TODO(https://fxbug.dev/42073532): //third_party/spirv* need this but they
     # need it added to BUILD.gn files not in fuchsia.git
     ":Wno-deprecated-this-capture",
@@ -1541,6 +1537,14 @@ config("Wno-nontrivial-memaccess") {
 # TODO(https://fxbug.dev/415133536): Disable "-Wunterminated-string-initialization"
 # until all instances are fixed.
 config("Wno-unterminated-string-initialization") {
+  visibility = [
+    "//third_party/acpica-migrating/*",
+    "//third_party/acpica/*",
+    "//third_party/mesa-migrating/*",
+    "//third_party/openssh-portable/*",
+    "//tools/vboot_reference/*",
+    "//vendor/third_party/oemcrypto/*",
+  ]
   cflags_c = [ "-Wno-unterminated-string-initialization" ]
 }
 
