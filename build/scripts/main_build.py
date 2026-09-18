@@ -69,6 +69,9 @@ def ts_msg(
 
 GLOBAL_RESULTSTORE_CONFIG = pathlib.Path(".fx/config/resultstore")
 LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
+DEFAULT_RBE_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
+DEFAULT_RESULTSTORE_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
+DEFAULT_CAS_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
 BAZEL_CRED_HELPER = pathlib.Path(
     "/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper"
 )
@@ -77,6 +80,33 @@ BAZEL_CRED_HELPER = pathlib.Path(
 @dataclasses.dataclass
 class BuildResult(object):
     return_code: int
+
+
+def _parse_cfg_text(text: str) -> dict[str, str]:
+    """Parses key-value pairs from a raw .cfg string, ignoring comments and stripping lines."""
+    cfg_data = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            key, sep, value = line.partition("=")
+            if sep:
+                cfg_data[key.strip()] = value.strip()
+    return cfg_data
+
+
+def _parse_cfg_file(config_path: pathlib.Path) -> dict[str, str]:
+    """Safely reads a .cfg file and parses it into a dictionary of key-value pairs."""
+    try:
+        if config_path.is_file():
+            return _parse_cfg_text(config_path.read_text())
+    except Exception as e:
+        # Speculative configuration parsing of user cfg files is non-critical to
+        # core build orchestration. Print a diagnostic warning but proceed.
+        msg(
+            f"Warning: Failed to read RBE/ResultStore config file {config_path}: {e}",
+            file=sys.stderr,
+        )
+    return {}
 
 
 class BuildConfigurationError(Exception):
@@ -534,6 +564,56 @@ class FuchsiaBuildContext(object):
 
         return env
 
+    @property
+    def build_service_env(self) -> dict[str, str]:
+        """Returns a dictionary of environment variables related to build-service proxying/overrides."""
+        env: dict[str, str] = {}
+
+        # Override the remote execution and resultstore proxy endpoints with
+        # unix:// socket paths if explicit CLI sockets are passed.
+        # LINT.IfChange(bazel_socket_env_vars)
+        if self.config.remote_proxy_socket:
+            socket_str = str(self.config.remote_proxy_socket)
+            # Override for reproxy, through build/rbe/fuchsia-reproxy-wrap.sh:
+            env["RBE_service"] = f"unix://{socket_str}"
+            # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
+            env["RS_cas_service"] = f"unix://{socket_str}"
+            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel remote traffic
+            env["FX_INTERNAL_BAZEL_RBE_SOCKET_PATH"] = socket_str
+
+        if self.config.resultstore_proxy_socket:
+            socket_str = str(self.config.resultstore_proxy_socket)
+            # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
+            env["RS_rs_service"] = f"unix://{socket_str}"
+            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel resultstore traffic
+            env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"] = socket_str
+        # LINT.ThenChange(
+        #   //build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars,
+        #   //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_socket_env_vars,
+        #   //build/resultstore/fuchsia-rsproxy-wrap.sh:rs_service_env_vars
+        # )
+
+        # Forward ResultStore/CAS instance names passed from CLI arguments only if they differ from on-disk configured defaults.
+        # These RS_ variables directly drive/influence the rsproxy daemon.
+        # LINT.IfChange(rs_instance_env_vars)
+        if self.config.resultstore_instance:
+            if (
+                self.config.resultstore_instance
+                != self.resolved_resultstore_instance
+            ):
+                env["RS_rs_instance"] = self.config.resultstore_instance
+        if self.config.cas_instance:
+            if self.config.cas_instance != self.resolved_cas_instance:
+                env["RS_cas_instance"] = self.config.cas_instance
+        # LINT.ThenChange(//build/resultstore/fuchsia-rsproxy-wrap.sh:rs_instance_env_vars)
+
+        # Forward RBE instance name passed from CLI arguments only if it differs from the on-disk configured default.
+        if self.config.rbe_instance:
+            if self.config.rbe_instance != self.resolved_rbe_instance:
+                env["RBE_instance"] = self.config.rbe_instance
+
+        return env
+
     @staticmethod
     def from_args(
         args: argparse.Namespace,
@@ -567,6 +647,31 @@ class FuchsiaBuildContext(object):
                 args, default_resultstore=resultstore_pref
             ),
         )
+
+    @functools.cached_property
+    def resolved_rbe_instance(self) -> str:
+        """Finds the default RBE instance configured on disk."""
+        config_path = self.source_dir / "build/rbe/fuchsia-reproxy.cfg"
+        cfg = _parse_cfg_file(config_path)
+        return cfg.get("instance", DEFAULT_RBE_INSTANCE)
+
+    @functools.cached_property
+    def resolved_resultstore_instance(self) -> str:
+        """Finds the default ResultStore instance configured on disk."""
+        config_path = (
+            self.source_dir / "build/resultstore/fuchsia-resultstore.cfg"
+        )
+        cfg = _parse_cfg_file(config_path)
+        return cfg.get("rs_instance", DEFAULT_RESULTSTORE_INSTANCE)
+
+    @functools.cached_property
+    def resolved_cas_instance(self) -> str:
+        """Finds the default CAS instance configured on disk."""
+        config_path = (
+            self.source_dir / "build/resultstore/fuchsia-resultstore.cfg"
+        )
+        cfg = _parse_cfg_file(config_path)
+        return cfg.get("cas_instance", DEFAULT_CAS_INSTANCE)
 
     @property
     def rbe_settings_file(self) -> pathlib.Path:
@@ -1045,44 +1150,7 @@ class BuildInvocation(object):
         build_env["FX_INTERNAL_RESULTSTORE_BAZEL"] = resultstore_bazel
         # LINT.ThenChange(//build/bazel/wrapper.bazel.sh:resultstore_bazel_env_vars)
 
-        # Override the remote execution and resultstore proxy endpoints with
-        # unix:// socket paths if explicit CLI sockets are passed.
-        # LINT.IfChange(bazel_socket_env_vars)
-        if self.context.config.remote_proxy_socket:
-            socket_str = str(self.context.config.remote_proxy_socket)
-            # Override for reproxy, through build/rbe/fuchsia-reproxy-wrap.sh:
-            build_env["RBE_service"] = f"unix://{socket_str}"
-            # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
-            build_env["RS_cas_service"] = f"unix://{socket_str}"
-            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel remote traffic
-            build_env["FX_INTERNAL_BAZEL_RBE_SOCKET_PATH"] = socket_str
-
-        if self.context.config.resultstore_proxy_socket:
-            socket_str = str(self.context.config.resultstore_proxy_socket)
-            # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
-            build_env["RS_rs_service"] = f"unix://{socket_str}"
-            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel resultstore traffic
-            build_env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"] = socket_str
-        # LINT.ThenChange(
-        #   //build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars,
-        #   //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_socket_env_vars,
-        #   //build/resultstore/fuchsia-rsproxy-wrap.sh:rs_service_env_vars
-        # )
-
-        # Forward ResultStore/CAS instance names passed from CLI arguments.
-        # These RS_ variables directly drive/influence the rsproxy daemon.
-        # LINT.IfChange(rs_instance_env_vars)
-        if self.context.config.resultstore_instance:
-            build_env[
-                "RS_rs_instance"
-            ] = self.context.config.resultstore_instance
-        if self.context.config.cas_instance:
-            build_env["RS_cas_instance"] = self.context.config.cas_instance
-        # LINT.ThenChange(//build/resultstore/fuchsia-rsproxy-wrap.sh:rs_instance_env_vars)
-
-        # Forward RBE instance name passed from CLI arguments.
-        if self.context.config.rbe_instance:
-            build_env["RBE_instance"] = self.context.config.rbe_instance
+        build_env.update(self.context.build_service_env)
 
         return build_env
 

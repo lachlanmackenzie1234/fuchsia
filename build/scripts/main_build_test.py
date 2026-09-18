@@ -690,6 +690,64 @@ class BuildInvocationTest(MainBuildTestBase):
                 "projects/fuchsia-infra/instances/default_instance",
             )
 
+    def test_get_build_env_no_forward_when_matching_disk_defaults(self) -> None:
+        context = self.create_context(
+            resultstore_instance="projects/rbe-fuchsia-prod/instances/default",
+            cas_instance="projects/rbe-fuchsia-prod/instances/default",
+            rbe_instance="projects/rbe-fuchsia-prod/instances/default",
+        )
+        context.env = {"USER": "fuchsia-user"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertNotIn("RS_rs_instance", env)
+            self.assertNotIn("RS_cas_instance", env)
+            self.assertNotIn("RBE_instance", env)
+
+    def test_build_service_env_empty_defaults(self) -> None:
+        context = self.create_context()
+        self.assertEqual(context.build_service_env, {})
+
+    def test_build_service_env_custom_overrides(self) -> None:
+        context = self.create_context(
+            resultstore_instance="projects/custom-rs/instances/default",
+            cas_instance="projects/custom-cas/instances/default",
+            rbe_instance="projects/custom-rbe/instances/default",
+            remote_proxy_socket="/tmp/rbe.sock",
+            resultstore_proxy_socket="/tmp/rs.sock",
+        )
+        env = context.build_service_env
+        self.assertEqual(
+            env["RS_rs_instance"], "projects/custom-rs/instances/default"
+        )
+        self.assertEqual(
+            env["RS_cas_instance"], "projects/custom-cas/instances/default"
+        )
+        self.assertEqual(
+            env["RBE_instance"], "projects/custom-rbe/instances/default"
+        )
+        self.assertEqual(env["RBE_service"], "unix:///tmp/rbe.sock")
+        self.assertEqual(env["RS_cas_service"], "unix:///tmp/rbe.sock")
+        self.assertEqual(env["RS_rs_service"], "unix:///tmp/rs.sock")
+
+    def test_parse_cfg_text(self) -> None:
+        cfg_text = (
+            "\n"
+            "        # Comment line\n"
+            "        key1 = value1\n"
+            "        key2=value2\n"
+            "        # Another comment\n"
+            "        key3 =  value3" + "  \n"
+        )
+        parsed = main_build._parse_cfg_text(cfg_text)
+        self.assertEqual(
+            parsed, {"key1": "value1", "key2": "value2", "key3": "value3"}
+        )
+
+    def test_parse_cfg_file_missing_returns_empty(self) -> None:
+        non_existent = pathlib.Path("/nonexistent/file.cfg")
+        self.assertEqual(main_build._parse_cfg_file(non_existent), {})
+
     def test_get_build_env_no_forward_rs_variables_from_env(self) -> None:
         context = self.create_context()
         context.env = {
