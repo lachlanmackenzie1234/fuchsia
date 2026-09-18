@@ -56,8 +56,11 @@ class LinkMetrics:
     """Represents link quality and rate metrics perceived by AP and DUT."""
 
     ap_rssi: int | None = None
+    ap_snr: int | None = None
     ap_tx_rate_mbps: float | None = None
     ap_rx_rate_mbps: float | None = None
+    ap_phy_mode: str | None = None
+    ap_nss: int | None = None
     dut_rssi: int | None = None
     dut_tx_rate_mbps: float | None = None
     dut_rx_rate_mbps: float | None = None
@@ -88,18 +91,38 @@ class LinkMetricSummary:
     """Aggregated link quality and rate statistics across all measurement samples."""
 
     ap_rssi: MetricStats
+    ap_snr: MetricStats
     ap_tx_rate_mbps: MetricStats
     ap_rx_rate_mbps: MetricStats
     dut_rssi: MetricStats
     dut_tx_rate_mbps: MetricStats
     dut_rx_rate_mbps: MetricStats
+    phy_mode: str | None
+    nss: int | None
     samples: list[LinkMetrics]
 
     @classmethod
     def from_samples(cls, samples: list[LinkMetrics]) -> "LinkMetricSummary":
+        # Find the most recent valid phy_mode and nss from the collected samples,
+        # reflecting the steady-state negotiated configuration under load.
+        phy_mode: str | None = None
+        for s in reversed(samples):
+            if s.ap_phy_mode:
+                phy_mode = s.ap_phy_mode
+                break
+
+        nss: int | None = None
+        for s in reversed(samples):
+            if s.ap_nss is not None:
+                nss = s.ap_nss
+                break
+
         return cls(
             ap_rssi=MetricStats.from_values(
                 [s.ap_rssi for s in samples], round_digits=1
+            ),
+            ap_snr=MetricStats.from_values(
+                [s.ap_snr for s in samples], round_digits=1
             ),
             ap_tx_rate_mbps=MetricStats.from_values(
                 [s.ap_tx_rate_mbps for s in samples], round_digits=1
@@ -116,6 +139,8 @@ class LinkMetricSummary:
             dut_rx_rate_mbps=MetricStats.from_values(
                 [s.dut_rx_rate_mbps for s in samples], round_digits=1
             ),
+            phy_mode=phy_mode,
+            nss=nss,
             samples=samples,
         )
 
@@ -126,8 +151,16 @@ class LinkMetricSummary:
         def fmt_rssi(val: float | None) -> str:
             return f"{val:.1f} dBm" if val is not None else "N/A"
 
+        def fmt_snr(val: float | None) -> str:
+            return f"{val:.1f} dB" if val is not None else "N/A"
+
+        mode_str = self.phy_mode or "N/A"
+        nss_str = str(self.nss) if self.nss is not None else "N/A"
+
         return (
-            f"AP PHY (RSSI: {fmt_rssi(self.ap_rssi.avg)}, "
+            f"AP PHY (Mode: {mode_str}, NSS: {nss_str}, "
+            f"RSSI: {fmt_rssi(self.ap_rssi.avg)}, "
+            f"SNR: {fmt_snr(self.ap_snr.avg)}, "
             f"TX: {fmt_rate(self.ap_tx_rate_mbps.avg)}, "
             f"RX: {fmt_rate(self.ap_rx_rate_mbps.avg)}), "
             f"DUT PHY (RSSI: {fmt_rssi(self.dut_rssi.avg)}, "
@@ -154,6 +187,10 @@ class LinkMetricSummary:
                 ],
             ),
             (
+                "  SNR (ap):",
+                [f"{v_val(s.ap_snr)}" for s in self.samples],
+            ),
+            (
                 "  PHY (ap_tx/dut_rx):",
                 [
                     f"{r_val(s.ap_tx_rate_mbps)}/{r_val(s.dut_rx_rate_mbps)}"
@@ -176,12 +213,12 @@ class LinkMetricSummary:
         ]
 
     def to_csv_strings(self) -> list[str]:
-        def fmt_rssi_avg(val: int | float | None) -> str:
+        def fmt_avg(val: int | float | None) -> str:
             if val is None:
                 return ""
             return f"{val:.1f}"
 
-        def fmt_rssi(val: int | float | None) -> str:
+        def fmt_val(val: int | float | None) -> str:
             if val is None:
                 return ""
             if isinstance(val, float) and val.is_integer():
@@ -194,12 +231,12 @@ class LinkMetricSummary:
             return f"{val:.1f}"
 
         vals: list[str] = []
-        for s in [self.ap_rssi]:
-            vals.extend([fmt_rssi_avg(s.avg), fmt_rssi(s.min), fmt_rssi(s.max)])
+        for s in [self.ap_rssi, self.ap_snr]:
+            vals.extend([fmt_avg(s.avg), fmt_val(s.min), fmt_val(s.max)])
         for s in [self.ap_tx_rate_mbps, self.ap_rx_rate_mbps]:
             vals.extend([fmt_rate(s.avg), fmt_rate(s.min), fmt_rate(s.max)])
         for s in [self.dut_rssi]:
-            vals.extend([fmt_rssi_avg(s.avg), fmt_rssi(s.min), fmt_rssi(s.max)])
+            vals.extend([fmt_avg(s.avg), fmt_val(s.min), fmt_val(s.max)])
         for s in [self.dut_tx_rate_mbps, self.dut_rx_rate_mbps]:
             vals.extend([fmt_rate(s.avg), fmt_rate(s.min), fmt_rate(s.max)])
         return vals
@@ -305,9 +342,10 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         with open(self.csv_file_path, "w", encoding="utf-8") as csv_file:
             csv_file.write(
-                "security,channel,bandwidth,"
+                "security,channel,bandwidth,phy_mode,nss,"
                 + "udp_or_tcp,dut_tx_or_rx,result_mbps,"
                 + "ap_rssi_avg,ap_rssi_min,ap_rssi_max,"
+                + "ap_snr_avg,ap_snr_min,ap_snr_max,"
                 + "ap_tx_rate_mbps_avg,ap_tx_rate_mbps_min,ap_tx_rate_mbps_max,"
                 + "ap_rx_rate_mbps_avg,ap_rx_rate_mbps_min,ap_rx_rate_mbps_max,"
                 + "dut_rssi_avg,dut_rssi_min,dut_rssi_max,"
@@ -375,8 +413,11 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f"Expected positive AP RX PHY rate for {dut_mac}: {ap_status}",
         )
         metrics.ap_rssi = ap_status.rssi
+        metrics.ap_snr = ap_status.snr
         metrics.ap_tx_rate_mbps = ap_status.tx_rate_mbps
         metrics.ap_rx_rate_mbps = ap_status.rx_rate_mbps
+        metrics.ap_phy_mode = ap_status.phy_mode
+        metrics.ap_nss = ap_status.nss
 
         # 2. Query DUT perspective
         signal_report = await iface.get_signal_report()
@@ -703,6 +744,8 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     sec_name,
                     str(test.channel),
                     str(test.channel_bandwidth),
+                    metrics.phy_mode or "",
+                    str(metrics.nss) if metrics.nss is not None else "",
                     proto,
                     direction,
                     str(mbps),
