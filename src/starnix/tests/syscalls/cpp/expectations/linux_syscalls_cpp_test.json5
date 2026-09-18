@@ -109,7 +109,7 @@
                 "InputTest.DevicePropertiesMatchKeyboardProperties",
                 "InputTest.DevicePropertiesMatchTouchProperties",
                 "InputTest.DeviceCanBeRegisteredWithEpoll",
-                "InputTest.DevicePropertiesMatchMouseWheelProperties",
+                "InputTest.DevicePropertiesMatchMouseProperties",
                 "InputTest.GetDeviceName",
                 "InputTest.CurrentStateQueriesSucceed",
 

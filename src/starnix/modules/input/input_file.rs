@@ -19,10 +19,11 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_MISC,
-    BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_DOWN, KEY_LEFT,
-    KEY_POWER, KEY_RIGHT, KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, KEY_VOLUMEUP, LED_CNT, MSC_CNT,
-    REL_CNT, REL_WHEEL, SW_CNT, errno, error, uapi,
+    ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_EXTRA,
+    BTN_LEFT, BTN_MIDDLE, BTN_MISC, BTN_RIGHT, BTN_SIDE, BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT,
+    INPUT_PROP_DIRECT, INPUT_PROP_POINTER, KEY_CNT, KEY_DOWN, KEY_LEFT, KEY_POWER, KEY_RIGHT,
+    KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, KEY_VOLUMEUP, LED_CNT, MSC_CNT, REL_CNT, REL_HWHEEL,
+    REL_WHEEL, REL_X, REL_Y, SW_CNT, errno, error, uapi,
 };
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -342,9 +343,36 @@ fn keyboard_position_attributes() -> BitSet<{ min_bytes(ABS_CNT) }> {
     BitSet::new()
 }
 
-fn mouse_wheel_attributes() -> BitSet<{ min_bytes(REL_CNT) }> {
+/// Returns appropriate `KEY`-board/button related flags for a mouse device.
+fn mouse_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     let mut attrs = BitSet::new();
+    // In Linux UAPI, BTN_LEFT has the numeric value 0x110, which is also aliased to BTN_MOUSE.
+    // Evdev and libevdev treat BTN_MOUSE as the primary indicator that a device is a mouse:
+    // https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/android/platform/external/libevdev/libevdev/libevdev.c;l=1134-1140;drc=7007dd6442654da8be96df23cf632ae0e87d7b30
+    attrs.set(BTN_LEFT);
+    attrs.set(BTN_RIGHT);
+    attrs.set(BTN_MIDDLE);
+    attrs.set(BTN_SIDE);
+    attrs.set(BTN_EXTRA);
+    attrs
+}
+
+/// Returns appropriate `REL`-ative motion related flags for a mouse device.
+fn mouse_motion_attributes() -> BitSet<{ min_bytes(REL_CNT) }> {
+    let mut attrs = BitSet::new();
+    attrs.set(REL_X);
+    attrs.set(REL_Y);
     attrs.set(REL_WHEEL);
+    attrs.set(REL_HWHEEL);
+    attrs
+}
+
+/// Returns appropriate `INPUT_PROP`-erties for a mouse device.
+fn mouse_properties() -> BitSet<{ min_bytes(INPUT_PROP_CNT) }> {
+    let mut attrs = BitSet::new();
+    // INPUT_PROP_POINTER indicates a mouse/pointer device.
+    // INPUT_PROP_DIRECT is for direct touchscreens and must NOT be set for a mouse.
+    attrs.set(INPUT_PROP_POINTER);
     attrs
 }
 
@@ -453,7 +481,7 @@ impl InputFile {
         }
     }
 
-    /// Creates an `InputFile` instance suitable for emulating a mouse wheel.
+    /// Creates an `InputFile` instance suitable for emulating a mouse.
     ///
     /// # Parameters
     /// - `input_id`: device's bustype, vendor id, product id, and version.
@@ -463,15 +491,18 @@ impl InputFile {
         Self {
             driver_version: Self::DRIVER_VERSION,
             input_id,
-            supported_event_types: BitSet::list([uapi::EV_REL]),
-            supported_keys: BitSet::new(), // None supported, scroll only
-            supported_position_attributes: BitSet::new(), // None supported, scroll only
-            supported_motion_attributes: mouse_wheel_attributes(),
+            // Mice report relative motion via EV_REL and buttons via EV_KEY.
+            // Absolute motion (EV_ABS) is not supported to avoid misclassification
+            // as a touch digitizer by libinput/Android EventHub.
+            supported_event_types: BitSet::list([uapi::EV_KEY, uapi::EV_REL]),
+            supported_keys: mouse_key_attributes(),
+            supported_position_attributes: BitSet::new(), // Mice report relative motion, not absolute.
+            supported_motion_attributes: mouse_motion_attributes(),
             supported_switches: BitSet::new(), // None supported
             supported_leds: BitSet::new(),     // None supported
             supported_haptics: BitSet::new(),  // None supported
             supported_misc_features: BitSet::new(), // None supported
-            properties: BitSet::new(),         // None supported, scroll only
+            properties: mouse_properties(),
             mt_slot_axis_info: uapi::input_absinfo::default(),
             mt_tracking_id_axis_info: uapi::input_absinfo::default(),
             x_axis_info: uapi::input_absinfo::default(),
@@ -962,5 +993,38 @@ mod tests {
         assert!(!bitset.get(1));
         assert!(!bitset.get(14));
         assert!(!bitset.get(30));
+    }
+
+    #[test]
+    fn test_mouse_capabilities() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let node = inspector.root();
+        let mouse_file = InputFile::new_mouse(
+            uapi::input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+            node,
+        );
+
+        // EV_KEY and EV_REL supported, EV_ABS not supported.
+        assert!(mouse_file.supported_event_types.get(uapi::EV_KEY));
+        assert!(mouse_file.supported_event_types.get(uapi::EV_REL));
+        assert!(!mouse_file.supported_event_types.get(uapi::EV_ABS));
+
+        // Buttons supported: BTN_LEFT (BTN_MOUSE), BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA.
+        assert!(mouse_file.supported_keys.get(BTN_LEFT));
+        assert!(mouse_file.supported_keys.get(BTN_RIGHT));
+        assert!(mouse_file.supported_keys.get(BTN_MIDDLE));
+        assert!(mouse_file.supported_keys.get(BTN_SIDE));
+        assert!(mouse_file.supported_keys.get(BTN_EXTRA));
+        assert!(!mouse_file.supported_keys.get(BTN_TOUCH));
+
+        // Relative motion: REL_X, REL_Y, REL_WHEEL, REL_HWHEEL.
+        assert!(mouse_file.supported_motion_attributes.get(REL_X));
+        assert!(mouse_file.supported_motion_attributes.get(REL_Y));
+        assert!(mouse_file.supported_motion_attributes.get(REL_WHEEL));
+        assert!(mouse_file.supported_motion_attributes.get(REL_HWHEEL));
+
+        // Properties: INPUT_PROP_POINTER supported, INPUT_PROP_DIRECT not supported.
+        assert!(mouse_file.properties.get(INPUT_PROP_POINTER));
+        assert!(!mouse_file.properties.get(INPUT_PROP_DIRECT));
     }
 }
