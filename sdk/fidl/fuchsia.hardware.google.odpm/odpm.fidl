@@ -57,7 +57,7 @@ type CurrentReading = table {
 
 type EnergyReading = table {
     /// Measured energy in microjoules.
-    1: energy_uj int32;
+    1: energy_uj int64;
     /// Measurement time interval (omitted if unknown).
     2: interval zx.Duration;
     /// Time when the reading was taken.
