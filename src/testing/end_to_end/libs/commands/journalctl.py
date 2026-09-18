@@ -1,12 +1,12 @@
-# Copyright 2025 The Fuchsia Authors
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import shlex
 from datetime import datetime
 
-from antlion.controllers.utils_lib.commands import pgrep
-from antlion.controllers.utils_lib.commands.command import LinuxCommand
+from libs.commands import pgrep
+from libs.commands.command import LinuxCommand
 from libs.proc.runner import Runner
 
 # Timestamp format accepted by systemd.
