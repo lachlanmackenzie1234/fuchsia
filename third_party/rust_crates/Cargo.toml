@@ -51,7 +51,7 @@ bit-vec = { version = "0.9.1", features = [ "serde" ] }
 bitfield = "0.19.5"
 bitflags = { version = "2.13.0", features = ["serde", "std"] }
 blocking = "1.6.2"
-bstr = { version = "1.12.1", default-features = false, features = [ "std" ] }
+bstr = { version = "1.13.1", default-features = false, features = [ "std" ] }
 bt-bass = { version = "0.0.1", features = ["test-utils"] }
 bt-broadcast-assistant = { version = "0.0.1", features = ["debug"] }
 bt-common = "0.0.1"
@@ -617,7 +617,7 @@ existing_gn_target = "//third_party/boringssl/rust:bssl-macros"
 existing_gn_target = "//third_party/boringssl/rust:bssl-sys"
 
 # The unicode feature is excluded so we don't need to spend time auditing it.
-[gn.package.bstr."1.12.1"]
+[gn.package.bstr."1.13.1"]
 reviewed_features = [ "std", "alloc" ]
 
 [gn.package.camino."1.2.5"]

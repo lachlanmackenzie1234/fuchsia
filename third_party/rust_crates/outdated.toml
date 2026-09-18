@@ -39,7 +39,6 @@ skip_updating = [
     "bit-vec",
     "block-buffer",
     "blocking",
-    "bstr",
     "build_const",
     "bumpalo",
     "bytecount",
