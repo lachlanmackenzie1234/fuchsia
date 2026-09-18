@@ -475,6 +475,10 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // 2) If it hosts a layer stack, drop the stack and release its layers via `ReleaseLayerObject()`.
   void ProcessDeadTransforms(const TransformGraph::TopologyData& data);
 
+  // Validates sample_rect extents for an image layer during Present().
+  // Returns true if valid, otherwise logs an error via `error_reporter_` and returns false.
+  bool IsLayerSampleRectValidForPresent(const LayerObject& layer_obj) const;
+
   // The dispatcher this Flatland instance is running on.
   async_dispatcher_t* dispatcher() const { return dispatcher_holder_->dispatcher(); }
   std::shared_ptr<utils::DispatcherHolder> dispatcher_holder_;

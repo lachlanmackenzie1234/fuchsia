@@ -331,6 +331,25 @@ Flatland::~Flatland() {
   FX_LOGS(INFO) << "Flatland DESTROYED session_id=" << session_id_;
 }
 
+bool Flatland::IsLayerSampleRectValidForPresent(const LayerObject& layer_obj) const {
+  if (layer_obj.mode == LayerObject::Mode::kImage &&
+      layer_obj.image_mode.image_id != allocation::kInvalidImageId) {
+    const auto& sample_rect = layer_obj.image_mode.sample_rect;
+    const float img_w = static_cast<float>(layer_obj.image_mode.image_width);
+    const float img_h = static_cast<float>(layer_obj.image_mode.image_height);
+    if (sample_rect.x() < 0.f || sample_rect.y() < 0.f ||
+        (sample_rect.x() + sample_rect.width()) > img_w ||
+        (sample_rect.y() + sample_rect.height()) > img_h) {
+      error_reporter_->ERROR() << "Present: sample_rect " << sample_rect
+                               << " exceeds bound image extent (0, 0, " << img_w << ", " << img_h
+                               << ")";
+      return false;
+    }
+  }
+
+  return true;
+}
+
 void Flatland::Present(PresentRequestView request, PresentCompleter::Sync& completer) {
   Present(request->args);
 }
@@ -511,8 +530,8 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
         uber_struct->layer_stacks.emplace(transform.handle, std::move(handles));
 
         for (auto layer_handle : it->second.layers) {
-          auto obj_it = layer_objects_.find(layer_handle);
-          FX_DCHECK(obj_it != layer_objects_.end());
+          auto layer_obj_it = layer_objects_.find(layer_handle);
+          FX_DCHECK(layer_obj_it != layer_objects_.end());
 
           // The UberStruct contains only those layers which are currently in a layer stack.
           auto [us_layer_it, inserted] = uber_struct->layers.try_emplace(layer_handle);
@@ -521,17 +540,23 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
             // copied, and only the mode-specific properties which match the composition mode
             // are copied.
             auto& us_layer = us_layer_it->second;
-            const auto& obj = obj_it->second;
-            us_layer.common = obj.common;
-            switch (obj.mode) {
+            const auto& layer_obj = layer_obj_it->second;
+
+            if (!IsLayerSampleRectValidForPresent(layer_obj)) {
+              CloseConnection(FlatlandError::kBadOperation);
+              return;
+            }
+
+            us_layer.common = layer_obj.common;
+            switch (layer_obj.mode) {
               case LayerObject::Mode::kInvisible:
                 // The variant defaults to std::monostate, so nothing to do.
                 break;
               case LayerObject::Mode::kImage:
-                us_layer.content = obj.image_mode;
+                us_layer.content = layer_obj.image_mode;
                 break;
               case LayerObject::Mode::kSolidColor:
-                us_layer.content = obj.solid_color_mode;
+                us_layer.content = layer_obj.solid_color_mode;
                 break;
             }
           }
@@ -2944,8 +2969,6 @@ void Flatland::SetStackLayers(LayerStackId layer_stack_id,
                     std::span<const LayerHandle>(new_layer_handles.data(), layers.size()));
 }
 
-// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
-// is that it captures "illegal usage".
 void Flatland::SetLayerImage(SetLayerImageRequestView request,
                              SetLayerImageCompleter::Sync& completer) {
   SetLayerImage(LayerId(request->layer_id.value), ImageId(request->image_id.value),
@@ -2975,16 +2998,21 @@ void Flatland::SetLayerImage(
   }
   LayerObject& layer_object = GetLayerObject(it->second);
 
-  // TODO(https://fxbug.dev/474444799): This is a stub for validating that the image exists; we know
-  // that it can't be created with an ID of zero.  The real impl will need to find a valid image.
-  if (image_id == kInvalidImageId) {
+  auto image_it = images2_.find(image_id);
+  if (image_it == images2_.end()) {
     error_reporter_->ERROR() << "SetLayerImage: image " << image_id << " not found";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
 
-  error_reporter_->ERROR() << "SetLayerImage: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+  // TODO(https://fxbug.dev/540952629): Add support for acquire and release fences.
+  if (acquire_fence.has_value() || release_fence.has_value()) {
+    error_reporter_->ERROR() << "SetLayerImage: fences not yet implemented";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  BindLayerImage(layer_object, image_it->second);
 }
 
 void Flatland::SetLayerProperties(SetLayerPropertiesRequestView request,
@@ -3063,14 +3091,30 @@ void Flatland::SetLayerProperties(LayerId layer_id,
     // could not validate a rect authored while no image is bound, and would reject
     // intermediate states that never reach the screen. See the `sample_rect` doc comment in
     // flatland2.fidl.
-    // TODO(https://fxbug.dev/474444799): the Present()-time sample_rect check is not
-    // implemented yet.
     if (!types::RectangleF::IsValid(properties.sample_rect())) {
       error_reporter_->ERROR() << "SetLayerProperties: sample_rect is invalid";
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }
-    layer_object.image_mode.sample_rect = types::RectangleF::From(properties.sample_rect());
+    const auto sample_rect = types::RectangleF::From(properties.sample_rect());
+    if (sample_rect == types::RectangleF()) {
+      // (0,0,0,0) is the sentinel value meaning "sample the entire image".
+      layer_object.sample_rect_is_full_image = true;
+      if (layer_object.image_mode.image_id != allocation::kInvalidImageId) {
+        layer_object.image_mode.sample_rect = types::RectangleF({
+            .x = 0.f,
+            .y = 0.f,
+            .width = static_cast<float>(layer_object.image_mode.image_width),
+            .height = static_cast<float>(layer_object.image_mode.image_height),
+        });
+      } else {
+        layer_object.image_mode.sample_rect = types::RectangleF();
+      }
+    } else {
+      // A non-zero rect specifies a concrete sub-rect, clearing the full-image sentinel.
+      layer_object.sample_rect_is_full_image = false;
+      layer_object.image_mode.sample_rect = sample_rect;
+    }
   }
 
   if (properties.has_transform()) {
@@ -3148,6 +3192,7 @@ void Flatland::ResetLayer(LayerId layer_id) {
   layer_object.image_mode = UberStructLayer::ImageModeProperties{};
   layer_object.solid_color_mode = UberStructLayer::SolidColorModeProperties{};
   layer_object.mode = LayerObject::Mode::kInvisible;
+  layer_object.sample_rect_is_full_image = true;
   layer_object.hint_damage_rects.clear();
   layer_object.hint_visible_rects.clear();
 }
@@ -3361,16 +3406,26 @@ void Flatland::BindLayerImage(LayerObject& layer, allocation::GlobalImageId id) 
   if (layer.image_mode.image_id == id) {
     return;
   }
-  UnbindLayerImage(layer);
 
   auto it = image_objects_.find(id);
   FX_CHECK(it != image_objects_.end()) << "Image not found: " << id.value();
   ++it->second.ref_count;
 
+  UnbindLayerImage(layer);
+
   auto& image_mode = layer.image_mode;
   image_mode.image_id = id;
   image_mode.image_width = it->second.metadata.width;
   image_mode.image_height = it->second.metadata.height;
+
+  if (layer.sample_rect_is_full_image) {
+    image_mode.sample_rect = types::RectangleF({
+        .x = 0.f,
+        .y = 0.f,
+        .width = static_cast<float>(image_mode.image_width),
+        .height = static_cast<float>(image_mode.image_height),
+    });
+  }
 }
 
 void Flatland::ReleaseImages(std::span<const allocation::GlobalImageId> ids) {
