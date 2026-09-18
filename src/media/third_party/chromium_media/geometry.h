@@ -46,7 +46,9 @@ class Size {
 
   constexpr int width() const { return width_; }
   constexpr int height() const { return height_; }
-  constexpr int GetArea() const { return width_ * height_; }
+  // GetArea() was intentionally removed to prevent signed integer overflow.
+  // When merging incoming usages of GetArea() from upstream Chromium, switch
+  // them to GetCheckedArea() or Area64().
   constexpr safemath::CheckedNumeric<int> GetCheckedArea() const {
     return safemath::CheckMul(width_, height_);
   }
@@ -78,7 +80,9 @@ class Size {
   }
 
   bool IsEmpty() const { return width_ == 0 || height_ == 0; }
-  std::string ToString() const { return std::string(); }
+  std::string ToString() const {
+    return std::to_string(width_) + "x" + std::to_string(height_);
+  }
 
  private:
   int width_;
@@ -102,7 +106,9 @@ class Point {
   constexpr int y() const { return y_; }
   void set_x(int x) { x_ = x; }
   void set_y(int y) { y_ = y; }
-  std::string ToString() { return std::string(); }
+  std::string ToString() const {
+    return std::to_string(x_) + "," + std::to_string(y_);
+  }
 
  private:
   int x_;
@@ -140,8 +146,18 @@ class Rect {
   constexpr int height() const { return size_.height(); }
   void set_height(int height) { size_.set_height(height); }
 
-  constexpr int right() const { return x() + width(); }
-  constexpr int bottom() const { return y() + height(); }
+  // Intentionally diverges from upstream Chromium by returning
+  // CheckedNumeric<int> without clamping width() or height() on overflow.
+  constexpr safemath::CheckedNumeric<int> right() const {
+    return safemath::CheckAdd(x(), width());
+  }
+  constexpr safemath::CheckedNumeric<int> bottom() const {
+    return safemath::CheckAdd(y(), height());
+  }
+
+  constexpr bool IsValid() const {
+    return right().IsValid() && bottom().IsValid();
+  }
 
   constexpr const Point& origin() const { return origin_; }
   void set_origin(const Point& origin) { origin_ = origin; }
@@ -152,14 +168,20 @@ class Rect {
     set_height(size.height());
   }
 
-  bool Contains(int point_x, int point_y) const {
-    return (point_x >= x()) && (point_x < right()) && (point_y >= y()) &&
-           (point_y < bottom());
+  // Intentionally diverges from upstream Chromium by asserting IsValid() in
+  // both release and debug builds before comparing boundaries.
+  constexpr bool Contains(int point_x, int point_y) const {
+    ZX_ASSERT(IsValid());
+    return (point_x >= x()) && (point_x < right().ValueOrDie()) &&
+           (point_y >= y()) && (point_y < bottom().ValueOrDie());
   }
 
-  bool Contains(const Rect& rect) const {
-    return (rect.x() >= x() && rect.right() <= right() && rect.y() >= y() &&
-            rect.bottom() <= bottom());
+  constexpr bool Contains(const Rect& rect) const {
+    ZX_ASSERT(IsValid());
+    ZX_ASSERT(rect.IsValid());
+    return (
+        rect.x() >= x() && rect.right().ValueOrDie() <= right().ValueOrDie() &&
+        rect.y() >= y() && rect.bottom().ValueOrDie() <= bottom().ValueOrDie());
   }
 
   std::string ToString() const {
