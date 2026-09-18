@@ -125,11 +125,6 @@ pub mod ref_counted_hash_map {
     };
 }
 
-/// Read-copy-update data structure.
-pub mod rcu {
-    pub use crate::data_structures::rcu::{ReadGuard, SynchronizedWriterRcu, WriteGuard};
-}
-
 /// Common types and utilities for sockets.
 pub mod socket {
     mod address;

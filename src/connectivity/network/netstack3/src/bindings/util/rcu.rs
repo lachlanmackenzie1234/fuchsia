@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::marker::PhantomData;
-use core::mem::ManuallyDrop;
-use core::ops::{Deref, DerefMut};
+//! An RCU (Read-Copy-Update) data structure.
 
-use alloc::sync::Arc;
+use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
+
 use arc_swap::ArcSwap;
-use netstack3_sync::{LockGuard, Mutex};
+use netstack3_core::sync::{LockGuard, Mutex};
 
 /// An RCU (Read-Copy-Update) data structure that uses a `Mutex` to synchronize
 /// writers.
@@ -52,23 +54,6 @@ impl<T> SynchronizedWriterRcu<T> {
         let lock_guard = lock.lock();
         let copy = f(&*data.load());
         WriteGuard(ManuallyDrop::new(WriteGuardInner { copy, lock_guard, data: &self.data }))
-    }
-
-    /// Replaces the value in the RCU with `value` without reading the current
-    /// value.
-    ///
-    /// *WARNING*: do *NOT* use this method with a value built from a clone of
-    /// the data from [`SingleWriterRcu::read`], this is only meant to be used
-    /// when the new value is produced independently of the previous value. The
-    /// value may be changed by another thread between `read` and `replace` -
-    /// these changes would be lost. Use [`SingleWriterRcu::write`] to ensure
-    /// writer synchronization is applied.
-    pub fn replace(&self, value: T) {
-        let Self { lock, data } = self;
-        let guard = lock.lock();
-        data.store(Arc::new(value));
-        // Only drop the guard after we've stored the new value in the ArcSwap.
-        core::mem::drop(guard);
     }
 }
 
@@ -128,7 +113,7 @@ impl<'a, T> WriteGuard<'a, T> {
         unsafe {
             ManuallyDrop::drop(inner);
         }
-        core::mem::forget(self);
+        std::mem::forget(self);
     }
 }
 
@@ -139,7 +124,7 @@ impl<'a, T> Drop for WriteGuard<'a, T> {
         let WriteGuardInner { copy, data, lock_guard } = unsafe { ManuallyDrop::take(inner) };
         data.store(Arc::new(copy));
         // Only drop the lock once we're done.
-        core::mem::drop(lock_guard);
+        std::mem::drop(lock_guard);
     }
 }
 
@@ -161,10 +146,10 @@ mod tests {
                 *data += 1;
             }
         };
-        let w1 = teststd::thread::spawn(writer.clone());
-        let w2 = teststd::thread::spawn(writer);
+        let w1 = std::thread::spawn(writer.clone());
+        let w2 = std::thread::spawn(writer);
         let rcu_clone = rcu.clone();
-        let reader = teststd::thread::spawn(move || {
+        let reader = std::thread::spawn(move || {
             let mut last = None;
             for _ in 0..(ROUNDS * 2) {
                 let data = rcu_clone.read();
@@ -180,40 +165,6 @@ mod tests {
     }
 
     #[test]
-    fn race_replace() {
-        const ROUNDS: usize = 100;
-        const DELTA: usize = 1000;
-        let rcu = Arc::new(SynchronizedWriterRcu::new(0usize));
-        let rcu_clone = rcu.clone();
-        let w1 = teststd::thread::spawn(move || {
-            let mut last = None;
-            for _ in 0..ROUNDS {
-                let mut data = rcu_clone.write();
-                assert!(last.is_none_or(|l| *data > l));
-                last = Some(*data);
-                *data += 1;
-            }
-        });
-        let rcu_clone = rcu.clone();
-        let w2 = teststd::thread::spawn(move || {
-            for i in 1..=ROUNDS {
-                let step = i * DELTA;
-                rcu_clone.replace(step);
-                // If replace didn't properly hold a lock this would fail
-                // because the writer thread would have an out of date copy.
-                assert!(*rcu_clone.read() >= step);
-            }
-        });
-        w1.join().expect("join w1");
-        w2.join().expect("join w2");
-        let value = *rcu.read();
-        let min = ROUNDS * DELTA;
-        let max = min + ROUNDS;
-        assert_eq!(value.min(min), min);
-        assert_eq!(value.max(max), max);
-    }
-
-    #[test]
     fn read_guard_post_write() {
         let rcu = SynchronizedWriterRcu::new(0usize);
         let read1 = rcu.read();
@@ -221,7 +172,7 @@ mod tests {
         let mut write = rcu.write();
         *write = 1;
         // Drop to commit.
-        core::mem::drop(write);
+        std::mem::drop(write);
         let read2 = rcu.read();
         assert_eq!(*read1, 0);
         assert_eq!(*read2, 1);
