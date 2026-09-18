@@ -14,7 +14,7 @@
             compatible: "fuchsia,gpio-buttons",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "adc-2",
             service: "fuchsia.hardware.adc.Service",

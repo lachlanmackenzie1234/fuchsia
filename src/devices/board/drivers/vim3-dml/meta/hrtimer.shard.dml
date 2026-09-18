@@ -9,7 +9,7 @@
             compatible: "amlogic,hrtimer",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

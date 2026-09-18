@@ -61,9 +61,17 @@
             },
             "default": []
         },
-        "offers": {
+        "offer": {
             "type": "array",
             "description": "Board manifest: service capability routes, parameters, and pin/channel constraints offered between board nodes and children.",
+            "items": {
+                "$ref": "#/definitions/BoardOffer"
+            },
+            "default": []
+        },
+        "offers": {
+            "type": "array",
+            "description": "Board manifest: service capability routes, parameters, and pin/channel constraints offered between board nodes and children. (Deprecated: use 'offer')",
             "items": {
                 "$ref": "#/definitions/BoardOffer"
             },

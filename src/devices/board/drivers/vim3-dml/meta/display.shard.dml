@@ -9,7 +9,7 @@
             compatible: "amlogic,display",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "canvas",
             service: "fuchsia.hardware.amlogiccanvas.Service",

@@ -9,7 +9,7 @@
             compatible: "amlogic,bt-uart",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

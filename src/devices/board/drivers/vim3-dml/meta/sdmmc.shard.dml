@@ -19,7 +19,7 @@
             compatible: "amlogic,meson-axg-mmc",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pwm-ffd1b000",
             service: "fuchsia.pwm.Init",

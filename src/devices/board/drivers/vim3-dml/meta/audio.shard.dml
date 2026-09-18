@@ -9,7 +9,7 @@
             compatible: "amlogic,audio-controller",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "clock-gate",
             service: "fuchsia.hardware.clock.Service",

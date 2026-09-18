@@ -9,7 +9,7 @@
             compatible: "broadcom,bcm4359",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "gpio-oob",
             service: "fuchsia.hardware.gpio.Service",

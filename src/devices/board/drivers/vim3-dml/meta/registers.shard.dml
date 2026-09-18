@@ -9,7 +9,7 @@
             compatible: "fuchsia,registers",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

@@ -9,7 +9,7 @@
             compatible: "amlogic,cpu",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "power-01",
             service: "fuchsia.hardware.power.Service",

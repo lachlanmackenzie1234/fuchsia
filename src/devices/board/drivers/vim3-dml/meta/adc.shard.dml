@@ -9,7 +9,7 @@
             compatible: "amlogic,meson-g12a-saradc",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

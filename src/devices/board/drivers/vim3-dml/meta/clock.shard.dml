@@ -9,7 +9,7 @@
             compatible: "amlogic,g12b-clk",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

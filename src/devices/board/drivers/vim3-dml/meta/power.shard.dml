@@ -9,7 +9,7 @@
             compatible: "amlogic,power",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "vreg-pwm-big",
             service: "fuchsia.hardware.vreg.Service",

@@ -38,9 +38,9 @@ DML supports two categories of manifests:
 | :--- | :--- | :--- |
 | **Target** | Standalone or composite leaf/intermediate device drivers | System board drivers (e.g. Vim3, QEMU, Astro) |
 | **Outputs** | `.cml`, `.bind`, optional C++/Rust metadata parsers | `.cml`, `.bind`, `.fidl` board configuration |
-| **Top-Level Sections** | `name`, `program`, `use`, `capabilities`, `expose`, `include`, `config` | `name`, `program`, `children`, `offers`, `metadata_mappings`, `use`, `include`, `capabilities`, `expose` |
+| **Top-Level Sections** | `name`, `program`, `use`, `capabilities`, `expose`, `include`, `config` | `name`, `program`, `children`, `offer`, `metadata_mappings`, `use`, `include`, `capabilities`, `expose` |
 | **Binding Style** | Non-composite (`program.bind`) or composite (`use[].bind`) | Platform bus device binding (`program.bind`) |
-| **Hardware Nodes** | Consumes parent nodes | Declares child nodes and capability routes (`offers`) |
+| **Hardware Nodes** | Consumes parent nodes | Declares child nodes and capability routes (`offer`) |
 
 ---
 
@@ -81,7 +81,7 @@ DML supports two categories of manifests:
   children: [ ... ],
 
   // Board manifest only: capability offers and constraint routing.
-  offers: [ ... ],
+  offer: [ ... ],
 
   // Board manifest only: rules for aggregating metadata across children.
   metadata_mappings: [ ... ]
@@ -233,12 +233,12 @@ children: [
 ]
 ```
 
-#### `offers`
+#### `offer`
 
 Routes capabilities between parent controllers and child drivers with hardware constraints:
 
 ```json5
-offers: [
+offer: [
   {
     service: "fuchsia.hardware.gpio.Service",
     name: "power",

@@ -9,7 +9,7 @@
             compatible: "nxp,pcf8563",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "rtc-51",
             service: "fuchsia.hardware.i2c.Service",

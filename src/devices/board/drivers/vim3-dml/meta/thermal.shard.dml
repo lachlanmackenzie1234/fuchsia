@@ -14,7 +14,7 @@
             compatible: "amlogic,g12a-thermal",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "clock-init",
             service: "fuchsia.clock.Init",

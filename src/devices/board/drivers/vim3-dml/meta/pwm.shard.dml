@@ -23,7 +23,7 @@
             compatible: "amlogic,pwm-regulator",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pwm-ffd1b000",
             service: "fuchsia.hardware.pwm.Service",

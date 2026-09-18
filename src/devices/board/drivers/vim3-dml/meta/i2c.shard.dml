@@ -14,7 +14,7 @@
             compatible: "amlogic,meson-axg-i2c",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

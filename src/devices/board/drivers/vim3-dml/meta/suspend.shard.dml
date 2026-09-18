@@ -9,5 +9,5 @@
             compatible: "generic,suspend",
         },
     ],
-    offers: [],
+    offer: [],
 }

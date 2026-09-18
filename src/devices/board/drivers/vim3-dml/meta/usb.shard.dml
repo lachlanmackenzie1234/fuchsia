@@ -23,7 +23,7 @@
             compatible: "generic-xhci",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

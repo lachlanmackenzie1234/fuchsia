@@ -14,7 +14,7 @@
             compatible: "amlogic,ethernet-phy",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "eth-board",
             service: "fuchsia.hardware.ethernet.board.Service",

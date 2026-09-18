@@ -14,7 +14,7 @@
             compatible: "arm,mali-gpu",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "pdev",
             service: "fuchsia.hardware.platform.device.Service",

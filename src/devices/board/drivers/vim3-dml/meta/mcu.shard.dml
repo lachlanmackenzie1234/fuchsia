@@ -9,7 +9,7 @@
             compatible: "khadas,vim3-mcu",
         },
     ],
-    offers: [
+    offer: [
         {
             name: "khadas-mcu-18",
             service: "fuchsia.hardware.i2c.Service",

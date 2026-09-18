@@ -100,8 +100,8 @@ pub struct DmlInput {
     pub include: Vec<String>,
     #[serde(default)]
     pub children: Vec<DmlChild>,
-    #[serde(default)]
-    pub offers: Vec<DmlOffer>,
+    #[serde(default, alias = "offers")]
+    pub offer: Vec<DmlOffer>,
     #[serde(default)]
     pub metadata_mappings: Vec<MetadataMapping>,
     #[serde(default, rename = "use")]
@@ -294,7 +294,7 @@ pub fn load_dml_file(
         let include_path = parent_dir.join(include);
         let include_input = load_dml_file(&include_path, visiting, processed)?;
         all_children.extend(include_input.children);
-        all_offers.extend(include_input.offers);
+        all_offers.extend(include_input.offer);
         all_mappings.extend(include_input.metadata_mappings);
         all_use_entries.extend(include_input.use_entries);
         all_capabilities.extend(include_input.capabilities);
@@ -302,14 +302,14 @@ pub fn load_dml_file(
     }
 
     all_children.extend(input.children);
-    all_offers.extend(input.offers);
+    all_offers.extend(input.offer);
     all_mappings.extend(input.metadata_mappings);
     all_use_entries.extend(input.use_entries);
     all_capabilities.extend(input.capabilities);
     all_expose.extend(input.expose);
 
     input.children = all_children;
-    input.offers = all_offers;
+    input.offer = all_offers;
     input.metadata_mappings = all_mappings;
     input.use_entries = all_use_entries;
     input.capabilities = all_capabilities;
@@ -557,5 +557,106 @@ mod tests {
         ] {
             assert!(defs.contains_key(key), "Missing key definition '{}' in dml.schema.json", key);
         }
+    }
+
+    #[test]
+    fn test_board_dml_offer_and_offers_alias() {
+        let json_offer = r##"{
+            "offer": [
+                {
+                    "from": "parent",
+                    "to": "#child",
+                    "service": "fuchsia.hardware.gpio.Service"
+                }
+            ]
+        }"##;
+        let parsed_offer: DmlInput = serde_json5::from_str(json_offer).unwrap();
+        assert_eq!(parsed_offer.offer.len(), 1);
+        assert_eq!(parsed_offer.offer[0].to, "#child");
+
+        let json_offers = r##"{
+            "offers": [
+                {
+                    "from": "parent",
+                    "to": "#child2",
+                    "service": "fuchsia.hardware.gpio.Service"
+                }
+            ]
+        }"##;
+        let parsed_offers: DmlInput = serde_json5::from_str(json_offers).unwrap();
+        assert_eq!(parsed_offers.offer.len(), 1);
+        assert_eq!(parsed_offers.offer[0].to, "#child2");
+    }
+
+    #[test]
+    fn test_board_dml_include_offer_merging() {
+        let temp_dir = std::env::temp_dir().join("test_temp_offer_merging");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let shard_offer = temp_dir.join("shard_offer.dml");
+        let shard_offers = temp_dir.join("shard_offers.dml");
+        let root_file = temp_dir.join("root.dml");
+
+        // shard_offer.dml uses modern "offer"
+        fs::write(
+            &shard_offer,
+            r##"{
+                "offer": [
+                    {
+                        "from": "parent",
+                        "to": "#child1",
+                        "service": "fuchsia.hardware.gpio.Service"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        // shard_offers.dml uses legacy "offers"
+        fs::write(
+            &shard_offers,
+            r##"{
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "#child2",
+                        "service": "fuchsia.hardware.i2c.Service"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        // root.dml includes both shards and defines its own "offer"
+        fs::write(
+            &root_file,
+            r##"{
+                "include": ["shard_offer.dml", "shard_offers.dml"],
+                "offer": [
+                    {
+                        "from": "parent",
+                        "to": "#child3",
+                        "service": "fuchsia.hardware.clock.Service"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let res = load_dml_file_root(&root_file);
+
+        // Clean up
+        let _ = fs::remove_file(&shard_offer);
+        let _ = fs::remove_file(&shard_offers);
+        let _ = fs::remove_file(&root_file);
+        let _ = fs::remove_dir(&temp_dir);
+
+        assert!(res.is_ok(), "Failed to load root file with included offers: {:?}", res.err());
+        let input = res.unwrap();
+        assert_eq!(input.offer.len(), 3);
+        assert_eq!(input.offer[0].to, "#child1");
+        assert_eq!(input.offer[1].to, "#child2");
+        assert_eq!(input.offer[2].to, "#child3");
     }
 }

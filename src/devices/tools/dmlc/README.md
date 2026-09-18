@@ -36,7 +36,7 @@ src/devices/tools/dmlc/dml.schema.json
 
 It is a Draft-07 JSON Schema providing syntax definitions and editor autocomplete for:
 * Driver manifests (`name`, `program`, `use`, `capabilities`, `expose`, `include`, `config`)
-* Board manifests (`children`, `offers`, `metadata_mappings`)
+* Board manifests (`children`, `offer`, `metadata_mappings`)
 * Bus blocks (`pci`, `usb`, `acpi`)
 * Composite parents and inline bind blocks (`bind`, `requirements`)
 
