@@ -25,7 +25,6 @@ namespace elfldltl {
 // or memory.StoreAdd(reloc_address, bias) to store the adjusted values.
 // Returns false iff any calls into the Memory object returned false.
 template <class Diagnostics, class RelocInfo>
-
 constexpr bool RelocateRelative(
     Diagnostics& diag,
     MemoryWriter<typename RelocInfo::size_type, typename RelocInfo::Addr> auto& memory,
@@ -78,6 +77,7 @@ enum class RelocateTls {
 // to continue applying more relocations or to bail out immediately.
 template <class Definition, class Elf, class Diagnostics, ElfMachine Machine>
 concept RelocateSymbolicDefinitionApi =
+    ElfApi<Elf> &&
     requires(const Definition& defn) {
       // Returns true iff the symbol was resolved as an undefined weak
       // reference.
@@ -154,7 +154,7 @@ concept RelocateSymbolicResolverResultApi =
 // error_value treatment is as described for Definition methods above.
 template <typename T, class Elf, class Diagnostics, ElfMachine Machine>
 concept RelocateSymbolicResolverApi =
-    std::invocable<T, const typename Elf::Sym&, RelocateTls> &&
+    ElfApi<Elf> && std::invocable<T, const typename Elf::Sym&, RelocateTls> &&
     RelocateSymbolicResolverResultApi<
         std::invoke_result_t<T, const typename Elf::Sym&, RelocateTls>,  //
         Elf, Diagnostics, Machine>;

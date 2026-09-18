@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "diagnostics.h"
+#include "layout.h"
 #include "link.h"
 #include "symbol.h"
 
@@ -31,13 +32,13 @@ enum class ResolverPolicy : bool {
 };
 
 // The projection function passed to ResolveSymbol<Elf> returns this type.
-template <class Elf>
+template <ElfApi Elf>
 using ResolveSymbolProjResult = fit::result<bool, const typename Elf::Sym*>;
 
 // This is the value_type of the fit::result value of ResolveSymbol<Elf>.  The
 // module iterator is where the projection function found the symbol pointer.
 // A success return with the end() iterator and nullptr means none was found.
-template <class Elf, std::forward_iterator Iterator>
+template <ElfApi Elf, std::forward_iterator Iterator>
 struct ResolveSymbolResult {
   Iterator module;
   const Elf::Sym* symbol = nullptr;
@@ -48,7 +49,7 @@ struct ResolveSymbolResult {
 // best definition by the policy.  If the last call attempted returned a
 // success result with nullptr, then this returns a success result of
 // {.module=modules.end(), .symbol=nullptr}.
-template <class Elf = elfldltl::Elf<>, std::ranges::forward_range Range,
+template <ElfApi Elf = elfldltl::Elf<>, std::ranges::forward_range Range,
           std::invocable<std::ranges::range_reference_t<Range>> Proj>
   requires std::convertible_to<  //
       std::invoke_result_t<Proj, std::ranges::range_reference_t<Range>>,
