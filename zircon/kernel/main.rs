@@ -65,6 +65,9 @@ pub mod root_resource_filter;
 #[path = "lib/syscalls/mod.rs"]
 pub mod syscalls_rs;
 
+#[path = "lib/topology/src/mod.rs"]
+pub mod topology;
+
 #[path = "lib/user_copy/src/mod.rs"]
 pub mod user_copy;
 
