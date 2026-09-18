@@ -22,207 +22,199 @@ const FLAGS: fio::Flags = fio::PERM_READABLE;
 ///     the package resolve if the pinned URL is found in the base index)
 ///   * queries `fuchsia.fxfs/BlobCreator.NeedsOverwrite` for every blob (e.g. does not
 ///     short-circuit the blob write if a blob is readable via `fuchsia.fxfs/BlobReader.GetVmo`)
-pub(crate) async fn serve_request_stream(
-    stream: fpkg::PackageResolverRequestStream,
+pub(crate) struct Resolver {
     authority: fpkg::AuthorityProxy,
     package_fetcher: crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
-) -> anyhow::Result<()> {
-    stream
-        .map_err(anyhow::Error::new)
-        .try_for_each_concurrent(None, |req| async {
-            match req {
-                fpkg::PackageResolverRequest::Resolve { package_url, dir, responder } => {
-                    match resolve(
-                        &package_url,
-                        dir,
-                        &authority,
-                        &package_fetcher,
-                        authenticator.clone(),
-                        scope.clone(),
-                    )
-                    .await
-                    {
-                        Ok(context) => responder.send(Ok(&context)),
-                        Err(e) => {
-                            let fidl_error = (&e).into();
-                            error!(
-                                "ota resolver failed to resolve {}: {:#}",
-                                package_url,
-                                anyhow!(e)
-                            );
-                            responder.send(Err(fidl_error))
-                        }
-                    }
-                    .context("sending fuchsia.pkg/PackageResolver-ota.Resolve response")
-                }
-                fpkg::PackageResolverRequest::ResolveWithContext {
-                    package_url,
-                    context,
-                    dir,
-                    responder,
-                } => match resolve_with_context(
-                    &package_url,
-                    context,
-                    dir,
-                    &authority,
-                    &package_fetcher,
-                    authenticator.clone(),
-                    &root_dir_factory,
-                    scope.clone(),
-                )
-                .await
-                {
-                    Ok(context) => responder.send(Ok(&context)),
-                    Err(e) => {
-                        let fidl_error = (&e).into();
-                        error!(
-                            "ota resolver failed to resolve with context {}: {:#}",
-                            package_url,
-                            anyhow!(e)
-                        );
-                        responder.send(Err(fidl_error))
-                    }
-                }
-                .context("sending fuchsia.pkg/PackageResolver-ota.ResolveWithContext response"),
-                fpkg::PackageResolverRequest::GetHash { package_url, responder } => {
-                    error!(
-                        "unsupported fuchsia.pkg/PackageResolver-ota.GetHash called with {:?}",
-                        package_url
-                    );
-                    responder
-                        .send(Err(zx::Status::NOT_SUPPORTED.into_raw()))
-                        .context("sending fuchsia.pkg/PackageResolver.GetHash response")
-                }
-            }
-        })
-        .await
 }
 
-async fn resolve_with_context(
-    package_url: &str,
-    context: fpkg::ResolutionContext,
-    dir: ServerEnd<fio::DirectoryMarker>,
-    authority: &fpkg::AuthorityProxy,
-    package_fetcher: &crate::package_fetcher::PackageFetcher,
-    authenticator: context_authenticator::ContextAuthenticator,
-    root_dir_factory: &crate::root_dir::RootDirFactory,
-    scope: package_directory::ExecutionScope,
-) -> Result<fpkg::ResolutionContext, Error> {
-    resolve_with_context_impl(
-        &PackageUrl::parse(package_url).map_err(Error::InvalidUrl)?,
-        context,
-        dir,
-        authority,
-        package_fetcher,
-        authenticator,
-        root_dir_factory,
-        scope,
-    )
-    .await
-}
-
-async fn resolve_with_context_impl(
-    package_url: &PackageUrl,
-    context: fpkg::ResolutionContext,
-    dir: ServerEnd<fio::DirectoryMarker>,
-    authority: &fpkg::AuthorityProxy,
-    package_fetcher: &crate::package_fetcher::PackageFetcher,
-    authenticator: context_authenticator::ContextAuthenticator,
-    root_dir_factory: &crate::root_dir::RootDirFactory,
-    scope: package_directory::ExecutionScope,
-) -> Result<fpkg::ResolutionContext, Error> {
-    match package_url {
-        PackageUrl::Absolute(url) => {
-            if !context.bytes.is_empty() {
-                return Err(Error::ContextWithAbsoluteUrl);
-            }
-            resolve_impl(url, dir, authority, package_fetcher, authenticator, scope).await
-        }
-        PackageUrl::Relative(url) => {
-            resolve_subpackage(url, context, dir, authenticator, root_dir_factory, scope).await
-        }
+impl Resolver {
+    pub(crate) fn new(
+        authority: fpkg::AuthorityProxy,
+        package_fetcher: crate::package_fetcher::PackageFetcher,
+        authenticator: context_authenticator::ContextAuthenticator,
+        root_dir_factory: crate::root_dir::RootDirFactory,
+        scope: package_directory::ExecutionScope,
+    ) -> Arc<Self> {
+        Arc::new(Self { authority, package_fetcher, authenticator, root_dir_factory, scope })
     }
-}
 
-async fn resolve(
-    url: &str,
-    dir: ServerEnd<fio::DirectoryMarker>,
-    authority: &fpkg::AuthorityProxy,
-    package_fetcher: &crate::package_fetcher::PackageFetcher,
-    authenticator: context_authenticator::ContextAuthenticator,
-    scope: package_directory::ExecutionScope,
-) -> Result<fpkg::ResolutionContext, Error> {
-    resolve_impl(
-        &url.parse().map_err(Error::InvalidUrl)?,
-        dir,
-        authority,
-        package_fetcher,
-        authenticator,
-        scope,
-    )
-    .await
-}
+    pub(crate) async fn serve_request_stream(
+        self: Arc<Self>,
+        stream: fpkg::PackageResolverRequestStream,
+    ) -> anyhow::Result<()> {
+        stream
+            .map_err(anyhow::Error::new)
+            .try_for_each_concurrent(None, |req| async {
+                match req {
+                    fpkg::PackageResolverRequest::Resolve { package_url, dir, responder } => {
+                        self.handle_resolve_request(package_url, dir, responder).await
+                    }
+                    fpkg::PackageResolverRequest::ResolveWithContext {
+                        package_url,
+                        context,
+                        dir,
+                        responder,
+                    } => {
+                        self.handle_resolve_with_context_request(
+                            package_url,
+                            context,
+                            dir,
+                            responder,
+                        )
+                        .await
+                    }
+                    fpkg::PackageResolverRequest::GetHash { package_url, responder } => {
+                        error!(
+                            "unsupported fuchsia.pkg/PackageResolver-ota.GetHash called with {:?}",
+                            package_url
+                        );
+                        responder
+                            .send(Err(zx::Status::NOT_SUPPORTED.into_raw()))
+                            .context("sending fuchsia.pkg/PackageResolver.GetHash response")
+                    }
+                }
+            })
+            .await
+    }
 
-pub(crate) async fn resolve_impl(
-    url: &AbsolutePackageUrl,
-    dir: ServerEnd<fio::DirectoryMarker>,
-    authority: &fpkg::AuthorityProxy,
-    package_fetcher: &crate::package_fetcher::PackageFetcher,
-    authenticator: context_authenticator::ContextAuthenticator,
-    scope: package_directory::ExecutionScope,
-) -> Result<fpkg::ResolutionContext, Error> {
-    let (fpkg::BlobId { merkle_root }, http_blob_dir) = authority
-        .lookup(&fpkg::PackageUrl { url: url.as_unpinned().to_string() })
-        .await
-        .map_err(Error::AuthorityFidl)?
-        .map_err(Error::Authority)?;
-    // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
-    let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
-    let root_dir = package_fetcher
-        .fetch(
-            pkg_id,
-            http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?,
-            fpkg::GcProtection::Retained,
+    async fn handle_resolve_request(
+        &self,
+        package_url: String,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        responder: fpkg::PackageResolverResolveResponder,
+    ) -> Result<(), anyhow::Error> {
+        match self.resolve(&package_url, dir).await {
+            Ok(context) => responder.send(Ok(&context)),
+            Err(e) => {
+                let fidl_error = (&e).into();
+                error!("ota resolver failed to resolve {package_url}: {:#}", anyhow!(e));
+                responder.send(Err(fidl_error))
+            }
+        }
+        .context("sending fuchsia.pkg/PackageResolver-ota.Resolve response")
+    }
+
+    async fn handle_resolve_with_context_request(
+        &self,
+        package_url: String,
+        context: fpkg::ResolutionContext,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        responder: fpkg::PackageResolverResolveWithContextResponder,
+    ) -> Result<(), anyhow::Error> {
+        match self.resolve_with_context(&package_url, context, dir).await {
+            Ok(context) => responder.send(Ok(&context)),
+            Err(e) => {
+                let fidl_error = (&e).into();
+                error!(
+                    "ota resolver failed to resolve with context {package_url}: {:#}",
+                    anyhow!(e)
+                );
+                responder.send(Err(fidl_error))
+            }
+        }
+        .context("sending fuchsia.pkg/PackageResolver-ota.ResolveWithContext response")
+    }
+
+    async fn resolve_with_context(
+        &self,
+        package_url: &str,
+        context: fpkg::ResolutionContext,
+        dir: ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        self.resolve_with_context_impl(
+            &PackageUrl::parse(package_url).map_err(Error::InvalidUrl)?,
+            context,
+            dir,
         )
         .await
-        .map_err(Error::PackageFetcher)?;
-    let hash = *root_dir.hash();
-    vfs::directory::serve_on(root_dir, FLAGS, scope, dir);
-    Ok(authenticator.create(&hash))
-}
+    }
 
-async fn resolve_subpackage(
-    url: &fuchsia_url::RelativePackageUrl,
-    context: fpkg::ResolutionContext,
-    dir: ServerEnd<fio::DirectoryMarker>,
-    authenticator: context_authenticator::ContextAuthenticator,
-    root_dir_factory: &crate::root_dir::RootDirFactory,
-    scope: package_directory::ExecutionScope,
-) -> Result<fpkg::ResolutionContext, Error> {
-    let super_hash =
-        authenticator.clone().authenticate(context).map_err(Error::ContextAuthenticator)?;
-    let super_package = root_dir_factory.create(super_hash).await.map_err(|source| {
-        Error::CreatingSuperpackageRootDir { source, superpackage: super_hash }
-    })?;
-    let sub_hash = *super_package
-        .subpackages()
-        .await
-        .map_err(Error::ReadingSubpackages)?
-        .subpackages()
-        .get(url)
-        .ok_or_else(|| Error::SubpackageNotFound {
-            subpackage: url.clone(),
-            superpackage: super_hash,
+    async fn resolve_with_context_impl(
+        &self,
+        package_url: &PackageUrl,
+        context: fpkg::ResolutionContext,
+        dir: ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        match package_url {
+            PackageUrl::Absolute(url) => {
+                if !context.bytes.is_empty() {
+                    return Err(Error::ContextWithAbsoluteUrl);
+                }
+                self.resolve_impl(url, dir).await
+            }
+            PackageUrl::Relative(url) => self.resolve_subpackage(url, context, dir).await,
+        }
+    }
+
+    async fn resolve(
+        &self,
+        url: &str,
+        dir: ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        self.resolve_impl(&url.parse().map_err(Error::InvalidUrl)?, dir).await
+    }
+
+    pub(crate) async fn resolve_impl(
+        &self,
+        url: &AbsolutePackageUrl,
+        dir: ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        let (fpkg::BlobId { merkle_root }, http_blob_dir) = self
+            .authority
+            .lookup(&fpkg::PackageUrl { url: url.as_unpinned().to_string() })
+            .await
+            .map_err(Error::AuthorityFidl)?
+            .map_err(Error::Authority)?;
+        // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
+        let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
+        let root_dir = self
+            .package_fetcher
+            .fetch(
+                pkg_id,
+                http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?,
+                fpkg::GcProtection::Retained,
+            )
+            .await
+            .map_err(Error::PackageFetcher)?;
+        let hash = *root_dir.hash();
+        vfs::directory::serve_on(root_dir, FLAGS, self.scope.clone(), dir);
+        Ok(self.authenticator.clone().create(&hash))
+    }
+
+    async fn resolve_subpackage(
+        &self,
+        url: &fuchsia_url::RelativePackageUrl,
+        context: fpkg::ResolutionContext,
+        dir: ServerEnd<fio::DirectoryMarker>,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        let super_hash = self
+            .authenticator
+            .clone()
+            .authenticate(context)
+            .map_err(Error::ContextAuthenticator)?;
+        let super_package = self.root_dir_factory.create(super_hash).await.map_err(|source| {
+            Error::CreatingSuperpackageRootDir { source, superpackage: super_hash }
         })?;
-    let sub_package = root_dir_factory
-        .create(sub_hash)
-        .await
-        .map_err(|source| Error::CreatingSubpackageRootDir { source, subpackage: sub_hash })?;
-    vfs::directory::serve_on(Arc::new(sub_package), FLAGS, scope, dir);
-    Ok(authenticator.create(&sub_hash))
+        let sub_hash = *super_package
+            .subpackages()
+            .await
+            .map_err(Error::ReadingSubpackages)?
+            .subpackages()
+            .get(url)
+            .ok_or_else(|| Error::SubpackageNotFound {
+                subpackage: url.clone(),
+                superpackage: super_hash,
+            })?;
+        let sub_package =
+            self.root_dir_factory.create(sub_hash).await.map_err(|source| {
+                Error::CreatingSubpackageRootDir { source, subpackage: sub_hash }
+            })?;
+        vfs::directory::serve_on(Arc::new(sub_package), FLAGS, self.scope.clone(), dir);
+        Ok(self.authenticator.clone().create(&sub_hash))
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
