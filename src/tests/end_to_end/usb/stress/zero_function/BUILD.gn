@@ -22,7 +22,9 @@ if (is_host) {
     test_data_deps =
         [ "//src/developer/ffx/tools/driver:ffx_driver_tool_test_data" ]
 
-    environments = [ iris_env ]
+    # This test drives the DUT's USB peripheral from the host, so it can only
+    # run on Iris devices hosted by a Fuchsia cell.
+    environments = [ iris_cell_env ]
     params = {
       stress_duration_sec = 120
     }

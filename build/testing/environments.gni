@@ -40,6 +40,7 @@ host_device_types = {
   ampere_altra = "AmpereAltraMax-M128-30"
   ampere_one = "AmpereOne-A192-32X"
   gcp_c4a_highmem_96_bm = "GCP_C4A_HIGHMEM_96_BM"
+  lattepanda_sigma_cell = "LATTEPANDA_SIGMA_CELL"
 }
 
 ### Individual test environments
@@ -313,6 +314,18 @@ _all_named_fuchsia_envs += [
     env = iris_env
   },
 ]
+
+# Iris devices that are hosted by a LattePanda Sigma "Fuchsia cell". Use this
+# instead of `iris_env` for tests that require a cell testbed.
+#
+# This is deliberately not added to `_all_named_fuchsia_envs`, so that it is
+# not swept into `all_fuchsia_envs` and does not pull unrelated tests onto it.
+iris_cell_env = {
+  dimensions = {
+    device_type = device_types.iris
+    host_device_type = host_device_types.lattepanda_sigma_cell
+  }
+}
 
 luis_env = {
   dimensions = {
