@@ -87,7 +87,10 @@ if (is_host) {
       fastboot_loop = true
     }
     local_config_source = "UsbDisconnectTestbed.yaml"
-    environments = [ sorrel_env ]
+    environments = [
+      iris_env,
+      sorrel_env,
+    ]
     timeout_secs = 900
   }
 
