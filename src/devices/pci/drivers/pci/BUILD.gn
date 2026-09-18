@@ -34,6 +34,7 @@ source_set("user_pci") {
   ]
 
   deps = [
+    "//sdk/lib/driver/legacy-bind-constants",
     "//sdk/lib/driver/metadata/cpp",
     "//src/devices/bind/fuchsia.acpi:fuchsia.acpi_cpp",
   ]
