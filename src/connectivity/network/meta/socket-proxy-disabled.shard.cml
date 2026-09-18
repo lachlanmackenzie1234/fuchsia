@@ -49,5 +49,9 @@
             from: "#netstack",
             as: "fuchsia.posix.socket.raw.Provider_Unproxied",
         },
+        {
+            protocol: [ "fuchsia.net.reachability.Monitor" ],
+            from: "#reachability",
+        },
     ],
 }

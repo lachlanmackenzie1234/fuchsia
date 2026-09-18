@@ -16,14 +16,18 @@ use policy_properties::NetworkTokenExt as _;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
+mod reachability;
 mod token_registry;
 
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_reachability as freachability;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect as _};
+pub use reachability::ReachabilityWatcherConnectionId;
+use reachability::{ReachabilityHandler, ReachabilityStream};
 
 // The id for each network, separated by network source.
 //
@@ -754,6 +758,7 @@ pub enum NetworkRequestStream {
         stream: fnp_properties::PropertyWatcherRequestStream,
     },
     DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+    Reachability(freachability::MonitorRequestStream),
 }
 
 impl From<fnp_properties::NetworksRequestStream> for NetworkRequestStream {
@@ -770,6 +775,12 @@ impl From<fnp_properties::NetworkTokenResolverRequestStream> for NetworkRequestS
 impl From<fnp_socketproxy::NetworkRegistryRequestStream> for NetworkRequestStream {
     fn from(s: fnp_socketproxy::NetworkRegistryRequestStream) -> Self {
         Self::DelegatedNetworks(s)
+    }
+}
+
+impl From<freachability::MonitorRequestStream> for NetworkRequestStream {
+    fn from(s: freachability::MonitorRequestStream) -> Self {
+        Self::Reachability(s)
     }
 }
 
@@ -793,6 +804,7 @@ enum NetworkRequestStreamInner {
         Tagged<PropertyWatcherConnectionId, fnp_properties::PropertyWatcherRequestStream>,
     ),
     DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+    Reachability(ReachabilityStream),
 }
 
 impl futures::Stream for NetworkRequestStreamInner {
@@ -827,6 +839,12 @@ impl futures::Stream for NetworkRequestStreamInner {
                         .map(NetworkRequest::DelegatedNetworks)
                 })
             }
+            NetworkRequestStreamInner::Reachability(ref mut stream) => {
+                stream.poll_next_unpin(cx).map(|o| {
+                    o.map(|(id, request)| ReachabilityRequest { id, request })
+                        .map(NetworkRequest::Reachability)
+                })
+            }
         }
     }
 }
@@ -855,6 +873,15 @@ pub struct DelegatedNetworksRequest {
     pub request: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
 }
 
+/// A wrapper for [`freachability::MonitorRequest`] that includes the
+/// [`ReachabilityWatcherConnectionId`] and indicates whether the watcher stream is still open.
+pub struct ReachabilityRequest {
+    pub id: ReachabilityWatcherConnectionId,
+    /// Note: Storing the Request inside the Option allows us to distinguish between the channel
+    /// being closed and a Watch request being sent to support cleaner channel-closing logic.
+    pub request: Option<Result<freachability::MonitorRequest, fidl::Error>>,
+}
+
 /// An enum representing all possible events that can be received by the NetpolNetworksService
 /// event loop.
 pub enum NetworkRequest {
@@ -862,6 +889,7 @@ pub enum NetworkRequest {
     NetworkTokenResolver(NetworkTokenResolverRequest),
     PropertyWatcher(PropertyWatcherRequest),
     DelegatedNetworks(DelegatedNetworksRequest),
+    Reachability(ReachabilityRequest),
 }
 
 impl futures::Stream for NetpolNetworksService {
@@ -961,6 +989,8 @@ pub struct NetpolNetworksService {
     next_networks_id: ConnectionId,
     // The next id to use for a property watcher connection
     next_watcher_id: PropertyWatcherConnectionId,
+    // Reachability Monitor Watcher Handler
+    reachability_handler: ReachabilityHandler,
     // The multiplexed stream of events handled by the eventloop
     streams: futures::stream::SelectAll<NetworkRequestStreamInner>,
 
@@ -1002,6 +1032,33 @@ impl NetpolNetworksService {
         Ok(service.with_network_registry_inspect(networks_parent, networks_name))
     }
 
+    pub fn synthesize_reachability_snapshot(&self) -> freachability::Snapshot {
+        ReachabilityHandler::synthesize_snapshot(
+            self.network_registry
+                .default_network
+                .and_then(|id| self.network_registry.networks.get(&id)),
+        )
+    }
+
+    fn maybe_notify_watchers(&mut self) {
+        let current_snapshot = self.synthesize_reachability_snapshot();
+        self.reachability_handler.maybe_notify_watchers(&current_snapshot);
+    }
+
+    fn handle_reachability_request(
+        &mut self,
+        id: ReachabilityWatcherConnectionId,
+        request: Option<Result<freachability::MonitorRequest, fidl::Error>>,
+    ) {
+        let current_snapshot = self.synthesize_reachability_snapshot();
+        self.reachability_handler.handle_request(&current_snapshot, id, request);
+    }
+
+    #[cfg(test)]
+    pub fn reachability_watcher_count(&self) -> usize {
+        self.reachability_handler.watcher_count()
+    }
+
     pub fn set_telemetry(&mut self, telemetry: TelemetrySender) {
         self.telemetry = Some(telemetry);
     }
@@ -1024,6 +1081,11 @@ impl NetpolNetworksService {
                 self.streams
                     .push(NetworkRequestStreamInner::PropertyWatcher(stream.tagged(connection_id)));
             }
+            NetworkRequestStream::Reachability(stream) => {
+                if let Some(reachability_stream) = self.reachability_handler.add_stream(stream) {
+                    self.streams.push(NetworkRequestStreamInner::Reachability(reachability_stream));
+                }
+            }
         }
     }
 
@@ -1045,6 +1107,10 @@ impl NetpolNetworksService {
             }
             NetworkRequest::PropertyWatcher(PropertyWatcherRequest { id, request }) => {
                 self.handle_property_watcher_request(id, request).await?;
+                Ok(DelegatedNetworkUpdateResult { dns_servers: None })
+            }
+            NetworkRequest::Reachability(ReachabilityRequest { id, request }) => {
+                self.handle_reachability_request(id, request);
                 Ok(DelegatedNetworkUpdateResult { dns_servers: None })
             }
         }
@@ -1643,6 +1709,7 @@ impl NetpolNetworksService {
         if let Some(DefaultChangedEvent { previous_default }) = default_changed {
             self.notify_default_network_changed(previous_default, &mut property_watchers).await;
             std::mem::swap(&mut self.property_watchers, &mut property_watchers);
+            self.maybe_notify_watchers();
             return;
         }
 
@@ -1735,6 +1802,7 @@ impl NetpolNetworksService {
                 "Re-inserted in an existing registration slot."
             );
         }
+        self.maybe_notify_watchers();
     }
 
     async fn notify_default_network_changed(
@@ -3306,5 +3374,65 @@ mod tests {
                 }
             }
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_reachability_service_integration() {
+        let mut service = NetpolNetworksService::default();
+
+        let mut expected_disconnected = freachability::Snapshot::default();
+        expected_disconnected.gateway_reachable = Some(false);
+        expected_disconnected.internet_available = Some(false);
+        expected_disconnected.dns_active = Some(false);
+        expected_disconnected.http_active = Some(false);
+
+        let mut expected_validated = freachability::Snapshot::default();
+        expected_validated.gateway_reachable = Some(true);
+        expected_validated.internet_available = Some(true);
+        expected_validated.dns_active = Some(true);
+        expected_validated.http_active = Some(true);
+
+        let (proxy, stream) =
+            fidl::endpoints::create_proxy_and_stream::<freachability::MonitorMarker>();
+        service.add_stream(stream);
+        assert_eq!(service.reachability_watcher_count(), 1);
+
+        let watch_fut = proxy.watch();
+        let event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(event).await.expect("handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        let snapshot = watch_fut.await.expect("watch error");
+        assert_eq!(snapshot, expected_disconnected);
+
+        let mut second_watch = proxy.watch();
+        let event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(event).await.expect("handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(futures::poll!(&mut second_watch), std::task::Poll::Pending);
+
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::Properties(DELEGATED_NET_1.change_with(
+                    true,
+                    Some(test_marks()),
+                    None,
+                    Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                )),
+            ))
+            .await;
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_1,
+                NetworkUpdate::MakeDefault,
+            ))
+            .await;
+
+        let snapshot = second_watch.await.expect("watch should succeed");
+        assert_eq!(snapshot, expected_validated);
     }
 }

@@ -200,6 +200,7 @@ impl ManagementAgent {
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
                 fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
+                fnet_reachability::MonitorMarker::PROTOCOL_NAME,
             ],
             Self::NetCfg(NetCfgVersion::Advanced) => &[
                 fnet_dhcpv6::PrefixProviderMarker::PROTOCOL_NAME,
@@ -209,6 +210,7 @@ impl ManagementAgent {
                 fnp_properties::NetworksMarker::PROTOCOL_NAME,
                 fnp_socketproxy::NetworkRegistryMarker::PROTOCOL_NAME,
                 fnp_properties::NetworkTokenResolverMarker::PROTOCOL_NAME,
+                fnet_reachability::MonitorMarker::PROTOCOL_NAME,
             ],
         }
     }
