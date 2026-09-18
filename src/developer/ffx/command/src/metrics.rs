@@ -106,7 +106,7 @@ impl MetricsSession {
             let redacted_args = redacted_args.iter().map(AsRef::as_ref).join(" ");
             let enhanced_args = enhanced_args.map(|val| val.iter().map(AsRef::as_ref).join(" "));
             let connection_mode = self.connection_mode;
-            let analytics_task = fuchsia_async::Task::local(async move {
+            let analytics_done = async move {
                 if let Err(e) = add_ffx_launch_event(
                     Some(connection_mode),
                     redacted_args,
@@ -120,15 +120,13 @@ impl MetricsSession {
                     log::error!("metrics submission failed: {}", e);
                 }
                 Instant::now()
-            });
-
-            let analytics_done = analytics_task
-                .on_timeout(self.upload_timeout, || {
-                    log::error!("metrics submission timed out");
-                    // Metrics timeouts should not impact user flows.
-                    Instant::now()
-                })
-                .await;
+            }
+            .on_timeout(self.upload_timeout, || {
+                log::error!("metrics submission timed out");
+                // Metrics timeouts should not impact user flows.
+                Instant::now()
+            })
+            .await;
             let analytics_duration = analytics_done - command_done;
 
             Some(analytics_duration)
