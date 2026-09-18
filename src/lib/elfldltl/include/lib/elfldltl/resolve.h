@@ -40,7 +40,7 @@ using ResolveSymbolProjResult = fit::result<bool, const typename Elf::Sym*>;
 template <class Elf, std::forward_iterator Iterator>
 struct ResolveSymbolResult {
   Iterator module;
-  const typename Elf::Sym* symbol = nullptr;
+  const Elf::Sym* symbol = nullptr;
 };
 
 // Apply the projection function to each module until one returns either an
@@ -55,7 +55,7 @@ template <class Elf = elfldltl::Elf<>, std::ranges::forward_range Range,
       ResolveSymbolProjResult<Elf>>
 constexpr fit::result<bool, ResolveSymbolResult<Elf, std::ranges::iterator_t<Range>>> ResolveSymbol(
     auto& diag, Range&& modules, Proj&& proj, ResolverPolicy policy) {
-  using Sym = typename Elf::Sym;
+  using Sym = Elf::Sym;
   using Result = ResolveSymbolResult<Elf, std::ranges::iterator_t<Range>>;
   Result found = {.module = modules.end()};
   for (auto it = modules.begin(); it != modules.end(); ++it) {
