@@ -392,6 +392,7 @@ mod test {
     };
     use futures::StreamExt as _;
     use pretty_assertions::assert_eq;
+    use starnix_core::mm::{MemoryAccessor as _, MemoryAccessorExt as _};
     use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use starnix_core::task::{EventHandler, Waiter};
     use starnix_core::testing::spawn_kernel_and_run;
@@ -2617,6 +2618,125 @@ mod test {
             assert!(res.is_ok());
             let bytes_written = res.unwrap().value() as usize;
             assert!(bytes_written > 0);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn evdev_variable_length_ioctls_succeed() {
+        spawn_kernel_and_run(async move |current_task| {
+            let inspector = fuchsia_inspect::Inspector::default();
+            let touch_device = InputDevice::new_touch(700, 1200, &inspector.root());
+            let file =
+                touch_device.open_test(&current_task).expect("Failed to open touch input file");
+
+            let user_addr = starnix_core::testing::map_memory(
+                &current_task,
+                starnix_uapi::user_address::UserAddress::default(),
+                4096,
+            );
+
+            // Test EVIOCGRAB succeeds.
+            let res = file.ioctl(&current_task, uapi::EVIOCGRAB, 1u64.into());
+            assert_eq!(res, Ok(starnix_syscalls::SUCCESS));
+
+            // Test EVIOCGPHYS with variable length.
+            let phys_req = crate::input_file::EVIOCGPHYS_BASE | (256 << 16);
+            let res = file.ioctl(&current_task, phys_req, user_addr.into());
+            assert!(res.is_ok());
+            let bytes_written = res.unwrap().value() as usize;
+            assert!(bytes_written > 0);
+
+            // Test EVIOCGUNIQ returns ENOENT (synthetic devices have no serial/unique identifier).
+            let uniq_req = crate::input_file::EVIOCGUNIQ_BASE | (256 << 16);
+            let res = file.ioctl(&current_task, uniq_req, user_addr.into());
+            assert_eq!(res, starnix_uapi::error!(ENOENT));
+
+            // Test EVIOCGPROP with variable length.
+            let prop_req = crate::input_file::EVIOCGPROP_BASE | (64 << 16);
+            let res = file.ioctl(&current_task, prop_req, user_addr.into());
+            assert_eq!(res, Ok(starnix_syscalls::SUCCESS));
+
+            // Test EVIOCGBIT(0) with variable length.
+            let bit0_req = crate::input_file::EVIOCGBIT_0_BASE | (64 << 16);
+            let res = file.ioctl(&current_task, bit0_req, user_addr.into());
+            assert_eq!(res, Ok(starnix_syscalls::SUCCESS));
+
+            // Test EVIOCGBIT(EV_SND) succeeds and returns zeros.
+            let snd_req = crate::input_file::EVIOCGBIT_EV_SND_BASE | (64 << 16);
+            let res = file.ioctl(&current_task, snd_req, user_addr.into());
+            assert_eq!(res, Ok(starnix_syscalls::SUCCESS));
+
+            // Test invalid EVIOCGBIT(0x1f) returns EINVAL.
+            let invalid_bit_req = (uapi::_IOC_READ << uapi::_IOC_DIRSHIFT)
+                | ((b'E' as u32) << uapi::_IOC_TYPESHIFT)
+                | (64 << 16)
+                | (0x20 + 0x1f);
+            let res = file.ioctl(&current_task, invalid_bit_req, user_addr.into());
+            assert_eq!(res, starnix_uapi::error!(EINVAL));
+
+            // Test unrecognized evdev ioctl code with valid type/dir returns EINVAL via fallback.
+            let unrecognized_evdev_req = (uapi::_IOC_READ << uapi::_IOC_DIRSHIFT)
+                | ((b'E' as u32) << uapi::_IOC_TYPESHIFT)
+                | 0xFF;
+            let res = file.ioctl(&current_task, unrecognized_evdev_req, user_addr.into());
+            assert_eq!(res, starnix_uapi::error!(EINVAL));
+
+            // Test invalid direction/type returns EINVAL.
+            let invalid_dir_req = (uapi::_IOC_WRITE << uapi::_IOC_DIRSHIFT)
+                | ((b'E' as u32) << uapi::_IOC_TYPESHIFT)
+                | 0x20;
+            let res = file.ioctl(&current_task, invalid_dir_req, user_addr.into());
+            assert_eq!(res, starnix_uapi::error!(EINVAL));
+        })
+        .await;
+    }
+
+    // The evdev current-state queries report what the device is doing right now,
+    // as opposed to the EVIOCGBIT queries which report what it is capable of.
+    // Starnix tracks none of this state and reports all-zeros, but these must not
+    // fail: `xf86-input-evdev` issues all four during PreInit and treats an error
+    // as fatal, so returning EINVAL here means X11 brings up no input devices.
+    #[::fuchsia::test]
+    async fn evdev_current_state_queries_succeed() {
+        spawn_kernel_and_run(async move |current_task| {
+            let inspector = fuchsia_inspect::Inspector::default();
+            let touch_device = InputDevice::new_touch(700, 1200, &inspector.root());
+            let file =
+                touch_device.open_test(&current_task).expect("Failed to open touch input file");
+
+            let user_addr = starnix_core::testing::map_memory(
+                &current_task,
+                starnix_uapi::user_address::UserAddress::default(),
+                4096,
+            );
+
+            const BUF_LEN: usize = 96;
+            for (name, base) in [
+                ("EVIOCGKEY", crate::input_file::EVIOCGKEY_BASE),
+                ("EVIOCGLED", crate::input_file::EVIOCGLED_BASE),
+                ("EVIOCGSND", crate::input_file::EVIOCGSND_BASE),
+                ("EVIOCGSW", crate::input_file::EVIOCGSW_BASE),
+            ] {
+                // Poison the buffer first, so that observing zeros afterwards
+                // proves the ioctl wrote them rather than finding them.
+                current_task
+                    .write_memory(user_addr, &[0xAAu8; BUF_LEN])
+                    .expect("failed to poison buffer");
+
+                let req = base | ((BUF_LEN as u32) << 16);
+                let res = file.ioctl(&current_task, req, user_addr.into());
+                assert_eq!(res, Ok(starnix_syscalls::SUCCESS), "{name} should succeed");
+
+                let read_back = current_task
+                    .read_memory_to_vec(user_addr, BUF_LEN)
+                    .expect("failed to read back buffer");
+                assert_eq!(
+                    read_back,
+                    vec![0u8; BUF_LEN],
+                    "{name} should report nothing currently active"
+                );
+            }
         })
         .await;
     }

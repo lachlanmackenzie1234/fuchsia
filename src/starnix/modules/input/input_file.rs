@@ -521,9 +521,28 @@ impl InputFile {
     }
 }
 
-// The bit-mask that removes the variable parts of the EVIOCGNAME ioctl
-// request.
-const EVIOCGNAME_MASK: u32 = 0b11_00_0000_0000_0000_1111_1111_1111_1111;
+// Remove the variable part of the request with params, so we can identify it.
+// Lowest 14 bits of the top 16 bits encode the buffer length in bytes.
+// See https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/android/platform/bionic/libc/kernel/uapi/linux/input.h;l=82;drc=0f0c18f695543b15b852f68f297744d03d642a26
+pub(crate) const EVIOC_VAR_LEN_MASK: u32 = !(uapi::_IOC_SIZEMASK << uapi::_IOC_SIZESHIFT);
+
+pub(crate) const EVIOCGNAME_BASE: u32 = uapi::EVIOCGNAME_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGPHYS_BASE: u32 = uapi::EVIOCGPHYS_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGUNIQ_BASE: u32 = uapi::EVIOCGUNIQ_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGKEY_BASE: u32 = uapi::EVIOCGKEY_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGLED_BASE: u32 = uapi::EVIOCGLED_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGSND_BASE: u32 = uapi::EVIOCGSND_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGSW_BASE: u32 = uapi::EVIOCGSW_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGPROP_BASE: u32 = uapi::EVIOCGPROP & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_0_BASE: u32 = uapi::EVIOCGBIT_0 & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_KEY_BASE: u32 = uapi::EVIOCGBIT_EV_KEY & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_ABS_BASE: u32 = uapi::EVIOCGBIT_EV_ABS & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_REL_BASE: u32 = uapi::EVIOCGBIT_EV_REL & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_SW_BASE: u32 = uapi::EVIOCGBIT_EV_SW & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_LED_BASE: u32 = uapi::EVIOCGBIT_EV_LED & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_FF_BASE: u32 = uapi::EVIOCGBIT_EV_FF & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_MSC_BASE: u32 = uapi::EVIOCGBIT_EV_MSC & EVIOC_VAR_LEN_MASK;
+pub(crate) const EVIOCGBIT_EV_SND_BASE: u32 = uapi::EVIOCGBIT_EV_SND & EVIOC_VAR_LEN_MASK;
 
 impl FileOps for InputFile {
     fileops_impl_nonseekable!();
@@ -567,52 +586,6 @@ impl FileOps for InputFile {
                 current_task.write_object(UserRef::new(user_addr), &self.input_id)?;
                 Ok(SUCCESS)
             }
-            uapi::EVIOCGBIT_0 => {
-                current_task
-                    .write_object(UserRef::new(user_addr), &self.supported_event_types.bytes)?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGBIT_EV_KEY => {
-                current_task.write_object(UserRef::new(user_addr), &self.supported_keys.bytes)?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGBIT_EV_ABS => {
-                current_task.write_object(
-                    UserRef::new(user_addr),
-                    &self.supported_position_attributes.bytes,
-                )?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGBIT_EV_REL => {
-                current_task.write_object(
-                    UserRef::new(user_addr),
-                    &self.supported_motion_attributes.bytes,
-                )?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGBIT_EV_SW => {
-                current_task
-                    .write_object(UserRef::new(user_addr), &self.supported_switches.bytes)?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGBIT_EV_LED => {
-                current_task.write_object(UserRef::new(user_addr), &self.supported_leds.bytes)?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGBIT_EV_FF => {
-                current_task
-                    .write_object(UserRef::new(user_addr), &self.supported_haptics.bytes)?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGBIT_EV_MSC => {
-                current_task
-                    .write_object(UserRef::new(user_addr), &self.supported_misc_features.bytes)?;
-                Ok(SUCCESS)
-            }
-            uapi::EVIOCGPROP => {
-                current_task.write_object(UserRef::new(user_addr), &self.properties.bytes)?;
-                Ok(SUCCESS)
-            }
             uapi::EVIOCGABS_MT_SLOT => {
                 current_task.write_object(UserRef::new(user_addr), &self.mt_slot_axis_info)?;
                 Ok(SUCCESS)
@@ -630,55 +603,102 @@ impl FileOps for InputFile {
                 current_task.write_object(UserRef::new(user_addr), &self.y_axis_info)?;
                 Ok(SUCCESS)
             }
+            uapi::EVIOCGRAB => {
+                // Xorg and libevdev use EVIOCGRAB to obtain exclusive access to the device.
+                track_stub!(TODO("https://fxbug.dev/322873200"), "EVIOCGRAB");
+                Ok(SUCCESS)
+            }
 
             request_with_params => {
-                // Remove the variable part of the request with params, so
-                // we can identify it.
-                match request_with_params & EVIOCGNAME_MASK {
-                    uapi::EVIOCGNAME_0 => {
-                        // Request to report the device name.
+                // The lowest 14 bits of the top 16 bits are the unsigned buffer length in bytes.
+                let buffer_bytes_count =
+                    ((request_with_params >> uapi::_IOC_SIZESHIFT) & uapi::_IOC_SIZEMASK) as usize;
+
+                let dir = (request_with_params >> uapi::_IOC_DIRSHIFT) & uapi::_IOC_DIRMASK;
+                let ioc_type = (request_with_params >> uapi::_IOC_TYPESHIFT) & uapi::_IOC_TYPEMASK;
+
+                // Validate that this is an evdev read ioctl ('E').
+                if dir != uapi::_IOC_READ || ioc_type != (b'E' as u32) {
+                    track_stub!(
+                        TODO("https://fxbug.dev/322873200"),
+                        "input ioctl invalid type or dir",
+                        request_with_params
+                    );
+                    return error!(EINVAL);
+                }
+
+                // Helper to copy a bitset slice to user memory.
+                // Note: Linux evdev's bits_to_user returns the number of bytes copied, whereas
+                // existing Starnix ioctl handlers and tests expect 0 (SUCCESS).
+                let write_bits = |bits: &[u8]| -> Result<SyscallResult, Errno> {
+                    if buffer_bytes_count == 0 {
+                        return Ok(SUCCESS);
+                    }
+                    // Zero out the entire user buffer in case the user reads too much.
+                    current_task.zero(user_addr, buffer_bytes_count)?;
+                    let to_copy = std::cmp::min(bits.len(), buffer_bytes_count);
+                    current_task.write_memory(user_addr, &bits[..to_copy])?;
+                    Ok(SUCCESS)
+                };
+
+                // Helper to copy a NUL-terminated string to user memory and return bytes written
+                // including the trailing NUL.
+                let write_string = |bytes: &[u8]| -> Result<SyscallResult, Errno> {
+                    if buffer_bytes_count == 0 {
+                        return Ok(SUCCESS);
+                    }
+                    // Zero out the entire user buffer in case the user reads too much.
+                    current_task.zero(user_addr, buffer_bytes_count)?;
+                    let to_copy = std::cmp::min(bytes.len(), buffer_bytes_count.saturating_sub(1));
+                    current_task.write_memory(user_addr, &bytes[..to_copy])?;
+                    // String queries (EVIOCGNAME, EVIOCGPHYS) return the number of bytes written,
+                    // including the trailing NUL.
+                    Ok((to_copy + 1).into())
+                };
+
+                match request_with_params & EVIOC_VAR_LEN_MASK {
+                    EVIOCGBIT_0_BASE => write_bits(&self.supported_event_types.bytes),
+                    EVIOCGBIT_EV_KEY_BASE => write_bits(&self.supported_keys.bytes),
+                    EVIOCGBIT_EV_ABS_BASE => write_bits(&self.supported_position_attributes.bytes),
+                    EVIOCGBIT_EV_REL_BASE => write_bits(&self.supported_motion_attributes.bytes),
+                    EVIOCGBIT_EV_SW_BASE => write_bits(&self.supported_switches.bytes),
+                    EVIOCGBIT_EV_LED_BASE => write_bits(&self.supported_leds.bytes),
+                    EVIOCGBIT_EV_FF_BASE => write_bits(&self.supported_haptics.bytes),
+                    EVIOCGBIT_EV_MSC_BASE => write_bits(&self.supported_misc_features.bytes),
+                    EVIOCGBIT_EV_SND_BASE => write_bits(&[]),
+                    EVIOCGPROP_BASE => write_bits(&self.properties.bytes),
+                    EVIOCGNAME_BASE => write_string(self.device_name.as_bytes()),
+                    EVIOCGPHYS_BASE => {
+                        let phys = format!("starnix/{}", self.device_name);
+                        write_string(phys.as_bytes())
+                    }
+                    EVIOCGUNIQ_BASE => {
+                        // Starnix synthetic devices do not have a unique identifier (serial/MAC).
+                        // Linux returns -ENOENT when no uniq string is set.
+                        error!(ENOENT)
+                    }
+                    EVIOCGKEY_BASE | EVIOCGLED_BASE | EVIOCGSND_BASE | EVIOCGSW_BASE => {
+                        // Current-state queries: which keys are held down, which LEDs are
+                        // lit, which sounds are playing, and which switches are toggled.
+                        // These are distinct from the EVIOCGBIT capability queries above,
+                        // which report what the device *can* do rather than what it is
+                        // doing right now.
                         //
-                        // An EVIOCGNAME request comes with the response buffer size encoded in
-                        // bits 29..16 of the request's `u32` code.  This is in contrast to
-                        // most other ioctl request codes in this file, which are fully known
-                        // at compile time, so we need to decode it a bit differently from
-                        // other ioctl codes.
+                        // Starnix does not track any of this per-device state, so report
+                        // all-zeros: nothing held, lit, playing, or toggled. That is an
+                        // honest answer for these devices rather than a fabrication, but
+                        // it is still an approximation, hence the stub.
                         //
-                        // See [here][hh] the macros that do this.
-                        //
-                        // [hh]: https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/android/platform/bionic/libc/kernel/uapi/linux/input.h;l=82;drc=0f0c18f695543b15b852f68f297744d03d642a26
-                        let device_name = &self.device_name;
-
-                        // The lowest 14 bits of the top 16 bits are the unsigned buffer
-                        // length in bytes.  While we don't use multibyte characters,
-                        // make sure that all sizes below are expressed in terms of
-                        // bytes, not characters.
-                        let buffer_bytes_count =
-                            ((request_with_params >> 16) & ((1 << 14) - 1)) as usize;
-
-                        if buffer_bytes_count == 0 {
-                            return Ok(SUCCESS);
-                        }
-
-                        // Zero out the entire user buffer in case the user reads too much.
-                        // Probably not needed, but I don't think it hurts.
-                        current_task.zero(user_addr, buffer_bytes_count)?;
-                        let device_name_as_bytes = device_name.as_bytes();
-
-                        // Copy all bytes from device name if the buffer is large enough.
-                        // If not, copy one less than the buffer size, to leave space
-                        // for the final NUL.
-                        let to_copy_bytes_count = std::cmp::min(
-                            device_name_as_bytes.len(),
-                            buffer_bytes_count.saturating_sub(1),
+                        // These must not fall through to EINVAL. `xf86-input-evdev` issues
+                        // all four unconditionally during PreInit and treats any failure as
+                        // fatal, so returning an error here prevents X11 from bringing up
+                        // the keyboard, mouse, and touchscreen entirely.
+                        track_stub!(
+                            TODO("https://fxbug.dev/322873200"),
+                            "evdev current-state query",
+                            request_with_params
                         );
-                        current_task.write_memory(
-                            user_addr,
-                            &device_name_as_bytes[..to_copy_bytes_count],
-                        )?;
-                        // EVIOCGNAME ioctl returns the number of bytes written.
-                        // Do not forget the trailing NUL.
-                        Ok((to_copy_bytes_count + 1).into())
+                        write_bits(&[])
                     }
                     _ => {
                         track_stub!(
@@ -686,7 +706,7 @@ impl FileOps for InputFile {
                             "input ioctl",
                             request_with_params
                         );
-                        error!(EOPNOTSUPP)
+                        error!(EINVAL)
                     }
                 }
             }
@@ -869,6 +889,14 @@ impl<const NUM_BYTES: usize> BitSet<{ NUM_BYTES }> {
         let bit = bitnum % 8;
         self.bytes[byte] |= 1 << bit;
     }
+
+    #[cfg(test)]
+    pub fn get(&self, bitnum: u32) -> bool {
+        let bitnum = bitnum as usize;
+        let byte = bitnum / 8;
+        let bit = bitnum % 8;
+        (self.bytes[byte] & (1 << bit)) != 0
+    }
 }
 
 #[cfg(test)]
@@ -915,5 +943,24 @@ mod tests {
         let notify_count =
             input_file.inspect_status.as_ref().unwrap().fd_notify_count.load(Ordering::Relaxed);
         assert_eq!(notify_count, 1);
+    }
+
+    #[test]
+    fn test_bitset_set_and_get() {
+        let mut bitset = BitSet::<4>::new();
+        assert!(!bitset.get(0));
+        assert!(!bitset.get(15));
+        assert!(!bitset.get(31));
+
+        bitset.set(0);
+        bitset.set(15);
+        bitset.set(31);
+
+        assert!(bitset.get(0));
+        assert!(bitset.get(15));
+        assert!(bitset.get(31));
+        assert!(!bitset.get(1));
+        assert!(!bitset.get(14));
+        assert!(!bitset.get(30));
     }
 }

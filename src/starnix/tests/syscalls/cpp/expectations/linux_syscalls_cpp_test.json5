@@ -111,6 +111,7 @@
                 "InputTest.DeviceCanBeRegisteredWithEpoll",
                 "InputTest.DevicePropertiesMatchMouseWheelProperties",
                 "InputTest.GetDeviceName",
+                "InputTest.CurrentStateQueriesSucceed",
 
                 // TODO(https://fxbug.dev/494326733)
                 "LoopTest.BlkGetSize",

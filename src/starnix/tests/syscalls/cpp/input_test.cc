@@ -491,4 +491,63 @@ TEST(InputTest, GetDeviceName) {
   EXPECT_GT(strlen(buf), 0u);
 }
 
+// The evdev current-state queries report what the device is doing right now (which keys
+// are held, which LEDs are lit, which sounds are playing, which switches are toggled), as
+// opposed to the EVIOCGBIT queries above which report what the device is capable of.
+//
+// Starnix does not track this state and reports all-zeros, but these must not fail.
+// `xf86-input-evdev` issues all four unconditionally during PreInit and treats any error
+// as fatal, so returning EINVAL here stops X11 from bringing up any input device at all.
+TEST(InputTest, CurrentStateQueriesSucceed) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (getuid() != 0) {
+    GTEST_SKIP() << "Can only be run as root.";
+  }
+
+  for (const uint32_t minor : {kTouchInputMinor, kKeyboardInputMinor, kMouseInputMinor}) {
+    auto fd = GetInputFile(minor);
+    ASSERT_TRUE(fd.is_valid());
+
+    {
+      std::array<uint8_t, min_bytes(KEY_MAX)> buf;
+      buf.fill(0xAA);
+      ASSERT_EQ(0, ioctl(fd.get(), EVIOCGKEY(buf.size()), buf.data()))
+          << "minor " << minor << ": get key state failed: " << strerror(errno);
+      for (size_t i = 0; i < buf.size(); i++) {
+        EXPECT_EQ(0, buf[i]) << "minor " << minor << ": no key should be reported as held";
+      }
+    }
+
+    {
+      std::array<uint8_t, min_bytes(LED_MAX)> buf;
+      buf.fill(0xAA);
+      ASSERT_EQ(0, ioctl(fd.get(), EVIOCGLED(buf.size()), buf.data()))
+          << "minor " << minor << ": get led state failed: " << strerror(errno);
+      for (size_t i = 0; i < buf.size(); i++) {
+        EXPECT_EQ(0, buf[i]) << "minor " << minor << ": no LED should be reported as lit";
+      }
+    }
+
+    {
+      std::array<uint8_t, min_bytes(SND_MAX)> buf;
+      buf.fill(0xAA);
+      ASSERT_EQ(0, ioctl(fd.get(), EVIOCGSND(buf.size()), buf.data()))
+          << "minor " << minor << ": get sound state failed: " << strerror(errno);
+      for (size_t i = 0; i < buf.size(); i++) {
+        EXPECT_EQ(0, buf[i]) << "minor " << minor << ": no sound should be reported as playing";
+      }
+    }
+
+    {
+      std::array<uint8_t, min_bytes(SW_MAX)> buf;
+      buf.fill(0xAA);
+      ASSERT_EQ(0, ioctl(fd.get(), EVIOCGSW(buf.size()), buf.data()))
+          << "minor " << minor << ": get switch state failed: " << strerror(errno);
+      for (size_t i = 0; i < buf.size(); i++) {
+        EXPECT_EQ(0, buf[i]) << "minor " << minor << ": no switch should be reported as toggled";
+      }
+    }
+  }
+}
+
 }  // namespace
