@@ -1903,13 +1903,13 @@ mod test {
     }
 
     #[::fuchsia::test]
-    async fn ignore_mouse_non_wheel_events() {
+    async fn handles_mouse_move_and_click_events() {
         spawn_kernel_and_run(async move |current_task| {
             let mouse_move_event = fuipointer::MouseEvent {
                 timestamp: Some(0),
                 pointer_sample: Some(fuipointer::MousePointerSample {
                     device_id: Some(0),
-                    position_in_viewport: Some([50.0, 50.0]),
+                    relative_motion: Some([10.0, 20.0]),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1927,7 +1927,7 @@ mod test {
             let (_mouse_device, mouse_file, mut mouse_stream) =
                 start_mouse_input(&current_task).await;
 
-            // Expect mouse relay to discard MouseEvents without vertical scroll.
+            // Expect mouse relay to handle MouseEvents with movement and buttons.
             answer_next_mouse_watch_request(&mut mouse_stream, vec![mouse_move_event]).await;
             answer_next_mouse_watch_request(&mut mouse_stream, vec![mouse_click_event]).await;
 
@@ -1936,7 +1936,16 @@ mod test {
             answer_next_mouse_watch_request(&mut mouse_stream, vec![]).await;
 
             let events = read_uapi_events(&mouse_file, &current_task);
-            assert_eq!(events.len(), 0);
+            assert!(!events.is_empty());
+            assert!(events.iter().any(|e| e.type_ == uapi::EV_REL as u16
+                && e.code == uapi::REL_X as u16
+                && e.value == 10));
+            assert!(events.iter().any(|e| e.type_ == uapi::EV_REL as u16
+                && e.code == uapi::REL_Y as u16
+                && e.value == 20));
+            assert!(events.iter().any(|e| e.type_ == uapi::EV_KEY as u16
+                && e.code == uapi::BTN_LEFT as u16
+                && e.value == 1));
         })
         .await;
     }
@@ -2533,8 +2542,8 @@ mod test {
                 ..Default::default()
             };
 
-            // Send 2 non-wheel MouseEvents to proxy that should be counted as `received` by InputFile
-            // These events have no scroll_v delta in the pointer sample so they should be ignored.
+            // Send 2 MouseEvents: one move event with no relative motion (ignored) and one click
+            // event with button 1 pressed (converted).
             answer_next_mouse_watch_request(
                 &mut mouse_source_stream,
                 vec![mouse_move_event, mouse_click_event],
@@ -2567,20 +2576,20 @@ mod test {
                     active_wake_leases_count: 0u64,
                     total_events_with_wake_lease_count: 0u64,
                     total_fidl_events_received_count: 8u64,
-                    total_fidl_events_ignored_count: 2u64,
+                    total_fidl_events_ignored_count: 1u64,
                     total_fidl_events_unexpected_count: 0u64,
-                    total_fidl_events_converted_count: 6u64,
-                    total_uapi_events_generated_count: 4u64,
+                    total_fidl_events_converted_count: 7u64,
+                    total_uapi_events_generated_count: 7u64,
                     last_generated_uapi_event_timestamp_ns: 5000i64,
                     mouse_file_0: {
                         fidl_events_received_count: 8u64,
-                        fidl_events_ignored_count: 2u64,
+                        fidl_events_ignored_count: 1u64,
                         fidl_events_unexpected_count: 0u64,
-                        fidl_events_converted_count: 6u64,
-                        uapi_events_generated_count: 4u64,
-                        uapi_events_read_count: 4u64,
-                        fd_read_count: 5u64,
-                        fd_notify_count: 2u64,
+                        fidl_events_converted_count: 7u64,
+                        uapi_events_generated_count: 7u64,
+                        uapi_events_read_count: 7u64,
+                        fd_read_count: 8u64,
+                        fd_notify_count: 3u64,
                         last_generated_uapi_event_timestamp_ns: 5000i64,
                         last_read_uapi_event_timestamp_ns: 5000i64,
                         opened_without_nonblock: AnyProperty,
