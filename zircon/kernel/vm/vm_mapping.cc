@@ -1862,6 +1862,9 @@ uint64_t VmMapping::TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) cons
     DEBUG_ASSERT(stream_size_res);
     size_t stream_size = stream_size_res.value();
     DEBUG_ASSERT(stream_size <= vmo_size);
+    if (vmo_offset >= stream_size) {
+      return 0;
+    }
     trim_len = stream_size - vmo_offset;
   }
 
