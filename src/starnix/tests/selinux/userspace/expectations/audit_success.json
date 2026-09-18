@@ -691,6 +691,12 @@
             ]
         },
         {
+            "name": "IoctlTest.SocketIoctlDeniedWithoutIoctlPermission",
+            "audit_expectations": [
+                "avc:  denied  { ioctl } for path=\"socket:[30]\" dev=\"sockfs\" ino=30 ioctlcmd=0x8915 scontext=test_u:test_r:test_ioctl_socket_denied_t:s0 tcontext=test_u:test_r:test_ioctl_socket_denied_t:s0 tclass=udp_socket permissive=0"
+            ]
+        },
+        {
             "name": "MMapTest/MMapDeniedTest.MMapDenied/no_map",
             "audit_expectations": [
                 "avc:  denied  { map } for path=\"/tmp/proc_test_file_3sGUE2\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_mmap_child_no_map_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0",

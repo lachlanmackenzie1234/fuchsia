@@ -162,6 +162,15 @@ pub fn netlink_ioctl(
     request: u32,
     arg: SyscallArg,
 ) -> Result<SyscallResult, Errno> {
+    // Capability checks must be validated against the user task's credentials
+    // before performing internal operations.
+    match request {
+        SIOCSIFADDR | SIOCSIFNETMASK | SIOCSIFFLAGS => {
+            security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+        }
+        _ => {}
+    }
+
     let user_addr = UserAddress::from(arg);
 
     // TODO(https://fxbug.dev/42079507): Share this implementation with `fdio`
@@ -664,14 +673,17 @@ fn get_netlink_interface_info_with_index(
 }
 
 fn new_route_socket(current_task: &CurrentTask) -> Result<FileHandle, Errno> {
-    SocketFile::new_socket(
-        current_task,
-        SocketDomain::Netlink,
-        SocketType::Datagram,
-        OpenFlags::RDWR,
-        SocketProtocol::from_raw(NetlinkFamily::Route.as_raw()),
-        /* kernel_private=*/ true,
-    )
+    let internal_creds = security::creds_start_internal_operation(current_task);
+    current_task.override_creds(internal_creds, || {
+        SocketFile::new_socket(
+            current_task,
+            SocketDomain::Netlink,
+            SocketType::Datagram,
+            OpenFlags::RDWR,
+            SocketProtocol::from_raw(NetlinkFamily::Route.as_raw()),
+            /* kernel_private=*/ true,
+        )
+    })
 }
 
 // Helper function for getting an interface's info through Netlink
@@ -720,46 +732,49 @@ fn get_netlink_ipv4_addresses(
     let if_index = link_msg.header.index;
 
     // Send the request to dump all IPv4 addresses.
-    {
-        let mut msg = NetlinkMessage::new(
-            {
-                let mut header = NetlinkHeader::default();
-                header.flags = netlink_packet_core::NLM_F_DUMP | netlink_packet_core::NLM_F_REQUEST;
-                header
-            },
-            NetlinkPayload::InnerMessage(RouteNetlinkMessage::GetAddress({
-                let mut msg = AddressMessage::default();
-                msg.header.family = AddressFamily::Inet.into();
-                msg
-            })),
-        );
-        msg.finalize();
-        let mut buf = vec![0; msg.buffer_len()];
-        msg.serialize(&mut buf[..]);
+    let mut msg = NetlinkMessage::new(
+        {
+            let mut header = NetlinkHeader::default();
+            header.flags = netlink_packet_core::NLM_F_DUMP | netlink_packet_core::NLM_F_REQUEST;
+            header
+        },
+        NetlinkPayload::InnerMessage(RouteNetlinkMessage::GetAddress({
+            let mut msg = AddressMessage::default();
+            msg.header.family = AddressFamily::Inet.into();
+            msg
+        })),
+    );
+    msg.finalize();
+    let mut buf = vec![0; msg.buffer_len()];
+    msg.serialize(&mut buf[..]);
+
+    let internal_creds = security::creds_start_internal_operation(current_task);
+    let addrs = current_task.override_creds(internal_creds, || {
         assert_eq!(socket.write(current_task, &mut VecInputBuffer::from(buf))?, msg.buffer_len());
-    }
 
-    // Collect all the addresses.
-    let mut addrs = Vec::new();
-    loop {
-        read_buf.reset();
-        let n = socket.read(current_task, read_buf)?;
+        // Collect all the addresses.
+        let mut addrs = Vec::new();
+        loop {
+            read_buf.reset();
+            let n = socket.read(current_task, read_buf)?;
 
-        let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(
-            &read_buf.data()[..n],
-            RouteNetlinkMessageParseMode::Strict,
-        )
-        .expect("netlink should always send well-formed messages");
-        match msg.payload {
-            NetlinkPayload::Done(_) => break,
-            NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress(msg)) => {
-                if msg.header.index == if_index {
-                    addrs.push(msg);
+            let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+                &read_buf.data()[..n],
+                RouteNetlinkMessageParseMode::Strict,
+            )
+            .expect("netlink should always send well-formed messages");
+            match msg.payload {
+                NetlinkPayload::Done(_) => break,
+                NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress(msg)) => {
+                    if msg.header.index == if_index {
+                        addrs.push(msg);
+                    }
                 }
+                payload => panic!("unexpected message = {:?}", payload),
             }
-            payload => panic!("unexpected message = {:?}", payload),
         }
-    }
+        Ok(addrs)
+    })?;
 
     Ok((addrs, if_index))
 }
@@ -814,7 +829,6 @@ fn set_netlink_interface_flags(
 }
 
 /// Sends the msg on the provided NETLINK ROUTE socket, returning the response.
-
 fn send_netlink_msg_and_wait_response(
     current_task: &CurrentTask,
     socket: &FileHandle,
@@ -824,14 +838,18 @@ fn send_netlink_msg_and_wait_response(
     msg.finalize();
     let mut buf = vec![0; msg.buffer_len()];
     msg.serialize(&mut buf[..]);
-    assert_eq!(socket.write(current_task, &mut VecInputBuffer::from(buf))?, msg.buffer_len());
 
-    read_buf.reset();
-    let n = socket.read(current_task, read_buf)?;
-    let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(
-        &read_buf.data()[..n],
-        RouteNetlinkMessageParseMode::Strict,
-    )
-    .expect("netlink should always send well-formed messages");
-    Ok(msg)
+    let internal_creds = security::creds_start_internal_operation(current_task);
+    current_task.override_creds(internal_creds, || {
+        assert_eq!(socket.write(current_task, &mut VecInputBuffer::from(buf))?, msg.buffer_len());
+
+        read_buf.reset();
+        let n = socket.read(current_task, read_buf)?;
+        let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(
+            &read_buf.data()[..n],
+            RouteNetlinkMessageParseMode::Strict,
+        )
+        .expect("netlink should always send well-formed messages");
+        Ok(msg)
+    })
 }
