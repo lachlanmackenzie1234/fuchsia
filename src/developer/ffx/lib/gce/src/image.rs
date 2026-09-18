@@ -10,7 +10,7 @@ use discovery::gce_watcher::write_file_atomically;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use product_bundle::ProductBundle;
-use rand::Rng as _;
+use rand::RngExt as _;
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::fs::File;

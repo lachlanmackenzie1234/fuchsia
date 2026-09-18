@@ -737,7 +737,7 @@ mod tests {
     use fuchsia_sync::{Mutex, MutexGuard};
 
     use rand::rng;
-    use rand::seq::SliceRandom;
+    use rand::seq::SliceRandom as _;
 
     use std::sync::Arc;
     use std::sync::atomic::Ordering;

@@ -691,8 +691,8 @@ mod test {
     use crate::interface_factory::{InterfaceFactoryBase, InterfaceFactoryError};
     use fastboot::test_transport::TestTransport;
     use pretty_assertions::assert_eq;
+    use rand::RngExt as _;
     use rand::rngs::SmallRng;
-    use rand::{RngCore, SeedableRng};
     use std::io::{Read, Seek, SeekFrom, Write};
     use tempfile::{NamedTempFile, TempDir};
     use tokio::sync::mpsc;
@@ -1254,10 +1254,10 @@ mod test {
         let tmpdir = TempDir::new().unwrap();
         // Generate a large temporary file
         let (mut file, temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: SmallRng = rand::make_rng();
         let mut buf = Vec::<u8>::new();
         buf.resize(1 * 4096, 0);
-        rng.fill_bytes(&mut buf);
+        rng.fill(&mut buf[..]);
         file.write_all(&buf).unwrap();
         file.flush().unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();
@@ -1295,10 +1295,10 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: SmallRng = rand::make_rng();
         let mut buf = Vec::<u8>::new();
         buf.resize(1 * 4096, 0);
-        rng.fill_bytes(&mut buf);
+        rng.fill(&mut buf[..]);
         file.write_all(&buf).unwrap();
         file.flush().unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();
@@ -1332,10 +1332,10 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: SmallRng = rand::make_rng();
         let mut buf = Vec::<u8>::new();
         buf.resize(1 * 4096, 0);
-        rng.fill_bytes(&mut buf);
+        rng.fill(&mut buf[..]);
         file.write_all(&buf).unwrap();
         file.flush().unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();
@@ -1377,10 +1377,10 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: SmallRng = rand::make_rng();
         let mut buf = Vec::<u8>::new();
         buf.resize(1 * 4096, 0);
-        rng.fill_bytes(&mut buf);
+        rng.fill(&mut buf[..]);
         file.write_all(&buf).unwrap();
         file.flush().unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();

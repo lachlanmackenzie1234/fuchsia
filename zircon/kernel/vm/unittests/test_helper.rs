@@ -11,12 +11,13 @@ use crate::vm::attribution::AttributionCounts;
 use crate::vm::page::VmPagePtr;
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
+use core::convert::Infallible;
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use core::num::NonZeroI64;
 use fbl::RefPtr;
-use rand::RngCore;
-use rand::rand_core::impls;
+use rand::TryRng;
+use rand::rand_core::utils;
 use test_helper_bindings as bindings;
 use zx_status::Status;
 
@@ -213,17 +214,19 @@ impl TestRand {
     }
 }
 
-impl RngCore for TestRand {
-    fn next_u32(&mut self) -> u32 {
+impl TryRng for TestRand {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
         self.state = test_rand(self.state);
-        self.state
+        Ok(self.state)
     }
 
-    fn next_u64(&mut self) -> u64 {
-        impls::next_u64_via_u32(self)
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+        utils::next_u64_via_u32(self)
     }
 
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        impls::fill_bytes_via_next(self, dest)
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
+        utils::fill_bytes_via_next_word(dest, || self.try_next_u64())
     }
 }

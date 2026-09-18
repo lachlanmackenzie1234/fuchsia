@@ -19,7 +19,7 @@ mod slab_rs {
     use core::pin::Pin;
     use core::ptr::NonNull;
     use pin_init::{PinInit, pin_data, pin_init, stack_pin_init};
-    use rand::Rng;
+    use rand::RngExt as _;
     use rand::seq::SliceRandom;
     use unittest::{expect_eq, expect_le, expect_lt, expect_true, unwrap_ok};
 

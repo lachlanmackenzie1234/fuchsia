@@ -64,7 +64,7 @@ use fxfs_crypto::{
     CipherHolder, Crypt, JournalCipher, JournalXtsCipher, KeyPurpose, ObjectType, StreamCipher,
     UnwrappedKey, WrappingKeyId, key_to_cipher,
 };
-use rand::RngCore;
+use rand::Rng as _;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

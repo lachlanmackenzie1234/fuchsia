@@ -13,9 +13,9 @@ use fuchsia_component_test::ScopedInstance;
 use fuchsia_scenic as scenic;
 use futures::StreamExt;
 use log::debug;
-use rand::Rng;
+use rand::RngExt as _;
 use rand::rngs::SmallRng;
-use rand::seq::IndexedMutRandom;
+use rand::seq::IndexedMutRandom as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 

@@ -48,7 +48,7 @@ mod vmo_rs {
     use fbl::{RefPtr, Vector};
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
-    use rand::Rng;
+    use rand::RngExt as _;
     use unittest::{
         assert_eq, assert_false, assert_ge, assert_le, assert_lt, assert_ok, assert_true,
         expect_eq, expect_false, expect_gt, expect_le, expect_ne, expect_ok, expect_true,
