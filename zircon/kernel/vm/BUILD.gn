@@ -47,7 +47,6 @@ source_set("vm") {
     "pmm_checker_ffi.cc",
     "pmm_ffi.cc",
     "pmm_node.cc",
-    "pmm_node_ffi.cc",
     "ppb_command.cc",
     "scanner.cc",
     "scanner_ffi.cc",
@@ -359,6 +358,7 @@ kernel_bindgen_crate("pmm-checker-bindings") {
     "cpp_pmm_checker_fill_pattern",
     "cpp_pmm_checker_validate_pattern",
     "cpp_pmm_checker_assert_pattern",
+    "cpp_pmm_checker_print_status_stdout",
   ]
   type_allowlist = [ "PmmChecker" ]
   opaque_types = [ "PmmChecker" ]
@@ -385,34 +385,6 @@ kernel_bindgen_crate("pmm-node-bindings") {
   cpp = true
 
   notice_year = 2026
-  function_allowlist = [
-    "cpp_pmm_node_destroy",
-    "cpp_pmm_node_alloc_page",
-    "cpp_pmm_node_alloc_pages",
-    "cpp_pmm_node_free_page",
-    "cpp_pmm_node_free_list",
-    "cpp_pmm_node_get_page_compression",
-    "cpp_pmm_node_count_free_pages",
-    "cpp_pmm_node_count_loaned_free_pages",
-    "cpp_pmm_node_count_loan_cancelled_pages",
-    "cpp_pmm_node_count_loaned_not_free_pages",
-    "cpp_pmm_node_count_loaned_pages",
-    "cpp_pmm_node_count_total_bytes",
-    "cpp_pmm_node_enable_free_page_filling",
-    "cpp_pmm_node_fill_free_pages_and_arm",
-    "cpp_pmm_node_set_free_memory_signal",
-    "cpp_pmm_node_wait_for_single_page_allocation",
-    "cpp_pmm_node_stop_returning_should_wait",
-    "cpp_pmm_node_has_alloc_failed_no_mem",
-    "cpp_pmm_node_get_first_alloc_failure",
-    "cpp_pmm_node_report_alloc_failure",
-    "cpp_pmm_node_begin_loan",
-    "cpp_pmm_node_cancel_loan",
-    "cpp_pmm_node_end_loan",
-    "cpp_pmm_node_alloc_loaned_page",
-    "cpp_pmm_node_begin_free_loaned_page",
-    "cpp_pmm_node_finish_free_loaned_pages",
-  ]
   type_allowlist = [
     "PmmOptDelayReuse",
     "PmmNode",
@@ -1344,6 +1316,7 @@ kernel_rust_mod("vm-rs") {
     "//src/lib/zr",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/heap:heap-rs",
     "//zircon/kernel/lib/init:init_rust",

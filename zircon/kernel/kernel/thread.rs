@@ -73,6 +73,7 @@ unsafe extern "C" {
     fn cpp_thread_current_set_restricted_state(raw_rs: *mut RestrictedState);
     fn cpp_thread_current_is_signaled() -> bool;
     fn cpp_thread_current_check_for_restricted_kick() -> bool;
+    fn cpp_thread_current_memory_allocation_state_is_enabled() -> bool;
 }
 
 pub const THREAD_SIGNAL_KILL: u32 = 1 << 0;
@@ -577,4 +578,10 @@ pub fn current_is_signaled() -> bool {
 pub fn current_check_for_restricted_kick() -> bool {
     // SAFETY: Foreign function wrapper for Thread::Current::CheckForRestrictedKick().
     unsafe { cpp_thread_current_check_for_restricted_kick() }
+}
+
+/// Checks whether the current thread has memory allocations enabled or not.
+pub fn current_memory_allocation_state_is_enabled() -> bool {
+    // SAFETY: Foreign function wrapper for Thread::Current::memory_allocation_state().IsEnabled().
+    unsafe { cpp_thread_current_memory_allocation_state_is_enabled() }
 }
