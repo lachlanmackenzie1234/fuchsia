@@ -20,9 +20,9 @@ pub use page_request::{NullPageRequest, PageRequest};
 pub use pager::{PagerThread, run_pager_loop};
 pub use protocol::{
     CLOSE_BLOB_COMMAND, DELIVERY_DATA_COMMAND, DELIVERY_DATA_SIZE, DELIVERY_REGISTER_BLOB_COMMAND,
-    DELIVERY_VMO_SIZE, DeliveryCommand, MAPPING_VMO_SIZE, MAPPINGS_COMMAND, MappingCommand,
-    PENDING_COMMANDS_CAPACITY, PENDING_DELIVERY_COMMANDS_CAPACITY, RawDeliveryCommand,
-    RawMappingCommand,
+    DELIVERY_VMO_SIZE, DeliveryCommand, ENCRYPTION_KEY_SIZE, MAPPING_VMO_SIZE, MAPPINGS_COMMAND,
+    MAPPINGS_FLAG_ENCRYPTED, MappingCommand, PENDING_COMMANDS_CAPACITY,
+    PENDING_DELIVERY_COMMANDS_CAPACITY, RawDeliveryCommand, RawMappingCommand,
 };
 pub use reader::{ChildBlockService, read_buffer_from_extents};
 

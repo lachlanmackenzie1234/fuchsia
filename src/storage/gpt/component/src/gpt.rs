@@ -456,12 +456,12 @@ fn offset_map_to_extents(
     }
     let extents = mapping::Extents::try_new(extents, base_device_offset)?;
     let mut payload_bytes = Vec::with_capacity(mappings.len() * std::mem::size_of::<u64>());
-    let mut blob_count = 0u32;
+    let mut extent_count = 0u32;
     for w in mapping::Extents::encode_extents_with_base_offset(&extents) {
         payload_bytes.extend_from_slice(&w.to_le_bytes());
-        blob_count += 1;
+        extent_count += 1;
     }
-    Ok((payload_bytes, running_logical, blob_count, base_device_offset))
+    Ok((payload_bytes, running_logical, extent_count, base_device_offset))
 }
 
 struct MapperSessionState {
@@ -636,7 +636,7 @@ impl GptManager {
         let state = self.mapper_state().await;
         let mut sender = state.sender.lock().await;
 
-        let (payload_bytes, stored_size, blob_count, device_offset) =
+        let (payload_bytes, stored_size, extent_count, device_offset) =
             offset_map_to_extents(offset_map, self.block_size)?;
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).await?;
         let cmd = mapping::RawMappingCommand {
@@ -646,7 +646,7 @@ impl GptManager {
             stored_size,
             device_offset,
             metadata_count: 0,
-            blob_count,
+            extent_count,
         };
         payload_buf.data().copy_from_slice(&payload_bytes);
         payload_buf.commit(cmd).await?;
@@ -2726,7 +2726,7 @@ mod tests {
                     .unwrap();
                     while let Ok(msg) = receiver.peek() {
                         let cmd = *msg;
-                        let payload_len = cmd.blob_count as u32 * 8;
+                        let payload_len = cmd.extent_count as u32 * 8;
                         let payload_slice = msg.payload_slice(cmd.offset, payload_len);
                         let mut payload = vec![0u8; payload_len as usize];
                         payload_slice.copy_to_slice(&mut payload);

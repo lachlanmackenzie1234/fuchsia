@@ -406,11 +406,11 @@ async fn test_mapper_with_verification_corrupted_block_on_gpt_partition() -> Res
     let msg = receiver.peek().context("Failed to peek temp mapping message")?;
     let cmd = mapping::MappingCommand::try_from(*msg)
         .map_err(|e| anyhow!("Invalid mapping command: {e:?}"))?;
-    let (offset, blob_count) = match cmd {
-        mapping::MappingCommand::Mappings { offset, blob_count, .. } => (offset, blob_count),
+    let (offset, extent_count) = match cmd {
+        mapping::MappingCommand::Mappings { offset, extent_count, .. } => (offset, extent_count),
         other => bail!("Expected Mappings command, got {other:?}"),
     };
-    ensure!(blob_count > 0, "Expected at least one extent for test blob");
+    ensure!(extent_count > 0, "Expected at least one extent for test blob");
     let payload_slice = msg.payload_slice(offset, 8);
     let mut packed_bytes = [0u8; 8];
     payload_slice.copy_to_slice(&mut packed_bytes);

@@ -3,14 +3,16 @@
 // found in the LICENSE file.
 
 use crate::reader::{BlockService, read_aligned_range};
-use crate::{Extents, MappingCommand, NullPageRequest, PageRequest, RawMappingCommand};
+use crate::{
+    ENCRYPTION_KEY_SIZE, Extents, MappingCommand, NullPageRequest, PageRequest, RawMappingCommand,
+};
 use anyhow::{Error, anyhow, bail};
 use blob_metadata::{BlobFormat, BlobMetadata, MerkleLeaves};
 use byteorder::{LittleEndian, ReadBytesExt};
 use delivery_blob::compression::{CompressionAlgorithm, CompressionInfo, StreamingDecompressor};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
-use fxfs_crypto::Cipher;
+use fxfs_crypto::{Cipher, FxfsCipher, UnwrappedKey};
 use std::borrow::Borrow;
 use std::cmp::min;
 use std::collections::hash_map::{Entry, HashMap};
@@ -614,26 +616,43 @@ pub fn process_mapping_command<S: BlockService + ?Sized + 'static, D: DeliveryHa
             stored_size,
             device_offset,
             metadata_count,
-            blob_count,
+            extent_count,
+            encrypted,
         } => {
-            let blob_bytes_len = (blob_count as usize)
+            if encrypted && metadata_count > 0 {
+                bail!("Encrypted files cannot have blob metadata");
+            }
+            let extent_bytes_len = (extent_count as usize)
                 .checked_mul(8)
-                .ok_or_else(|| anyhow!("Overflow calculating blob extent byte length"))?;
+                .ok_or_else(|| anyhow!("Overflow calculating extent byte length"))?;
             let metadata_bytes_len = (metadata_count as usize)
                 .checked_mul(8)
                 .ok_or_else(|| anyhow!("Overflow calculating metadata extent byte length"))?;
-            let total_bytes_len = blob_bytes_len
+            let key_bytes_len = if encrypted { ENCRYPTION_KEY_SIZE } else { 0 };
+            let total_bytes_len = extent_bytes_len
                 .checked_add(metadata_bytes_len)
+                .and_then(|len| len.checked_add(key_bytes_len))
                 .ok_or_else(|| anyhow!("Overflow calculating total extent byte length"))?;
             let payload_len: u32 = total_bytes_len
                 .try_into()
                 .map_err(|_| anyhow!("Extent byte length exceeds u32"))?;
 
             let payload_bytes = msg.payload_slice(offset, payload_len);
-            let data_bytes = payload_bytes.subslice(0..blob_bytes_len);
-            let metadata_bytes = payload_bytes.subslice(blob_bytes_len..total_bytes_len);
+            let data_bytes = payload_bytes.subslice(0..extent_bytes_len);
             let data_extents = Extents::from_encoded(data_bytes.iter_as::<u64>(), device_offset)
                 .ok_or_else(|| anyhow!("Failed to decode data extents"))?;
+
+            if encrypted {
+                let key_bytes = payload_bytes.subslice(extent_bytes_len..total_bytes_len);
+                let cipher_key = UnwrappedKey::new(key_bytes.to_vec());
+                let cipher = Arc::new(FxfsCipher::new(&cipher_key)) as Arc<dyn Cipher>;
+                let file =
+                    Arc::new(File::new(data_extents, stored_size, Transform::Encrypted(cipher)));
+                files.insert(key, file);
+                return Ok(());
+            }
+
+            let metadata_bytes = payload_bytes.subslice(extent_bytes_len..total_bytes_len);
             let metadata_extents =
                 Extents::from_encoded(metadata_bytes.iter_as::<u64>(), device_offset)
                     .ok_or_else(|| anyhow!("Failed to decode metadata extents"))?;
@@ -1322,7 +1341,7 @@ mod tests {
             stored_size: 4096,
             device_offset: 0,
             metadata_count: 1,
-            blob_count: 1,
+            extent_count: 1,
         };
         payload_buf.commit(cmd).unwrap();
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
@@ -1398,7 +1417,7 @@ mod tests {
             stored_size: 4096,
             device_offset: 0,
             metadata_count: 1,
-            blob_count: 1,
+            extent_count: 1,
         };
         payload_buf.commit(cmd).unwrap();
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
@@ -1510,7 +1529,7 @@ mod tests {
             stored_size: 4096,
             device_offset: 0,
             metadata_count: 1,
-            blob_count: 1,
+            extent_count: 1,
         };
         payload_buf.commit(cmd).unwrap();
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
@@ -1586,7 +1605,7 @@ mod tests {
             stored_size: BLOCK_SIZE,
             device_offset: 0,
             metadata_count: 1,
-            blob_count: 1,
+            extent_count: 1,
         };
 
         let vmo = Vmo::create(65536).unwrap();
@@ -1686,7 +1705,7 @@ mod tests {
             stored_size: BLOCK_SIZE,
             device_offset: 0,
             metadata_count: 1,
-            blob_count: 1,
+            extent_count: 1,
         };
 
         let vmo = Vmo::create(65536).unwrap();
@@ -1757,7 +1776,7 @@ mod tests {
             stored_size: 4096,
             device_offset: 0,
             metadata_count: 0,
-            blob_count: 1,
+            extent_count: 1,
         };
         payload_buf.commit(cmd).unwrap();
 
@@ -1777,7 +1796,7 @@ mod tests {
                 stored_size: 0,
                 device_offset: 0,
                 metadata_count: 0,
-                blob_count: 0,
+                extent_count: 0,
             })
             .unwrap();
 
@@ -1986,5 +2005,144 @@ mod tests {
         let (page_request, rx) = TestVecBuffer::new_with_range(0..8192);
         file.read_range(&service, page_request);
         assert_eq!(rx.commits().len(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_process_mapping_command_unencrypted_no_metadata() {
+        let block_count = 2;
+        let mut expected_data = vec![0u8; (block_count as u64 * BLOCK_SIZE) as usize];
+        for (i, byte) in expected_data.iter_mut().enumerate() {
+            *byte = (i % 251) as u8;
+        }
+        let service = Arc::new(FakeBlockService::new(expected_data.clone()));
+        let files = Arc::new(Files::new(
+            service.clone(),
+            TestDeliveryHandler(|_k, r| TestVecBuffer::new_with_range(r).0),
+        ));
+
+        let data_extents =
+            Extents::try_new([Extent::new(0..(block_count as u64 * BLOCK_SIZE), Some(0))], 0)
+                .unwrap();
+        let mut payload_bytes = Vec::new();
+        for w in Extents::encode_extents(&data_extents) {
+            payload_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+
+        let vmo = zx::Vmo::create(65536).unwrap();
+        let mut sender = vmo_fifo::SyncSender::<crate::RawMappingCommand>::new(
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            1024,
+            16,
+        )
+        .unwrap();
+        let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
+        payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = crate::RawMappingCommand {
+            opcode: crate::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key: 100,
+            stored_size: block_count as u64 * BLOCK_SIZE,
+            device_offset: 0,
+            metadata_count: 0,
+            extent_count: 1,
+        };
+        payload_buf.commit(cmd).unwrap();
+        let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
+
+        let msg = receiver.peek().unwrap();
+        process_mapping_command(&msg, &files).unwrap();
+
+        let file = files.get_file(100).expect("File should be loaded immediately");
+        let (page_request, rx) =
+            TestVecBuffer::new_with_range(0..(block_count as u64 * BLOCK_SIZE));
+        file.read_range(service.as_ref(), page_request);
+        assert_eq!(rx.output(), expected_data);
+    }
+
+    #[fuchsia::test]
+    fn test_process_mapping_command_encrypted() {
+        struct NoRegisterBlobHandler;
+        impl DeliveryHandler for NoRegisterBlobHandler {
+            type Request = TestVecBuffer;
+            fn get_page_request(self: &Arc<Self>, _key: u64, range: Range<u64>) -> Self::Request {
+                TestVecBuffer::new_with_range(range).0
+            }
+            fn register_blob(&self, _key: u64, _merkle_leaves: &[[u8; 32]]) -> Result<(), Error> {
+                panic!("register_blob should not be called for encrypted files");
+            }
+        }
+
+        let block_count = 2;
+        let mut plaintext = vec![0u8; (block_count as u64 * BLOCK_SIZE) as usize];
+        for (i, byte) in plaintext.iter_mut().enumerate() {
+            *byte = (i % 251) as u8;
+        }
+
+        let raw_key = [0x5au8; 32];
+        let key = UnwrappedKey::new(raw_key.to_vec());
+        let cipher = FxfsCipher::new(&key);
+
+        let mut ciphertext = plaintext.clone();
+        cipher.encrypt(0, 0, 0, 0, MutPtrByteSlice::from(&mut ciphertext[..])).unwrap();
+
+        let service = Arc::new(FakeBlockService::new(ciphertext));
+        let files = Arc::new(Files::new(service.clone(), NoRegisterBlobHandler));
+
+        let data_extents =
+            Extents::try_new([Extent::new(0..(block_count as u64 * BLOCK_SIZE), Some(0))], 0)
+                .unwrap();
+        let mut payload_bytes = Vec::new();
+        for w in Extents::encode_extents(&data_extents) {
+            payload_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        payload_bytes.extend_from_slice(&raw_key);
+
+        let vmo = zx::Vmo::create(65536).unwrap();
+        let mut sender = vmo_fifo::SyncSender::<crate::RawMappingCommand>::new(
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            1024,
+            16,
+        )
+        .unwrap();
+        let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
+        payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = crate::RawMappingCommand {
+            opcode: crate::MAPPINGS_COMMAND | crate::MAPPINGS_FLAG_ENCRYPTED,
+            offset: payload_buf.offset(),
+            key: 101,
+            stored_size: block_count as u64 * BLOCK_SIZE,
+            device_offset: 0,
+            metadata_count: 0,
+            extent_count: 1,
+        };
+        payload_buf.commit(cmd).unwrap();
+
+        let invalid_cmd = crate::RawMappingCommand {
+            opcode: crate::MAPPINGS_COMMAND | crate::MAPPINGS_FLAG_ENCRYPTED,
+            offset: 0,
+            key: 102,
+            stored_size: block_count as u64 * BLOCK_SIZE,
+            device_offset: 0,
+            metadata_count: 1,
+            extent_count: 1,
+        };
+        sender.reserve_payload(0).unwrap().commit(invalid_cmd).unwrap();
+
+        let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
+
+        let msg = receiver.peek().unwrap();
+        process_mapping_command(&msg, &files).unwrap();
+        msg.pop().unwrap();
+
+        let invalid_msg = receiver.peek().unwrap();
+        assert!(process_mapping_command(&invalid_msg, &files).is_err());
+
+        let file = files.get_file(101).expect("File should be loaded immediately");
+        assert!(matches!(file.transform(), Transform::Encrypted(_)));
+
+        let (page_request, rx) =
+            TestVecBuffer::new_with_range(0..(block_count as u64 * BLOCK_SIZE));
+        file.read_range(service.as_ref(), page_request);
+        assert_eq!(rx.output(), plaintext);
     }
 }

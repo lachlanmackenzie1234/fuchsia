@@ -4456,7 +4456,7 @@ mod tests {
             stored_size: 4096,
             device_offset: 0,
             metadata_count: 0,
-            blob_count: data_extent_words.len() as u32,
+            extent_count: data_extent_words.len() as u32,
         };
 
         let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
@@ -4538,7 +4538,7 @@ mod tests {
             stored_size: 8192,
             device_offset: 0,
             metadata_count: 0,
-            blob_count: partition_extents.len() as u32,
+            extent_count: partition_extents.len() as u32,
         };
         let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
             root_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
@@ -4596,7 +4596,7 @@ mod tests {
             stored_size: 4096,
             device_offset: 0,
             metadata_count: 0,
-            blob_count: child_extents.len() as u32,
+            extent_count: child_extents.len() as u32,
         };
         let mut child_sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
             child_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
@@ -4680,7 +4680,7 @@ mod tests {
             stored_size: 8192,
             device_offset: 0,
             metadata_count: 0,
-            blob_count: partition_extents.len() as u32,
+            extent_count: partition_extents.len() as u32,
         };
         let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
             root_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),

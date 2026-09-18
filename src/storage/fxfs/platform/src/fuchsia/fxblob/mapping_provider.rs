@@ -101,10 +101,10 @@ impl BlobMappingSession {
         let extents = node.get_mapping_extents().await?;
         let size = node.as_ref().byte_size();
         let stored_size = node.as_ref().stored_size().await?;
-        let blob_count = extents.data.len() as u32;
+        let extent_count = extents.data.len() as u32;
         let metadata_count = extents.merkle.len() as u32;
 
-        let allocation_size = (blob_count + metadata_count) as usize * std::mem::size_of::<u64>();
+        let allocation_size = (extent_count + metadata_count) as usize * std::mem::size_of::<u64>();
 
         if allocation_size > 0 {
             let mut payload = self.sender.reserve_payload(allocation_size).await?;
@@ -126,7 +126,8 @@ impl BlobMappingSession {
                 stored_size,
                 device_offset: 0,
                 metadata_count,
-                blob_count,
+                extent_count,
+                encrypted: false,
             };
 
             payload.commit(command.into()).await?;
@@ -249,25 +250,27 @@ mod tests {
             let cmd1_raw = receiver.peek().expect("peek failed");
             let cmd1 = MappingCommand::try_from(*cmd1_raw).expect("try_from failed");
 
-            let (cmd1_offset, cmd1_blob_count, cmd1_metadata_count) = match cmd1 {
+            let (cmd1_offset, cmd1_extent_count, cmd1_metadata_count) = match cmd1 {
                 MappingCommand::Mappings {
                     key,
                     offset,
                     stored_size: _,
                     device_offset: _,
                     metadata_count,
-                    blob_count,
+                    extent_count,
+                    encrypted,
                 } => {
                     assert_eq!(key, 1);
-                    assert_eq!(blob_count, data_extents.len() as u32);
+                    assert_eq!(extent_count, data_extents.len() as u32);
                     assert_eq!(metadata_count, merkle_extents.len() as u32);
-                    (offset, blob_count, metadata_count)
+                    assert!(!encrypted);
+                    (offset, extent_count, metadata_count)
                 }
                 _ => panic!("Expected Mappings command"),
             };
 
             // Verify payload
-            let total_extents = cmd1_blob_count + cmd1_metadata_count;
+            let total_extents = cmd1_extent_count + cmd1_metadata_count;
             let buffer = cmd1_raw.payload_slice(cmd1_offset, total_extents * 8).to_vec();
 
             let data_extents_container = Extents::try_new(&data_extents, 0).unwrap();
@@ -591,16 +594,16 @@ mod tests {
         assert_eq!(blob_size as usize, uncompressed_data.len());
 
         let msg = receiver.peek().expect("Failed to peek message");
-        if let Ok(MappingCommand::Mappings { blob_count, metadata_count, .. }) =
+        if let Ok(MappingCommand::Mappings { extent_count, metadata_count, .. }) =
             MappingCommand::try_from(*msg)
         {
-            if (blob_count as usize) < min_data_extents
+            if (extent_count as usize) < min_data_extents
                 || (metadata_count as usize) < min_merkle_extents
             {
                 panic!(
-                    "EXTENTS MISMATCH: blob_count = {}, metadata_count = {}, \
+                    "EXTENTS MISMATCH: extent_count = {}, metadata_count = {}, \
                      required min_data = {}, min_merkle = {}",
-                    blob_count, metadata_count, min_data_extents, min_merkle_extents
+                    extent_count, metadata_count, min_data_extents, min_merkle_extents
                 );
             }
         }
