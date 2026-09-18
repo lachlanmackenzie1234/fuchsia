@@ -161,6 +161,9 @@ template("rustc_test_internal") {
       if (defined(invoker.test_environments)) {
         environments = invoker.test_environments
       }
+      if (defined(invoker.test_build_only)) {
+        build_only = invoker.test_build_only
+      }
       forward_variables_from(invoker,
                              [
                                "package_deps",

@@ -71,7 +71,7 @@ fuchsia_test_package("loopback-socket-benchmarks-with-tracing-pkg-netstack3") {
   # Prevent this test from being run as a target-side test, since it's kicked
   # off by the dart wrapper.
   test_specs = {
-    environments = []
+    build_only = true
   }
 }
 

@@ -137,7 +137,7 @@ fuchsia_test_package("zx-tests") {
     # TODO(https://fxbug.dev/42081270): Remove this once
     # version::tests::get_version_string passes on RISC-V.
     test_specs = {
-      environments = []
+      build_only = true
     }
   }
 }

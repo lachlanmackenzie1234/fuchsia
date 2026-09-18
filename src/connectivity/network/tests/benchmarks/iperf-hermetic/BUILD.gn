@@ -80,6 +80,6 @@ fuchsia_test_package("iperf-benchmark") {
   # Don't run the benchmark on the target as it is run as a part of the
   # host-driven iPerf benchmarks.
   test_specs = {
-    environments = []
+    build_only = true
   }
 }
