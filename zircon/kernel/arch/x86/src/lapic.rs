@@ -234,7 +234,6 @@ pub extern "C" fn apic_vm_init() {
 /// Initializes the current processor's local APIC.  Should be called after
 /// apic_vm_init has been called.
 #[unsafe(no_mangle)]
-#[sanitize(safestack = "off")]
 pub extern "C" fn apic_local_init() {
     debug_assert!(crate::arch_rs::ints_disabled());
 
@@ -278,7 +277,6 @@ pub extern "C" fn apic_local_init() {
 }
 
 #[unsafe(no_mangle)]
-#[sanitize(safestack = "off")]
 pub extern "C" fn apic_local_id() -> u8 {
     let mut id = lapic_reg_read(LAPIC_REG_ID);
 
@@ -295,7 +293,6 @@ pub extern "C" fn apic_local_id() -> u8 {
 }
 
 #[unsafe(no_mangle)]
-#[sanitize(safestack = "off")]
 pub extern "C" fn apic_bsp_id() -> u8 {
     // SAFETY: Checking BSP_APIC_ID_VALID before reading BSP_APIC_ID.
     unsafe {
