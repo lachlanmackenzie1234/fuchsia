@@ -9,7 +9,7 @@ use crate::fuchsia::file::{FlushType, FxFile};
 use crate::fuchsia::memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor};
 use crate::fuchsia::node::{FxNode, GetResult, NodeCache};
 use crate::fuchsia::pager::Pager;
-use crate::fuchsia::profile::ProfileState;
+use crate::fuchsia::profile::{FileRecordingHandle, ProfileState};
 use crate::fuchsia::symlink::FxSymlink;
 use crate::fuchsia::volumes_directory::VolumesDirectory;
 use anyhow::{Error, bail, ensure};
@@ -333,8 +333,7 @@ impl FxVolume {
 
         info!("Recording new profile '{name}' for volume object {}", self.store.store_object_id());
         // Begin recording first to ensure that we capture any activity from the replay.
-        let recording_handle =
-            crate::fuchsia::profile::FileRecordingHandle::new(name, self.clone()).await?;
+        let recording_handle = FileRecordingHandle::new(name, self.clone()).await?;
 
         let mut profile_state = self.profile_state.lock();
         self.pager.set_recorder(Some(state.record_new(self, Box::new(recording_handle))));
@@ -382,8 +381,7 @@ impl FxVolume {
                 "Recording new profile '{name}' for volume object {}",
                 self.store.store_object_id()
             );
-            let recording_handle =
-                crate::fuchsia::profile::FileRecordingHandle::new(name, self.clone()).await?;
+            let recording_handle = FileRecordingHandle::new(name, self.clone()).await?;
             let mut profile_state = self.profile_state.lock();
             self.pager.set_recorder(Some(state.record_new(self, Box::new(recording_handle))));
             *profile_state = Some(state);

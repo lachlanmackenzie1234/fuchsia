@@ -1052,6 +1052,9 @@ impl AttributeId {
     /// attribute.
     pub const FSVERITY_MERKLE: Self = Self(2);
 
+    /// For storing an associated profile of paging activity.
+    pub const PROFILE_RECORDING: Self = Self(4);
+
     /// The range of fxfs attribute IDs which are reserved for extended attribute values. Whenever a
     /// new attribute is needed, the first unused ID will be chosen from this range. It's
     /// technically safe to change these values, but it has potential consequences - they are only
