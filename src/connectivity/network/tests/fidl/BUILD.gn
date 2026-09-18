@@ -64,12 +64,6 @@ _log_less_package_deps = [
   "//src/connectivity/network/netstack3:component-debug-less-logs",
 ]
 
-# RISC-V on Fuchsia does not support Golang.
-if (target_cpu != "riscv64") {
-  _common_test_package_deps +=
-      [ "//src/connectivity/network/netstack:component-debug" ]
-}
-
 all_non_sharded_test_packages = []
 
 foreach(test, non_sharded_tests) {
