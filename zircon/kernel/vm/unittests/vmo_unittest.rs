@@ -3322,7 +3322,7 @@ mod vmo_rs {
 
         // Reclamation should drop the number of committed pages.
         expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
-        expect_true!(verify_continuous_attribution_bytes(&vmo, alloc_size));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
         // SAFETY: It is sound to reclaim `page` at offset 0.
         assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 1);
         expect_true!(attribution::zero() == vmo.get_attributed_memory());
