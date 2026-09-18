@@ -41,7 +41,6 @@ all_ffx_libraries = [
   "target/holders",
   "target_errors",
   "target_net",
-  "tasks",
   "termio",
   "testing",
   "timeout",
