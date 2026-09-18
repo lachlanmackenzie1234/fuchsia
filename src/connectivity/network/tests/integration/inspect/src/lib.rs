@@ -6,10 +6,10 @@
 // Needed for invocations of the `assert_data_tree` macro.
 #![recursion_limit = "256"]
 
-mod common;
-
 use std::collections::HashMap;
 use std::convert::TryFrom as _;
+use std::fs::File;
+use std::io::BufReader;
 use std::mem::MaybeUninit;
 use std::num::{NonZeroU16, NonZeroU64};
 use std::os::fd::AsFd;
@@ -37,6 +37,7 @@ use fnet_filter_ext::{
     RoutineType, Rule, RuleId,
 };
 use futures::StreamExt as _;
+use itertools::Itertools as _;
 use net_declare::{
     fidl_mac, fidl_subnet, net_ip_v4, net_ip_v6, net_subnet_v4, std_ip_v4, std_ip_v6,
 };
@@ -60,6 +61,7 @@ use packet_formats::ip::IpProto;
 use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 use regex::Regex;
+use sampler_config::runtime::ProjectConfig;
 use test_case::test_case;
 
 enum TcpSocketState {
@@ -3558,18 +3560,13 @@ async fn inspect_conntrack_nat_state(name: &str) {
     });
 }
 
-struct InspectDataGetter<'a> {
-    realm: &'a netemul::TestRealm<'a>,
-}
+/// The location where [`inspect_for_sampler`] will pull Sampler config from.
+/// The test must make sure to output sampler config into that directory (minus
+/// the leading "/pkg") in its dependencies.
+const SAMPLER_CONFIG_FILE: &str = "/pkg/data/sampler-config/netstack.json";
 
-impl<'a> common::InspectDataGetter for InspectDataGetter<'a> {
-    async fn get_inspect_data(&self, metric: &str) -> diagnostics_hierarchy::DiagnosticsHierarchy {
-        get_inspect_data(self.realm, "netstack", metric)
-            .await
-            .expect("inspect data should be present")
-    }
-}
-
+/// Validates that the selectors used in the Sampler config are present in the
+/// inspect data.
 #[netstack_test]
 async fn inspect_for_sampler(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
@@ -3580,9 +3577,61 @@ async fn inspect_for_sampler(name: &str) {
         .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
         .expect("connect to protocol");
 
-    let sampler = InspectDataGetter { realm: &realm };
-
-    common::inspect_for_sampler_test_inner(&sampler).await;
+    let file = File::open(SAMPLER_CONFIG_FILE).expect("open config file");
+    let mut reader = BufReader::new(file);
+    let project_config: ProjectConfig =
+        serde_json5::from_reader(&mut reader).expect("loaded sampler config");
+    for metric_config in project_config.data_sets.iter().flat_map(|ds| ds.metrics.iter()) {
+        let selector = match &metric_config.selectors[..] {
+            [selector] => selector,
+            selectors => panic!("expected one selector but got {:#?}", selectors),
+        };
+        let fidl_fuchsia_diagnostics::Selector { tree_selector, .. } = selector;
+        let (tree_selector, expected_key) = match tree_selector.as_ref().expect("tree_selector") {
+            fidl_fuchsia_diagnostics::TreeSelector::PropertySelector(
+                fidl_fuchsia_diagnostics::PropertySelector { node_path, target_properties },
+            ) => {
+                let tree_selector = node_path
+                    .iter()
+                    .map(|selector| match selector {
+                        fidl_fuchsia_diagnostics::StringSelector::ExactMatch(segment) => {
+                            selectors::sanitize_string_for_selectors(segment)
+                        }
+                        selector => panic!("expected exact match selector but got {:#?}", selector),
+                    })
+                    .join("/");
+                let expected_key = match target_properties {
+                    fidl_fuchsia_diagnostics::StringSelector::ExactMatch(segment) => segment,
+                    selector => panic!("expected exact match selector but got {:#?}", selector),
+                };
+                (tree_selector, expected_key)
+            }
+            selector => panic!("expected property selector but got {:#?}", selector),
+        };
+        let data = get_inspect_data(&realm, "netstack", &format!("{tree_selector}:{expected_key}"))
+            .await
+            .expect("inspect data should be present");
+        let properties: Vec<_> = data
+            .property_iter()
+            .filter_map(|(_hierarchy_path, property_opt): (Vec<&str>, _)| property_opt)
+            .collect();
+        match &properties[..] {
+            [diagnostics_hierarchy::Property::Uint(key, _)] => {
+                if key != expected_key {
+                    panic!(
+                        "wrong key {:#?} found (expected {:#?}) for selector {:#?}",
+                        key, expected_key, selector
+                    );
+                }
+            }
+            [] => {
+                panic!("no properties found for selector {:#?}", selector)
+            }
+            properties => {
+                panic!("wrong properties {:#?} found for selector {:#?}", properties, selector);
+            }
+        }
+    }
 }
 
 #[netstack_test]
