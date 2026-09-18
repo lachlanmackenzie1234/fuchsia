@@ -12,7 +12,6 @@ source_set("object") {
   public_deps = [ ":headers" ]
 
   sources = [
-    "buffer_chain.cc",
     "bus_transaction_initiator_dispatcher.cc",
     "bus_transaction_initiator_dispatcher_ffi.cc",
     "channel_dispatcher.cc",
@@ -124,14 +123,11 @@ source_set("object") {
 library_headers("headers") {
   headers = []
   public_deps = [
-    # <object/buffer_chain.h> has #include <ktl/utility.h>.
+    # <object/message_packet.h> has #include <ktl/unique_ptr.h>.
     "//zircon/kernel/lib/ktl:headers",
 
     # <object/port_dispatcher.h> has <lib/object_cache.h>
     "//zircon/kernel/lib/object_cache:headers",
-
-    # <object/buffer_chain.h> has <lib/page_cache.h>
-    "//zircon/kernel/lib/page_cache:headers",
 
     # <object/log_dispatcher.h> has #include <lib/debuglog.h>.
     "//zircon/kernel/lib/debuglog:headers",
@@ -146,8 +142,7 @@ library_headers("headers") {
     # <object/clock_dispatcher.h> includes things from kconcurrent
     "//zircon/kernel/lib/kconcurrent:headers",
 
-    # <object/buffer_chain.h> has #include <lib/page/size.h>
-    # <object/clock_dispatcher.> has #include <lib/page/size.h>
+    # <object/clock_dispatcher.h> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
 
     # <object/process_dispatcher.h> has #include <vm/vm_aspace.h>.
@@ -161,13 +156,11 @@ library_headers("headers") {
 source_set("tests") {
   testonly = true
   sources = [
-    "test/buffer_chain_tests.cc",
     "test/exceptionate_tests.cc",
     "test/handle_tests.cc",
     "test/interrupt_event_dispatcher_tests.cc",
     "test/job_dispatcher_tests.cc",
     "test/job_policy_tests.cc",
-    "test/message_packet_tests.cc",
     "test/msi_object_tests.cc",
     "test/root_job_observer_tests.cc",
     "test/shareable_process_state_tests.cc",
@@ -186,36 +179,6 @@ source_set("tests") {
 group("kernel-tests") {
   testonly = true
   deps = [ ":tests" ]
-}
-
-kernel_bindgen_crate("message-packet-bindings") {
-  visibility = [ ":*" ]
-  headers = [ "include/object/message_packet.h" ]
-  non_rust_deps = [ ":headers" ]
-  cpp = true
-  edition = "2024"
-  notice_year = 2026
-
-  type_allowlist = [
-    "MessagePacket",
-    "MessagePacket::FidlHeader",
-  ]
-  opaque_types = [
-    "BufferChain",
-    "fbl::.*",
-    "bitmap::.*",
-    "btree::.*",
-  ]
-  function_blocklist = [ ".*" ]
-
-  raw_lines = [
-    "#![no_std]",
-    "#![allow(clippy::all)]",
-  ]
-  expect_lints = [
-    "non_camel_case_types",
-    "non_upper_case_globals",
-  ]
 }
 
 kernel_rust_mod("object-rs") {
@@ -286,7 +249,6 @@ kernel_rust_mod("object-rs") {
   ]
 
   deps = [
-    ":message-packet-bindings",
     "//sdk/rust/iob",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",

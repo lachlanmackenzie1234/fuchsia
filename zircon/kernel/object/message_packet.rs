@@ -25,8 +25,6 @@ use zx_types::{
     zx_channel_iovec_t, zx_txid_t,
 };
 
-static_assert!(size_of::<MessagePacket>() == size_of::<message_packet_bindings::MessagePacket>());
-
 // The number of iovecs to read and process at a time. If number of iovecs <= IOVEC_CHUNK_SIZE,
 // then the message buf size will be computed and the minimum required number of pages will be
 // allocated. Otherwise, a large enough buffer for the largest possible message will be allocated.
@@ -37,6 +35,7 @@ const HANDLES_OFFSET: usize = size_of::<MessagePacket>();
 
 // In C++, `iovec.reserved != 0` returns ZX_ERR_INVALID_ARGS.
 // In Rust `zx_channel_iovec_t`, `padding1` occupies the reserved field.
+#[inline]
 fn iovec_reserved(iovec: &zx_channel_iovec_t) -> u32 {
     const OFFSET: usize = offset_of!(zx_channel_iovec_t, capacity) + size_of::<u32>();
     // SAFETY: `zx_channel_iovec_t` is 8-byte aligned and 16 bytes in size.
@@ -118,7 +117,10 @@ impl MessagePacket {
                 message_size += iovec.capacity as usize;
             }
             let mut msg = Self::create_common(message_size, num_handles)?;
-            Self::append_iovecs(&mut msg, &iovecs[..num_iovecs])?;
+            for iovec in &iovecs[..num_iovecs] {
+                let src = UserInPtr::<u8>::new(iovec.buffer);
+                msg.buffer_chain_mut().append_user(src, iovec.capacity as usize)?;
+            }
             return Ok(msg);
         }
 
@@ -127,7 +129,14 @@ impl MessagePacket {
         while num_iovecs > 0 {
             let chunk = cmp::min(num_iovecs, IOVEC_CHUNK_SIZE);
             Self::copy_iovec_chunk(user_iovecs, chunk, &mut iovecs)?;
-            message_size += Self::append_iovecs(&mut msg, &iovecs[..chunk])?;
+            for iovec in &iovecs[..chunk] {
+                if iovec_reserved(iovec) != 0 {
+                    return Err(Status::INVALID_ARGS);
+                }
+                message_size += iovec.capacity as usize;
+                let src = UserInPtr::<u8>::new(iovec.buffer);
+                msg.buffer_chain_mut().append_user(src, iovec.capacity as usize)?;
+            }
             num_iovecs -= chunk;
             user_iovecs = user_iovecs.element_offset(chunk);
         }
@@ -146,6 +155,7 @@ impl MessagePacket {
     }
 
     /// Returns payload data size in bytes.
+    #[inline]
     pub fn data_size(&self) -> usize {
         self.data_size as usize
     }
@@ -164,12 +174,14 @@ impl MessagePacket {
     }
 
     /// Returns the number of handles attached to this message packet.
+    #[inline]
     pub fn num_handles(&self) -> usize {
         self.num_handles as usize
     }
 
     /// Returns the transaction ID stored in the payload header (`zx_channel_call` treats the
     /// leading bytes of the payload as a transaction ID of type `zx_txid_t`).
+    #[inline]
     pub fn get_txid(&self) -> zx_txid_t {
         if (self.data_size as usize) < size_of::<zx_txid_t>() {
             return 0;
@@ -181,6 +193,7 @@ impl MessagePacket {
     }
 
     /// Sets the transaction ID in the payload header.
+    #[inline]
     pub fn set_txid(&mut self, txid: zx_txid_t) {
         if (self.data_size as usize) >= size_of::<zx_txid_t>() {
             // SAFETY: `self` is located at the start of the first buffer's data.
@@ -209,6 +222,7 @@ impl MessagePacket {
     ///   (`!packet.in_container()`).
     /// - If `packet.owns_handles` is true, every non-null entry in `packet.handles` must be a
     ///   valid, owned `Handle*`.
+    #[inline]
     pub unsafe fn recycle(packet: *mut MessagePacket) {
         // SAFETY:
         // - `packet` is a valid, uniquely owned pointer to an allocated `MessagePacket` that is not
@@ -286,6 +300,7 @@ impl MessagePacket {
         unsafe { Ok(MessagePacketPtr::from_raw(packet)) }
     }
 
+    #[inline]
     fn copy_iovec_chunk(
         user_iovecs: UserInPtr<zx_channel_iovec_t>,
         count: usize,
@@ -304,60 +319,47 @@ impl MessagePacket {
         Ok(())
     }
 
-    fn append_iovecs(
-        msg: &mut MessagePacket,
-        iovecs: &[zx_channel_iovec_t],
-    ) -> Result<usize, Status> {
-        let mut size = 0;
-        for iovec in iovecs {
-            if iovec_reserved(iovec) != 0 {
-                return Err(Status::INVALID_ARGS);
-            }
-            size += iovec.capacity as usize;
-            let src = UserInPtr::<u8>::new(iovec.buffer);
-            msg.buffer_chain_mut().append_user(src, iovec.capacity as usize)?;
-        }
-        Ok(size)
-    }
-
+    #[inline]
     fn buffer_chain_mut(&mut self) -> Pin<&mut BufferChain> {
         // SAFETY: `self.buffer_chain` is uniquely owned and points to the pinned BufferChain
         // inside the first buffer.
         unsafe { Pin::new_unchecked(self.buffer_chain.as_mut()) }
     }
 
+    #[inline]
     fn payload(&self) -> *const u8 {
         // SAFETY: `self` is located at the start of the first buffer's data.
         // `self.payload_offset` is within the contiguous region of the first buffer.
         unsafe { (self as *const Self).cast::<u8>().add(self.payload_offset as usize) }
     }
 
+    #[inline]
     fn in_container(&self) -> bool {
         self.node.in_container()
     }
 
     /// Returns a const pointer to the array of handle pointers attached to this message packet.
-    #[cfg(ktest)]
-    fn handles(&self) -> *const *mut c_void {
+    #[inline]
+    pub fn handles(&self) -> *const *mut c_void {
         self.handles.cast()
     }
 
     /// Returns a mutable pointer to the array of handle pointers attached to this message packet.
-    #[cfg(ktest)]
-    fn handles_mut(&mut self) -> *mut *mut c_void {
+    #[inline]
+    pub fn handles_mut(&mut self) -> *mut *mut c_void {
         self.handles
     }
 
     /// Sets whether this packet owns its attached handles and should delete them on recycle.
-    #[cfg(ktest)]
-    fn set_owns_handles(&mut self, owns_handles: bool) {
+    #[inline]
+    pub fn set_owns_handles(&mut self, owns_handles: bool) {
         self.owns_handles = owns_handles;
     }
 
     /// Returns a slice referencing the first chunk of payload stored contiguously in the first
     /// buffer backing the message packet.
-    #[cfg(ktest)]
-    fn start_of_payload(&self) -> &[u8] {
+    #[inline]
+    pub fn start_of_payload(&self) -> &[u8] {
         // The first chunk of payload. Eventually we'd want to actually get the whole message out.
         // The first Buffer of a BufferChain will contain the handles (if any are present) and at
         // least some of the message's payload. How much of message payload? Up to CONTIGUOUS_SIZE
@@ -412,6 +414,7 @@ impl MessagePacketPtr {
     /// # Safety
     ///
     /// `raw` must be a valid, uniquely owned `MessagePacket*`.
+    #[inline]
     pub unsafe fn from_raw(raw: *mut MessagePacket) -> Self {
         debug_assert!(!raw.is_null());
         // SAFETY: `raw` is non-null.
@@ -419,6 +422,7 @@ impl MessagePacketPtr {
     }
 
     /// Consumes the pointer and returns the raw pointer without running destructor.
+    #[inline]
     pub fn into_raw(self) -> *mut MessagePacket {
         let ptr = self.ptr.as_ptr();
         mem::forget(self);
@@ -426,6 +430,7 @@ impl MessagePacketPtr {
     }
 
     /// Returns the underlying raw pointer.
+    #[inline]
     pub fn as_ptr(&self) -> *mut MessagePacket {
         self.ptr.as_ptr()
     }
@@ -434,6 +439,7 @@ impl MessagePacketPtr {
 impl Deref for MessagePacketPtr {
     type Target = MessagePacket;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: `self.ptr` is non-null and points to an initialized MessagePacket.
         unsafe { self.ptr.as_ref() }
@@ -441,6 +447,7 @@ impl Deref for MessagePacketPtr {
 }
 
 impl DerefMut for MessagePacketPtr {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: `self.ptr` is non-null and valid.
         unsafe { self.ptr.as_mut() }
@@ -451,15 +458,18 @@ unsafe impl PtrTraits for MessagePacketPtr {
     type Target = MessagePacket;
     const IS_MANAGED: bool = true;
 
+    #[inline]
     fn into_raw(self) -> *mut MessagePacket {
         Self::into_raw(self)
     }
 
+    #[inline]
     unsafe fn from_raw(raw: *mut MessagePacket) -> Self {
         // SAFETY: Caller guarantees `raw` is a valid MessagePacket pointer.
         unsafe { Self::from_raw(raw) }
     }
 
+    #[inline]
     fn get_ref(&self) -> &MessagePacket {
         self
     }
@@ -468,11 +478,229 @@ unsafe impl PtrTraits for MessagePacketPtr {
 unsafe impl ManagedPtr for MessagePacketPtr {}
 
 impl Drop for MessagePacketPtr {
+    #[inline]
     fn drop(&mut self) {
         // SAFETY: `self.ptr` is a valid, uniquely owned MessagePacket pointer.
         unsafe {
             MessagePacket::recycle(self.ptr.as_ptr());
         }
+    }
+}
+
+/// Creates a `MessagePacket` with user payload data and space for `num_handles` handles.
+///
+/// # Safety
+///
+/// `out` must point to valid writable memory capable of storing `*mut MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_create_user(
+    data_uaddr: usize,
+    data_size: usize,
+    num_handles: usize,
+    out: *mut *mut MessagePacket,
+) -> zx_types::zx_status_t {
+    let user_in = UserInPtr::new(core::ptr::with_exposed_provenance::<u8>(data_uaddr));
+    match MessagePacket::create_from_user(user_in, data_size, num_handles) {
+        Ok(packet) => {
+            // SAFETY: Caller guarantees `out` is valid writable memory.
+            unsafe { *out = packet.into_raw() };
+            zx_types::ZX_OK
+        }
+        Err(status) => status.into_raw(),
+    }
+}
+
+/// Creates a `MessagePacket` with user iovecs and space for `num_handles` handles.
+///
+/// # Safety
+///
+/// `out` must point to valid writable memory capable of storing `*mut MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_create_iovecs(
+    iovecs_uaddr: usize,
+    num_iovecs: usize,
+    num_handles: usize,
+    out: *mut *mut MessagePacket,
+) -> zx_types::zx_status_t {
+    let user_iovecs =
+        UserInPtr::new(core::ptr::with_exposed_provenance::<zx_channel_iovec_t>(iovecs_uaddr));
+    match MessagePacket::create_from_iovecs(user_iovecs, num_iovecs, num_handles) {
+        Ok(packet) => {
+            // SAFETY: Caller guarantees `out` is valid writable memory.
+            unsafe { *out = packet.into_raw() };
+            zx_types::ZX_OK
+        }
+        Err(status) => status.into_raw(),
+    }
+}
+
+/// Creates a `MessagePacket` with kernel payload data and space for `num_handles` handles.
+///
+/// # Safety
+///
+/// - If `data` is non-null and `data_size > 0`, `data` must point to `data_size` valid bytes.
+/// - `out` must point to valid writable memory capable of storing `*mut MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_create_kernel(
+    data: *const u8,
+    data_size: usize,
+    num_handles: usize,
+    out: *mut *mut MessagePacket,
+) -> zx_types::zx_status_t {
+    let payload = if data.is_null() || data_size == 0 {
+        &[]
+    } else {
+        // SAFETY: Caller guarantees `data` points to `data_size` valid bytes in kernel memory.
+        unsafe { slice::from_raw_parts(data, data_size) }
+    };
+    match MessagePacket::create_from_kernel(payload, num_handles) {
+        Ok(packet) => {
+            // SAFETY: Caller guarantees `out` is valid writable memory.
+            unsafe { *out = packet.into_raw() };
+            zx_types::ZX_OK
+        }
+        Err(status) => status.into_raw(),
+    }
+}
+
+/// Destroys and frees a `MessagePacket`.
+///
+/// # Safety
+///
+/// `packet` must be null or a valid, uniquely owned pointer returned by
+/// one of the `rust_message_packet_create_*` functions.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_delete(packet: *mut MessagePacket) {
+    if !packet.is_null() {
+        // SAFETY: Caller guarantees `packet` is a valid, uniquely owned MessagePacket pointer.
+        unsafe {
+            drop(MessagePacketPtr::from_raw(packet));
+        }
+    }
+}
+
+/// Copies payload data to userspace memory.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_copy_data_to(
+    packet: *const MessagePacket,
+    buf_uaddr: usize,
+) -> zx_types::zx_status_t {
+    let user_out = UserOutPtr::new(core::ptr::with_exposed_provenance_mut::<u8>(buf_uaddr));
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    match unsafe { (*packet).copy_data_to(user_out) } {
+        Ok(()) => zx_types::ZX_OK,
+        Err(status) => status.into_raw(),
+    }
+}
+
+/// Returns the size of the payload in bytes.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_get_data_size(packet: *const MessagePacket) -> usize {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    unsafe { (*packet).data_size() }
+}
+
+/// Returns the number of handles attached to the packet.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_get_num_handles(
+    packet: *const MessagePacket,
+) -> usize {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    unsafe { (*packet).num_handles() }
+}
+
+/// Returns a const pointer to the attached handle pointers.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_get_handles(
+    packet: *const MessagePacket,
+) -> *const *mut c_void {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    unsafe { (*packet).handles() }
+}
+
+/// Returns a mutable pointer to the attached handle pointers.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_get_mutable_handles(
+    packet: *mut MessagePacket,
+) -> *mut *mut c_void {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    unsafe { (*packet).handles_mut() }
+}
+
+/// Sets whether this packet owns its attached handles.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_set_owns_handles(
+    packet: *mut MessagePacket,
+    owns_handles: bool,
+) {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    unsafe { (*packet).set_owns_handles(owns_handles) };
+}
+
+/// Returns the transaction ID from the packet payload.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_get_txid(packet: *const MessagePacket) -> zx_txid_t {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    unsafe { (*packet).get_txid() }
+}
+
+/// Sets the transaction ID in the packet payload.
+///
+/// # Safety
+///
+/// `packet` must point to a valid, initialized `MessagePacket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_set_txid(packet: *mut MessagePacket, txid: zx_txid_t) {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    unsafe { (*packet).set_txid(txid) };
+}
+
+/// Returns the first contiguous chunk of the payload.
+///
+/// # Safety
+///
+/// - `packet` must point to a valid, initialized `MessagePacket`.
+/// - `out_ptr` and `out_len` must point to valid writable memory.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_message_packet_get_start_of_payload(
+    packet: *const MessagePacket,
+    out_ptr: *mut *const u8,
+    out_len: *mut usize,
+) {
+    // SAFETY: Caller guarantees `packet` is a valid pointer to a MessagePacket.
+    let slice = unsafe { (*packet).start_of_payload() };
+    // SAFETY: Caller guarantees `out_ptr` and `out_len` are valid writable memory.
+    unsafe {
+        *out_ptr = slice.as_ptr();
+        *out_len = slice.len();
     }
 }
 
@@ -488,7 +716,6 @@ mod tests {
     use fbl::DoublyLinkedList;
     use pin_init::stack_pin_init;
     use unittest::{expect_eq, expect_false, expect_ok, expect_true, unwrap_ok};
-    use zr::static_assert;
     use zx_types::{
         ZX_CHANNEL_MAX_MSG_BYTES, ZX_CHANNEL_MAX_MSG_HANDLES, zx_channel_iovec_t, zx_txid_t,
     };
@@ -502,10 +729,6 @@ mod tests {
         magic: u8,
         ordinal: u64,
     }
-
-    static_assert!(
-        size_of::<FidlHeader>() == size_of::<message_packet_bindings::MessagePacket_FidlHeader>()
-    );
 
     fn fill_user_memory(mem: &UserMemory, byte: u8, offset: usize, size: usize) -> bool {
         let chunk = [byte; 256];
@@ -602,8 +825,16 @@ mod tests {
     /// Tests that creating a MessagePacket with too many handles fails with OUT_OF_RANGE.
     #[test]
     fn test_create_too_many_handles() {
-        let res = MessagePacket::create_from_kernel(&[], ZX_CHANNEL_MAX_MSG_HANDLES as usize + 1);
-        expect_true!(matches!(res, Err(Status::OUT_OF_RANGE)));
+        let mem = unwrap_ok!(UserMemory::create(1).ok_or(Status::NO_MEMORY));
+        unwrap_ok!(mem.commit_and_map(0..1));
+        let user_in = UserInPtr::new(ptr::with_exposed_provenance::<u8>(mem.base()));
+        let res_user =
+            MessagePacket::create_from_user(user_in, 1, ZX_CHANNEL_MAX_MSG_HANDLES as usize + 1);
+        expect_true!(matches!(res_user, Err(Status::OUT_OF_RANGE)));
+
+        let res_kernel =
+            MessagePacket::create_from_kernel(&[], ZX_CHANNEL_MAX_MSG_HANDLES as usize + 1);
+        expect_true!(matches!(res_kernel, Err(Status::OUT_OF_RANGE)));
     }
 
     /// Tests set_owns_handles(true) and set_owns_handles(false).
