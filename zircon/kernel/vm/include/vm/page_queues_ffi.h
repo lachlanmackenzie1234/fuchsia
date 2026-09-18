@@ -12,12 +12,13 @@
 
 #include <kernel/ffi.h>
 
+#include "vm/debug_compressor.h"
 #include "vm/page_queues.h"
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 __BEGIN_CDECLS
 
-FFI_ALWAYS_INLINE void cpp_page_queues_destroy(PageQueues* queues);
+FFI_ALWAYS_INLINE void cpp_page_queues_stop_threads(PageQueues* queues);
 FFI_ALWAYS_INLINE void cpp_page_queues_init(ffi::Uninitialized<PageQueues>* queues);
 FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues,
                                                            const vm_page_t* page);
@@ -43,6 +44,9 @@ FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_anonymous(const PageQueues*
 FFI_ALWAYS_INLINE void cpp_page_queues_set_reclaim(PageQueues* queues, vm_page_t* page,
                                                    VmCowPages* cow, uint64_t offset);
 FFI_ALWAYS_INLINE void cpp_page_queues_remove(PageQueues* queues, vm_page_t* page);
+
+FFI_ALWAYS_INLINE void cpp_debug_compressor_init(ffi::Uninitialized<VmDebugCompressor>* compressor);
+FFI_ALWAYS_INLINE void cpp_debug_compressor_destroy(VmDebugCompressor* compressor);
 
 __END_CDECLS
 

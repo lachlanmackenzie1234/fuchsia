@@ -536,7 +536,7 @@ kernel_bindgen_crate("page-queues-bindings") {
   notice_year = 2026
   function_allowlist = [
     "cpp_page_queues_init",
-    "cpp_page_queues_destroy",
+    "cpp_page_queues_stop_threads",
     "cpp_page_queues_debug_page_is_wired",
     "cpp_page_queues_debug_page_is_any_anonymous",
     "cpp_page_queues_debug_page_is_reclaim",
@@ -551,6 +551,8 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_is_page_reclaimable",
     "cpp_page_queues_move_to_reclaim_dont_need",
     "cpp_page_queues_queue_counts",
+    "cpp_debug_compressor_init",
+    "cpp_debug_compressor_destroy",
   ]
   type_allowlist = [
     "AgeReason",
@@ -558,10 +560,19 @@ kernel_bindgen_crate("page-queues-bindings") {
     "LruAction",
     "PageQueues",
     "PageQueues_Counts",
+    "RelaxedAtomic",
+    "ktl::atomic",
+    "std::atomic",
   ]
   type_blocklist = [
+    "AutounsignalEvent",
+    "Event",
+    "Thread",
+    "VmPageDoublyLinkedList",
     "fbl_RefPtr",
     "vm_page_t",
+    "zx_duration_mono_t",
+    "zx_instant_mono_t",
     "zx_paddr_t",
     "zx_status_t",
     "PageQueues_VmoBacklink",
@@ -569,7 +580,14 @@ kernel_bindgen_crate("page-queues-bindings") {
     "PageQueues_ActiveInactiveCounts",
   ]
   var_allowlist = [ "PageQueues_k.*" ]
-  opaque_types = [ "PageQueues" ]
+  opaque_types = [
+    "RelaxedAtomic",
+    "VmDebugCompressor",
+    "ktl::atomic",
+    "ktl::unique_ptr",
+    "std::atomic",
+    "std::unique_ptr",
+  ]
   rustified_enum = [
     "PageQueues_AgeReason",
     "PageQueues_LruAction",
@@ -579,13 +597,18 @@ kernel_bindgen_crate("page-queues-bindings") {
   deps = [
     ":page-bindings",
     "//sdk/rust/zx-types",
+    "//zircon/kernel/kernel:event-bindings",
   ]
   raw_lines = [
     "#![no_std]",
     "use page_bindings::vm_page_t;",
-    "pub use zx_types::zx_duration_mono_t;",
+    "pub use event_bindings::{AutounsignalEvent, Event};",
+    "pub use zx_types::{zx_duration_mono_t, zx_instant_mono_t};",
     "pub use zx_types::zx_paddr_t;",
+    "pub type Thread = core::ffi::c_void;",
     "pub type VmCowPages = *const core::ffi::c_void;",
+    "pub type VmDebugCompressor = core::ffi::c_void;",
+    "pub type VmPageDoublyLinkedList = usize;",
   ]
   expect_lints = [
     "non_camel_case_types",
@@ -1221,6 +1244,7 @@ kernel_rust_mod("vm-rs") {
     "compression.rs",
     "compressor.rs",
     "continuous_attribution_tracker.rs",
+    "debug_compressor.rs",
     "discardable_vmo_tracker.rs",
     "evictor.rs",
     "fault.rs",

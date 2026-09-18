@@ -10,6 +10,7 @@
 
 #include <kernel/ffi.h>
 #include <ktl/memory.h>
+#include <vm/vm_cow_pages.h>
 
 #include "vm/page_queues.h"
 #include "vm/pmm.h"
@@ -17,7 +18,7 @@
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
 
-FFI_ALWAYS_INLINE void cpp_page_queues_destroy(PageQueues* queues) { ktl::destroy_at(queues); }
+FFI_ALWAYS_INLINE void cpp_page_queues_stop_threads(PageQueues* queues) { queues->StopThreads(); }
 
 FFI_ALWAYS_INLINE void cpp_page_queues_init(ffi::Uninitialized<PageQueues>* queues) {
   queues->Initialize();
@@ -87,6 +88,15 @@ FFI_ALWAYS_INLINE void cpp_page_queues_set_reclaim(PageQueues* queues, vm_page_t
 
 FFI_ALWAYS_INLINE void cpp_page_queues_remove(PageQueues* queues, vm_page_t* page) {
   queues->Remove(page);
+}
+
+FFI_ALWAYS_INLINE void cpp_debug_compressor_init(
+    ffi::Uninitialized<VmDebugCompressor>* compressor) {
+  compressor->Initialize();
+}
+
+FFI_ALWAYS_INLINE void cpp_debug_compressor_destroy(VmDebugCompressor* compressor) {
+  ktl::destroy_at(compressor);
 }
 
 }  // extern "C"
