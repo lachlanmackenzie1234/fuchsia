@@ -21,7 +21,6 @@ use starnix_types::time::SCHEDULER_CLOCK_HZ;
 use starnix_uapi::AT_PLATFORM;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::Access;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::{
@@ -205,20 +204,6 @@ fn elf_load_error_to_errno(err: elf_load::ElfLoadError) -> Errno {
     errno!(EINVAL)
 }
 
-fn access_from_vmar_flags(vmar_flags: zx::VmarFlags) -> Access {
-    let mut access = Access::empty();
-    if vmar_flags.contains(zx::VmarFlags::PERM_READ) {
-        access |= Access::READ;
-    }
-    if vmar_flags.contains(zx::VmarFlags::PERM_WRITE) {
-        access |= Access::WRITE;
-    }
-    if vmar_flags.contains(zx::VmarFlags::PERM_EXECUTE) {
-        access |= Access::EXEC;
-    }
-    access
-}
-
 struct Mapper {
     file: Arc<FileMapping>,
     mm: Arc<MemoryManager>,
@@ -251,7 +236,6 @@ impl elf_load::Mapper for Mapper {
                 vmo_offset,
                 length,
                 ProtectionFlags::from_vmar_flags(vmar_flags),
-                access_from_vmar_flags(vmar_flags),
                 MappingOptions::ELF_BINARY,
                 MappingName::File(self.file.clone()),
             )
@@ -601,7 +585,6 @@ pub fn load_executable(
 
     let vdso_size = vdso_memory.get_size();
     const VVAR_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ;
-    const VVAR_MAX_ACCESS: Access = Access::READ;
 
     let utc_clock_handle = crate::time::utc::duplicate_real_utc_clock_handle()
         .expect("clock should always be readable");
@@ -617,7 +600,6 @@ pub fn load_executable(
         0,
         (time_values_size as usize) + (utc_clock_size as usize) + (vdso_size as usize),
         VVAR_PROT_FLAGS,
-        VVAR_MAX_ACCESS,
         MappingOptions::empty(),
         MappingName::Vvar,
     )?;
@@ -631,7 +613,6 @@ pub fn load_executable(
         /*memory_offset=*/ 0u64,
         utc_clock_size as usize,
         VVAR_PROT_FLAGS,
-        VVAR_MAX_ACCESS,
         MappingOptions::empty(),
         MappingName::Vvar,
     )?;
@@ -648,7 +629,6 @@ pub fn load_executable(
     );
 
     const VDSO_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ.union(ProtectionFlags::EXEC);
-    const VDSO_MAX_ACCESS: Access = Access::READ.union(Access::EXEC);
 
     // Overwrite the third part of the vvar mapping to contain the vDSO clone.
     let vdso_base_address = mm.map_memory(
@@ -659,7 +639,6 @@ pub fn load_executable(
         0,
         vdso_size as usize,
         VDSO_PROT_FLAGS,
-        VDSO_MAX_ACCESS,
         MappingOptions::DONT_SPLIT,
         MappingName::Vdso,
     )?;

@@ -1050,7 +1050,6 @@ mod tests {
         use crate::mm::memory::MemoryObject;
         use crate::mm::{DesiredAddress, MappingName, MappingOptions, PAGE_SIZE, ProtectionFlags};
         use crate::testing::spawn_kernel_and_run;
-        use starnix_uapi::file_mode::Access;
         use std::sync::atomic::{AtomicBool, Ordering};
         use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
 
@@ -1079,7 +1078,6 @@ mod tests {
                     0,
                     *PAGE_SIZE as usize,
                     ProtectionFlags::READ | ProtectionFlags::WRITE,
-                    Access::rwx(),
                     MappingOptions::empty(),
                     MappingName::None,
                 )

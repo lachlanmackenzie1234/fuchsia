@@ -40,7 +40,6 @@ use starnix_types::math::{round_down_to_system_page_size, round_up_to_system_pag
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::auth::CAP_IPC_LOCK;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::Access;
 use starnix_uapi::range_ext::RangeExt;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::restricted_aspace::{
@@ -657,7 +656,6 @@ impl MemoryManagerState {
         memory_offset: u64,
         length: usize,
         flags: MappingFlags,
-        max_access: Access,
         populate: bool,
         name: MappingName,
         mapping_mode: MappingMode,
@@ -688,7 +686,6 @@ impl MemoryManagerState {
         let mapping = Mapping::with_name(
             self.create_memory_backing(mapped_addr, memory, memory_offset),
             flags,
-            max_access,
             name,
             mapping_mode,
         );
@@ -767,7 +764,6 @@ impl MemoryManagerState {
             0,
             length,
             flags,
-            Access::rwx(),
             options.contains(MappingOptions::POPULATE),
             name,
             MappingMode::Eager,
@@ -1022,7 +1018,6 @@ impl MemoryManagerState {
                     backing.address_to_offset(original_range.start),
                     final_length,
                     original_mapping.flags(),
-                    original_mapping.max_access(),
                     false,
                     original_mapping.name().to_owned(),
                     original_mapping.mapping_mode(),
@@ -1186,7 +1181,6 @@ impl MemoryManagerState {
                     dst_memory_offset,
                     dst_length,
                     src_mapping.flags(),
-                    src_mapping.max_access(),
                     false,
                     src_mapping.name().to_owned(),
                     src_mapping.mapping_mode(),
@@ -3521,7 +3515,6 @@ impl MemoryManager {
                                 memory_offset,
                             ))),
                             target_mapping_flags,
-                            mapping.max_access(),
                             mapping.name().to_owned(),
                             MappingMode::Lazy,
                         );
@@ -3671,7 +3664,6 @@ impl MemoryManager {
         memory_offset: u64,
         length: usize,
         prot_flags: ProtectionFlags,
-        max_access: Access,
         options: MappingOptions,
         name: MappingName,
     ) -> Result<UserAddress, Errno> {
@@ -3689,7 +3681,6 @@ impl MemoryManager {
             memory_offset,
             length,
             flags,
-            max_access,
             options.contains(MappingOptions::POPULATE),
             name,
             MappingMode::Eager,
@@ -5166,7 +5157,6 @@ mod tests {
             let mapping = Mapping::with_name(
                 MappingBacking::Memory(Box::new(MappingBackingMemory::new(addr, memory, 0))),
                 flags,
-                Access::rwx(),
                 MappingName::None,
                 MappingMode::Lazy,
             );
@@ -6290,7 +6280,6 @@ mod tests {
                     0,
                     VMO_SIZE as usize,
                     prot_flags,
-                    Access::rwx(),
                     MappingOptions::empty(),
                     MappingName::None,
                 )
