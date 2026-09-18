@@ -46,6 +46,7 @@ all_ffx_libraries = [
   "timeout",
   "trace",
   "traceable_error",
+  "uart_driver_api",
   "uefi_disk",
   "usb_driver_api",
   "usb_fastboot_discovery",
