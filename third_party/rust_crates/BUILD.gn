@@ -17095,7 +17095,7 @@ rustc_library("primeorder-v0_14_0") {
   deps += [ ":once_cell-v1_21_3" ]
   deps += [ ":primefield-v0_14_0" ]
   deps += [ ":serdect-v0_4_3" ]
-  deps += [ ":wnaf-v0_14_0" ]
+  deps += [ ":wnaf-v0_14_1" ]
 
   rustenv = []
 
@@ -26287,18 +26287,18 @@ rustc_library("winnow-v1_0_4") {
   applicable_licenses = [ ":winnow-v1_0_4.license" ]
 }
 
-license("wnaf-v0_14_0.license") {
+license("wnaf-v0_14_1.license") {
   public_package_name = "wnaf"
   license_files = [
-    "//third_party/rust_crates/vendor/wnaf-0.14.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/wnaf-0.14.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/wnaf-0.14.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/wnaf-0.14.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("wnaf-v0_14_0") {
+rustc_library("wnaf-v0_14_1") {
   crate_name = "wnaf"
-  source_root = "//third_party/rust_crates/vendor/wnaf-0.14.0/src/lib.rs"
-  output_name = "wnaf-29a21c961071c1e3"
+  source_root = "//third_party/rust_crates/vendor/wnaf-0.14.1/src/lib.rs"
+  output_name = "wnaf-8451540ade06493c"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -26308,13 +26308,14 @@ rustc_library("wnaf-v0_14_0") {
   deps += [ ":ff-v0_14_0" ]
   deps += [ ":group-v0_14_0" ]
   deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":primefield-v0_14_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=29a21c961071c1e3",
-    "-Cextra-filename=-29a21c961071c1e3",
+    "-Cmetadata=8451540ade06493c",
+    "-Cextra-filename=-8451540ade06493c",
   ]
 
   aliased_deps = {
@@ -26322,7 +26323,7 @@ rustc_library("wnaf-v0_14_0") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":wnaf-v0_14_0.license" ]
+  applicable_licenses = [ ":wnaf-v0_14_1.license" ]
 }
 
 license("writeable-v0_6_3.license") {
