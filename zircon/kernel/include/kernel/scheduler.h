@@ -1861,4 +1861,8 @@ class Scheduler {
   PowerLevelControl power_level_control_{this};
 };
 
+extern "C" {
+cpu_mask_t cpp_scheduler_peek_active_mask();
+}  // extern "C"
+
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_H_

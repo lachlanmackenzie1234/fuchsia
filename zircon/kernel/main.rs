@@ -126,6 +126,10 @@ pub mod console_tests_rust;
 #[path = "lib/pow2_range_allocator/tests/kernel.rs"]
 pub mod pow2_range_allocator_tests;
 
+#[cfg(all(console_enabled, ktest))]
+#[path = "lib/unittest/console.rs"]
+pub mod unittest_console;
+
 #[cfg(ktest)]
 #[path = "lib/unittest/user_memory.rs"]
 pub mod user_memory;

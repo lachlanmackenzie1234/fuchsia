@@ -10,7 +10,8 @@
 #[cfg(test)]
 extern crate self as unittest;
 
-use core::ffi::c_char;
+use core::ffi::{CStr, c_char};
+use core::slice;
 
 #[doc(hidden)]
 pub use zx_status::Status as __Status;
@@ -156,6 +157,38 @@ pub struct TestSuiteRegistration {
 
 unsafe impl Sync for TestSuiteRegistration {}
 
+impl TestSuiteRegistration {
+    /// The name of the suite.
+    ///
+    /// Registrations are emitted by the #[suite] macro as compile-time
+    /// constants, so a missing or non-UTF-8 name is a programming error.
+    pub fn name(&self) -> &'_ str {
+        assert!(!self.name.is_null(), "test suite registration has no name");
+        // Safety: the name is a static, NUL-terminated string.
+        unsafe { CStr::from_ptr(self.name) }.to_str().expect("test suite name is not valid UTF-8")
+    }
+
+    /// The description of the suite, if it has one.
+    pub fn desc(&self) -> Option<&'_ str> {
+        if self.desc.is_null() {
+            return None;
+        }
+        // Safety: the description is a static, NUL-terminated string.
+        let desc = unsafe { CStr::from_ptr(self.desc) };
+        Some(desc.to_str().expect("test suite description is not valid UTF-8"))
+    }
+
+    /// The test cases of the suite.
+    pub fn cases(&self) -> &'_ [TestCaseRegistration] {
+        if self.test_cnt == 0 {
+            return &[];
+        }
+        assert!(!self.tests.is_null(), "test suite registration has tests but no test array");
+        // Safety: the registration records `test_cnt` contiguous test cases.
+        unsafe { slice::from_raw_parts(self.tests, self.test_cnt) }
+    }
+}
+
 /// The data structure defining a test case within a suite, also intended be
 /// defined via the #[suite] macro to encoded into a special section in
 /// the kernel
@@ -168,6 +201,18 @@ pub struct TestCaseRegistration {
 }
 
 unsafe impl Sync for TestCaseRegistration {}
+
+impl TestCaseRegistration {
+    /// The name of the test case.
+    ///
+    /// Registrations are emitted by the #[suite] macro as compile-time
+    /// constants, so a missing or non-UTF-8 name is a programming error.
+    pub fn name(&self) -> &'_ str {
+        assert!(!self.name.is_null(), "test case registration has no name");
+        // Safety: the name is a static, NUL-terminated string.
+        unsafe { CStr::from_ptr(self.name) }.to_str().expect("test case name is not valid UTF-8")
+    }
+}
 
 /// Asserts that two expressions are equal, but does not short-circuit on failure.
 #[macro_export]
