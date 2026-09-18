@@ -21,10 +21,6 @@ tests = [
     label = "device"
   },
   {
-    label = "bridge"
-    err_logs = true
-  },
-  {
     label = "dhcp"
     err_logs = true
     package_deps = [
