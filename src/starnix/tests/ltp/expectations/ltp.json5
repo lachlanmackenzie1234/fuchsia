@@ -154,7 +154,6 @@
                 "mlockall01",
                 "mlockall02",
                 "mlockall03",
-                "mmap12",
                 "mmap14",
                 "mount02",
                 "mprotect01",

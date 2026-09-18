@@ -14,12 +14,15 @@ use crate::mm::{
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
-use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task};
+use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Pid, Task};
 use crate::vfs::aio::AioContext;
+use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::dynamic_file::{
     DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
 };
-use crate::vfs::{FsString, NamespaceNode};
+use crate::vfs::{
+    FileObject, FileOps, FsString, NamespaceNode, fileops_impl_noop_sync, fileops_impl_seekable,
+};
 use anyhow::{Error, anyhow};
 use bitflags::bitflags;
 use flyweights::FlyByteStr;
@@ -55,6 +58,7 @@ use starnix_uapi::{
     from_status_like_fdio,
 };
 use std::collections::HashMap;
+use std::hash::Hasher;
 use std::mem::MaybeUninit;
 use std::ops::{ControlFlow, Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
@@ -4843,6 +4847,239 @@ impl DynamicFileSource for ProcSmapsRollupFile {
         writeln!(sink, "SwapPss:        {swap_kb:>8} kB")?;
         writeln!(sink, "Locked:         {locked_kb:>8} kB")?;
         Ok(())
+    }
+}
+
+const PAGEMAP_PFN_MASK: u64 = (1u64 << 55) - 1;
+
+/// Computes a synthetic 55-bit Page Frame Number (PFN) for `/proc/<pid>/pagemap`.
+///
+/// Linux pagemap entries reserve bits 0..54 for the physical page frame number.
+/// Because Zircon does not expose physical RAM addresses to userspace, Starnix
+/// synthesizes pseudo-PFNs by hashing the backing Zircon VMO's KOID to generate a
+/// 55-bit base address and adding the page offset within that VMO.
+///
+/// Tradeoffs:
+/// - Mappings in different processes that share the same underlying VMO at the same offset
+///   (such as shared libraries like `libc.so` or shared ashmem) produce identical pseudo-PFNs,
+///   allowing memory tools (e.g. `procrank`, `librank`) to accurately compute proportional set
+///   sizes (PSS).
+/// - Unrelated processes with private memory at identical virtual addresses have distinct
+///   private VMO KOIDs and will not falsely collide.
+/// - Consecutive virtual pages within the same VMO mapping have strictly adjacent pseudo-PFNs
+///   (`pfn + 1`).
+/// - On `fork()`, Zircon creates a child snapshot VMO with a new KOID for private memory,
+///   meaning parent and child private pages will have different pseudo-PFNs immediately
+///   rather than waiting for Copy-on-Write modifications. As a result, memory might end up
+///   significantly bigger in accounting tools (in particular, RELRO pages will be over-counted
+///   for processes forked from the zygote).
+fn compute_pseudo_pfn(koid: zx::Koid, vmo_page_idx: u64) -> u64 {
+    let mut hasher = rustc_hash::FxHasher::default();
+    hasher.write_u64(koid.raw_koid());
+    hasher.finish().wrapping_add(vmo_page_idx) & PAGEMAP_PFN_MASK
+}
+
+/// Implements `/proc/<pid>/pagemap`.
+#[derive(Clone)]
+pub struct ProcPagemapFile {
+    pid: Pid,
+}
+
+impl ProcPagemapFile {
+    pub fn new(pid: Pid) -> Self {
+        Self { pid }
+    }
+}
+
+impl FileOps for ProcPagemapFile {
+    fileops_impl_seekable!();
+    fileops_impl_noop_sync!();
+
+    fn read(
+        &self,
+        _file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        dst: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        let task = self.pid.get_task()?;
+        let Ok(mm) = task.mm() else {
+            return Ok(0);
+        };
+
+        let to_read = std::cmp::min(dst.available(), 1024 * 1024);
+        if to_read == 0 {
+            return Ok(0);
+        }
+
+        let entry_size = std::mem::size_of::<u64>();
+        let page_size = *PAGE_SIZE as usize;
+
+        let unaligned_offset = offset % entry_size;
+        let start_page_idx = offset / entry_size;
+        let total_bytes_needed = unaligned_offset + to_read;
+        let num_pages = (total_bytes_needed + entry_size - 1) / entry_size;
+
+        let state = mm.state.read();
+        let can_read_pfn =
+            security::is_task_capable_noaudit(current_task, starnix_uapi::auth::CAP_SYS_ADMIN);
+
+        let get_mapping_vmo_info = |mm_mapping: &Mapping, addr: UserAddress| -> (zx::Koid, u64) {
+            match state.get_mapping_backing(mm_mapping) {
+                MappingBacking::Memory(backing) => {
+                    (backing.memory().get_koid(), backing.address_to_offset(addr))
+                }
+                MappingBacking::PrivateAnonymous => {
+                    (mm.mapping_context.private_anonymous.backing.get_koid(), addr.ptr() as u64)
+                }
+            }
+        };
+
+        // Bit 63 indicates the page is present in RAM, bit 61 indicates file-page or
+        // shared-anon, and bit 57 indicates an exclusively mapped page (anonymous private).
+        //
+        // On Linux, bit 63 indicates physical hardware residency in CPU page tables. Zircon
+        // uses demand paging and does not expose per-page commit/PTE status to userspace
+        // without faulting in the page. We treat all registered mappings as present so tools
+        // (e.g. procrank, librank, showmap) can query page sharing, while aggregate resident
+        // sizes (RSS) are obtained from /proc/<pid>/smaps.
+        let compute_entry_flags = |mm_mapping: &Mapping| -> u64 {
+            let is_shared = mm_mapping.flags().contains(MappingFlags::SHARED);
+            let is_file = matches!(mm_mapping.name(), MappingNameRef::File(_));
+            (1u64 << 63) | if is_shared || is_file { 1u64 << 61 } else { 1u64 << 57 }
+        };
+
+        // Ultra-fast path for single-page reads (the dominant case in procrank/smapinfo).
+        if to_read == entry_size && unaligned_offset == 0 {
+            let start_vaddr = match start_page_idx.checked_mul(page_size) {
+                Some(addr) => UserAddress::from(addr as u64),
+                None => return Ok(0),
+            };
+            let mut entry = 0u64;
+            if let Some((_, mm_mapping)) = state.mappings.get(start_vaddr) {
+                let flags = compute_entry_flags(mm_mapping);
+                let pfn = if can_read_pfn {
+                    let (koid, vmo_offset) = get_mapping_vmo_info(mm_mapping, start_vaddr);
+                    compute_pseudo_pfn(koid, vmo_offset / page_size as u64)
+                } else {
+                    0
+                };
+                entry = flags | pfn;
+            }
+            dst.write_all(&entry.to_ne_bytes())?;
+            return Ok(entry_size);
+        }
+
+        const CHUNK_PAGES: usize = 512;
+        let mut chunk_buf = [0u64; CHUNK_PAGES];
+
+        let mut pages_processed = 0;
+        let mut bytes_written_total = 0;
+
+        while pages_processed < num_pages && bytes_written_total < to_read {
+            let chunk_start_page = start_page_idx + pages_processed;
+            let current_chunk_pages = std::cmp::min(CHUNK_PAGES, num_pages - pages_processed);
+            let chunk_slice = &mut chunk_buf[..current_chunk_pages];
+
+            let chunk_start_vaddr = match chunk_start_page.checked_mul(page_size) {
+                Some(addr) => UserAddress::from(addr as u64),
+                None => break,
+            };
+            let chunk_end_vaddr =
+                match (chunk_start_page + current_chunk_pages).checked_mul(page_size) {
+                    Some(addr) => UserAddress::from(addr as u64),
+                    None => UserAddress::from(u64::MAX),
+                };
+
+            // Fast path: entire chunk is contained within a single mapping.
+            if let Some((mm_range, mm_mapping)) = state.mappings.get(chunk_start_vaddr) {
+                if mm_range.end >= chunk_end_vaddr {
+                    let flags = compute_entry_flags(mm_mapping);
+
+                    let start_pfn = if can_read_pfn {
+                        let (koid, vmo_offset) =
+                            get_mapping_vmo_info(mm_mapping, chunk_start_vaddr);
+                        compute_pseudo_pfn(koid, vmo_offset / page_size as u64)
+                    } else {
+                        0
+                    };
+
+                    for (i, entry) in chunk_slice.iter_mut().enumerate() {
+                        let pfn = if can_read_pfn {
+                            (start_pfn.wrapping_add(i as u64)) & PAGEMAP_PFN_MASK
+                        } else {
+                            0
+                        };
+                        *entry = flags | pfn;
+                    }
+
+                    let byte_slice = chunk_slice.as_bytes();
+                    let chunk_byte_offset = if pages_processed == 0 { unaligned_offset } else { 0 };
+                    let chunk_available_bytes = byte_slice.len().saturating_sub(chunk_byte_offset);
+                    let chunk_write_len =
+                        std::cmp::min(to_read - bytes_written_total, chunk_available_bytes);
+
+                    dst.write_all(
+                        &byte_slice[chunk_byte_offset..chunk_byte_offset + chunk_write_len],
+                    )?;
+                    bytes_written_total += chunk_write_len;
+                    pages_processed += current_chunk_pages;
+                    continue;
+                }
+            }
+
+            // General path: spans multiple mappings or unmapped memory.
+            chunk_slice.fill(0);
+
+            for (mm_range, mm_mapping) in state.mappings.range(chunk_start_vaddr..chunk_end_vaddr) {
+                let flags = compute_entry_flags(mm_mapping);
+
+                let map_start_page = (mm_range.start.ptr() as usize) / page_size;
+                let map_end_page = (mm_range.end.ptr() as usize) / page_size;
+
+                let first_page = std::cmp::max(chunk_start_page, map_start_page);
+                let last_page = std::cmp::min(chunk_start_page + current_chunk_pages, map_end_page);
+
+                let first_page_vaddr = UserAddress::from((first_page * page_size) as u64);
+                let start_pfn = if can_read_pfn {
+                    let (koid, vmo_offset) = get_mapping_vmo_info(mm_mapping, first_page_vaddr);
+                    compute_pseudo_pfn(koid, vmo_offset / page_size as u64)
+                } else {
+                    0
+                };
+
+                for page_idx in first_page..last_page {
+                    let pfn = if can_read_pfn {
+                        (start_pfn.wrapping_add((page_idx - first_page) as u64)) & PAGEMAP_PFN_MASK
+                    } else {
+                        0
+                    };
+                    chunk_slice[page_idx - chunk_start_page] = flags | pfn;
+                }
+            }
+
+            let byte_slice = chunk_slice.as_bytes();
+            let chunk_byte_offset = if pages_processed == 0 { unaligned_offset } else { 0 };
+            let chunk_available_bytes = byte_slice.len().saturating_sub(chunk_byte_offset);
+            let chunk_write_len =
+                std::cmp::min(to_read - bytes_written_total, chunk_available_bytes);
+
+            dst.write_all(&byte_slice[chunk_byte_offset..chunk_byte_offset + chunk_write_len])?;
+            bytes_written_total += chunk_write_len;
+            pages_processed += current_chunk_pages;
+        }
+
+        Ok(bytes_written_total)
+    }
+
+    fn write(
+        &self,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+        _offset: usize,
+        _data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        starnix_uapi::error!(EPERM)
     }
 }
 
