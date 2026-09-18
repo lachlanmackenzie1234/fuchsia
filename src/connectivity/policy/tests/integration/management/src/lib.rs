@@ -20,6 +20,8 @@ use fidl_fuchsia_net_dhcp as fnet_dhcp;
 use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
 use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
@@ -2529,6 +2531,77 @@ async fn test_masquerade_errors<N: Netstack, M: Manager>(
     );
 }
 
+async fn await_masquerade_removed_ns3(
+    router: &netemul::TestRealm<'_>,
+    masq_control: fnet_masquerade::ControlProxy,
+    client: &netemul::TestRealm<'_>,
+    server: &netemul::TestRealm<'_>,
+    server_ip: std::net::IpAddr,
+    client_ip: std::net::IpAddr,
+) {
+    let filter_state = router
+        .connect_to_protocol::<fnet_filter::StateMarker>()
+        .expect("connect to fuchsia.net.filter/State server");
+    let filter_stream =
+        fnet_filter_ext::event_stream_from_state(filter_state).expect("create event stream");
+    let mut filter_stream = pin!(filter_stream);
+    let mut current_resources: HashMap<_, HashMap<_, _>> =
+        fnet_filter_ext::get_existing_resources(&mut filter_stream)
+            .await
+            .expect("get existing filter resources");
+
+    // Drop the control handle, and verify that the masquerade config is removed.
+    std::mem::drop(masq_control);
+
+    let has_masquerade_rule = |resources: &HashMap<_, HashMap<_, _>>| {
+        resources.values().flat_map(|r| r.values()).any(|resource| {
+            matches!(
+                resource,
+                fnet_filter_ext::Resource::Rule(fnet_filter_ext::Rule {
+                    action: fnet_filter_ext::Action::Masquerade { .. },
+                    ..
+                })
+            )
+        })
+    };
+
+    if has_masquerade_rule(&current_resources) {
+        fnet_filter_ext::wait_for_condition(filter_stream, &mut current_resources, |resources| {
+            !has_masquerade_rule(resources)
+        })
+        .await
+        .expect("wait for masquerade rule removal");
+    }
+
+    assert_eq!(client_ip, get_src_ip(SocketAddr::from((server_ip, 8082)), client, server).await);
+}
+
+// TODO(https://fxbug.dev/555371797): Remove this helper when Netstack2 is removed.
+async fn await_masquerade_removed_ns2(
+    masq_control: fnet_masquerade::ControlProxy,
+    client: &netemul::TestRealm<'_>,
+    server: &netemul::TestRealm<'_>,
+    server_ip: std::net::IpAddr,
+    client_ip: std::net::IpAddr,
+) {
+    // Drop the control handle, and verify that the masquerade config is removed.
+    // Note that Netstack2 doesn't have a synchronization mechanism to wait for the
+    // config to be removed. Instead, repeatedly check the source IP with a
+    // timeout until we observe the client IP again.
+    std::mem::drop(masq_control);
+    const MAX_ATTEMPTS: usize = 60;
+    const WAIT: Duration = Duration::from_secs(1);
+    // Ensure each attempt gets a unique port.
+    let port = AtomicU16::new(8082);
+    fuchsia_backoff::retry_or_last_error(std::iter::repeat(WAIT).take(MAX_ATTEMPTS), || async {
+        let port = port.fetch_add(1, Ordering::Relaxed);
+        let actual_ip = get_src_ip(SocketAddr::from((server_ip, port)), client, server).await;
+        if actual_ip == client_ip { Ok(()) } else { Err(actual_ip) }
+    })
+    .await
+    .expect("IP does not match client");
+}
+
 // Verify that the masquerade configuration is associated with the lifetime of
 // the underlying FIDL connection.
 #[netstack_test]
@@ -2574,22 +2647,24 @@ async fn test_masquerade_lifetime<N: Netstack, M: Manager>(name: &str, setup: Ma
     assert!(!masq_control.set_enabled(true).await.expect("set enabled fidl").expect("set enabled"));
     assert_eq!(router_ip, get_src_ip(SocketAddr::from((server_ip, 8081)), client, server).await);
 
-    // Drop the control handle, and verify that the masquerade config is removed.
-    // Note that we don't have a synchronization mechanism to wait for the
-    // config to be removed.  Instead, repeatedly check the source IP with a
-    // timeout until we observe the client IP again.
-    std::mem::drop(masq_control);
-    const MAX_ATTEMPTS: usize = 60;
-    const WAIT: Duration = Duration::from_secs(1);
-    // Ensure each attempt gets a unique port.
-    let port = AtomicU16::new(8082);
-    fuchsia_backoff::retry_or_last_error(std::iter::repeat(WAIT).take(MAX_ATTEMPTS), || async {
-        let port = port.fetch_add(1, Ordering::Relaxed);
-        let actual_ip = get_src_ip(SocketAddr::from((server_ip, port)), &client, &server).await;
-        if actual_ip == client_ip { Ok(()) } else { Err(actual_ip) }
-    })
-    .await
-    .expect("IP does not match client")
+    match N::VERSION {
+        netstack_testing_common::realms::NetstackVersion::Netstack3
+        | netstack_testing_common::realms::NetstackVersion::ProdNetstack3 => {
+            await_masquerade_removed_ns3(
+                router,
+                masq_control,
+                client,
+                server,
+                server_ip,
+                client_ip,
+            )
+            .await;
+        }
+        netstack_testing_common::realms::NetstackVersion::Netstack2 { .. }
+        | netstack_testing_common::realms::NetstackVersion::ProdNetstack2 => {
+            await_masquerade_removed_ns2(masq_control, client, server, server_ip, client_ip).await;
+        }
+    }
 }
 
 #[netstack_test]
