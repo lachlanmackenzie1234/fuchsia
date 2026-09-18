@@ -577,6 +577,7 @@ impl fbl::DoublyLinkedListContainable<VmPage> for VmPage {
 /// and therefore `VmPagePtr` does not provide mutable references (`&mut VmPage`). Instead,
 /// operations that mutate page metadata require the caller to possess conceptual ownership of the
 /// page or holding the relevant subsystem locks, operating through interior mutability.
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VmPagePtr(NonNull<VmPage>);
 
