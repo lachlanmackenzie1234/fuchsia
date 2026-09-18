@@ -55,6 +55,18 @@ impl fmt::Display for TaskDebugInfo {
     }
 }
 
+/// Helper type for logging macros that implements `Display` by reading the current thread's
+/// `TaskDebugInfo` on demand, avoiding the need for an enclosing closure.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug)]
+pub struct CurrentTaskInfo;
+
+impl fmt::Display for CurrentTaskInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        with_current_task_info(|task| fmt::Display::fmt(task, f))
+    }
+}
+
 #[inline]
 pub const fn trace_debug_logs_enabled() -> bool {
     // Allow trace and debug logs if we are in a debug (non-release) build
@@ -66,20 +78,16 @@ pub const fn trace_debug_logs_enabled() -> bool {
 macro_rules! log_trace {
     ($($key:tt $(:$capture:tt)? $(= $value:expr)?),+; $($arg:tt)+) => {
         if $crate::trace_debug_logs_enabled() {
-            $crate::with_current_task_info(|_task_info| {
-                $crate::__log::trace!(
-                    tag:% = _task_info,
-                    $($key $(:$capture)* $(= $value)*),+;
-                    $($arg)*
-                );
-            })
+            $crate::__log::trace!(
+                tag:% = $crate::CurrentTaskInfo,
+                $($key $(:$capture)* $(= $value)*),+;
+                $($arg)*
+            );
         }
     };
     ($($arg:tt)*) => {
         if $crate::trace_debug_logs_enabled() {
-            $crate::with_current_task_info(|_task_info| {
-                $crate::__log::trace!(tag:% = _task_info; $($arg)*)
-            })
+            $crate::__log::trace!(tag:% = $crate::CurrentTaskInfo; $($arg)*)
         }
     };
 }
@@ -100,20 +108,16 @@ macro_rules! log_syscall {
 macro_rules! log_debug {
     ($($key:tt $(:$capture:tt)? $(= $value:expr)?),+; $($arg:tt)+) => {
         if $crate::trace_debug_logs_enabled() {
-            $crate::with_current_task_info(|_task_info| {
-                $crate::__log::debug!(
-                    tag:% = _task_info,
-                    $($key $(:$capture)* $(= $value)*),+;
-                    $($arg)*
-                );
-            })
+            $crate::__log::debug!(
+                tag:% = $crate::CurrentTaskInfo,
+                $($key $(:$capture)* $(= $value)*),+;
+                $($arg)*
+            );
         }
     };
     ($($arg:tt)*) => {
         if $crate::trace_debug_logs_enabled() {
-            $crate::with_current_task_info(|_task_info| {
-                $crate::__log::debug!(tag:% = _task_info; $($arg)*)
-            })
+            $crate::__log::debug!(tag:% = $crate::CurrentTaskInfo; $($arg)*)
         }
     };
 }
@@ -142,19 +146,15 @@ macro_rules! log_error {
 #[macro_export]
 macro_rules! log {
     ($lvl:expr, $($key:tt $(:$capture:tt)? $(= $value:expr)?),+; $($arg:tt)+) => {
-        $crate::with_current_task_info(|_task_info| {
-            $crate::__log::log!(
-                $lvl,
-                tag:% = _task_info,
-                $($key $(:$capture)* $(= $value)*),+;
-                $($arg)*
-            );
-        })
+        $crate::__log::log!(
+            $lvl,
+            tag:% = $crate::CurrentTaskInfo,
+            $($key $(:$capture)* $(= $value)*),+;
+            $($arg)*
+        )
     };
     ($lvl:expr, $($arg:tt)+) => {
-        $crate::with_current_task_info(|_task_info| {
-            $crate::__log::log!($lvl, tag:% = _task_info; $($arg)*);
-        })
+        $crate::__log::log!($lvl, tag:% = $crate::CurrentTaskInfo; $($arg)*)
     };
 }
 
@@ -202,7 +202,7 @@ pub fn set_current_task_info(
 /// purposes of writing kernel logic beyond logging for debugging purposes, those should be accessed
 /// through the `CurrentTask` type as an argument explicitly passed to your function.
 #[doc(hidden)]
-pub fn with_current_task_info<T>(f: impl Fn(&dyn fmt::Display) -> T) -> T {
+pub fn with_current_task_info<T>(mut f: impl FnMut(&dyn fmt::Display) -> T) -> T {
     match CURRENT_TASK_INFO.try_with(|task_info| f(&task_info.borrow())) {
         Ok(value) => value,
         Err(_) => f(&TaskDebugInfo::Unknown),
