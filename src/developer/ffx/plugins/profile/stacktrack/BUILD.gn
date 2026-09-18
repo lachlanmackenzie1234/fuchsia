@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//src/developer/ffx/build/ffx_plugin.gni")
+import("//src/developer/ffx/lib/e2e_emu/ffx_e2e_test.gni")
 
 if (is_host) {
   ffx_plugin("ffx_profile_stacktrack") {
@@ -31,8 +32,44 @@ if (is_host) {
     ]
   }
 
+  ffx_e2e_test("verify_ffx_profile_stacktrack") {
+    testonly = true
+
+    edition = "2024"
+    source_root = "src/tests.rs"
+    sources = [ source_root ]
+
+    product_bundle = ":product_bundle"
+
+    deps = [
+      "//src/lib/fuchsia",
+      "//src/lib/fuchsia-async",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:log",
+      "//third_party/rust_crates:serde",
+      "//third_party/rust_crates:serde_json",
+    ]
+  }
+
   group("host_tests") {
     testonly = true
-    deps = [ "common:ffx_profile_stacktrack_common_test" ]
+    deps = [
+      ":verify_ffx_profile_stacktrack",
+      "common:ffx_profile_stacktrack_common_test",
+    ]
+  }
+}
+
+ffx_e2e_product_bundle("product_bundle") {
+  name = "profile_stacktrack_test"
+  product_configuration = {
+    platform = {
+      build_type = "eng"
+    }
+    base_packages = [
+      {
+        package_target = "//src/performance/memory/stacktrack/example"
+      },
+    ]
   }
 }
