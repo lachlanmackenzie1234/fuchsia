@@ -6,6 +6,7 @@
 #include <lib/fdio/directory.h>
 #include <stdio.h>
 
+#include <limits>
 #include <memory>
 #include <thread>
 
@@ -16,6 +17,8 @@
 #include "src/media/codec/codecs/vaapi/codec_adapter_vaapi_encoder.h"
 #include "src/media/codec/codecs/vaapi/codec_runner_app.h"
 #include "src/media/codec/codecs/vaapi/vaapi_utils.h"
+#include "src/media/third_party/chromium_media/geometry.h"
+#include "src/media/third_party/chromium_media/media/gpu/gpu_video_encode_accelerator_helpers.h"
 #include "vaapi_stubs.h"
 
 namespace {
@@ -405,6 +408,56 @@ TEST(H264Encoder, Init) {
   codec_factory.Unbind();
 
   codec_thread.join();
+}
+
+TEST(H264Encoder, BitstreamBufferSizeNoOverflow) {
+  constexpr size_t kExpected8MB = 8 * 1024 * 1024;
+  constexpr size_t kExpected4MB = 4 * 1024 * 1024;
+  constexpr size_t kExpected2MB = 2 * 1024 * 1024;
+
+  // 1. 65536 * 65536 overflows a 32-bit signed int to 0. Verify that buffer
+  // sizing uses 64-bit area and selects the 8 MB max buffer size (> 1440p)
+  // rather than falling back to 2 MB (or matching the 320x180 table entry).
+  const gfx::Size large_size(65536, 65536);
+  EXPECT_EQ(kExpected8MB, media::GetEncodeBitstreamBufferSize(large_size));
+  EXPECT_EQ(kExpected8MB, media::GetEncodeBitstreamBufferSize(large_size, 20000000u, 30u));
+
+  // 2. 46341 * 46341 overflows a 32-bit signed int to a negative value
+  // (-2,147,479,015). Verify that 64-bit area prevents matching the first
+  // table entry (<= 320 * 180) and selects the 8 MB max buffer size.
+  const gfx::Size negative_overflow_size(46341, 46341);
+  EXPECT_EQ(kExpected8MB, media::GetEncodeBitstreamBufferSize(negative_overflow_size));
+  EXPECT_EQ(kExpected8MB,
+            media::GetEncodeBitstreamBufferSize(negative_overflow_size, 100000u, 30u));
+
+  // 3. Exercise the base::saturated_cast<size_t>(data.buffer_size_in_bytes * ratio)
+  // clamping path inside the table loop using a table-matching size (1080p) and
+  // an extreme bitrate/framerate ratio.
+  const gfx::Size size_1080p(1920, 1080);
+  EXPECT_EQ(kExpected2MB, media::GetEncodeBitstreamBufferSize(
+                              size_1080p, std::numeric_limits<uint32_t>::max(), 1u));
+
+  // 4. Verify exact resolution tier transitions in GetMaxEncodeBitstreamBufferSize():
+  // <= 1080p -> 2 MB, (1080p, 1440p] -> 4 MB, > 1440p -> 8 MB.
+  EXPECT_EQ(kExpected2MB, media::GetEncodeBitstreamBufferSize(gfx::Size(1920, 1080)));
+  EXPECT_EQ(kExpected4MB, media::GetEncodeBitstreamBufferSize(gfx::Size(1920, 1081)));
+  EXPECT_EQ(kExpected4MB, media::GetEncodeBitstreamBufferSize(gfx::Size(2560, 1440)));
+  EXPECT_EQ(kExpected8MB, media::GetEncodeBitstreamBufferSize(gfx::Size(2560, 1441)));
+
+  // 5. Verify that negative constructor arguments and setter inputs are clamped
+  // to 0, preserving the non-negative invariant required by Area64() (which
+  // casts directly to uint64_t without sign checks).
+  gfx::Size clamped_size(-100, -200);
+  EXPECT_EQ(0, clamped_size.width());
+  EXPECT_EQ(0, clamped_size.height());
+  EXPECT_EQ(0ULL, clamped_size.Area64());
+  EXPECT_EQ(0, clamped_size.GetCheckedArea().ValueOrDie());
+
+  clamped_size.set_width(-50);
+  clamped_size.set_height(-75);
+  EXPECT_EQ(0, clamped_size.width());
+  EXPECT_EQ(0, clamped_size.height());
+  EXPECT_EQ(0ULL, clamped_size.Area64());
 }
 
 }  // namespace

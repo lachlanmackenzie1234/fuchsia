@@ -6,11 +6,14 @@
 #define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_GEOMETRY_H_
 
 #include <stdint.h>
-
 #include <zircon/assert.h>
+
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <string>
+
+#include <safemath/safe_math.h>
 
 namespace gfx {
 
@@ -44,6 +47,17 @@ class Size {
   constexpr int width() const { return width_; }
   constexpr int height() const { return height_; }
   constexpr int GetArea() const { return width_ * height_; }
+  constexpr safemath::CheckedNumeric<int> GetCheckedArea() const {
+    return safemath::CheckMul(width_, height_);
+  }
+  // Size constructors and mutators clamp width_ and height_ to >= 0 when set,
+  // maintaining the class invariant that width_ and height_ are always in
+  // [0, INT_MAX]. Thus casting to uint64_t cannot sign-extend, and the product
+  // cannot overflow uint64_t.
+  constexpr uint64_t Area64() const {
+    ZX_DEBUG_ASSERT(width_ >= 0 && height_ >= 0);
+    return static_cast<uint64_t>(width_) * static_cast<uint64_t>(height_);
+  }
 
   void set_width(int width) { width_ = std::max(0, width); }
   void set_height(int height) { height_ = std::max(0, height); }
