@@ -1657,6 +1657,9 @@ class Scheduler {
         processing_rate_ = updated_processing_rate_;
         processing_rate_reciprocal_ = 1 / processing_rate_;
         active_power_coefficient_nw_ = power_state_.active_power_coefficient_nw();
+        if (!domain()) {
+          max_processing_rate_ = processing_rate_;
+        }
       }
       return processing_rate_;
     }
