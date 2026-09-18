@@ -11,12 +11,6 @@
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
-        // TODO: https://fxbug.dev/561468765 - Call security::file_receive in sys_pidfd_getfd.
-        "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedAppendWithoutFileAppend",
-        "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFdUse",
-        "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFileRead",
-        "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFileWrite",
-
         // Starnix does not generate the sys_nice capability denial that Linux does
         // because Starnix avoids the unnecessary capability check when EUIDs match.
         "SchedTest.SchedSetschedulerDeniedWithoutSetsched",

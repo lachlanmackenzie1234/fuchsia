@@ -54,11 +54,7 @@
                 "PerfEventTest.InvalidTracepointIdAndNoPermission",
 
                 // TODO: https://fxbug.dev/561468765 - Return EPERM when ptrace access check
-                // fails in sys_pidfd_getfd, and call security::file_receive.
-                "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedAppendWithoutFileAppend",
-                "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFdUse",
-                "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFileRead",
-                "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutFileWrite",
+                // fails in sys_pidfd_getfd.
                 "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutPtrace",
 
                 // TODO: https://fxbug.dev/297440106 - Fix zombies to remain in "/proc/<pid>" with correct labels.

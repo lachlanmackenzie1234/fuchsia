@@ -1997,6 +1997,7 @@ pub fn sys_pidfd_getfd(
     current_task.check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &task)?;
 
     let target_file = task.files()?.get(targetfd)?;
+    security::file_receive(current_task, &target_file)?;
     current_task.add_file(target_file, FdFlags::CLOEXEC)
 }
 
