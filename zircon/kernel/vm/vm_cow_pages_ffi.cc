@@ -124,4 +124,23 @@ FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_debug_is_parent_content(const VmCowPages
   return cow->DebugIsParentContent(offset);
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_can_borrow(const VmCowPages* cow) {
+  return cow->can_borrow();
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_can_evict(const VmCowPages* cow) {
+  return cow->can_evict();
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_is_discardable(const VmCowPages* cow) {
+  return cow->is_discardable();
+}
+
+FFI_ALWAYS_INLINE VmCowPages* cpp_vm_cow_pages_upgrade_from_raw(VmCowPages* cow) {
+  if (!cow->AddRefMaybeInDestructor()) {
+    return nullptr;
+  }
+  return cow;
+}
+
 }  // extern "C"

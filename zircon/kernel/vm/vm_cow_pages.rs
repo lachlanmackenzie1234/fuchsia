@@ -153,6 +153,40 @@ impl VmCowPages {
         unsafe { RefPtr::try_from_raw(ptr.cast::<Self>()) }
     }
 
+    /// Upgrades a raw `VmCowPages` pointer to a `RefPtr<VmCowPages>`, or returns `None` if the
+    /// object is being destroyed.
+    ///
+    /// # Safety
+    ///
+    /// `cow` must be a valid pointer to `VmCowPages`.
+    pub unsafe fn upgrade_from_raw(cow: *mut bindings::VmCowPages) -> Option<RefPtr<Self>> {
+        let ptr = unsafe { bindings::cpp_vm_cow_pages_upgrade_from_raw(cow) };
+        if ptr.is_null() {
+            None
+        } else {
+            // SAFETY: `cpp_vm_cow_pages_upgrade_from_raw` incremented the refcount, so we can adopt it.
+            unsafe { RefPtr::try_from_raw(ptr.cast::<Self>()) }
+        }
+    }
+
+    /// Returns true if the `VmCowPages` is capable of borrowing pages.
+    pub fn can_borrow(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_can_borrow(self.as_raw()) }
+    }
+
+    /// Returns true if the `VmCowPages` can evict pages (i.e. is user-pager backed).
+    pub fn can_evict(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_can_evict(self.as_raw()) }
+    }
+
+    /// Returns true if the `VmCowPages` is discardable.
+    pub fn is_discardable(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_is_discardable(self.as_raw()) }
+    }
+
     /// Replaces a page at offset with a loaned page.
     pub fn replace_page_with_loaned(
         &self,

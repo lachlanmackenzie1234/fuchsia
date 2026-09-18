@@ -54,6 +54,10 @@ zx_status_t cpp_vm_cow_pages_zero_pages_locked(VmCowPages* cow, VmCowRange range
                                                uint64_t* out_zeroed_bytes);
 uint32_t cpp_vm_cow_pages_debug_get_populated_slots_count(const VmCowPages* cow);
 bool cpp_vm_cow_pages_debug_is_parent_content(const VmCowPages* cow, uint64_t offset);
+bool cpp_vm_cow_pages_can_borrow(const VmCowPages* cow);
+bool cpp_vm_cow_pages_can_evict(const VmCowPages* cow);
+bool cpp_vm_cow_pages_is_discardable(const VmCowPages* cow);
+VmCowPages* cpp_vm_cow_pages_upgrade_from_raw(VmCowPages* cow);
 
 __END_CDECLS
 

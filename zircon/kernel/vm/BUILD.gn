@@ -120,10 +120,12 @@ kernel_bindgen_crate("scanner-bindings") {
   function_allowlist = [
     "cpp_scanner_push_disable_count",
     "cpp_scanner_pop_disable_count",
+    "cpp_scanner_needs_accessed_scan",
+    "cpp_scanner_wait_for_accessed_scan",
   ]
 
   raw_lines = [ "#![no_std]" ]
-  expect_lints = []
+  expect_lints = [ "non_camel_case_types" ]
 }
 
 kernel_bindgen_crate("discardable-vmo-tracker-bindings") {
@@ -298,12 +300,14 @@ kernel_bindgen_crate("pmm-bindings") {
     "cpp_pmm_num_arenas",
     "cpp_pmm_get_arena_info",
     "cpp_paddr_to_vm_page",
+    "cpp_pmm_get_page_compression",
   ]
   type_allowlist = []
   type_blocklist = [
     "PmmOptDelayReuse",
     "PageQueues",
     "PmmNode",
+    "VmCompression",
     "VmPageDoublyLinkedList",
     "pmm_arena_info",
     "pmm_arena_info_t",
@@ -331,6 +335,7 @@ kernel_bindgen_crate("pmm-bindings") {
     "pub use pmm_node_bindings::PmmOptDelayReuse;",
     "pub type PmmNode = pmm_node_bindings::PmmNode;",
     "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
+    "pub type VmCompression = core::ffi::c_void;",
   ]
   expect_lints = []
 }
@@ -1160,6 +1165,10 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_zero_pages_locked",
     "cpp_vm_cow_pages_debug_get_populated_slots_count",
     "cpp_vm_cow_pages_debug_is_parent_content",
+    "cpp_vm_cow_pages_can_borrow",
+    "cpp_vm_cow_pages_can_evict",
+    "cpp_vm_cow_pages_is_discardable",
+    "cpp_vm_cow_pages_upgrade_from_raw",
   ]
   type_allowlist = [
     "DirtyState",
