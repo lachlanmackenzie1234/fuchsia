@@ -382,7 +382,12 @@ impl<'a> GroPacket<'a> {
             let src = ip.src_ip();
             let dst = ip.dst_ip();
 
-            let transport_offset = total_len - view.len();
+            // NB: the IP parser trims any bytes past the end of the IP payload
+            // (e.g. link layer padding) off of `view`, so `total_len -
+            // view.len()` would overshoot the start of the transport header by
+            // the number of trailing bytes. Derive the offset from the IP
+            // header length instead.
+            let transport_offset = ip_offset + ip.header_len();
             let transport = TransportPacket::parse(&mut view, proto, src, dst, context)
                 .filter(|p| p.is_eligible_for_gro())?;
 
