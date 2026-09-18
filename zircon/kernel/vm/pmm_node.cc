@@ -543,8 +543,10 @@ zx_status_t PmmNode::AllocContiguous(const size_t count, uint alloc_flags, uint8
   DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
   LTRACEF("count %zu, align %u\n", count, alignment_log2);
 
+  // Forbid zero size contiguous allocations because we are obligated to provide the physical
+  // address on success, but have no sensible value to give.
   if (count == 0) {
-    return ZX_OK;
+    return ZX_ERR_INVALID_ARGS;
   }
   if (alignment_log2 < kPageShift) {
     alignment_log2 = kPageShift;
