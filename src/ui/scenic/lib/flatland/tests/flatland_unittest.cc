@@ -8733,6 +8733,644 @@ TEST_F(Flatland2Test, TwoSolidLayersZOrder) {
             (std::array<float, 4>{0.f, 0.f, 1.f, 1.f}));
 }
 
+TEST_F(Flatland2Test, CreateImage2ImportsAndRegisters) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const ImageId kImageId(1);
+  const LayerId kLayerId(1);  // Coincides with image id to test per-type id spaces.
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  flatland->CreateLayer(kLayerId);
+
+  EXPECT_FALSE(error_log.has_value());
+
+  auto global_id = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(global_id, allocation::kInvalidImageId);
+
+  const auto* img_obj = flatland->GetImageObjectForTest(global_id);
+  ASSERT_NE(img_obj, nullptr);
+  EXPECT_EQ(img_obj->ref_count, 1u);
+  EXPECT_EQ(img_obj->metadata.identifier, global_id);
+  EXPECT_EQ(img_obj->metadata.width, 100u);
+  EXPECT_EQ(img_obj->metadata.height, 200u);
+  EXPECT_EQ(img_obj->metadata.vmo_index, 0u);
+}
+
+TEST_F(Flatland2Test, CreateImage2ImportFailureCleansUp) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const ImageId kImageId(1);
+
+  // Return failure on import.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::error()));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+
+  const auto global_id = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(global_id, allocation::kInvalidImageId);
+  EXPECT_NE(flatland->GetImageObjectForTest(global_id), nullptr);
+
+  // Run the loop so the promise resolves and fails.
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("Importer could not import image"), std::string::npos);
+  EXPECT_EQ(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id), nullptr);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(1);
+  flatland.reset();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Flatland2Test, CreateImage2ImportFailureUnbindsLayersAndCleansUp) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const ImageId kImageId(1);
+  const LayerId kLayer1(2);
+  const LayerId kLayer2(3);
+
+  // Return failure on import.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::error()));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  flatland->CreateLayer(kLayer1);
+  flatland->CreateLayer(kLayer2);
+
+  const auto global_id = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(global_id, allocation::kInvalidImageId);
+
+  LayerHandle handle1 = flatland->GetLayerHandleForTest(kLayer1);
+  LayerHandle handle2 = flatland->GetLayerHandleForTest(kLayer2);
+
+  // Before the async import promise resolves, bind the image to two layers AND release the client
+  // ImageId. The image object is now kept alive solely by the two layer bindings (ref_count == 2).
+  flatland->SetLayerImageForTest(handle1, global_id);
+  flatland->SetLayerImageForTest(handle2, global_id);
+  flatland->ReleaseImage2(kImageId);
+  EXPECT_EQ(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
+  ASSERT_NE(flatland->GetImageObjectForTest(global_id), nullptr);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 2u);
+
+  // Run the loop so the promise resolves and fails. Both layers must be unbound and the image
+  // object destroyed.
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("Importer could not import image"), std::string::npos);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id), nullptr);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle1)->image_mode.image_id,
+            allocation::kInvalidImageId);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle2)->image_mode.image_id,
+            allocation::kInvalidImageId);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(1);
+  flatland.reset();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Flatland2Test, ReleaseImage2FreesUnboundImage) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const ImageId kImageId(1);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(error_log.has_value());
+  auto global_id = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(global_id, allocation::kInvalidImageId);
+
+  // Releasing image decrements ref_count to 0 and immediately frees the client id.
+  flatland->ReleaseImage2(kImageId);
+  EXPECT_EQ(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id), nullptr);
+
+  // Client ID kImageId can be reused immediately.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+  auto properties2 = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                         .size(fuchsia_math::wire::SizeU{50, 60})
+                         .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties2);
+  RunLoopUntilIdle();
+  EXPECT_FALSE(error_log.has_value());
+  auto global_id2 = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(global_id2, allocation::kInvalidImageId);
+  EXPECT_NE(global_id2, global_id);
+
+  // The first image is queued for release behind the next Present's release fence.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(0);
+  Present(flatland, true);
+
+  // Signal the release fence: ReleaseBufferImage(global_id) is called once.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  // The Flatland destructor will release the second image.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id2)).Times(1);
+  flatland.reset();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Flatland2Test, ImageObjectRefCountLifecycle) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const ImageId kImageId(1);
+  const LayerId kLayer1(2);
+  const LayerId kLayer2(3);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  RunLoopUntilIdle();
+  flatland->CreateLayer(kLayer1);
+  flatland->CreateLayer(kLayer2);
+
+  auto global_id = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(global_id, allocation::kInvalidImageId);
+  auto* img_obj = flatland->GetImageObjectForTest(global_id);
+  ASSERT_NE(img_obj, nullptr);
+  EXPECT_EQ(img_obj->ref_count, 1u);
+
+  LayerHandle handle1 = flatland->GetLayerHandleForTest(kLayer1);
+  LayerHandle handle2 = flatland->GetLayerHandleForTest(kLayer2);
+
+  // Bind to Layer 1 via test seam.
+  flatland->SetLayerImageForTest(handle1, global_id);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 2u);
+
+  // Bind to Layer 2 via test seam.
+  flatland->SetLayerImageForTest(handle2, global_id);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 3u);
+
+  // Releasing the client ImageId decrements ref_count to 2; image object survives!
+  flatland->ReleaseImage2(kImageId);
+  EXPECT_EQ(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
+  ASSERT_NE(flatland->GetImageObjectForTest(global_id), nullptr);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 2u);
+
+  // Destroy Layer 1: decrements ref_count to 1; image object survives!
+  flatland->ReleaseLayer(kLayer1);
+  ASSERT_NE(flatland->GetImageObjectForTest(global_id), nullptr);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 1u);
+
+  // Destroy Layer 2: decrements ref_count to 0; image object erased!
+  flatland->ReleaseLayer(kLayer2);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id), nullptr);
+
+  // Deferred release observed after Present + release fence signal!
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(0);
+  Present(flatland, true);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Flatland2Test, ResetLayerUnbindsAndReleasesImage) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const ImageId kImageId(1);
+  const LayerId kLayerId(2);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  RunLoopUntilIdle();
+  flatland->CreateLayer(kLayerId);
+
+  auto global_id = flatland->GetGlobalImageIdForTest(kImageId);
+  LayerHandle handle = flatland->GetLayerHandleForTest(kLayerId);
+
+  flatland->SetLayerImageForTest(handle, global_id);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 2u);
+
+  // Release client ImageId; image survives because it is bound to kLayerId.
+  flatland->ReleaseImage2(kImageId);
+  ASSERT_NE(flatland->GetImageObjectForTest(global_id), nullptr);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 1u);
+
+  // ResetLayer must unbind the image and drop its ref count to 0.
+  flatland->ResetLayer(kLayerId);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id), nullptr);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle)->image_mode.image_id,
+            allocation::kInvalidImageId);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(0);
+  Present(flatland, true);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+}
+
+// Verifies the transitive lifetime chain: LayerStack -> LayerObject -> ImageObject.
+// Even after the client releases both the ImageId (via ReleaseImage2) and LayerId
+// (via ReleaseLayer), the stack continues to hold a reference to the LayerObject, which
+// in turn transitively keeps the bound ImageObject alive across presents.
+// Once the layer is removed from the stack, the LayerObject is destroyed, which unbinds
+// the image, drops the ImageObject's ref count to 0, and queues it for deferred release
+// upon the next Present.
+TEST_F(Flatland2Test, StackKeepsLayerKeepsImageAlive) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const ImageId kImageId(1);
+  const LayerId kLayerId(2);
+  const LayerStackId kStackId(3);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  RunLoopUntilIdle();
+  flatland->CreateLayer(kLayerId);
+  flatland->CreateLayerStack(kStackId);
+
+  auto global_id = flatland->GetGlobalImageIdForTest(kImageId);
+  LayerHandle layer_handle = flatland->GetLayerHandleForTest(kLayerId);
+
+  // Bind image to layer, and attach layer to stack.
+  flatland->SetLayerImageForTest(layer_handle, global_id);
+  flatland->SetStackLayers(kStackId, {kLayerId});
+
+  // Release BOTH the client ImageId and client LayerId.
+  // The stack keeps the LayerObject alive (layer ref_count == 1), which in turn keeps the
+  // ImageObject alive (image ref_count == 1).
+  flatland->ReleaseImage2(kImageId);
+  flatland->ReleaseLayer(kLayerId);
+  EXPECT_EQ(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
+  EXPECT_EQ(flatland->GetLayerHandleForTest(kLayerId), LayerHandle());
+  ASSERT_NE(flatland->GetLayerObjectForTest(layer_handle), nullptr);
+  ASSERT_NE(flatland->GetImageObjectForTest(global_id), nullptr);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id)->ref_count, 1u);
+
+  // Present while attached to stack: image is NOT released.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(0);
+  Present(flatland, true);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  // Removing the layer from the stack destroys the LayerObject, which unbinds and destroys the
+  // ImageObject.
+  flatland->SetStackLayers(kStackId, {});
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_handle), nullptr);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_id), nullptr);
+
+  // Image release is now observed after the next Present retires.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(0);
+  Present(flatland, true);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Flatland2Test, TeardownReleasesLiveImageObjects) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  allocation::GlobalImageId id1 = allocation::kInvalidImageId;
+  allocation::GlobalImageId id2 = allocation::kInvalidImageId;
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(testing::Invoke(
+          [&id1](const ImageMetadata& metadata, allocation::BufferCollectionUsage usage_type) {
+            id1 = metadata.identifier;
+            return fpromise::make_ok_promise();
+          }))
+      .WillOnce(testing::Invoke(
+          [&id2](const ImageMetadata& metadata, allocation::BufferCollectionUsage usage_type) {
+            id2 = metadata.identifier;
+            return fpromise::make_ok_promise();
+          }));
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
+  flatland->CreateImage2(ImageId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  flatland->CreateImage2(ImageId(2), ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+
+  RunLoopUntilIdle();
+  EXPECT_NE(id1, allocation::kInvalidImageId);
+  EXPECT_NE(id2, allocation::kInvalidImageId);
+
+  // Destroy the flatland session with live image objects. Both should be released by importers.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(id1)).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(id2)).Times(1);
+
+  flatland.reset();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Flatland2Test, CreateImage2FailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->CreateImage2(ImageId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("Flatland2 not enabled"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, CreateImage2ZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->CreateImage2(kInvalidImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("image_id 0"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, CreateImage2DuplicateIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  fidl::Arena arena;
+  auto properties1 = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                         .size(fuchsia_math::wire::SizeU{100, 100})
+                         .Build();
+  flatland->CreateImage2(ImageId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties1);
+  EXPECT_FALSE(error_log.has_value());
+
+  auto properties2 = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                         .size(fuchsia_math::wire::SizeU{100, 100})
+                         .Build();
+  flatland->CreateImage2(ImageId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties2);
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("pre-existing image_id"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, CreateImage2InvalidExportTokenFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  // Unregistered / invalid export token.
+  fuchsia_ui_composition::BufferCollectionImportToken import_token;
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->CreateImage2(ImageId(1), ToWire(std::move(import_token)), 0, properties);
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("no valid export token"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, CreateImage2NoSizeFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  flatland->CreateImage2(ImageId(1), ToWire(ref_pair.DuplicateImportToken()), 0, {});
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("did not specify size"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, CreateImage2ZeroWidthFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{0, 100})
+                        .Build();
+  flatland->CreateImage2(ImageId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("did not specify a width"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, CreateImage2ZeroHeightFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 0})
+                        .Build();
+  flatland->CreateImage2(ImageId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("did not specify a height"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, ReleaseImage2FailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+
+  flatland->ReleaseImage2(ImageId(1));
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("Flatland2 not enabled"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, ReleaseImage2ZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  flatland->ReleaseImage2(kInvalidImageId);
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("image_id 0"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, ReleaseImage2UnknownIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+
+  flatland->ReleaseImage2(ImageId(999));
+  EXPECT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("not found"), std::string::npos);
+}
+
+TEST_F(Flatland2Test, ClearResetsFlatland2Ids) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  auto allocator = CreateAllocator();
+
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
+
+  const LayerId kLayerId(1);
+  const LayerStackId kStackId(2);
+  const ImageId kImageId(3);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  flatland->CreateLayer(kLayerId);
+  flatland->CreateLayerStack(kStackId);
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
+  EXPECT_FALSE(error_log.has_value());
+
+  LayerHandle layer_handle = flatland->GetLayerHandleForTest(kLayerId);
+  ASSERT_NE(layer_handle, LayerHandle());
+  EXPECT_NE(flatland->GetLayerObjectForTest(layer_handle), nullptr);
+
+  auto stack_handle = flatland->GetLayerStackHandleForTest(kStackId);
+  ASSERT_TRUE(stack_handle.has_value());
+
+  allocation::GlobalImageId global_image_id = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(global_image_id, allocation::kInvalidImageId);
+  EXPECT_NE(flatland->GetImageObjectForTest(global_image_id), nullptr);
+
+  flatland->Clear();
+
+  // The client-only layer is destroyed by the Clear().
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_handle), nullptr);
+  EXPECT_EQ(flatland->GetLayerHandleForTest(kLayerId), LayerHandle());
+  EXPECT_FALSE(flatland->GetLayerStackHandleForTest(kStackId).has_value());
+  EXPECT_EQ(flatland->GetGlobalImageIdForTest(kImageId), allocation::kInvalidImageId);
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_image_id), nullptr);
+
+  // Recreate all three IDs: succeeds.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
+
+  flatland->CreateLayer(kLayerId);
+  flatland->CreateLayerStack(kStackId);
+  auto properties2 = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                         .size(fuchsia_math::wire::SizeU{100, 100})
+                         .Build();
+  flatland->CreateImage2(kImageId, ToWire(ref_pair.DuplicateImportToken()), 0, properties2);
+  EXPECT_FALSE(error_log.has_value());
+
+  LayerHandle new_layer_handle = flatland->GetLayerHandleForTest(kLayerId);
+  EXPECT_NE(new_layer_handle, LayerHandle());
+  EXPECT_NE(new_layer_handle, layer_handle);
+  EXPECT_NE(flatland->GetLayerObjectForTest(new_layer_handle), nullptr);
+
+  auto new_stack_handle = flatland->GetLayerStackHandleForTest(kStackId);
+  ASSERT_TRUE(new_stack_handle.has_value());
+  EXPECT_NE(*new_stack_handle, *stack_handle);
+
+  allocation::GlobalImageId new_global_image_id = flatland->GetGlobalImageIdForTest(kImageId);
+  EXPECT_NE(new_global_image_id, allocation::kInvalidImageId);
+  EXPECT_NE(new_global_image_id, global_image_id);
+  EXPECT_NE(flatland->GetImageObjectForTest(new_global_image_id), nullptr);
+
+  // The unbound image's release is observed at the next Present()'s fence.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  Present(flatland, true);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  // The Flatland destructor will release the recreated image.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(new_global_image_id)).Times(1);
+  flatland.reset();
+  RunLoopUntilIdle();
+}
+
 // These tests exercise the legacy bridging logic where Flatland1 mutator calls
 // are converted into Flatland2 UberStructLayer properties. They will be removed
 // when the Flatland1 FIDL API is finally deleted.

@@ -184,6 +184,7 @@ Flatland::Flatland(
       local_root_(transform_graph_.CreateTransform()),
       content_handles_(&pool_),
       layer_handles_(&pool_),
+      images2_(&pool_),
       layer_objects_(&pool_),
       layer_stacks_(&pool_),
       layer_stack_handles_(&pool_),
@@ -1109,6 +1110,10 @@ void Flatland::ClearFlatland2State() {
   // The stacks' transforms die with ResetGraph(); the dead-transform cleanup
   // drops their LayerStackData.
   layer_stack_handles_.clear();
+  for (const auto& [image_id, global_id] : images2_) {
+    ReleaseImageObject(global_id);
+  }
+  images2_.clear();
 }
 
 void Flatland::ProcessDeadTransforms(const TransformGraph::TopologyData& data) {
@@ -1489,6 +1494,96 @@ void Flatland::CreateViewport2(
   CloseConnection(FlatlandError::kBadOperation);
 }
 
+std::optional<allocation::ImageMetadata> Flatland::ImportImage(
+    fuchsia_ui_composition::wire::BufferCollectionImportToken import_token, uint32_t vmo_index,
+    const fuchsia_ui_composition::wire::ImageProperties& properties) {
+  const BufferCollectionId global_collection_id = fsl::GetRelatedKoid(import_token.value.get());
+
+  // Check if there is a valid peer.
+  if (global_collection_id == ZX_KOID_INVALID) {
+    error_reporter_->ERROR() << "ImportImage called with no valid export token";
+    CloseConnection(FlatlandError::kBadOperation);
+    return std::nullopt;
+  }
+
+  if (!properties.has_size()) {
+    error_reporter_->ERROR() << "ImportImage failed, ImageProperties did not specify size";
+    CloseConnection(FlatlandError::kBadOperation);
+    return std::nullopt;
+  }
+
+  if (!properties.size().width) {
+    error_reporter_->ERROR() << "ImportImage failed, ImageProperties did not specify a width";
+    CloseConnection(FlatlandError::kBadOperation);
+    return std::nullopt;
+  }
+
+  if (!properties.size().height) {
+    error_reporter_->ERROR() << "ImportImage failed, ImageProperties did not specify a height";
+    CloseConnection(FlatlandError::kBadOperation);
+    return std::nullopt;
+  }
+
+  allocation::ImageMetadata metadata;
+  metadata.identifier = allocation::GenerateUniqueImageId();
+  metadata.collection_id = global_collection_id;
+  metadata.vmo_index = vmo_index;
+  metadata.width = properties.size().width;
+  metadata.height = properties.size().height;
+
+  import_tokens_->emplace(metadata.identifier, std::move(import_token));
+
+  // This fence is used to bridge promise resolution (see below) to the existing `fence_queue_`
+  // mechanism, to guarantee that the image has been created by the time the corresponding
+  // `Present()`'s UberStruct is applied to the global scene graph.
+  auto [create_image_fence, create_image_fence_dup] = CreateEventAndDup();
+  pending_create_image_fences_.push_back(std::move(create_image_fence));
+
+  std::vector<fpromise::promise<>> promises;
+  promises.reserve(buffer_collection_importers_.size());
+  for (auto& importer : buffer_collection_importers_) {
+    auto promise =
+        importer->ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
+    promises.push_back(std::move(promise));
+  }
+  auto join_promise =
+      fpromise::join_promise_vector(std::move(promises))
+          .and_then([this, id = metadata.identifier, fence = std::move(create_image_fence_dup)](
+                        std::vector<fpromise::result<>>& results) mutable -> fpromise::result<> {
+            bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
+
+            if (ok) {
+              // Signal the fence to unblock `Present()` via `fence_queue_` (see above).
+              fence.signal(0, ZX_EVENT_SIGNALED);
+              return fpromise::ok();
+            }
+
+            // Drop the reference(s).
+            // Unbind from any layers that still reference this image.
+            for (auto& [handle, layer] : layer_objects_) {
+              if (layer.image_mode.image_id == id) {
+                UnbindLayerImage(layer);
+              }
+            }
+            // For Flatland2, if the client ImageId is still alive in images2_, erase it and
+            // release its reference.
+            for (auto it = images2_.begin(); it != images2_.end(); ++it) {
+              if (it->second == id) {
+                images2_.erase(it);
+                ReleaseImageObject(id);
+                break;
+              }
+            }
+            FX_CHECK(!image_objects_.contains(id));
+
+            error_reporter_->ERROR() << "Importer could not import image.";
+            CloseConnection(FlatlandError::kBadOperation);
+            return fpromise::error();
+          });
+  executor_.schedule_task(std::move(join_promise));
+  return metadata;
+}
+
 void Flatland::CreateImage(CreateImageRequestView request, CreateImageCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Flatland::CreateImage", "debug_name", TA_STRING(debug_name_.c_str()));
 
@@ -1518,30 +1613,8 @@ void Flatland::CreateImage(ContentId image_id,
     return;
   }
 
-  const BufferCollectionId global_collection_id = fsl::GetRelatedKoid(import_token.value.get());
-
-  // Check if there is a valid peer.
-  if (global_collection_id == ZX_KOID_INVALID) {
-    error_reporter_->ERROR() << "CreateImage called with no valid export token";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
-  }
-
-  if (!properties.has_size()) {
-    error_reporter_->ERROR() << "CreateImage failed, ImageProperties did not specify size";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
-  }
-
-  if (!properties.size().width) {
-    error_reporter_->ERROR() << "CreateImage failed, ImageProperties did not specify a width";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
-  }
-
-  if (!properties.size().height) {
-    error_reporter_->ERROR() << "CreateImage failed, ImageProperties did not specify a height";
-    CloseConnection(FlatlandError::kBadOperation);
+  auto metadata = ImportImage(std::move(import_token), vmo_index, properties);
+  if (!metadata) {
     return;
   }
 
@@ -1552,8 +1625,8 @@ void Flatland::CreateImage(ContentId image_id,
       .sample_rect = {{
           .x = 0.f,
           .y = 0.f,
-          .width = static_cast<float>(properties.size().width),
-          .height = static_cast<float>(properties.size().height),
+          .width = static_cast<float>(metadata->width),
+          .height = static_cast<float>(metadata->height),
       }},
   };
   auto& layer_object = layer_objects_[layer_handle];
@@ -1562,72 +1635,21 @@ void Flatland::CreateImage(ContentId image_id,
   layer_object.common.display_rect = {{
       .x = 0,
       .y = 0,
-      .width = static_cast<int32_t>(properties.size().width),
-      .height = static_cast<int32_t>(properties.size().height),
+      .width = static_cast<int32_t>(metadata->width),
+      .height = static_cast<int32_t>(metadata->height),
   }};
 
-  allocation::ImageMetadata metadata;
-  metadata.identifier = allocation::GenerateUniqueImageId();
-  metadata.collection_id = global_collection_id;
-  metadata.vmo_index = vmo_index;
-  metadata.width = properties.size().width;
-  metadata.height = properties.size().height;
-
-  image_objects_.try_emplace(metadata.identifier,
-                             ImageObject{.metadata = metadata, .ref_count = 0});
-  BindLayerImage(layer_object, metadata.identifier);  // Increments image ref-count.
+  image_objects_.try_emplace(metadata->identifier,
+                             ImageObject{.metadata = *metadata, .ref_count = 0});
+  BindLayerImage(layer_object, metadata->identifier);  // Increments image ref-count.
 
   TransformHandle stack_handle = CreateLayerStackData();
   SetLayerStackData(stack_handle, {layer_handle});
   content_handles_[image_id] = stack_handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateImage() session_id=" << session_id_
-                       << "  image_id=" << image_id << "  size=" << properties.size().width << "x"
-                       << properties.size().height << "  handle=" << stack_handle;
-
-  import_tokens_->emplace(metadata.identifier, std::move(import_token));
-
-  // This fence is used to bridge promise resolution (see below) to the existing `fence_queue_`
-  // mechanism, to guarantee that the image has been created by the time the corresponding
-  // `Present()`'s UberStruct is applied to the global scene graph.
-  auto [create_image_fence, create_image_fence_dup] = CreateEventAndDup();
-  pending_create_image_fences_.push_back(std::move(create_image_fence));
-
-  std::vector<fpromise::promise<>> promises;
-  promises.reserve(buffer_collection_importers_.size());
-  for (auto& importer : buffer_collection_importers_) {
-    auto promise =
-        importer->ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
-    promises.push_back(std::move(promise));
-  }
-  auto join_promise =
-      fpromise::join_promise_vector(std::move(promises))
-          .and_then([this, layer_handle, id = metadata.identifier,
-                     fence = std::move(create_image_fence_dup)](
-                        std::vector<fpromise::result<>>& results) mutable -> fpromise::result<> {
-            bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
-
-            if (ok) {
-              // Signal the fence to unblock `Present()` via `fence_queue_` (see above).
-              fence.signal(0, ZX_EVENT_SIGNALED);
-              return fpromise::ok();
-            }
-
-            // Drop the reference taken by the layer.  In Flatland1 this is the only reference,
-            // guaranteeing that the image will be cleaned up properly.  If the layer is gone, the
-            // client released the content and presented, and the layer dropped it when it died.
-            if (auto layer_it = layer_objects_.find(layer_handle);
-                layer_it != layer_objects_.end()) {
-              // Facade layers are never rebound and handles are never reused.
-              FX_CHECK(layer_it->second.image_mode.image_id == id);
-              UnbindLayerImage(layer_it->second);
-            }
-
-            error_reporter_->ERROR() << "Importer could not import image.";
-            CloseConnection(FlatlandError::kBadOperation);
-            return fpromise::error();
-          });
-  executor_.schedule_task(std::move(join_promise));
+                       << "  image_id=" << image_id << "  size=" << metadata->width << "x"
+                       << metadata->height << "  handle=" << stack_handle;
 }
 
 void Flatland::CreateImage2(CreateImage2RequestView request,
@@ -1645,8 +1667,32 @@ void Flatland::CreateImage2(ImageId image_id,
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "CreateImage2: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (image_id == kInvalidImageId) {
+    error_reporter_->ERROR() << "CreateImage2 called with image_id " << kInvalidImageId;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (images2_.contains(image_id)) {
+    error_reporter_->ERROR() << "CreateImage2 called with pre-existing image_id " << image_id;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto metadata = ImportImage(std::move(import_token), vmo_index, properties);
+  if (!metadata) {
+    return;
+  }
+
+  images2_[image_id] = metadata->identifier;
+  auto [it, success] = image_objects_.try_emplace(
+      metadata->identifier, ImageObject{.metadata = *metadata, .ref_count = 1});
+  FX_CHECK(success) << "image object already exists: " << metadata->identifier;
+
+  FLATLAND_VERBOSE_LOG << "Flatland::CreateImage2() session_id=" << session_id_
+                       << "  image_id=" << image_id << "  global_id=" << metadata->identifier
+                       << "  size=" << metadata->width << "x" << metadata->height;
 }
 
 void Flatland::SetImageSampleRegion(SetImageSampleRegionRequestView request,
@@ -2562,16 +2608,32 @@ void Flatland::ReleaseImage2(ReleaseImage2RequestView request,
   ReleaseImage2(ImageId(request->image_id.value));
 }
 
-// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
-// is that it captures "illegal usage".  See TODO in CreateLayer.
 void Flatland::ReleaseImage2(ImageId image_id) {
   if (!config_.use_flatland2) {
     error_reporter_->ERROR() << "ReleaseImage2 called, but Flatland2 not enabled";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "ReleaseImage2: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (image_id == kInvalidImageId) {
+    error_reporter_->ERROR() << "ReleaseImage2 called with image_id " << kInvalidImageId;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = images2_.find(image_id);
+  if (it == images2_.end()) {
+    error_reporter_->ERROR() << "ReleaseImage2 failed, image_id " << image_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  const allocation::GlobalImageId global_id = it->second;
+  images2_.erase(it);
+  ReleaseImageObject(global_id);
+
+  FLATLAND_VERBOSE_LOG << "Flatland::ReleaseImage2() session_id=" << session_id_
+                       << "  client_image_id=" << image_id << "  global_image_id=" << global_id;
 }
 
 void Flatland::SetDebugName(SetDebugNameRequestView request,
@@ -3081,8 +3143,7 @@ void Flatland::ResetLayer(LayerId layer_id) {
   }
   LayerObject& layer_object = GetLayerObject(it->second);
 
-  // TODO(https://fxbug.dev/540952629): When SetLayerImage is implemented, ResetLayer must end any
-  // image binding on this layer, signal its release fence, and add the image to images_to_release_.
+  UnbindLayerImage(layer_object);
   layer_object.common = UberStructLayer::CommonProperties{};
   layer_object.image_mode = UberStructLayer::ImageModeProperties{};
   layer_object.solid_color_mode = UberStructLayer::SolidColorModeProperties{};
@@ -3281,6 +3342,8 @@ void Flatland::ReleaseImageObject(allocation::GlobalImageId id) {
   images_to_release_on_present_.push_back(id);
 }
 
+// TODO(https://fxbug.dev/540952629): When release fences are implemented, UnbindLayerImage will
+// also stage the binding's release fence.
 void Flatland::UnbindLayerImage(LayerObject& layer) {
   auto& image_mode = layer.image_mode;
   if (image_mode.image_id == allocation::kInvalidImageId) {
@@ -3409,8 +3472,8 @@ LayerObject* Flatland::GetLayerObjectForTest(LayerHandle handle) {
   return &it->second;
 }
 
-ImageObject* Flatland::GetImageObjectForTest(allocation::GlobalImageId id) {
-  auto it = image_objects_.find(id);
+const ImageObject* Flatland::GetImageObjectForTest(allocation::GlobalImageId global_id) const {
+  auto it = image_objects_.find(global_id);
   if (it == image_objects_.end()) {
     return nullptr;
   }
@@ -3454,5 +3517,13 @@ std::optional<TransformHandle> Flatland::GetLayerStackHandleForTest(
 }
 
 size_t Flatland::PendingImageReleaseCountForTest() const { return pending_image_releases_.size(); }
+
+allocation::GlobalImageId Flatland::GetGlobalImageIdForTest(ImageId image_id) const {
+  auto it = images2_.find(image_id);
+  if (it == images2_.end()) {
+    return allocation::kInvalidImageId;
+  }
+  return it->second;
+}
 
 }  // namespace flatland
