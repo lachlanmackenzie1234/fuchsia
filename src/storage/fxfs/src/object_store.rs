@@ -1033,6 +1033,13 @@ impl ObjectStore {
         &self.key_manager
     }
 
+    /// Clears all in-memory caches (LSM tree object cache, persistent layer chunk caches, and
+    /// non-permanent unwrapped keys) for this object store.
+    pub fn clear_caches(&self) {
+        self.tree.clear_cache();
+        self.key_manager.clear_cached_keys();
+    }
+
     pub fn parent_store(&self) -> Option<&Arc<ObjectStore>> {
         self.parent_store.as_ref()
     }

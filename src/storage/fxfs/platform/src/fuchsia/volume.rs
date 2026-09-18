@@ -16,8 +16,9 @@ use anyhow::{Error, bail, ensure};
 use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_fxfs::{
-    BytesAndNodes, FileBackedVolumeProviderRequest, FileBackedVolumeProviderRequestStream,
-    ProjectIdRequest, ProjectIdRequestStream, ProjectIterToken,
+    BytesAndNodes, DebugRequest, DebugRequestStream, FileBackedVolumeProviderRequest,
+    FileBackedVolumeProviderRequestStream, ProjectIdRequest, ProjectIdRequestStream,
+    ProjectIterToken,
 };
 use fidl_fuchsia_io as fio;
 use fs_inspect::{FsInspectVolume, VolumeData};
@@ -873,6 +874,51 @@ impl FxVolume {
                             Err(map_to_raw_status(error))
                         }
                     })?
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Clears the directory entry cache and internal object store caches for this volume.
+    pub fn clear_caches(&self) {
+        self.dirent_cache.clear();
+        self.store.clear_caches();
+    }
+
+    pub async fn handle_debug_requests(
+        this: Weak<Self>,
+        scope: ExecutionScope,
+        mut requests: DebugRequestStream,
+    ) -> Result<(), Error> {
+        while let Some(request) = requests.try_next().await? {
+            // Try and get an active guard before upgrading.
+            let Some(_guard) = scope.try_active_guard() else { bail!("Volume shutting down") };
+            let Some(this) = this.upgrade() else { bail!("FxVolume dropped") };
+
+            match request {
+                DebugRequest::ClearCaches { responder } => {
+                    this.clear_caches();
+                    let fs = this.store.filesystem();
+                    fs.root_store().clear_caches();
+                    fs.root_parent_store().clear_caches();
+                    fs.allocator().tree().clear_cache();
+                    responder.send(Ok(()))?;
+                }
+                DebugRequest::Compact { responder } => {
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+                }
+                DebugRequest::DeleteProfile { responder, .. } => {
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+                }
+                DebugRequest::RecordAndReplayProfile { responder, .. } => {
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+                }
+                DebugRequest::ReplayXorRecordProfile { responder, .. } => {
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+                }
+                DebugRequest::StopProfileTasks { responder } => {
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
                 }
             }
         }

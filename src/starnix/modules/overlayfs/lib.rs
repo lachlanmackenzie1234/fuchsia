@@ -1356,6 +1356,10 @@ impl FileSystemOps for OverlayFs {
     }
 
     fn unmount(&self) {}
+
+    fn sub_filesystems(&self) -> Vec<Arc<FileSystem>> {
+        vec![self.stack.lower_fs.clone(), self.stack.upper_fs.clone()]
+    }
 }
 
 /// Helper used to resolve directories passed in mount options. The directory is resolved in the

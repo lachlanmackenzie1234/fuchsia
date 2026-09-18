@@ -719,6 +719,10 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
         self.caching_object_handle.purge();
     }
 
+    fn clear_cached_data(&self) {
+        self.caching_object_handle.clear();
+    }
+
     async fn seek<'a>(&'a self, bound: Bound<&K>) -> Result<BoxedLayerIterator<'a, K, V>, Error> {
         Ok(Box::new(PersistentLayer::seek(self, bound).await?))
     }
@@ -1780,5 +1784,32 @@ mod tests {
             }
         }
         assert!(false_count > WRITTEN_ITEMS / 2);
+    }
+
+    #[fuchsia::test]
+    async fn test_clear_cached_data() {
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
+        let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
+        {
+            let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
+                Writer::new(&handle).await,
+                100,
+                BLOCK_SIZE,
+            )
+            .await
+            .expect("writer new");
+            writer.write(Item::new(1, 1).as_item_ref()).await.expect("write failed");
+            writer.complete().await.expect("flush failed");
+        }
+        let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("open failed");
+        let iter = layer.seek(Bound::Unbounded).await.expect("seek failed");
+        assert_eq!(iter.get().map(|i| (*i.key, *i.value)), Some((1, 1)));
+        drop(iter);
+
+        assert!(layer.caching_object_handle.try_read(BLOCK_SIZE.get() as usize).is_some());
+
+        layer.clear_cached_data();
+
+        assert!(layer.caching_object_handle.try_read(BLOCK_SIZE.get() as usize).is_none());
     }
 }

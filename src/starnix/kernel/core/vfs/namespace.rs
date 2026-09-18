@@ -13,11 +13,11 @@ use crate::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileS
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
-    AccessCheck, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
-    FileSystemOptions, FileWriteGuardMode, FsContext, FsNode, FsNodeHandle, FsNodeOps, FsStr,
-    FsString, OpenAccessCheck, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind,
-    fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fs_node_impl_not_dir,
+    AccessCheck, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystem,
+    FileSystemHandle, FileSystemOptions, FileWriteGuardMode, FsContext, FsNode, FsNodeHandle,
+    FsNodeOps, FsStr, FsString, OpenAccessCheck, PathBuilder, RenameFlags, SymlinkTarget,
+    UnlinkKind, fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek,
+    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use fuchsia_rcu::{RcuArc, RcuBox, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
@@ -25,7 +25,7 @@ use fuchsia_sync::Mutex;
 use starnix_logging::log_warn;
 use starnix_rcu::RcuHashMap;
 use starnix_sync::{LockDepMutex, NamespaceFlagsLock};
-use starnix_uapi::arc_key::{PtrKey, WeakKey};
+use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -2205,23 +2205,33 @@ impl Mounts {
         }
     }
 
-    pub fn sync_all(&self, current_task: &CurrentTask) -> Result<(), Errno> {
-        let mut filesystems = Vec::new();
-        {
-            let scope = RcuReadScope::new();
-            let mut seen = HashSet::new();
-            for (_dir_entry, m_list) in self.mounts.iter(&scope) {
-                for m in m_list {
-                    if let Some(mount) = m.0.upgrade() {
-                        if seen.insert(Arc::as_ptr(&mount.fs)) {
-                            filesystems.push(mount.fs.clone());
-                        }
+    /// Returns the set of unique mounted filesystems, including any underlying filesystems
+    /// wrapped by stacked filesystems such as OverlayFs.
+    fn unique_filesystems(&self) -> HashSet<ArcKey<FileSystem>> {
+        let mut filesystems = HashSet::new();
+        let mut queue = Vec::new();
+        let scope = RcuReadScope::new();
+        for (_dir_entry, m_list) in self.mounts.iter(&scope) {
+            for m in m_list {
+                if let Some(mount) = m.0.upgrade() {
+                    if filesystems.insert(ArcKey(mount.fs.clone())) {
+                        queue.push(mount.fs.clone());
                     }
                 }
             }
         }
+        while let Some(fs) = queue.pop() {
+            for sub_fs in fs.sub_filesystems() {
+                if filesystems.insert(ArcKey(sub_fs.clone())) {
+                    queue.push(sub_fs);
+                }
+            }
+        }
+        filesystems
+    }
 
-        for fs in filesystems {
+    pub fn sync_all(&self, current_task: &CurrentTask) -> Result<(), Errno> {
+        for fs in self.unique_filesystems() {
             if let Err(e) = fs.sync(current_task) {
                 log_warn!("sync failed for filesystem {:?}: {:?}", fs.name(), e);
             }
@@ -2230,23 +2240,14 @@ impl Mounts {
     }
 
     pub fn drop_caches(&self) {
-        let mut filesystems = Vec::new();
-        {
-            let scope = RcuReadScope::new();
-            let mut seen = HashSet::new();
-            for (_dir_entry, m_list) in self.mounts.iter(&scope) {
-                for m in m_list {
-                    if let Some(mount) = m.0.upgrade() {
-                        if seen.insert(Arc::as_ptr(&mount.fs)) {
-                            filesystems.push(mount.fs.clone());
-                        }
-                    }
-                }
-            }
+        let filesystems = self.unique_filesystems();
+        // First purge all directory entry caches so that stacked filesystems (like OverlayFs)
+        // drop references to underlying DirEntries/FsNodes before backend caches are cleared.
+        for fs in &filesystems {
+            fs.purge_dcache();
         }
-
-        for fs in filesystems {
-            fs.purge_all_entries();
+        for fs in &filesystems {
+            fs.drop_backend_caches();
         }
     }
 }
