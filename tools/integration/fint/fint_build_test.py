@@ -74,7 +74,9 @@ class BuildArtifactsTest(unittest.TestCase):
         """Verifies that produce_build_artifacts successfully writes build_artifacts.json."""
         with tempfile.TemporaryDirectory() as artifact_dir:
             fint_build.produce_build_artifacts(pathlib.Path(artifact_dir), 42)
-            manifest_path = pathlib.Path(artifact_dir) / "build_artifacts.json"
+            manifest_path = (
+                pathlib.Path(artifact_dir) / fint_build.BUILD_ARTIFACTS_JSON
+            )
             self.assertTrue(manifest_path.exists())
 
             # Load and verify content
@@ -87,7 +89,9 @@ class BuildArtifactsTest(unittest.TestCase):
             fint_build.produce_build_artifacts(
                 pathlib.Path(artifact_dir), 42, failure_summary="test failure"
             )
-            manifest_path = pathlib.Path(artifact_dir) / "build_artifacts.json"
+            manifest_path = (
+                pathlib.Path(artifact_dir) / fint_build.BUILD_ARTIFACTS_JSON
+            )
             self.assertTrue(manifest_path.exists())
 
             # Load and verify content
@@ -186,7 +190,9 @@ class ParseNinjaFailuresTest(unittest.TestCase):
     def test_parse_file_handling(self) -> None:
         """Verifies parse_ninja_failures correctly loads files and delegates."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            errors_json_path = pathlib.Path(tmp_dir) / "ninja_errors.json"
+            errors_json_path = (
+                pathlib.Path(tmp_dir) / fint_build.NINJA_ERRORS_JSON
+            )
 
             # Malformed JSON
             errors_json_path.write_text("{invalid")
@@ -394,7 +400,7 @@ class NinjaBuildWrapTest(unittest.TestCase):
                 checkout_dir="fake_checkout", build_dir=tmp_dir
             )
 
-            test_specs_path = os.path.join(tmp_dir, "test_specs.json")
+            test_specs_path = os.path.join(tmp_dir, fint_build.TESTS_JSON)
             test_specs_data = [
                 {"test": {"os": "fuchsia", "path": "fuchsia_test"}},
                 {"test": {"os": "linux", "path": "host_test_1"}},
@@ -417,7 +423,9 @@ class NinjaBuildWrapTest(unittest.TestCase):
                 checkout_dir="fake_checkout", build_dir=tmp_dir
             )
 
-            stamp_path = os.path.join(tmp_dir, "last_ninja_build_success.stamp")
+            stamp_path = os.path.join(
+                tmp_dir, fint_build.LAST_NINJA_BUILD_SUCCESS_STAMP
+            )
             with open(stamp_path, "w") as f:
                 f.write("old-content")
 
@@ -428,7 +436,9 @@ class NinjaBuildWrapTest(unittest.TestCase):
                 self.assertFalse(os.path.exists(stamp_path))
 
                 # Rebuild sentinel should be touched on incremental builds
-                sentinel = os.path.join(tmp_dir, "force_nonhermetic_rebuild")
+                sentinel = os.path.join(
+                    tmp_dir, fint_build.FORCE_NONHERMETIC_REBUILD_SENTINEL
+                )
                 self.assertTrue(os.path.exists(sentinel))
 
                 run.exit_code = 0
@@ -456,7 +466,7 @@ class NinjaBuildWrapTest(unittest.TestCase):
                 with open(bazel_launcher_path, "w") as f:
                     pass
 
-                # Write actual test_specs.json
+                # Write actual tests.json
                 test_specs_data = [
                     {
                         "test": {
@@ -477,7 +487,9 @@ class NinjaBuildWrapTest(unittest.TestCase):
                         }
                     },
                 ]
-                with open(os.path.join(build_dir, "test_specs.json"), "w") as f:
+                with open(
+                    os.path.join(build_dir, fint_build.TESTS_JSON), "w"
+                ) as f:
                     json.dump(test_specs_data, f)
 
                 static_spec = static_pb2.Static()
@@ -550,7 +562,7 @@ class MainExecutionTest(unittest.TestCase):
 
                 # Verify build_artifacts.json was written to the artifact directory
                 manifest_path = os.path.join(
-                    artifact_dir, "build_artifacts.json"
+                    artifact_dir, fint_build.BUILD_ARTIFACTS_JSON
                 )
                 self.assertTrue(os.path.exists(manifest_path))
 
@@ -584,7 +596,9 @@ class MainExecutionTest(unittest.TestCase):
                 )
                 context_path = context_file.name
 
-            errors_json_path = os.path.join(build_dir, "ninja_errors.json")
+            errors_json_path = os.path.join(
+                build_dir, fint_build.NINJA_ERRORS_JSON
+            )
             mock_errors_data = {
                 "version": 1,
                 "failures": [
@@ -622,7 +636,7 @@ class MainExecutionTest(unittest.TestCase):
 
                 # Verify build_artifacts.json was written to the artifact directory
                 manifest_path = os.path.join(
-                    artifact_dir, "build_artifacts.json"
+                    artifact_dir, fint_build.BUILD_ARTIFACTS_JSON
                 )
                 self.assertTrue(os.path.exists(manifest_path))
 

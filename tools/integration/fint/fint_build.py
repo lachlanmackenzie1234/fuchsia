@@ -67,6 +67,16 @@ from tools.integration.fint.proto import (
 JSONObject = dict[str, Any]
 JSONArray = list[Any]
 
+# Module-scope constants for file names
+BUILD_ARTIFACTS_JSON = "build_artifacts.json"
+NINJA_ERRORS_JSON = "ninja_errors.json"
+TOOL_PATHS_JSON = "tool_paths.json"
+TESTS_JSON = "tests.json"
+GENERATED_SOURCES_JSON = "generated_sources.json"
+PREBUILT_BINARY_SETS_JSON = "prebuilt_binary_sets.json"
+FORCE_NONHERMETIC_REBUILD_SENTINEL = "force_nonhermetic_rebuild"
+LAST_NINJA_BUILD_SUCCESS_STAMP = "last_ninja_build_success.stamp"
+
 
 @dataclass
 class BuildExecution:
@@ -211,7 +221,7 @@ def produce_build_artifacts(
     if failure_summary:
         artifacts.failure_summary = failure_summary
 
-    json_manifest_path = artifact_dir / "build_artifacts.json"
+    json_manifest_path = artifact_dir / BUILD_ARTIFACTS_JSON
     # MessageToJson formats with nice spacing/indentation
     json_data = json_format.MessageToJson(
         artifacts, always_print_fields_with_no_presence=True
@@ -460,12 +470,12 @@ class BuildContext:
     @functools.cached_property
     def tool_paths(self) -> JSONArray:
         """Loads and returns the tool paths config list."""
-        return load_json_list(self.build_dir / "tool_paths.json")
+        return load_json_list(self.build_dir / TOOL_PATHS_JSON)
 
     @functools.cached_property
     def test_specs(self) -> JSONArray:
         """Loads and returns the test specs list."""
-        path = self.build_dir / "test_specs.json"
+        path = self.build_dir / TESTS_JSON
         if not path.exists():
             return []
         return load_json_list(path)
@@ -473,7 +483,7 @@ class BuildContext:
     @functools.cached_property
     def generated_sources(self) -> JSONArray:
         """Loads and returns the generated sources list."""
-        path = self.build_dir / "generated_sources.json"
+        path = self.build_dir / GENERATED_SOURCES_JSON
         if not path.exists():
             return []
         return load_json_list(path)
@@ -481,7 +491,7 @@ class BuildContext:
     @functools.cached_property
     def prebuilt_binary_sets(self) -> JSONArray:
         """Loads and returns the prebuilt binary sets list."""
-        path = self.build_dir / "prebuilt_binary_sets.json"
+        path = self.build_dir / PREBUILT_BINARY_SETS_JSON
         if not path.exists():
             return []
         return load_json_list(path)
@@ -539,7 +549,7 @@ class BuildContext:
         return sorted(list(set(self._stream_all_targets())))
 
     def _build_bazel_host_tests(self) -> None:
-        """Builds Bazel host tests if any are present in test_specs.json."""
+        """Builds Bazel host tests if any are present in tests.json."""
         bazel_labels = []
         for spec in self.test_specs:
             test_spec = spec.get("test", {})
@@ -578,8 +588,10 @@ class BuildContext:
                 "checkout_dir is required in the Context specification"
             )
 
-        rebuild_sentinel_path = self.build_dir / "force_nonhermetic_rebuild"
-        success_stamp_path = self.build_dir / "last_ninja_build_success.stamp"
+        rebuild_sentinel_path = (
+            self.build_dir / FORCE_NONHERMETIC_REBUILD_SENTINEL
+        )
+        success_stamp_path = self.build_dir / LAST_NINJA_BUILD_SUCCESS_STAMP
 
         # Pre-build: Touch rebuild sentinel if incremental
         if self.static_spec.incremental:
