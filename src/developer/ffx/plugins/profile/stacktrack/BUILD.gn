@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//src/developer/ffx/build/ffx_plugin.gni")
+
+if (is_host) {
+  ffx_plugin("ffx_profile_stacktrack") {
+    sdk_category = "not-yet-specified"
+    version = "0.1.0"
+    edition = "2024"
+
+    args_sources = [ "src/args.rs" ]
+    args_deps = [
+      "//src/developer/ffx/core:lib",
+      "//third_party/rust_crates:argh",
+    ]
+
+    sources = [ "src/lib.rs" ]
+    deps = [
+      "common:ffx_profile_stacktrack_common",
+      "//sdk/fidl/fuchsia.memory.stacktrack.client:fuchsia.memory.stacktrack.client_rust_fdomain",
+      "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/lib/fho:lib",
+      "//src/developer/ffx/lib/target/holders:lib",
+      "//src/developer/ffx/lib/writer:lib",
+      "//src/lib/fdomain/client",
+      "//src/performance/memory/stacktrack/lib/stacktrack_snapshot:stacktrack_snapshot_fdomain",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:async-trait",
+    ]
+  }
+
+  group("host_tests") {
+    testonly = true
+    deps = [ "common:ffx_profile_stacktrack_common_test" ]
+  }
+}
