@@ -2541,15 +2541,94 @@ mod tests {
 
         let (_session_proxy, session_server_end) =
             fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
-        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let mapping_vmo = zx::Vmo::create(mapping::MAPPING_VMO_SIZE).unwrap();
         let port = zx::Port::create();
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(mapping::DELIVERY_VMO_SIZE).unwrap();
 
         part_mapper
             .open_session(session_server_end, mapping_vmo, Some(port), Some(delivery_queue))
             .await
             .expect("FIDL open_session failed")
             .expect("open_session returned error");
+
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_mapper_not_supported_without_parent_mapper() {
+        const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
+        const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
+        const PART_NAME: &str = "super";
+
+        let (block_device, partitions_dir) = setup(
+            512,
+            64,
+            vec![PartitionInfo {
+                label: PART_NAME.to_string(),
+                type_guid: Guid::from_bytes(PART_TYPE_GUID),
+                instance_guid: Guid::from_bytes(PART_INSTANCE_GUID),
+                start_block: 8,
+                num_blocks: 16,
+                flags: 0,
+            }],
+        )
+        .await;
+
+        let (block_proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
+        let underlying: fblock::BlockProxy = block_device.connect();
+        let _block_task = fasync::Task::spawn(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                match request {
+                    fblock::BlockRequest::ConnectMapper { responder, .. } => {
+                        let _ = responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()));
+                    }
+                    fblock::BlockRequest::GetInfo { responder } => {
+                        let _ = responder
+                            .send(underlying.get_info().await.unwrap().as_ref().map_err(|s| *s));
+                    }
+                    fblock::BlockRequest::OpenSession { session, .. } => {
+                        let _ = underlying.open_session(session);
+                    }
+                    _ => unimplemented!(),
+                }
+            }
+        });
+
+        let runner = GptManager::new(block_proxy, partitions_dir.clone())
+            .await
+            .expect("load should succeed");
+
+        let part_dir = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+        let part_block =
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_dir, "volume")
+                .expect("Failed to open Block service");
+        let (part_mapper, mapper_server_end) =
+            fidl::endpoints::create_proxy::<fblock::MapperMarker>();
+        part_block
+            .connect_mapper(mapper_server_end)
+            .await
+            .expect("FIDL connect_mapper failed")
+            .expect("connect_mapper returned error");
+
+        let (_session_proxy, session_server_end) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(mapping::MAPPING_VMO_SIZE).unwrap();
+        let port = zx::Port::create();
+        let delivery_queue = zx::Vmo::create(mapping::DELIVERY_VMO_SIZE).unwrap();
+
+        assert_eq!(
+            part_mapper
+                .open_session(session_server_end, mapping_vmo, Some(port), Some(delivery_queue))
+                .await
+                .expect("FIDL open_session failed"),
+            Err(zx::Status::NOT_SUPPORTED.into_raw())
+        );
 
         runner.shutdown().await;
     }
