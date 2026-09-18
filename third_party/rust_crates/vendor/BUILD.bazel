@@ -295,26 +295,26 @@ alias(
 )
 
 alias(
-    name = "bit-set-0.10.0",
-    actual = "//third_party/rust_crates/vendor/bit-set-0.10.0:bit_set",
+    name = "bit-set-0.11.1",
+    actual = "//third_party/rust_crates/vendor/bit-set-0.11.1:bit_set",
     tags = ["manual"],
 )
 
 alias(
     name = "bit-set",
-    actual = "//third_party/rust_crates/vendor/bit-set-0.10.0:bit_set",
+    actual = "//third_party/rust_crates/vendor/bit-set-0.11.1:bit_set",
     tags = ["manual"],
 )
 
 alias(
-    name = "bit-vec-0.9.1",
-    actual = "//third_party/rust_crates/vendor/bit-vec-0.9.1:bit_vec",
+    name = "bit-vec-0.10.1",
+    actual = "//third_party/rust_crates/vendor/bit-vec-0.10.1:bit_vec",
     tags = ["manual"],
 )
 
 alias(
     name = "bit-vec",
-    actual = "//third_party/rust_crates/vendor/bit-vec-0.9.1:bit_vec",
+    actual = "//third_party/rust_crates/vendor/bit-vec-0.10.1:bit_vec",
     tags = ["manual"],
 )
 

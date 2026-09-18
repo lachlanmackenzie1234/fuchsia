@@ -204,19 +204,19 @@ group("bincode-1.3.3") {
 }
 
 group("bit-set") {
-  public_deps = [ ":bit-set-v0_10_0" ]
+  public_deps = [ ":bit-set-v0_11_1" ]
 }
 
-group("bit-set-0.10.0") {
-  public_deps = [ ":bit-set-v0_10_0" ]
+group("bit-set-0.11.1") {
+  public_deps = [ ":bit-set-v0_11_1" ]
 }
 
 group("bit-vec") {
-  public_deps = [ ":bit-vec-v0_9_1" ]
+  public_deps = [ ":bit-vec-v0_10_1" ]
 }
 
-group("bit-vec-0.9.1") {
-  public_deps = [ ":bit-vec-v0_9_1" ]
+group("bit-vec-0.10.1") {
+  public_deps = [ ":bit-vec-v0_10_1" ]
 }
 
 group("bitfield") {
@@ -4529,39 +4529,39 @@ rustc_library("bincode-v1_3_3") {
   applicable_licenses = [ ":bincode-v1_3_3.license" ]
 }
 
-license("bit-set-v0_10_0.license") {
+license("bit-set-v0_11_1.license") {
   public_package_name = "bit_set"
   license_files = [
-    "//third_party/rust_crates/vendor/bit-set-0.10.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bit-set-0.10.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/bit-set-0.11.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bit-set-0.11.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("bit-set-v0_10_0") {
+rustc_library("bit-set-v0_11_1") {
   crate_name = "bit_set"
-  source_root = "//third_party/rust_crates/vendor/bit-set-0.10.0/src/lib.rs"
-  output_name = "bit_set-c69fc60cd3706227"
+  source_root = "//third_party/rust_crates/vendor/bit-set-0.11.1/src/lib.rs"
+  output_name = "bit_set-5fc757cc975f5b94"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bit-vec-v0_9_1" ]
+  deps += [ ":bit-vec-v0_10_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c69fc60cd3706227",
-    "-Cextra-filename=-c69fc60cd3706227",
+    "-Cmetadata=5fc757cc975f5b94",
+    "-Cextra-filename=-5fc757cc975f5b94",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":bit-set-v0_10_0.license" ]
+  applicable_licenses = [ ":bit-set-v0_11_1.license" ]
 }
 
 license("bit-set-v0_5_3.license") {
@@ -4634,6 +4634,43 @@ rustc_library("bit-set-v0_8_0") {
   applicable_licenses = [ ":bit-set-v0_8_0.license" ]
 }
 
+license("bit-vec-v0_10_1.license") {
+  public_package_name = "bit_vec"
+  license_files = [
+    "//third_party/rust_crates/vendor/bit-vec-0.10.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bit-vec-0.10.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("bit-vec-v0_10_1") {
+  crate_name = "bit_vec"
+  source_root = "//third_party/rust_crates/vendor/bit-vec-0.10.1/src/lib.rs"
+  output_name = "bit_vec-eed5292f94fa806"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":borsh-v1_8_1" ]
+  deps += [ ":serde-v1_0_229" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=eed5292f94fa806",
+    "-Cextra-filename=-eed5292f94fa806",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"serde\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bit-vec-v0_10_1.license" ]
+}
+
 license("bit-vec-v0_6_3.license") {
   public_package_name = "bit_vec"
   license_files = [
@@ -4699,42 +4736,6 @@ rustc_library("bit-vec-v0_8_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":bit-vec-v0_8_0.license" ]
-}
-
-license("bit-vec-v0_9_1.license") {
-  public_package_name = "bit_vec"
-  license_files = [
-    "//third_party/rust_crates/vendor/bit-vec-0.9.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bit-vec-0.9.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("bit-vec-v0_9_1") {
-  crate_name = "bit_vec"
-  source_root = "//third_party/rust_crates/vendor/bit-vec-0.9.1/src/lib.rs"
-  output_name = "bit_vec-aa22b5c13cb86996"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":serde-v1_0_229" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=aa22b5c13cb86996",
-    "-Cextra-filename=-aa22b5c13cb86996",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"serde\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":bit-vec-v0_9_1.license" ]
 }
 
 license("bitfield-v0_19_5.license") {
@@ -5015,6 +5016,32 @@ rustc_library("blocking-v1_6_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":blocking-v1_6_2.license" ]
+}
+
+rustc_library("borsh-v1_8_1") {
+  crate_name = "borsh"
+  source_root = "//third_party/rust_crates/empty/borsh/src/lib.rs"
+  output_name = "borsh-6f77ec085ccfbe0"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=6f77ec085ccfbe0",
+    "-Cextra-filename=-6f77ec085ccfbe0",
+    "--cfg=feature=\"derive\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 group("bssl-macros-v0_1_0") {
