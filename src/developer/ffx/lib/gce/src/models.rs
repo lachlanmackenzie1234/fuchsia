@@ -74,7 +74,7 @@ pub struct OperationErrorItem {
 }
 
 /// Represents a GCE virtual machine instance.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Instance {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,7 +82,11 @@ pub struct Instance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machine_type: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disks: Vec<AttachedDisk>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub network_interfaces: Vec<NetworkInterface>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,32 +112,88 @@ impl Instance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachedDisk {
+    #[serde(default)]
+    pub boot: bool,
+    #[serde(default)]
+    pub auto_delete: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initialize_params: Option<AttachedDiskInitializeParams>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachedDiskInitializeParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disk_size_gb: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkInterface {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
     #[serde(rename = "networkIP", alias = "networkIp", skip_serializing_if = "Option::is_none")]
     pub network_ip: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub access_configs: Vec<AccessConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nic_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessConfig {
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub access_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     #[serde(rename = "natIP", alias = "natIp", skip_serializing_if = "Option::is_none")]
     pub nat_ip: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Metadata {
+    #[serde(default)]
+    pub items: Vec<MetadataItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataItem {
+    pub key: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub value: String,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Default + Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
 /// Represents the list response from GET /compute/v1/projects/{project}/zones/{zone}/instances.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InstanceList {
     #[serde(default)]
     pub items: Vec<Instance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_page_token: Option<String>,
 }
 
 /// Represents serial port output returned by GCE REST API.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SerialPortOutput {
     #[serde(default)]
@@ -157,8 +217,50 @@ where
     s.parse::<i64>().map_err(serde::de::Error::custom)
 }
 
+/// Represents a GCE firewall rule.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallRule {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_ranges: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed: Vec<FirewallAllowed>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallAllowed {
+    #[serde(rename = "IPProtocol")]
+    pub ip_protocol: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ports: Vec<String>,
+}
+
+/// Result returned by `ffx gce start` in machine-readable output format.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StartResult {
+    pub name: String,
+    pub project: String,
+    pub zone: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub internal_ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_port: Option<u16>,
+}
+
 /// Result returned by `ffx gce stop` in machine-readable output format.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StopResult {
     pub name: String,
@@ -225,6 +327,25 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_instance_ip_extraction() {
+        let instance = Instance {
+            name: Some("test-vm".to_string()),
+            network_interfaces: vec![NetworkInterface {
+                network_ip: Some("10.128.0.5".to_string()),
+                access_configs: vec![AccessConfig {
+                    nat_ip: Some("34.120.10.20".to_string()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(instance.internal_ip(), Some("10.128.0.5"));
+        assert_eq!(instance.external_ip(), Some("34.120.10.20"));
+    }
+
+    #[fuchsia::test]
     fn test_operation_deserialization() {
         let json = r#"{
             "id": "123456789",
@@ -236,6 +357,65 @@ mod tests {
         let op: Operation = serde_json::from_str(json).expect("deserialize operation");
         assert_eq!(op.name.as_deref(), Some("operation-123"));
         assert_eq!(op.status.as_deref(), Some("DONE"));
+    }
+
+    #[fuchsia::test]
+    fn test_firewall_rule_serialization() {
+        let rule = FirewallRule {
+            name: "allow-ssh-ingress-default".to_string(),
+            network: Some("global/networks/default".to_string()),
+            source_ranges: vec!["172.253.30.0/23".to_string()],
+            allowed: vec![FirewallAllowed {
+                ip_protocol: "tcp".to_string(),
+                ports: vec!["22".to_string()],
+            }],
+            direction: Some("INGRESS".to_string()),
+            priority: Some(1000),
+        };
+
+        let json = serde_json::to_string(&rule).expect("serialize firewall rule");
+        assert!(json.contains("\"IPProtocol\":\"tcp\""));
+        assert!(json.contains("\"172.253.30.0/23\""));
+        assert!(json.contains("\"direction\":\"INGRESS\""));
+        let parsed: FirewallRule = serde_json::from_str(&json).expect("deserialize firewall rule");
+        assert_eq!(parsed, rule);
+    }
+
+    #[fuchsia::test]
+    fn test_metadata_item_deserialization() {
+        let with_val: MetadataItem =
+            serde_json::from_str(r#"{"key": "serial-port-enable", "value": "1"}"#).unwrap();
+        assert_eq!(with_val.key, "serial-port-enable");
+        assert_eq!(with_val.value, "1");
+
+        let missing_val: MetadataItem =
+            serde_json::from_str(r#"{"key": "serial-port-enable"}"#).unwrap();
+        assert_eq!(missing_val.key, "serial-port-enable");
+        assert_eq!(missing_val.value, "");
+
+        let null_val: MetadataItem =
+            serde_json::from_str(r#"{"key": "serial-port-enable", "value": null}"#).unwrap();
+        assert_eq!(null_val.key, "serial-port-enable");
+        assert_eq!(null_val.value, "");
+    }
+
+    #[fuchsia::test]
+    fn test_start_result_serialization() {
+        let result = StartResult {
+            name: "test-vm".to_string(),
+            project: "test-proj".to_string(),
+            zone: "us-central1-a".to_string(),
+            status: "RUNNING".to_string(),
+            internal_ip: Some("10.128.0.2".to_string()),
+            external_ip: Some("34.120.10.20".to_string()),
+            ssh_port: Some(12345),
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize start result");
+        assert!(json.contains("\"internalIp\":\"10.128.0.2\""));
+        assert!(json.contains("\"sshPort\":12345"));
+        let parsed: StartResult = serde_json::from_str(&json).expect("deserialize start result");
+        assert_eq!(parsed, result);
     }
 
     #[fuchsia::test]

@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::models::{Image, Instance, InstanceList, Operation, SerialPortOutput};
+use crate::models::{
+    FirewallAllowed, FirewallRule, Image, Instance, InstanceList, Operation, SerialPortOutput,
+};
 use anyhow::{Context, Result, bail};
 use fuchsia_hyper::{HttpsClient, new_https_client};
 use http_body_util::BodyExt;
@@ -33,6 +35,15 @@ const GCS_UPLOAD_MAX_RETRIES: u32 = 3;
 
 /// Delay between retry attempts for a failed GCS upload chunk.
 const GCS_UPLOAD_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+/// Google-internal Cloud Uberproxy IPv4 CIDR block used for SSH ingress to GCE VMs.
+///
+/// Note: External GCP environments or connections via Cloud Identity-Aware Proxy (IAP,
+/// which uses `35.235.240.0/20`) require different source ranges; this could be made
+/// configurable via `ffx config` in the future.
+const SSH_INGRESS_SOURCE_RANGE: &str = "172.253.30.0/23";
+const SSH_PORT: &str = "22";
+const DEFAULT_FIREWALL_PRIORITY: u32 = 1000;
 
 /// High-level client for interacting with Google Compute Engine (GCE) and
 /// Google Cloud Storage (GCS) APIs.
@@ -85,6 +96,15 @@ impl GceClient {
         Ok(list.items)
     }
 
+    pub async fn insert_instance(
+        &self,
+        project: &str,
+        zone: &str,
+        instance: &Instance,
+    ) -> Result<Operation> {
+        self.http.post_json(endpoints::instances(project, zone)?, instance).await
+    }
+
     pub async fn delete_instance(
         &self,
         project: &str,
@@ -101,6 +121,15 @@ impl GceClient {
         instance_name: &str,
     ) -> Result<Operation> {
         self.http.post_empty_json(endpoints::stop_instance(project, zone, instance_name)?).await
+    }
+
+    pub async fn start_instance(
+        &self,
+        project: &str,
+        zone: &str,
+        instance_name: &str,
+    ) -> Result<Operation> {
+        self.http.post_empty_json(endpoints::start_instance(project, zone, instance_name)?).await
     }
 
     pub async fn get_global_operation(&self, project: &str, op_name: &str) -> Result<Operation> {
@@ -157,6 +186,60 @@ impl GceClient {
         self.wait_for_operation(|| self.get_zone_operation(project, zone, op_name)).await
     }
 
+    pub async fn get_firewall_rule(&self, project: &str, rule_name: &str) -> Result<FirewallRule> {
+        self.http.get_json(endpoints::firewall_rule(project, rule_name)?).await
+    }
+
+    pub async fn insert_firewall_rule(
+        &self,
+        project: &str,
+        rule: &FirewallRule,
+    ) -> Result<Operation> {
+        self.http.post_json(endpoints::firewalls(project)?, rule).await
+    }
+
+    /// Best-effort helper to ensure a firewall ingress rule allowing SSH traffic exists for `network`.
+    ///
+    /// If checking or creating the firewall rule fails (for example, when the caller lacks
+    /// `compute.firewalls.create` IAM permissions), a warning is logged and `Ok(())` is returned
+    /// so VM connection attempts can still proceed if a rule was pre-provisioned.
+    pub async fn ensure_ssh_firewall_rule(&self, project: &str, network: &str) -> Result<()> {
+        let rule_name = ssh_firewall_rule_name(network);
+
+        if self.get_firewall_rule(project, &rule_name).await.is_ok() {
+            return Ok(());
+        }
+
+        let trimmed_network = network.trim_matches('/');
+        let rule = FirewallRule {
+            name: rule_name.clone(),
+            network: Some(
+                if trimmed_network.starts_with("global/networks/")
+                    || trimmed_network.starts_with("projects/")
+                    || trimmed_network.starts_with("https://")
+                {
+                    trimmed_network.to_string()
+                } else {
+                    let net_name =
+                        if trimmed_network.is_empty() { "default" } else { trimmed_network };
+                    format!("global/networks/{net_name}")
+                },
+            ),
+            source_ranges: vec![SSH_INGRESS_SOURCE_RANGE.to_string()],
+            allowed: vec![FirewallAllowed {
+                ip_protocol: "tcp".to_string(),
+                ports: vec![SSH_PORT.to_string()],
+            }],
+            direction: Some("INGRESS".to_string()),
+            priority: Some(DEFAULT_FIREWALL_PRIORITY),
+        };
+
+        if let Err(e) = self.insert_firewall_rule(project, &rule).await {
+            log::warn!("Failed to insert SSH firewall rule {rule_name}: {e:?}");
+        }
+        Ok(())
+    }
+
     /// Ensures the specified GCS bucket exists by attempting to create it directly
     /// and treating `409 Conflict` (already exists) as success.
     pub async fn ensure_bucket(&self, project: &str, bucket: &str) -> Result<()> {
@@ -209,6 +292,16 @@ impl GceClient {
         let url = endpoints::delete_gcs_object(bucket, object_name)?;
         self.http.delete_raw(url, &[StatusCode::NOT_FOUND]).await
     }
+}
+
+fn ssh_firewall_rule_name(network: &str) -> String {
+    let network_suffix = network
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("default");
+    format!("allow-ssh-ingress-{network_suffix}")
 }
 
 /// Reads from `reader` until `buf` is completely filled or EOF is reached.
@@ -519,14 +612,26 @@ mod endpoints {
         build_url(COMPUTE_BASE, &["projects", project, "global", "images", image_name], &[])
     }
 
-    pub fn list_instances(project: &str, zone: &str) -> Result<Url> {
+    pub fn instances(project: &str, zone: &str) -> Result<Url> {
         build_url(COMPUTE_BASE, &["projects", project, "zones", zone, "instances"], &[])
+    }
+
+    pub fn list_instances(project: &str, zone: &str) -> Result<Url> {
+        instances(project, zone)
     }
 
     pub fn instance(project: &str, zone: &str, instance_name: &str) -> Result<Url> {
         build_url(
             COMPUTE_BASE,
             &["projects", project, "zones", zone, "instances", instance_name],
+            &[],
+        )
+    }
+
+    pub fn start_instance(project: &str, zone: &str, instance_name: &str) -> Result<Url> {
+        build_url(
+            COMPUTE_BASE,
+            &["projects", project, "zones", zone, "instances", instance_name, "start"],
             &[],
         )
     }
@@ -565,6 +670,14 @@ mod endpoints {
 
     pub fn zone_operation(project: &str, zone: &str, op_name: &str) -> Result<Url> {
         build_url(COMPUTE_BASE, &["projects", project, "zones", zone, "operations", op_name], &[])
+    }
+
+    pub fn firewalls(project: &str) -> Result<Url> {
+        build_url(COMPUTE_BASE, &["projects", project, "global", "firewalls"], &[])
+    }
+
+    pub fn firewall_rule(project: &str, rule_name: &str) -> Result<Url> {
+        build_url(COMPUTE_BASE, &["projects", project, "global", "firewalls", rule_name], &[])
     }
 
     pub fn create_bucket(project: &str) -> Result<Url> {
@@ -645,6 +758,15 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_start_instance_url_construction() {
+        let url = endpoints::start_instance("test-p", "test-z", "test-inst").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst/start"
+        );
+    }
+
+    #[fuchsia::test]
     fn test_stop_instance_url_construction() {
         let url = endpoints::stop_instance("test-p", "test-z", "test-inst").unwrap();
         assert_eq!(
@@ -677,6 +799,24 @@ mod tests {
         assert_eq!(
             url.as_str(),
             "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/operations/operation-123"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_firewall_rule_url_construction() {
+        let url = endpoints::firewall_rule("test-p", "test-firewall").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/global/firewalls/test-firewall"
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_firewalls_url_construction() {
+        let url = endpoints::firewalls("test-p").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/global/firewalls"
         );
     }
 
@@ -820,5 +960,20 @@ mod tests {
         .expect("empty upload should succeed");
 
         assert_eq!(*recorded.borrow(), vec![("bytes */0".to_string(), 0, true)]);
+    }
+
+    #[fuchsia::test]
+    fn test_ssh_firewall_rule_name() {
+        assert_eq!(super::ssh_firewall_rule_name("default"), "allow-ssh-ingress-default");
+        assert_eq!(
+            super::ssh_firewall_rule_name("global/networks/default"),
+            "allow-ssh-ingress-default"
+        );
+        assert_eq!(
+            super::ssh_firewall_rule_name("global/networks/custom-net/"),
+            "allow-ssh-ingress-custom-net"
+        );
+        assert_eq!(super::ssh_firewall_rule_name(""), "allow-ssh-ingress-default");
+        assert_eq!(super::ssh_firewall_rule_name("///"), "allow-ssh-ingress-default");
     }
 }

@@ -4,10 +4,11 @@
 
 use crate::args::SerialCommand;
 use async_trait::async_trait;
+use discovery::gce_watcher;
 use ffx_config::EnvironmentContext;
 use ffx_gce::GceContext;
 use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool, Result, return_user_error};
+use fho::{FfxMain, FfxTool, Result, return_user_error, user_error};
 use std::io::Write;
 use std::time::Duration;
 
@@ -24,10 +25,14 @@ impl FfxMain for SerialTool {
     type Error = fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
+        gce_watcher::Instance::validate_name(&self.cmd.name).map_err(|e| user_error!("{e}"))?;
+
         let gce = match GceContext::new(self.context, self.cmd.project, self.cmd.zone).await {
             Ok(c) => c,
             Err(e) => return_user_error!("{e}"),
         };
+        let instance = gce_watcher::Instance::new(&gce.project, &gce.zone, &self.cmd.name)
+            .map_err(|e| user_error!("{e}"))?;
 
         let mut current_offset = self.cmd.start;
 
@@ -35,9 +40,9 @@ impl FfxMain for SerialTool {
             let had_new_data = match gce
                 .client
                 .get_serial_port_output(
-                    &gce.project,
-                    &gce.zone,
-                    &self.cmd.name,
+                    &instance.project,
+                    &instance.zone,
+                    &instance.name,
                     self.cmd.port,
                     current_offset,
                 )

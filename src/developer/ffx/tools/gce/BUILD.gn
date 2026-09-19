@@ -17,7 +17,6 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/gce:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
