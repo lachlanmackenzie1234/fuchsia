@@ -18,9 +18,11 @@ if (is_host) {
       "//src/developer/lib/uart_fpl",
       "//src/lib/fuchsia-async",
       "//third_party/rust_crates:nix",
+      "//third_party/rust_crates:rand",
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
       "//third_party/rust_crates:tempfile",
+      "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:tokio",
       "//third_party/rust_crates:tracing",
     ]
@@ -33,6 +35,7 @@ if (is_host) {
     sources = [
       "src/lib.rs",
       "src/metadata.rs",
+      "src/stream.rs",
       "src/sys.rs",
     ]
   }

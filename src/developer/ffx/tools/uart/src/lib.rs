@@ -9,8 +9,11 @@
 
 /// Connection metadata resolution and persistence for active UART targets.
 pub mod metadata;
+/// Asynchronous stream abstractions and connection helpers for UART devices.
+pub mod stream;
 /// Host process inspection, peer PID discovery, and daemon liveness checking.
 pub mod sys;
 
 pub use metadata::*;
+pub use stream::*;
 pub use sys::*;
