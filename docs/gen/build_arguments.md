@@ -206,7 +206,7 @@ The list of environment names to include in "basic_envs".
 
 **Current value (from the default):** `["emu"]`
 
-From //build/testing/environments.gni:9
+From //build/testing/environments.gni:7
 
 ### bazel_auto_refresh_compdb
 
@@ -951,10 +951,10 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
