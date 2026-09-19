@@ -230,12 +230,17 @@ impl InputEventsRelay {
             let mut mouse_future = mouse_waking_stream.next();
 
             // keyboard
-            let (mut default_keyboard_device, mut keyboard_event_stream) = setup_keyboard_relay(
-                keyboard,
-                view_ref,
-                default_keyboard_device_opened_files.clone(),
-                default_keyboard_device_inspect.clone(),
-            );
+            // `_keyboard_proxy` is load-bearing despite being unused: it holds the channel to
+            // text_manager open for the lifetime of the relay loop below. Dropping it closes
+            // the channel, which deregisters our `KeyboardListener` and silently stops all
+            // key delivery. Do not remove it as an unused binding.
+            let (mut default_keyboard_device, mut keyboard_event_stream, _keyboard_proxy) =
+                setup_keyboard_relay(
+                    keyboard,
+                    view_ref,
+                    default_keyboard_device_opened_files.clone(),
+                    default_keyboard_device_inspect.clone(),
+                );
 
             // button
             let (
@@ -522,11 +527,52 @@ impl InputEventsRelay {
                     None => default_keyboard_device,
                 };
 
+                // These counters are denominated in FIDL events, not uapi events: the
+                // documented invariant is received = ignored + unexpected + converted (see
+                // `InputDeviceStatus`). One FIDL key event converts to several uapi events
+                // (the key itself plus a SYN), so only the *generated* counters take
+                // `new_events.len()`.
+                let (converted_events, ignored_events, generated_events) = match new_events.len() {
+                    0 => (0u64, 1u64, 0u64),
+                    len => (1u64, 0u64, len as u64),
+                };
+                let last_time = event.timestamp.unwrap_or(0);
+
+                if let Some(dev_inspect_status) = &dev.inspect_status {
+                    dev_inspect_status.count_total_received_events(1);
+                    dev_inspect_status.count_total_ignored_events(ignored_events);
+                    dev_inspect_status.count_total_converted_events(converted_events);
+                    // Guarded because `count_total_generated_events` *stores* the timestamp:
+                    // calling it with a count of 0 would move
+                    // `last_generated_uapi_event_timestamp_ns` on an event that generated
+                    // nothing.
+                    if generated_events > 0 {
+                        dev_inspect_status
+                            .count_total_generated_events(generated_events, last_time);
+                    }
+                } else {
+                    log_warn!("unable to record inspect for keyboard device");
+                }
+
                 dev.open_files.lock().retain(|f| {
                     let Some(file) = f.upgrade() else {
                         log_warn!("Dropping input file for keyboard that failed to upgrade");
                         return false;
                     };
+                    match &file.inspect_status {
+                        Some(file_inspect_status) => {
+                            file_inspect_status.count_received_events(1);
+                            file_inspect_status.count_ignored_events(ignored_events);
+                            file_inspect_status.count_converted_events(converted_events);
+                            if generated_events > 0 {
+                                file_inspect_status
+                                    .count_generated_events(generated_events, last_time);
+                            }
+                        }
+                        None => {
+                            log_warn!("unable to record inspect within the input file")
+                        }
+                    }
                     if !new_events.is_empty() {
                         file.add_events(new_events.clone().into_iter().collect());
                     }
@@ -910,7 +956,7 @@ fn setup_keyboard_relay(
     view_ref: fuiviews::ViewRef,
     default_keyboard_device_opened_files: OpenedFiles,
     device_inspect_status: Option<Arc<InputDeviceStatus>>,
-) -> (DeviceState, KeyboardListenerRequestStream) {
+) -> (DeviceState, KeyboardListenerRequestStream, KeyboardSynchronousProxy) {
     let default_keyboard_device = DeviceState {
         device_type: InputDeviceType::Keyboard,
         open_files: default_keyboard_device_opened_files,
@@ -918,11 +964,13 @@ fn setup_keyboard_relay(
     };
     let (keyboard_listener, event_stream) =
         fidl::endpoints::create_request_stream::<KeyboardListenerMarker>();
-    if keyboard.add_listener(view_ref, keyboard_listener, zx::MonotonicInstant::INFINITE).is_err() {
-        log_warn!("Could not register keyboard listener");
+    if let Err(e) =
+        keyboard.add_listener(view_ref, keyboard_listener, zx::MonotonicInstant::INFINITE)
+    {
+        log_warn!("Could not register keyboard listener: {:?}", e);
     }
 
-    (default_keyboard_device, event_stream)
+    (default_keyboard_device, event_stream, keyboard)
 }
 
 fn setup_button_relay(

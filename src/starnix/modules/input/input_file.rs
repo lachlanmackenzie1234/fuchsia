@@ -21,9 +21,9 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_EXTRA,
     BTN_LEFT, BTN_MIDDLE, BTN_MISC, BTN_RIGHT, BTN_SIDE, BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT,
-    INPUT_PROP_DIRECT, INPUT_PROP_POINTER, KEY_CNT, KEY_DOWN, KEY_LEFT, KEY_POWER, KEY_RIGHT,
-    KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, KEY_VOLUMEUP, LED_CNT, MSC_CNT, REL_CNT, REL_HWHEEL,
-    REL_WHEEL, REL_X, REL_Y, SW_CNT, errno, error, uapi,
+    INPUT_PROP_DIRECT, INPUT_PROP_POINTER, KEY_CNT, KEY_DOWN, KEY_LEFT, KEY_OK, KEY_POWER,
+    KEY_RIGHT, KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, KEY_VOLUMEUP, LED_CNT, MSC_CNT, REL_CNT,
+    REL_HWHEEL, REL_WHEEL, REL_X, REL_Y, SW_CNT, errno, error, uapi,
 };
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -331,6 +331,18 @@ fn touch_properties() -> BitSet<{ min_bytes(INPUT_PROP_CNT) }> {
 /// Returns appropriate `KEY`-board related flags for a keyboard device.
 fn keyboard_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     let mut attrs = BitSet::new();
+    for keycode in starnix_modules_input_event_conversion::keymap::KEY_MAP.all_linux_keycodes() {
+        // `KEY_MAP` also carries a block of test-only keycodes (see b/311425670), 31 of which
+        // fall in the `BTN_*` range. Advertising those would make evdev clients classify this
+        // device as a gamepad in addition to a keyboard, which is the opposite of what this
+        // capability list is for. No real `KEY_*` constant lives in `BTN_MISC..KEY_OK`.
+        if keycode >= BTN_MISC && keycode < KEY_OK {
+            continue;
+        }
+        if (keycode as usize) < KEY_CNT as usize {
+            attrs.set(keycode);
+        }
+    }
     attrs.set(BTN_MISC);
     attrs.set(KEY_POWER);
     attrs.set(KEY_VOLUMEUP);
@@ -934,6 +946,42 @@ impl<const NUM_BYTES: usize> BitSet<{ NUM_BYTES }> {
 mod tests {
     use super::*;
     use std::sync::atomic::Ordering;
+
+    #[test]
+    fn test_keyboard_input_file_attributes() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let node = inspector.root();
+        let keyboard_file = InputFile::new_keyboard(
+            uapi::input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+            node,
+        );
+
+        // Event types: EV_KEY
+        assert!(keyboard_file.supported_event_types.get(uapi::EV_KEY));
+        assert!(!keyboard_file.supported_event_types.get(uapi::EV_REL));
+        assert!(!keyboard_file.supported_event_types.get(uapi::EV_ABS));
+
+        // Mapped Linux keys from KEY_MAP
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_A));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_Z));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_1));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_ENTER));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_SPACE));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_ESC));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_TAB));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_BACKSPACE));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_LEFTSHIFT));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_LEFTCTRL));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_LEFTALT));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_POWER));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_VOLUMEUP));
+        assert!(keyboard_file.supported_keys.get(uapi::KEY_VOLUMEDOWN));
+        assert!(keyboard_file.supported_keys.get(uapi::BTN_MISC));
+
+        // Properties: INPUT_PROP_DIRECT
+        assert!(keyboard_file.properties.get(uapi::INPUT_PROP_DIRECT));
+        assert!(!keyboard_file.properties.get(uapi::INPUT_PROP_POINTER));
+    }
 
     #[test]
     fn test_read_events_no_notify_when_buffer_full() {

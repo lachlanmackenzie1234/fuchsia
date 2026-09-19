@@ -223,6 +223,7 @@ TEST(InputTest, DevicePropertiesMatchKeyboardProperties) {
         << "get supported keys failed: " << strerror(errno);
     ASSERT_TRUE(get_bit(buf, BTN_MISC)) << " BTN_MISC not supported (but should be)";
     ASSERT_TRUE(get_bit(buf, KEY_POWER)) << " KEY_POWER not supported (but should be)";
+    ASSERT_TRUE(get_bit(buf, KEY_A)) << " KEY_A not supported (but should be)";
   }
 
   // Getting the supported absolute position attributes must succeed, but Keyboard should
