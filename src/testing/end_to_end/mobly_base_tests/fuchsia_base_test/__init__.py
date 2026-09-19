@@ -192,6 +192,10 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             switch, outlet = self._lookup_power_switch(device)
             if switch is not None:
                 device.set_power_switch(power_switch=switch, outlet=outlet)
+
+            hub, port = self._lookup_usb_power_hub(device)
+            if hub is not None:
+                device.set_usb_power_hub(usb_power_hub=hub, port=port)
         if (
             self.tracing_on == TracingOn.TEARDOWN_CLASS
             or self.tracing_on == TracingOn.TEARDOWN_CLASS_ON_FAIL
@@ -524,7 +528,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
     def _lookup_usb_power_hub(
         self, fx_device: fuchsia_device.FuchsiaDevice
-    ) -> tuple[usb_power_hub.UsbPowerHub, int | None]:
+    ) -> tuple[usb_power_hub.UsbPowerHub | None, int | None]:
         device_config: dict[str, object] = self._get_device_config(
             controller_type="FuchsiaDevice",
             identifier_key="name",
@@ -548,13 +552,15 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 usb_power_hub_class(**usb_power_hub_hw),
                 usb_power_hub_port,
             )
-        else:
+        elif usb_power_hub_using_dmc.DMC_PATH_KEY in os.environ:
             return (
                 usb_power_hub_using_dmc.UsbPowerHubUsingDmc(
                     device_name=fx_device.device_name,
                 ),
                 None,
             )
+        else:
+            return (None, None)
 
     async def _log_message_to_devices(
         self, message: str, level: custom_types.LEVEL
