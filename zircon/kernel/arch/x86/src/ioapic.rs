@@ -366,19 +366,12 @@ pub unsafe extern "C" fn apic_io_init(
     overrides: *const IoApicIsaOverride,
     num_overrides: usize,
 ) {
-    let io_apic_descs = if num_io_apic_descs > 0 {
-        // SAFETY: `io_apic_descs` points to a valid array of size `num_io_apic_descs` provided by
-        // early boot.
-        unsafe { core::slice::from_raw_parts(io_apic_descs, num_io_apic_descs) }
-    } else {
-        &[]
-    };
-    let overrides = if num_overrides > 0 {
-        // SAFETY: `overrides` points to a valid array of size `num_overrides` provided by early boot.
-        unsafe { core::slice::from_raw_parts(overrides, num_overrides) }
-    } else {
-        &[]
-    };
+    // SAFETY: The caller guarantees `io_apic_descs` points to `num_io_apic_descs` initialized
+    // descriptors whenever `num_io_apic_descs > 0`.
+    let io_apic_descs = unsafe { zr::slice_from_raw_parts(io_apic_descs, num_io_apic_descs) };
+    // SAFETY: The caller guarantees `overrides` points to `num_overrides` initialized entries
+    // whenever `num_overrides > 0`.
+    let overrides = unsafe { zr::slice_from_raw_parts(overrides, num_overrides) };
     apic_io_init_safe(io_apic_descs, overrides);
 }
 

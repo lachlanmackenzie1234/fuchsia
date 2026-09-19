@@ -158,7 +158,6 @@ pub const unsafe fn slice_from_raw_parts<'a, T>(data: *const T, len: usize) -> &
     if len == 0 {
         &[]
     } else {
-        debug_assert!(!data.is_null());
         // SAFETY: `len > 0`, and the caller guarantees `data` is valid for `len` elements.
         unsafe { core::slice::from_raw_parts(data, len) }
     }
@@ -179,7 +178,6 @@ pub const unsafe fn slice_from_raw_parts_mut<'a, T>(data: *mut T, len: usize) ->
     if len == 0 {
         &mut []
     } else {
-        debug_assert!(!data.is_null());
         // SAFETY: `len > 0`, and the caller guarantees `data` is uniquely valid for `len` elements.
         unsafe { core::slice::from_raw_parts_mut(data, len) }
     }
