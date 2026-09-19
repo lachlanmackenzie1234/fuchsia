@@ -16,6 +16,7 @@ pub use image::{
     package_gce_tar_gz,
 };
 pub use models::{
-    Instance, InstanceList, NetworkInterface, Operation, SerialPortOutput, StopResult,
+    GuestOsFeature, Image, Instance, InstanceList, NetworkInterface, Operation, RawDisk,
+    SerialPortOutput, StopResult,
 };
 pub use tunnel::{GceTunnel, GceTunnelConfig, read_gce_ssh_pubkey, read_gce_ssh_pubkeys};

@@ -50,6 +50,22 @@ impl GceContext {
         Ok(Self { env_context, project, zone, client })
     }
 
+    /// Resolves the GCS bucket to use for storing custom images.
+    pub fn resolve_bucket(&self, bucket_flag: Option<&str>) -> String {
+        bucket_flag
+            .map(str::trim)
+            .filter(|b| !b.is_empty())
+            .map(str::to_owned)
+            .or_else(|| {
+                self.env_context
+                    .get("gce.bucket")
+                    .ok()
+                    .map(|b: String| b.trim().to_owned())
+                    .filter(|b| !b.is_empty())
+            })
+            .unwrap_or_else(|| format!("{}-fuchsia-images", self.project))
+    }
+
     /// Derives the GCE SSH serial port gateway endpoint for this context's zone.
     /// e.g. "us-central1-a" -> "us-central1-ssh-serialport.googleapis.com:9600"
     pub fn serial_endpoint(&self) -> String {
@@ -154,7 +170,7 @@ mod tests {
         assert_eq!(ctx.env_context.get::<String, _>("gce.project").ok(), Some("".to_string()));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_serial_endpoint() {
         assert_eq!(
             get_serial_endpoint("us-central1-a"),
@@ -164,5 +180,52 @@ mod tests {
             get_serial_endpoint("europe-west1-b"),
             "europe-west1-ssh-serialport.googleapis.com:9600"
         );
+    }
+
+    #[fuchsia::test]
+    fn test_resolve_bucket() {
+        let env = ffx_config::test_init().expect("test env");
+        let ctx = GceContext {
+            env_context: env.context.clone(),
+            project: "my-gcp-project".to_string(),
+            zone: "us-central1-a".to_string(),
+            client: GceClient::new("token".to_string()),
+        };
+
+        // Flag takes precedence
+        assert_eq!(ctx.resolve_bucket(Some("custom-bucket")), "custom-bucket");
+        assert_eq!(ctx.resolve_bucket(Some("  custom-bucket  ")), "custom-bucket");
+
+        // Whitespace-only or empty flag falls back to default when config is unset
+        assert_eq!(ctx.resolve_bucket(Some("   ")), "my-gcp-project-fuchsia-images");
+        assert_eq!(ctx.resolve_bucket(None), "my-gcp-project-fuchsia-images");
+
+        // Config fallback takes precedence over default
+        let configured_env = ffx_config::test_env()
+            .user_config("gce.bucket", "configured-bucket")
+            .build()
+            .expect("configured test env");
+        let configured_ctx = GceContext {
+            env_context: configured_env.context.clone(),
+            project: "my-gcp-project".to_string(),
+            zone: "us-central1-a".to_string(),
+            client: GceClient::new("token".to_string()),
+        };
+        assert_eq!(configured_ctx.resolve_bucket(None), "configured-bucket");
+        assert_eq!(configured_ctx.resolve_bucket(Some("   ")), "configured-bucket");
+        assert_eq!(configured_ctx.resolve_bucket(Some("flag-override")), "flag-override");
+
+        // Whitespace-only config falls back to default
+        let whitespace_env = ffx_config::test_env()
+            .user_config("gce.bucket", "   ")
+            .build()
+            .expect("whitespace test env");
+        let whitespace_ctx = GceContext {
+            env_context: whitespace_env.context.clone(),
+            project: "my-gcp-project".to_string(),
+            zone: "us-central1-a".to_string(),
+            client: GceClient::new("token".to_string()),
+        };
+        assert_eq!(whitespace_ctx.resolve_bucket(None), "my-gcp-project-fuchsia-images");
     }
 }

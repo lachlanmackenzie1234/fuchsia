@@ -4,6 +4,75 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Represents a GCE custom image object.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Image {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_disk: Option<RawDisk>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guest_os_features: Vec<GuestOsFeature>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub self_link: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RawDisk {
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GuestOsFeature {
+    #[serde(rename = "type")]
+    pub feature_type: String,
+}
+
+/// Represents an operation returned by asynchronous GCE API calls.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Operation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<OperationError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub self_link: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationError {
+    #[serde(default)]
+    pub errors: Vec<OperationErrorItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationErrorItem {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 /// Represents a GCE virtual machine instance.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -88,42 +157,6 @@ where
     s.parse::<i64>().map_err(serde::de::Error::custom)
 }
 
-/// Represents a GCE asynchronous operation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Operation {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub operation_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_link: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<OperationError>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct OperationError {
-    #[serde(default)]
-    pub errors: Vec<OperationErrorItem>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct OperationErrorItem {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub location: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
-}
-
 /// Result returned by `ffx gce stop` in machine-readable output format.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -138,7 +171,7 @@ pub struct StopResult {
 mod tests {
     use super::*;
 
-    #[test]
+    #[fuchsia::test]
     fn test_deserialize_instance_list() {
         let json_str = r#"{
             "items": [
@@ -169,14 +202,14 @@ mod tests {
         assert_eq!(inst.external_ip(), Some("35.200.100.50"));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_empty_instance_list() {
         let json_str = r#"{}"#;
         let list: InstanceList = serde_json::from_str(json_str).expect("parsed empty list");
         assert!(list.items.is_empty());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_serial_port_output_deserialization() {
         let json_str = r#"{"contents": "world", "start": "10", "next": "20"}"#;
         let spo: SerialPortOutput = serde_json::from_str(json_str).unwrap();
@@ -185,13 +218,13 @@ mod tests {
         assert_eq!(spo.next, 20);
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_serial_port_output_rejects_numeric_literal() {
         let json_int = r#"{"contents": "hello", "start": 0, "next": 10}"#;
         assert!(serde_json::from_str::<SerialPortOutput>(json_int).is_err());
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_operation_deserialization() {
         let json = r#"{
             "id": "123456789",
@@ -205,7 +238,7 @@ mod tests {
         assert_eq!(op.status.as_deref(), Some("DONE"));
     }
 
-    #[test]
+    #[fuchsia::test]
     fn test_stop_result_serialization() {
         let result = StopResult {
             name: "test-vm".to_string(),
@@ -218,5 +251,40 @@ mod tests {
         assert!(json.contains("\"action\":\"stopped\""));
         let parsed: StopResult = serde_json::from_str(&json).expect("deserialize stop result");
         assert_eq!(parsed, result);
+    }
+
+    #[fuchsia::test]
+    fn test_image_serialization_roundtrip() {
+        let image = Image {
+            name: Some("fuchsia-test-img".to_string()),
+            raw_disk: Some(RawDisk {
+                source: "https://storage.googleapis.com/b/disk.tar.gz".to_string(),
+            }),
+            guest_os_features: vec![GuestOsFeature {
+                feature_type: "VIRTIO_SCSI_MULTIQUEUE".to_string(),
+            }],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&image).expect("serialize image");
+        assert!(json.contains("\"rawDisk\":{\"source\":"));
+        assert!(json.contains("\"guestOsFeatures\":[{\"type\":\"VIRTIO_SCSI_MULTIQUEUE\"}]"));
+        let parsed: Image = serde_json::from_str(&json).expect("deserialize image");
+        assert_eq!(parsed, image);
+    }
+
+    #[fuchsia::test]
+    fn test_operation_deserialization_with_error() {
+        let json = r#"{
+            "id": "123",
+            "status": "DONE",
+            "error": {
+                "errors": [
+                    {"code": "RESOURCE_ALREADY_EXISTS", "message": "Image already exists"}
+                ]
+            }
+        }"#;
+        let op: Operation = serde_json::from_str(json).expect("deserialize operation with error");
+        assert!(op.error.is_some());
+        assert_eq!(op.error.unwrap().errors[0].code.as_deref(), Some("RESOURCE_ALREADY_EXISTS"));
     }
 }
