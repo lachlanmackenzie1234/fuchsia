@@ -359,7 +359,6 @@
                 "GetrusageTest.IgnoreZombie",
 
                 // inotify_test
-                "Inotify.UnmatchedEventsAreDiscarded",
                 "Inotify.ExcludeUnlinkDirectory",
                 "Inotify.ExcludeUnlink",
                 "Inotify.IncludeUnlinkedFile",
