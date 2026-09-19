@@ -283,6 +283,8 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             * Stops, terminates and downloads the trace data for all devices and stores
               it under "<log_path>/teardown_class<_on_fail>" directory if `tracing_on`
               test param is set to "teardown_class" or "teardown_class_on_fail".
+            * Powers on any configured power switch outlets and USB power hub ports
+              for all Fuchsia devices.
         """
         for device in self.fuchsia_devices:
             if (
@@ -314,6 +316,28 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             await self._collect_snapshot(
                 directory=self._teardown_class_artifacts
             )
+
+        for device in self.fuchsia_devices:
+            switch, outlet = self._lookup_power_switch(device)
+            if switch is not None:
+                try:
+                    switch.power_on(outlet=outlet)
+                except Exception as err:
+                    _LOGGER.warning(
+                        "Failed to power on power switch for %s with error: %s",
+                        device.device_name,
+                        err,
+                    )
+            usb_power_hub, port = self._lookup_usb_power_hub(device)
+            if usb_power_hub is not None:
+                try:
+                    usb_power_hub.power_on(port=port)
+                except Exception as err:
+                    _LOGGER.warning(
+                        "Failed to power on USB power hub for %s with error: %s",
+                        device.device_name,
+                        err,
+                    )
 
     async def on_fail(self, record: TestResultRecord) -> None:
         """on_fail is called once when a test case fails.
