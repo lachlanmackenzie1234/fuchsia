@@ -415,6 +415,7 @@ async fn main_inner() -> Result<(), Error> {
         blob_fetcher,
         root_dir_factory.clone(),
         open_packages.clone(),
+        inspector.root().create_child("package_fetcher"),
     );
     let package_fetcher_fut = Task::spawn(package_fetcher_fut);
     let tuf_authority = fuchsia_component::client::connect_to_protocol::<fpkg::AuthorityMarker>()
@@ -426,6 +427,7 @@ async fn main_inner() -> Result<(), Error> {
             authenticator.clone(),
             root_dir_factory.clone(),
             scope.clone(),
+            inspector.root().create_child("fuchsia.pkg.PackageResolver-ota"),
         );
         let () = svc_dir
             .add_entry(
@@ -448,6 +450,7 @@ async fn main_inner() -> Result<(), Error> {
         open_packages,
         executability::Decider::new(executability_restrictions, Arc::clone(&base_index)),
         scope.clone(),
+        inspector.root().create_child("fuchsia.pkg.PackageResolver-full"),
     );
     {
         let full_package_resolver = Arc::clone(&full_package_resolver);

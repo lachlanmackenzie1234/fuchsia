@@ -7,13 +7,16 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as fpkg_ext;
+use fuchsia_inspect as finspect;
+use fuchsia_sync::Mutex;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl};
 use futures::stream::TryStreamExt as _;
-use log::error;
+use log::{error, warn};
 use std::sync::Arc;
 
 // Packages resolved during OTA never need to be executed.
 const FLAGS: fio::Flags = fio::PERM_READABLE;
+const INSPECT_RECENT_RESOLVE_COUNT: usize = 50;
 
 /// Used only by the system-updater to resolve packages during OTA, and so:
 /// * assumes the retained index has been initialized with the to-be-resolved package
@@ -28,6 +31,12 @@ pub(crate) struct Resolver {
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
+
+    // Only used for inspect.
+    inspect_active: finspect::Node,
+    inspect_recent: Mutex<fuchsia_inspect_contrib::nodes::BoundedListNode>,
+    request_count: std::sync::atomic::AtomicU64,
+    _inspect: finspect::Node,
 }
 
 impl Resolver {
@@ -37,8 +46,22 @@ impl Resolver {
         authenticator: context_authenticator::ContextAuthenticator,
         root_dir_factory: crate::root_dir::RootDirFactory,
         scope: package_directory::ExecutionScope,
+        inspect: finspect::Node,
     ) -> Arc<Self> {
-        Arc::new(Self { authority, package_fetcher, authenticator, root_dir_factory, scope })
+        Arc::new(Self {
+            authority,
+            package_fetcher,
+            authenticator,
+            root_dir_factory,
+            scope,
+            inspect_active: inspect.create_child("active"),
+            inspect_recent: Mutex::new(fuchsia_inspect_contrib::nodes::BoundedListNode::new(
+                inspect.create_child("recent"),
+                INSPECT_RECENT_RESOLVE_COUNT,
+            )),
+            request_count: std::sync::atomic::AtomicU64::new(0),
+            _inspect: inspect,
+        })
     }
 
     pub(crate) async fn serve_request_stream(
@@ -86,11 +109,21 @@ impl Resolver {
         dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
         responder: fpkg::PackageResolverResolveResponder,
     ) -> Result<(), anyhow::Error> {
-        match self.resolve(&package_url, dir).await {
-            Ok(context) => responder.send(Ok(&context)),
+        let inspect = self.inspect_active.create_child(
+            self.request_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(),
+        );
+        match self.resolve(&package_url, dir, &inspect).await {
+            Ok(context) => {
+                inspect.record_string("result", "success");
+                self.move_inspect_node_to_recent(inspect);
+                responder.send(Ok(&context))
+            }
             Err(e) => {
                 let fidl_error = (&e).into();
-                error!("ota resolver failed to resolve {package_url}: {:#}", anyhow!(e));
+                let log_error = format!("{:#}", anyhow!(e));
+                inspect.record_string("result", format!("error: {log_error}"));
+                self.move_inspect_node_to_recent(inspect);
+                error!("ota resolver failed to resolve {package_url}: {log_error}");
                 responder.send(Err(fidl_error))
             }
         }
@@ -104,14 +137,21 @@ impl Resolver {
         dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
         responder: fpkg::PackageResolverResolveWithContextResponder,
     ) -> Result<(), anyhow::Error> {
-        match self.resolve_with_context(&package_url, context, dir).await {
-            Ok(context) => responder.send(Ok(&context)),
+        let inspect = self.inspect_active.create_child(
+            self.request_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(),
+        );
+        match self.resolve_with_context(&package_url, context, dir, &inspect).await {
+            Ok(context) => {
+                inspect.record_string("result", "success");
+                self.move_inspect_node_to_recent(inspect);
+                responder.send(Ok(&context))
+            }
             Err(e) => {
                 let fidl_error = (&e).into();
-                error!(
-                    "ota resolver failed to resolve with context {package_url}: {:#}",
-                    anyhow!(e)
-                );
+                let log_error = format!("{:#}", anyhow!(e));
+                inspect.record_string("result", &log_error);
+                self.move_inspect_node_to_recent(inspect);
+                error!("ota resolver failed to resolve with context {package_url}: {log_error}");
                 responder.send(Err(fidl_error))
             }
         }
@@ -123,11 +163,13 @@ impl Resolver {
         package_url: &str,
         context: fpkg::ResolutionContext,
         dir: ServerEnd<fio::DirectoryMarker>,
+        inspect: &finspect::Node,
     ) -> Result<fpkg::ResolutionContext, Error> {
         self.resolve_with_context_impl(
             &PackageUrl::parse(package_url).map_err(Error::InvalidUrl)?,
             context,
             dir,
+            inspect,
         )
         .await
     }
@@ -137,15 +179,16 @@ impl Resolver {
         package_url: &PackageUrl,
         context: fpkg::ResolutionContext,
         dir: ServerEnd<fio::DirectoryMarker>,
+        inspect: &finspect::Node,
     ) -> Result<fpkg::ResolutionContext, Error> {
         match package_url {
             PackageUrl::Absolute(url) => {
                 if !context.bytes.is_empty() {
                     return Err(Error::ContextWithAbsoluteUrl);
                 }
-                self.resolve_impl(url, dir).await
+                self.resolve_impl(url, dir, inspect).await
             }
-            PackageUrl::Relative(url) => self.resolve_subpackage(url, context, dir).await,
+            PackageUrl::Relative(url) => self.resolve_subpackage(url, context, dir, inspect).await,
         }
     }
 
@@ -153,15 +196,22 @@ impl Resolver {
         &self,
         url: &str,
         dir: ServerEnd<fio::DirectoryMarker>,
+        inspect: &finspect::Node,
     ) -> Result<fpkg::ResolutionContext, Error> {
-        self.resolve_impl(&url.parse().map_err(Error::InvalidUrl)?, dir).await
+        self.resolve_impl(&url.parse().map_err(Error::InvalidUrl)?, dir, inspect).await
     }
 
     pub(crate) async fn resolve_impl(
         &self,
         url: &AbsolutePackageUrl,
         dir: ServerEnd<fio::DirectoryMarker>,
+        inspect: &finspect::Node,
     ) -> Result<fpkg::ResolutionContext, Error> {
+        inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
+        let _end_inspect = scopeguard::guard(&inspect, |inspect| {
+            inspect.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
+        });
+        inspect.record_string("url", url.to_string());
         let (fpkg::BlobId { merkle_root }, http_blob_dir) = self
             .authority
             .lookup(&fpkg::PackageUrl { url: url.as_unpinned().to_string() })
@@ -170,6 +220,8 @@ impl Resolver {
             .map_err(Error::Authority)?;
         // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
         let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
+        inspect.record_string("hash", pkg_id.to_string());
+        inspect.record_string("blob_source", &http_blob_dir);
         let root_dir = self
             .package_fetcher
             .fetch(
@@ -189,7 +241,13 @@ impl Resolver {
         url: &fuchsia_url::RelativePackageUrl,
         context: fpkg::ResolutionContext,
         dir: ServerEnd<fio::DirectoryMarker>,
+        inspect: &finspect::Node,
     ) -> Result<fpkg::ResolutionContext, Error> {
+        inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
+        let _end_inspect = scopeguard::guard(&inspect, |inspect| {
+            inspect.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
+        });
+        inspect.record_string("url", url.to_string());
         let super_hash = self
             .authenticator
             .clone()
@@ -208,12 +266,22 @@ impl Resolver {
                 subpackage: url.clone(),
                 superpackage: super_hash,
             })?;
+        inspect.record_string("hash", sub_hash.to_string());
         let sub_package =
             self.root_dir_factory.create(sub_hash).await.map_err(|source| {
                 Error::CreatingSubpackageRootDir { source, subpackage: sub_hash }
             })?;
         vfs::directory::serve_on(Arc::new(sub_package), FLAGS, self.scope.clone(), dir);
         Ok(self.authenticator.clone().create(&sub_hash))
+    }
+
+    fn move_inspect_node_to_recent(&self, node: finspect::Node) {
+        self.inspect_recent.lock().add_entry(|parent| {
+            let () = parent.adopt(&node).unwrap_or_else(|e| {
+                warn!("failed to move inspect node to recent: {:#}", anyhow!(e))
+            });
+            let () = parent.record(node);
+        });
     }
 }
 

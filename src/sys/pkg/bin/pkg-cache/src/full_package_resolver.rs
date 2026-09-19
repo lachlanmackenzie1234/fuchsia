@@ -8,15 +8,19 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as fpkg_ext;
+use fuchsia_inspect as finspect;
+use fuchsia_sync::Mutex;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl};
 use futures::stream::TryStreamExt as _;
-use log::error;
+use log::{error, warn};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 const SLOW_CACHE_FALLBACK_WARN_DURATION: zx::MonotonicDuration =
     zx::MonotonicDuration::from_seconds(10);
 const SLOW_CACHE_FALLBACK_WARN_SQUELCH_DURATION: zx::MonotonicDuration =
     zx::MonotonicDuration::from_minutes(10);
+const INSPECT_RECENT_RESOLVE_COUNT: usize = 50;
 
 /// Used to resolve most non-OTA packages on products that support ephemeral resolution.
 /// * always uses open package tracking
@@ -36,6 +40,12 @@ pub(crate) struct Resolver {
     open_packages: crate::RootDirCache,
     executability_decider: crate::executability::Decider,
     scope: package_directory::ExecutionScope,
+
+    // Only used for inspect.
+    inspect_active: finspect::Node,
+    inspect_recent: Mutex<fuchsia_inspect_contrib::nodes::BoundedListNode>,
+    request_count: std::sync::atomic::AtomicU64,
+    _inspect: finspect::Node,
 }
 
 impl Resolver {
@@ -49,6 +59,7 @@ impl Resolver {
         open_packages: crate::RootDirCache,
         executability_decider: crate::executability::Decider,
         scope: package_directory::ExecutionScope,
+        inspect: finspect::Node,
     ) -> Arc<Self> {
         Arc::new(Self {
             base_resolver,
@@ -60,6 +71,13 @@ impl Resolver {
             open_packages,
             executability_decider,
             scope,
+            inspect_active: inspect.create_child("active"),
+            inspect_recent: Mutex::new(fuchsia_inspect_contrib::nodes::BoundedListNode::new(
+                inspect.create_child("recent"),
+                INSPECT_RECENT_RESOLVE_COUNT,
+            )),
+            request_count: std::sync::atomic::AtomicU64::new(0),
+            _inspect: inspect,
         })
     }
 
@@ -175,7 +193,7 @@ impl Resolver {
                 if !context.bytes.is_empty() {
                     return Err(Error::ContextWithAbsoluteUrl);
                 }
-                self.resolve(url).await
+                self.resolve_manage_inspect(url).await
             }
             PackageUrl::Relative(url) => self.resolve_subpackage(url, context).await,
         }?;
@@ -198,18 +216,42 @@ impl Resolver {
         url: &AbsolutePackageUrl,
         dir: ServerEnd<fio::DirectoryMarker>,
     ) -> Result<fpkg::ResolutionContext, Error> {
-        let root_dir = self.resolve(url).await?;
+        let root_dir = self.resolve_manage_inspect(url).await?;
         let hash = *root_dir.hash();
         let flags = self.executability_decider.decide(hash).into();
         vfs::directory::serve_on(root_dir, flags, self.scope.clone(), dir);
         Ok(self.authenticator.clone().create(&hash))
     }
 
-    async fn resolve(
+    async fn resolve_manage_inspect(
         &self,
         url: &AbsolutePackageUrl,
     ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
-        let (pkg_id, blob_source) = self.lookup(url).await?;
+        let inspect = self.inspect_active.create_child(
+            self.request_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(),
+        );
+        let res = self.resolve(url, &inspect).await;
+        inspect.record_string(
+            "result",
+            res.as_ref().err().map_or(Cow::Borrowed("success"), |e| {
+                format!("error: {}", stringify_error(e)).into()
+            }),
+        );
+        inspect.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
+        self.move_inspect_node_to_recent(inspect);
+        res
+    }
+
+    async fn resolve(
+        &self,
+        url: &AbsolutePackageUrl,
+        inspect: &finspect::Node,
+    ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
+        inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
+        inspect.record_string("url", url.to_string());
+        let (pkg_id, blob_source) = self.lookup(url, inspect).await?;
+        inspect.record_string("hash", pkg_id.to_string());
+        inspect.record_string("blob_source", format!("{blob_source:?}"));
         if let Some(root_dir) = self.open_packages.get(&pkg_id) {
             return Ok(root_dir);
         }
@@ -230,7 +272,9 @@ impl Resolver {
         &self,
         url: &str,
     ) -> Result<(fuchsia_hash::Hash, Option<http::Uri>), Error> {
-        self.lookup(&url.parse().map_err(Error::InvalidUrl)?).await
+        // lookup_unparsed is only used by GetHash which is only used for debugging, we don't want
+        // that complicating the inspect.
+        self.lookup(&url.parse().map_err(Error::InvalidUrl)?, &finspect::Node::default()).await
     }
 
     // Returns the hash of the package and an optional http blob dir that contains the blobs.
@@ -239,11 +283,13 @@ impl Resolver {
     async fn lookup(
         &self,
         url: &AbsolutePackageUrl,
+        inspect: &finspect::Node,
     ) -> Result<(fuchsia_hash::Hash, Option<http::Uri>), Error> {
         // Use monotonic timeline to warn on slow cache fallback to avoid warning on suspension.
         let start_mono = zx::MonotonicInstant::get();
         let () = match self.base_resolver.lookup(url) {
             Ok(pkg_id) => {
+                inspect.record_string("authority", "base");
                 return Ok((pkg_id, None));
             }
             Err(crate::base_package_resolver::Error::PackageNotInIndex) => (),
@@ -256,6 +302,7 @@ impl Resolver {
             if url.hash().is_some() {
                 return Err(Error::PinnedUpgradablePackage);
             }
+            inspect.record_string("authority", "upgradable");
             return Ok((hash, None));
         }
 
@@ -270,6 +317,7 @@ impl Resolver {
             Ok((fpkg::BlobId { merkle_root }, http_blob_dir)) => {
                 // TODO(https://fxbug.dev/519687989): Forbid pinned URL authority override.
                 let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
+                inspect.record_string("authority", "tuf");
                 return Ok((
                     pkg_id,
                     Some(http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?),
@@ -295,6 +343,7 @@ impl Resolver {
             );
         }
         let () = log_slow_cache_fallback(start_mono, url);
+        inspect.record_string("authority", "cache");
         Ok((pkg_id, None))
     }
 
@@ -325,6 +374,15 @@ impl Resolver {
             .get_or_insert(sub_hash, None)
             .await
             .map_err(|source| Error::CreatingSubpackageRootDir { source, subpackage: sub_hash })
+    }
+
+    fn move_inspect_node_to_recent(&self, node: finspect::Node) {
+        self.inspect_recent.lock().add_entry(|parent| {
+            let () = parent.adopt(&node).unwrap_or_else(|e| {
+                warn!("failed to move inspect node to recent: {:#}", anyhow!(e))
+            });
+            let () = parent.record(node);
+        });
     }
 }
 
@@ -544,4 +602,21 @@ impl From<&Error> for zx::Status {
             InvalidContext => zx::Status::INVALID_ARGS,
         }
     }
+}
+
+// Replicates `format!("{:#}", anyhow!(err))` but without consuming `err` or converting it into an
+// `anyhow::Error`, so that the original, un-type-erased error can be propagated.
+// Normally errors should either be propagated XOR logged, but in this case we are duplicating the
+// log into inspect and doing so at the package resolver level instead of component resolver level
+// so that the history contains resolves performed on behalf of:
+//   1. the full component resolver that is in this component and uses the trait
+//   2. external clients that use the FIDL interface
+fn stringify_error(mut err: &dyn std::error::Error) -> String {
+    let mut result = err.to_string();
+    while let Some(source) = err.source() {
+        use std::fmt::Write as _;
+        let _ = write!(result, ": {source}");
+        err = source;
+    }
+    result
 }

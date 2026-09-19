@@ -34,6 +34,7 @@ rustc_binary("bin") {
     "//src/lib/async-utils",
     "//src/lib/cobalt/rust/builders",
     "//src/lib/collections/sorted-vec-map",
+    "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
@@ -70,6 +71,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:scopeguard",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:typed-builder",
   ]
