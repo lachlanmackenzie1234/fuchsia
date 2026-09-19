@@ -951,10 +951,10 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -6146,7 +6146,7 @@ to off; the consumer opts in via perfetto_sdk_config.h (see build_config.h).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:496
+From //third_party/perfetto/gn/perfetto.gni:504
 
 ### perfetto_build_with_android
 
@@ -6217,6 +6217,24 @@ Note: that if this is enabled `perfetto_use_system_protobuf` should be also.
 
 From //third_party/perfetto/gn/perfetto.gni:474
 
+### perfetto_use_system_expat
+
+Used by NixOS system builds. Uses the system version of expat
+from pkg-config instead of the hermetic one.
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:478
+
+### perfetto_use_system_linenoise
+
+Used by NixOS system builds. Uses the system version of linenoise
+from pkg-config instead of the hermetic one.
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:482
+
 ### perfetto_use_system_protobuf
 
 Used by CrOS system builds. Uses the system version of protobuf
@@ -6224,7 +6242,7 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:478
+From //third_party/perfetto/gn/perfetto.gni:486
 
 ### perfetto_use_system_re2
 
@@ -6233,7 +6251,7 @@ from pkg-config instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:482
+From //third_party/perfetto/gn/perfetto.gni:490
 
 ### perfetto_use_system_sqlite
 
@@ -6242,13 +6260,13 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:486
+From //third_party/perfetto/gn/perfetto.gni:494
 
 ### perfetto_use_system_zlib
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:488
+From //third_party/perfetto/gn/perfetto.gni:496
 
 ### perfetto_use_system_zstd
 
@@ -6257,7 +6275,7 @@ from pkg-config instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:492
+From //third_party/perfetto/gn/perfetto.gni:500
 
 ### perfetto_verbose_logs_enabled
 
