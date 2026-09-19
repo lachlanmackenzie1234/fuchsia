@@ -9,5 +9,8 @@
 
 /// Connection metadata resolution and persistence for active UART targets.
 pub mod metadata;
+/// Host process inspection, peer PID discovery, and daemon liveness checking.
+pub mod sys;
 
 pub use metadata::*;
+pub use sys::*;
