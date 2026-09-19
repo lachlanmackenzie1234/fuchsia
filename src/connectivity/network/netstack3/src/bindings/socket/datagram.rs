@@ -670,9 +670,9 @@ where
         // to detect the difference between that and the error coming in later.
         match remote {
             Some((remote_ip, remote_port)) => {
-                ctx.api().udp().send_to(id, remote_ip, remote_port, body).map_err(|e| e.into())
+                ctx.api().udp().send_to(id, remote_ip, remote_port, body, ()).map_err(|e| e.into())
             }
-            None => ctx.api().udp().send(id, body).map_err(|e| e.into()),
+            None => ctx.api().udp().send(id, body, ()).map_err(|e| e.into()),
         }
     }
 
@@ -1106,9 +1106,9 @@ where
     ) -> Result<(), Self::SendError> {
         match remote {
             Some((remote_ip, _remote_id)) => {
-                ctx.api().icmp_echo().send_to(id, remote_ip, body).map_err(|e| e.into())
+                ctx.api().icmp_echo().send_to(id, remote_ip, body, ()).map_err(|e| e.into())
             }
-            None => ctx.api().icmp_echo().send(id, body).map_err(|e| e.into()),
+            None => ctx.api().icmp_echo().send(id, body, ()).map_err(|e| e.into()),
         }
     }
 

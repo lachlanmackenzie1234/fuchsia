@@ -185,6 +185,7 @@ pub mod testutil {
     mod fake_network;
     mod misc;
     mod monotonic_id;
+    mod send_token;
 
     pub use crate::device::address::testutil::FakeWeakAddressId;
     pub use crate::device::link::testutil::{FakeLinkAddress, FakeLinkDevice, FakeLinkDeviceId};
@@ -211,6 +212,7 @@ pub mod testutil {
     };
     pub use misc::{assert_empty, set_logger_for_test};
     pub use monotonic_id::MonotonicIdentifier;
+    pub use send_token::{FakeSendToken, FakeSendTokenTracker};
 }
 
 /// Benchmarks defined in the base crate.

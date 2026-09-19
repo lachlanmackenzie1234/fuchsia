@@ -2835,6 +2835,7 @@ fn conntrack_entry_retained_across_loopback<I: TestDualStackIpExt + IpExt>(
             Some(ZonedAddr::Unzoned(remote_ip)),
             LISTENER_PORT.into(),
             Buf::new(HELLO.to_vec(), ..),
+            Default::default(),
         )
         .unwrap();
     let local_port = match udp_api.get_info(&socket) {

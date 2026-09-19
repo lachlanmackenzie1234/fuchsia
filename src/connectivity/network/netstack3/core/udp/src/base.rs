@@ -504,6 +504,7 @@ impl<BT: UdpBindingsTypes> DatagramSocketSpec for Udp<BT> {
     type Settings = UdpSettings;
     type Counters<I: Ip> = UdpCountersWithSocket<I>;
     type SocketWritableListener = BT::SocketWritableListener;
+    type SendToken = BT::SendToken;
 
     fn ip_proto<I: IpProtoExt>() -> I::Proto {
         IpProto::Udp.into()
@@ -1204,6 +1205,12 @@ pub trait UdpBindingsTypes: DatagramBindingsTypes + MatcherBindingsTypes + Sized
     type ExternalData<I: Ip>: Debug + Send + Sync + 'static;
     /// The listener notified when sockets' writable state changes.
     type SocketWritableListener: SocketWritableListener + Debug + Send + Sync + 'static;
+    /// A token representing resources allocated for an in-flight send operation.
+    ///
+    /// Core holds this token until the packet is either transmitted by the
+    /// device or dropped along the egress path. This allows bindings to track
+    /// send buffer capacity or other per-packet resources.
+    type SendToken: Debug + Send + Sync + 'static;
 }
 
 /// The bindings context for UDP.
@@ -2804,9 +2811,10 @@ where
         &mut self,
         id: &UdpApiSocketId<I, C>,
         body: B,
+        send_token: <C::BindingsContext as UdpBindingsTypes>::SendToken,
     ) -> Result<(), Either<SendError, ExpectedConnError>> {
         self.core_ctx().increment_both(id, |c| &c.tx);
-        self.datagram().send_conn(id, body).map_err(|err| {
+        self.datagram().send_conn(id, body, send_token).map_err(|err| {
             self.core_ctx().increment_both(id, |c| &c.tx_error);
             match err {
                 DatagramSendError::NotConnected => Either::Right(ExpectedConnError),
@@ -2842,6 +2850,7 @@ where
         >,
         remote_port: UdpRemotePort,
         body: B,
+        send_token: <C::BindingsContext as UdpBindingsTypes>::SendToken,
     ) -> Result<(), SendToError> {
         // Match Linux's behavior and verify the remote port is set.
         match remote_port {
@@ -2850,7 +2859,7 @@ where
         }
 
         self.core_ctx().increment_both(id, |c| &c.tx);
-        self.datagram().send_to(id, remote_ip, remote_port, body).map_err(|e| {
+        self.datagram().send_to(id, remote_ip, remote_port, body, send_token).map_err(|e| {
             self.core_ctx().increment_both(id, |c| &c.tx_error);
             match e {
                 datagram::SendToError::LocalAddress(e) => SendToError::LocalAddress(e),
@@ -3122,8 +3131,8 @@ pub(crate) mod testutils {
 
     use net_types::ip::{IpAddr, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
     use netstack3_base::testutil::{
-        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSocketWritableListener, FakeStrongDeviceId,
-        FakeWeakDeviceId,
+        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSendToken, FakeSocketWritableListener,
+        FakeStrongDeviceId, FakeWeakDeviceId,
     };
     use netstack3_base::{CtxPair, ResourceCounterContext, UninstantiableWrapper};
     use netstack3_hashmap::HashMap;
@@ -3355,6 +3364,7 @@ pub(crate) mod testutils {
     impl<D: StrongDeviceIdentifier> UdpBindingsTypes for FakeUdpBindingsCtx<D> {
         type ExternalData<I: Ip> = ();
         type SocketWritableListener = FakeSocketWritableListener;
+        type SendToken = FakeSendToken;
     }
 
     /// Utilities for accessing locked internal state in tests.
@@ -3795,7 +3805,7 @@ mod tests {
     use netstack3_base::socket::{SocketIpAddrExt as _, StrictlyZonedAddr};
     use netstack3_base::sync::PrimaryRc;
     use netstack3_base::testutil::{
-        FakeDeviceId, FakeReferencyDeviceId, FakeStrongDeviceId, FakeWeakDeviceId,
+        FakeDeviceId, FakeReferencyDeviceId, FakeSendToken, FakeStrongDeviceId, FakeWeakDeviceId,
         MultipleDevicesId, TestIpExt as _, set_logger_for_test,
     };
     use netstack3_base::{
@@ -4048,6 +4058,7 @@ mod tests {
             Some(ZonedAddr::Unzoned(remote_ip)),
             REMOTE_PORT.into(),
             Buf::new(body.to_vec(), ..),
+            FakeSendToken::default(),
         )
         .expect("send_to suceeded");
 
@@ -4057,6 +4068,7 @@ mod tests {
             Some(ZonedAddr::Unzoned(remote_ip)),
             REMOTE_PORT.into(),
             Buf::new(body.to_vec(), ..),
+            FakeSendToken::default(),
         )
         .expect("send_to succeeded");
         let frames = api.core_ctx().bound_sockets.ip_socket_ctx.frames();
@@ -4214,7 +4226,8 @@ mod tests {
         );
 
         // Now try to send something over this new connection.
-        api.send(&socket, Buf::new(body.to_vec(), ..)).expect("send_udp_conn returned an error");
+        api.send(&socket, Buf::new(body.to_vec(), ..), FakeSendToken::default())
+            .expect("send_udp_conn returned an error");
 
         let (meta, frame_body) =
             assert_matches!(api.core_ctx().bound_sockets.ip_socket_ctx.frames(), [frame] => frame);
@@ -4572,6 +4585,7 @@ mod tests {
             Some(ZonedAddr::Unzoned(other_remote_ip)),
             REMOTE_PORT.into(),
             Buf::new(body.to_vec(), ..),
+            FakeSendToken::default(),
         )
         .expect("send_to failed");
 
@@ -4628,7 +4642,8 @@ mod tests {
         );
 
         // Now try to send something over this new connection:
-        let send_err = api.send(&socket, Buf::new(Vec::new(), ..)).unwrap_err();
+        let send_err =
+            api.send(&socket, Buf::new(Vec::new(), ..), FakeSendToken::default()).unwrap_err();
         assert_eq!(send_err, Either::Left(SendError::IpSock(IpSockSendError::Mtu)));
 
         let expects_with_socket =
@@ -4667,7 +4682,10 @@ mod tests {
                 device.mark_removed();
             }
 
-            assert_eq!(api.send(&socket, Buf::new(Vec::new(), ..)), expected_res)
+            assert_eq!(
+                api.send(&socket, Buf::new(Vec::new(), ..), FakeSendToken::default()),
+                expected_res
+            )
         }
     }
 
@@ -4689,6 +4707,7 @@ mod tests {
                     Some(remote_ip),
                     REMOTE_PORT.into(),
                     Buf::new(Vec::new(), ..),
+                    FakeSendToken::default(),
                 )
                 .map_err(
                     |e| assert_matches!(e, SendToError::NotWriteable => NotWriteableError)
@@ -4696,6 +4715,7 @@ mod tests {
                 None => api.send(
                     id,
                     Buf::new(Vec::new(), ..),
+                    FakeSendToken::default(),
                 )
                 .map_err(|e| assert_matches!(e, Either::Left(SendError::NotWriteable) => NotWriteableError)),
             }
@@ -5359,6 +5379,7 @@ mod tests {
                 Some(ZonedAddr::Unzoned(I::get_other_remote_ip_address(1))),
                 REMOTE_PORT.into(),
                 Buf::new(body.to_vec(), ..),
+                FakeSendToken::default(),
             )
             .expect("send should succeed");
         }
@@ -5634,6 +5655,7 @@ mod tests {
                 Some(ZonedAddr::Unzoned(multicast_ip.into())),
                 REMOTE_PORT.into(),
                 Buf::new(b"packet".to_vec(), ..),
+                FakeSendToken::default(),
             )
             .expect("send should succeed");
 
@@ -5679,7 +5701,8 @@ mod tests {
             api.connect(&socket, Some(ZonedAddr::Unzoned(multicast_ip.into())), REMOTE_PORT.into())
                 .expect("send should succeed");
 
-            api.send(&socket, Buf::new(b"packet".to_vec(), ..)).expect("send should succeed");
+            api.send(&socket, Buf::new(b"packet".to_vec(), ..), FakeSendToken::default())
+                .expect("send should succeed");
 
             let packets = api.core_ctx().bound_sockets.ip_socket_ctx.take_frames();
             assert_eq!(packets.len(), 1usize);
@@ -6782,6 +6805,7 @@ mod tests {
                 Some(send_to_remote_addr),
                 REMOTE_PORT.into(),
                 Buf::new(Vec::new(), ..),
+                FakeSendToken::default(),
             )
         } else {
             api.listen(&socket, None, Some(LOCAL_PORT)).expect("listen should succeed");
@@ -6790,6 +6814,7 @@ mod tests {
                 Some(send_to_remote_addr),
                 REMOTE_PORT.into(),
                 Buf::new(Vec::new(), ..),
+                FakeSendToken::default(),
             )
         };
 
@@ -6845,6 +6870,7 @@ mod tests {
                 Some(send_to_remote_addr),
                 REMOTE_PORT.into(),
                 Buf::new(Vec::new(), ..),
+                FakeSendToken::default(),
             )
         } else {
             api.send_to(
@@ -6852,6 +6878,7 @@ mod tests {
                 Some(send_to_remote_addr),
                 REMOTE_PORT.into(),
                 Buf::new(Vec::new(), ..),
+                FakeSendToken::default(),
             )
         };
 
@@ -6989,6 +7016,7 @@ mod tests {
                 Some(ZonedAddr::Unzoned(remote_ip)),
                 REMOTE_PORT.into(),
                 Buf::new(vec![], ..),
+                FakeSendToken::default(),
             )
             .expect("send failed");
 

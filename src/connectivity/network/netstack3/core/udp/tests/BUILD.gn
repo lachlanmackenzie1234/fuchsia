@@ -11,6 +11,7 @@ rustc_test("netstack3_udp_integration_test") {
     "src/bindtodevice.rs",
     "src/lib.rs",
     "src/loopback.rs",
+    "src/send_token.rs",
     "src/sndbuf.rs",
   ]
 

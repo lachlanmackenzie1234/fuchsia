@@ -47,6 +47,7 @@ fn bindtodevice_send_to_loopback_addrs<I: IpExt + TestIpExt>() {
         Some(ZonedAddr::Unzoned(I::LOOPBACK_ADDRESS)),
         LOCAL_PORT.into(),
         Buf::new(HELLO.to_vec(), ..),
+        Default::default(),
     );
     assert_eq!(result, Err(SendToError::Send(IpSockSendError::IllegalLoopbackAddress)));
 }

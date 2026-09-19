@@ -55,6 +55,7 @@ rustc_library_with_features("netstack3-base") {
     "src/testutil/fake_network.rs",
     "src/testutil/misc.rs",
     "src/testutil/monotonic_id.rs",
+    "src/testutil/send_token.rs",
     "src/time.rs",
     "src/time/local_timer_heap.rs",
     "src/time/testutil.rs",
