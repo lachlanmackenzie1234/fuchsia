@@ -1799,6 +1799,13 @@ class Scheduler {
       return domain() ? power_state_.target_processing_rate() : processing_rate_;
     }
 
+    // Returns true if there is a pending request to change the active power level.
+    bool has_pending_request() const { return pending_update_request_.has_value(); }
+
+    // Returns whether the kernel scheduler should send power level update requests through the
+    // control interface to handle utilization changes.
+    bool scheduler_control_enabled() const { return power_state_.scheduler_control_enabled(); }
+
     // Returns the processing rate of the active power level immediately
     // preceding the target power level (the lower bound of the target power level).
     SchedProcessingRate preceding_target_processing_rate() const {
@@ -1806,12 +1813,11 @@ class Scheduler {
                       : preceding_processing_rate();
     }
 
-    // Returns true if the clamped demand is outside the processing rate range
-    // of the target active power level.
-    bool processing_rate_should_change() const {
-      const SchedUtilization clamped_demand = clamped_total_demand();
-      return clamped_demand <= preceding_target_processing_rate() ||
-             clamped_demand > target_processing_rate();
+    // Returns true if the targeted active power level has an active power level
+    // preceding it (i.e. is not the lowest active power level).
+    bool has_preceding_target_power_level() const {
+      return domain() ? power_state_.has_preceding_target_power_level()
+                      : preceding_processing_rate() > 0;
     }
 
     // Returns true if the clamped demand is above the processing rate of the
@@ -1825,7 +1831,14 @@ class Scheduler {
     // the preceding target active power level.
     bool processing_rate_should_decrease() const {
       const SchedUtilization clamped_demand = clamped_total_demand();
-      return clamped_demand <= preceding_target_processing_rate();
+      return has_preceding_target_power_level() &&
+             clamped_demand <= preceding_target_processing_rate();
+    }
+
+    // Returns true if the clamped demand is outside the processing rate range
+    // of the target active power level.
+    bool processing_rate_should_change() const {
+      return processing_rate_should_decrease() || processing_rate_should_increase();
     }
 
     // Returns true if there is a pending update to the processing rate that has not yet been
