@@ -247,6 +247,12 @@
             ]
         },
         {
+            "name": "BpfProgLoadTestSuite/BpfProgLoadTest.Load/no_prog_load",
+            "audit_expectations": [
+                "avc:  denied  { prog_load } scontext=test_u:test_r:bpf_no_prog_load_t:s0 tcontext=test_u:test_r:bpf_no_prog_load_t:s0 tclass=bpf permissive=0"
+            ]
+        },
+        {
             "name": "CapabilitiesTest.GetCapDenied",
             "audit_expectations": [
                 "avc:  denied  { getcap } for scontext=test_u:test_r:test_deny_getcap_self_t:s0 tcontext=test_u:test_r:test_deny_getcap_self_t:s0 tclass=process permissive=0"
