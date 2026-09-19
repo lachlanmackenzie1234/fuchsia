@@ -21,7 +21,8 @@ use crate::vfs::pseudo::dynamic_file::{
     DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
 };
 use crate::vfs::{
-    FileObject, FileOps, FsString, NamespaceNode, fileops_impl_noop_sync, fileops_impl_seekable,
+    FileObject, FileOps, FsContext, FsString, NamespaceNode, fileops_impl_noop_sync,
+    fileops_impl_seekable,
 };
 use anyhow::{Error, anyhow};
 use bitflags::bitflags;
@@ -4489,6 +4490,7 @@ impl SelectedAddress {
 /// Write one line of the memory map intended for adding to `/proc/self/maps`.
 fn write_map(
     task: &Task,
+    fs_context: Option<&FsContext>,
     sink: &mut DynamicFileBuf,
     state: &MemoryManagerState,
     range: &Range<UserAddress>,
@@ -4546,7 +4548,11 @@ fn write_map(
             // File names can have newlines that need to be escaped before printing.
             // According to https://man7.org/linux/man-pages/man5/proc.5.html the only
             // escaping applied to paths is replacing newlines with an octal sequence.
-            let path = file.name().path(&task.running_state()?.fs());
+            let path = if let Some(fs_context) = fs_context {
+                file.name().path(fs_context)
+            } else {
+                file.name().path(&task.running_state()?.fs())
+            };
             sink.write_iter(
                 path.iter()
                     .flat_map(|b| if *b == b'\n' { b"\\012" } else { std::slice::from_ref(b) })
@@ -4614,7 +4620,8 @@ impl SequenceFileSource for ProcMapsFile {
         };
         let state = mm.state.read();
         if let Some((range, map)) = state.mappings.find_at_or_after(cursor) {
-            write_map(&task, sink, &state, range, map)?;
+            let fs_context = task.running_state().ok().map(|rs| rs.fs());
+            write_map(&task, fs_context.as_deref(), sink, &state, range, map)?;
             return Ok(Some(range.end));
         }
         Ok(None)
@@ -4712,10 +4719,12 @@ impl DynamicFileSource for ProcSmapsFile {
             Ok(committed_bytes_vec)
         })?;
 
+        let fs_context = task.running_state().ok().map(|rs| rs.fs());
+        let fs_context_ref = fs_context.as_deref();
         for ((mm_range, mm_mapping), committed_bytes) in
             state.mappings.iter().zip(committed_bytes_vec.into_iter())
         {
-            write_map(&task, sink, &state, mm_range, mm_mapping)?;
+            write_map(&task, fs_context_ref, sink, &state, mm_range, mm_mapping)?;
 
             let size_kb = (mm_range.end.ptr() - mm_range.start.ptr()) / 1024;
             writeln!(sink, "Size:           {size_kb:>8} kB",)?;
