@@ -18,7 +18,7 @@ _USB_HOST_NAME = "USB Host"
 _LSUSB_DEVICE_TOKEN = "Device"
 
 
-class UsbTest(fuchsia_base_test.FuchsiaBaseTest):
+class UsbEnumerationTest(fuchsia_base_test.FuchsiaBaseTest):
     """Verifies USB host and peripheral mode functionality on a DUT."""
 
     def test_lsusb_device_list(self) -> None:
