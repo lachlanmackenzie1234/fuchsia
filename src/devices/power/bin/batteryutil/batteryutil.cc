@@ -246,7 +246,8 @@ zx::result<std::string> SelectInstance(const std::vector<std::string>& service_n
   return zx::ok(instances[0]);
 }
 
-// Helper to format values with micro-units (uA, uAh, uV)
+// Helper to format values based on available precision: ideally micro-units (uA, uAh, uV),
+// else milli-units (mA, mAh, mV) if possible, else units (A, Ah, V).
 std::string FormatUnit(int64_t value, const char* unit_suffix) {
   double val = static_cast<double>(value);
   const char* prefix = "u";
@@ -364,6 +365,23 @@ const char* HealthStatusToString(fbattery::HealthStatus status) {
   }
 }
 
+const char* ErrorToString(fbattery::Error error) {
+  switch (error) {
+    case fbattery::Error::kInternal:
+      return "Internal";
+    case fbattery::Error::kNotSupported:
+      return "Not Supported";
+    case fbattery::Error::kInvalidArgs:
+      return "Invalid Args";
+    case fbattery::Error::kIo:
+      return "IO";
+    case fbattery::Error::kAlreadyWatching:
+      return "Already Watching";
+    default:
+      return "Unknown";
+  }
+}
+
 const char* ChargeSourceToString(fpowerbattery::ChargeSource source) {
   switch (source) {
     case fpowerbattery::ChargeSource::kNone:
@@ -438,19 +456,6 @@ void PrintBatteryInfo(const fpowerbattery::wire::BatteryInfo& info) {
 }
 
 void PrintBatteryInfo(const fbattery::wire::Status& info) {
-  if (info.has_source_status()) {
-    const auto& src = info.source_status();
-    if (src.has_present()) {
-      printf("Present: %s\n", src.present() ? "Yes" : "No");
-    }
-    if (src.has_voltage_uv()) {
-      printf("Voltage: %s\n", FormatUnit(src.voltage_uv(), "V").c_str());
-    }
-    if (src.has_current_ua()) {
-      printf("Current: %s\n", FormatUnit(src.current_ua(), "A").c_str());
-    }
-  }
-
   if (info.has_charge_status()) {
     printf("Charge Status: %s\n", ChargeStatusToString(info.charge_status()));
   }
@@ -466,8 +471,14 @@ void PrintBatteryInfo(const fbattery::wire::Status& info) {
   if (info.has_health()) {
     printf("Health: %s\n", HealthStatusToString(info.health()));
   }
-  if (info.has_temperature_mc()) {
-    printf("Temperature: %.1f C\n", info.temperature_mc() / 1000.0);
+  if (info.has_temp_celsius()) {
+    printf("Temperature: %.1f C\n", info.temp_celsius());
+  }
+  if (info.has_voltage_uv()) {
+    printf("Voltage: %s\n", FormatUnit(info.voltage_uv(), "V").c_str());
+  }
+  if (info.has_current_ua()) {
+    printf("Current: %s\n", FormatUnit(info.current_ua(), "A").c_str());
   }
   if (info.has_cycle_count()) {
     printf("Cycle Count: %u\n", info.cycle_count());
@@ -521,8 +532,8 @@ zx::result<> TryGetNewBatteryInfo(std::string path) {
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    fprintf(stderr, "GetStatus rejected with domain error: %d\n",
-            static_cast<uint32_t>(result->error_value()));
+    fprintf(stderr, "GetStatus rejected with domain error: %s\n",
+            ErrorToString(result->error_value()));
     return zx::error(ZX_ERR_INTERNAL);
   }
   PrintBatteryInfo(result->value()->status);
