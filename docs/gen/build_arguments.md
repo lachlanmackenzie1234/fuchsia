@@ -954,7 +954,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1645,7 +1645,7 @@ This should never be set as a build argument.
 }
   x86_64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/24/lib/x86_64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/24"
   variants = {
   asan = {
