@@ -65,6 +65,8 @@ rust_library(
     ],
     rustc_flags = [
         "--cap-lints=allow",
+        "--cfg=std_atomic64",
+        "--cfg=std_atomic",
     ],
     tags = [
         "cargo-bazel",

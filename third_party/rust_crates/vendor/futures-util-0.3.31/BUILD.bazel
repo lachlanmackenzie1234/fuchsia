@@ -73,8 +73,12 @@ rust_library(
     proc_macro_deps = [
         "//third_party/rust_crates/vendor/futures-macro-0.3.31:futures_macro",
     ],
+    rustc_env = {
+        "CARGO_PKG_NAME": "futures-util",
+    },
     rustc_flags = [
         "--cap-lints=allow",
+        "--cfg=fn_like_proc_macro",
     ],
     tags = [
         "cargo-bazel",

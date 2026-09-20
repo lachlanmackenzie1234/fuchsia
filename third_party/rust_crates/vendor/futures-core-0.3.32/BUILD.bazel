@@ -59,6 +59,9 @@ rust_library(
     ],
     crate_root = "src/lib.rs",
     edition = "2018",
+    rustc_env = {
+        "CARGO_PKG_NAME": "futures-core",
+    },
     rustc_flags = [
         "--cap-lints=allow",
     ],

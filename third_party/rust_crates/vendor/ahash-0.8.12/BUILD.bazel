@@ -62,6 +62,7 @@ rust_library(
     edition = "2018",
     rustc_flags = [
         "--cap-lints=allow",
+        "--cfg=feature=\"folded_multiply\"",
     ],
     tags = [
         "cargo-bazel",

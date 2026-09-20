@@ -54,8 +54,12 @@ rust_proc_macro(
     ),
     crate_root = "src/lib.rs",
     edition = "2018",
+    rustc_env = {
+        "CARGO_PKG_NAME": "futures-macro",
+    },
     rustc_flags = [
         "--cap-lints=allow",
+        "--cfg=fn_like_proc_macro",
     ],
     tags = [
         "cargo-bazel",
