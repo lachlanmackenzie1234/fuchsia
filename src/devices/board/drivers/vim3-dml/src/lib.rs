@@ -13,46 +13,11 @@ use log::info;
 use anyhow::Context;
 
 mod driver_specific_data;
-use dml_config::parser::{
-    DEFAULT_SERVICE_BIND_CONFIG, Destination, DmlParserConfig, PropertyRule, RuleValueType,
-    ServiceBindConfig, TransportType, ValueSource, publish_dml_devices,
-};
-
-/// Configuration for the DML parser.
-/// Maps services to bind properties and rules, specifying how to generate bind
-/// rules and properties for the child devices published by this driver.
-static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
-    service_configs: phf::phf_map! {
-        "fuchsia.clock.Init" => ServiceBindConfig {
-            transport: TransportType::None,
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.BIND_INIT_STEP",
-                sources: &[ValueSource::Integer(0x494B4C43)],
-                value_type: RuleValueType::Integer,
-                destination: Destination::Both,
-            }],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
-        "fuchsia.pwm.Init" => ServiceBindConfig {
-            transport: TransportType::None,
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.BIND_INIT_STEP",
-                sources: &[ValueSource::Integer(0x004D5750)],
-                value_type: RuleValueType::Integer,
-                destination: Destination::Both,
-            }],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
-        "fuchsia.hardware.gpu.mali.Service" => ServiceBindConfig {
-            transport: TransportType::Driver,
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
-    },
-};
+use dml_config::parser::{DEFAULT_DML_PARSER_CONFIG, publish_dml_devices};
 
 /// The VIM3 DML board driver.
 /// This driver parses the compiled board configuration (from DML) and publishes
-/// devices using the parser configuration (`VIM3_PARSER_CONFIG`) to map services to
+/// devices using the default parser configuration (`DEFAULT_DML_PARSER_CONFIG`) to map services to
 /// bind properties and rules, and using `VIM3_DRIVER_METADATA` to publish metadata.
 struct Vim3DmlDriver {
     _node: Node,
@@ -111,7 +76,7 @@ impl Driver for Vim3DmlDriver {
             &pbus,
             &composite_manager,
             &board_config,
-            &VIM3_PARSER_CONFIG,
+            &DEFAULT_DML_PARSER_CONFIG,
             Some(&driver_specific_data::VIM3_DRIVER_METADATA),
         )
         .await
