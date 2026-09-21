@@ -31,6 +31,10 @@
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000
+#endif
+
 namespace {
 
 struct robust_list_entry {
@@ -655,8 +659,16 @@ TEST(FutexTest, FutexSucceedsHighestRestrictedAddress) {
   }
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGESIZE));
   const uintptr_t highest_restricted_mode_address = kLowestNormalModeAddress - page_size;
-  void *result = mmap(reinterpret_cast<void *>(highest_restricted_mode_address), page_size,
-                      PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+  // With only 8 bits of stack ASLR on arch32, this page is sometimes the live stack, so use
+  // MAP_FIXED_NOREPLACE: replacing the stack would kill the test. See
+  // https://fxbug.dev/563359856.
+  void *result =
+      mmap(reinterpret_cast<void *>(highest_restricted_mode_address), page_size,
+           PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+  if (result == MAP_FAILED && errno == EEXIST) {
+    GTEST_SKIP() << "The highest restricted page is already mapped, which happens when stack ASLR "
+                    "picks an offset of 0 pages.";
+  }
   ASSERT_NE(result, MAP_FAILED) << strerror(errno);
   ASSERT_EQ(highest_restricted_mode_address, reinterpret_cast<uintptr_t>(result));
   struct timespec wait_timeout = {};
