@@ -105,6 +105,10 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
         Self { source, chunks: Mutex::new(chunks), event: Event::new() }
     }
 
+    pub fn source(&self) -> &S {
+        &self.source
+    }
+
     /// Returns a reference to the chunk (up to `CHUNK_SIZE` bytes) containing `offset`.  If the
     /// data is already cached, this does not require reading from `source`.
     /// `offset` must be less than the size of `source`.

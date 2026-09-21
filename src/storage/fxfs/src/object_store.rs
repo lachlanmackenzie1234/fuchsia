@@ -40,7 +40,7 @@ use crate::filesystem::{
 use crate::log::*;
 use crate::lsm_tree::cache::ObjectCache;
 use crate::lsm_tree::types::{Existence, Item, ItemRef, LayerIterator};
-use crate::lsm_tree::{LSMTree, Query};
+use crate::lsm_tree::{LSMTree, Query, open_layers};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
 use crate::object_store::graveyard::Graveyard;
@@ -1927,11 +1927,9 @@ impl ObjectStore {
         if !is_encrypted {
             let object_tree_layer_object_ids =
                 store.store_info.lock().as_ref().unwrap().layers.clone();
-            let object_layers = store.open_layers(object_tree_layer_object_ids, None).await?;
-            total_layer_size = object_layers.iter().map(|h| h.get_size()).sum();
-            store
+            total_layer_size = store
                 .tree
-                .append_layers(object_layers)
+                .append_layers(&parent_store, object_tree_layer_object_ids, None)
                 .await
                 .context("Failed to read object store layers")?;
         }
@@ -1946,27 +1944,6 @@ impl ObjectStore {
 
     async fn load_store_info(&self) -> Result<StoreInfo, Error> {
         load_store_info_from_handle(self.store_info_handle.get().unwrap()).await
-    }
-
-    async fn open_layers(
-        &self,
-        object_ids: impl std::iter::IntoIterator<Item = u64>,
-        crypt: Option<Arc<dyn Crypt>>,
-    ) -> Result<Vec<DataObjectHandle<ObjectStore>>, Error> {
-        let parent_store = self.parent_store.as_ref().unwrap();
-        let mut handles = Vec::new();
-        for object_id in object_ids {
-            let handle = ObjectStore::open_object(
-                &parent_store,
-                object_id,
-                HandleOptions::default(),
-                crypt.clone(),
-            )
-            .await
-            .with_context(|| format!("Failed to open layer file {}", object_id))?;
-            handles.push(handle);
-        }
-        Ok(handles)
     }
 
     /// Unlocks a store so that it is ready to be used.
@@ -2050,10 +2027,13 @@ impl ObjectStore {
         };
 
         // Open layers (uses crypt).
-        let layers = self
-            .open_layers(store_info.layers.iter().cloned(), Some(crypt.clone()))
-            .await
-            .context("Failed to read object tree layer file contents")?;
+        let (layers, _) = open_layers(
+            self.parent_store.as_ref().unwrap(),
+            store_info.layers.iter().cloned(),
+            Some(crypt.clone()),
+        )
+        .await
+        .context("Failed to read object tree layer file contents")?;
 
         // Unwrap mutations key.
         let wrapped_key =
@@ -2252,7 +2232,7 @@ impl ObjectStore {
         });
 
         // Apply layers.
-        self.tree.append_layers(layers).await.context("Failed to append layers to object tree")?;
+        self.tree.append_open_layers(layers);
 
         // Set last object ID.
         match &store_info.last_object_id {

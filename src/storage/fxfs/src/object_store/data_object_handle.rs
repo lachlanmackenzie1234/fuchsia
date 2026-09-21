@@ -7,7 +7,7 @@ use crate::log::*;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::{
-    ObjectHandle, ObjectProperties, ReadObjectHandle, WriteBytes, WriteObjectHandle,
+    LayerObject, ObjectHandle, ObjectProperties, ReadObjectHandle, WriteBytes, WriteObjectHandle,
 };
 use crate::object_store::extent_record::{ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
@@ -1915,6 +1915,8 @@ impl<S: HandleOwner> ReadObjectHandle for DataObjectHandle<S> {
         self.content_size.load(atomic::Ordering::Relaxed)
     }
 }
+
+impl<S: HandleOwner> LayerObject for DataObjectHandle<S> {}
 
 impl<S: HandleOwner> WriteObjectHandle for DataObjectHandle<S> {
     async fn write_or_append(&self, offset: Option<u64>, buf: BufferRef<'_>) -> Result<u64, Error> {
