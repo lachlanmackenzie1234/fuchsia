@@ -979,7 +979,7 @@ pub fn verify_program(
                 // If the context has a parent, register the data dependencies and try to terminate
                 // it.
                 if let Some(parent) = context.parent.take() {
-                    parent.dependencies.lock().push(ending_context.dependencies.clone());
+                    parent.dependencies.lock().merge(ending_context.dependencies);
                     if let Some(parent) = Arc::into_inner(parent) {
                         parent
                             .terminate(&mut verification_context)
@@ -1390,7 +1390,7 @@ struct ComputationContext {
     parent: Option<Arc<ComputationContext>>,
     /// The data dependencies of this context. This is used to broaden a known ending context to
     /// help cutting computation branches.
-    dependencies: Mutex<Vec<DataDependencies>>,
+    dependencies: Mutex<DataDependencies>,
     /// Whether this context has reached an exit instruction. The main loop uses this flag to
     /// call terminate() on the owned context, avoiding the extra Arc reference that would be
     /// created by cloning self in the exit handler.
@@ -2100,10 +2100,7 @@ impl ComputationContext {
 
             // 1. Compute the dependencies of the context using the dependencies of its children
             //    and the actual operation.
-            let mut dependencies = DataDependencies::default();
-            for dependency in current.dependencies.get_mut().iter() {
-                dependencies.merge(dependency);
-            }
+            let mut dependencies = *current.dependencies.get_mut();
 
             dependencies.visit(
                 &mut DataDependenciesVisitorContext {
@@ -2115,11 +2112,15 @@ impl ComputationContext {
 
             // 2. Clear the state depending on the dependencies states
             for register in 0..GENERAL_REGISTER_COUNT {
-                if !dependencies.registers.contains(&register) {
+                if !dependencies.has_reg(register) {
                     current.set_reg(register, Default::default())?;
                 }
             }
-            current.stack.data.retain(|k, _| dependencies.stack.contains(k));
+            if dependencies.stack == 0 {
+                current.stack.data.clear();
+            } else if dependencies.stack != !0 {
+                current.stack.data.retain(|k, _| dependencies.has_stack(*k));
+            }
 
             // 3. Add the cleared state to the set of `terminating_contexts`
             let terminating_contexts =
@@ -2136,18 +2137,16 @@ impl ComputationContext {
                 _ => true,
             });
             if !is_dominated {
-                terminating_contexts.push(TerminatingContext {
-                    computation_context: current,
-                    dependencies: dependencies.clone(),
-                });
+                terminating_contexts
+                    .push(TerminatingContext { computation_context: current, dependencies });
             }
 
             // 4. Register the computed dependencies in our parent, and terminate it if all
             //    dependencies has been computed.
             if let Some(parent) = parent {
-                parent.dependencies.lock().push(dependencies);
-                // To check whether all dependencies have been computed, rely on the fact that the Arc
-                // count of the parent keep track of how many dependencies are left.
+                parent.dependencies.lock().merge(dependencies);
+                // To check whether all dependencies have been computed, rely on the fact that the
+                // Arc count of the parent keep track of how many dependencies are left.
                 next = Arc::into_inner(parent);
             }
         }
@@ -2219,34 +2218,79 @@ impl PartialOrd for ComputationContext {
 ///
 /// The verifier assumes that data not read by a terminated branch is irrelevant
 /// for future execution paths and can be safely cleared.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct DataDependencies {
-    /// The set of registers read by the children of a context.
-    registers: HashSet<Register>,
-    /// The stack positions read by the children of a context.
-    stack: HashSet<usize>,
+    /// A bitset of registers read by the children of a context.
+    registers: u16,
+    /// A bitset of stack positions read by the children of a context.
+    stack: u64,
 }
 
 impl DataDependencies {
-    fn merge(&mut self, other: &DataDependencies) {
-        self.registers.extend(other.registers.iter());
-        self.stack.extend(other.stack.iter());
+    #[inline]
+    fn has_reg(&self, reg: Register) -> bool {
+        (self.registers & (1_u16 << reg)) != 0
+    }
+
+    #[inline]
+    fn add_reg(&mut self, reg: Register) {
+        self.registers |= 1_u16 << reg;
+    }
+
+    #[inline]
+    fn remove_reg(&mut self, reg: Register) -> bool {
+        let mask = 1_u16 << reg;
+        let was_set = (self.registers & mask) != 0;
+        self.registers &= !mask;
+        was_set
+    }
+
+    #[inline]
+    fn has_stack(&self, slot: usize) -> bool {
+        (self.stack & (1_u64 << slot)) != 0
+    }
+
+    #[inline]
+    fn add_stack(&mut self, slot: usize) {
+        self.stack |= 1_u64 << slot;
+    }
+
+    #[inline]
+    fn remove_stack(&mut self, slot: usize) -> bool {
+        let mask = 1_u64 << slot;
+        let was_set = (self.stack & mask) != 0;
+        self.stack &= !mask;
+        was_set
+    }
+
+    #[inline]
+    fn add_stack_range(&mut self, start: usize, end: usize) {
+        if end > start {
+            let count = end - start;
+            let mask = if count >= 64 { !0 } else { ((1_u64 << count) - 1) << start };
+            self.stack |= mask;
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.registers |= other.registers;
+        self.stack |= other.stack;
     }
 
     fn alu(&mut self, dst: Register, src: Source) -> Result<(), String> {
         // Only do something if the dst is read, otherwise the computation doesn't matter.
-        if self.registers.contains(&dst) {
+        if self.has_reg(dst) {
             if let Source::Reg(src) = src {
-                self.registers.insert(src);
+                self.add_reg(src);
             }
         }
         Ok(())
     }
 
     fn jmp(&mut self, dst: Register, src: Source) -> Result<(), String> {
-        self.registers.insert(dst);
+        self.add_reg(dst);
         if let Source::Reg(src) = src {
-            self.registers.insert(src);
+            self.add_reg(src);
         }
         Ok(())
     }
@@ -2262,10 +2306,10 @@ impl DataDependencies {
         is_cmpxchg: bool,
     ) -> Result<(), String> {
         let mut is_read = false;
-        if is_cmpxchg && self.registers.contains(&0) {
+        if is_cmpxchg && self.has_reg(0) {
             is_read = true;
         }
-        if fetch && self.registers.contains(&src) {
+        if fetch && self.has_reg(src) {
             is_read = true;
         }
         let addr = context.reg(dst)?;
@@ -2274,16 +2318,17 @@ impl DataDependencies {
             if !stack_offset.is_valid_offset() {
                 return Err(format!("Invalid stack offset at {}", context.pc));
             }
-            if is_read || self.stack.contains(&stack_offset.array_index()) {
+            let slot = stack_offset.array_index();
+            if is_read || self.has_stack(slot) {
                 is_read = true;
-                self.stack.insert(stack_offset.array_index());
+                self.add_stack(slot);
             }
         }
         if is_read {
-            self.registers.insert(0);
-            self.registers.insert(src);
+            self.add_reg(0);
+            self.add_reg(src);
         }
-        self.registers.insert(dst);
+        self.add_reg(dst);
         Ok(())
     }
 }
@@ -2479,13 +2524,13 @@ impl BpfVisitor for DataDependencies {
         dst: Register,
         src: Source,
     ) -> Result<(), String> {
-        if src == Source::Reg(dst) || !self.registers.contains(&dst) {
+        if src == Source::Reg(dst) || !self.has_reg(dst) {
             return Ok(());
         }
         if let Source::Reg(src) = src {
-            self.registers.insert(src);
+            self.add_reg(src);
         }
-        self.registers.remove(&dst);
+        self.remove_reg(dst);
         Ok(())
     }
     fn mov64<'a>(
@@ -2545,30 +2590,27 @@ impl BpfVisitor for DataDependencies {
                 if let Type::PtrToStack { offset } = comp.reg((arg_index + 1) as Register)? {
                     let end = offset.add(size.size(comp)?);
                     if offset.is_valid_offset() && end.is_within_stack() {
-                        for slot in offset.array_index()..end.array_index() {
-                            self.stack.insert(slot);
-                        }
+                        let start_idx = offset.array_index();
+                        let end_idx = end.array_index();
+                        self.add_stack_range(start_idx, end_idx);
                         if end.sub_index() != 0 {
-                            self.stack.insert(end.array_index());
+                            self.add_stack(end_idx);
                         }
                     }
                 }
             }
         }
         // 0 is overwritten and 1 to 5 are scratch registers
-        for register in 0..helper.signature.args.len() + 1 {
-            self.registers.remove(&(register as Register));
-        }
+        self.registers &= !0b0011_1111;
         // 1 to k are parameters.
-        for register in 0..helper.signature.args.len() {
-            self.registers.insert((register + 1) as Register);
-        }
+        let num_args = helper.signature.args.len();
+        self.registers |= ((1_u16 << num_args) - 1) << 1;
         Ok(())
     }
 
     fn exit<'a>(&mut self, _context: &mut Self::Context<'a>) -> Result<(), String> {
         // This read r0 unconditionally.
-        self.registers.insert(0);
+        self.add_reg(0);
         Ok(())
     }
 
@@ -2915,17 +2957,17 @@ impl BpfVisitor for DataDependencies {
         width: DataWidth,
     ) -> Result<(), String> {
         let context = &context.computation_context;
-        if self.registers.contains(&dst) {
+        if self.has_reg(dst) {
             let addr = context.reg(src)?;
             if let Type::PtrToStack { offset: stack_offset } = addr {
                 let stack_offset = stack_offset.add(offset);
                 if !stack_offset.is_valid_offset() {
                     return Err(format!("Invalid stack offset at {}", context.pc));
                 }
-                self.stack.insert(stack_offset.array_index());
+                self.add_stack(stack_offset.array_index());
             }
         }
-        self.registers.insert(src);
+        self.add_reg(src);
         Ok(())
     }
 
@@ -2936,7 +2978,7 @@ impl BpfVisitor for DataDependencies {
         _src: u8,
         _lower: u32,
     ) -> Result<(), String> {
-        self.registers.remove(&dst);
+        self.remove_reg(dst);
         Ok(())
     }
 
@@ -2949,15 +2991,13 @@ impl BpfVisitor for DataDependencies {
         register_offset: Option<Register>,
         _width: DataWidth,
     ) -> Result<(), String> {
-        // 1 to 5 are scratch registers
-        for register in 1..6 {
-            self.registers.remove(&(register as Register));
-        }
+        // 1 to 5 are scratch registers (bits 1..=5)
+        self.registers &= !0b0011_1110;
         // Only do something if the dst is read, otherwise the computation doesn't matter.
-        if self.registers.remove(&dst) {
-            self.registers.insert(src);
+        if self.remove_reg(dst) {
+            self.add_reg(src);
             if let Some(reg) = register_offset {
-                self.registers.insert(reg);
+                self.add_reg(reg);
             }
         }
         Ok(())
@@ -2978,16 +3018,16 @@ impl BpfVisitor for DataDependencies {
             if !stack_offset.is_valid_offset() {
                 return Err(format!("Invalid stack offset at {}", context.pc));
             }
-            if self.stack.remove(&stack_offset.array_index()) {
+            if self.remove_stack(stack_offset.array_index()) {
                 if let Source::Reg(src) = src {
-                    self.registers.insert(src);
+                    self.add_reg(src);
                 }
             }
         } else {
             if let Source::Reg(src) = src {
-                self.registers.insert(src);
+                self.add_reg(src);
             }
-            self.registers.insert(dst);
+            self.add_reg(dst);
         }
 
         Ok(())
