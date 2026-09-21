@@ -3560,10 +3560,10 @@ mod tests {
         }
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientConnectionsToggle {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientConnectionsToggle {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Enabled
-            }))
+            })
         );
     }
 
@@ -3619,10 +3619,10 @@ mod tests {
         }
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientConnectionsToggle {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientConnectionsToggle {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Enabled
-            }))
+            })
         );
     }
 
@@ -3665,10 +3665,10 @@ mod tests {
         }
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientConnectionsToggle {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientConnectionsToggle {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Enabled
-            }))
+            })
         );
     }
 
@@ -3750,10 +3750,10 @@ mod tests {
         }
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientConnectionsToggle {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientConnectionsToggle {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Enabled
-            }))
+            })
         );
     }
 
@@ -3792,8 +3792,8 @@ mod tests {
         );
         assert!(response.is_err());
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ChipPowerUpFailure))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ChipPowerUpFailure)
         );
 
         // Expect we turn the chip back off after failure to start
@@ -3846,18 +3846,18 @@ mod tests {
 
         // There was a start and a stop, so expect enabled and disabled mesages.
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientConnectionsToggle {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientConnectionsToggle {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Enabled
-            }))
+            })
         );
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientConnectionsToggle {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientConnectionsToggle {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Disabled
-            }))
+            })
         );
-        assert!(test_helper.telemetry_receiver.try_next().is_err());
+        assert!(test_helper.telemetry_receiver.try_recv().is_err());
     }
 
     #[fuchsia::test]
@@ -3873,10 +3873,10 @@ mod tests {
         // Clear out the client connections toggle event so that we can test for the telemetry
         // event we are interested in later in this test.
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientConnectionsToggle {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientConnectionsToggle {
                 event: wlan_telemetry::ClientConnectionsToggleEvent::Enabled
-            }))
+            })
         );
 
         let stop_fut = test_helper.wifi_proxy.stop();
@@ -3886,8 +3886,8 @@ mod tests {
 
         // Verify that telemetry event for iface destruction failure is sent.
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionFailure))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::IfaceDestructionFailure)
         );
     }
 
@@ -4006,10 +4006,7 @@ mod tests {
         );
 
         // Verify telemetry event for iface creation failure is sent
-        assert_matches!(
-            telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceCreationFailure))
-        );
+        assert_matches!(telemetry_receiver.try_recv(), Ok(TelemetryEvent::IfaceCreationFailure));
 
         // Verify that OnSubsystemRestart callback was called.
         let callback_event = assert_matches!(
@@ -4100,10 +4097,7 @@ mod tests {
         );
 
         // Verify telemetry event for iface creation failure is sent
-        assert_matches!(
-            telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceCreationFailure))
-        );
+        assert_matches!(telemetry_receiver.try_recv(), Ok(TelemetryEvent::IfaceCreationFailure));
 
         // Verify that OnSubsystemRestart callback was not called.
         assert_matches!(exec.run_until_stalled(&mut callback_stream.next()), Poll::Pending);
@@ -4130,8 +4124,8 @@ mod tests {
 
         // Verify telemetry event for iface destruction failure is sent
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionFailure))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::IfaceDestructionFailure)
         );
     }
 
@@ -4241,12 +4235,12 @@ mod tests {
 
         // Verify that the telemetry events were sent.
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryEvent))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::RecoveryEvent)
         );
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryResult { result: Ok(()) }))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::RecoveryResult { result: Ok(()) })
         );
 
         // Verify that the PHY reset was called.
@@ -4300,12 +4294,12 @@ mod tests {
 
         // Verify that the telemetry events were sent.
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryEvent))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::RecoveryEvent)
         );
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryResult { result: Err(()) }))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::RecoveryResult { result: Err(()) })
         );
 
         // Verify that OnSubsystemRestart callback was not called.
@@ -4344,8 +4338,8 @@ mod tests {
         assert_eq!(power_manager_calls[1], "wlanix-remove-iface");
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ClientIfaceDestroyed { iface_id })) => {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ClientIfaceDestroyed { iface_id }) => {
                 assert_eq!(iface_id, FAKE_IFACE_RESPONSE.id);
             }
         );
@@ -4570,12 +4564,12 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut create_sta_iface_fut), Poll::Ready(Ok(Ok(()))));
         assert!(power_manager.is_lease_dropped("wlanix-create-sta-iface"));
 
-        assert_matches!(telemetry_receiver.try_next(), Ok(Some(TelemetryEvent::ClientIfaceCreated { iface_id })) => {
+        assert_matches!(telemetry_receiver.try_recv(), Ok(TelemetryEvent::ClientIfaceCreated { iface_id }) => {
             assert_eq!(iface_id, FAKE_IFACE_RESPONSE.id);
         });
 
         // Quick check that telemetry event queue is now empty
-        assert_matches!(telemetry_receiver.try_next(), Err(_));
+        assert_matches!(telemetry_receiver.try_recv(), Err(_));
 
         let test_helper = WifiTestHelper {
             _wlanix_proxy: wlanix_proxy,
@@ -4764,8 +4758,8 @@ mod tests {
         assert!(mcast_msg.payload.attrs.contains(&Nl80211Attr::Mac([42, 42, 42, 42, 42, 42])));
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ConnectResult { result, bss, is_credential_rejected: _, is_owe_transition: _ })) => {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ConnectResult { result, bss, is_credential_rejected: _, is_owe_transition: _ }) => {
                 assert_eq!(result, fidl_ieee80211::StatusCode::Success);
                 assert_eq!(bss.ssid, Ssid::try_from("foo").unwrap());
                 assert_eq!(bss.bssid, Bssid::from([42, 42, 42, 42, 42, 42]));
@@ -5174,13 +5168,13 @@ mod tests {
         establish_open_connection(&mut test_helper, &mut test_fut, &mut mcast_stream);
         // Metrics: for this test, we don't care about the contents of the ConnectResult
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ConnectResult {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ConnectResult {
                 result: _,
                 bss: _,
                 is_credential_rejected: _,
                 is_owe_transition: _,
-            }))
+            })
         );
 
         let connection_length_nanos: u16 = rand::random();
@@ -5242,8 +5236,8 @@ mod tests {
         assert_eq!(disconnect_info, mocked_disconnect_source);
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::Disconnect { info })) => {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::Disconnect { info }) => {
                 assert_eq!(info.connected_duration, zx::BootDuration::from_nanos(connection_length_nanos.into()));
                 assert_eq!(info.is_sme_reconnecting, mocked_is_sme_reconnecting);
                 assert_eq!(info.disconnect_source, mocked_disconnect_source);
@@ -5278,13 +5272,13 @@ mod tests {
         establish_open_connection(&mut test_helper, &mut test_fut, &mut mcast_stream);
         // Metrics: for this test, we don't care about the contents of the ConnectResult
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ConnectResult {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ConnectResult {
                 result: _,
                 bss: _,
                 is_credential_rejected: _,
                 is_owe_transition: _,
-            }))
+            })
         );
 
         let connection_length_nanos: u16 = rand::random();
@@ -5319,8 +5313,8 @@ mod tests {
 
         // We should always log a disconnect to the metrics module, even if reconnect is pending
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::Disconnect { info })) => {
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::Disconnect { info }) => {
                 assert_eq!(info.connected_duration, zx::BootDuration::from_nanos(connection_length_nanos.into()));
                 assert_eq!(info.is_sme_reconnecting, mocked_is_sme_reconnecting);
                 assert_eq!(info.disconnect_source, mocked_disconnect_source);
@@ -5379,7 +5373,7 @@ mod tests {
         }
 
         // Metrics: no further messages expected, regardless of if reconnect is successful
-        assert_matches!(test_helper.telemetry_receiver.try_next(), Err(_));
+        assert_matches!(test_helper.telemetry_receiver.try_recv(), Err(_));
     }
 
     #[fuchsia::test]
@@ -6058,10 +6052,7 @@ mod tests {
         let mut trigger_scan_fut = pin!(trigger_scan_fut);
         assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
-        assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ScanStart))
-        );
+        assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(TelemetryEvent::ScanStart));
 
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut trigger_scan_fut),
@@ -6070,10 +6061,8 @@ mod tests {
         assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
 
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ScanResult {
-                result: wlan_telemetry::ScanResult::Complete { .. }
-            }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ScanResult { result: wlan_telemetry::ScanResult::Complete { .. } })
         );
 
         // With our faked scan results we expect an immediate multicast notification.
@@ -6687,10 +6676,7 @@ mod tests {
         let mut trigger_scan_fut = pin!(trigger_scan_fut);
         assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
 
-        assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ScanStart))
-        );
+        assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(TelemetryEvent::ScanStart));
 
         // While the scan is running, handle a GetStation request.
         {
@@ -6720,10 +6706,8 @@ mod tests {
         assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
 
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ScanResult {
-                result: wlan_telemetry::ScanResult::Complete { .. }
-            }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ScanResult { result: wlan_telemetry::ScanResult::Complete { .. } })
         );
 
         // With our faked scan results we expect an immediate multicast notification.
@@ -6793,10 +6777,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut trigger_scan_fut), Poll::Ready(_));
         assert_matches!(exec.run_until_stalled(&mut next_mcast), Poll::Pending);
 
-        assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ScanStart))
-        );
+        assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(TelemetryEvent::ScanStart));
 
         // After ending the scan we expect wlanix to broadcast the scan abort.
         scan_end_sender.send(scan_result).expect("Failed to send scan result");
@@ -6805,8 +6786,8 @@ mod tests {
         assert_eq!(message.payload.cmd, Nl80211Cmd::ScanAborted);
 
         let scan_result = assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ScanResult { result })) => result
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ScanResult { result }) => result
         );
         assert_eq!(scan_result, expected_telemetry_result);
     }
@@ -6834,8 +6815,8 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut abort_scan_fut), Poll::Ready(_));
 
         let scan_result = assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ScanResult { result })) => result
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ScanResult { result }) => result
         );
         assert_eq!(scan_result, wlan_telemetry::ScanResult::Cancelled);
     }
@@ -7668,10 +7649,10 @@ mod tests {
 
         // Verify such charge status is logged to telemetry
         assert_matches!(
-            telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::BatteryChargeStatus(
+            telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::BatteryChargeStatus(
                 fidl_fuchsia_power_battery::ChargeStatus::Charging
-            )))
+            ))
         );
 
         // Send battery info through watcher
@@ -7686,10 +7667,10 @@ mod tests {
 
         // Verify such charge status is logged to telemetry
         assert_matches!(
-            telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::BatteryChargeStatus(
+            telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::BatteryChargeStatus(
                 fidl_fuchsia_power_battery::ChargeStatus::Discharging
-            )))
+            ))
         );
 
         let client_calls = iface_manager.get_iface_call_history();
@@ -7876,8 +7857,8 @@ mod tests {
         assert_matches!(response, Err(_));
 
         assert_matches!(
-            test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ChipPowerDownFailure))
+            test_helper.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::ChipPowerDownFailure)
         );
     }
 

@@ -2084,12 +2084,12 @@ mod tests {
         assert_eq!(levels.get(&element_b), Some(ON));
 
         let mut received_a = Vec::new();
-        while let Ok(Some(level)) = receiver_a.try_next() {
+        while let Ok(level) = receiver_a.try_recv() {
             received_a.push(level)
         }
         assert_eq!(received_a, vec![None, Some(ON), Some(OFF)]);
         let mut received_b = Vec::new();
-        while let Ok(Some(level)) = receiver_b.try_next() {
+        while let Ok(level) = receiver_b.try_recv() {
             received_b.push(level)
         }
         assert_eq!(received_b, vec![None, Some(ON)]);

@@ -82,52 +82,6 @@ CRATE_ANNOTATIONS = {
             },
         ),
     ],
-    "futures-channel": [
-        crate.annotation(
-            version = "0.3.31",
-            rustc_env = {
-                "CARGO_PKG_NAME": "futures-channel",
-            },
-        ),
-    ],
-    "futures-core": [
-        crate.annotation(
-            version = "0.3.32",
-            rustc_env = {
-                "CARGO_PKG_NAME": "futures-core",
-            },
-        ),
-    ],
-    "futures-macro": [
-        crate.annotation(
-            version = "0.3.31",
-            rustc_env = {
-                "CARGO_PKG_NAME": "futures-macro",
-            },
-            rustc_flags = [
-                "--cfg=fn_like_proc_macro",
-            ],
-        ),
-    ],
-    "futures-task": [
-        crate.annotation(
-            version = "0.3.31",
-            rustc_env = {
-                "CARGO_PKG_NAME": "futures-task",
-            },
-        ),
-    ],
-    "futures-util": [
-        crate.annotation(
-            version = "0.3.31",
-            rustc_env = {
-                "CARGO_PKG_NAME": "futures-util",
-            },
-            rustc_flags = [
-                "--cfg=fn_like_proc_macro",
-            ],
-        ),
-    ],
     "generic-array": [
         crate.annotation(
             version = "0.14.9",

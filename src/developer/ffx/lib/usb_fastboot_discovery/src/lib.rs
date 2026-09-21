@@ -533,7 +533,7 @@ mod test {
 
         drop(watcher);
         let mut events = Vec::<FastbootEvent>::new();
-        while let Ok(Some(event)) = queue.try_next() {
+        while let Ok(event) = queue.try_recv() {
             events.push(event);
         }
 

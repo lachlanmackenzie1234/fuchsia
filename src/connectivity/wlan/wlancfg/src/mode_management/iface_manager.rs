@@ -2197,7 +2197,7 @@ mod tests {
         }
 
         // Consume the first request from the channel to verify it was sent
-        assert_matches!(test_values.connection_selection_request_receiver.try_next(), Ok(Some(ConnectionSelectionRequest::NewConnectionSelection { network_id: Some(id), .. })) if id == network_a);
+        assert_matches!(test_values.connection_selection_request_receiver.try_recv(), Ok(ConnectionSelectionRequest::NewConnectionSelection { network_id: Some(id), .. }) if id == network_a);
 
         // Second request (same network)
         {
@@ -2207,7 +2207,7 @@ mod tests {
         }
 
         // Verify NO new request in channel
-        assert_matches!(test_values.connection_selection_request_receiver.try_next(), Err(_));
+        assert_matches!(test_values.connection_selection_request_receiver.try_recv(), Err(_));
 
         // Verify still valid
         assert!(
@@ -2657,8 +2657,8 @@ mod tests {
             networks: vec![],
         };
         assert_matches!(
-            test_values.client_update_receiver.try_next(),
-            Ok(Some(listener::Message::NotifyListeners(updates))) => {
+            test_values.client_update_receiver.try_recv(),
+            Ok(listener::Message::NotifyListeners(updates)) => {
             assert_eq!(updates, client_state_update);
         });
     }
@@ -2853,7 +2853,7 @@ mod tests {
         }
 
         // Verify that telemetry event has been sent
-        let event = assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(ev)) => ev);
+        let event = assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(ev) => ev);
         assert_matches!(event, TelemetryEvent::ClearEstablishConnectionStartTime);
     }
 
@@ -3000,7 +3000,7 @@ mod tests {
         }
 
         // Ensure no update is sent
-        assert_matches!(test_values.client_update_receiver.try_next(), Err(_));
+        assert_matches!(test_values.client_update_receiver.try_recv(), Err(_));
     }
 
     /// Tests the case where starting client connections fails.
@@ -3207,8 +3207,8 @@ mod tests {
 
         // Ensure a metric was logged.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
     }
 
@@ -3229,7 +3229,7 @@ mod tests {
         assert!(!iface_manager.aps.is_empty());
 
         // Ensure no metric was logged.
-        assert_matches!(test_values.telemetry_receiver.try_next(), Err(_));
+        assert_matches!(test_values.telemetry_receiver.try_recv(), Err(_));
 
         // Ensure the AP start time has not been cleared.
         assert!(iface_manager.aps[0].enabled_time.is_some());
@@ -3257,8 +3257,8 @@ mod tests {
 
         // Ensure metric was logged.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
     }
 
@@ -3284,8 +3284,8 @@ mod tests {
 
         // Ensure metric was logged.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
     }
 
@@ -3355,12 +3355,12 @@ mod tests {
 
         // Ensure metrics are logged for both AP interfaces.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
     }
 
@@ -3398,12 +3398,12 @@ mod tests {
 
         // Ensure metrics are logged for both AP interfaces.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
     }
 
@@ -3441,12 +3441,12 @@ mod tests {
 
         // Ensure metrics are logged for both AP interfaces.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
     }
 
@@ -3484,7 +3484,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         // Ensure no metrics are logged.
-        assert_matches!(test_values.telemetry_receiver.try_next(), Err(_));
+        assert_matches!(test_values.telemetry_receiver.try_recv(), Err(_));
     }
 
     /// Tests the case where there is a single AP interface and it is asked to start twice and then
@@ -3523,7 +3523,7 @@ mod tests {
         assert_eq!(initial_start_time, iface_manager.aps[0].enabled_time);
 
         // Verify that no metric has been recorded.
-        assert_matches!(test_values.telemetry_receiver.try_next(), Err(_));
+        assert_matches!(test_values.telemetry_receiver.try_recv(), Err(_));
 
         // Now issue a stop command.
         {
@@ -3535,8 +3535,8 @@ mod tests {
 
         // Make sure the metric has been sent.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::StopAp { .. }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::StopAp { .. })
         );
     }
 
@@ -3653,8 +3653,8 @@ mod tests {
             networks: vec![],
         };
         assert_matches!(
-            test_values.client_update_receiver.try_next(),
-            Ok(Some(listener::Message::NotifyListeners(updates))) => {
+            test_values.client_update_receiver.try_recv(),
+            Ok(listener::Message::NotifyListeners(updates)) => {
                 assert_eq!(updates, expected_update);
             }
         );
@@ -4906,7 +4906,7 @@ mod tests {
         run_state_machine_futures(&mut exec, &mut iface_manager);
 
         // Verify telemetry event has been sent.
-        let event = assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(ev)) => ev);
+        let event = assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(ev) => ev);
         assert_matches!(
             event,
             TelemetryEvent::StartEstablishConnection { reset_start_time: false }
@@ -5109,14 +5109,14 @@ mod tests {
         match test_type {
             NetworkSelectionMissingAttribute::AllAttributesPresent => {
                 let event =
-                    assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(ev)) => ev);
+                    assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(ev) => ev);
                 assert_matches!(
                     event,
                     TelemetryEvent::StartEstablishConnection { reset_start_time: false }
                 );
             }
             _ => {
-                assert_matches!(test_values.telemetry_receiver.try_next(), Err(_));
+                assert_matches!(test_values.telemetry_receiver.try_recv(), Err(_));
             }
         }
 
@@ -5129,7 +5129,7 @@ mod tests {
                     },
                 );
                 // Connection selector should receive request if all attributes are present.
-                assert_matches!(test_values.connection_selection_request_receiver.try_next(), Ok(Some(request)) => {
+                assert_matches!(test_values.connection_selection_request_receiver.try_recv(), Ok(request) => {
                     assert_matches!(request, ConnectionSelectionRequest::NewConnectionSelection {network_id, reason, responder} => {
                         assert_eq!(network_id, None);
                         assert_eq!(reason, client_types::ConnectReason::IdleInterfaceAutoconnect);
@@ -5140,7 +5140,7 @@ mod tests {
             _ => {
                 // No connection selection request should be sent.
                 assert_matches!(
-                    test_values.connection_selection_request_receiver.try_next(),
+                    test_values.connection_selection_request_receiver.try_recv(),
                     Err(_)
                 );
             }
@@ -6029,8 +6029,8 @@ mod tests {
             }],
         };
         assert_matches!(
-            test_values.client_update_receiver.try_next(),
-            Ok(Some(listener::Message::NotifyListeners(updates))) => {
+            test_values.client_update_receiver.try_recv(),
+            Ok(listener::Message::NotifyListeners(updates)) => {
             assert_eq!(updates, connecting_state_update);
         });
 
@@ -6054,8 +6054,8 @@ mod tests {
             }],
         };
         assert_matches!(
-            test_values.client_update_receiver.try_next(),
-            Ok(Some(listener::Message::NotifyListeners(updates))) => {
+            test_values.client_update_receiver.try_recv(),
+            Ok(listener::Message::NotifyListeners(updates)) => {
             assert_eq!(updates, disconnected_state_update);
         });
     }

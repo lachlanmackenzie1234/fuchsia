@@ -3538,11 +3538,11 @@ mod tests {
 
         // Verify that there is nothing waiting on the telemetry receiver.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceCreationResult {
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::IfaceCreationResult {
                 role: fidl_common::WlanMacRole::Client,
                 result: Ok(0),
-            }))
+            })
         )
     }
 
@@ -3581,11 +3581,11 @@ mod tests {
 
             // Verify that a metric has been logged.
             assert_matches!(
-                test_values.telemetry_receiver.try_next(),
-                Ok(Some(TelemetryEvent::IfaceCreationResult {
+                test_values.telemetry_receiver.try_recv(),
+                Ok(TelemetryEvent::IfaceCreationResult {
                     role: fidl_common::WlanMacRole::Client,
                     result: Err(()),
-                }))
+                })
             );
         }
 
@@ -3628,11 +3628,11 @@ mod tests {
 
             // Verify that a metric has been logged.
             assert_matches!(
-                test_values.telemetry_receiver.try_next(),
-                Ok(Some(TelemetryEvent::IfaceCreationResult {
+                test_values.telemetry_receiver.try_recv(),
+                Ok(TelemetryEvent::IfaceCreationResult {
                     role: fidl_common::WlanMacRole::Client,
                     result: Err(()),
-                }))
+                })
             );
         }
 
@@ -3669,11 +3669,11 @@ mod tests {
 
         // Verify that there is nothing waiting on the telemetry receiver.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionResult {
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::IfaceDestructionResult {
                 role: fidl_common::WlanMacRole::Client,
                 result: Ok(0),
-            }))
+            })
         )
     }
 
@@ -3701,7 +3701,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         // Verify that no metric has been logged.
-        assert_matches!(test_values.telemetry_receiver.try_next(), Err(_))
+        assert_matches!(test_values.telemetry_receiver.try_recv(), Err(_))
     }
 
     #[fuchsia::test]
@@ -3736,11 +3736,11 @@ mod tests {
 
         // Verify that a metric has been logged.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionResult {
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::IfaceDestructionResult {
                 role: fidl_common::WlanMacRole::Client,
                 result: Err(()),
-            }))
+            })
         )
     }
 
@@ -3768,11 +3768,11 @@ mod tests {
 
         // Verify that a metric has been logged.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::IfaceDestructionResult {
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::IfaceDestructionResult {
                 role: fidl_common::WlanMacRole::Client,
                 result: Err(()),
-            }))
+            })
         )
     }
 
@@ -3973,7 +3973,7 @@ mod tests {
         phy_manager.record_defect(defect);
 
         // Verify that a recovery event was sent.
-        let recovery_action = test_values.recovery_receiver.try_next().unwrap().unwrap();
+        let recovery_action = test_values.recovery_receiver.try_recv().unwrap();
         assert_eq!(recovery_action.defect, defect);
         assert_eq!(
             recovery_action.action,
@@ -4031,7 +4031,7 @@ mod tests {
         phy_manager.record_defect(defect);
 
         // Verify that a recovery event was sent.
-        assert!(test_values.recovery_receiver.try_next().is_err());
+        assert!(test_values.recovery_receiver.try_recv().is_err());
     }
 
     #[test_case(
@@ -4123,8 +4123,8 @@ mod tests {
         // Send the provided recovery summary and expect the associated telemetry event.
         phy_manager.log_recovery_action(summary);
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::RecoveryEvent { reason } )) => {
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::RecoveryEvent { reason } ) => {
         assert_eq!(reason, expected_reason);
             })
     }
@@ -4847,8 +4847,8 @@ mod tests {
 
         // Verify that the defect was reported to telemetry.
         assert_matches!(
-            test_values.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Scan }))
+            test_values.telemetry_receiver.try_recv(),
+            Ok(TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Scan })
         )
     }
 }

@@ -560,9 +560,9 @@ mod tests {
             }
             let mut actual_events: Vec<Option<EmulatorInstanceEvent>> = vec![];
             loop {
-                let actual_event = match emu_instance_rx.try_next() {
-                    Ok(emu_event) => emu_event,
-                    // try_next Err() means no messages, but the channel is still open.
+                let actual_event = match emu_instance_rx.try_recv() {
+                    Ok(emu_event) => Some(emu_event),
+                    // try_recv Err() means no messages, or the channel is closed.
                     Err(_) => None,
                 };
                 actual_events.push(actual_event.clone());

@@ -539,9 +539,8 @@ async fn create_interface(
                 // Retrieve the original control handle from the receiver.
                 let OwnedControlHandle { request_stream: _, control_handle, owns_interface: _ } =
                     control_receiver
-                        .try_next()
-                        .expect("expected control handle to be ready in the receiver")
-                        .expect("expected receiver to not be closed/empty");
+                        .try_recv()
+                        .expect("expected control handle to be ready in the receiver");
                 control_handle.send_on_interface_removed(removed_reason).unwrap_or_else(|e| {
                     warn!("failed to send removed reason: {:?}", e);
                 });

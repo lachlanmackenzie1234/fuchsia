@@ -7,6 +7,11 @@ use crate::utils::update_process_name;
 use anyhow::{Context, Result};
 use fidl::encoding::{DefaultFuchsiaResourceDialect, clear_tls_buf};
 use fidl::endpoints::{ClientEnd, ServerEnd};
+use fidl_fuchsia_driver_framework as fidl_fdf;
+use fidl_fuchsia_driver_host as fdh;
+use fidl_fuchsia_ldsvc as fldsvc;
+use fidl_fuchsia_system_state as fss;
+use fuchsia_async as fasync;
 use fuchsia_async::Timer;
 use fuchsia_component::client;
 use fuchsia_sync::Mutex;
@@ -17,10 +22,6 @@ use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
 use zx::Status;
-use {
-    fidl_fuchsia_driver_framework as fidl_fdf, fidl_fuchsia_driver_host as fdh,
-    fidl_fuchsia_ldsvc as fldsvc, fidl_fuchsia_system_state as fss, fuchsia_async as fasync,
-};
 
 /// Any stored data is removed after this amount of time
 const EXCEPTIONS_CLEANUP_DEADLINE_SECONDS: i64 = 600;
@@ -226,7 +227,7 @@ impl DriverHost {
         self.scope.spawn_local(async move {
             loop {
                 // Drain queue.
-                while let Ok(Some(_)) = rx.try_next() {}
+                while rx.try_recv().is_ok() {}
 
                 // SAFETY: this call does not use any memory allocated by rust and only does
                 // anything if the fdf_env is currently set up, otherwise it does nothing.

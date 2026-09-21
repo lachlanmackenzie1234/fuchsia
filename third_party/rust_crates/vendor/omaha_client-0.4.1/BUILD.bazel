@@ -82,7 +82,7 @@ rust_library(
         "//third_party/rust_crates/vendor/chrono-0.4.45:chrono",
         "//third_party/rust_crates/vendor/ecdsa-0.17.0:ecdsa",
         "//third_party/rust_crates/vendor/elliptic-curve-0.14.1:elliptic_curve",
-        "//third_party/rust_crates/vendor/futures-0.3.31:futures",
+        "//third_party/rust_crates/vendor/futures-0.3.34:futures",
         "//third_party/rust_crates/vendor/hex-0.4.3:hex",
         "//third_party/rust_crates/vendor/http-1.4.2:http",
         "//third_party/rust_crates/vendor/http-body-1.1.0:http_body",

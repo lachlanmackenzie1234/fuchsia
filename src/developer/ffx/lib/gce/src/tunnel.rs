@@ -117,7 +117,7 @@ fn is_discovered_by_watcher(ctx: &EnvironmentContext, instance_name: &str) -> bo
     let Ok(_watcher) = GceWatcher::from_context(ctx, tx) else {
         return false;
     };
-    while let Ok(Some(event)) = rx.try_next() {
+    while let Ok(event) = rx.try_recv() {
         if let TargetEvent::Added(handle) = event {
             if handle.node_name.as_deref() == Some(instance_name) {
                 return true;

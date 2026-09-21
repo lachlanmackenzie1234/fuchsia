@@ -2449,8 +2449,7 @@ mod tests {
         test_values.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(61_000_000_000));
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
 
-        let event =
-            assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event = assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(event) => event);
         assert_matches!(
             event,
             TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Scan }
@@ -3169,8 +3168,7 @@ mod tests {
         let failure = assert_matches!(connect_result, ConnectResult::Fail(failure) => failure);
         assert!(failure.timed_out);
 
-        let event =
-            assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event = assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(event) => event);
         assert_matches!(
             event,
             TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Connect }
@@ -3332,8 +3330,7 @@ mod tests {
             Poll::Ready(Err(_))
         );
 
-        let event =
-            assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event = assert_matches!(test_values.telemetry_receiver.try_recv(), Ok(event) => event);
         assert_matches!(
             event,
             TelemetryEvent::SmeTimeout { source: wlan_telemetry::TimeoutSource::Disconnect }
@@ -3597,7 +3594,7 @@ mod tests {
             }
         };
 
-        let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event = assert_matches!(telemetry_receiver.try_recv(), Ok(event) => event);
         assert_matches!(event, TelemetryEvent::IfacePowerLevelChanged {
             iface_id,
             iface_power_level
@@ -3656,7 +3653,7 @@ mod tests {
         // Future completes
         exec.run_singlethreaded(power_call_fut).expect("future finished");
 
-        let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event = assert_matches!(telemetry_receiver.try_recv(), Ok(event) => event);
         assert_matches!(
             event,
             TelemetryEvent::IfacePowerLevelChanged { iface_power_level: _, iface_id: _ }
@@ -3689,7 +3686,7 @@ mod tests {
         exec.run_singlethreaded(power_call_fut).expect("future finished");
 
         // Check for the unclear power demand metric
-        let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event = assert_matches!(telemetry_receiver.try_recv(), Ok(event) => event);
         assert_matches!(
             event,
             TelemetryEvent::UnclearPowerDemand(
