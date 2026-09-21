@@ -15,7 +15,9 @@ group("tests") {
   testonly = true
   deps = [
     ":dap_framework_test($host_toolchain)",
-    ":dap_symbol_unittest($host_toolchain)",
+    # FIXME(https://fxbug.dev/563596222): Re-enable these tests when the source of the flakes is
+    # eliminated.
+    # ":dap_symbol_unittest($host_toolchain)",
   ]
 }
 
