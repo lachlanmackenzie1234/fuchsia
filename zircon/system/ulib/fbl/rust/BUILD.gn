@@ -66,7 +66,6 @@ rustc_library("fbl") {
     configs += [ "//zircon/kernel/switch:allow-needless-late-init" ]
     configs += [ "//zircon/kernel/switch:allow-unnecessary-unwrap" ]
     configs += [ "//zircon/kernel/switch:allow-new-without-default" ]
-    configs += [ "//zircon/kernel/switch:allow-needless-range-loop" ]
   }
 }
 
