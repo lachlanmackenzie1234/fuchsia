@@ -17,8 +17,7 @@ python_library("usb_lib") {
 
 group("tests") {
   testonly = true
-  deps = [
-    ":usb_lib",
+  public_deps = [
     "testusb:tests",
     "zero_function:tests",
   ]
