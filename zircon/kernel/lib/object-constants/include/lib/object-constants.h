@@ -115,6 +115,14 @@ constexpr size_t kDpcStorageAlign = 8;
 constexpr size_t kWaitSignalObserverSize = 72;
 constexpr size_t kWaitSignalObserverAlign = 8;
 
+// Size and alignment for RootJobSignalObserver.
+constexpr size_t kRootJobSignalObserverSize = 48;
+constexpr size_t kRootJobSignalObserverAlign = 8;
+
+// Size and alignment for RootJobObserver (Rust state).
+constexpr size_t kRootJobObserverStorageSize = 80;
+constexpr size_t kRootJobObserverStorageAlign = 8;
+
 // Size, alignment, and offset for WaitSignalObserverState.
 constexpr size_t kWaitSignalObserverStorageSize = 32;
 constexpr size_t kWaitSignalObserverStorageAlign = 8;

@@ -49,6 +49,8 @@ mod resource;
 mod resource_dispatcher;
 mod resource_dispatcher_ffi;
 mod resource_ffi;
+mod root_job_observer;
+mod root_job_observer_ffi;
 mod sampler_dispatcher;
 mod sampler_dispatcher_ffi;
 mod socket_dispatcher;
