@@ -44,7 +44,8 @@ pub(crate) async fn run_single_target_diagnostics<W: Write>(
     ledger: &mut LedgerNodeGuard<'_, W>,
     product_timeout: std::time::Duration,
 ) -> anyhow::Result<()> {
-    let handle: TargetHandle = TargetHandle::try_from(target_info)?;
+    let target_info = ffx_target::TargetInfo::from(target_info);
+    let handle: TargetHandle = target_info.into();
     let mut notifier = LedgerNotifier::new(ledger);
     run_diagnostics_with_handle(env_context, handle, &mut notifier, product_timeout)
         .await

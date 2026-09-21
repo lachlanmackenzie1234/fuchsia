@@ -4,7 +4,6 @@
 use crate::desc::Description;
 use crate::{DiscoverySources, TargetHandle};
 use addr::{TargetAddr, TargetIpAddr};
-use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
 use std::net::SocketAddr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -255,23 +254,10 @@ impl From<TargetAddr> for TargetInfoQuery {
     }
 }
 
-/// Convert a TargetAddrInfo to a SocketAddr preserving the port number if
-/// provided, otherwise the returned SocketAddr will have port number 0.
-pub fn target_addr_info_to_socketaddr(tai: TargetIpAddrInfo) -> SocketAddr {
-    let mut sa = SocketAddr::from(TargetIpAddr::from(&tai));
-    // TODO(raggi): the port special case needed here indicates a general problem in our
-    // addressing strategy that is worth reviewing.
-    if let TargetIpAddrInfo::IpPort(ref ipp) = tai {
-        sa.set_port(ipp.port)
-    }
-    sa
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_developer_ffx::{TargetIp, TargetIpPort};
-    use net_declare::{fidl_ip, std_socket_addr};
+    use net_declare::std_socket_addr;
     use test_case::test_case;
 
     #[test]
@@ -353,48 +339,6 @@ mod test {
             addresses: vec![TargetAddr::UsbCtx(CID)],
             ..Default::default()
         }));
-    }
-
-    #[test]
-    fn test_target_addr_info_to_socketaddr() {
-        let tai = TargetIpAddrInfo::IpPort(TargetIpPort {
-            ip: fidl_ip!("127.0.0.1"),
-            port: 8022,
-            scope_id: 0,
-        });
-
-        let sa = std_socket_addr!("127.0.0.1:8022");
-
-        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
-
-        let tai = TargetIpAddrInfo::Ip(TargetIp { ip: fidl_ip!("127.0.0.1"), scope_id: 0 });
-
-        let sa = std_socket_addr!("127.0.0.1:0");
-
-        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
-
-        let tai =
-            TargetIpAddrInfo::IpPort(TargetIpPort { ip: fidl_ip!("::1"), port: 8022, scope_id: 0 });
-
-        let sa = std_socket_addr!("[::1]:8022");
-
-        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
-
-        let tai = TargetIpAddrInfo::Ip(TargetIp { ip: fidl_ip!("fe80::1"), scope_id: 1 });
-
-        let sa = std_socket_addr!("[fe80::1%1]:0");
-
-        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
-
-        let tai = TargetIpAddrInfo::IpPort(TargetIpPort {
-            ip: fidl_ip!("fe80::1"),
-            port: 8022,
-            scope_id: 1,
-        });
-
-        let sa = std_socket_addr!("[fe80::1%1]:8022");
-
-        assert_eq!(target_addr_info_to_socketaddr(tai), sa);
     }
 
     #[test_case(
@@ -514,5 +458,92 @@ mod test {
     fn test_serial_to_string_becomes_id() {
         let q = TargetInfoQuery::try_from("serial:123456").unwrap();
         assert_eq!(String::from(q), "id:123456");
+    }
+
+    #[test]
+    fn test_query_match_description_ipv4_and_ipv6_scope_edge_cases() {
+        use std::net::{Ipv4Addr, Ipv6Addr};
+
+        let ipv4_desc = Description {
+            nodename: Some("node-v4".to_string()),
+            addresses: vec![TargetAddr::Net(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+                8022,
+            ))],
+            ssh_port: Some(8022),
+            ..Default::default()
+        };
+
+        // Query with port 0 matches target with port 8022
+        let q_v4_wildcard = TargetInfoQuery::Addr(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            0,
+        ));
+        assert!(q_v4_wildcard.match_description(&ipv4_desc));
+
+        // Query with exact port 8022 matches
+        let q_v4_exact = TargetInfoQuery::Addr(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            8022,
+        ));
+        assert!(q_v4_exact.match_description(&ipv4_desc));
+
+        // Query with mismatched port does NOT match
+        let q_v4_mismatch = TargetInfoQuery::Addr(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            2222,
+        ));
+        assert!(!q_v4_mismatch.match_description(&ipv4_desc));
+
+        let ipv6_desc = Description {
+            nodename: Some("node-v6".to_string()),
+            addresses: vec![TargetAddr::Net(SocketAddr::V6(std::net::SocketAddrV6::new(
+                Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1),
+                22,
+                0,
+                3, // scope_id = 3
+            )))],
+            ssh_port: Some(22),
+            ..Default::default()
+        };
+
+        // Query with scope_id 0 (wildcard) matches target with scope_id 3
+        let q_v6_wildcard_scope = TargetInfoQuery::Addr(SocketAddr::V6(
+            std::net::SocketAddrV6::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 22, 0, 0),
+        ));
+        assert!(q_v6_wildcard_scope.match_description(&ipv6_desc));
+
+        // Query with matching scope_id 3 matches
+        let q_v6_matching_scope = TargetInfoQuery::Addr(SocketAddr::V6(
+            std::net::SocketAddrV6::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 22, 0, 3),
+        ));
+        assert!(q_v6_matching_scope.match_description(&ipv6_desc));
+
+        // Query with mismatched scope_id 4 does NOT match
+        let q_v6_mismatched_scope = TargetInfoQuery::Addr(SocketAddr::V6(
+            std::net::SocketAddrV6::new(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 22, 0, 4),
+        ));
+        assert!(!q_v6_mismatched_scope.match_description(&ipv6_desc));
+    }
+
+    #[test]
+    fn test_query_match_description_vsock_and_usb_cid() {
+        let vsock_desc = Description {
+            nodename: Some("node-vsock".to_string()),
+            addresses: vec![TargetAddr::VSockCtx(42)],
+            ..Default::default()
+        };
+        assert!(TargetInfoQuery::VSock(42).match_description(&vsock_desc));
+        assert!(!TargetInfoQuery::VSock(99).match_description(&vsock_desc));
+        assert!(!TargetInfoQuery::Usb(42).match_description(&vsock_desc));
+
+        let usb_desc = Description {
+            nodename: Some("node-usb".to_string()),
+            addresses: vec![TargetAddr::UsbCtx(100)],
+            ..Default::default()
+        };
+        assert!(TargetInfoQuery::Usb(100).match_description(&usb_desc));
+        assert!(!TargetInfoQuery::Usb(101).match_description(&usb_desc));
+        assert!(!TargetInfoQuery::VSock(100).match_description(&usb_desc));
     }
 }

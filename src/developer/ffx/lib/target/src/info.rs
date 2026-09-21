@@ -173,10 +173,90 @@ impl From<ffx::TargetInfo> for TargetInfo {
     }
 }
 
+use netext::IsLocalAddr;
+use std::cmp::Ordering;
+
+// For ipv6 addresses, prefer link-local to non-local
+fn prefer_local(a: &TargetAddr, b: &TargetAddr) -> Ordering {
+    let a_is_local = a.ip().map(|x| x.is_link_local_addr()).unwrap_or(false);
+    let b_is_local = b.ip().map(|x| x.is_link_local_addr()).unwrap_or(false);
+    match (a_is_local, b_is_local) {
+        (true, true) | (false, false) => a.cmp(b),
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+    }
+}
+
 impl From<discovery::TargetHandle> for TargetInfo {
     fn from(handle: discovery::TargetHandle) -> Self {
-        let fidl_th: ffx::TargetInfo = handle.into();
-        fidl_th.into()
+        let (target_state, addresses, serial_number) = match handle.state {
+            discovery::TargetState::Unknown => (TargetState::Unknown, vec![], None),
+            discovery::TargetState::Product { addrs, serial } => {
+                (TargetState::Product, addrs, serial)
+            }
+            discovery::TargetState::Fastboot(fts) => {
+                let addresses = match fts.connection_state {
+                    discovery::FastbootConnectionState::Usb => vec![],
+                    discovery::FastbootConnectionState::Tcp(addrs)
+                    | discovery::FastbootConnectionState::Udp(addrs) => {
+                        addrs.into_iter().map(Into::into).collect()
+                    }
+                };
+                (TargetState::Fastboot, addresses, Some(fts.serial_number))
+            }
+            discovery::TargetState::Zedboot => (TargetState::Zedboot, vec![], None),
+        };
+        let mut addresses = addresses;
+        addresses.sort_by(prefer_local);
+        TargetInfo {
+            nodename: handle.node_name,
+            addresses,
+            rcs_state: RemoteControlState::Unknown,
+            target_state,
+            product_config: None,
+            board_config: None,
+            serial_number,
+            is_manual: handle.manual,
+            boot_id: None,
+            is_default: None,
+        }
+    }
+}
+
+impl From<TargetInfo> for discovery::TargetHandle {
+    fn from(info: TargetInfo) -> Self {
+        let state = match info.target_state {
+            TargetState::Unknown => discovery::TargetState::Unknown,
+            TargetState::Product => discovery::TargetState::Product {
+                addrs: info.addresses,
+                serial: info.serial_number,
+            },
+            TargetState::Fastboot => {
+                let has_usb =
+                    info.addresses.iter().any(|a| matches!(a, addr::TargetAddr::UsbCtx(_)));
+                let ip_addrs: Vec<addr::TargetIpAddr> = info
+                    .addresses
+                    .into_iter()
+                    .filter_map(|a| match a {
+                        addr::TargetAddr::Net(s) => Some(addr::TargetIpAddr::from(s)),
+                        _ => None,
+                    })
+                    .collect();
+                let connection_state = if has_usb || ip_addrs.is_empty() {
+                    discovery::FastbootConnectionState::Usb
+                } else {
+                    // Note: TargetInfo only stores network addresses without a protocol tag (TCP vs UDP),
+                    // so network fastboot addresses default to TCP.
+                    discovery::FastbootConnectionState::Tcp(ip_addrs)
+                };
+                discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                    serial_number: info.serial_number.unwrap_or_default(),
+                    connection_state,
+                })
+            }
+            TargetState::Zedboot => discovery::TargetState::Zedboot,
+        };
+        discovery::TargetHandle { node_name: info.nodename, state, manual: info.is_manual }
     }
 }
 
@@ -188,6 +268,96 @@ impl From<TargetInfo> for discovery::Description {
             serial: info.serial_number,
             ssh_port: None,
             fastboot_interface: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::SocketAddr;
+
+    #[test]
+    fn test_target_info_to_and_from_target_handle() {
+        let socket: SocketAddr = "192.168.1.10:22".parse().unwrap();
+        let addr = TargetAddr::from(socket);
+        let original_info = TargetInfo {
+            nodename: Some("test-device".to_string()),
+            addresses: vec![addr],
+            rcs_state: RemoteControlState::Up,
+            target_state: TargetState::Product,
+            product_config: None,
+            board_config: None,
+            serial_number: Some("sn12345".to_string()),
+            is_manual: false,
+            boot_id: None,
+            is_default: None,
+        };
+
+        let handle = discovery::TargetHandle::from(original_info.clone());
+        assert_eq!(handle.node_name.as_deref(), Some("test-device"));
+        match &handle.state {
+            discovery::TargetState::Product { addrs, serial } => {
+                assert_eq!(addrs, &vec![addr]);
+                assert_eq!(serial.as_deref(), Some("sn12345"));
+            }
+            _ => panic!("Expected Product target state"),
+        }
+
+        let roundtrip_info = TargetInfo::from(handle);
+        assert_eq!(roundtrip_info.nodename.as_deref(), Some("test-device"));
+        assert_eq!(roundtrip_info.target_state, TargetState::Product);
+        assert_eq!(roundtrip_info.addresses, vec![addr]);
+        assert_eq!(roundtrip_info.serial_number.as_deref(), Some("sn12345"));
+    }
+
+    #[test]
+    fn test_fastboot_target_info_to_target_handle() {
+        let original_info = TargetInfo {
+            nodename: Some("fastboot-device".to_string()),
+            addresses: vec![],
+            rcs_state: RemoteControlState::Unknown,
+            target_state: TargetState::Fastboot,
+            product_config: None,
+            board_config: None,
+            serial_number: Some("fb-serial-99".to_string()),
+            is_manual: false,
+            boot_id: None,
+            is_default: None,
+        };
+
+        let handle = discovery::TargetHandle::from(original_info);
+        match handle.state {
+            discovery::TargetState::Fastboot(fts) => {
+                assert_eq!(fts.serial_number, "fb-serial-99");
+                assert_eq!(fts.connection_state, discovery::FastbootConnectionState::Usb);
+            }
+            _ => panic!("Expected Fastboot state"),
+        }
+    }
+
+    #[test]
+    fn test_fastboot_target_info_with_usb_addr_to_target_handle() {
+        let original_info = TargetInfo {
+            nodename: Some("fastboot-usb-device".to_string()),
+            addresses: vec![TargetAddr::UsbCtx(42)],
+            rcs_state: RemoteControlState::Unknown,
+            target_state: TargetState::Fastboot,
+            product_config: None,
+            board_config: None,
+            serial_number: Some("fb-serial-usb-42".to_string()),
+            is_manual: false,
+            boot_id: None,
+            is_default: None,
+        };
+
+        let handle = discovery::TargetHandle::from(original_info);
+        match handle.state {
+            discovery::TargetState::Fastboot(fts) => {
+                assert_eq!(fts.serial_number, "fb-serial-usb-42");
+                assert_eq!(fts.connection_state, discovery::FastbootConnectionState::Usb);
+            }
+            _ => panic!("Expected Fastboot state"),
         }
     }
 }

@@ -52,16 +52,8 @@ pub async fn check_identify_host<W: Write>(
     env_context: &EnvironmentContext,
     retry_delay: Duration,
 ) -> bool {
-    let handle = match discovery::TargetHandle::try_from(target.clone()) {
-        Ok(h) => h,
-        Err(e) => {
-            ledger
-                .add_node(&format!("Error while communicating with RCS: {e}"), LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Failure);
-            return true;
-        }
-    };
-    let resolution = match ffx_target::Resolution::from_target_handle(handle) {
+    let target_info = ffx_target::TargetInfo::from(target.clone());
+    let resolution = match ffx_target::Resolution::from_target_info(&target_info) {
         Ok(r) => r,
         Err(e) => {
             ledger
@@ -279,7 +271,10 @@ pub async fn find_targets_locally(
     query: TargetInfoQuery,
 ) -> Result<Vec<TargetInfo>> {
     let targets = ffx_target::get_discovered_targets(query, true, true, env_context).await?;
-    Ok(targets.into_iter().map(|t| TargetInfo::from(t)).collect::<Vec<TargetInfo>>())
+    Ok(targets
+        .into_iter()
+        .map(|t| TargetInfo::from(ffx_target::TargetInfo::from(t)))
+        .collect::<Vec<TargetInfo>>())
 }
 
 #[cfg(test)]

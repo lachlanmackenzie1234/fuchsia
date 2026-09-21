@@ -803,6 +803,17 @@ impl Resolution {
         Ok(Self { discovered: Some(th), ..Self::from_target(target) })
     }
 
+    pub fn from_target_info(
+        info: &TargetInfo,
+    ) -> std::result::Result<Self, crate::FfxTargetCrateError> {
+        let target = ResolutionTarget::from_target_info(info).ok_or_else(|| {
+            crate::error::TargetResolutionError::MissingProductAddress {
+                node_name: info.nodename.clone(),
+            }
+        })?;
+        Ok(Self::from_target(target))
+    }
+
     pub fn addr(&self) -> std::result::Result<SocketAddr, crate::FfxTargetCrateError> {
         match self.target {
             ResolutionTarget::Addr(addr) => Ok(addr),
