@@ -561,6 +561,81 @@ INSTANTIATE_TEST_SUITE_P(
                          .absolute_realtime_deadline = true}),
     [](const ::testing::TestParamInfo<WakeRaceTestCase> &info) { return info.param.name; });
 
+// FUTEX_UNLOCK_PI hands the mutex to a waiter by writing its tid into the futex word, so a waiter
+// that is interrupted at that moment must still be told it owns the lock.
+//
+// A kernel that answers EINTR here leaves the mutex owned by a thread that believes it failed to
+// take it: every other locker then blocks forever, and glibc turns the retry into EDEADLK.
+TEST(FutexTest, LockPiHandoffIsNotLostWhenRacingWithSignal) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    struct sigaction action = {};
+    action.sa_handler = NoopSignalHandler;
+    sigemptyset(&action.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &action, nullptr));
+
+    const pid_t pid = getpid();
+    const pid_t owner_tid = static_cast<pid_t>(syscall(SYS_gettid));
+
+    constexpr int kIterations = 200;
+    for (int i = 0; i < kIterations; ++i) {
+      // The main thread owns the mutex to force the waiter down the blocking path.
+      std::atomic<uint32_t> futex_word(static_cast<uint32_t>(owner_tid));
+      std::atomic<pid_t> waiter_tid(0);
+      std::atomic<long> lock_result(-1);
+      std::atomic<int> lock_errno(0);
+
+      std::thread waiter([&futex_word, &waiter_tid, &lock_result, &lock_errno]() {
+        waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+        long result = syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr);
+        lock_errno.store(result == 0 ? 0 : errno);
+        lock_result.store(result);
+      });
+
+      while (waiter_tid.load() == 0) {
+        sched_yield();
+      }
+
+      const bool keep_going = [&]() {
+        if (!test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+              return state.find(" S ") != std::string_view::npos;
+            })) {
+          ADD_FAILURE() << "waiter never blocked at iteration " << i;
+          return false;
+        }
+
+        // Interrupt the waiter and hand it the mutex at the same time.
+        SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+        SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE));
+        return true;
+      }();
+
+      waiter.join();
+      if (!keep_going) {
+        break;
+      }
+
+      // Either the unlock handed the mutex over before the signal dequeued the waiter, or it
+      // did not and the waiter reports EINTR. What must never happen is the mutex being handed
+      // to a waiter that is told its lock failed.
+      const uint32_t word = futex_word.load();
+      const bool waiter_owns_mutex =
+          (word & FUTEX_TID_MASK) == static_cast<uint32_t>(waiter_tid.load());
+      const bool lock_succeeded = lock_result.load() == 0;
+      EXPECT_EQ(waiter_owns_mutex, lock_succeeded)
+          << "futex word " << word << " disagrees with FUTEX_LOCK_PI returning "
+          << lock_result.load() << " (errno " << lock_errno.load() << ") at iteration " << i;
+      if (waiter_owns_mutex != lock_succeeded) {
+        break;
+      }
+
+      // Give the mutex back to the main thread for the next iteration.
+      futex_word.store(static_cast<uint32_t>(owner_tid));
+    }
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 TEST(FutexTest, CanRequeueAllWaiters) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
