@@ -97,6 +97,13 @@ class ReleaseFenceManager final {
   // increase with each subsequent call (repeats are OK).
   void OnVsync(uint64_t frame_number, zx::time_monotonic timestamp);
 
+  // Treats every frame that has not been presented as presented at |timestamp|.
+  // Used when the display is powered off: no vsync will ever acknowledge those
+  // frames. Equivalent to OnVsync() for the newest frame, so a GPU-composited
+  // frame that is still rendering invokes its callback when rendering finishes,
+  // as usual.
+  void MarkAllFramesPresented(zx::time_monotonic timestamp);
+
   // For testing.  Return the number of frame records currently held by the manager.
   size_t frame_record_count() const { return frame_records_.size(); }
 

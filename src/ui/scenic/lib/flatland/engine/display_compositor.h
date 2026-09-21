@@ -157,10 +157,18 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // errors of `fuchsia.ui.display.singleton/DisplayPower`: `ZX_ERR_NOT_FOUND` if this
   // compositor or the coordinator does not have the display, `ZX_ERR_NOT_SUPPORTED` if
   // the driver or hardware cannot do `mode`, `ZX_ERR_INTERNAL` for any other failure.
-  // Only called from the main thread.
+  // On kOff, frames applied before this call will never be acknowledged by a vsync, so
+  // their release fences are signaled and their frame-presented callbacks invoked now;
+  // then a solid black config is committed, so that the panel shows black rather than the
+  // last frame when it is powered on again. The dropped configs and flushed fences are
+  // shared by all displays. Only called from the main thread.
   zx_status_t SetDisplayPowerMode(display::DisplayId display_id,
                                   fuchsia_hardware_display_types::PowerMode mode)
       FXL_LOCKS_EXCLUDED(lock_);
+
+  // False for a display this compositor does not have. Only called from the main
+  // thread.
+  bool IsDisplayDark(display::DisplayId display_id) const;
 
   display::CoordinatorProxy* GetDisplayCoordinatorForTest() { return &display_coordinator_; }
 
@@ -207,6 +215,11 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
     // Keeps track of display mode that needs to be set before next `ApplyConfig()`.
     std::optional<display::WireDisplayMode> updated_display_mode;
+
+    // True after SetDisplayPowerMode(kOff) succeeded for this display, until another
+    // mode succeeds. While true, a vsync for an unknown config stamp is expected
+    // (see OnVsync()).
+    bool is_dark = false;
   };
 
   // Notifies the compositor that a vsync has occurred, in response to a display configuration

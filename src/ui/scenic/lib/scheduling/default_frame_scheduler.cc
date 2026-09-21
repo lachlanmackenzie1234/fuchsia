@@ -67,6 +67,11 @@ void DefaultFrameScheduler::SetRenderContinuously(bool render_continuously) {
   }
 }
 
+void DefaultFrameScheduler::ForceRenderFrame() {
+  force_render_next_frame_ = true;
+  RequestFrame(zx::time(0), /*schedule_asap=*/true);
+}
+
 std::pair<zx::time, zx::time> DefaultFrameScheduler::ComputePresentationAndWakeupTimesForTargetTime(
     const zx::time& requested_presentation_time, bool schedule_asap) const {
   const zx::time& last_vsync_time = vsync_timing_->last_vsync_time();
@@ -98,7 +103,8 @@ std::pair<zx::time, zx::time> DefaultFrameScheduler::ComputePresentationAndWakeu
 }
 
 void DefaultFrameScheduler::RequestFrame(zx::time requested_presentation_time, bool schedule_asap) {
-  FX_DCHECK(HaveUpdatableSessions() || render_continuously_ || !last_frame_is_presented_);
+  FX_DCHECK(HaveUpdatableSessions() || render_continuously_ || !last_frame_is_presented_ ||
+            force_render_next_frame_);
 
   auto [new_target_presentation_time, new_wakeup_time] =
       ComputePresentationAndWakeupTimesForTargetTime(requested_presentation_time, schedule_asap);
@@ -201,7 +207,8 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
   const zx::time render_start_time = update_end_time;
   frame_predictor_->ReportUpdateDuration(zx::duration(update_end_time - update_start_time));
 
-  if (!needs_render && last_frame_is_presented_ && !render_continuously_) {
+  if (!needs_render && last_frame_is_presented_ && !render_continuously_ &&
+      !force_render_next_frame_) {
     FLATLAND_VERBOSE_LOG << "FrameScheduler::MaybeRenderFrame() frame_number=" << frame_number
                          << "  target_presentation_time=" << target_presentation_time.get()
                          << "  skipping render because there is nothing to render.";
@@ -267,6 +274,8 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
   outstanding_latch_points_.push_back(update_end_time);
 
   inspect_frame_number_.Set(frame_number);
+
+  force_render_next_frame_ = false;
 
   // Render the frame.
   render_scheduled_frame_(frame_number, target_presentation_time, std::move(on_presented_callback));

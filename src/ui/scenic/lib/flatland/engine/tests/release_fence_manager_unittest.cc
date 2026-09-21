@@ -60,6 +60,12 @@
 //    - OutOfOrderRenderFinished
 //    - FramePresentedCallbackForGpuCompositedFrame
 //    - FramePresentedCallbackForDirectScanoutFrame
+//
+// 7) MarkAllFramesPresented(): used when the display is powered off and no vsync will arrive.
+//
+//    Tests:
+//    - MarkAllFramesPresentedSignalsDirectScanoutFences
+//    - MarkAllFramesPresentedKeepsRenderingGpuFrame
 
 namespace flatland::test {
 
@@ -742,6 +748,58 @@ TEST_F(ReleaseFenceManagerTest, ReleaseCountersOfSameFrameHaveIdenticalTimestamp
 
     EXPECT_EQ(utils::ReadCounter(release_counters[0]), utils::ReadCounter(release_counters[1]));
   }
+}
+
+TEST_F(ReleaseFenceManagerTest, MarkAllFramesPresentedSignalsDirectScanoutFences) {
+  ReleaseFenceManager manager(dispatcher());
+
+  bool frame1_callback_ran = false;
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 1, {}, {}, {},
+      [&frame1_callback_ran](scheduling::Timestamps) { frame1_callback_ran = true; });
+
+  std::vector<zx::event> release_fences = utils::CreateEventArray(1);
+  bool frame2_callback_ran = false;
+  zx::time_monotonic frame2_presentation_time = zx::time_monotonic::infinite_past();
+  manager.OnDirectScanoutFrame(
+      /*frame_number*/ 2, utils::CopyZxHandleVector(release_fences), {}, {},
+      [&frame2_callback_ran, &frame2_presentation_time](scheduling::Timestamps timestamps) {
+        frame2_callback_ran = true;
+        frame2_presentation_time = timestamps.actual_presentation_time;
+      });
+
+  manager.MarkAllFramesPresented(zx::time_monotonic(1000));
+
+  EXPECT_TRUE(utils::IsEventSignalled(release_fences[0], ZX_EVENT_SIGNALED));
+  EXPECT_TRUE(frame1_callback_ran);
+  EXPECT_TRUE(frame2_callback_ran);
+  EXPECT_EQ(frame2_presentation_time.get(), 1000);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+}
+
+TEST_F(ReleaseFenceManagerTest, MarkAllFramesPresentedKeepsRenderingGpuFrame) {
+  ReleaseFenceManager manager(dispatcher());
+
+  zx::event render_finished_fence = utils::CreateEvent();
+  bool callback_ran = false;
+  zx::time_monotonic presentation_time = zx::time_monotonic::infinite_past();
+  manager.OnGpuCompositedFrame(
+      /*frame_number*/ 1, utils::CopyZxHandle(render_finished_fence), {}, {}, {},
+      [&callback_ran, &presentation_time](scheduling::Timestamps timestamps) {
+        callback_ran = true;
+        presentation_time = timestamps.actual_presentation_time;
+      });
+
+  manager.MarkAllFramesPresented(zx::time_monotonic(1000));
+
+  EXPECT_FALSE(callback_ran);
+  EXPECT_EQ(manager.frame_record_count(), 1u);
+
+  render_finished_fence.signal(0u, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(callback_ran);
+  EXPECT_EQ(presentation_time.get(), 1000);
 }
 
 }  // namespace flatland::test

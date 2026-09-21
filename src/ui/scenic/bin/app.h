@@ -132,8 +132,8 @@ class App {
   std::unique_ptr<flatland::TrustedFlatlandFactoryImpl> trusted_flatland_factory_;
   std::shared_ptr<flatland::DisplayCompositor> flatland_compositor_;
   std::shared_ptr<flatland::Engine> flatland_engine_;
-  // Its closure calls into |flatland_compositor_|, so it is declared after it and
-  // destroyed first.
+  // Its closure calls into |flatland_compositor_| and |frame_scheduler_|, so it is
+  // declared after them and destroyed first.
   std::optional<display::DisplayPowerManager> display_power_manager_;
 
   display::ColorConverter color_converter_;

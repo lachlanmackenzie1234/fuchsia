@@ -668,8 +668,17 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
             FX_LOGS(WARNING) << "SetDisplayPowerMode: no default display";
             return ZX_ERR_NOT_FOUND;
           }
+          const display::DisplayId display_id = display->display_id();
           FX_DCHECK(flatland_compositor_);
-          return flatland_compositor_->SetDisplayPowerMode(display->display_id(), mode);
+          const bool was_dark = flatland_compositor_->IsDisplayDark(display_id);
+          const zx_status_t status = flatland_compositor_->SetDisplayPowerMode(display_id, mode);
+          // Frames scheduled while dark were skipped, not rendered, so the display is
+          // showing the black config committed at power-off. Render the current scene
+          // now rather than leaving it black until some client presents.
+          if (status == ZX_OK && was_dark && !flatland_compositor_->IsDisplayDark(display_id)) {
+            frame_scheduler_.ForceRenderFrame();
+          }
+          return status;
         });
     FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_display_singleton::DisplayPower>(
                  display_power_manager_->GetHandler()) == ZX_OK);
@@ -836,12 +845,17 @@ void App::InitializeHeartbeat(display::Display& display) {
       [this](auto frame_number, auto presentation_time, auto frame_presented_callback) {
         TRACE_DURATION("gfx", "App render_scheduled_frame");
         FX_CHECK(flatland_frame_count_ + skipped_frame_count_ == frame_number - 1);
-        if (auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering()) {
+        auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering();
+        // While the display is dark nothing is rendered or applied; SkipRender() signals
+        // the frame's fences and invokes its callback so that nothing waits on a vsync.
+        if (display && !flatland_compositor_->IsDisplayDark(display->display()->display_id())) {
           flatland_engine_->RenderScheduledFrame(frame_number, presentation_time, *display,
                                                  std::move(frame_presented_callback));
           ++flatland_frame_count_;
         } else {
-          FX_LOGS(INFO) << "No FlatlandDisplay; skipping render scheduled frame.";
+          if (!display) {
+            FX_LOGS(INFO) << "No FlatlandDisplay; skipping render scheduled frame.";
+          }
           skipped_frame_count_++;
           flatland_engine_->SkipRender(std::move(frame_presented_callback));
         }

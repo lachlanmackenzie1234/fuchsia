@@ -101,6 +101,13 @@ void ReleaseFenceManager::OnVsync(uint64_t frame_number, zx::time_monotonic time
   }
 }
 
+void ReleaseFenceManager::MarkAllFramesPresented(zx::time_monotonic timestamp) {
+  if (frame_records_.empty()) {
+    return;
+  }
+  OnVsync(frame_records_.rbegin()->first, timestamp);
+}
+
 bool ReleaseFenceManager::MaybeInvokeFramePresentedCallback(FrameRecord& record) {
   FX_DCHECK(!record.callback_invoked) << "callback already invoked.";
 

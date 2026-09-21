@@ -58,6 +58,11 @@ class DefaultFrameScheduler final : public FrameScheduler {
   // |FrameScheduler|
   void SetRenderContinuously(bool render_continuously) override;
 
+  // Renders a frame as soon as possible even if no session has a pending update.
+  // Used when the display is powered on again, so that the current scene is shown
+  // without waiting for a client to present.
+  void ForceRenderFrame();
+
   // |FrameScheduler|
   void ScheduleUpdateForSession(zx::time presentation_time, SchedulingIdPair id_pair,
                                 bool squashable, bool schedule_asap) override;
@@ -167,6 +172,8 @@ class DefaultFrameScheduler final : public FrameScheduler {
   bool last_frame_is_presented_ = false;
   std::deque<zx::time> outstanding_latch_points_;
   bool render_continuously_ = false;
+  // Set by ForceRenderFrame(); cleared when the forced frame starts rendering.
+  bool force_render_next_frame_ = false;
   zx::time wakeup_time_;
   zx::time next_target_presentation_time_;
   const std::unique_ptr<FramePredictor> frame_predictor_;

@@ -75,6 +75,10 @@ namespace {
 
 constexpr uint32_t kMaxDisplayLayersCount = 2;
 
+// `AddDisplay()` creates the empty-scene layer before the pool layers, and layer ids
+// start at 1.
+constexpr display::WireLayerId kEmptySceneLayer{.value = 1};
+
 // Returns a matcher matching the `field` from [`fuchsia.hardware.display/Coordinator.FunctionName`]
 // FIDL request.
 #define MatchRequestField(FunctionName, field, matcher)                                          \
@@ -288,6 +292,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
 
  protected:
   uint64_t next_layer_id_ = 1;
+
   bool RunPromise(fpromise::promise<> promise) {
     return integration_tests::RunPromise(
         dispatcher(), [this] { RunLoopUntilIdle(); }, std::move(promise));
@@ -1941,10 +1946,149 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
 
+TEST_F(DisplayCompositorTest, GoingDarkFlushesPendingConfigsAndStagesBlack) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  AddDisplayWithExpectations(&display, display_info);
+
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(2)
+      .WillRepeatedly(
+          testing::Invoke([&](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+            completer.Reply(display::WireConfigResult::kOk);
+          }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(3).WillRepeatedly(Return());
+
+  std::vector<display::WireLayerId> expected_layers = {kEmptySceneLayer};
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      SetDisplayLayers(
+          testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId.ToFidl())),
+                         MatchRequestField(SetDisplayLayers, layer_ids,
+                                           testing::ElementsAreArray(expected_layers))),
+          _))
+      .Times(1)
+      .WillOnce(Return());
+
+  bool frame_1_callback_fired = false;
+  bool frame_2_callback_fired = false;
+  zx::event release_fence = utils::CreateEvent();
+  zx::event release_fence_copy;
+  ASSERT_EQ(release_fence.duplicate(ZX_RIGHT_SAME_RIGHTS, &release_fence_copy), ZX_OK);
+
+  std::vector<zx::event> frame_2_release_fences;
+  frame_2_release_fences.push_back(std::move(release_fence));
+
+  display_compositor_->RenderFrame(
+      1, zx::time_monotonic(1), std::span<const RenderData>(), {}, {}, {},
+      [&frame_1_callback_fired](const scheduling::Timestamps&) { frame_1_callback_fired = true; });
+
+  display_compositor_->RenderFrame(
+      2, zx::time_monotonic(2), std::span<const RenderData>(), std::move(frame_2_release_fences),
+      {}, {},
+      [&frame_2_callback_fired](const scheduling::Timestamps&) { frame_2_callback_fired = true; });
+
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 2u);
+
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOff, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_OK);
+  EXPECT_TRUE(display_compositor_->IsDisplayDark(kDisplayId));
+
+  EXPECT_TRUE(utils::IsEventSignalled(release_fence_copy, ZX_EVENT_SIGNALED));
+  EXPECT_TRUE(frame_1_callback_fired);
+  EXPECT_TRUE(frame_2_callback_fired);
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 1u);
+  EXPECT_EQ(GetPendingApplyConfigs().front().frame_number, 2u);
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, LateVsyncAfterGoingDarkIsIgnored) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  AddDisplayWithExpectations(&display, display_info);
+
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(2)
+      .WillRepeatedly(
+          testing::Invoke([&](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+            completer.Reply(display::WireConfigResult::kOk);
+          }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(3).WillRepeatedly(Return());
+
+  std::vector<display::WireLayerId> expected_layers = {kEmptySceneLayer};
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      SetDisplayLayers(
+          testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId.ToFidl())),
+                         MatchRequestField(SetDisplayLayers, layer_ids,
+                                           testing::ElementsAreArray(expected_layers))),
+          _))
+      .Times(1)
+      .WillOnce(Return());
+
+  bool frame_1_callback_fired = false;
+  bool frame_2_callback_fired = false;
+  zx::event release_fence = utils::CreateEvent();
+  zx::event release_fence_copy;
+  ASSERT_EQ(release_fence.duplicate(ZX_RIGHT_SAME_RIGHTS, &release_fence_copy), ZX_OK);
+
+  std::vector<zx::event> frame_2_release_fences;
+  frame_2_release_fences.push_back(std::move(release_fence));
+
+  display_compositor_->RenderFrame(
+      1, zx::time_monotonic(1), std::span<const RenderData>(), {}, {}, {},
+      [&frame_1_callback_fired](const scheduling::Timestamps&) { frame_1_callback_fired = true; });
+
+  display_compositor_->RenderFrame(
+      2, zx::time_monotonic(2), std::span<const RenderData>(), std::move(frame_2_release_fences),
+      {}, {},
+      [&frame_2_callback_fired](const scheduling::Timestamps&) { frame_2_callback_fired = true; });
+
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 2u);
+
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOff, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_OK);
+  EXPECT_TRUE(display_compositor_->IsDisplayDark(kDisplayId));
+
+  EXPECT_TRUE(utils::IsEventSignalled(release_fence_copy, ZX_EVENT_SIGNALED));
+  EXPECT_TRUE(frame_1_callback_fired);
+  EXPECT_TRUE(frame_2_callback_fired);
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 1u);
+  EXPECT_EQ(GetPendingApplyConfigs().front().frame_number, 2u);
+
+  static constexpr display::WireConfigStamp kConfigStamp1(1);
+  SendOnVsyncEvent(kConfigStamp1);
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 1u);
+
+  static constexpr display::WireConfigStamp kConfigStamp3(3);
+  SendOnVsyncEvent(kConfigStamp3);
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 0u);
+
+  ExpectDisplayCleanup();
+}
+
 TEST_F(DisplayCompositorTest, SetDisplayPowerModeWithoutDisplayIsNotFound) {
   EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
                 display::DisplayId(1), fuchsia_hardware_display_types::PowerMode::kOff),
             ZX_ERR_NOT_FOUND);
+  EXPECT_FALSE(display_compositor_->IsDisplayDark(display::DisplayId(1)));
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
@@ -1962,6 +2106,7 @@ TEST_F(DisplayCompositorTest, SetDisplayPowerModeReportsCoordinatorError) {
   EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
                 kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
             ZX_ERR_NOT_SUPPORTED);
+  EXPECT_FALSE(display_compositor_->IsDisplayDark(kDisplayId));
   EXPECT_TRUE(GetPendingApplyConfigs().empty());
 
   ExpectDisplayCleanup();
@@ -1987,6 +2132,63 @@ TEST_F(DisplayCompositorTest, SetDisplayPowerModeMapsCoordinatorErrors) {
   EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
                 kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
             ZX_ERR_INTERNAL);
+  EXPECT_FALSE(display_compositor_->IsDisplayDark(kDisplayId));
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, DozeModesKeepDisplayingContent) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  AddDisplayWithExpectations(&display, display_info);
+
+  // 1. kDoze
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kDoze, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kDoze),
+            ZX_OK);
+  EXPECT_FALSE(display_compositor_->IsDisplayDark(kDisplayId));
+  EXPECT_TRUE(GetPendingApplyConfigs().empty());
+
+  // 2. kOff
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillOnce(testing::Invoke([](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+        completer.Reply(display::WireConfigResult::kOk);
+      }));
+  EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
+
+  std::vector<display::WireLayerId> expected_layers = {kEmptySceneLayer};
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      SetDisplayLayers(
+          testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId.ToFidl())),
+                         MatchRequestField(SetDisplayLayers, layer_ids,
+                                           testing::ElementsAreArray(expected_layers))),
+          _))
+      .Times(1)
+      .WillOnce(Return());
+
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOff, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_OK);
+  EXPECT_TRUE(display_compositor_->IsDisplayDark(kDisplayId));
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 1u);
+
+  // 3. kDozeSuspend
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kDozeSuspend, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kDozeSuspend),
+            ZX_OK);
+  EXPECT_FALSE(display_compositor_->IsDisplayDark(kDisplayId));
+  EXPECT_EQ(GetPendingApplyConfigs().size(), 1u);
 
   ExpectDisplayCleanup();
 }

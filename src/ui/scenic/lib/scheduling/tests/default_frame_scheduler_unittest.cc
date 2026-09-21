@@ -742,6 +742,27 @@ TEST_F(FrameSchedulerTest, RenderContinuously_ShouldCauseRenders_WithoutSchedule
   EXPECT_FALSE(frame_presented_callback_.has_value());
 }
 
+TEST_F(FrameSchedulerTest, ForceRenderFrameRendersWithoutUpdates) {
+  constexpr SessionId kSessionId = 1;
+
+  ScheduleUpdate(kSessionId, Now());
+  RunLoopFor(zx::duration(vsync_timing_->vsync_interval()));
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+  FireFramePresentedCallback();
+  RunLoopFor(zx::duration(vsync_timing_->vsync_interval()));
+  EXPECT_FALSE(frame_presented_callback_.has_value());
+  EXPECT_EQ(update_sessions_call_count_, 1u);
+
+  scheduler_.ForceRenderFrame();
+  RunLoopUntilIdle();
+  EXPECT_TRUE(frame_presented_callback_.has_value());
+  EXPECT_EQ(update_sessions_call_count_, 2u);
+
+  FireFramePresentedCallback();
+  RunLoopFor(zx::duration(vsync_timing_->vsync_interval()));
+  EXPECT_FALSE(frame_presented_callback_.has_value());
+}
+
 TEST_F(FrameSchedulerTest, ScheduleAsap_ShouldBeScheduledAsap) {
   constexpr SessionId kSessionId = 1;
 
