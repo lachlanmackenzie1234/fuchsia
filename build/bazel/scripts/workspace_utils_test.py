@@ -1002,7 +1002,7 @@ filegroup(
 )
 
 fuchsia_unstripped_binary(
-    name = "sysroot_library_dist",
+    name = "sysroot_library_dist.novariant",
     dest = "lib/ld.so.1",
     stripped_file = "sysroot/dist/lib/ld.so.1",
     unstripped_file = "sysroot/debug/libc.so",
@@ -1022,6 +1022,15 @@ fuchsia_unstripped_binary(
         "@platforms//os:fuchsia",
         "@platforms//cpu:x86_64",
     ],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "sysroot_library_dist",
+    actual = select({
+        "@@//build/bazel/toolchains/clang:asan_variant": ":sysroot_library_dist.asan",
+        "//conditions:default": ":sysroot_library_dist.novariant",
+    }),
     visibility = ["//visibility:public"],
 )
 """,

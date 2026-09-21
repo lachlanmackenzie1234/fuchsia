@@ -1347,15 +1347,16 @@ def _generate_sysroot_dist_targets(
         bazel_arch: The target CPU architecture (in Bazel's cpu representation, e.g. "x86_64")
 
     Returns:
-        A list of target declarations of fuchsia_unstripped_binary targets.
+        A list of target declarations of fuchsia_unstripped_binary targets and
+        a variant-selecting sysroot_library_dist alias.
     """
     dist_targets: list[str] = []
+    select_entries: dict[str, str] = {}
     for variant in sorted(dist_files.keys()):
         if variant not in debug_files:
             continue
-        target_name = "sysroot_library_dist" + (
-            f".{variant}" if variant else ""
-        )
+        variant_suffix = variant if variant else "novariant"
+        target_name = f"sysroot_library_dist.{variant_suffix}"
         stripped_file, subpath = dist_files[variant]
         unstripped_file = debug_files[variant]
         dist_targets.append(
@@ -1374,6 +1375,31 @@ def _generate_sysroot_dist_targets(
                 )"""
             )
         )
+        if variant:
+            select_entries[
+                f"@@//build/bazel/toolchains/clang:{variant}_variant"
+            ] = f":{target_name}"
+
+    if "" in dist_files and "" in debug_files:
+        select_entries[
+            "//conditions:default"
+        ] = ":sysroot_library_dist.novariant"
+
+    if select_entries:
+        select_dict_lines = "".join(
+            f'        "{cond}": "{target}",\n'
+            for cond, target in select_entries.items()
+        )
+        dist_targets.append(
+            f"""\
+alias(
+    name = "sysroot_library_dist",
+    actual = select({{
+{select_dict_lines}    }}),
+    visibility = ["//visibility:public"],
+)"""
+        )
+
     return dist_targets
 
 
