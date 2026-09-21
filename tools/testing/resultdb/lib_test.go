@@ -15,9 +15,13 @@ import (
 
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder/metadata"
@@ -498,6 +502,261 @@ func TestToResultDBFailureReason_Truncation(t *testing.T) {
 	if len(resList.Errors)+int(resList.TruncatedErrorsCount) != 20 {
 		t.Errorf("got %d kept errors + %d truncated errors, want 20 total", len(resList.Errors), resList.TruncatedErrorsCount)
 	}
+}
+
+// mustParseProperties parses a JSON object into a properties struct, so that
+// expectations can be written as the JSON that ResultDB ultimately exports.
+func mustParseProperties(t *testing.T, properties string) *structpb.Struct {
+	t.Helper()
+	parsed := &structpb.Struct{}
+	if err := protojson.Unmarshal([]byte(properties), parsed); err != nil {
+		t.Fatalf("Cannot parse properties %q: %s", properties, err)
+	}
+	return parsed
+}
+
+func TestTestDetailProperties(t *testing.T) {
+	detail := &runtests.TestDetails{
+		Name:        "foo",
+		GNLabel:     "//src/foo:foo-tests(//build/toolchain/fuchsia:x64)",
+		SourceLabel: "//src/foo:foo-tests",
+		Affected:    true,
+		Tags:        []build.TestTag{{Key: "scope", Value: "hermetic"}},
+		// Include 7 owners to verify that the owner list is not truncated,
+		// unlike the owners tag.
+		Metadata: metadata.TestMetadata{
+			Owners: []string{
+				"testgoogler1@google.com",
+				"testgoogler2@google.com",
+				"testgoogler3@google.com",
+				"testgoogler4@google.com",
+				"testgoogler5@google.com",
+				"testgoogler6@google.com",
+				"testgoogler7@google.com",
+			},
+		},
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{CaseName: "bar_0"}, {CaseName: "bar_1"}, {CaseName: "bar_2"},
+			},
+		},
+	}
+	buildTags := []*resultpb.StringPair{
+		{Key: "builder", Value: "core.x64-release"},
+		{Key: "board", Value: "x64"},
+	}
+
+	got, _ := testDetailProperties(detail, buildTags)
+
+	want := mustParseProperties(t, `{
+		"gn_label": "//src/foo:foo-tests(//build/toolchain/fuchsia:x64)",
+		"source_label": "//src/foo:foo-tests",
+		"test_case_count": 3,
+		"affected": true,
+		"owners": [
+			"testgoogler1@google.com",
+			"testgoogler2@google.com",
+			"testgoogler3@google.com",
+			"testgoogler4@google.com",
+			"testgoogler5@google.com",
+			"testgoogler6@google.com",
+			"testgoogler7@google.com"
+		],
+		"tags": {"scope": "hermetic"},
+		"build": {"builder": "core.x64-release", "board": "x64"}
+	}`)
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("Properties differ (-want +got):\n%s", diff)
+	}
+}
+
+func TestTestCaseProperties(t *testing.T) {
+	detail := &runtests.TestDetails{
+		Name:     "foo",
+		Metadata: metadata.TestMetadata{Owners: []string{"testgoogler1@google.com"}},
+	}
+	testCase := runtests.TestCaseResult{
+		DisplayName: "foo/bar_0",
+		SuiteName:   "foo",
+		CaseName:    "bar_0",
+		Format:      "Rust",
+		Tags:        []build.TestTag{{Key: "key1", Value: "value1"}},
+	}
+	buildTags := []*resultpb.StringPair{{Key: "builder", Value: "core.x64-release"}}
+
+	got, _ := testCaseProperties(testCase, detail, buildTags)
+
+	want := mustParseProperties(t, `{
+		"format": "Rust",
+		"owners": ["testgoogler1@google.com"],
+		"tags": {"key1": "value1"},
+		"build": {"builder": "core.x64-release"}
+	}`)
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("Properties differ (-want +got):\n%s", diff)
+	}
+}
+
+func TestPropertiesFreeFormTags(t *testing.T) {
+	// Tags are reported as a repeated list, so the same key may appear more
+	// than once, and keys may be empty.
+	detail := &runtests.TestDetails{
+		Name: "foo",
+		Tags: []build.TestTag{
+			{Key: "test_outcome", Value: "PASSED"},
+			{Key: "test_outcome", Value: "FAILED"},
+			{Key: "", Value: "tag without a key"},
+		},
+	}
+
+	properties, tags := testDetailProperties(detail, nil)
+
+	// The last value for a key wins, tags without a key are dropped, and the
+	// build metadata is omitted entirely when there is none.
+	want := mustParseProperties(t, `{
+		"gn_label": "",
+		"source_label": "",
+		"test_case_count": 0,
+		"affected": false,
+		"tags": {"test_outcome": "FAILED"}
+	}`)
+	if diff := cmp.Diff(want, properties, protocmp.Transform()); diff != "" {
+		t.Errorf("Properties differ (-want +got):\n%s", diff)
+	}
+
+	// The tags report the same metadata, but, being a repeated list, they keep
+	// every value of a repeated key. They are unordered, so compare them as a
+	// set.
+	wantTags := []*resultpb.StringPair{
+		{Key: "is_top_level_test", Value: "true"},
+		{Key: "gn_label", Value: ""},
+		{Key: "source_label", Value: ""},
+		{Key: "test_case_count", Value: "0"},
+		{Key: "affected", Value: "false"},
+		{Key: "test_outcome", Value: "PASSED"},
+		{Key: "test_outcome", Value: "FAILED"},
+	}
+	sortTags := cmpopts.SortSlices(func(a, b *resultpb.StringPair) bool {
+		if a.Key != b.Key {
+			return a.Key < b.Key
+		}
+		return a.Value < b.Value
+	})
+	if diff := cmp.Diff(wantTags, tags, protocmp.Transform(), sortTags); diff != "" {
+		t.Errorf("Tags differ (-want +got):\n%s", diff)
+	}
+}
+
+func TestPropertiesSizeLimit(t *testing.T) {
+	// Both of these are far larger than the properties size limit on their own.
+	testTags := []build.TestTag{}
+	buildTags := []*resultpb.StringPair{}
+	for i := 0; i < MaxPropertiesSize/1024; i++ {
+		testTags = append(testTags, build.TestTag{
+			Key: fmt.Sprintf("test_tag_%d", i), Value: strings.Repeat("t", 1024),
+		})
+		buildTags = append(buildTags, &resultpb.StringPair{
+			Key: fmt.Sprintf("build_tag_%d", i), Value: strings.Repeat("b", 1024),
+		})
+	}
+
+	t.Run("OversizedTags", func(t *testing.T) {
+		detail := &runtests.TestDetails{Name: "foo", Tags: testTags}
+		got, _ := testDetailProperties(detail, []*resultpb.StringPair{{Key: "builder", Value: "core.x64-release"}})
+		if got != nil {
+			t.Errorf("Got properties of %d bytes, want nil", proto.Size(got))
+		}
+	})
+
+	t.Run("OversizedBuildMetadata", func(t *testing.T) {
+		detail := &runtests.TestDetails{Name: "foo"}
+		got, _ := testDetailProperties(detail, buildTags)
+		if got != nil {
+			t.Errorf("Got properties of %d bytes, want nil", proto.Size(got))
+		}
+	})
+
+	t.Run("OversizedControlledProperties", func(t *testing.T) {
+		detail := &runtests.TestDetails{
+			Name:    "foo",
+			GNLabel: strings.Repeat("l", MaxPropertiesSize+1),
+		}
+		if got, _ := testDetailProperties(detail, nil); got != nil {
+			t.Errorf("Got properties of %d bytes, want nil", proto.Size(got))
+		}
+	})
+
+	t.Run("WithinLimit", func(t *testing.T) {
+		detail := &runtests.TestDetails{
+			Name: "foo",
+			Tags: []build.TestTag{{Key: "scope", Value: "hermetic"}},
+		}
+		got, _ := testDetailProperties(detail, []*resultpb.StringPair{{Key: "builder", Value: "core.x64-release"}})
+		if got == nil {
+			t.Fatal("Got nil properties, want them to be reported")
+		}
+		for _, key := range []string{"tags", "build"} {
+			if _, ok := got.Fields[key]; !ok {
+				t.Errorf("Got no %q properties, want them to be kept", key)
+			}
+		}
+	})
+}
+
+func TestPropertiesReportedInResults(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := createTestDetailWithTestCase(1, outputRoot)
+	buildTags := []*resultpb.StringPair{{Key: "builder", Value: "core.x64-release"}}
+
+	// The builder must stay queryable after the migration to properties, since
+	// Milo regression pages rely on it. See b/527958920.
+	assertBuilderReported := func(t *testing.T, result *sinkpb.TestResult) {
+		t.Helper()
+		gotBuild := result.Properties.GetFields()["build"].GetStructValue()
+		if got := gotBuild.GetFields()["builder"].GetStringValue(); got != "core.x64-release" {
+			t.Errorf("Got builder property %q, want core.x64-release", got)
+		}
+		// The tags are still reported alongside the properties until all the
+		// downstream consumers have migrated.
+		for _, tag := range result.Tags {
+			if tag.Key == "builder" && tag.Value == "core.x64-release" {
+				return
+			}
+		}
+		t.Errorf("Got tags %v, want a builder tag", result.Tags)
+	}
+
+	// The suite and test case hierarchy is reported as a legacy tag only, since
+	// ResultDB already models it. See b/527958757.
+	assertTagReported := func(t *testing.T, result *sinkpb.TestResult, key string) {
+		t.Helper()
+		for _, tag := range result.Tags {
+			if tag.Key == key && tag.Value == "true" {
+				return
+			}
+		}
+		t.Errorf("Got tags %v, want a %q tag", result.Tags, key)
+	}
+
+	result, _, _, err := testDetailsToResultSink(buildTags, detail, outputRoot)
+	if err != nil {
+		t.Fatalf("Cannot parse test detail. got %s", err)
+	}
+	assertTagReported(t, result, "is_top_level_test")
+	if _, ok := result.Properties.GetFields()["is_top_level_test"]; ok {
+		t.Error("Got an is_top_level_test property, want it to be reported as a tag only")
+	}
+	assertBuilderReported(t, result)
+
+	caseResults, _, _ := testCaseToResultSink(detail.Cases, buildTags, detail, outputRoot)
+	if len(caseResults) != 1 {
+		t.Fatalf("Got %d test case results, want 1", len(caseResults))
+	}
+	assertTagReported(t, caseResults[0], "is_test_case")
+	if _, ok := caseResults[0].Properties.GetFields()["is_test_case"]; ok {
+		t.Error("Got an is_test_case property, want it to be reported as a tag only")
+	}
+	assertBuilderReported(t, caseResults[0])
 }
 
 func createTestSummary(testCount int) *runtests.TestSummary {
