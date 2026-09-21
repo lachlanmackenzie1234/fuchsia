@@ -1297,7 +1297,7 @@ assembly_input_bundle(
         # This is a required dependency of pkg-cache
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-update-committer",
         # Build-Information
-        "//bundles/assembly/bazel_inputs/src/developer/build_info:build-info-service",
+        "//src/developer/build_info:build-info-service",
         # Developer.
         "//bundles/assembly/bazel_inputs/src/developer/forensics:pkg",
     ],
