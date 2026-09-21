@@ -1254,6 +1254,10 @@ void Sysmem::LogCollectionsTimer(async_dispatcher_t* loop_dispatcher, async::Tas
   ZX_ASSERT(ZX_OK == log_all_collections_.PostDelayed(loop_dispatcher, kLogAllCollectionsInterval));
 }
 
+// Security note: fuchsia.hardware.sysmem/Sysmem is a privileged protocol. Access control is
+// enforced via Component Framework capability routing (only drivers that legitimately need to call
+// RegisterHeap or RegisterSecureMem may declare `use` of fuchsia.hardware.sysmem.Sysmem in their
+// component manifest). Normal clients/drivers use fuchsia.sysmem2/Allocator instead.
 void Sysmem::RegisterHeap(RegisterHeapRequest& request, RegisterHeapCompleter::Sync& completer) {
   std::lock_guard checker(client_checker_);
   // TODO(b/316646315): Change RegisterHeap to specify fuchsia_sysmem2::Heap, and remove the

@@ -50,8 +50,15 @@ struct Settings {
   uint64_t max_allocation_size = UINT64_MAX;
 };
 
-// The fuchsia_hardware_sysmem::Sysmem protocol is used by the securemem driver and by external
-// heaps such as goldfish.
+// The fuchsia_hardware_sysmem::Sysmem protocol is a privileged backend registration protocol used
+// ONLY by the securemem driver (RegisterSecureMem) and by external heap drivers such as goldfish
+// (RegisterHeap).
+//
+// Normal sysmem clients (including almost all drivers) use fuchsia_sysmem2::Allocator instead.
+//
+// Security model: Callers with access to fuchsia_hardware_sysmem::Sysmem are trusted. Access
+// control is enforced by Component Framework capability routing (only drivers that specifically and
+// legitimately need to register a heap or securemem may declare `use` of this protocol).
 class Sysmem final : public MemoryAllocator::Owner,
                      public fidl::Server<fuchsia_hardware_sysmem::Sysmem> {
  public:
