@@ -408,10 +408,8 @@ impl TestEnvBuilder {
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::directory("root-ssl-certificates"))
                     .capability(Capability::protocol::<fmetrics::MetricEventLoggerFactoryMarker>())
-                    .capability(Capability::protocol::<fidl_fuchsia_posix_socket::ProviderMarker>())
-                    .capability(Capability::protocol::<fidl_fuchsia_net_name::LookupMarker>())
+                    .capability(Capability::protocol::<fidl_fuchsia_net_http::LoaderMarker>())
                     .from(Ref::parent())
                     .to(&omaha_client_service),
             )

@@ -15,6 +15,12 @@
     program: {
         binary: "bin/isolated_ota_integration_test",
     },
+    children: [
+        {
+            name: "http-client",
+            url: "#meta/http-client.cm",
+        },
+    ],
     use: [
         {
             protocol: [
@@ -30,11 +36,13 @@
             protocol: [ "fuchsia.net.name.Lookup" ],
             from: "#dns_resolver",
         },
+        {
+            protocol: [ "fuchsia.net.http.Loader" ],
+            from: "#http-client",
+        },
 
-        // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
-        // the tests don't actually make https connections and so don't need any certs, so we can
-        // just give them an empty file instead of making them a system test and giving them the
-        // system certs.
+        // isolated-ota-env opens /config/ssl to pass root SSL certificates to http-client
+        // when custom repo_config is used (e.g. test_no_network).
         {
             directory: "pkg",
             from: "framework",
@@ -45,14 +53,42 @@
     ],
     offer: [
         {
+            config: [
+                "fuchsia.http-client.StopOnIdleTimeoutMillis",
+                "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+            ],
+            from: "void",
+            to: "#http-client",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.posix.socket.Provider",
             from: "#netstack",
-            to: "#realm_builder",
+            to: [
+                "#http-client",
+                "#realm_builder",
+            ],
         },
         {
             protocol: "fuchsia.net.name.Lookup",
             from: "#dns_resolver",
-            to: "#realm_builder",
+            to: [
+                "#http-client",
+                "#realm_builder",
+            ],
+        },
+
+        // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
+        // the tests don't actually make https connections and so don't need any certs, so we can
+        // just give them an empty file instead of making them a system test and giving them the
+        // system certs.
+        {
+            directory: "pkg",
+            from: "framework",
+            as: "root-ssl-certificates",
+            to: "#http-client",
+            rights: [ "r*" ],
+            subdir: "fake-ssl-certs",
         },
     ],
     facets: {
