@@ -33,22 +33,8 @@
             from: "#netstack",
         },
         {
-            protocol: [ "fuchsia.net.name.Lookup" ],
-            from: "#dns_resolver",
-        },
-        {
             protocol: [ "fuchsia.net.http.Loader" ],
             from: "#http-client",
-        },
-
-        // isolated-ota-env opens /config/ssl to pass root SSL certificates to http-client
-        // when custom repo_config is used (e.g. test_no_network).
-        {
-            directory: "pkg",
-            from: "framework",
-            rights: [ "r*" ],
-            path: "/config/ssl",
-            subdir: "fake-ssl-certs",
         },
     ],
     offer: [
@@ -64,18 +50,20 @@
         {
             protocol: "fuchsia.posix.socket.Provider",
             from: "#netstack",
-            to: [
-                "#http-client",
-                "#realm_builder",
-            ],
+            to: "#http-client",
         },
         {
             protocol: "fuchsia.net.name.Lookup",
             from: "#dns_resolver",
-            to: [
-                "#http-client",
-                "#realm_builder",
+            to: "#http-client",
+        },
+        {
+            protocol: [
+                "fuchsia.net.http.Loader",
+                "fuchsia.pkg.http.Client",
             ],
+            from: "#http-client",
+            to: "#realm_builder",
         },
 
         // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
