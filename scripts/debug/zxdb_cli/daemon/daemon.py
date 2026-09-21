@@ -416,11 +416,6 @@ class Daemon:
             except Exception:
                 pass
 
-        server.close()
-        await server.wait_closed()
-        if UDS_PATH.exists():
-            UDS_PATH.unlink(missing_ok=True)
-
         if self.dap_proc:
             self.dap_proc.terminate()
 
@@ -431,7 +426,15 @@ class Daemon:
             if self.repo_name:
                 await package_server.stop(self.repo_name)
 
+        server.close()
+        # Set shutdown_complete_event first to allow handle_uds_client to unblock
+        # and close client connection. In Python 3.12+, server.wait_closed() blocks
+        # until all connections drop; doing this out of order causes a mutual deadlock.
         self.shutdown_complete_event.set()
+        await server.wait_closed()
+        if UDS_PATH.exists():
+            UDS_PATH.unlink(missing_ok=True)
+
         return 0
 
     async def _connect_to_dap(self) -> bool:
