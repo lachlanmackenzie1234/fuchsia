@@ -85,6 +85,7 @@ syscall_tests_without_deps = [
   "vmsplice_test",
   "waitpid_exit_signal_test",
   "waitpid_flags_test",
+  "xattr_test",
   "zombie_test",
 
   # go/keep-sorted end

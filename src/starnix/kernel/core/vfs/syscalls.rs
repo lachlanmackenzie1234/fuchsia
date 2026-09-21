@@ -65,8 +65,8 @@ use starnix_uapi::{
     POSIX_FADV_DONTNEED, POSIX_FADV_NOREUSE, POSIX_FADV_NORMAL, POSIX_FADV_RANDOM,
     POSIX_FADV_SEQUENTIAL, POSIX_FADV_WILLNEED, RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK,
     TFD_TIMER_ABSTIME, TFD_TIMER_CANCEL_ON_SET, XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE,
-    aio_context_t, errno, error, io_event, iocb, off_t, pid_t, pollfd, pselect6_sigmask, sigset_t,
-    statx, timespec, uapi, uid_t,
+    XATTR_SIZE_MAX, aio_context_t, errno, error, io_event, iocb, off_t, pid_t, pollfd,
+    pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t,
 };
 use std::collections::{HashSet, VecDeque};
 use std::marker::PhantomData;
@@ -1343,7 +1343,7 @@ fn do_setxattr(
     size: usize,
     flags: u32,
 ) -> Result<(), Errno> {
-    if size > XATTR_NAME_MAX as usize {
+    if size > XATTR_SIZE_MAX as usize {
         return error!(E2BIG);
     }
 
