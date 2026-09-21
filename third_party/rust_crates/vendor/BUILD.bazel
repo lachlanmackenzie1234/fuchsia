@@ -1723,14 +1723,14 @@ alias(
 )
 
 alias(
-    name = "num-derive-0.4.2",
-    actual = "//third_party/rust_crates/vendor/num-derive-0.4.2:num_derive",
+    name = "num-derive-0.5.1",
+    actual = "//third_party/rust_crates/vendor/num-derive-0.5.1:num_derive",
     tags = ["manual"],
 )
 
 alias(
     name = "num-derive",
-    actual = "//third_party/rust_crates/vendor/num-derive-0.4.2:num_derive",
+    actual = "//third_party/rust_crates/vendor/num-derive-0.5.1:num_derive",
     tags = ["manual"],
 )
 

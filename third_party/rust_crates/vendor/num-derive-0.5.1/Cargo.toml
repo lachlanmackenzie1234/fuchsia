@@ -11,14 +11,20 @@
 
 [package]
 edition = "2021"
-rust-version = "1.56.0"
+rust-version = "1.71.0"
 name = "num-derive"
-version = "0.4.2"
+version = "0.5.1"
 authors = ["The Rust Project Developers"]
+build = false
 exclude = [
     "/ci/*",
     "/.github/*",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Numeric syntax extensions"
 homepage = "https://github.com/rust-num/num-derive"
 documentation = "https://docs.rs/num-derive"
@@ -33,24 +39,65 @@ repository = "https://github.com/rust-num/num-derive"
 
 [lib]
 name = "num_derive"
+path = "src/lib.rs"
 test = false
 proc-macro = true
 
 [[test]]
+name = "empty_enum"
+path = "tests/empty_enum.rs"
+
+[[test]]
+name = "issue-16"
+path = "tests/issue-16.rs"
+
+[[test]]
+name = "issue-6"
+path = "tests/issue-6.rs"
+
+[[test]]
+name = "issue-9"
+path = "tests/issue-9.rs"
+
+[[test]]
+name = "newtype"
+path = "tests/newtype.rs"
+
+[[test]]
 name = "newtype-2015"
+path = "tests/newtype-2015.rs"
 edition = "2015"
 
 [[test]]
 name = "newtype-2018"
+path = "tests/newtype-2018.rs"
 edition = "2018"
 
 [[test]]
+name = "no_implicit_prelude"
+path = "tests/no_implicit_prelude.rs"
+
+[[test]]
+name = "num_derive_without_num"
+path = "tests/num_derive_without_num.rs"
+
+[[test]]
+name = "trivial"
+path = "tests/trivial.rs"
+
+[[test]]
 name = "trivial-2015"
+path = "tests/trivial-2015.rs"
 edition = "2015"
 
 [[test]]
 name = "trivial-2018"
+path = "tests/trivial-2018.rs"
 edition = "2018"
+
+[[test]]
+name = "with_custom_values"
+path = "tests/with_custom_values.rs"
 
 [dependencies.proc-macro2]
 version = "1"
@@ -59,7 +106,7 @@ version = "1"
 version = "1"
 
 [dependencies.syn]
-version = "2.0.5"
+version = "3"
 
 [dev-dependencies.num]
 version = "0.4"

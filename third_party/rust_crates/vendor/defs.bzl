@@ -664,7 +664,7 @@ _PROC_MACRO_DEPENDENCIES = {
             "async-trait": Label("//third_party/rust_crates/vendor/async-trait-0.1.92:async_trait"),
             "derivative": Label("//third_party/rust_crates/vendor/derivative-2.2.0:derivative"),
             "enumn": Label("//third_party/rust_crates/vendor/enumn-0.1.14:enumn"),
-            "num-derive": Label("//third_party/rust_crates/vendor/num-derive-0.4.2:num_derive"),
+            "num-derive": Label("//third_party/rust_crates/vendor/num-derive-0.5.1:num_derive"),
             "paste": Label("//third_party/rust_crates/vendor/paste-1.0.15:paste"),
             "pest_derive": Label("//third_party/rust_crates/vendor/pest_derive-2.9.0:pest_derive"),
             "proptest-derive": Label("//third_party/rust_crates/vendor/proptest-derive-0.8.0:proptest_derive"),

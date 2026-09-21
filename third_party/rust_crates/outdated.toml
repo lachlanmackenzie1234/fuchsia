@@ -214,7 +214,6 @@ skip_updating = [
     "num-bigint",
     "num-complex",
     "num_cpus",
-    "num-derive",
     "num-integer",
     "num-iter",
     "num-rational",

@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "num-derive",
     package_url = "https://github.com/rust-num/num-derive",
-    package_version = "0.4.2",
+    package_version = "0.5.1",
 )
 
 license(
@@ -71,10 +71,10 @@ rust_proc_macro(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.4.2",
+    version = "0.5.1",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.106:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.47:quote",
-        "//third_party/rust_crates/vendor/syn-2.0.119:syn",
+        "//third_party/rust_crates/vendor/syn-3.0.3:syn",
     ],
 )

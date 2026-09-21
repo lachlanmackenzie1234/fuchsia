@@ -1272,11 +1272,11 @@ group("num-0.4.3") {
 }
 
 group("num-derive") {
-  public_deps = [ ":num-derive-v0_4_2($host_toolchain)" ]
+  public_deps = [ ":num-derive-v0_5_1($host_toolchain)" ]
 }
 
-group("num-derive-0.4.2") {
-  public_deps = [ ":num-derive-v0_4_2" ]
+group("num-derive-0.5.1") {
+  public_deps = [ ":num-derive-v0_5_1" ]
 }
 
 group("num-traits") {
@@ -14660,18 +14660,18 @@ rustc_library("num_cpus-v1_17_0") {
   applicable_licenses = [ ":num_cpus-v1_17_0.license" ]
 }
 
-license("num-derive-v0_4_2.license") {
+license("num-derive-v0_5_1.license") {
   public_package_name = "num_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/num-derive-0.4.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/num-derive-0.4.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/num-derive-0.5.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/num-derive-0.5.1/LICENSE-MIT",
   ]
 }
 
-rustc_macro("num-derive-v0_4_2") {
+rustc_macro("num-derive-v0_5_1") {
   crate_name = "num_derive"
-  source_root = "//third_party/rust_crates/vendor/num-derive-0.4.2/src/lib.rs"
-  output_name = "num_derive-59c052b6ac9cc106"
+  source_root = "//third_party/rust_crates/vendor/num-derive-0.5.1/src/lib.rs"
+  output_name = "num_derive-5c040aeb76cff579"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -14680,19 +14680,19 @@ rustc_macro("num-derive-v0_4_2") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=59c052b6ac9cc106",
-    "-Cextra-filename=-59c052b6ac9cc106",
+    "-Cmetadata=5c040aeb76cff579",
+    "-Cextra-filename=-5c040aeb76cff579",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":num-derive-v0_4_2.license" ]
+  applicable_licenses = [ ":num-derive-v0_5_1.license" ]
 }
 
 license("num-integer-v0_1_46.license") {
