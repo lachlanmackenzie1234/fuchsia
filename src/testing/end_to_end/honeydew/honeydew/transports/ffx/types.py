@@ -4,12 +4,15 @@
 """Data types that match the machine output of ffx."""
 
 import enum
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from honeydew.affordances_capable import FuchsiaDeviceIpChange
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.typing.custom_types import IpPort
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -100,6 +103,25 @@ class DeviceData:
     retail_sku: str | None
     retail_demo: bool | None
     device_id: str | None
+
+    def __post_init__(self) -> None:
+        for attr in ("serial_number", "retail_sku", "device_id"):
+            val = getattr(self, attr)
+            if isinstance(val, str):
+                cleaned = val.strip()
+                if "\n" in cleaned:
+                    raise ValueError(
+                        f"Multi-line value {val!r} is not allowed for DeviceData.{attr}"
+                    )
+                if not cleaned or cleaned.lower() in ("unknown", "<unknown>"):
+                    _LOGGER.debug(
+                        "Invalid value %r provided for DeviceData.%s; setting to None.",
+                        val,
+                        attr,
+                    )
+                    object.__setattr__(self, attr, None)
+                else:
+                    object.__setattr__(self, attr, cleaned)
 
 
 @dataclass(frozen=True)

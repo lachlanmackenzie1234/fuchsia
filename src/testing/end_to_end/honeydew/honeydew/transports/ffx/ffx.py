@@ -159,6 +159,16 @@ class FFX:
         """
         return self._config_data
 
+    @properties.PersistentProperty
+    def serial_number(self) -> str | None:
+        """Returns the device serial number from FFX target show.
+
+        Returns:
+            Serial number if available, else None.
+        """
+        target_info = self.get_target_information()
+        return target_info.device.serial_number
+
     # FFX monitor session management:
     # For infra runs, ffx monitor session is started and managed by botanist.
     # Currently it is not started by default and is only started for on a

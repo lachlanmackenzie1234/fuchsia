@@ -19,6 +19,7 @@ from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.ffx.types import (
+    DeviceData,
     MachineFormat,
     MonitorTargetInfo,
     TargetInfoData,
@@ -382,6 +383,19 @@ class FfxTests(unittest.TestCase):
                 )
             )
         self.assertEqual(ffx_obj.shared_data, shared_data)
+
+    @mock.patch.object(
+        ffx.FFX,
+        "get_target_information",
+        return_value=_FFX_TARGET_SHOW_INFO,
+        autospec=True,
+    )
+    def test_serial_number(
+        self, mock_get_target_information: mock.Mock
+    ) -> None:
+        """Verify serial_number property returns serial number from target show."""
+        self.assertEqual(self.ffx_obj_wo_ip.serial_number, "1234321")
+        mock_get_target_information.assert_called_once_with(self.ffx_obj_wo_ip)
 
     @mock.patch.object(ffx.FFX, "wait_for_rcs_connection", autospec=True)
     def test_check_connection(
@@ -1193,3 +1207,71 @@ class FfxTests(unittest.TestCase):
         # Should catch and not raise exception
         self.ffx_obj_with_ip_and_monitor.notify_intentional_disconnect()
         mock_run.assert_called_once()
+
+    @parameterized.expand(
+        [
+            ("empty_strings", "", "", "", None, None, None),
+            (
+                "unknown_strings",
+                "unknown",
+                "<unknown>",
+                "UNKNOWN",
+                None,
+                None,
+                None,
+            ),
+            (
+                "whitespace_trimmed",
+                "  SER123\n",
+                " SKU123 ",
+                " ID123 ",
+                "SER123",
+                "SKU123",
+                "ID123",
+            ),
+            ("none_values", None, None, None, None, None, None),
+        ]
+    )
+    def test_device_data_sanitization(
+        self,
+        _: str,
+        serial_number: str | None,
+        retail_sku: str | None,
+        device_id: str | None,
+        expected_serial: str | None,
+        expected_sku: str | None,
+        expected_id: str | None,
+    ) -> None:
+        """Test DeviceData.__post_init__ sanitizes empty/unknown strings to None."""
+        data = DeviceData(
+            serial_number=serial_number,
+            retail_sku=retail_sku,
+            retail_demo=False,
+            device_id=device_id,
+        )
+        self.assertEqual(data.serial_number, expected_serial)
+        self.assertEqual(data.retail_sku, expected_sku)
+        self.assertEqual(data.device_id, expected_id)
+
+    @parameterized.expand(
+        [
+            ("multiline_serial", "SER1\nSER2", None, None),
+            ("multiline_sku", None, "SKU1\nSKU2", None),
+            ("multiline_device_id", None, None, "ID1\nID2"),
+        ]
+    )
+    def test_device_data_multiline_raises(
+        self,
+        _: str,
+        serial_number: str | None,
+        retail_sku: str | None,
+        device_id: str | None,
+    ) -> None:
+        """Test DeviceData.__post_init__ raises ValueError on multi-line strings."""
+        with self.assertRaises(ValueError):
+            DeviceData(
+                serial_number=serial_number,
+                retail_sku=retail_sku,
+                retail_demo=False,
+                device_id=device_id,
+            )

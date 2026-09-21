@@ -154,13 +154,13 @@ class FuchsiaController:
             FuchsiaControllerConnectionError
         """
         try:
-            _LOGGER.debug(
-                "Waiting for for Fuchsia-Controller to check the "
+            _LOGGER.info(
+                "Waiting for Fuchsia-Controller to check the "
                 "connection from host to %s...",
                 self._target_name,
             )
             self.ctx.target_wait(timeout=0)
-            _LOGGER.debug(
+            _LOGGER.info(
                 "Fuchsia-Controller completed the connection check from host "
                 "to %s...",
                 self._target_name,
