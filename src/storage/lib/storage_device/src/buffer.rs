@@ -102,7 +102,7 @@ use std::sync::Arc;
 pub struct BufferImpl<'a, H: Borrow<A>, A: ?Sized + BufferAllocator> {
     slice: MutPtrByteSlice<'a>,
     range: Range<usize>,
-    allocator: H,
+    pub(super) allocator: H,
     _phantom: PhantomData<fn() -> &'a A>,
 }
 

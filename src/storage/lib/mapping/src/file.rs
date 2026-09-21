@@ -168,8 +168,12 @@ impl File {
                 let uncompressed_size = self.uncompressed_size;
 
                 read_aligned_range(&self.extents, read_range, service, move |res| {
-                    let Ok(buffer) = res else {
-                        return ControlFlow::Break(());
+                    let buffer = match res {
+                        Ok(buffer) => buffer,
+                        Err(error) => {
+                            log::error!(error:?; "Failed to read blocks for mapped file");
+                            return ControlFlow::Break(());
+                        }
                     };
                     let valid_len =
                         min(buffer.len() as u64, uncompressed_size.saturating_sub(current_offset))
@@ -197,8 +201,15 @@ impl File {
                 };
 
                 read_aligned_range(&self.extents, aligned_range, service, move |res| {
-                    let Ok(buffer) = res else {
-                        return ControlFlow::Break(());
+                    let buffer = match res {
+                        Ok(buffer) => buffer,
+                        Err(error) => {
+                            log::error!(
+                                error:?;
+                                "Failed to read blocks for compressed mapped file"
+                            );
+                            return ControlFlow::Break(());
+                        }
                     };
                     if decompressor.push(buffer.as_ptr_slice()).is_err() {
                         return ControlFlow::Break(());
@@ -212,8 +223,12 @@ impl File {
                 let cipher = cipher.clone();
 
                 read_aligned_range(&self.extents, read_range, service, move |res| {
-                    let Ok(buffer) = res else {
-                        return ControlFlow::Break(());
+                    let buffer = match res {
+                        Ok(buffer) => buffer,
+                        Err(error) => {
+                            log::error!(error:?; "Failed to read blocks for encrypted mapped file");
+                            return ControlFlow::Break(());
+                        }
                     };
                     let mut dest = page_request.mut_ptr_slice().subslice_mut(0..buffer.len());
                     // Both `buffer` and `dest` are aligned to 64 bytes.
@@ -276,6 +291,9 @@ pub trait DeliveryHandler: Send + Sync + 'static {
     fn register_blob(&self, _key: u64, _merkle_leaves: &[[u8; 32]]) -> Result<(), Error> {
         Ok(())
     }
+
+    /// Unregisters a file when it is closed.
+    fn unregister_file(&self, _key: u64) {}
 }
 
 /// A no-op [`DeliveryHandler`] for sessions that do not run a kernel pager or verify blobs
@@ -418,6 +436,7 @@ impl<S: BlockService + ?Sized, D: DeliveryHandler> Files<S, D> {
 
     /// Removes the file registered under `key`.
     pub fn remove(&self, key: u64) {
+        self.delivery_handler.unregister_file(key);
         self.map.lock().remove(&key);
     }
 
