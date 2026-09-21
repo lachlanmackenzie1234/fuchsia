@@ -52,6 +52,21 @@ fuchsia_hardware_display_types::PowerMode ToDisplayPowerMode(const PowerMode& po
 
 }  // namespace
 
+bool PowerModeGeneratesVsyncs(fuchsia_ui_display_singleton::PowerMode mode) {
+  switch (mode) {
+    case fuchsia_ui_display_singleton::PowerMode::kOn:
+    case fuchsia_ui_display_singleton::PowerMode::kDoze:
+    case fuchsia_ui_display_singleton::PowerMode::kDozeSuspend:
+      return true;
+    case fuchsia_ui_display_singleton::PowerMode::kOff:
+      return false;
+    default:
+      // ToDisplayPowerMode() forwards unknown modes to the coordinator as kOn, so
+      // treat them as generating vsyncs here too.
+      return true;
+  }
+}
+
 DisplayPowerManager::DisplayPowerManager(inspect::Node& parent_node,
                                          SetDisplayPowerModeFn set_display_power_mode)
     : inspect_display_power_events_(parent_node.CreateChild(kDisplayPowerEvents),

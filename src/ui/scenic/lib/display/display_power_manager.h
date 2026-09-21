@@ -17,6 +17,10 @@
 
 namespace display {
 
+// True for every PowerMode in which the display emits VSync events: kOn, kDoze,
+// kDozeSuspend. Only kOff stops VSync events (see fuchsia.hardware.display.types/PowerMode).
+bool PowerModeGeneratesVsyncs(fuchsia_ui_display_singleton::PowerMode mode);
+
 // Implements the |fuchsia::ui::display::singleton::DisplayPower| protocol,
 // Internal protocol clients are able to control the power of all available
 // display devices through this protocol.

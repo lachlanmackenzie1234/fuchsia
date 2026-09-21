@@ -112,6 +112,13 @@ class DisplayPowerManagerTest : public ::testing::Test {
   DisplayPowerManager display_power_manager_;
 };
 
+TEST_F(DisplayPowerManagerTest, PowerModeGeneratesVsyncs) {
+  EXPECT_TRUE(PowerModeGeneratesVsyncs(PowerMode::kOn));
+  EXPECT_TRUE(PowerModeGeneratesVsyncs(PowerMode::kDoze));
+  EXPECT_TRUE(PowerModeGeneratesVsyncs(PowerMode::kDozeSuspend));
+  EXPECT_FALSE(PowerModeGeneratesVsyncs(PowerMode::kOff));
+}
+
 TEST_F(DisplayPowerManagerTest, Ok) {
   EXPECT_EQ(display_power_manager()->current_power_mode(), PowerMode::kOn);
 
