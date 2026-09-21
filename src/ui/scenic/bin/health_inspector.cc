@@ -39,7 +39,7 @@ bool HealthInspector::CheckReceivingVsyncsWhenDisplayIsOn(inspect::Node& node,
   }
 
   const auto power_mode = display_power_manager_->current_power_mode();
-  // Only kOff stops VSync events; the doze modes still emit them.
+  // Only `kOff` stops VSync events; the doze modes still emit them.
   if (!display::PowerModeGeneratesVsyncs(power_mode)) {
     return true;
   }

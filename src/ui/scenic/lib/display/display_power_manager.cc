@@ -61,8 +61,8 @@ bool PowerModeGeneratesVsyncs(fuchsia_ui_display_singleton::PowerMode mode) {
     case fuchsia_ui_display_singleton::PowerMode::kOff:
       return false;
     default:
-      // ToDisplayPowerMode() forwards unknown modes to the coordinator as kOn, so
-      // treat them as generating vsyncs here too.
+      // `ToDisplayPowerMode()` forwards unknown modes to the coordinator as `kOn`,
+      // so treat them as generating vsyncs here too.
       return true;
   }
 }

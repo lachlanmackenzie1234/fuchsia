@@ -17,23 +17,23 @@
 
 namespace display {
 
-// True for every PowerMode in which the display emits VSync events: kOn, kDoze,
-// kDozeSuspend. Only kOff stops VSync events (see fuchsia.hardware.display.types/PowerMode).
+// True for every `PowerMode` in which the display emits VSync events: `kOn`, `kDoze`,
+// `kDozeSuspend`. Only `kOff` stops VSync events (see `fuchsia.hardware.display.types/PowerMode`).
 bool PowerModeGeneratesVsyncs(fuchsia_ui_display_singleton::PowerMode mode);
 
-// Implements the |fuchsia::ui::display::singleton::DisplayPower| protocol,
+// Implements the `fuchsia::ui::display::singleton::DisplayPower` protocol,
 // Internal protocol clients are able to control the power of all available
 // display devices through this protocol.
 class DisplayPowerManager : public fidl::Server<fuchsia_ui_display_singleton::DisplayPower> {
  public:
-  // Applies |mode| to the display hardware, synchronously, and returns ZX_OK or the
+  // Applies `mode` to the display hardware, synchronously, and returns `ZX_OK` or the
   // status to report to the protocol client.
   using SetDisplayPowerModeFn =
       fit::function<zx_status_t(fuchsia_hardware_display_types::PowerMode mode)>;
 
   DisplayPowerManager(inspect::Node& parent_node, SetDisplayPowerModeFn set_display_power_mode);
 
-  // |fuchsia::ui::display::singleton::DisplayPower|
+  // `fuchsia::ui::display::singleton::DisplayPower`
   void SetPowerMode(SetPowerModeRequest& request, SetPowerModeCompleter::Sync& completer) override;
   void SetPowerMode(fuchsia_ui_display_singleton::PowerMode power_mode,
                     fit::function<void(fit::result<zx_status_t>)> completer);

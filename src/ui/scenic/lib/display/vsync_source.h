@@ -27,7 +27,7 @@ class VsyncSource : public fidl::Server<fuchsia_ui_display_singleton::VsyncSourc
   ~VsyncSource() override;
 
  private:
-  // |fuchsia_ui_display_singleton::VsyncSource|
+  // `fuchsia_ui_display_singleton::VsyncSource`
   void SetVsyncEnabled(SetVsyncEnabledRequest& request,
                        SetVsyncEnabledCompleter::Sync& completer) override;
 

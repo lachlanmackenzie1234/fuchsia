@@ -28,7 +28,7 @@ constexpr uint32_t kMaxDisplayLayersCount = 2;
 
 class DisplayManagerMockTest : public gtest::TestLoopFixture {
  public:
-  // |testing::Test|
+  // `testing::Test`
   void SetUp() override {
     TestLoopFixture::SetUp();
 
@@ -36,7 +36,7 @@ class DisplayManagerMockTest : public gtest::TestLoopFixture {
     display_manager_ = std::make_unique<DisplayManager>([]() {});
   }
 
-  // |testing::Test|
+  // `testing::Test`
   void TearDown() override {
     display_manager_.reset();
     TestLoopFixture::TearDown();
@@ -84,7 +84,7 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
                                     WireConfigStamp stamp) { ++num_vsync_display_received; });
 
   for (size_t vsync_id = 1; vsync_id <= kTotalVsync; vsync_id++) {
-    // We only require acknowledgement for every |kAcknowledgeRate| Vsync IDs.
+    // We only require acknowledgement for every `kAcknowledgeRate` Vsync IDs.
     uint64_t cookie = (vsync_id % kAcknowledgeRate == 0) ? vsync_id : 0;
 
     test_loop().AdvanceTimeByEpsilon();

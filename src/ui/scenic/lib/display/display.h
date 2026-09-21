@@ -24,7 +24,7 @@
 
 namespace display {
 
-// Display is a placeholder that provides make-believe values for screen
+// `Display` is a placeholder that provides make-believe values for screen
 // resolution, vsync interval, last vsync time, etc.
 class Display {
  public:
@@ -51,7 +51,7 @@ class Display {
   void Claim();
   void Unclaim();
 
-  // Sets the device_pixel ratio that should be used for this specific Display.
+  // Sets the device_pixel ratio that should be used for this specific display.
   void set_device_pixel_ratio(const glm::vec2& device_pixel_ratio) {
     device_pixel_ratio_.store(device_pixel_ratio);
     if (dpr_callback_) {
@@ -61,7 +61,7 @@ class Display {
 
   const WireDisplayMode& Mode() const { return mode_; }
 
-  // The display's ID in the context of the DisplayManager's DisplayController.
+  // The display's ID in the context of the `DisplayManager`'s `DisplayController`.
   display::DisplayId display_id() const { return display_id_; }
   const WireDisplayMode& mode() const { return mode_; }
   uint32_t width_in_px() const { return mode_.active_area.width; }
@@ -77,11 +77,11 @@ class Display {
 
   uint32_t max_layer_count() const { return max_layer_count_; }
 
-  // Event signaled by DisplayManager when ownership of the display
-  // changes. This event backs Scenic's GetDisplayOwnershipEvent API.
+  // Event signaled by `DisplayManager` when ownership of the display
+  // changes. This event backs Scenic's `GetDisplayOwnershipEvent()` API.
   const zx::event& ownership_event() const { return ownership_event_; }
 
-  // Called by DisplayManager, other users of Display should probably not call this.  Except tests.
+  // Called by `DisplayManager`, non-test users of `Display` should probably not call this.
   void OnVsync(zx::time_monotonic timestamp, WireConfigStamp displayed_config_stamp);
 
  protected:
@@ -102,8 +102,8 @@ class Display {
   const uint32_t width_in_mm_;
   const uint32_t height_in_mm_;
   const uint32_t max_layer_count_;
-  // |device_pixel_ratio_| may be written from FlatlandDisplay thread and read by SingletonDisplay
-  // service running on the main thread.
+  // `device_pixel_ratio_` may be written from `FlatlandDisplay` thread and read by
+  // `SingletonDisplay` service running on the main thread.
   std::atomic<glm::vec2> device_pixel_ratio_;
   zx::event ownership_event_;
   std::vector<fuchsia_images2::PixelFormat> pixel_formats_;

@@ -153,7 +153,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
 
     mock_display_coordinator_ =
         std::make_unique<testing::StrictMock<flatland::MockDisplayCoordinator>>();
-    // The fidl::Server requires the binding and teardown to occur on the
+    // The `fidl::Server` requires the binding and teardown to occur on the
     // same thread where the FIDL server runs.
     libsync::Completion completion;
     async::PostTask(
@@ -240,8 +240,8 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
                                                    /* trace_flow_id= */ 1);
   }
 
-  // AddDisplay() with the mock expectations it needs. Layer ids are 1 (the
-  // empty-scene layer) through kMaxDisplayLayersCount + 1.
+  // `AddDisplay()` with the mock expectations it needs. Layer ids are 1 (the
+  // empty-scene layer) through `kMaxDisplayLayersCount + 1`.
   void AddDisplayWithExpectations(display::Display* display, const DisplayInfo& display_info) {
     next_layer_id_ = 1;
     EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
@@ -258,7 +258,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
                                     /*out_buffer_collection*/ nullptr);
   }
 
-  // Expectations for the DisplayCompositor destructor after AddDisplayWithExpectations().
+  // Expectations for the `DisplayCompositor` destructor after `AddDisplayWithExpectations()`.
   void ExpectDisplayCleanup() {
     for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
       EXPECT_CALL(
@@ -271,8 +271,8 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
     EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
   }
 
-  // One SetDisplayPowerMode() call on the mock, replying |reply|. Set this up right
-  // before each DisplayCompositor::SetDisplayPowerMode() call.
+  // One `SetDisplayPowerMode()` call on the mock, replying `reply`. Set this up right
+  // before each `DisplayCompositor::SetDisplayPowerMode()` call.
   void ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode expected_mode,
                                  zx_status_t reply) {
     EXPECT_CALL(*mock_display_coordinator_, SetDisplayPowerMode(_, _))
@@ -306,8 +306,8 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
   std::shared_ptr<flatland::MockRenderer> renderer_;
   std::shared_ptr<flatland::DisplayCompositor> display_compositor_;
 
-  // Only for use on the main thread. Establish a new connection when on the MockDisplayCoordinator
-  // thread.
+  // Only for use on the main thread. Establish a new connection when on the
+  // `MockDisplayCoordinator` thread.
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 
   void HardwareFrameCorrectnessWithRotationTester(
@@ -315,7 +315,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
       display::WireCoordinateTransformation expected_transform);
 };
 
-// TODO(https://fxbug.dev/324688770): Dispatch all DisplayCompositor methods
+// TODO(https://fxbug.dev/324688770): Dispatch all `DisplayCompositor` methods
 // to the test loop.
 
 TEST_F(DisplayCompositorTest, ImportAndReleaseBufferCollectionTest) {
@@ -378,7 +378,7 @@ TEST_F(DisplayCompositorTest, ImportAndReleaseBufferCollectionTest) {
 
 // This test makes sure the buffer negotiations work as intended.
 // There are three participants: the client, the display and the renderer.
-// Each participant sets {min_buffer_count, max_buffer_count} constraints like so:
+// Each participant sets `{min_buffer_count, max_buffer_count}` constraints like so:
 // Client: {1, 3}
 // Display: {2, 3}
 // Renderer: {1, 2}
@@ -506,7 +506,7 @@ TEST_F(DisplayCompositorTest,
     EXPECT_EQ(wait_result->buffer_collection_info().value().buffers().value().size(), 2u);
   }
 
-  // ImportBufferImage() to confirm that the allocation was handled correctly.
+  // `ImportBufferImage()` to confirm that the allocation was handled correctly.
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
   ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
@@ -520,7 +520,7 @@ TEST_F(DisplayCompositorTest,
 
 // This test makes sure the buffer negotiations work as intended.
 // There are three participants: the client, the display and the renderer.
-// Each participant sets {min_buffer_count, max_buffer_count} constraints like so:
+// Each participant sets `{min_buffer_count, max_buffer_count}` constraints like so:
 // Client: {1, 2}
 // Display: {1, 1}
 // Renderer: {2, 2}
@@ -638,7 +638,7 @@ TEST_F(DisplayCompositorTest,
     EXPECT_EQ(wait_result->buffer_collection_info().value().buffers().value().size(), 2u);
   }
 
-  // ImportBufferImage() to confirm that the allocation was handled correctly.
+  // `ImportBufferImage()` to confirm that the allocation was handled correctly.
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
   ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
@@ -710,7 +710,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
         return fpromise::make_ok_promise();
       });
 
-  // Import BufferCollection and image to trigger constraint setting and handling of allocations.
+  // Import `BufferCollection` and image to trigger constraint setting and handling of allocations.
   ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
       kGlobalBufferCollectionId, sysmem_allocator_, std::move(compositor_token),
       BufferCollectionUsage::kClientImage, std::nullopt)));
@@ -721,7 +721,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
     EXPECT_EQ(wait_result->buffer_collection_info().value().buffers().value().size(), 2u);
   }
 
-  // ImportBufferImage() to confirm that the allocation was handled correctly.
+  // `ImportBufferImage()` to confirm that the allocation was handled correctly.
   EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
   ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
@@ -1003,7 +1003,7 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
 
-// This test checks that DisplayCompositor properly processes ConfigStamp from Vsync.
+// This test checks that `DisplayCompositor` properly processes `ConfigStamp` from Vsync.
 TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
@@ -1034,7 +1034,7 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
 }
 
 // When compositing directly to a hardware display layer, the display coordinator
-// takes in source and destination Frame object types, which mirrors flatland usage.
+// takes in source and destination `Frame` object types, which mirrors flatland usage.
 // The source frames are nonnormalized UV coordinates and the destination frames are
 // screenspace coordinates given in pixels. So this test makes sure that the rectangle
 // and frame data that is generated by flatland sends along to the display coordinator
@@ -1166,7 +1166,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   display_compositor_->SetColorConversionValues({1, 0, 0, 0, 1, 0, 0, 0, 1}, {0.1f, 0.2f, 0.3f},
                                                 {-0.3f, -0.2f, -0.1f});
 
-  // Setup the EXPECT_CALLs for gmock.
+  // Setup the `EXPECT_CALL`s for gmock.
   uint64_t layer_id_value = 1;
   EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
       .Times(3)
@@ -1372,7 +1372,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   display_compositor_->SetColorConversionValues({1, 0, 0, 0, 1, 0, 0, 0, 1}, {0.1f, 0.2f, 0.3f},
                                                 {-0.3f, -0.2f, -0.1f});
 
-  // Setup the EXPECT_CALLs for gmock.
+  // Setup the `EXPECT_CALL`s for gmock.
   // Note that a couple of layers are created upfront for the display.
   uint64_t layer_id_value = 1;
   EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
@@ -1517,7 +1517,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith270DegreeRotationTest)
 
 // WithLeftRightFlipTest
 //   No rotation: destination stays 10×20.  A left-right (horizontal) mirror is a
-//   reflection across the Y axis (kReflectY); the flip rides ImageFlip.
+//   reflection across the Y axis (`kReflectY`); the flip rides `ImageFlip`.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlipTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
   HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw0Degrees, ImageFlip::kLeftRight,
@@ -1527,7 +1527,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlipTest) {
 
 // WithUpDownFlipTest
 //   No rotation: destination stays 10×20.  An up-down (vertical) mirror reflects
-//   across the X axis (kReflectX); the flip rides ImageFlip.
+//   across the X axis (`kReflectX`); the flip rides `ImageFlip`.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlipTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
   HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw0Degrees, ImageFlip::kUpDown,
@@ -1537,11 +1537,11 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlipTest) {
 
 // WithLeftRightFlip90DegreeRotationTest
 //   Left-right flip combined with 90° CCW rotation; destination 10×20 -> 20×10.
-//   Display transform ROTATE_CCW_90_REFLECT_X: "ROTATE_CCW_90, followed by
-//   REFLECT_X" (coordinator.fidl / fuchsia.hardware.display.types.CoordinateTransformation :
+//   Display transform `ROTATE_CCW_90_REFLECT_X`: "`ROTATE_CCW_90`, followed by
+//   `REFLECT_X`" (`coordinator.fidl` / `fuchsia.hardware.display.types.CoordinateTransformation` :
 //   the combined enums rotate first, then reflect).  Note the reflection is
-//   REFLECT_X here, whereas a left-right flip *without* rotation is REFLECT_Y
-//   (kReflectY): the display reflects in the post-rotation frame.
+//   `REFLECT_X` here, whereas a left-right flip *without* rotation is `REFLECT_Y`
+//   (`kReflectY`): the display reflects in the post-rotation frame.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip90DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
@@ -1551,8 +1551,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip90DegreeR
 
 // WithUpDownFlip90DegreeRotationTest
 //   Up-down flip combined with 90° CCW rotation; destination 10×20 -> 20×10.
-//   Display transform ROTATE_CCW_90_REFLECT_Y: "ROTATE_CCW_90, followed by
-//   REFLECT_Y" (same rotate-then-reflect order, coordinator.fidl).
+//   Display transform `ROTATE_CCW_90_REFLECT_Y`: "`ROTATE_CCW_90`, followed by
+//   `REFLECT_Y`" (same rotate-then-reflect order, `coordinator.fidl`).
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip90DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
@@ -1588,7 +1588,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip270DegreeRot
       display::WireCoordinateTransformation::kRotateCcw90ReflectX);
 }
 
-// Tests that RenderOnly mode does not attempt to ImportBufferCollection() to display.
+// Tests that RenderOnly mode does not attempt to `ImportBufferCollection()` to display.
 TEST_F(DisplayCompositorTest, RendererOnly_ImportAndReleaseBufferCollectionTest) {
   ForceRendererOnlyMode(true);
 
@@ -1641,8 +1641,8 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
             completer.Reply(display::WireConfigResult::kOk);
           }));
 
-  // Setup the EXPECT_CALLs for gmock.
-  // We expect 1 layer for empty scene, and 2 layers for the pool (configured in SetUp).
+  // Setup the `EXPECT_CALL`s for gmock.
+  // We expect 1 layer for empty scene, and 2 layers for the pool (configured in `SetUp`).
   uint64_t layer_id_value = 1;
   EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
       .Times(3)
@@ -1661,7 +1661,7 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
-  // We expect SetDisplayLayers to be called with the FIRST layer created (empty scene layer).
+  // We expect `SetDisplayLayers` to be called with the FIRST layer created (empty scene layer).
   std::vector<display::WireLayerId> expected_layers = {{.value = 1}};
   EXPECT_CALL(
       *mock_display_coordinator_,
@@ -1675,8 +1675,8 @@ TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer)
 
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
-  // RenderFrame with empty render data list for the display.
-  // This triggers SetRenderDataOnDisplay with 0 images.
+  // `RenderFrame` with empty render data list for the display.
+  // This triggers `SetRenderDataOnDisplay` with 0 images.
   RenderData render_data = {.display_id = kDisplayId, .layers = {}};
   std::span<const RenderData> render_data_list(&render_data, 1);
   display_compositor_->RenderFrame(1, zx::time_monotonic(1), render_data_list, {}, {}, {},
@@ -1699,8 +1699,8 @@ TEST_F(DisplayCompositorTest, TryDirectToDisplayExceedsHardwareLayerLimitFallbac
   static constexpr uint32_t kMaxDisplayLayersCount = 1;
   const DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
 
-  // Note: Scenic creates display->max_layer_count() layers for the pool PLUS
-  // one additional layer for the empty scene. Total = kMaxDisplayLayersCount + 1.
+  // Note: Scenic creates `display->max_layer_count()` layers for the pool PLUS
+  // one additional layer for the empty scene. Total = `kMaxDisplayLayersCount + 1`.
   EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
       .Times(kMaxDisplayLayersCount + 1)
       .WillRepeatedly(
@@ -1732,7 +1732,7 @@ TEST_F(DisplayCompositorTest, TryDirectToDisplayExceedsHardwareLayerLimitFallbac
   bool result = TryDirectToDisplay(render_data_list);
   EXPECT_FALSE(result);
 
-  // Cleanup: All layers (kMaxDisplayLayersCount + 1 empty scene layer) should be destroyed.
+  // Cleanup: All layers (`kMaxDisplayLayersCount` + 1 empty scene layer) should be destroyed.
   for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
     EXPECT_CALL(
         *mock_display_coordinator_,
@@ -2146,7 +2146,7 @@ TEST_F(DisplayCompositorTest, DozeModesKeepDisplayingContent) {
 
   AddDisplayWithExpectations(&display, display_info);
 
-  // 1. kDoze
+  // 1. `kDoze`
   ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kDoze, ZX_OK);
   EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
                 kDisplayId, fuchsia_hardware_display_types::PowerMode::kDoze),
@@ -2154,7 +2154,7 @@ TEST_F(DisplayCompositorTest, DozeModesKeepDisplayingContent) {
   EXPECT_FALSE(display_compositor_->IsDisplayDark(kDisplayId));
   EXPECT_TRUE(GetPendingApplyConfigs().empty());
 
-  // 2. kOff
+  // 2. `kOff`
   EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
   EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1).WillOnce(Return());
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
@@ -2182,7 +2182,7 @@ TEST_F(DisplayCompositorTest, DozeModesKeepDisplayingContent) {
   EXPECT_TRUE(display_compositor_->IsDisplayDark(kDisplayId));
   EXPECT_EQ(GetPendingApplyConfigs().size(), 1u);
 
-  // 3. kDozeSuspend
+  // 3. `kDozeSuspend`
   ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kDozeSuspend, ZX_OK);
   EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
                 kDisplayId, fuchsia_hardware_display_types::PowerMode::kDozeSuspend),

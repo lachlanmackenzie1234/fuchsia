@@ -46,19 +46,19 @@ uint32_t BufferCollectionPixelFormatToImageTilingType(
     fuchsia_images2::PixelFormatModifier pixel_format_modifier) {
   switch (pixel_format_modifier) {
     case fuchsia_images2::PixelFormatModifier::kIntelI915XTiled:
-      return 1;  // IMAGE_TILING_TYPE_X_TILED
+      return 1;  // `IMAGE_TILING_TYPE_X_TILED`
     case fuchsia_images2::PixelFormatModifier::kIntelI915YTiled:
-      return 2;  // IMAGE_TILING_TYPE_Y_LEGACY_TILED
+      return 2;  // `IMAGE_TILING_TYPE_Y_LEGACY_TILED`
     case fuchsia_images2::PixelFormatModifier::kIntelI915YfTiled:
-      return 3;  // IMAGE_TILING_TYPE_YF_TILED
+      return 3;  // `IMAGE_TILING_TYPE_YF_TILED`
     case fuchsia_images2::PixelFormatModifier::kLinear:
     default:
       return fuchsia_hardware_display_types::kImageTilingTypeLinear;
   }
 }
 
-// Creates a duplicate of |token| in |duplicate|.
-// Returns an error string if it fails, otherwise std::nullopt.
+// Creates a duplicate of `token` in `duplicate`.
+// Returns an error string if it fails, otherwise `std::nullopt`.
 std::optional<std::string> DuplicateToken(
     fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken>& token,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>& duplicate) {
@@ -74,8 +74,8 @@ std::optional<std::string> DuplicateToken(
   return std::nullopt;
 }
 
-// Returns a prunable subtree of |token| with |num_new_tokens| children.
-// Returns std::nullopt on failure.
+// Returns a prunable subtree of `token` with `num_new_tokens` children.
+// Returns `std::nullopt` on failure.
 std::optional<std::vector<fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>>>
 CreatePrunableChildren(fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                        fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
@@ -98,7 +98,7 @@ CreatePrunableChildren(fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allo
     token_group.Bind(std::move(client_end));
   }
 
-  // Create the requested children, then mark all children created and close out |token_group|.
+  // Create the requested children, then mark all children created and close out `token_group`.
   {
     std::vector<zx_rights_t> children_request_rights(num_new_tokens, ZX_RIGHT_SAME_RIGHTS);
     fuchsia_sysmem2::BufferCollectionTokenGroupCreateChildrenSyncRequest create_children_request;
@@ -128,8 +128,8 @@ CreatePrunableChildren(fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allo
   }
 }
 
-// Returns a BufferCollection duplicate of |token| with empty constraints set.
-// Since it has the same failure domain as |token|, it can be used to check the status of
+// Returns a `BufferCollection` duplicate of `token` with empty constraints set.
+// Since it has the same failure domain as `token`, it can be used to check the status of
 // allocations made from that collection.
 std::optional<fidl::SyncClient<fuchsia_sysmem2::BufferCollection>>
 CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
@@ -164,7 +164,7 @@ CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
   return buffer_collection;
 }
 
-// Returns whether |metadata| describes a valid image.
+// Returns whether `metadata` describes a valid image.
 bool IsValidBufferImage(const allocation::ImageMetadata& metadata) {
   if (metadata.identifier == display::kInvalidImageId) {
     FX_LOGS(ERROR) << "ImageMetadata identifier is invalid.";
@@ -185,14 +185,13 @@ bool IsValidBufferImage(const allocation::ImageMetadata& metadata) {
   return true;
 }
 
-// Calls CheckBuffersAllocated |token| and returns whether the allocation succeeded.
 bool CheckBuffersAllocated(fidl::SyncClient<fuchsia_sysmem2::BufferCollection>& token) {
   auto check_status = token->CheckAllBuffersAllocated();
   return check_status.is_ok();
 }
 
-// Calls WaitForBuffersAllocated() on |token| and returns the pixel format of the allocation.
-// |token| must have already checked that buffers are allocated.
+// Calls `WaitForBuffersAllocated()` on `token` and returns the pixel format of the allocation.
+// `token` must have already checked that buffers are allocated.
 // TODO(https://fxbug.dev/42150686): Delete after we don't need the pixel format anymore.
 fuchsia_images2::PixelFormatModifier GetPixelFormatModifier(
     fidl::SyncClient<fuchsia_sysmem2::BufferCollection>& token) {
@@ -210,8 +209,8 @@ fuchsia_images2::PixelFormatModifier GetPixelFormatModifier(
       .value();
 }
 
-// Consumes |token| and if its allocation is compatible with the display returns its pixel format.
-// Otherwise returns std::nullopt.
+// Consumes `token` and if its allocation is compatible with the display returns its pixel format.
+// Otherwise returns `std::nullopt`.
 // TODO(https://fxbug.dev/42150686): Just return a bool after we don't need the pixel format
 // anymore.
 std::optional<fuchsia_images2::PixelFormatModifier> DetermineDisplaySupportFor(
@@ -281,7 +280,7 @@ DisplayCompositor::~DisplayCompositor() {
     }
   }
 
-  // TODO(https://fxbug.dev/42063495): Release |render_targets| and |protected_render_targets|
+  // TODO(https://fxbug.dev/42063495): Release `render_targets` and `protected_render_targets`
   // collections and images.
 }
 
@@ -303,9 +302,9 @@ fpromise::promise<> DisplayCompositor::ImportBufferCollection(
   // and one with no constraints. Only one of these children will be chosen during sysmem
   // negotiations.
   // Resulting tokens:
-  // * renderer_token
-  // . * token_group
-  // . . * display_token (+ duplicate with no constraints to check allocation with, created below)
+  // * `renderer_token`
+  // . * `token_group`
+  // . . * `display_token` (+ duplicate with no constraints to check allocation with, created below)
   // . . * Empty token
   fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> display_token;
   if (auto prunable_tokens = CreatePrunableChildren(sysmem_allocator, renderer_token,
@@ -340,15 +339,15 @@ fpromise::promise<> DisplayCompositor::ImportBufferCollection(
                  display_token = std::move(display_token)]() mutable -> fpromise::result<> {
         if (!config_.enable_direct_to_display) {
           // Forced fallback to using the renderer; don't attempt direct-to-display.
-          // Close |display_token| without importing it to the display coordinator.
+          // Close `display_token` without importing it to the display coordinator.
           if (const auto status = display_token->Release(); status.is_error()) {
             FX_LOGS(ERROR) << "Could not close token: " << status.error_value().FormatDescription();
           }
           return fpromise::ok();
         }
 
-        // Create a BufferCollectionPtr from a duplicate of |display_token| with which to later
-        // check if buffers allocated from the BufferCollection are display-compatible.
+        // Create a `BufferCollectionPtr` from a duplicate of `display_token` with which to later
+        // check if buffers allocated from the `BufferCollection` are display-compatible.
         auto collection_ptr = CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
             sysmem_allocator_, display_token);
         if (!collection_ptr.has_value()) {
@@ -408,7 +407,7 @@ fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::Image
     return fpromise::make_error_promise();
   }
 
-  // NOTE: The VkRenderer::ImportBufferImage() is currently synchronous. If we want to improve
+  // NOTE: The `VkRenderer::ImportBufferImage()` is currently synchronous. If we want to improve
   // latency, we'd need to make it asynchronous and start both import operations concurrently.
   return renderer_->ImportBufferImage(metadata, usage)
       .or_else([] {
@@ -426,7 +425,7 @@ fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::Image
             buffer_collection_supports_display_.contains(collection_id);
 
         // When display composition is disabled, the only images that should be imported by the
-        // display are the framebuffers, and their display support is already set in AddDisplay()
+        // display are the framebuffers, and their display support is already set in `AddDisplay()`
         // (instead of below). For every other image with display composition off mode we can early
         // exit.
         if (!config_.enable_direct_to_display &&
@@ -588,8 +587,8 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id, const 
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
-  // We have to convert the image_metadata's multiply color, which is an array of normalized
-  // floating point values, to an unnormalized array of uint8_ts in the range 0-255.
+  // We have to convert the `image_metadata`'s multiply color, which is an array of normalized
+  // floating point values, to an unnormalized array of `uint8_t`s in the range 0-255.
   const fidl::Array<uint8_t, 8> color_bytes = {
       static_cast<uint8_t>(255 * color[0]),
       static_cast<uint8_t>(255 * color[1]),
@@ -696,7 +695,7 @@ bool DisplayCompositor::PerformGpuComposition(
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::PerformGpuComposition");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   // Create an event that will be signaled when the final display's content has finished
-  // rendering; it will be passed into |release_fence_manager_.OnGpuCompositedFrame()|.  If there
+  // rendering; it will be passed into `release_fence_manager_.OnGpuCompositedFrame()`.  If there
   // are multiple displays which require GPU-composited content, we pass this event to be signaled
   // when the final display's content has finished rendering (thus guaranteeing that all previous
   // content has also finished rendering).
@@ -773,7 +772,7 @@ bool DisplayCompositor::PerformGpuComposition(
     if (config_.enable_frame_counter_overlay) {
       render_args.display_frame_number = frame_number;
     }
-    // const render_args allows us to retrieve the fences after the render call.
+    // const `render_args` allows us to retrieve the fences after the render call.
     renderer_->Render(render_target, layers, render_args);
 
     event_data.wait_event = std::move(render_args.release_fences[0]);
@@ -832,7 +831,7 @@ bool DisplayCompositor::PerformGpuComposition(
     ClearAllPendingDisplayModes(render_data_list);
   }
 
-  // See ReleaseFenceManager comments for details.
+  // See `ReleaseFenceManager` comments for details.
   FX_DCHECK(render_finished_fence);
   release_fence_manager_.OnGpuCompositedFrame(
       frame_number, std::move(render_finished_fence), std::move(release_fences),
@@ -857,10 +856,10 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
   uint64_t trace_flow_id = TRACE_NONCE();
   TRACE_FLOW_BEGIN("gfx", "render_frame_to_vsync", trace_flow_id);
 
-  // Determine whether we need to fall back to GPU composition. Avoid calling CheckConfig() if we
+  // Determine whether we need to fall back to GPU composition. Avoid calling `CheckConfig()` if we
   // don't need to, because this requires a round-trip to the display coordinator.
   // Notes:
-  //   - failing TryDirectToDisplay() means that the display driver is unable to directly display
+  //   - failing `TryDirectToDisplay()` means that the display driver is unable to directly display
   //     this frame's list of client images.
   //   - `enable_frame_counter_overlay` currently requires GPU composition because we use
   //     `escher::DebugFont` to blit the overlay directly into the displayed framebuffer.
@@ -879,7 +878,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
       // CC was successfully applied to the config so we update the state machine.
       cc_state_machine_.SetApplyConfigSucceeded();
 
-      // See ReleaseFenceManager comments for details.
+      // See `ReleaseFenceManager` comments for details.
       release_fence_manager_.OnDirectScanoutFrame(frame_number, std::move(release_fences),
                                                   std::move(release_counters),
                                                   std::move(present_fences), std::move(callback));
@@ -941,7 +940,7 @@ bool DisplayCompositor::TryDirectToDisplay(std::span<const RenderData> render_da
 
   auto result = ApplyConfig(frame_number, trace_flow_id);
   if (result.is_error()) {
-    // No TRACE_INSTANT("gfx", "scenic_d2d_failed:") here: ApplyConfig() has info to generate a
+    // No `TRACE_INSTANT("gfx", "scenic_d2d_failed:")` here: `ApplyConfig()` has info to generate a
     // more specific event.
     return false;
   }
@@ -959,23 +958,23 @@ void DisplayCompositor::OnVsync(display::DisplayId display_id, zx::time_monotoni
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "Flatland::DisplayCompositor::OnVsync");
 
-  // We might receive multiple OnVsync() callbacks with the same |displayed_config_stamp| if the
+  // We might receive multiple `OnVsync()` callbacks with the same `displayed_config_stamp` if the
   // scene doesn't change. Early exit for these cases.
   if (last_presented_config_stamp_.has_value() &&
       displayed_config_stamp.value == last_presented_config_stamp_->value) {
     return;
   }
 
-  // Verify that the configuration from Vsync is in the [pending_apply_configs_] queue.
+  // Verify that the configuration from Vsync is in the `pending_apply_configs_` queue.
   const auto vsync_frame_it =
       std::find_if(pending_apply_configs_.begin(), pending_apply_configs_.end(),
                    [displayed_config_stamp](const ApplyConfigInfo& info) {
                      return info.config_stamp.value == displayed_config_stamp.value;
                    });
 
-  // While the display is dark this is expected: the SetDisplayPowerMode() docs in
-  // fuchsia.hardware.display/Coordinator say a vsync generated before the power-off
-  // reached the hardware may still arrive, and SetDisplayPowerMode(kOff) has already
+  // While the display is dark this is expected: the `SetDisplayPowerMode()` docs in
+  // `fuchsia.hardware.display/Coordinator` say a vsync generated before the power-off
+  // reached the hardware may still arrive, and `SetDisplayPowerMode(kOff)` has already
   // dropped the configs it could refer to. Otherwise it should not be possible.
   if (vsync_frame_it == pending_apply_configs_.end()) {
     if (IsDisplayDark(display_id)) {
@@ -991,7 +990,7 @@ void DisplayCompositor::OnVsync(display::DisplayId display_id, zx::time_monotoni
   FLATLAND_VERBOSE_LOG << "DisplayCompositor::OnVsync() config_stamp="
                        << displayed_config_stamp.value << "  timestamp=" << timestamp.get();
 
-  // Handle the presented ApplyConfig() call, as well as the skipped ones.
+  // Handle the presented `ApplyConfig()` call, as well as the skipped ones.
   auto it = pending_apply_configs_.begin();
   auto end = std::next(vsync_frame_it);
   while (it != end) {
@@ -1067,8 +1066,6 @@ fpromise::promise<> DisplayCompositor::AddDisplay(
     }
   }
 
-  // Add vsync callback on display. Note that this will overwrite the existing callback on
-  // |display| and other clients won't receive any, i.e. gfx.
   display->AddVsyncCallback(
       [weak_ref = weak_from_this()](display::DisplayId display_id, zx::time timestamp,
                                     display::WireConfigStamp displayed_config_stamp) {
@@ -1192,8 +1189,8 @@ zx_status_t DisplayCompositor::SetDisplayPowerMode(
       return ZX_ERR_INTERNAL;
     }
 
-    // Only kOff darkens the panel and stops VSync events; the doze modes keep showing
-    // an image (see fuchsia.hardware.display.types/PowerMode).
+    // Only `kOff` darkens the panel and stops VSync events; the doze modes keep showing
+    // an image (see `fuchsia.hardware.display.types/PowerMode`).
     const bool going_dark = (mode == fuchsia_hardware_display_types::PowerMode::kOff);
     if (going_dark == data.is_dark) {
       return ZX_OK;
@@ -1226,7 +1223,7 @@ zx_status_t DisplayCompositor::SetDisplayPowerMode(
     }
   }
 
-  // Not under lock_: this invokes the frame-presented callbacks.
+  // Not under `lock_`: this invokes the frame-presented callbacks.
   release_fence_manager_.MarkAllFramesPresented(
       zx::time_monotonic(async_now(async_get_default_dispatcher())));
   return ZX_OK;
@@ -1285,7 +1282,7 @@ DisplayCompositor::AllocateDisplayRenderTargets(
       if (client_name.size() > kMaxSysmem1DebugNameLength) {
         client_name.resize(kMaxSysmem1DebugNameLength);
       }
-      // set debug info for renderer_token in case it fails unexpectedly or similar
+      // set debug info for `renderer_token` in case it fails unexpectedly or similar
       auto result = fidl::WireCall(token)->SetDebugClientInfo(
           fuchsia_sysmem2::wire::NodeSetDebugClientInfoRequest::Builder(arena)
               .name(std::move(client_name))
@@ -1297,10 +1294,10 @@ DisplayCompositor::AllocateDisplayRenderTargets(
     set_debug_name(renderer_token, "renderer_token");
     set_debug_name(display_token, "display_token");
 
-    // The compositor_token inherited it's debug info from sysmem_allocator_, so is still set to
+    // The `compositor_token` inherited it's debug info from `sysmem_allocator_`, so is still set to
     // "scenic flatland::DisplayCompositor" at this point, which is fine; just need to be able to
-    // tell which token is potentially failing below - at this point each token (compositor_token,
-    // renderer_token, display_token) has distinguishable debug info.
+    // tell which token is potentially failing below - at this point each token (`compositor_token`,
+    // `renderer_token`, `display_token`) has distinguishable debug info.
   }
 
   // Set renderer constraints.
@@ -1309,7 +1306,7 @@ DisplayCompositor::AllocateDisplayRenderTargets(
       ->ImportBufferCollection(collection_id, sysmem_allocator_, std::move(renderer_token),
                                BufferCollectionUsage::kRenderTarget,
                                std::optional<fuchsia_math::SizeU>(size))
-      // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of DisplayCompositor.
+      // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of `DisplayCompositor`.
       .and_then([this, use_protected_memory, num_render_targets, size, pixel_format,
                  compositor_token = std::move(compositor_token),
                  display_token = std::move(display_token), collection_id,
@@ -1394,7 +1391,7 @@ DisplayCompositor::AllocateDisplayRenderTargets(
         }
 
         // We know that this collection is supported by display because we collected constraints
-        // from display in display::ImportBufferCollection() and waited for successful allocation.
+        // from display in `display::ImportBufferCollection()` and waited for successful allocation.
         {
           std::scoped_lock lock(lock_);
           buffer_collection_supports_display_[collection_id] = true;
@@ -1407,7 +1404,7 @@ DisplayCompositor::AllocateDisplayRenderTargets(
                                                                .value());
         }
 
-        // The collection info is no longer needed, so move it to out_collection_info if provided.
+        // The collection info is no longer needed, so move it to `out_collection_info` if provided.
         if (out_collection_info) {
           *out_collection_info = std::move(collection_info);
         }
