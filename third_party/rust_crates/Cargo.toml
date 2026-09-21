@@ -360,7 +360,7 @@ num_cpus = "1.17.0"
 parking_lot = "0.12.5"
 parking_lot_core = "0.9.12"
 petgraph = { version = "0.6.2" }
-proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 pulldown-cmark = { version = "0.13.4", features = ["serde"] }
 quote = "1.0.47"
 rustfix = "0.9.7"
@@ -987,7 +987,7 @@ groups = [
 rustflags = []
 
 # cargo-gnaw suggested "--cfg=proc_macro_span" as well but proc_macro_span is still an unstable feature.
-[gn.package.proc-macro2."1.0.106"]
+[gn.package.proc-macro2."1.0.107"]
 rustflags = ["--cfg=span_locations", "--cfg=wrap_proc_macro"]
 
 [gn.package.pulldown-cmark."0.13.4"]

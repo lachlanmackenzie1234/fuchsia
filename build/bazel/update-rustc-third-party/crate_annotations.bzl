@@ -357,7 +357,7 @@ CRATE_ANNOTATIONS = {
     ],
     "proc-macro2": [
         crate.annotation(
-            version = "1.0.106",
+            version = "1.0.107",
             gen_build_script = False,
             rustc_flags = [
                 "--cfg=span_locations",
