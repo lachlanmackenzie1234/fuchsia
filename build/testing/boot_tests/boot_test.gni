@@ -97,6 +97,13 @@ template("_boot_test") {
     }
   }
 
+  _disabled = false
+  if ((defined(invoker.disabled) && invoker.disabled) ||
+      (defined(invoker.environments) && invoker.environments == []) ||
+      disable_boot_tests) {
+    _disabled = true
+  }
+
   test_spec(main_target) {
     target = get_label_info(invoker.label, "label_with_toolchain")
     name = target_name
@@ -119,7 +126,7 @@ template("_boot_test") {
                              "visibility",
                            ])
 
-    if ((defined(invoker.disabled) && invoker.disabled) || disable_boot_tests) {
+    if (_disabled) {
       # A disabled test is still built.
       build_only = true
 
