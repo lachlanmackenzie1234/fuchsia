@@ -33,7 +33,7 @@ def fidl_rust_library(
     """
 
     _fidl_rust_library_flavor("fidl", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
-    _fidl_rust_library_flavor("common", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, ["//visibility:private"])
+    _fidl_rust_library_flavor("common", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
     _fidl_rust_library_flavor("fdomain", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
     _fidl_rust_library_flex("fidl", name, fidl_library_name, testonly, visibility)
     _fidl_rust_library_flex("fdomain", name, fidl_library_name, testonly, visibility)
