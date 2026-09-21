@@ -5,10 +5,14 @@
 #[cfg(test)]
 mod ebpf_test {
     use ebpf_loader::{MapDefinition, ProgramDefinition};
-    use libc;
+    use libc::{
+        self, IPPROTO_TCP, IPPROTO_UDP, SO_COOKIE, SO_MARK, SO_SNDBUF, SOCK_DGRAM, SOCK_STREAM,
+        SOL_SOCKET,
+    };
     use linux_uapi::{bpf_attr, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
     use serial_test::serial;
     use std::fs::File;
+    use std::io::Write as _;
     use std::net::UdpSocket;
     use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
     use std::os::unix::net::UnixStream;
@@ -219,8 +223,8 @@ mod ebpf_test {
         let result = unsafe {
             libc::getsockopt(
                 fd.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_COOKIE,
+                SOL_SOCKET,
+                SO_COOKIE,
                 &mut value as *mut u64 as *mut libc::c_void,
                 &mut value_len,
             )
@@ -306,6 +310,7 @@ mod ebpf_test {
 
         ether_type: u32,
         ifindex: u32,
+        mark: u32,
 
         sockaddr_family: u32,
         sockaddr_port: u32,
@@ -315,6 +320,7 @@ mod ebpf_test {
         sk_protocol: u32,
         sk_family: u32,
         sk_state: u32,
+        _padding: u32,
     }
 
     #[repr(C)]
@@ -510,11 +516,73 @@ mod ebpf_test {
         lo_index
     }
 
-    #[test_case(IpFamily::V4, IpFamily::V4; "ipv4")]
-    #[test_case(IpFamily::V6, IpFamily::V4; "dual_stack_ipv4")]
-    #[test_case(IpFamily::V6, IpFamily::V6; "dual_stack_ipv6")]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    enum SocketTestKind {
+        Udp,
+        TcpListener,
+        TcpConnected,
+    }
+
+    fn tcp_connect_with_mark(addr: std::net::SocketAddr, mark: u32) -> std::net::TcpStream {
+        let domain = match addr {
+            std::net::SocketAddr::V4(_) => libc::AF_INET,
+            std::net::SocketAddr::V6(_) => libc::AF_INET6,
+        };
+        // SAFETY: creating a TCP socket is safe.
+        let fd = unsafe {
+            let fd = libc::socket(domain, SOCK_STREAM, 0);
+            assert!(fd >= 0, "Failed to create TCP socket");
+            OwnedFd::from_raw_fd(fd)
+        };
+        setsockopt(fd.as_fd(), SOL_SOCKET, SO_MARK, &mark.to_ne_bytes())
+            .expect("Failed to set SO_MARK");
+        let res = match addr {
+            std::net::SocketAddr::V4(v4) => {
+                let sin = libc::sockaddr_in {
+                    sin_family: libc::AF_INET as u16,
+                    sin_port: v4.port().to_be(),
+                    sin_addr: libc::in_addr { s_addr: u32::from_ne_bytes(v4.ip().octets()) },
+                    sin_zero: [0; 8],
+                };
+                // SAFETY: `fd` and `sin` are valid.
+                unsafe {
+                    libc::connect(
+                        fd.as_raw_fd(),
+                        &sin as *const libc::sockaddr_in as *const libc::sockaddr,
+                        std::mem::size_of_val(&sin) as libc::socklen_t,
+                    )
+                }
+            }
+            std::net::SocketAddr::V6(v6) => {
+                let sin6 = libc::sockaddr_in6 {
+                    sin6_family: libc::AF_INET6 as u16,
+                    sin6_port: v6.port().to_be(),
+                    sin6_flowinfo: v6.flowinfo(),
+                    sin6_addr: libc::in6_addr { s6_addr: v6.ip().octets() },
+                    sin6_scope_id: v6.scope_id(),
+                };
+                // SAFETY: `fd` and `sin6` are valid.
+                unsafe {
+                    libc::connect(
+                        fd.as_raw_fd(),
+                        &sin6 as *const libc::sockaddr_in6 as *const libc::sockaddr,
+                        std::mem::size_of_val(&sin6) as libc::socklen_t,
+                    )
+                }
+            }
+        };
+        assert_eq!(res, 0, "Failed to connect TCP socket: {:?}", std::io::Error::last_os_error());
+        std::net::TcpStream::from(fd)
+    }
+
+    #[test_case(IpFamily::V4, IpFamily::V4, SOCK_DGRAM; "udp_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V4, SOCK_DGRAM; "udp_dual_stack_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V6, SOCK_DGRAM; "udp_dual_stack_ipv6")]
+    #[test_case(IpFamily::V4, IpFamily::V4, SOCK_STREAM; "tcp_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V4, SOCK_STREAM; "tcp_dual_stack_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V6, SOCK_STREAM; "tcp_dual_stack_ipv6")]
     #[serial]
-    fn ebpf_egress(socket_family: IpFamily, packet_family: IpFamily) {
+    fn ebpf_egress(socket_family: IpFamily, packet_family: IpFamily, sock_type: libc::c_int) {
         root_required!();
 
         let mut maps = MapSet::new();
@@ -530,17 +598,47 @@ mod ebpf_test {
             .expect("Failed to poll ringbuffer FD");
         assert!(signaled == None);
 
-        let socket =
-            UdpSocket::bind(socket_family.any_addr()).expect("Failed to create UDP socket");
-        let cookie = get_socket_cookie(socket.as_fd()).expect("Failed to get SO_COOKIE");
-        maps.set_target_cookie(cookie);
+        const MARK: u32 = 100;
+        let (_keep_alive, expected_protocol): (Box<dyn std::any::Any>, _) = match sock_type {
+            SOCK_DGRAM => {
+                let socket =
+                    UdpSocket::bind(socket_family.any_addr()).expect("Failed to create UDP socket");
+                setsockopt(socket.as_fd(), SOL_SOCKET, SO_MARK, &MARK.to_ne_bytes())
+                    .expect("Failed to set SO_MARK");
+                let cookie = get_socket_cookie(socket.as_fd()).expect("Failed to get SO_COOKIE");
+                maps.set_target_cookie(cookie);
 
-        let _attached = program.attach();
+                let attached = program.attach();
 
-        // Send a UDP packet.
-        socket
-            .send_to(&[1, 2, 3], (packet_family.localhost_addr().ip(), 12345))
-            .expect("Failed to send UDP packet");
+                // Send a UDP packet.
+                socket
+                    .send_to(&[1, 2, 3], (packet_family.localhost_addr().ip(), 12345))
+                    .expect("Failed to send UDP packet");
+                (Box::new((socket, attached)), IPPROTO_UDP as u32)
+            }
+            SOCK_STREAM => {
+                let listener = std::net::TcpListener::bind(socket_family.any_addr())
+                    .expect("Failed to create TCP listener");
+                let listener_addr = listener.local_addr().expect("Failed to get listener addr");
+                let connect_addr = std::net::SocketAddr::new(
+                    packet_family.localhost_addr().ip(),
+                    listener_addr.port(),
+                );
+                let client =
+                    std::net::TcpStream::connect(connect_addr).expect("Failed to connect TCP");
+                let (mut accepted, _) = listener.accept().expect("Failed to accept TCP");
+                setsockopt(accepted.as_fd(), SOL_SOCKET, SO_MARK, &MARK.to_ne_bytes())
+                    .expect("Failed to set SO_MARK");
+                let cookie = get_socket_cookie(accepted.as_fd()).expect("Failed to get SO_COOKIE");
+                maps.set_target_cookie(cookie);
+
+                let attached = program.attach();
+
+                accepted.write_all(&[1, 2, 3]).expect("Failed to send TCP packet");
+                (Box::new((listener, client, accepted, attached)), IPPROTO_TCP as u32)
+            }
+            _ => unreachable!(),
+        };
 
         // The ring buffer FD should be signalled by the program.
         let signaled = pollfd(maps.ringbuf(), libc::POLLIN, Duration::MAX)
@@ -550,16 +648,23 @@ mod ebpf_test {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.ether_type, u16::to_be(packet_family.ether_type() as u16) as u32);
         assert_eq!(test_result.ifindex, get_loopback_ifindex());
-        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
-        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        assert_eq!(test_result.mark, MARK);
+        assert_eq!(test_result.sk_type, sock_type as u32);
+        assert_eq!(test_result.sk_protocol, expected_protocol);
         assert_eq!(test_result.sk_family, socket_family.family() as u32);
     }
 
-    #[test_case(IpFamily::V4, IpFamily::V4; "ipv4")]
-    #[test_case(IpFamily::V6, IpFamily::V4; "dual_stack_ipv4")]
-    #[test_case(IpFamily::V6, IpFamily::V6; "dual_stack_ipv6")]
+    #[test_case(IpFamily::V4, IpFamily::V4, SocketTestKind::Udp; "udp_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V4, SocketTestKind::Udp; "udp_dual_stack_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V6, SocketTestKind::Udp; "udp_dual_stack_ipv6")]
+    #[test_case(IpFamily::V4, IpFamily::V4, SocketTestKind::TcpListener; "tcp_listener_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V4, SocketTestKind::TcpListener; "tcp_listener_dual_stack_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V6, SocketTestKind::TcpListener; "tcp_listener_dual_stack_ipv6")]
+    #[test_case(IpFamily::V4, IpFamily::V4, SocketTestKind::TcpConnected; "tcp_connected_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V4, SocketTestKind::TcpConnected; "tcp_connected_dual_stack_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V6, SocketTestKind::TcpConnected; "tcp_connected_dual_stack_ipv6")]
     #[serial]
-    fn ebpf_ingress(socket_family: IpFamily, packet_family: IpFamily) {
+    fn ebpf_ingress(socket_family: IpFamily, packet_family: IpFamily, kind: SocketTestKind) {
         root_required!();
 
         let mut maps = MapSet::new();
@@ -570,21 +675,96 @@ mod ebpf_test {
             &mut maps,
         );
 
-        // Setup a listening socket.
-        let recv_socket =
-            UdpSocket::bind(socket_family.any_addr()).expect("Failed to create UDP socket");
-        let recv_addr = recv_socket.local_addr().expect("Failed to get local socket addr");
+        const SEND_MARK: u32 = 100;
+        const RECV_MARK: u32 = 200;
 
-        let cookie = get_socket_cookie(recv_socket.as_fd()).expect("Failed to get SO_COOKIE");
-        maps.set_target_cookie(cookie);
+        let (_keep_alive, expected_sk_type, expected_protocol): (Box<dyn std::any::Any>, _, _) =
+            match kind {
+                SocketTestKind::Udp => {
+                    // Setup a listening UDP socket with RECV_MARK.
+                    let recv_socket = UdpSocket::bind(socket_family.any_addr())
+                        .expect("Failed to create UDP socket");
+                    setsockopt(recv_socket.as_fd(), SOL_SOCKET, SO_MARK, &RECV_MARK.to_ne_bytes())
+                        .expect("Failed to set SO_MARK");
+                    let recv_addr =
+                        recv_socket.local_addr().expect("Failed to get local socket addr");
 
-        let _attached = program.attach();
+                    let cookie =
+                        get_socket_cookie(recv_socket.as_fd()).expect("Failed to get SO_COOKIE");
+                    maps.set_target_cookie(cookie);
 
-        // Send a UDP packet.
-        let send_sock_addr = packet_family.localhost_addr();
-        let send_socket = UdpSocket::bind(send_sock_addr).expect("Failed to create UDP socket");
-        let send_to_addr = std::net::SocketAddr::new(send_sock_addr.ip(), recv_addr.port());
-        send_socket.send_to(&[1, 2, 3], send_to_addr).expect("Failed to send UDP packet");
+                    let attached = program.attach();
+
+                    // Send a UDP packet with SEND_MARK.
+                    let send_sock_addr = packet_family.localhost_addr();
+                    let send_socket =
+                        UdpSocket::bind(send_sock_addr).expect("Failed to create UDP socket");
+                    setsockopt(send_socket.as_fd(), SOL_SOCKET, SO_MARK, &SEND_MARK.to_ne_bytes())
+                        .expect("Failed to set SO_MARK");
+                    let send_to_addr =
+                        std::net::SocketAddr::new(send_sock_addr.ip(), recv_addr.port());
+                    send_socket
+                        .send_to(&[1, 2, 3], send_to_addr)
+                        .expect("Failed to send UDP packet");
+                    (
+                        Box::new((recv_socket, send_socket, attached)),
+                        SOCK_DGRAM as u32,
+                        IPPROTO_UDP as u32,
+                    )
+                }
+                SocketTestKind::TcpListener => {
+                    // Setup a listening TCP socket with RECV_MARK.
+                    let listener = std::net::TcpListener::bind(socket_family.any_addr())
+                        .expect("Failed to create TCP listener");
+                    setsockopt(listener.as_fd(), SOL_SOCKET, SO_MARK, &RECV_MARK.to_ne_bytes())
+                        .expect("Failed to set SO_MARK");
+                    let recv_addr = listener.local_addr().expect("Failed to get local socket addr");
+
+                    let cookie =
+                        get_socket_cookie(listener.as_fd()).expect("Failed to get SO_COOKIE");
+                    maps.set_target_cookie(cookie);
+
+                    let attached = program.attach();
+
+                    // Connect to the listener from a client socket with SEND_MARK.
+                    let connect_addr = std::net::SocketAddr::new(
+                        packet_family.localhost_addr().ip(),
+                        recv_addr.port(),
+                    );
+                    let client = tcp_connect_with_mark(connect_addr, SEND_MARK);
+                    (Box::new((listener, client, attached)), SOCK_STREAM as u32, IPPROTO_TCP as u32)
+                }
+                SocketTestKind::TcpConnected => {
+                    let listener = std::net::TcpListener::bind(socket_family.any_addr())
+                        .expect("Failed to create TCP listener");
+                    let recv_addr = listener.local_addr().expect("Failed to get local socket addr");
+                    let connect_addr = std::net::SocketAddr::new(
+                        packet_family.localhost_addr().ip(),
+                        recv_addr.port(),
+                    );
+                    let mut client =
+                        std::net::TcpStream::connect(connect_addr).expect("Failed to connect TCP");
+                    let (accepted, _) = listener.accept().expect("Failed to accept TCP");
+
+                    setsockopt(accepted.as_fd(), SOL_SOCKET, SO_MARK, &RECV_MARK.to_ne_bytes())
+                        .expect("Failed to set SO_MARK");
+                    setsockopt(client.as_fd(), SOL_SOCKET, SO_MARK, &SEND_MARK.to_ne_bytes())
+                        .expect("Failed to set SO_MARK");
+
+                    let cookie =
+                        get_socket_cookie(accepted.as_fd()).expect("Failed to get SO_COOKIE");
+                    maps.set_target_cookie(cookie);
+
+                    let attached = program.attach();
+
+                    client.write_all(&[1, 2, 3]).expect("Failed to send TCP packet");
+                    (
+                        Box::new((listener, client, accepted, attached)),
+                        SOCK_STREAM as u32,
+                        IPPROTO_TCP as u32,
+                    )
+                }
+            };
 
         // The ring buffer FD should be signalled by the program.
         let signaled = pollfd(maps.ringbuf(), libc::POLLIN, Duration::MAX)
@@ -594,8 +774,11 @@ mod ebpf_test {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.ether_type, u16::to_be(packet_family.ether_type() as u16) as u32);
         assert_eq!(test_result.ifindex, get_loopback_ifindex());
-        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
-        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        // On loopback ingress, __sk_buff.mark should reflect the packet's SO_MARK (SEND_MARK)
+        // rather than being overwritten by the destination socket's SO_MARK (RECV_MARK).
+        assert_eq!(test_result.mark, SEND_MARK);
+        assert_eq!(test_result.sk_type, expected_sk_type);
+        assert_eq!(test_result.sk_protocol, expected_protocol);
         assert_eq!(test_result.sk_family, socket_family.family() as u32);
     }
 
@@ -624,7 +807,7 @@ mod ebpf_test {
 
         assert!(new_count - last_count >= 1);
         let test_result = maps.get_test_result();
-        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
@@ -664,7 +847,7 @@ mod ebpf_test {
         assert_eq!(new_count, last_count + 1);
 
         let test_result = maps.get_test_result();
-        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
@@ -695,7 +878,7 @@ mod ebpf_test {
         let (socket, _peer) = UnixStream::pair().expect("Failed to create UNIX socket");
 
         let set_test_sock_opt =
-            |optval| setsockopt(socket.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, optval);
+            |optval| setsockopt(socket.as_fd(), SOL_SOCKET, TEST_SOCK_OPT, optval);
 
         // Set TEST_SOCK_OPT.
         let optval = vec![0; 10000];
@@ -706,7 +889,7 @@ mod ebpf_test {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.optlen, 10000);
         assert_eq!(test_result.optval_size, getpagesize() as u64);
-        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, 0);
         assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_ESTABLISHED);
@@ -714,9 +897,9 @@ mod ebpf_test {
         // Verify setsockopt on a listening TCP socket.
         let listener =
             std::net::TcpListener::bind("127.0.0.1:0").expect("Failed to bind TCP listener");
-        assert!(setsockopt(listener.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok());
+        assert!(setsockopt(listener.as_fd(), SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok());
         let test_result = maps.get_test_result();
-        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_TCP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_LISTEN);
@@ -724,20 +907,18 @@ mod ebpf_test {
         // Verify setsockopt on a connected TCP socket.
         let stream = std::net::TcpStream::connect(listener.local_addr().unwrap())
             .expect("Failed to connect TCP stream");
-        assert!(setsockopt(stream.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok());
+        assert!(setsockopt(stream.as_fd(), SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok());
         let test_result = maps.get_test_result();
-        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_TCP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
         assert!(test_result.sk_state == linux_uapi::BPF_TCP_ESTABLISHED);
 
         // Verify setsockopt on an accepted TCP socket.
         let (accepted_stream, _peer_addr) = listener.accept().expect("Failed to accept TCP stream");
-        assert!(
-            setsockopt(accepted_stream.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok()
-        );
+        assert!(setsockopt(accepted_stream.as_fd(), SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok());
         let test_result = maps.get_test_result();
-        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_TCP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_ESTABLISHED);
@@ -753,12 +934,11 @@ mod ebpf_test {
         let err = set_test_sock_opt(&optval).expect_err("setsockopt expected to fail");
         assert_eq!(err.raw_os_error(), Some(libc::EPERM));
 
-        let set_sndbuf =
-            |optval| setsockopt(socket.as_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, optval);
+        let set_sndbuf = |optval| setsockopt(socket.as_fd(), SOL_SOCKET, SO_SNDBUF, optval);
 
         let get_rcvbuf = || {
-            let v = getsockopt(socket.as_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, 4)
-                .expect("getsockopt failed");
+            let v =
+                getsockopt(socket.as_fd(), SOL_SOCKET, SO_SNDBUF, 4).expect("getsockopt failed");
             libc::socklen_t::read_from_bytes(&v).expect("getsockopt returned invalid result")
         };
 
@@ -796,7 +976,7 @@ mod ebpf_test {
         let (socket, _peer) = UnixStream::pair().expect("Failed to create UNIX socket");
 
         let get_test_sock_opt =
-            |optlen| getsockopt(socket.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, optlen);
+            |optlen| getsockopt(socket.as_fd(), SOL_SOCKET, TEST_SOCK_OPT, optlen);
 
         // If the syscall fails and eBPF doesn't change `retval` then the
         // original error is returned.
@@ -808,7 +988,7 @@ mod ebpf_test {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.retval, -libc::ENOPROTOOPT);
         assert_eq!(test_result.get_retval, -libc::ENOPROTOOPT);
-        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, 0);
         assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_ESTABLISHED);
@@ -825,8 +1005,7 @@ mod ebpf_test {
         let err = get_test_sock_opt(5).expect_err("getsockopt expected to fail");
         assert_eq!(err.raw_os_error(), Some(libc::ENOPROTOOPT));
 
-        let get_rcvbuf =
-            |optlen| getsockopt(socket.as_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, optlen);
+        let get_rcvbuf = |optlen| getsockopt(socket.as_fd(), SOL_SOCKET, SO_SNDBUF, optlen);
 
         // Verify that eBPF program can override the returned value.
         let result = get_rcvbuf(55).expect("getsockopt failed");
@@ -851,7 +1030,7 @@ mod ebpf_test {
 
         // Set SO_SNDBUF for the two tests below.
         let buf_size: u32 = 65536;
-        setsockopt(socket.as_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, &buf_size.to_ne_bytes())
+        setsockopt(socket.as_fd(), SOL_SOCKET, SO_SNDBUF, &buf_size.to_ne_bytes())
             .expect("setsockopt(SO_SNDBUF)");
 
         // Original value returned if program just returns 1.
@@ -902,7 +1081,7 @@ mod ebpf_test {
         assert_eq!(test_result.sockaddr_port, src_port.to_be() as u32);
         assert_eq!(test_result.sockaddr_family, linux_uapi::AF_INET6);
         assert_eq!(test_result.sockaddr_ip, [0, 0, 0xffff0000, 0x0100007F]);
-        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, linux_uapi::AF_INET6);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
@@ -949,7 +1128,7 @@ mod ebpf_test {
         assert_eq!(test_result.sockaddr_port, dst_port.to_be() as u32);
         assert_eq!(test_result.sockaddr_family, linux_uapi::AF_INET);
         assert_eq!(test_result.sockaddr_ip[0], 0x0100007F);
-        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_type, SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
         assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
@@ -1017,7 +1196,7 @@ mod ebpf_test {
         let socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to create UDP socket");
 
         // Trigger setsockopt.
-        assert!(setsockopt(socket.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &[0; 4]).is_ok());
+        assert!(setsockopt(socket.as_fd(), SOL_SOCKET, TEST_SOCK_OPT, &[0; 4]).is_ok());
 
         // Trigger connect.
         socket.connect("127.0.0.1:12345").expect("udp connect failed");

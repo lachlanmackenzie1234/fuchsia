@@ -1116,6 +1116,15 @@ pub trait MarksBindingsContext {
     /// socket to the packet and can be observed in `LOCAL_INGRESS` filter
     /// hook.
     fn marks_to_set_on_ingress() -> &'static [MarkDomain];
+
+    /// Returns a copy of `packet_marks` with the mark domains in
+    /// [`Self::marks_to_set_on_ingress`] overridden from `socket_marks`.
+    fn update_ingress_marks(mut packet_marks: Marks, socket_marks: &Marks) -> Marks {
+        for mark in Self::marks_to_set_on_ingress() {
+            *packet_marks.get_mut(*mark) = *socket_marks.get(*mark);
+        }
+        packet_marks
+    }
 }
 
 /// The bindings execution context for the IP layer.
@@ -2511,9 +2520,8 @@ impl<I: FilterIpExt, S> EarlyDemuxResult<I, S> {
         CC: IpLayerIngressContext<I, BC>,
     {
         packet_metadata.socket_info = Some(self.socket.socket_info(core_ctx));
-        for mark in BC::marks_to_set_on_ingress() {
-            *packet_metadata.marks.get_mut(*mark) = self.socket.marks(core_ctx).get(*mark).clone();
-        }
+        packet_metadata.marks =
+            BC::update_ingress_marks(packet_metadata.marks, &self.socket.marks(core_ctx));
     }
 }
 

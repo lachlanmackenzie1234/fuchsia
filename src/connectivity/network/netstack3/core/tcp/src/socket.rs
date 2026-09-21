@@ -71,7 +71,8 @@ use netstack3_ip::socket::{
     IpSocketHandler,
 };
 use netstack3_ip::{
-    self as ip, BaseTransportIpContext, IpLayerIpExt, SocketMetadata, TransportIpContext,
+    self as ip, BaseTransportIpContext, IpLayerIpExt, MarksBindingsContext, SocketMetadata,
+    TransportIpContext,
 };
 use netstack3_trace::{TraceResourceId, trace_duration};
 use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
@@ -522,6 +523,7 @@ pub trait TcpBindingsContext<D>:
     + SocketOpsFilterBindingContext<D>
     + SettingsContext<TcpSettings>
     + TcpSocketDestructionContext
+    + MarksBindingsContext
 {
 }
 
@@ -534,6 +536,7 @@ impl<D, BC> TcpBindingsContext<D> for BC where
         + SocketOpsFilterBindingContext<D>
         + SettingsContext<TcpSettings>
         + TcpSocketDestructionContext
+        + MarksBindingsContext
 {
 }
 
@@ -2605,7 +2608,7 @@ where
     /// Accepts an established socket from the queue of a listener socket.
     ///
     /// Note: The accepted socket will have the marks of the incoming SYN
-    /// instead of the listener itself.
+    /// overridden by the listener's marks for domains in `marks_to_set_on_ingress`.
     pub fn accept(
         &mut self,
         id: &TcpApiSocketId<I, C>,
@@ -6179,6 +6182,18 @@ mod tests {
         type BindingsPacketMatcher = Never;
     }
 
+    impl<D: FakeStrongDeviceId> MarksBindingsContext for TcpBindingsCtx<D> {
+        fn marks_to_keep_on_egress() -> &'static [netstack3_base::MarkDomain] {
+            const MARKS: [netstack3_base::MarkDomain; 1] = [netstack3_base::MarkDomain::Mark1];
+            &MARKS
+        }
+
+        fn marks_to_set_on_ingress() -> &'static [netstack3_base::MarkDomain] {
+            const MARKS: [netstack3_base::MarkDomain; 1] = [netstack3_base::MarkDomain::Mark2];
+            &MARKS
+        }
+    }
+
     impl<D: FakeStrongDeviceId> TcpBindingsTypes for TcpBindingsCtx<D> {
         type ReceiveBuffer = Arc<Mutex<RingBuffer>>;
         type SendBuffer = TestSendBuffer;
@@ -9705,14 +9720,16 @@ mod tests {
                 DualStackConverter = I::DualStackConverter,
             >,
     {
-        // We want the accepted socket to be marked 101 for MARK_1 and 102 for MARK_2.
+        // We want the accepted socket to be marked 101 for MARK_1 (from SYN packet) and
+        // 102 for MARK_2 (from listener socket, since Mark2 is in marks_to_set_on_ingress).
         let expected_marks = [(MarkDomain::Mark1, 101), (MarkDomain::Mark2, 102)];
-        let marks = netstack3_base::Marks::new(expected_marks);
+        let packet_marks =
+            netstack3_base::Marks::new([(MarkDomain::Mark1, 101), (MarkDomain::Mark2, 2)]);
         let mut net = new_test_net::<I>();
 
         for c in [LOCAL, REMOTE] {
             net.with_context(c, |ctx| {
-                ctx.core_ctx.recv_packet_marks = marks;
+                ctx.core_ctx.recv_packet_marks = packet_marks;
             })
         }
 
@@ -9723,6 +9740,7 @@ mod tests {
             let mut api = ctx.tcp_api::<I>();
             let server = api.create(Default::default());
             api.set_mark(&server, MarkDomain::Mark1, Mark(Some(1)));
+            api.set_mark(&server, MarkDomain::Mark2, Mark(Some(102)));
             api.bind(&server, None, Some(server_port)).expect("failed to bind the server socket");
             api.listen(&server, backlog).expect("can listen");
             server

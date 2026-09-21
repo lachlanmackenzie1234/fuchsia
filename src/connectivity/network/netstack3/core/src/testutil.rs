@@ -60,7 +60,6 @@ use netstack3_device::{
     DeviceLayerStateTypes, DeviceLayerTypes, DeviceProvider, DeviceSendFrameError, WeakDeviceId,
     for_any_device_id,
 };
-use netstack3_filter::testutil::NoOpSocketOpsFilter;
 use netstack3_filter::{FilterTimerId, SocketOpsFilter, SocketOpsFilterBindingContext};
 use netstack3_hashmap::HashMap;
 use netstack3_icmp_echo::{
@@ -597,6 +596,8 @@ pub struct FakeBindingsCtxState {
     pub rx_available: Vec<LoopbackDeviceId<FakeBindingsCtx>>,
     /// IDs with tx queue signaled available.
     pub tx_available: Vec<DeviceId<FakeBindingsCtx>>,
+    /// Recorded `(SocketInfo, Marks)` passed to `SocketOpsFilter::on_ingress`.
+    pub socket_ingress_filter_marks: Vec<(netstack3_base::socket::SocketInfo, Marks)>,
     /// Deferred resource removals.
     #[cfg(loom)]
     pub deferred_receivers: Vec<loom_notifiers::LoomReceiver>,
@@ -824,9 +825,36 @@ impl DeviceBufferBindingsTypes for FakeBindingsCtx {
     type TxAllocator = netstack3_device::queue::BufVecU8Allocator;
 }
 
+struct FakeSocketOpsFilter<'a>(&'a FakeBindingsCtx);
+
+impl SocketOpsFilter<DeviceId<FakeBindingsCtx>> for FakeSocketOpsFilter<'_> {
+    fn on_egress<I: netstack3_filter::FilterIpExt, P: netstack3_filter::FilterIpPacket<I>>(
+        &self,
+        _packet: &P,
+        _device: &DeviceId<FakeBindingsCtx>,
+        _socket_info: netstack3_base::socket::SocketInfo,
+        _marks: &Marks,
+    ) -> netstack3_filter::SocketEgressFilterResult {
+        netstack3_filter::SocketEgressFilterResult::Pass { congestion: false }
+    }
+
+    fn on_ingress(
+        &self,
+        _ip_version: net_types::ip::IpVersion,
+        _packet: packet::FragmentedByteSlice<'_, &[u8]>,
+        _header_len: usize,
+        _device: &DeviceId<FakeBindingsCtx>,
+        socket_info: netstack3_base::socket::SocketInfo,
+        marks: &Marks,
+    ) -> netstack3_filter::SocketIngressFilterResult {
+        self.0.0.lock().state.socket_ingress_filter_marks.push((socket_info, *marks));
+        netstack3_filter::SocketIngressFilterResult::Accept
+    }
+}
+
 impl SocketOpsFilterBindingContext<DeviceId<FakeBindingsCtx>> for FakeBindingsCtx {
     fn socket_ops_filter(&self) -> impl SocketOpsFilter<DeviceId<FakeBindingsCtx>> {
-        NoOpSocketOpsFilter
+        FakeSocketOpsFilter(self)
     }
 }
 

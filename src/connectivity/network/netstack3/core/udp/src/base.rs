@@ -58,7 +58,7 @@ use netstack3_ip::socket::{
     IpSockCreateAndSendError, IpSockCreationError, IpSockSendError, SocketHopLimits,
 };
 use netstack3_ip::{
-    HopLimits, IpHeaderInfo, IpTransportContext, LocalDeliveryPacketInfo,
+    HopLimits, IpHeaderInfo, IpTransportContext, LocalDeliveryPacketInfo, MarksBindingsContext,
     MulticastMembershipHandler, ReceiveIpPacketMeta, SocketMetadata, TransparentLocalDelivery,
     TransportIpContext,
 };
@@ -1226,6 +1226,7 @@ pub trait UdpBindingsContext<I: IpExt, D: StrongDeviceIdentifier>:
     + SocketOpsFilterBindingContext<D>
     + SettingsContext<UdpSettings>
     + MatcherBindingsTypes
+    + MarksBindingsContext
 {
 }
 impl<
@@ -1236,7 +1237,8 @@ impl<
         + ReferenceNotifiers
         + UdpBindingsTypes
         + SocketOpsFilterBindingContext<D>
-        + SettingsContext<UdpSettings>,
+        + SettingsContext<UdpSettings>
+        + MarksBindingsContext,
     D: StrongDeviceIdentifier,
 > UdpBindingsContext<I, D> for BC
 {
@@ -1491,7 +1493,7 @@ fn receive_ip_packet<
     info: &mut LocalDeliveryPacketInfo<I, H>,
     early_demux_socket: Option<DualStackUdpSocketId<I, CC::WeakDeviceId, BC>>,
 ) -> Result<(), (B, I::IcmpError)> {
-    let LocalDeliveryPacketInfo { meta, header_info, marks: _ } = info;
+    let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
     let ReceiveIpPacketMeta { broadcast, transparent_override, parsing_context } = meta;
 
     trace_duration!("udp::receive_ip_packet");
@@ -1601,6 +1603,7 @@ fn receive_ip_packet<
             lookup_result,
             device,
             &meta,
+            marks,
             require_transparent,
             header_info,
             packet.clone(),
@@ -1632,6 +1635,7 @@ fn try_deliver<
     id: &UdpSocketId<I, CC::WeakDeviceId, BC>,
     device_id: &CC::DeviceId,
     meta: UdpPacketMeta<I>,
+    packet_marks: &Marks,
     require_transparent: bool,
     header_info: &H,
     packet: UdpPacket<&[u8]>,
@@ -1675,13 +1679,14 @@ fn try_deliver<
         let mut slices = [ip_prefix, ip_options, udp_header, data];
         let packet_buf = FragmentedByteSlice::new(&mut slices);
         let header_len = ip_prefix.len() + ip_options.len() + udp_header.len();
+        let marks = BC::update_ingress_marks(*packet_marks, state.options().marks());
         let filter_result = bindings_ctx.socket_ops_filter().on_ingress(
             WireI::VERSION,
             packet_buf,
             header_len,
             device_id,
             id.socket_info(),
-            state.options().marks(),
+            &marks,
         );
 
         match filter_result {
@@ -1722,6 +1727,7 @@ fn try_dual_stack_deliver<
     socket: I::DualStackBoundSocketId<CC::WeakDeviceId, Udp<BC>>,
     device_id: &CC::DeviceId,
     meta: &UdpPacketMeta<I>,
+    packet_marks: &Marks,
     require_transparent: bool,
     header_info: &H,
     packet: UdpPacket<&[u8]>,
@@ -1767,6 +1773,7 @@ fn try_dual_stack_deliver<
             &socket,
             device_id,
             meta,
+            packet_marks,
             require_transparent,
             header_info,
             packet,
@@ -1777,6 +1784,7 @@ fn try_dual_stack_deliver<
             &socket,
             device_id,
             meta,
+            packet_marks,
             require_transparent,
             header_info,
             packet,
