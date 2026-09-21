@@ -103,14 +103,13 @@ class TestAddSubcommand(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_add_claims_slot(self) -> None:
+    @patch("subcommands.add.run_jiri")
+    def test_add_claims_slot_and_syncs(self, mock_run_jiri: MagicMock) -> None:
         wt_path = self.jiri_root / "worktrees" / "wt1"
         wt_path.mkdir(parents=True, exist_ok=True)
         self.pool.registry_file.write_text(f"{wt_path}\n")
 
-        args = argparse.Namespace(
-            name="my-feat", pool_name=None, sync=False, json=False
-        )
+        args = argparse.Namespace(name="my-feat", pool_name=None, json=False)
         with patch("sys.stdout", new_callable=StringIO) as mock_out:
             add_cmd.run(args, self.pool)
             self.assertIn(".jiri_root/worktrees/my-feat", mock_out.getvalue())
@@ -119,30 +118,11 @@ class TestAddSubcommand(unittest.TestCase):
         lease = wt.get_lease_info()
         assert lease is not None
         self.assertEqual(lease.task_id, "my-feat")
-
-    @patch("subcommands.add.run_jiri")
-    def test_add_with_sync_order(self, mock_run_jiri: MagicMock) -> None:
-        wt_path = self.jiri_root / "worktrees" / "wt1"
-        wt_path.mkdir(parents=True, exist_ok=True)
-        self.pool.registry_file.write_text(f"{wt_path}\n")
-
-        args = argparse.Namespace(
-            name="my-feat", pool_name=None, sync=True, json=False
+        mock_run_jiri.assert_called_once_with(
+            self.jiri_root,
+            ["worktree", "sync", str(wt_path)],
+            check=True,
         )
-        manager = MagicMock()
-        manager.attach_mock(mock_run_jiri, "mock_run_jiri")
-
-        with patch("sys.stdout", new_callable=StringIO):
-            add_cmd.run(args, self.pool)
-
-        expected_calls = [
-            unittest.mock.call.mock_run_jiri(
-                self.jiri_root,
-                ["worktree", "sync", str(wt_path)],
-                check=True,
-            ),
-        ]
-        self.assertEqual(manager.mock_calls, expected_calls)
 
     @patch("worktree.run_git")
     def test_remove_by_task_id(self, mock_run_git: MagicMock) -> None:
@@ -160,10 +140,14 @@ class TestAddSubcommand(unittest.TestCase):
         with self.assertRaises(KeyError):
             pool_remove_cmd.run(args_pool, self.pool)
 
+    @patch("subcommands.add.run_jiri")
     @patch("worktree_pool.run_jiri")
     @patch("sys.stderr", new_callable=StringIO)
     def test_add_auto_provisions_when_no_free_slots(
-        self, mock_stderr: MagicMock, mock_run_jiri: MagicMock
+        self,
+        mock_stderr: MagicMock,
+        mock_run_jiri_pool: MagicMock,
+        mock_run_jiri_add: MagicMock,
     ) -> None:
         from typing import Any
 
@@ -177,11 +161,9 @@ class TestAddSubcommand(unittest.TestCase):
                     f.write(f"{path}\n")
             return MagicMock()
 
-        mock_run_jiri.side_effect = mock_run_jiri_side_effect
+        mock_run_jiri_pool.side_effect = mock_run_jiri_side_effect
 
-        args = argparse.Namespace(
-            name="my-feat", pool_name=None, sync=False, json=False
-        )
+        args = argparse.Namespace(name="my-feat", pool_name=None, json=False)
 
         with patch("sys.stdout", new_callable=StringIO) as mock_out:
             add_cmd.run(args, self.pool)
@@ -191,8 +173,8 @@ class TestAddSubcommand(unittest.TestCase):
             )
             self.assertIn(".jiri_root/worktrees/my-feat", mock_out.getvalue())
 
-        mock_run_jiri.assert_called_once()
-        call_args = mock_run_jiri.call_args[0][1]
+        mock_run_jiri_pool.assert_called_once()
+        call_args = mock_run_jiri_pool.call_args[0][1]
         self.assertEqual(call_args[0:2], ["worktree", "add"])
 
         symlink_path = self.pool.worktrees_dir / "my-feat"
@@ -206,22 +188,26 @@ class TestAddSubcommand(unittest.TestCase):
         self.assertIsNotNone(lease)
         assert lease is not None
         self.assertEqual(lease.task_id, "my-feat")
+        mock_run_jiri_add.assert_called_once_with(
+            self.jiri_root,
+            ["worktree", "sync", str(wt.path)],
+            check=True,
+        )
 
-    def test_add_already_leased_task_fails(self) -> None:
+    @patch("subcommands.add.run_jiri")
+    def test_add_already_leased_task_fails(
+        self, mock_run_jiri: MagicMock
+    ) -> None:
         wt_path1 = self.jiri_root / "worktrees" / "wt1"
         wt_path2 = self.jiri_root / "worktrees" / "wt2"
         wt_path1.mkdir(parents=True, exist_ok=True)
         wt_path2.mkdir(parents=True, exist_ok=True)
         self.pool.registry_file.write_text(f"{wt_path1}\n{wt_path2}\n")
 
-        args1 = argparse.Namespace(
-            name="my-feat", pool_name=None, sync=False, json=False
-        )
+        args1 = argparse.Namespace(name="my-feat", pool_name=None, json=False)
         add_cmd.run(args1, self.pool)
 
-        args2 = argparse.Namespace(
-            name="my-feat", pool_name=None, sync=False, json=False
-        )
+        args2 = argparse.Namespace(name="my-feat", pool_name=None, json=False)
         with self.assertRaises(ValueError) as context:
             add_cmd.run(args2, self.pool)
         self.assertIn("already active", str(context.exception))

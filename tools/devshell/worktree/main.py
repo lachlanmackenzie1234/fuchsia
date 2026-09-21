@@ -101,9 +101,6 @@ def main() -> None:
     )
     parser_add.add_argument("name", help="Name of worktree / branch")
     parser_add.add_argument(
-        "--sync", action="store_true", help="Sync after adding"
-    )
-    parser_add.add_argument(
         "--pool-name", help="Specific pool slot to allocate"
     )
     parser_add.add_argument("--json", action="store_true", help="Output JSON")
