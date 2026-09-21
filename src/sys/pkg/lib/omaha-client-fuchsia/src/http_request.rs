@@ -10,6 +10,8 @@ use futures::prelude::*;
 use omaha_client::http_request::{Body, Error, HttpRequest, Request, Response};
 use std::time::Duration;
 
+const MAX_RESPONSE_BODY_SIZE: usize = 1 * 1024 * 1024;
+
 #[derive(Debug, thiserror::Error)]
 enum LoaderRequestError {
     #[error("failed to connect to fuchsia.net.http.Loader protocol")]
@@ -32,6 +34,8 @@ enum LoaderRequestError {
     InvalidHeaderValue(#[source] http::header::InvalidHeaderValue),
     #[error("failed to read response body from socket")]
     ReadBodySocket(#[source] std::io::Error),
+    #[error("response body exceeds maximum allowed size of {MAX_RESPONSE_BODY_SIZE} bytes")]
+    ResponseBodyTooLarge,
 }
 
 impl From<LoaderRequestError> for Error {
@@ -103,8 +107,15 @@ async fn make_request(req: Request<Body>, timeout: Duration) -> Result<Response<
 
     let mut resp_body = Vec::new();
     if let Some(zx_socket) = fidl_resp.body {
-        let mut socket = fasync::Socket::from_socket(zx_socket);
-        socket.read_to_end(&mut resp_body).await.map_err(LoaderRequestError::ReadBodySocket)?;
+        let socket = fasync::Socket::from_socket(zx_socket);
+        socket
+            .take(MAX_RESPONSE_BODY_SIZE as u64 + 1)
+            .read_to_end(&mut resp_body)
+            .await
+            .map_err(LoaderRequestError::ReadBodySocket)?;
+        if resp_body.len() > MAX_RESPONSE_BODY_SIZE {
+            return Err(LoaderRequestError::ResponseBodyTooLarge.into());
+        }
     }
 
     let mut response = Response::new(resp_body);
@@ -228,5 +239,22 @@ mod tests {
         assert_eq!(resp.headers().get("x-retry-after").unwrap(), "3600");
         assert_eq!(resp.headers().get("etag").unwrap(), "sig:hash");
         assert_eq!(resp.into_body(), b"error body");
+    }
+
+    #[fuchsia::test]
+    async fn test_response_body_too_large() {
+        use std::error::Error as _;
+
+        let server = TestServer::builder()
+            .handler(StaticResponse::ok_body(vec![b'a'; MAX_RESPONSE_BODY_SIZE + 1]))
+            .start()
+            .await;
+        let mut client = FuchsiaHttpRequest::using_timeout(Duration::from_secs(5));
+        let response = client.request(make_request_for(&server, "some/path")).await;
+        let err = response.unwrap_err();
+        std::assert_matches!(
+            err.source().and_then(|s| s.downcast_ref::<LoaderRequestError>()),
+            Some(LoaderRequestError::ResponseBodyTooLarge)
+        );
     }
 }
