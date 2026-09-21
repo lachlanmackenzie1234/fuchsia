@@ -81,6 +81,7 @@ from honeydew.transports.adb import adb as adb_transport
 from honeydew.transports.fastboot import fastboot
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
@@ -376,12 +377,14 @@ class FuchsiaDevice(
             else self.device_name
         )
         ffx_obj: ffx.FFX = ffx.FFX(
-            query=query,
-            name=self.device_name,
-            config_data=self._ffx_config_data,
-            use_monitor_state=use_monitor_state,
-            shared_data=shared_data,
-            device_ip_change=self,
+            args=ffx_types.FfxArgs(
+                query=query,
+                name=self.device_name,
+                config_data=self._ffx_config_data,
+                use_monitor_state=use_monitor_state,
+                shared_data=shared_data,
+                device_ip_change=self,
+            )
         )
         return ffx_obj
 

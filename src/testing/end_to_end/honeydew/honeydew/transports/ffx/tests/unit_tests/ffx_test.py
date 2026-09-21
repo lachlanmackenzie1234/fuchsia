@@ -17,6 +17,7 @@ from honeydew import affordances_capable, errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
+from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.ffx.types import (
     MachineFormat,
     MonitorTargetInfo,
@@ -221,8 +222,10 @@ class FfxTests(unittest.TestCase):
             ) as mock_ffx_check_connection,
         ):
             self.ffx_obj_wo_ip = ffx.FFX(
-                query=_INPUT_ARGS["target_query"],
-                config_data=_INPUT_ARGS["ffx_config_data"],
+                ffx_types.FfxArgs(
+                    query=_INPUT_ARGS["target_query"],
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                )
             )
         mock_ffx_check_connection.assert_called()
 
@@ -239,10 +242,12 @@ class FfxTests(unittest.TestCase):
             ) as mock_ffx_check_connection,
         ):
             self.ffx_obj_with_ip = ffx.FFX(
-                query=str(_INPUT_ARGS["target_addr"]),
-                name=_INPUT_ARGS["target_query"],
-                config_data=_INPUT_ARGS["ffx_config_data"],
-                device_ip_change=self.device_ip_change,
+                ffx_types.FfxArgs(
+                    query=str(_INPUT_ARGS["target_addr"]),
+                    name=_INPUT_ARGS["target_query"],
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                    device_ip_change=self.device_ip_change,
+                )
             )
         mock_ffx_check_connection.assert_called()
 
@@ -262,14 +267,29 @@ class FfxTests(unittest.TestCase):
             ) as mock_ffx_check_running_monitor,
         ):
             self.ffx_obj_with_ip_and_monitor = ffx.FFX(
-                query=str(_INPUT_ARGS["target_addr"]),
-                name=_INPUT_ARGS["target_query"],
-                config_data=_INPUT_ARGS["ffx_config_data"],
-                use_monitor_state=True,
-                device_ip_change=self.device_ip_change,
+                ffx_types.FfxArgs(
+                    query=str(_INPUT_ARGS["target_addr"]),
+                    name=_INPUT_ARGS["target_query"],
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                    use_monitor_state=True,
+                    device_ip_change=self.device_ip_change,
+                )
             )
         mock_ffx_check_connection.assert_called()
         mock_ffx_check_running_monitor.assert_called()
+
+    def test_ffx_args_dataclass_defaults(self) -> None:
+        """Test case for ffx_types.FfxArgs default values."""
+        args = ffx_types.FfxArgs(
+            query=_INPUT_ARGS["target_query"],
+            config_data=_INPUT_ARGS["ffx_config_data"],
+        )
+        self.assertEqual(args.query, _INPUT_ARGS["target_query"])
+        self.assertEqual(args.config_data, _INPUT_ARGS["ffx_config_data"])
+        self.assertIsNone(args.name)
+        self.assertFalse(args.use_monitor_state)
+        self.assertIsNone(args.shared_data)
+        self.assertIsNone(args.device_ip_change)
 
     def test_ffx_init_with_ip_as_target_query(self) -> None:
         """Test case for ffx.FFX() when called with query=<ip>."""
@@ -279,9 +299,11 @@ class FfxTests(unittest.TestCase):
             autospec=True,
         ):
             ffx_obj = ffx.FFX(
-                query="127.0.0.1",
-                config_data=_INPUT_ARGS["ffx_config_data"],
-                device_ip_change=self.device_ip_change,
+                ffx_types.FfxArgs(
+                    query="127.0.0.1",
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                    device_ip_change=self.device_ip_change,
+                )
             )
         self.assertEqual(ffx_obj._query, "127.0.0.1")
         self.assertEqual(
@@ -295,8 +317,49 @@ class FfxTests(unittest.TestCase):
         """Test case for ffx.FFX() when called with IP and no device_ip_change."""
         with self.assertRaises(ValueError):
             ffx.FFX(
-                query="127.0.0.1",
-                config_data=_INPUT_ARGS["ffx_config_data"],
+                ffx_types.FfxArgs(
+                    query="127.0.0.1",
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                )
+            )
+
+    def test_ffx_init_monitor_not_running_raises(self) -> None:
+        """Test case for ffx.FFX() when use_monitor_state=True and no monitor is running."""
+        with (
+            mock.patch.object(
+                ffx.FFX,
+                "_check_running_monitor",
+                return_value=False,
+                autospec=True,
+            ),
+            self.assertRaises(ffx_errors.FfxMonitorNotSupportedError),
+        ):
+            ffx.FFX(
+                ffx_types.FfxArgs(
+                    query=_INPUT_ARGS["target_query"],
+                    name=_INPUT_ARGS["target_query"],
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                    use_monitor_state=True,
+                )
+            )
+
+    def test_ffx_init_monitor_without_name_raises(self) -> None:
+        """Test case for ffx.FFX() when use_monitor_state=True and name is None."""
+        with (
+            mock.patch.object(
+                ffx.FFX,
+                "_check_running_monitor",
+                return_value=True,
+                autospec=True,
+            ),
+            self.assertRaises(ffx_errors.FfxMonitorRequiresNameError),
+        ):
+            ffx.FFX(
+                ffx_types.FfxArgs(
+                    query=_INPUT_ARGS["target_query"],
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                    use_monitor_state=True,
+                )
             )
 
     def test_ffx_init_shared_data_default(self) -> None:
@@ -312,9 +375,11 @@ class FfxTests(unittest.TestCase):
             autospec=True,
         ):
             ffx_obj = ffx.FFX(
-                query=_INPUT_ARGS["target_query"],
-                config_data=_INPUT_ARGS["ffx_config_data"],
-                shared_data=shared_data,
+                ffx_types.FfxArgs(
+                    query=_INPUT_ARGS["target_query"],
+                    config_data=_INPUT_ARGS["ffx_config_data"],
+                    shared_data=shared_data,
+                )
             )
         self.assertEqual(ffx_obj.shared_data, shared_data)
 
@@ -711,10 +776,12 @@ class FfxTests(unittest.TestCase):
             autospec=True,
         ):
             ffx_obj = ffx.FFX(
-                query=str(_INPUT_ARGS["target_addr"]),
-                name=_INPUT_ARGS["target_query"],
-                config_data=config_data,
-                device_ip_change=self.device_ip_change,
+                ffx_types.FfxArgs(
+                    query=str(_INPUT_ARGS["target_addr"]),
+                    name=_INPUT_ARGS["target_query"],
+                    config_data=config_data,
+                    device_ip_change=self.device_ip_change,
+                )
             )
 
         expected_config = {
