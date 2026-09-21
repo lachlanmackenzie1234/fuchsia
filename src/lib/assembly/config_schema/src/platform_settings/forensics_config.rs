@@ -35,23 +35,6 @@ pub struct FeedbackConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub large_disk: bool,
 
-    /// If true, Feedback will retrieve the device ID via the fuchsia.feedback.DeviceIdProvider
-    /// FIDL protocol rather than using its local implementation.
-    ///
-    /// NOTE: Deprecated. Remote device ID provider is inferred based on whether
-    /// `component_url_for_remote_feedback_id` is specified.
-    #[deprecated(note = "use component_url_for_remote_feedback_id instead")]
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub remote_device_id_provider: bool,
-
-    /// The URL of the component, if any, that exposes the fuchsia.feedback.DeviceIdProvider
-    /// protocol and should be added to the core realm.
-    ///
-    /// NOTE: Deprecated. Use `component_url_for_remote_feedback_id` instead.
-    #[deprecated(note = "use component_url_for_remote_feedback_id instead")]
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub feedback_id_component_url: FeedbackIdComponentUrl,
-
     /// The URL of the component, if any, that exposes the fuchsia.feedback.DeviceIdProvider
     /// protocol and should be added to the core realm.
     ///
