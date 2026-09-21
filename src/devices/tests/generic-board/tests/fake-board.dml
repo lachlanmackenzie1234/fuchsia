@@ -34,6 +34,12 @@
             to: "#clock",
         },
         {
+            name: "pdev",
+            service: "fuchsia.hardware.interrupt.ControllerRegistryService",
+            from: "parent",
+            to: "#clock",
+        },
+        {
             name: "my-clock",
             service: "fuchsia.hardware.clock.Service",
             from: "#clock",
@@ -45,6 +51,14 @@
             service: "fuchsia.hardware.platform.device.Service",
             from: "parent",
             to: "#device",
+            constraints: {
+                interrupts: [
+                    {
+                        number: 42,
+                        controller: "#clock",
+                    },
+                ],
+            },
         },
     ],
     metadata_mappings: [

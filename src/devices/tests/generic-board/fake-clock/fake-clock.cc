@@ -3,21 +3,29 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.clock/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.interrupt/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fit/function.h>
+#include <lib/zx/clock.h>
+#include <lib/zx/interrupt.h>
 
 namespace fake_clock {
 
 class FakeClockDevice : public fidl::Server<fuchsia_hardware_clock::Clock> {
  public:
-  FakeClockDevice(uint32_t id, std::string name) : id_(id), name_(std::move(name)) {}
+  FakeClockDevice(uint32_t id, std::string name, fit::closure on_enable = nullptr)
+      : id_(id), name_(std::move(name)), on_enable_(std::move(on_enable)) {}
 
   void Enable(EnableCompleter::Sync& completer) override {
     fdf::info("Clock {} (id {}) Enabled", name_, id_);
+    if (on_enable_) {
+      on_enable_();
+    }
     completer.Reply(zx::ok());
   }
 
@@ -62,11 +70,39 @@ class FakeClockDevice : public fidl::Server<fuchsia_hardware_clock::Clock> {
  private:
   uint32_t id_;
   std::string name_;
+  fit::closure on_enable_;
 };
 
-class FakeClockDriver : public fdf::DriverBase2 {
+class FakeClockDriver : public fdf::DriverBase2,
+                        public fidl::Server<fuchsia_hardware_interrupt::Controller> {
  public:
   FakeClockDriver() : fdf::DriverBase2("fake-clock") {}
+
+  void RegisterInterrupt(RegisterInterruptRequest& request,
+                         RegisterInterruptCompleter::Sync& completer) override {
+    fdf::info("fake-clock: RegisterInterrupt called with irq {}", request.irq());
+    if (request.irq() != 42) {
+      fdf::error("Unexpected irq: expected 42, got {}", request.irq());
+      completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
+    irq_ = std::move(request.interrupt());
+    TriggerInterrupt();
+    completer.Reply(fit::ok());
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_interrupt::Controller> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    fdf::error("FakeClockDriver unknown method ordinal {}", metadata.method_ordinal);
+  }
+
+  void TriggerInterrupt() {
+    if (irq_.is_valid()) {
+      zx_status_t status = irq_.trigger(0, zx::clock::get_monotonic());
+      fdf::info("fake-clock TriggerInterrupt: status {}", zx_status_get_string(status));
+    }
+  }
 
   zx::result<> Start(fdf::DriverContext context) final {
     fdf::info("Starting fake-clock driver");
@@ -79,11 +115,39 @@ class FakeClockDriver : public fdf::DriverBase2 {
     }
     auto pdev = std::move(pdev_result.value());
 
+    // Register as interrupt controller with platform bus.
+    auto registry_connect =
+        incoming_->Connect<fuchsia_hardware_interrupt::ControllerRegistryService::Registry>("pdev");
+    if (registry_connect.is_error()) {
+      fdf::error("Failed to connect to ControllerRegistryService: {}", registry_connect);
+      return registry_connect.take_error();
+    }
+    auto [controller_client_end, controller_server_end] =
+        fidl::Endpoints<fuchsia_hardware_interrupt::Controller>::Create();
+
+    controller_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                    std::move(controller_server_end), this,
+                                    fidl::kIgnoreBindingClosure);
+
+    fidl::WireSyncClient<fuchsia_hardware_interrupt::ControllerRegistry> registry(
+        std::move(registry_connect.value()));
+    fidl::WireResult reg_result = registry->RegisterController(std::move(controller_client_end));
+    if (!reg_result.ok()) {
+      fdf::error("Failed to call RegisterController: {}", reg_result.FormatDescription());
+      return zx::error(reg_result.status());
+    }
+    if (reg_result->is_error()) {
+      fdf::error("RegisterController failed: {}", zx_status_get_string(reg_result->error_value()));
+      return zx::error(reg_result->error_value());
+    }
+    fdf::info("fake-clock registered as interrupt controller successfully!");
+
     // Hardcoded clock config: name="my-clock", id=1
     std::string clock_name = "my-clock";
     uint32_t clock_id = 1;
 
-    auto clock_device = std::make_unique<FakeClockDevice>(clock_id, clock_name);
+    auto clock_device =
+        std::make_unique<FakeClockDevice>(clock_id, clock_name, [this] { TriggerInterrupt(); });
 
     // Expose service
     fuchsia_hardware_clock::Service::InstanceHandler instance_handler{
@@ -118,6 +182,8 @@ class FakeClockDriver : public fdf::DriverBase2 {
 
  private:
   fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_interrupt::Controller> controller_bindings_;
+  zx::interrupt irq_;
   std::vector<std::unique_ptr<FakeClockDevice>> clock_devices_;
   std::shared_ptr<fdf::Namespace> incoming_;
 };

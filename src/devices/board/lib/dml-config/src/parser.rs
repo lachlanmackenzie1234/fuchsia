@@ -455,6 +455,7 @@ pub async fn publish_dml_devices(
             driver_host: dev.url.clone(),
             ..Default::default()
         };
+        node.interrupt_controller_id = dev.interrupt_controller_id;
 
         if let Some(compatible) = &dev.compatible {
             node.properties = Some(vec![fdf_framework::NodeProperty2 {
@@ -482,8 +483,15 @@ pub async fn publish_dml_devices(
                 });
             }
             for irq in crate::irq_list(pdev_dict) {
+                let irq_spec = match irq.controller {
+                    Some(controller_id) => fpbus::IrqSpec::UserspaceIrq(fpbus::UserspaceIrq {
+                        irq: irq.number,
+                        controller_id,
+                    }),
+                    None => fpbus::IrqSpec::Irq(irq.number),
+                };
                 irq_list.push(fpbus::Irq {
-                    irq: Some(fpbus::IrqSpec::Irq(irq.number)),
+                    irq: Some(irq_spec),
                     mode: Some(map_interrupt_mode(irq.mode.as_deref())),
                     name: irq.name.clone(),
                     wake_vector: irq.wake_vector,
@@ -562,8 +570,10 @@ pub async fn publish_dml_devices(
                 if let Some(resources) = &agg.resources {
                     for res in resources {
                         if res.node.as_deref() == dev.name.as_deref() {
-                            let parent_and_key = if agg.service.as_deref()
+                            let parent_and_key = if (agg.service.as_deref()
                                 == Some("fuchsia.hardware.platform.device.Service")
+                                || agg.service.as_deref()
+                                    == Some("fuchsia.hardware.interrupt.ControllerRegistryService"))
                                 && dev.compatible.is_some()
                             {
                                 None

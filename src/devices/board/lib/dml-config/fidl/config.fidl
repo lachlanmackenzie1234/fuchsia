@@ -19,6 +19,7 @@ type Device = table {
     3: url string:MAX;
     4: compatible string:MAX;
     5: metadata vector<StaticMetadata>:MAX;
+    6: interrupt_controller_id uint32;
 };
 
 type ResourceEntry = table {

@@ -26,7 +26,11 @@ struct LocalResourceEntry {
 /// Strips the leading '#' from a node/component reference name if present.
 /// In DML/CML, child nodes are often referenced with a leading '#'.
 fn strip_hash(s: &str) -> String {
-    if s.starts_with('#') { s[1..].to_string() } else { s.to_string() }
+    if let Some(stripped) = s.strip_prefix('#') {
+        stripped.to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 pub fn compute_global_id(provider: &str, name: &str) -> u32 {
@@ -59,6 +63,83 @@ fn get_or_create_device_idx(
     let dev = fbdc::Device { name: Some(name.to_string()), url, ..Default::default() };
     devices.push(dev);
     devices.len() - 1
+}
+
+/// Allocates a sequential, non-zero interrupt controller ID.
+fn allocate_controller_id(next_id: &mut u32) -> u32 {
+    let allocated = *next_id;
+    *next_id = next_id.checked_add(1).expect("Exhausted interrupt controller IDs");
+    allocated
+}
+
+fn resolve_single_irq_controller(
+    irq_obj: &mut serde_json::Map<String, Value>,
+    devices: &[fbdc::Device],
+) -> Result<(), anyhow::Error> {
+    if let Some(ctrl_val) = irq_obj.get("controller") {
+        match ctrl_val {
+            Value::String(ctrl_str) => {
+                let target_node = strip_hash(ctrl_str);
+                if target_node.is_empty() {
+                    anyhow::bail!(
+                        "Empty controller reference '{}' in interrupt constraint",
+                        ctrl_str
+                    );
+                }
+                let dev_idx = devices
+                    .iter()
+                    .position(|d| d.name.as_deref() == Some(&target_node))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Referenced interrupt controller device '{}' not found in board devices",
+                            target_node
+                        )
+                    })?;
+                let controller_id = devices[dev_idx].interrupt_controller_id.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Referenced interrupt controller device '{}' does not have a 'fuchsia.hardware.interrupt.ControllerRegistryService' offer from 'parent'",
+                        target_node
+                    )
+                })?;
+                irq_obj.insert("controller".to_string(), Value::Number(controller_id.into()));
+            }
+            Value::Number(_) => {
+                anyhow::bail!(
+                    "Manual integer controller IDs are not supported in interrupt constraints, use string reference (e.g. \"#<node_name>\")"
+                );
+            }
+            other => {
+                anyhow::bail!(
+                    "Invalid controller value in interrupt constraint: expected string reference (e.g. \"#<node_name>\"), got {:?}",
+                    other
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolve_interrupt_controllers(
+    constraint_val: &mut Value,
+    devices: &[fbdc::Device],
+) -> Result<(), anyhow::Error> {
+    let Some(obj) = constraint_val.as_object_mut() else {
+        return Ok(());
+    };
+
+    if let Some(Value::Array(interrupts)) = obj.get_mut("interrupts") {
+        for irq_val in interrupts.iter_mut() {
+            if let Some(irq_obj) = irq_val.as_object_mut() {
+                resolve_single_irq_controller(irq_obj, devices)?;
+            }
+        }
+    }
+
+    if let Some(Value::Object(irq_obj)) = obj.get_mut("interrupt") {
+        resolve_single_irq_controller(irq_obj, devices)?;
+    }
+
+    Ok(())
 }
 
 fn flatten_value(
@@ -289,9 +370,51 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
     let mut auto_incrementer =
         crate::workarounds::AutoIncrementer::new(&board_dml.metadata_mappings);
     let mut aggregates_list = Vec::<((String, String), Vec<LocalResourceEntry>)>::new();
+    let mut next_controller_id: u32 = 1;
+
+    // Allocate interrupt controller IDs for devices receiving ControllerRegistryService from parent
+    for offer in &board_dml.offer {
+        if offer.service.as_deref() == Some("fuchsia.hardware.interrupt.ControllerRegistryService")
+        {
+            let to_name = strip_hash(&offer.to);
+            let from = offer.from.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("'from' is missing in service offer for '{}'", to_name)
+            })?;
+            if from != "parent" {
+                anyhow::bail!(
+                    "fuchsia.hardware.interrupt.ControllerRegistryService offer to '{}' must come from 'parent', found '{}'",
+                    to_name,
+                    from
+                );
+            }
+            if offer.name.as_deref().map(|s| s.is_empty()).unwrap_or(true) {
+                anyhow::bail!(
+                    "'name' is missing in fuchsia.hardware.interrupt.ControllerRegistryService offer for '{}'",
+                    to_name
+                );
+            }
+            let dev_idx = devices
+                .iter()
+                .position(|d| d.name.as_deref() == Some(&to_name))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Target device '{}' for ControllerRegistryService offer not found in board devices",
+                        to_name
+                    )
+                })?;
+            if devices[dev_idx].interrupt_controller_id.is_none() {
+                let allocated = allocate_controller_id(&mut next_controller_id);
+                devices[dev_idx].interrupt_controller_id = Some(allocated);
+            }
+        }
+    }
 
     // Process offers
     for offer in &board_dml.offer {
+        if offer.service.as_deref() == Some("fuchsia.hardware.interrupt.ControllerRegistryService")
+        {
+            continue;
+        }
         let to_name = strip_hash(&offer.to);
         let _ = get_or_create_device_idx(&mut devices, &to_name, None);
 
@@ -306,6 +429,7 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
                 offer.constraints.clone().unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
             auto_incrementer.apply(service_name, &provider, &mut constraint_val)?;
+            resolve_interrupt_controllers(&mut constraint_val, &devices)?;
 
             let global_id = compute_global_id(&provider, offer.name.as_deref().unwrap_or(&to_name));
             if let Some(obj) = constraint_val.as_object_mut() {
@@ -759,7 +883,6 @@ mod tests {
         assert_ne!(id1, id3);
         assert_ne!(id1, 0);
     }
-
     #[test]
     fn test_compile_board_minimal() {
         let temp_dir = std::env::temp_dir().join("test_temp_compile_board_minimal");
@@ -808,6 +931,939 @@ mod tests {
         assert!(fidl_path.exists(), "Expected board-config.fidl to exist");
         assert!(bind_path.exists(), "Expected test_board-dml.bind to exist");
         assert!(cml_path.exists(), "Expected test_board-dml.cml to exist");
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_interrupt_controller_id() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "gia_node",
+                        "compatible": "google,level-gia"
+                    },
+                    {
+                        "name": "regular_node",
+                        "compatible": "google,regular"
+                    },
+                    {
+                        "name": "gia_node",
+                        "metadata": [
+                            { "id": "test.meta", "data": [1, 2] }
+                        ]
+                    }
+                ],
+                "offers": [
+                    {
+                        "name": "pdev",
+                        "from": "parent",
+                        "to": "#gia_node",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    },
+                    {
+                        "from": "parent",
+                        "to": "regular_node",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                {
+                                    "number": 10,
+                                    "mode": "LevelHigh",
+                                    "controller": "#gia_node"
+                                },
+                                {
+                                    "number": 20,
+                                    "mode": "EdgeHigh"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let devices = board_config.devices.as_ref().unwrap();
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].name.as_deref(), Some("gia_node"));
+        assert_eq!(devices[0].interrupt_controller_id, Some(1));
+        assert_eq!(devices[1].name.as_deref(), Some("regular_node"));
+        assert_eq!(devices[1].interrupt_controller_id, None);
+
+        // Verify that IRQ constraints with controller IDs are parsed properly
+        let pdev_dict = fbdc::pdev_constraints(&board_config, "regular_node").unwrap();
+        let irqs = fbdc::irq_list(pdev_dict);
+        assert_eq!(irqs.len(), 2);
+        assert_eq!(irqs[0].number, 10);
+        assert_eq!(irqs[0].mode.as_deref(), Some("LevelHigh"));
+        assert_eq!(irqs[0].controller, Some(1));
+
+        assert_eq!(irqs[1].number, 20);
+        assert_eq!(irqs[1].mode.as_deref(), Some("EdgeHigh"));
+        assert_eq!(irqs[1].controller, None);
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_interrupt_controller_reference() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_ref");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "auto_gia_1",
+                        "compatible": "google,level-gia"
+                    },
+                    {
+                        "name": "auto_gia_2",
+                        "compatible": "google,level-gia"
+                    },
+                    {
+                        "name": "auto_gia_3",
+                        "compatible": "google,level-gia"
+                    },
+                    {
+                        "name": "unreferenced_node",
+                        "compatible": "google,unreferenced"
+                    },
+                    {
+                        "name": "client_node",
+                        "compatible": "google,client"
+                    }
+                ],
+                "offers": [
+                    {
+                        "name": "pdev",
+                        "from": "parent",
+                        "to": "#auto_gia_1",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    },
+                    {
+                        "name": "pdev",
+                        "from": "parent",
+                        "to": "#auto_gia_2",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    },
+                    {
+                        "name": "pdev",
+                        "from": "parent",
+                        "to": "#auto_gia_3",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    },
+                    {
+                        "from": "parent",
+                        "to": "client_node",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                {
+                                    "number": 10,
+                                    "mode": "LevelHigh",
+                                    "controller": "#auto_gia_1"
+                                },
+                                {
+                                    "number": 11,
+                                    "mode": "LevelHigh",
+                                    "controller": "#auto_gia_1"
+                                },
+                                {
+                                    "number": 20,
+                                    "mode": "EdgeHigh",
+                                    "controller": "#auto_gia_2"
+                                },
+                                {
+                                    "number": 30,
+                                    "mode": "LevelHigh",
+                                    "controller": "auto_gia_3"
+                                },
+                                {
+                                    "number": 40
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let devices = board_config.devices.as_ref().unwrap();
+
+        let find_dev =
+            |name: &str| devices.iter().find(|d| d.name.as_deref() == Some(name)).unwrap();
+        assert_eq!(find_dev("auto_gia_1").interrupt_controller_id, Some(1));
+        assert_eq!(find_dev("auto_gia_2").interrupt_controller_id, Some(2));
+        assert_eq!(find_dev("auto_gia_3").interrupt_controller_id, Some(3));
+        assert_eq!(find_dev("unreferenced_node").interrupt_controller_id, None);
+        assert_eq!(find_dev("client_node").interrupt_controller_id, None);
+
+        let pdev_dict = fbdc::pdev_constraints(&board_config, "client_node").unwrap();
+        let irqs = fbdc::irq_list(pdev_dict);
+        assert_eq!(irqs.len(), 5);
+
+        // First reference to #auto_gia_1 gets allocated ID 1
+        assert_eq!(irqs[0].number, 10);
+        assert_eq!(irqs[0].controller, Some(1));
+
+        // Second reference to #auto_gia_1 reuses ID 1
+        assert_eq!(irqs[1].number, 11);
+        assert_eq!(irqs[1].controller, Some(1));
+
+        // Reference to auto_gia_2 gets allocated ID 2
+        assert_eq!(irqs[2].number, 20);
+        assert_eq!(irqs[2].controller, Some(2));
+
+        // Reference to auto_gia_3 (without leading #) gets allocated ID 3
+        assert_eq!(irqs[3].number, 30);
+        assert_eq!(irqs[3].controller, Some(3));
+
+        // No controller specified
+        assert_eq!(irqs[4].number, 40);
+        assert_eq!(irqs[4].controller, None);
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_interrupt_controller_empty_reference_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_empty_ref");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "node_a" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "node_a",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": "#" }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Empty controller reference"),
+            "Expected empty controller reference error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_invalid_type_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_invalid_type");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r#"{
+                "name": "test_board",
+                "children": [
+                    { "name": "node_a" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "node_a",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": [1, 2] }
+                            ]
+                        }
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Invalid controller value"),
+            "Expected invalid controller value error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_nonexistent_reference_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_nonexistent");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "node_a" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "node_a",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": "#nonexistent_node" }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Referenced interrupt controller device 'nonexistent_node' not found in board devices"),
+            "Expected nonexistent device error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_raw_integer_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_integer");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r#"{
+                "name": "test_board",
+                "children": [
+                    { "name": "node_a" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "node_a",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": 42 }
+                            ]
+                        }
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Manual integer controller IDs are not supported"),
+            "Expected manual integer controller IDs not supported error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_zero_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_zero");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r#"{
+                "name": "test_board",
+                "children": [
+                    { "name": "node_a" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "node_a",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": 0 }
+                            ]
+                        }
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Manual integer controller IDs are not supported"),
+            "Expected manual integer controller IDs not supported error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_empty_string_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_empty_str");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r#"{
+                "name": "test_board",
+                "children": [
+                    { "name": "node_a" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "node_a",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": "" }
+                            ]
+                        }
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Empty controller reference"),
+            "Expected empty controller reference error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_singular_object() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_singular");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "ctrl_node" },
+                    { "name": "client_node" }
+                ],
+                "offers": [
+                    {
+                        "name": "pdev",
+                        "from": "parent",
+                        "to": "#ctrl_node",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    },
+                    {
+                        "from": "parent",
+                        "to": "client_node",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupt": {
+                                "number": 42,
+                                "controller": "#ctrl_node"
+                            }
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let devices = board_config.devices.as_ref().unwrap();
+
+        let ctrl = devices.iter().find(|d| d.name.as_deref() == Some("ctrl_node")).unwrap();
+        assert_eq!(ctrl.interrupt_controller_id, Some(1));
+
+        let client = devices.iter().find(|d| d.name.as_deref() == Some("client_node")).unwrap();
+        assert_eq!(client.interrupt_controller_id, None);
+
+        let pdev_dict = fbdc::pdev_constraints(&board_config, "client_node").unwrap();
+        let irq_ctrl = fbdc::get_uint32(pdev_dict, "interrupt.controller");
+        assert_eq!(irq_ctrl, Some(1));
+        let irq_num = fbdc::get_uint32(pdev_dict, "interrupt.number");
+        assert_eq!(irq_num, Some(42));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_interrupt_controller_multiple_offers_same_controller() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_multi_offer");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "controller_x" },
+                    { "name": "controller_y" },
+                    { "name": "client_a" },
+                    { "name": "client_b" }
+                ],
+                "offers": [
+                    {
+                        "name": "pdev",
+                        "from": "parent",
+                        "to": "#controller_x",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    },
+                    {
+                        "name": "pdev",
+                        "from": "parent",
+                        "to": "#controller_y",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    },
+                    {
+                        "from": "parent",
+                        "to": "client_a",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": "#controller_x" }
+                            ]
+                        }
+                    },
+                    {
+                        "from": "parent",
+                        "to": "client_b",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 2, "controller": "#controller_y" },
+                                { "number": 3, "controller": "#controller_x" }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let devices = board_config.devices.as_ref().unwrap();
+
+        let find_dev =
+            |name: &str| devices.iter().find(|d| d.name.as_deref() == Some(name)).unwrap();
+        // controller_x is offered first -> ID 1
+        assert_eq!(find_dev("controller_x").interrupt_controller_id, Some(1));
+        // controller_y is offered next -> ID 2
+        assert_eq!(find_dev("controller_y").interrupt_controller_id, Some(2));
+
+        let pdev_a = fbdc::pdev_constraints(&board_config, "client_a").unwrap();
+        let irqs_a = fbdc::irq_list(pdev_a);
+        assert_eq!(irqs_a.len(), 1);
+        assert_eq!(irqs_a[0].controller, Some(1));
+
+        let pdev_b = fbdc::pdev_constraints(&board_config, "client_b").unwrap();
+        let irqs_b = fbdc::irq_list(pdev_b);
+        assert_eq!(irqs_b.len(), 2);
+        assert_eq!(irqs_b[0].controller, Some(2));
+        assert_eq!(irqs_b[1].controller, Some(1));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_interrupt_controller_missing_registry_offer_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_missing_registry");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "ctrl_node" },
+                    { "name": "client_node" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "client_node",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "constraints": {
+                            "interrupts": [
+                                { "number": 1, "controller": "#ctrl_node" }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("does not have a 'fuchsia.hardware.interrupt.ControllerRegistryService' offer from 'parent'"),
+            "Expected missing ControllerRegistryService offer error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_registry_offer_wrong_source_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_wrong_source");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "other_node" },
+                    { "name": "ctrl_node" }
+                ],
+                "offers": [
+                    {
+                        "name": "pdev",
+                        "from": "#other_node",
+                        "to": "#ctrl_node",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("must come from 'parent'"),
+            "Expected wrong source error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_interrupt_controller_registry_offer_missing_name_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_intr_ctrl_missing_name");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "ctrl_node" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "to": "#ctrl_node",
+                        "service": "fuchsia.hardware.interrupt.ControllerRegistryService"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("'name' is missing in fuchsia.hardware.interrupt.ControllerRegistryService offer"),
+            "Expected missing name error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_service_offer_name_and_constraint_name() {
+        let temp_dir = std::env::temp_dir().join("test_temp_offer_name_constraint");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "pmic_node",
+                        "compatible": "fuchsia,test-pmic"
+                    },
+                    {
+                        "name": "dpu_node",
+                        "compatible": "fuchsia,test-display"
+                    }
+                ],
+                "offers": [
+                    {
+                        "from": "#pmic_node",
+                        "to": "#dpu_node",
+                        "service": "fuchsia.hardware.vreg.Service",
+                        "name": "test-vreg",
+                        "constraints": {
+                            "name": "regulator_1"
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let aggregates = board_config.aggregates.as_ref().unwrap();
+        assert_eq!(aggregates.len(), 1);
+        assert_eq!(aggregates[0].provider.as_deref(), Some("pmic_node"));
+        assert_eq!(aggregates[0].service.as_deref(), Some("fuchsia.hardware.vreg.Service"));
+
+        let resources = aggregates[0].resources.as_ref().unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name.as_deref(), Some("test-vreg"));
+        assert_eq!(resources[0].node.as_deref(), Some("dpu_node"));
+
+        let constraint_entries =
+            resources[0].constraint.as_ref().unwrap().entries.as_ref().unwrap();
+        let name_entry = constraint_entries.iter().find(|e| e.key == "name").unwrap();
+        assert_eq!(name_entry.value, fdr::DictionaryValue::Str("regulator_1".to_string()));
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
