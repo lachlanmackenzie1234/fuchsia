@@ -5452,8 +5452,7 @@ mod tests {
             receive_packet_on::<I>(core_ctx, bindings_ctx, MultipleDevicesId::B, early_demux_mode),
             Err(I::IcmpError::port_unreachable())
         );
-        let received = &bindings_ctx.state.socket_data::<I>();
-        assert_eq!(received, &HashMap::new());
+        assert_eq!(bindings_ctx.state.socket_data::<I>(), HashMap::new());
 
         // When unbound, the socket can receive packets on the other device.
         api.set_device(&socket, None).expect("clearing bound device failed");
@@ -5498,7 +5497,7 @@ mod tests {
     #[ip_test(I)]
     fn test_bind_conn_socket_device_fails<I: TestIpExt>() {
         set_logger_for_test();
-        let device_configs = HashMap::from(
+        let device_configs = HashMap::<_, _>::from(
             [(MultipleDevicesId::A, 1), (MultipleDevicesId::B, 2)].map(|(device, i)| {
                 (
                     device,

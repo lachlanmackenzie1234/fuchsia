@@ -1504,7 +1504,7 @@ mod tests {
 
         let device_sockets = &api.core_ctx().state.device_sockets;
         if let TargetDevice::SpecificDevice(d) = device {
-            let DeviceSockets(socket_ids) = device_sockets.get(&d).expect("device state exists");
+            let DeviceSockets(socket_ids) = device_sockets.get(d).expect("device state exists");
             assert_eq!(socket_ids, &HashSet::from([bound]));
         }
     }
@@ -1764,7 +1764,7 @@ mod tests {
 
         for (n, socket) in sockets_expecting_frames.iter().enumerate() {
             assert!(
-                sockets_with_received_frames.remove(&socket),
+                sockets_with_received_frames.remove(socket),
                 "socket {n} didn't receive the frame"
             );
         }
@@ -1834,7 +1834,7 @@ mod tests {
 
         for (n, socket) in sockets_expecting_frames.iter().enumerate() {
             assert!(
-                sockets_with_received_frames.remove(&socket),
+                sockets_with_received_frames.remove(socket),
                 "socket {n} didn't receive the frame"
             );
         }
