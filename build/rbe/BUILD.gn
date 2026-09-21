@@ -27,6 +27,7 @@ group("tests") {
     ":linker_test($host_toolchain)",
     ":output_leak_scanner_test($host_toolchain)",
     ":prebuilt_tool_remote_wrapper_test($host_toolchain)",
+    ":rbe_diagnose_test($host_toolchain)",
     ":relativize_args_test($host_toolchain)",
     ":remote_action_test($host_toolchain)",
     ":remotetool_test($host_toolchain)",
@@ -50,6 +51,7 @@ if (is_host) {
   _linker_sources = [ "linker.py" ] + _cl_utils_sources + _depfile_sources
   _tablefmt_sources = [ "tablefmt.py" ]
   _textpb_sources = [ "textpb.py" ]
+  _rbe_diagnose_sources = [ "rbe_diagnose.py" ]
 
   _cas_sources = [ "cas.py" ] + _cl_utils_sources + _fuchsia_sources
   _bbtool_sources =
@@ -236,6 +238,14 @@ if (is_host) {
   python_build_time_tests("textpb_test") {
     tests = [ "textpb_test.py" ]
     inputs = _textpb_sources
+  }
+
+  python_library("rbe_diagnose") {
+    sources = _rbe_diagnose_sources
+  }
+  python_build_time_tests("rbe_diagnose_test") {
+    tests = [ "rbe_diagnose_test.py" ]
+    inputs = _rbe_diagnose_sources
   }
 }
 
