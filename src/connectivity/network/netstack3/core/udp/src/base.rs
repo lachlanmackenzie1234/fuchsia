@@ -53,7 +53,6 @@ use netstack3_datagram::{
     WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 use netstack3_filter::{SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext};
-use netstack3_hashmap::hash_map::DefaultHasher;
 use netstack3_ip::icmp::IcmpError;
 use netstack3_ip::socket::{
     IpSockCreateAndSendError, IpSockCreationError, IpSockSendError, SocketHopLimits,
@@ -69,6 +68,7 @@ use packet::{
 };
 use packet_formats::ip::{DscpAndEcn, IpProto, IpProtoExt, Ipv4Proto, Ipv6Proto};
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpPacketRaw, UdpParseArgs};
+use siphasher::sip::SipHasher13;
 use thiserror::Error;
 
 use crate::internal::counters::{
@@ -825,7 +825,10 @@ impl<T> AddrState<T> {
                 } else if load_balanced.len() == 1 {
                     &load_balanced[0].id
                 } else {
-                    let mut hasher = DefaultHasher::new();
+                    // NB: The hasher must be deterministic across calls, so
+                    // that all the packets in a flow are delivered to the same
+                    // socket.
+                    let mut hasher = SipHasher13::new();
                     selector.hash(&mut hasher);
                     let index: usize = hasher.finish() as usize % load_balanced.len();
                     &load_balanced[index].id
@@ -5849,6 +5852,41 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[ip_test(I)]
+    fn select_receiver_load_balances_deterministically<I: TestIpExt>() {
+        const NUM_SOCKETS: usize = 4;
+        const NUM_FLOWS: u16 = 100;
+
+        let state = AddrState::Shared {
+            priority: Vec::new(),
+            load_balanced: (0..NUM_SOCKETS)
+                .map(|id| LoadBalancedEntry {
+                    id,
+                    sharing_domain: SharingDomain::new(1),
+                    reuse_addr: false,
+                })
+                .collect(),
+        };
+        let selector = |src_port| SocketSelectorParams::<I, SpecifiedAddr<I::Addr>> {
+            src_ip: remote_ip::<I>().get(),
+            dst_ip: local_ip::<I>(),
+            src_port,
+            dst_port: LOCAL_PORT.get(),
+            _ip: IpVersionMarker::default(),
+        };
+
+        let selected = (0..NUM_FLOWS)
+            .map(|src_port| {
+                let selected = *state.select_receiver(selector(src_port));
+                // All the packets in a flow are delivered to the same socket.
+                assert_eq!(*state.select_receiver(selector(src_port)), selected);
+                selected
+            })
+            .collect::<HashSet<_>>();
+        // Different flows are spread across all the sockets.
+        assert_eq!(selected.len(), NUM_SOCKETS);
     }
 
     #[ip_test(I)]
