@@ -217,7 +217,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
   }
 
   void SendOnVsyncEvent(display::WireConfigStamp stamp) {
-    display_compositor_->OnVsync(zx::time_monotonic(), stamp);
+    display_compositor_->OnVsync(display::DisplayId(1), zx::time_monotonic(), stamp);
   }
 
   std::deque<DisplayCompositor::ApplyConfigInfo> GetPendingApplyConfigs() {

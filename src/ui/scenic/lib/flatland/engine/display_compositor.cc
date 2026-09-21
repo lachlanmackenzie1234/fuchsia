@@ -953,7 +953,7 @@ bool DisplayCompositor::TryDirectToDisplay(std::span<const RenderData> render_da
   return true;
 }
 
-void DisplayCompositor::OnVsync(zx::time_monotonic timestamp,
+void DisplayCompositor::OnVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                                 display::WireConfigStamp displayed_config_stamp) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "Flatland::DisplayCompositor::OnVsync");
@@ -1061,10 +1061,10 @@ fpromise::promise<> DisplayCompositor::AddDisplay(
   // Add vsync callback on display. Note that this will overwrite the existing callback on
   // |display| and other clients won't receive any, i.e. gfx.
   display->AddVsyncCallback(
-      [weak_ref = weak_from_this()](zx::time timestamp,
+      [weak_ref = weak_from_this()](display::DisplayId display_id, zx::time timestamp,
                                     display::WireConfigStamp displayed_config_stamp) {
         if (auto ref = weak_ref.lock())
-          ref->OnVsync(timestamp, displayed_config_stamp);
+          ref->OnVsync(display_id, timestamp, displayed_config_stamp);
       });
 
   // Exit early if there are no vmos to create.

@@ -417,9 +417,10 @@ class DisplayCompositorPixelTest : public gtest::RealLoopFixture {
     // The callback will switch this bool to |true| if the two configs match. It is initialized
     // to |false| and blocks the main thread below.
     bool configs_are_equal = false;
-    auto vsync_callback_id = display->AddVsyncCallback(
-        [&pending_config_stamp, &configs_are_equal](
-            zx::time timestamp, display::WireConfigStamp displayed_config_stamp) {
+    auto vsync_callback_id =
+        display->AddVsyncCallback([&pending_config_stamp, &configs_are_equal](
+                                      display::DisplayId, zx::time timestamp,
+                                      display::WireConfigStamp displayed_config_stamp) {
           if (pending_config_stamp.value == displayed_config_stamp.value &&
               displayed_config_stamp.value != fuchsia_hardware_display::kInvalidConfigStampValue) {
             configs_are_equal = true;

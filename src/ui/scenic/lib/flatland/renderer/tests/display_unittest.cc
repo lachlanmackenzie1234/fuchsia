@@ -122,7 +122,7 @@ class DisplayTest : public gtest::RealLoopFixture {
   zx::result<> WaitForVsync(display::WireConfigStamp target_stamp, zx::duration timeout) {
     std::optional<display::WireConfigStamp> received_stamp;
     auto vsync_callback_id = display_manager_->default_display()->AddVsyncCallback(
-        [&](zx::time, display::WireConfigStamp displayed_config_stamp) {
+        [&](display::DisplayId, zx::time, display::WireConfigStamp displayed_config_stamp) {
           received_stamp = displayed_config_stamp;
         });
 

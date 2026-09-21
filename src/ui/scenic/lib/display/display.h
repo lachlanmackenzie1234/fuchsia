@@ -36,7 +36,8 @@ class Display {
 
   using VsyncCallbackId = int;
   using VsyncCallback =
-      fit::function<void(zx::time_monotonic timestamp, WireConfigStamp displayed_config_stamp)>;
+      fit::function<void(display::DisplayId display_id, zx::time_monotonic timestamp,
+                         WireConfigStamp displayed_config_stamp)>;
   VsyncCallbackId AddVsyncCallback(VsyncCallback callback);
   void RemoveVsyncCallback(VsyncCallbackId id);
 
