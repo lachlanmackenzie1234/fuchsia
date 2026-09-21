@@ -30,7 +30,7 @@ use starnix_sync::{
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::stats::TaskTimeStats;
-use starnix_uapi::auth::{Credentials, FsCred};
+use starnix_uapi::auth::{CAP_SYS_PTRACE, Credentials, FsCred};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SIGCHLD, SigSet, Signal, sigaltstack_contains_pointer};
 use starnix_uapi::user_address::{
@@ -225,14 +225,10 @@ pub struct TaskMutableState {
     pub uts_ns: UtsNamespaceHandle,
 
     /// Bit that determines whether a newly started program can have privileges its parent does
-    /// not have.  See Documentation/prctl/no_new_privs.txt in the Linux kernel for details.
-    /// Note that Starnix does not currently implement the relevant privileges (e.g.,
-    /// setuid/setgid binaries).  So, you can set this, but it does nothing other than get
-    /// propagated to children.
+    /// not have. See `PR_SET_NO_NEW_PRIVS` in `prctl(2)` for details.
     ///
-    /// The documentation indicates that this can only ever be set to
-    /// true, and it cannot be reverted to false.  Accessor methods
-    /// for this field ensure this property.
+    /// Once set to true, this bit cannot be reverted to false. Accessor methods for this field
+    /// ensure this property.
     no_new_privs: bool,
 
     /// Userspace hint about how to adjust the OOM score for this process.
@@ -301,6 +297,18 @@ impl TaskMutableState {
 
     pub fn is_ptraced(&self) -> bool {
         self.ptrace.is_some()
+    }
+
+    /// Returns true if the task is being traced via `ptrace(2)` by a tracer that does not hold
+    /// [`CAP_SYS_PTRACE`] in its effective capability set.
+    pub fn is_ptraced_without_cap_sys_ptrace(&self) -> bool {
+        self.ptrace.as_ref().is_some_and(|ptrace| {
+            ptrace.core_state.task.upgrade().is_none_or(|tracer| {
+                // TODO(https://fxbug.dev/322893829): Verify CAP_SYS_PTRACE in the tracee's user
+                // namespace once user namespaces are supported.
+                !tracer.real_creds().cap_effective.contains(CAP_SYS_PTRACE)
+            })
+        })
     }
 
     pub fn is_ptrace_listening(&self) -> bool {
