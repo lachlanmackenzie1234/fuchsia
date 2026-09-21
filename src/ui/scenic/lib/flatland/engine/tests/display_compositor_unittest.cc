@@ -236,7 +236,58 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
                                                    /* trace_flow_id= */ 1);
   }
 
+  // AddDisplay() with the mock expectations it needs. Layer ids are 1 (the
+  // empty-scene layer) through kMaxDisplayLayersCount + 1.
+  void AddDisplayWithExpectations(display::Display* display, const DisplayInfo& display_info) {
+    next_layer_id_ = 1;
+    EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
+        .Times(kMaxDisplayLayersCount + 1)
+        .WillRepeatedly(testing::Invoke(
+            [this](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                       request,
+                   MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+              EXPECT_EQ(request->layer_id.value, next_layer_id_++);
+              completer.Reply(fit::ok());
+            }));
+    EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
+    display_compositor_->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                    /*out_buffer_collection*/ nullptr);
+  }
+
+  // Expectations for the DisplayCompositor destructor after AddDisplayWithExpectations().
+  void ExpectDisplayCleanup() {
+    for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
+      EXPECT_CALL(
+          *mock_display_coordinator_,
+          DestroyLayer(
+              MatchRequestField(DestroyLayer, layer_id, Eq(display::WireLayerId{.value = i})), _))
+          .Times(1)
+          .WillOnce(Return());
+    }
+    EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+  }
+
+  // One SetDisplayPowerMode() call on the mock, replying |reply|. Set this up right
+  // before each DisplayCompositor::SetDisplayPowerMode() call.
+  void ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode expected_mode,
+                                 zx_status_t reply) {
+    EXPECT_CALL(*mock_display_coordinator_, SetDisplayPowerMode(_, _))
+        .Times(1)
+        .WillOnce(testing::Invoke(
+            [expected_mode, reply](
+                fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerModeRequest* request,
+                MockDisplayCoordinator::SetDisplayPowerModeCompleter::Sync& completer) {
+              EXPECT_EQ(request->power_mode, expected_mode);
+              if (reply == ZX_OK) {
+                completer.Reply(fit::ok());
+              } else {
+                completer.Reply(fit::error(reply));
+              }
+            }));
+  }
+
  protected:
+  uint64_t next_layer_id_ = 1;
   bool RunPromise(fpromise::promise<> promise) {
     return integration_tests::RunPromise(
         dispatcher(), [this] { RunLoopUntilIdle(); }, std::move(promise));
@@ -1888,6 +1939,74 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
         .WillOnce(Return());
   }
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, SetDisplayPowerModeWithoutDisplayIsNotFound) {
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                display::DisplayId(1), fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_ERR_NOT_FOUND);
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, SetDisplayPowerModeReportsCoordinatorError) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  AddDisplayWithExpectations(&display, display_info);
+
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOff, ZX_ERR_NOT_SUPPORTED);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_ERR_NOT_SUPPORTED);
+  EXPECT_TRUE(GetPendingApplyConfigs().empty());
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, SetDisplayPowerModeMapsCoordinatorErrors) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  AddDisplayWithExpectations(&display, display_info);
+
+  // The coordinator lost the display before this compositor heard about it.
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOff, ZX_ERR_NOT_FOUND);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_ERR_NOT_FOUND);
+
+  // An error the coordinator does not document.
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kOff, ZX_ERR_BAD_STATE);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kOff),
+            ZX_ERR_INTERNAL);
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, SetDisplayPowerModeForwardsToCoordinator) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y,
+                           kMaxDisplayLayersCount);
+
+  AddDisplayWithExpectations(&display, display_info);
+
+  ExpectSetDisplayPowerMode(fuchsia_hardware_display_types::PowerMode::kDoze, ZX_OK);
+  EXPECT_EQ(display_compositor_->SetDisplayPowerMode(
+                kDisplayId, fuchsia_hardware_display_types::PowerMode::kDoze),
+            ZX_OK);
+  EXPECT_TRUE(GetPendingApplyConfigs().empty());
+
+  ExpectDisplayCleanup();
 }
 
 }  // namespace flatland::test

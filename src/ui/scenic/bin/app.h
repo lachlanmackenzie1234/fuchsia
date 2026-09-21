@@ -115,9 +115,6 @@ class App {
   std::optional<display::DisplayManager> display_manager_;
   std::optional<display::SingletonDisplayService> singleton_display_service_;
   std::optional<DisplayInfoDelegate> display_info_delegate_;
-  // DisplayPowerManager has a reference to |display_manager_|, so it should be
-  // destroyed before |display_manager_|.
-  std::optional<display::DisplayPowerManager> display_power_manager_;
   // VsyncSourceManager has a reference to |display_manager_|, so it should be
   // destroyed before |display_manager_|.
   std::optional<display::VsyncSourceManager> vsync_source_manager_;
@@ -135,6 +132,9 @@ class App {
   std::unique_ptr<flatland::TrustedFlatlandFactoryImpl> trusted_flatland_factory_;
   std::shared_ptr<flatland::DisplayCompositor> flatland_compositor_;
   std::shared_ptr<flatland::Engine> flatland_engine_;
+  // Its closure calls into |flatland_compositor_|, so it is declared after it and
+  // destroyed first.
+  std::optional<display::DisplayPowerManager> display_power_manager_;
 
   display::ColorConverter color_converter_;
 

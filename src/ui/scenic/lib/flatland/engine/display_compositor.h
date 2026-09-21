@@ -153,6 +153,15 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Only called from the main thread.
   bool SetMinimumRgb(uint8_t minimum_rgb) FXL_LOCKS_EXCLUDED(lock_);
 
+  // Sets the power mode of `display_id`, synchronously. Returns `ZX_OK`, or one of the
+  // errors of `fuchsia.ui.display.singleton/DisplayPower`: `ZX_ERR_NOT_FOUND` if this
+  // compositor or the coordinator does not have the display, `ZX_ERR_NOT_SUPPORTED` if
+  // the driver or hardware cannot do `mode`, `ZX_ERR_INTERNAL` for any other failure.
+  // Only called from the main thread.
+  zx_status_t SetDisplayPowerMode(display::DisplayId display_id,
+                                  fuchsia_hardware_display_types::PowerMode mode)
+      FXL_LOCKS_EXCLUDED(lock_);
+
   display::CoordinatorProxy* GetDisplayCoordinatorForTest() { return &display_coordinator_; }
 
  private:

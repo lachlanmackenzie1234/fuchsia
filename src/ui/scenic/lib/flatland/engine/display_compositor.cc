@@ -1151,6 +1151,37 @@ bool DisplayCompositor::SetMinimumRgb(const uint8_t minimum_rgb) {
   return true;
 }
 
+zx_status_t DisplayCompositor::SetDisplayPowerMode(
+    const display::DisplayId display_id, const fuchsia_hardware_display_types::PowerMode mode) {
+  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
+  TRACE_DURATION("gfx", "flatland::DisplayCompositor::SetDisplayPowerMode");
+
+  std::scoped_lock lock(lock_);
+  if (!display_engine_data_map_.contains(display_id)) {
+    FX_LOGS(WARNING) << "SetDisplayPowerMode: unknown display " << display_id.value();
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  const auto result =
+      display_coordinator_.raw().sync()->SetDisplayPowerMode(display_id.ToFidl(), mode);
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "SetDisplayPowerMode transport error: " << result.status_string();
+    return ZX_ERR_INTERNAL;
+  }
+  if (result->is_error()) {
+    FX_LOGS(ERROR) << "SetDisplayPowerMode method error: "
+                   << zx_status_get_string(result->error_value());
+    // The coordinator documents `ZX_ERR_NOT_FOUND` (it no longer has the display) and
+    // `ZX_ERR_NOT_SUPPORTED` (the driver or hardware cannot do `mode`).
+    const zx_status_t status = result->error_value();
+    if (status == ZX_ERR_NOT_FOUND || status == ZX_ERR_NOT_SUPPORTED) {
+      return status;
+    }
+    return ZX_ERR_INTERNAL;
+  }
+  return ZX_OK;
+}
+
 fpromise::promise<std::vector<allocation::ImageMetadata>>
 DisplayCompositor::AllocateDisplayRenderTargets(
     const bool use_protected_memory, const uint32_t num_render_targets,

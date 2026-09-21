@@ -658,7 +658,19 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
   {
     TRACE_DURATION("gfx", "App::InitializeServices[display_power]");
-    display_power_manager_.emplace(display_manager_.value(), inspect_node_);
+    display_power_manager_.emplace(
+        inspect_node_,
+        /*set_display_power_mode=*/[this](fuchsia_hardware_display_types::PowerMode mode) {
+          // fuchsia.ui.display.singleton.DisplayPower controls the default display, the
+          // only one Scenic renders to.
+          const display::Display* display = display_manager_->default_display();
+          if (!display) {
+            FX_LOGS(WARNING) << "SetDisplayPowerMode: no default display";
+            return ZX_ERR_NOT_FOUND;
+          }
+          FX_DCHECK(flatland_compositor_);
+          return flatland_compositor_->SetDisplayPowerMode(display->display_id(), mode);
+        });
     FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_display_singleton::DisplayPower>(
                  display_power_manager_->GetHandler()) == ZX_OK);
   }
