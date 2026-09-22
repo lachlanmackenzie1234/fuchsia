@@ -6,6 +6,7 @@
 
 #include <lib/magma/platform/platform_barriers.h>
 #include <lib/magma/platform/platform_logger.h>
+#include <stdlib.h>
 
 #include <chrono>
 #include <thread>
@@ -297,9 +298,13 @@ void AddressManager::HardwareSlot::WaitForMmuIdle(mali::RegisterIo* io) {
     ;
 
   uint32_t status = status_reg.ReadFrom(io).reg_value();
-  if (status)
-    MAGMA_LOG(WARNING, "Wait for MMU %d to idle timed out with status 0x%x",
+  if (status) {
+    MAGMA_LOG(ERROR, "Wait for MMU %d to idle timed out with status 0x%x - aborting",
               registers.address_space(), status);
+    // TODO(https://fxbug.dev/524677098): Remove this abort and handle this gracefully.
+    // The MMU failing to go idle is not something that is known to happen.
+    abort();
+  }
 }
 
 void AddressManager::HardwareSlot::FlushMmuRange(mali::RegisterIo* io, uint64_t start,
