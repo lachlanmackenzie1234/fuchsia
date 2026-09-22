@@ -560,7 +560,7 @@ impl BinderObject {
         StrongRefGuard::new(Arc::clone(self))
     }
 
-    /// Increments the strong reference count of the binder object. Fails is the current strong
+    /// Increments the strong reference count of the binder object. Fails if the current strong
     /// count is 0.
     pub fn inc_strong_checked(self: &Arc<Self>) -> Result<StrongRefGuard, Errno> {
         let mut state = self.lock();
@@ -635,7 +635,7 @@ impl BinderObject {
                 }
             }
 
-            // Forget this object if we have just remove the last reference to it.
+            // Forget this object if we have just removed the last reference to it.
             if did_decrease
                 && !object_state.strong_count.has_ref()
                 && !object_state.weak_count.has_ref()
