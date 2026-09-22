@@ -78,6 +78,7 @@ tests_migrated_ffx_libraries = [
   "safe_string",
   "target_errors",
   "termio",
+  "trace",
   "traceable_error",
   "version",
 

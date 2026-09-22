@@ -21,6 +21,7 @@ json_merge(
     srcs = [
         "data/config.json",
         "lib/pbms/data/config.json",
+        "plugins/trace/data/config.json",
     ],
     deep_merge = True,
 )
@@ -40,6 +41,7 @@ test_suite(
         "//src/developer/ffx/lib/safe_string:lib_test",
         "//src/developer/ffx/lib/target_errors:lib_test",
         "//src/developer/ffx/lib/termio:termio_test",
+        "//src/developer/ffx/lib/trace:lib_test",
         "//src/developer/ffx/lib/traceable_error:lib_test",
         "//src/developer/ffx/lib/version:lib_test",
     ],
