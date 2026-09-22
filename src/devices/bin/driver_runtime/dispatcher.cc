@@ -905,7 +905,8 @@ fit::result<NonInlinedReason> Dispatcher::ShouldInline(
     // TODO(https://fxbug.dev/42180471): we should be able to remove the task check once we track
     // drivers through banjo calls, or start each DFv2 driver with a ALLOW_SYNC_CALLS
     // dispatcher.
-    if (req_type == CallbackRequest::RequestType::kTask) {
+    if (req_type == CallbackRequest::RequestType::kTask ||
+        req_type == CallbackRequest::RequestType::kAlwaysOnTask) {
       return fit::error(NonInlinedReason::kTask);
     }
   }
@@ -916,6 +917,7 @@ fit::result<NonInlinedReason> Dispatcher::ShouldInline(
   // call into the driver.
   bool is_global_loop_callback = (req_type == CallbackRequest::RequestType::kIrq) ||
                                  (req_type == CallbackRequest::RequestType::kWait) ||
+                                 (req_type == CallbackRequest::RequestType::kAlwaysOnWait) ||
                                  (req_type == CallbackRequest::RequestType::kWakeIrq) ||
                                  (req_type == CallbackRequest::RequestType::kWakeWait);
   if (is_global_loop_callback) {
@@ -948,6 +950,13 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
                  "was_deferred", TA_BOOL(was_deferred));
 
   ZX_ASSERT(request);
+
+  fit::closure completion_callback;
+  auto complete_suspend_defer = fit::defer([&completion_callback]() {
+    if (completion_callback) {
+      completion_callback();
+    }
+  });
 
   auto decrement_and_idle_check = fit::defer([this]() {
     fbl::AutoLock lock(&callback_lock_);
@@ -1075,8 +1084,6 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
   auto req_type = callback_request->request_type();
   DispatchCallback(std::move(callback_request));
 
-  bool should_complete_suspend = false;
-  fit::closure completion_callback;
   {
     fbl::AutoLock lock(&callback_lock_);
     dispatching_sync_ = false;
@@ -1091,11 +1098,9 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
         executing_wake_vectors_--;
       }
 
-      if (suspend_state_ == SuspendState::kSuspended && executing_power_managed_tasks_ == 0) {
-        if (suspend_completion_callback_) {
-          completion_callback = std::move(suspend_completion_callback_);
-          should_complete_suspend = true;
-        }
+      if (suspend_state_ == SuspendState::kSuspended && executing_power_managed_tasks_ == 0 &&
+          suspend_completion_callback_) {
+        completion_callback = std::move(suspend_completion_callback_);
       }
     }
 
@@ -1103,10 +1108,6 @@ void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* reques
         IsRunningLocked()) {
       event_waiter_->signal();
     }
-  }
-
-  if (should_complete_suspend && completion_callback) {
-    completion_callback();
   }
 }
 
@@ -1279,6 +1280,13 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
                                    fbl::RefPtr<Dispatcher> dispatcher_ref) {
   ZX_ASSERT(dispatcher_ref != nullptr);
 
+  fit::closure completion_callback;
+  auto complete_suspend_defer = fit::defer([&completion_callback]() {
+    if (completion_callback) {
+      completion_callback();
+    }
+  });
+
   auto defer = fit::defer([&]() {
     fbl::AutoLock lock(&callback_lock_);
 
@@ -1344,13 +1352,7 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
     }
   }
 
-  bool should_complete_suspend = false;
-  fit::closure completion_callback;
-
   while (true) {
-    should_complete_suspend = false;
-    completion_callback = nullptr;
-
     // Call the callbacks outside of the lock.
     while (!to_call.is_empty()) {
       auto callback_request = to_call.pop_front();
@@ -1366,17 +1368,16 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
       current_batch_power_managed_count = 0;
       current_batch_wake_vectors_count = 0;
 
-      if (suspend_state_ == SuspendState::kSuspended && executing_power_managed_tasks_ == 0) {
-        if (suspend_completion_callback_) {
-          completion_callback = std::move(suspend_completion_callback_);
-          should_complete_suspend = true;
-        }
+      if (suspend_state_ == SuspendState::kSuspended && executing_power_managed_tasks_ == 0 &&
+          suspend_completion_callback_) {
+        completion_callback = std::move(suspend_completion_callback_);
       }
 
       // Check if there are any more callbacks to dispatch. This may be the case
       // if we were dispatching an async operation, or if the user queued more
       // operations during the last callback.
-      if (!callback_queue_.is_empty() && (num_callbacks_dispatched < kBatchSize)) {
+      if (!completion_callback && !callback_queue_.is_empty() &&
+          (num_callbacks_dispatched < kBatchSize)) {
         num_callbacks_dispatched += TakeNextCallbacks(&to_call);
 
         for (auto& req : to_call) {
@@ -1396,31 +1397,14 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
         if (!callback_queue_.is_empty() && event_waiter_ && !event_waiter_->signaled()) {
           event_waiter_->signal();
         }
+        if (event_waiter) {
+          ResetTimerLocked();
+          if (callback_queue_.is_empty() && event_waiter->signaled()) {
+            event_waiter->designal();
+          }
+        }
+        return;
       }
-    }  // Drop the lock
-
-    // 1. Execute the callback outside the lock BEFORE doing continue/return
-    if (should_complete_suspend && completion_callback) {
-      completion_callback();
-    }
-
-    // 2. Now handle the control flow
-    if (!to_call.is_empty()) {
-      continue;
-    }
-
-    if (!event_waiter) {
-      return;
-    }
-
-    // 3. Final cleanup and return
-    {
-      fbl::AutoLock lock(&callback_lock_);
-      ResetTimerLocked();
-      if (callback_queue_.is_empty() && event_waiter->signaled()) {
-        event_waiter->designal();
-      }
-      return;
     }
   }
 }
