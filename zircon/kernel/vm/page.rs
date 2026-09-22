@@ -14,7 +14,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use page_bindings as bindings;
 
 #[cfg(console_enabled)]
-use crate::console_rust::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
+use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
 
 pub mod object {
     use page_bindings as bindings;
