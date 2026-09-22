@@ -20,7 +20,6 @@ rustc_library("pretty") {
   if (is_kernel) {
     configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
     configs += [ "//zircon/kernel/switch:allow-write-with-newline" ]
-    configs += [ "//zircon/kernel/switch:allow-manual-is-multiple-of" ]
   }
 }
 
