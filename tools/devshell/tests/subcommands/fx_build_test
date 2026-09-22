@@ -644,4 +644,77 @@ EOF
     BT_EXPECT_EQ "${status}" "5"
 }
 
+TEST_fx-build-resultstore-option-all() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --resultstore //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_NINJA='1'" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_BAZEL=" stdout.txt
+    BT_EXPECT_FAIL grep -q "FX_INTERNAL_RESULTSTORE_BAZEL='0'" stdout.txt
+}
+
+TEST_fx-build-resultstore-option-ninja() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --resultstore=ninja //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_NINJA='1'" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_BAZEL='0'" stdout.txt
+}
+
+TEST_fx-build-resultstore-option-bazel() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --resultstore=bazel //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_NINJA='0'" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_BAZEL=" stdout.txt
+    BT_EXPECT_FAIL grep -q "FX_INTERNAL_RESULTSTORE_BAZEL='0'" stdout.txt
+}
+
+TEST_fx-build-resultstore-option-none() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --no-resultstore //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_NINJA='0'" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_BAZEL='0'" stdout.txt
+}
+
+TEST_fx-build-resultstore-option-false() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --resultstore=false //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_NINJA='0'" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_BAZEL='0'" stdout.txt
+}
+
+TEST_fx-build-resultstore-option-zero() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --resultstore=0 //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_NINJA='0'" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_BAZEL='0'" stdout.txt
+}
+
+TEST_fx-build-resultstore-option-no() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --resultstore=no //src:foo ">" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_NINJA='0'" stdout.txt
+    BT_EXPECT grep -q "FX_INTERNAL_RESULTSTORE_BAZEL='0'" stdout.txt
+}
+
+TEST_fx-build-resultstore-option-invalid() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT_FAIL "${fx}" build --resultstore=invalid_val //src:foo "2>" stderr.txt
+    BT_EXPECT_FILE_CONTAINS_SUBSTRING stderr.txt "Invalid --resultstore value:"
+}
+
 BT_RUN_TESTS "$@"

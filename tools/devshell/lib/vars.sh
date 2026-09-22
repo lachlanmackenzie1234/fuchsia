@@ -130,12 +130,19 @@ readonly NINJA_DIRTY_SOURCES_FILE="ninja_dirty_sources.log"
 readonly main_build_script="${FUCHSIA_DIR}/build/scripts/main_build.py"
 
 # If ResultStore is enabled, wrap builds with ResultStore tools.
-RESULTSTORE_ENABLED=0
+CONFIG_RESULTSTORE_ENABLED="none"
 readonly fx_resultstore_config="${FX_CONFIG_DIR}/resultstore"
 if [[ -f "$fx_resultstore_config" ]]; then
   # shellcheck source=/dev/null
   source "$fx_resultstore_config"
-  # This sets RESULTSTORE_ENABLED to 0 or 1.
+  # Unify and normalize into CONFIG_RESULTSTORE_ENABLED
+  if [[ -n "${resultstore}" ]]; then
+    CONFIG_RESULTSTORE_ENABLED="${resultstore}"
+  elif [[ "${RESULTSTORE_ENABLED}" -eq 1 ]]; then
+    CONFIG_RESULTSTORE_ENABLED="all"
+  fi
+  unset RESULTSTORE_ENABLED
+  unset resultstore
 fi
 
 date="$(date +%Y%m%d-%H%M%S)"
@@ -308,9 +315,14 @@ function recheck-fx-build-needs-auth() {
   fx-build-dir-if-present || return 1
 
   # The ResultStore service requires authentication.
-  if [[ "${RESULTSTORE_ENABLED}" -eq 1 ]]; then
-    return 0
-  fi
+  local rs_mode="${FX_BUILD_RESULTSTORE_OVERRIDE:-${CONFIG_RESULTSTORE_ENABLED}}"
+  case "${rs_mode,,}" in
+    none|false|0|no)
+      ;;
+    *)
+      return 0
+      ;;
+  esac
 
   # This RBE settings file is created at GN gen time.
   local -r rbe_settings_file="${FUCHSIA_BUILD_DIR}/rbe_settings.json"
@@ -1239,7 +1251,7 @@ function fx-run-build-command {
     "--build-dir" "${FUCHSIA_BUILD_DIR}"
     "--out-dir" "${FUCHSIA_OUT_DIR}"
     "--rbe=$(fx-rbe-enabled && echo true || echo false)"
-    "--resultstore=${RESULTSTORE_ENABLED}"
+    "--resultstore=${FX_BUILD_RESULTSTORE_OVERRIDE:-${CONFIG_RESULTSTORE_ENABLED}}"
     "--profile=${BUILD_PROFILE_ENABLED}"
     "--tui=${TUI_ENABLED:-0}"
 
@@ -1393,10 +1405,6 @@ function fx-filter-tui {
 function fx-resultstore-write-config {
   local path="$1"
   local val="$2"
-  local enabled=0
-  if [[ "$val" != "none" ]]; then
-    enabled=1
-  fi
 
   local -r tempfile="${path}.tmp"
   mkdir -p "$(dirname "${path}")"
@@ -1409,7 +1417,6 @@ function fx-resultstore-write-config {
 #   bazel: Enable uploading only for Bazel builds.
 #   none:  Disable all ResultStore uploading.
 #
-RESULTSTORE_ENABLED=${enabled}
 resultstore=${val}
 EOF
   # Only rewrite the config file if content has changed
