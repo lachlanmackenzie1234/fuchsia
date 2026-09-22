@@ -78,6 +78,7 @@ impl Driver for Vim3DmlDriver {
             &board_config,
             &DEFAULT_DML_PARSER_CONFIG,
             Some(&driver_specific_data::VIM3_DRIVER_METADATA),
+            None,
         )
         .await
         .context("Failed to publish DML devices")?;

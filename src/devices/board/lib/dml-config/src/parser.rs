@@ -8,6 +8,7 @@ use fdf_fidl::DriverChannel;
 use fidl_fuchsia_driver_metadata as fdr;
 use fidl_next_fuchsia_driver_framework as fdf_framework;
 use fidl_next_fuchsia_hardware_platform_bus as fpbus;
+use fidl_next_fuchsia_hardware_power as fpower;
 use phf;
 use std::collections::{HashMap, HashSet};
 use zx;
@@ -41,6 +42,9 @@ fn map_interrupt_mode(mode: Option<&str>) -> fpbus::ZirconInterruptMode {
 
 pub type DriverSpecificMetadata =
     phf::Map<&'static str, &'static [(&'static str, fn() -> anyhow::Result<Vec<u8>>)]>;
+
+pub type DriverSpecificPowerConfigs =
+    phf::Map<&'static str, fn() -> anyhow::Result<Vec<fpower::PowerElementConfiguration>>>;
 
 pub fn make_accept_bind_rule(
     key: &str,
@@ -419,6 +423,7 @@ pub async fn publish_dml_devices(
     config: &BoardConfig,
     parser_config: &DmlParserConfig,
     driver_metadata: Option<&DriverSpecificMetadata>,
+    driver_power_configs: Option<&DriverSpecificPowerConfigs>,
 ) -> anyhow::Result<()> {
     let mut provider_metadata = HashMap::<String, Vec<fpbus::Metadata>>::new();
 
@@ -561,6 +566,14 @@ pub async fn publish_dml_devices(
 
         if !metadata_list.is_empty() {
             node.metadata = Some(metadata_list);
+        }
+
+        if let Some(gen_fn) = driver_power_configs.and_then(|configs| configs.get(dev_name)) {
+            let power_config = gen_fn()
+                .with_context(|| format!("Failed to generate power config for {}", dev_name))?;
+            if !power_config.is_empty() {
+                node.power_config = Some(power_config);
+            }
         }
 
         let mut resource_parents = Vec::new();

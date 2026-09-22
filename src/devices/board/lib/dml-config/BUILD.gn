@@ -26,6 +26,7 @@ rustc_library("dml-config") {
     deps += [
       "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
       "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust_next",
+      "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust_next",
       "//sdk/lib/driver/runtime/rust/fidl",
       "//sdk/rust/zx",
       "//src/lib/fidl/rust_next/fidl_next",

@@ -75,6 +75,7 @@ impl Driver for GenericBoardDriver {
             &board_config,
             &GENERIC_BOARD_PARSER_CONFIG,
             None,
+            None,
         )
         .await
         .context("Failed to publish DML devices")?;
