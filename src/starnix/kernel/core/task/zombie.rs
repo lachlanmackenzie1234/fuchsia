@@ -20,11 +20,8 @@ pub struct ZombieProcess {
     pub pid: Pid,
     pub pgid: Pid,
     pub uid: uid_t,
-
-    pub exit_info: ProcessExitInfo,
-
-    /// Cumulative time stats for the process and its children.
-    pub time_stats: TaskTimeStats,
+    pub exit_signal: Option<Signal>,
+    pub state: ZombieState,
 
     /// Whether dropping this ZombieProcess should imply removing the pid from
     /// the PidTable
@@ -56,15 +53,16 @@ impl ZombieProcess {
     pub fn new(
         thread_group: ThreadGroupStateRef<'_>,
         credentials: &Credentials,
-        exit_info: ProcessExitInfo,
+        exit_status: ExitStatus,
+        exit_signal: Option<Signal>,
     ) -> OwnedRef<Self> {
         let time_stats = thread_group.base.time_stats() + thread_group.children_time_stats;
         OwnedRef::new(ZombieProcess {
             pid: thread_group.base.leader.clone(),
             pgid: thread_group.process_group.leader.clone(),
             uid: credentials.uid,
-            exit_info,
-            time_stats,
+            state: ZombieState { exit_status, time_stats },
+            exit_signal,
             is_canonical: true,
         })
     }
@@ -81,8 +79,8 @@ impl ZombieProcess {
         WaitResult {
             pid: self.pid.clone(),
             uid: self.uid,
-            exit_info: self.exit_info.clone(),
-            time_stats: self.time_stats,
+            zombie_state: self.state.clone(),
+            exit_signal: self.exit_signal,
         }
     }
 
@@ -91,8 +89,8 @@ impl ZombieProcess {
             pid: self.pid.clone(),
             pgid: self.pgid.clone(),
             uid: self.uid,
-            exit_info: self.exit_info.clone(),
-            time_stats: self.time_stats,
+            state: self.state.clone(),
+            exit_signal: self.exit_signal,
             is_canonical: false,
         }
     }
@@ -119,7 +117,7 @@ impl ZombieProcess {
         } else {
             // A "clone" zombie is one which has delivered no signal, or a
             // signal other than SIGCHLD to its parent upon termination.
-            options.wait_for_clone == (self.exit_info.exit_signal != Some(SIGCHLD))
+            options.wait_for_clone == (self.exit_signal != Some(SIGCHLD))
         }
     }
 }
@@ -206,11 +204,8 @@ impl ZombieNotification {
 pub struct WaitResult {
     pub pid: Pid,
     pub uid: uid_t,
-
-    pub exit_info: ProcessExitInfo,
-
-    /// Cumulative time stats for the process and its children.
-    pub time_stats: TaskTimeStats,
+    pub zombie_state: ZombieState,
+    pub exit_signal: Option<Signal>,
 }
 
 impl WaitResult {
@@ -218,18 +213,19 @@ impl WaitResult {
     pub fn as_signal_info(&self) -> SignalInfo {
         SignalInfo::with_detail(
             SIGCHLD,
-            self.exit_info.status.signal_info_code(),
+            self.zombie_state.exit_status.signal_info_code(),
             SignalDetail::SIGCHLD {
                 pid: self.pid.clone(),
                 uid: self.uid,
-                status: self.exit_info.status.signal_info_status(),
+                status: self.zombie_state.exit_status.signal_info_status(),
             },
         )
     }
 }
 
+/// State of a task or thread group which has exited.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProcessExitInfo {
-    pub status: ExitStatus,
-    pub exit_signal: Option<Signal>,
+pub struct ZombieState {
+    pub exit_status: ExitStatus,
+    pub time_stats: TaskTimeStats,
 }

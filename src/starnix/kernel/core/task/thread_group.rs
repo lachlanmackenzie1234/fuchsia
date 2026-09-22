@@ -17,8 +17,8 @@ use crate::signals::{
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
     ControllingTerminal, CurrentTask, ExitStatus, Kernel, Pid, PidTable, PidTableGuard,
-    ProcessExitInfo, ProcessGroup, Session, SessionDisassociation, Task, TaskMutableState,
-    TaskPersistentInfo, TypedWaitQueue, WaitResult, ZombieProcess,
+    ProcessGroup, Session, SessionDisassociation, Task, TaskMutableState, TaskPersistentInfo,
+    TypedWaitQueue, WaitResult, ZombieProcess, ZombieState,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
@@ -657,10 +657,12 @@ impl ThreadGroup {
             let zombie_notifications = state.zombie_ptracees.detach_all(&mut pids);
 
             // Replace PID table entry with a zombie.
-            let exit_info =
-                ProcessExitInfo { status: exit_status, exit_signal: state.exit_signal.clone() };
-            let zombie =
-                ZombieProcess::new(state.as_ref(), &task.persistent_info.real_creds(), exit_info);
+            let zombie = ZombieProcess::new(
+                state.as_ref(),
+                &task.persistent_info.real_creds(),
+                exit_status,
+                state.exit_signal.clone(),
+            );
             pids.kill_process(&self.leader);
 
             let session = state.leave_process_group(&mut pids);
@@ -816,7 +818,7 @@ impl ThreadGroup {
         state.children.remove(&zombie.pid());
         state.deferred_zombie_ptracers.retain(|dzp| dzp.tracee_pid != zombie.pid);
 
-        let exit_signal = zombie.exit_info.exit_signal;
+        let exit_signal = zombie.exit_signal;
         let mut signal_info = zombie.to_wait_result().as_signal_info();
 
         // From https://man7.org/linux/man-pages/man2/sigaction.2.html
@@ -1557,8 +1559,8 @@ impl ThreadGroup {
                     return Some(WaitResult {
                         pid,
                         uid,
-                        exit_info: ProcessExitInfo { status: exit_status, exit_signal },
-                        time_stats,
+                        zombie_state: ZombieState { exit_status, time_stats },
+                        exit_signal,
                     });
                 }
             }
@@ -1897,7 +1899,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
     /// Reaps the given zombie, making its PID available for reuse.
     fn reap_zombie(&mut self, zombie: OwnedRef<ZombieProcess>, pids: &mut PidTableGuard<'_>) {
-        self.children_time_stats += zombie.time_stats;
+        self.children_time_stats += zombie.state.time_stats;
         zombie.release(pids);
     }
 
@@ -2016,11 +2018,11 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                     WaitResult {
                         pid: child.base.leader.clone(),
                         uid,
-                        exit_info: ProcessExitInfo {
-                            status: exit_status,
-                            exit_signal: child.exit_signal,
+                        zombie_state: ZombieState {
+                            exit_status,
+                            time_stats: child.base.time_stats() + child.children_time_stats,
                         },
-                        time_stats: child.base.time_stats() + child.children_time_stats,
+                        exit_signal: child.exit_signal,
                     }
                 };
                 let child_stopped = child.base.load_stopped();
@@ -2262,7 +2264,7 @@ mod test {
             child.thread_group().kill(ExitStatus::Exit(42), None);
             std::mem::drop(child);
             assert_eq!(
-                current_task.thread_group().read().zombie_children[0].exit_info.status,
+                current_task.thread_group().read().zombie_children[0].state.exit_status,
                 ExitStatus::Exit(42)
             );
         })

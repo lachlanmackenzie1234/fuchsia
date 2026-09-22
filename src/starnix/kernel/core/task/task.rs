@@ -11,10 +11,9 @@ use crate::task::run_state::RunState;
 use crate::task::tracing::ZirconIdentity;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentCreds, CurrentTask,
-    EventHandler, ExitStatus, Kernel, NormalPriority, Pid, ProcessExitInfo, RealtimePriority,
-    SchedulerState, SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue,
-    TaskRunningState, ThreadGroup, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter,
-    ZombieProcess,
+    EventHandler, ExitStatus, Kernel, NormalPriority, Pid, RealtimePriority, SchedulerState,
+    SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState,
+    ThreadGroup, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess, ZombieState,
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
@@ -1001,14 +1000,16 @@ impl Task {
                     ExitStatus::Exit(u8::MAX)
                 });
                 let uid = self.real_creds().uid;
-                let exit_info = ProcessExitInfo { status: exit_status, exit_signal };
                 let zombie = ZombieProcess {
                     pid: self.pid.clone(),
                     pgid,
                     uid,
-                    exit_info: exit_info,
-                    // ptrace doesn't need this.
-                    time_stats: TaskTimeStats::default(),
+                    state: ZombieState {
+                        exit_status,
+                        // ptrace doesn't need this.
+                        time_stats: TaskTimeStats::default(),
+                    },
+                    exit_signal,
                     is_canonical: false,
                 };
 

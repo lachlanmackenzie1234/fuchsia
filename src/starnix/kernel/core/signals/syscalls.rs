@@ -944,8 +944,10 @@ pub fn sys_waitid(
     if let Some(waitable_process) = wait_on_pid(current_task, &task_selector, &waiting_options)? {
         if !user_rusage.is_null() {
             let usage = rusage {
-                ru_utime: timeval_from_duration(waitable_process.time_stats.user_time),
-                ru_stime: timeval_from_duration(waitable_process.time_stats.system_time),
+                ru_utime: timeval_from_duration(waitable_process.zombie_state.time_stats.user_time),
+                ru_stime: timeval_from_duration(
+                    waitable_process.zombie_state.time_stats.system_time,
+                ),
                 ..Default::default()
             };
 
@@ -1028,13 +1030,15 @@ pub fn sys_wait4(
     };
 
     if let Some(waitable_process) = wait_on_pid(current_task, &selector, &waiting_options)? {
-        let status = waitable_process.exit_info.status.wait_status();
+        let status = waitable_process.zombie_state.exit_status.wait_status();
 
         if !user_rusage.is_null() {
             track_stub!(TODO("https://fxbug.dev/322874768"), "real rusage from wait4");
             let usage = rusage {
-                ru_utime: timeval_from_duration(waitable_process.time_stats.user_time),
-                ru_stime: timeval_from_duration(waitable_process.time_stats.system_time),
+                ru_utime: timeval_from_duration(waitable_process.zombie_state.time_stats.user_time),
+                ru_stime: timeval_from_duration(
+                    waitable_process.zombie_state.time_stats.system_time,
+                ),
                 ..Default::default()
             };
             current_task.write_multi_arch_object(user_rusage, usage)?;
@@ -1110,7 +1114,7 @@ mod tests {
         SI_HEADER_SIZE, SI_MAX_SIZE_AS_USIZE, SignalInfoHeader, send_standard_signal,
     };
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-    use crate::task::{EventHandler, ExitStatus, ProcessExitInfo};
+    use crate::task::{EventHandler, ExitStatus, ZombieState};
     use crate::testing::*;
     use starnix_sync::{EventHandlerReadyQueueLock, LockDepMutex};
     use starnix_types::math::round_up_to_system_page_size;
@@ -2007,11 +2011,11 @@ mod tests {
             let expected_result = WaitResult {
                 pid: child.tid.clone(),
                 uid: 0,
-                exit_info: ProcessExitInfo {
-                    status: ExitStatus::Exit(1),
-                    exit_signal: Some(SIGCHLD),
+                zombie_state: ZombieState {
+                    exit_status: ExitStatus::Exit(1),
+                    time_stats: Default::default(),
                 },
-                time_stats: Default::default(),
+                exit_signal: Some(SIGCHLD),
             };
             child.thread_group().kill(ExitStatus::Exit(1), None);
             std::mem::drop(child);
