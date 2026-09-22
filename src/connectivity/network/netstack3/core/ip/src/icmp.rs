@@ -2708,8 +2708,6 @@ mod tests {
     };
     use crate::socket::RouteResolutionOptions;
 
-    use test_util::assert_geq;
-
     pub(super) trait IcmpTestIpExt:
         TestIpExt + IpExt + FilterIpExt + IcmpCountersIpExt
     {
@@ -3811,7 +3809,8 @@ mod tests {
                 packet_formats::ip::IpProto::Udp.into(),
                 &Default::default(),
             );
-            assert_geq!(core_ctx.icmp.tx_counters.time_exceeded.ttl_expired.get(), 1);
+            let count = core_ctx.icmp.tx_counters.time_exceeded.ttl_expired.get();
+            assert!(count >= 1, "{count} >= 1");
         }
 
         /// Call `send_icmpv4_parameter_problem` with fake values.
@@ -3834,10 +3833,8 @@ mod tests {
                 packet_formats::ip::IpProto::Udp.into(),
                 &Default::default(),
             );
-            assert_geq!(
-                core_ctx.icmp.tx_counters.parameter_problem.pointer_indicates_error.get(),
-                1
-            );
+            let count = core_ctx.icmp.tx_counters.parameter_problem.pointer_indicates_error.get();
+            assert!(count >= 1, "{count} >= 1");
         }
 
         /// Call `send_icmpv4_dest_unreachable` with fake values.
@@ -3856,10 +3853,8 @@ mod tests {
                 packet_formats::ip::IpProto::Udp.into(),
                 &Default::default(),
             );
-            assert_geq!(
-                core_ctx.icmp.tx_counters.dest_unreachable.dest_network_unreachable.get(),
-                1
-            );
+            let count = core_ctx.icmp.tx_counters.dest_unreachable.dest_network_unreachable.get();
+            assert!(count >= 1, "{count} >= 1");
         }
 
         /// Call `send_icmpv6_ttl_expired` with fake values.
@@ -3878,7 +3873,8 @@ mod tests {
                 Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
-            assert_geq!(core_ctx.icmp.tx_counters.time_exceeded.hop_limit_exceeded.get(), 1);
+            let count = core_ctx.icmp.tx_counters.time_exceeded.hop_limit_exceeded.get();
+            assert!(count >= 1, "{count} >= 1");
         }
 
         /// Call `send_icmpv6_packet_too_big` with fake values.
@@ -3897,7 +3893,8 @@ mod tests {
                 Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
-            assert_geq!(core_ctx.icmp.tx_counters.packet_too_big.get(), 1);
+            let count = core_ctx.icmp.tx_counters.packet_too_big.get();
+            assert!(count >= 1, "{count} >= 1");
         }
 
         /// Call `send_icmpv6_parameter_problem` with fake values.
@@ -3921,10 +3918,8 @@ mod tests {
                 Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
-            assert_geq!(
-                core_ctx.icmp.tx_counters.parameter_problem.erroneous_header_field.get(),
-                1
-            );
+            let count = core_ctx.icmp.tx_counters.parameter_problem.erroneous_header_field.get();
+            assert!(count >= 1, "{count} >= 1");
         }
 
         /// Call `send_icmpv6_dest_unreachable` with fake values.
@@ -3943,7 +3938,8 @@ mod tests {
                 Ipv6Proto::NoNextHeader,
                 &Default::default(),
             );
-            assert_geq!(core_ctx.icmp.tx_counters.dest_unreachable.no_route.get(), 1);
+            let count = core_ctx.icmp.tx_counters.dest_unreachable.no_route.get();
+            assert!(count >= 1, "{count} >= 1");
         }
 
         // Run tests for each function that sends error messages to make sure

@@ -5853,7 +5853,6 @@ mod tests {
     use packet_formats::tcp::{TcpParseArgs, TcpSegment, TcpSegmentBuilder};
     use rand::RngExt as _;
     use test_case::test_case;
-    use test_util::assert_gt;
 
     use super::*;
     use crate::internal::base::{ConnectionError, DEFAULT_FIN_WAIT2_TIMEOUT};
@@ -10303,7 +10302,9 @@ mod tests {
 
         assert_eq!(client.mss(), expected_mss);
         // The PMTU update should not represent a congestion event.
-        assert_gt!(client.cwnd().cwnd(), u32::from(expected_mss));
+        let cwnd = client.cwnd().cwnd();
+        let expected_mss = u32::from(expected_mss);
+        assert!(cwnd > expected_mss, "{cwnd} > {expected_mss}");
 
         // The segment that was too large should be eagerly retransmitted.
         net.with_context(LOCAL, |ctx| {

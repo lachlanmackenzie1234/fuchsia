@@ -11,7 +11,6 @@ use net_types::{UnicastAddr, Witness as _, ZonedAddr};
 use netstack3_base::WorkQueueReport;
 use packet::Buf;
 use test_case::test_case;
-use test_util::assert_lt;
 
 use netstack3_base::testutil::{FakeSendToken, TestIpExt, set_logger_for_test};
 use netstack3_core::IpExt;
@@ -46,7 +45,8 @@ fn loopback_holds_metadata<I: IpExt + TestIpExt>(connected: bool) {
     }
 
     // send buffer utilization is held over loopback.
-    assert_lt!(api.send_buffer_available(&socket), sndbuf_before);
+    let sndbuf_after = api.send_buffer_available(&socket);
+    assert!(sndbuf_after < sndbuf_before, "{sndbuf_after} < {sndbuf_before}");
     assert!(ctx.test_api().handle_queued_rx_packets());
     // After handling the queued packets the send buffer is released.
     assert_eq!(ctx.core_api().udp::<I>().send_buffer_available(&socket), sndbuf_before);
@@ -75,7 +75,8 @@ fn neighbor_resolution_holds_metadata<I: IpExt + TestIpExt>() {
     .unwrap();
 
     // send buffer utilization is held over neighbor resolution.
-    assert_lt!(api.send_buffer_available(&socket), sndbuf_before);
+    let sndbuf_after = api.send_buffer_available(&socket);
+    assert!(sndbuf_after < sndbuf_before, "{sndbuf_after} < {sndbuf_before}");
 
     // Mark the neighbor as static.
     ctx.core_api()
@@ -124,7 +125,8 @@ fn holds_in_tx_queue<I: IpExt + TestIpExt>() {
         FakeSendToken::default(),
     )
     .unwrap();
-    assert_lt!(api.send_buffer_available(&socket), sndbuf_before);
+    let sndbuf_after = api.send_buffer_available(&socket);
+    assert!(sndbuf_after < sndbuf_before, "{sndbuf_after} < {sndbuf_before}");
 
     // Clear the tx available signal.
     let tx_avail = core::mem::take(&mut ctx.bindings_ctx.state_mut().tx_available);
