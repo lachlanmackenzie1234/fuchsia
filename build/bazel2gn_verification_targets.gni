@@ -97,6 +97,8 @@ bazel2gn_verification_targets = [
   "//src/lib/cmdline:verify_bazel2gn",
   "//src/lib/collections/packed:verify_bazel2gn",
   "//src/lib/containers/cpp:verify_bazel2gn",
+  "//src/lib/diagnostics/log/encoding/rust:verify_bazel2gn",
+  "//src/lib/diagnostics/log/rust:verify_bazel2gn",
   "//src/lib/diagnostics/log/types:verify_bazel2gn",
   "//src/lib/directed_graph:verify_bazel2gn",
   "//src/lib/elflib:verify_bazel2gn",
