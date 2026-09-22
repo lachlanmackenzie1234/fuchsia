@@ -2269,14 +2269,14 @@ alias(
 )
 
 alias(
-    name = "regex-1.12.3",
-    actual = "//third_party/rust_crates/vendor/regex-1.12.3:regex",
+    name = "regex-1.13.1",
+    actual = "//third_party/rust_crates/vendor/regex-1.13.1:regex",
     tags = ["manual"],
 )
 
 alias(
     name = "regex",
-    actual = "//third_party/rust_crates/vendor/regex-1.12.3:regex",
+    actual = "//third_party/rust_crates/vendor/regex-1.13.1:regex",
     tags = ["manual"],
 )
 

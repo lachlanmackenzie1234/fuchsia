@@ -202,7 +202,7 @@ range-alloc = "0.1.5"
 rapidhash = { version = "1.4.0", features = ["unsafe"] }
 rayon = "1.10.0"
 ref-cast = "1.0.26"
-regex = "1.12.3"
+regex = "1.13.1"
 regex-lite = "0.1.9"
 ring = "0.17.14"
 rkyv = { version = "0.8.18", features = ["little_endian", "unaligned", "pointer_width_32"] }
@@ -1035,7 +1035,7 @@ env_vars = [
   "CARGO_PKG_VERSION_PATCH=25",
 ]
 
-[gn.package.regex."1.12.3"]
+[gn.package.regex."1.13.1"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "regex_visibility" }
 
 [gn.package.ring."0.17.14"]
