@@ -43,6 +43,8 @@ class MsdArmBuffer {
 
   Region committed_region() const { return committed_region_; }
 
+  std::unordered_set<GpuMapping*>& mappings() { return gpu_mappings_; }
+
  private:
   friend class TestMsdArmBuffer;
   friend class TestConnection;

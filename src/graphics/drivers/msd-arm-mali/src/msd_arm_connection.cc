@@ -464,9 +464,7 @@ bool MsdArmConnection::RemoveMappingLocked(uint64_t gpu_va) {
   return true;
 }
 
-// CommitMemoryForBuffer or PageInAddress will hold address_lock_ before calling this, but that's
-// impossible to specify for the thread safety analysis.
-bool MsdArmConnection::UpdateCommittedMemory(GpuMapping* mapping) __TA_NO_THREAD_SAFETY_ANALYSIS {
+bool MsdArmConnection::UpdateCommittedMemory(GpuMapping* mapping) {
   uint64_t access_flags = 0;
   if (!access_flags_from_flags(mapping->flags(),
                                owner_->NdtGetCacheCoherencyStatus() == kArmMaliCacheCoherencyAce,
@@ -626,7 +624,14 @@ bool MsdArmConnection::PageInMemory(uint64_t address) {
 
   // The MMU command to update the page tables should automatically cause
   // the atom to continue executing.
-  return buffer->CommitPageRange(buffer->start_committed_pages(), committed_page_count);
+  bool success = buffer->CommitPageRange(buffer->start_committed_pages(), committed_page_count);
+  if (success) {
+    for (auto& mapping : buffer->mappings()) {
+      if (!UpdateCommittedMemory(mapping))
+        success = false;
+    }
+  }
+  return success;
 }
 
 MsdArmConnection::JitMemoryRegion* MsdArmConnection::FindBestJitRegionAddressWithUsage(
@@ -899,6 +904,9 @@ void MsdArmConnection::ReleaseOneJitMemory(const magma_arm_jit_memory_free_info&
           magma::Status result = region.buffer->platform_buffer()->DecommitPages(
               new_page_count, current_committed_page_count - new_page_count);
           DASSERT(result.ok());
+          for (auto& mapping : region.buffer->mappings()) {
+            UpdateCommittedMemory(mapping);
+          }
         }
       }
       break;
@@ -940,19 +948,42 @@ size_t MsdArmConnection::FreeUnusedJitRegionsIfNeeded() {
 bool MsdArmConnection::CommitMemoryForBuffer(MsdArmBuffer* buffer, uint64_t page_offset,
                                              uint64_t page_count) {
   std::lock_guard<std::mutex> lock(address_lock_);
-  return buffer->CommitPageRange(page_offset, page_count);
+  if (!buffer->CommitPageRange(page_offset, page_count)) {
+    return false;
+  }
+
+  bool success = true;
+  for (auto& mapping : buffer->mappings()) {
+    if (!UpdateCommittedMemory(mapping))
+      success = false;
+  }
+  return success;
 }
 
 bool MsdArmConnection::SetCommittedPagesForBuffer(MsdArmBuffer* buffer, uint64_t page_offset,
                                                   uint64_t page_count) {
   std::lock_guard<std::mutex> lock(address_lock_);
-  return buffer->SetCommittedPages(page_offset, page_count);
+  if (!buffer->SetCommittedPages(page_offset, page_count))
+    return false;
+  bool success = true;
+  for (auto& mapping : buffer->mappings()) {
+    if (!UpdateCommittedMemory(mapping))
+      success = false;
+  }
+  return success;
 }
 
 bool MsdArmConnection::DecommitMemoryForBuffer(MsdArmBuffer* buffer, uint64_t page_offset,
                                                uint64_t page_count) {
   std::lock_guard<std::mutex> lock(address_lock_);
-  return buffer->DecommitPageRange(page_offset, page_count);
+  if (!buffer->DecommitPageRange(page_offset, page_count))
+    return false;
+  bool success = true;
+  for (auto& mapping : buffer->mappings()) {
+    if (!UpdateCommittedMemory(mapping))
+      success = false;
+  }
+  return success;
 }
 
 void MsdArmConnection::SetNotificationCallback(msd::NotificationHandler* handler) {

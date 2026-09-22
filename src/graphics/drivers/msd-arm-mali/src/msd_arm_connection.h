@@ -80,7 +80,6 @@ class MsdArmConnection : public std::enable_shared_from_this<MsdArmConnection>,
 
   // GpuMapping::Owner implementation.
   bool RemoveMapping(uint64_t gpu_va) override;
-  bool UpdateCommittedMemory(GpuMapping* mapping) override;
 
   bool CreateMapping(uint64_t gpu_va, uint64_t page_offset, uint64_t size, uint64_t flags,
                      std::shared_ptr<MsdArmBuffer> buffer,
@@ -197,6 +196,7 @@ class MsdArmConnection : public std::enable_shared_from_this<MsdArmConnection>,
   // Release all unused JIT regions to save memory. Returns the number of bytes freed.
   size_t FreeUnusedJitRegionsIfNeeded() FIT_REQUIRES(address_lock_);
   bool RemoveMappingLocked(uint64_t gpu_va) FIT_REQUIRES(address_lock_);
+  bool UpdateCommittedMemory(GpuMapping* mapping) FIT_REQUIRES(address_lock_);
 
   magma::PlatformBusMapper* GetBusMapper() override { return owner_->NdtGetBusMapper(); }
 
