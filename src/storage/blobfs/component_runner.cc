@@ -20,6 +20,7 @@
 #include <lib/inspect/component/cpp/tree_handler_settings.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
+#include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -35,7 +36,6 @@
 #include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/page_loader.h"
 #include "src/storage/blobfs/service/lifecycle.h"
-#include "src/storage/blobfs/service/ota_health_check.h"
 #include "src/storage/blobfs/service/overwrite_configuration.h"
 #include "src/storage/blobfs/service/startup.h"
 #include "src/storage/lib/trace/trace.h"
@@ -108,6 +108,7 @@ void ComponentRunner::Shutdown(fs::FuchsiaVfs::ShutdownCallback cb) {
       // The threads in the paged vfs' thread pool reference data owned by blobfs. The threads must
       // be stopped before blobfs is destroyed.
       TearDown();
+      ota_health_check_bindings_.RemoveAll();
       // Manually destroy the filesystem. The promise of Shutdown is that no
       // connections are active, and destroying the Runner object
       // should terminate all background workers.
@@ -224,8 +225,19 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<BlockDevice> device,
 
   auto svc_dir = fbl::MakeRefCounted<fs::PseudoDir>();
 
-  svc_dir->AddEntry(fidl::DiscoverableProtocolName<fuchsia_update_verify::ComponentOtaHealthCheck>,
-                    fbl::MakeRefCounted<OtaHealthCheckService>(dispatcher(), *blobfs_));
+  svc_dir->AddEntry(
+      fidl::DiscoverableProtocolName<fuchsia_update_verify::ComponentOtaHealthCheck>,
+      fbl::MakeRefCounted<fs::Service>(
+          [this](fidl::ServerEnd<fuchsia_update_verify::ComponentOtaHealthCheck> server_end) {
+            if (blobfs_ == nullptr) {
+              server_end.Close(ZX_ERR_UNAVAILABLE);
+              return ZX_OK;
+            }
+            ota_health_check_bindings_.AddBinding(dispatcher(), std::move(server_end), this,
+                                                  fidl::kIgnoreBindingClosure);
+            return ZX_OK;
+          }));
+
   svc_dir->AddEntry(
       fidl::DiscoverableProtocolName<fuchsia_fs::Admin>,
       fbl::MakeRefCounted<fs::Service>([this](fidl::ServerEnd<fuchsia_fs::Admin> server_end) {
@@ -250,6 +262,15 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<BlockDevice> device,
   }
 
   return zx::ok();
+}
+
+void ComponentRunner::GetHealthStatus(GetHealthStatusCompleter::Sync& completer) {
+  ZX_ASSERT(blobfs_);
+  if (blobfs_->VerifyHealth() == ZX_OK) {
+    completer.Reply(fuchsia_update_verify::wire::HealthStatus::kHealthy);
+  } else {
+    completer.Reply(fuchsia_update_verify::wire::HealthStatus::kUnhealthy);
+  }
 }
 
 }  // namespace blobfs

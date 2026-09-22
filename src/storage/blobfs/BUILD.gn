@@ -147,8 +147,6 @@ static_library("blobfs") {
       "page_loader.h",
       "service/lifecycle.cc",
       "service/lifecycle.h",
-      "service/ota_health_check.cc",
-      "service/ota_health_check.h",
       "service/overwrite_configuration.cc",
       "service/overwrite_configuration.h",
       "service/startup.cc",
