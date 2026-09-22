@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "crossbeam-utils",
     package_url = "https://github.com/crossbeam-rs/crossbeam",
-    package_version = "0.8.21",
+    package_version = "0.8.23",
 )
 
 license(
@@ -76,9 +76,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.8.21",
+    version = "0.8.23",
     deps = [
-        "//third_party/rust_crates/vendor/crossbeam-utils-0.8.21:build_script_build",
+        "//third_party/rust_crates/vendor/crossbeam-utils-0.8.23:build_script_build",
     ],
 )
 
@@ -131,7 +131,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "0.8.21",
+    version = "0.8.23",
     visibility = ["//visibility:private"],
 )
 

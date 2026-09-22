@@ -93,7 +93,7 @@ crc = "3.4.0"
 crc32fast = "1.5.0"
 criterion = { version = "0.8.2", default-features = false, features = ["csv_output", "cargo_bench_support"] }
 crossbeam = "0.8.4"
-crossbeam-utils = "0.8.21"
+crossbeam-utils = "0.8.23"
 csv = "1.4.0"
 darling = "0.23.0"
 data-encoding = "2.11.0"
@@ -645,7 +645,7 @@ env_vars = [
   "CARGO_PKG_VERSION_PATCH=2",
 ]
 
-[gn.package.crossbeam-utils."0.8.21"]
+[gn.package.crossbeam-utils."0.8.23"]
 rustflags = []
 
 [gn.package.crunchy."0.2.3"]
