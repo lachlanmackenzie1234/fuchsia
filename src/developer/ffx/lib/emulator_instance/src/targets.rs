@@ -348,7 +348,7 @@ impl EmulatorWatcher {
 
 pub fn get_all_targets(instances: &EmulatorInstances) -> Result<Vec<EmulatorTargetInfo>> {
     let items = instances.get_all_instances()?;
-    Ok(items.iter().flat_map(|i| EmulatorWatcher::make_target(i)).collect())
+    Ok(items.iter().flat_map(|i| EmulatorWatcher::handle_instance(i)).collect())
 }
 
 pub fn get_target(instances: &EmulatorInstances, name: &str) -> Result<Option<EmulatorTargetInfo>> {
@@ -693,7 +693,19 @@ mod tests {
         let emu_config = serde_json::to_string(&instance_data)?;
         file1.write_all(emu_config.as_bytes())?;
 
+        let path2 = instance_root.join("path2");
+        create_dir_all(path2.as_path())?;
+        let file2_path = path2.join(crate::instances::SERIALIZE_FILE_NAME);
+        let mut file2 = File::create(&file2_path)?;
+        let stopped_instance = crate::EmulatorInstanceData::new_with_state(
+            "stopped-emu-instance",
+            crate::EngineState::Staged,
+        );
+        let stopped_config = serde_json::to_string(&stopped_instance)?;
+        file2.write_all(stopped_config.as_bytes())?;
+
         let targets = get_all_targets(&emulator_instances)?;
+        assert_eq!(targets.len(), 1);
         assert_eq!(targets.first().unwrap().nodename, "emu-data-instance");
         assert_eq!(targets.first().unwrap().serial_number, Some("EM-123456789".to_string()));
 
