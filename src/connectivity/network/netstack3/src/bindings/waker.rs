@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use std::collections::HashMap;
+use std::convert::Infallible as Never;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -71,7 +72,7 @@ impl WakeGroups {
         let WakeGroups(inner) = self;
 
         let (data_watcher, data_notifier) = DataWatcher::new();
-        let mut wake_group = WakeGroup::new(debug_name, data_watcher, wake_watcher);
+        let wake_group = WakeGroup::new(debug_name, data_watcher, wake_watcher);
         let id = wake_group.id.duplicate_for_client();
 
         assert_matches!(
@@ -84,16 +85,14 @@ impl WakeGroups {
 
         let wake_groups = self.clone();
         let _: fasync::JoinHandle<()> = fasync::Scope::current().spawn(async move {
-            match wake_group.serve(wake_groups).await {
-                Ok(()) => {}
-                Err(WakeGroupShutdownReason::WakeWatcherClosed) => {
-                    debug!("wake group '{}' closing because of client closure", wake_group.name);
+            let name = wake_group.name.clone();
+            let Err(reason) = wake_group.serve(wake_groups).await;
+            match reason {
+                WakeGroupShutdownReason::WakeWatcherClosed => {
+                    debug!("wake group '{name}' closing because of client closure");
                 }
-                Err(WakeGroupShutdownReason::AwakeAndAsleepAsserted) => {
-                    warn!(
-                        "closing wake group '{}' because both AWAKE and ASLEEP signals set",
-                        wake_group.name
-                    );
+                WakeGroupShutdownReason::AwakeAndAsleepAsserted => {
+                    warn!("closing wake group '{name}' because both AWAKE and ASLEEP signals set");
                 }
             }
         });
@@ -216,11 +215,12 @@ impl WakeGroup {
         Self { name, id: WakeGroupId::new(), data_watcher, wake_watcher }
     }
 
-    async fn serve(&mut self, wake_groups: WakeGroups) -> Result<(), WakeGroupShutdownReason> {
-        let Self { name, id, data_watcher, wake_watcher } = self;
+    async fn serve(self, wake_groups: WakeGroups) -> Result<Never, WakeGroupShutdownReason> {
+        let Self { name, id, mut data_watcher, wake_watcher } = self;
         let WakeGroupId { token, koid: _ } = &id;
 
         let _cleanup = scopeguard::guard((wake_groups, &id), |(wake_groups, id)| {
+            let _ = id.token.signal(GROUP_WAKEUP_SIGNAL, zx::Signals::NONE);
             // Note that sockets that were attached to this wake group still
             // hold onto their DataNotifiers, but without a data watcher, those
             // notifications are no-ops.
@@ -271,6 +271,19 @@ mod tests {
     use test_case::{test_case, test_matrix};
     use zx::Peered as _;
 
+    fn assert_wake_signal_clear(token: &zx::Event) {
+        assert_matches!(
+            token.wait_one(GROUP_WAKEUP_SIGNAL, zx::MonotonicInstant::INFINITE_PAST),
+            zx::WaitResult::TimedOut(_)
+        );
+    }
+
+    fn assert_wake_signal_set(token: &zx::Event) {
+        let observed =
+            token.wait_one(GROUP_WAKEUP_SIGNAL, zx::MonotonicInstant::INFINITE_PAST).unwrap();
+        assert!(observed.contains(GROUP_WAKEUP_SIGNAL));
+    }
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TriggerShutdownWhen {
         BeforeSuspend,
@@ -312,7 +325,7 @@ mod tests {
         wake_watcher_signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
 
         let (data_watcher, data_notifier) = DataWatcher::new();
-        let mut wake_group =
+        let wake_group =
             WakeGroup::new("test-group".to_string(), data_watcher, wake_watcher_observer);
         let id = wake_group.id.duplicate_for_client();
 
@@ -379,19 +392,6 @@ mod tests {
     #[test_case(false; "without_pre_suspend_notification")]
     #[test_case(true; "with_pre_suspend_notification")]
     fn wake_group_happy_path_signals(notify_before_suspend: bool) {
-        fn assert_wake_signal_clear(token: &zx::Event) {
-            assert_matches!(
-                token.wait_one(GROUP_WAKEUP_SIGNAL, zx::MonotonicInstant::INFINITE_PAST),
-                zx::WaitResult::TimedOut(_)
-            );
-        }
-
-        fn assert_wake_signal_set(token: &zx::Event) {
-            let observed =
-                token.wait_one(GROUP_WAKEUP_SIGNAL, zx::MonotonicInstant::INFINITE_PAST).unwrap();
-            assert!(observed.contains(GROUP_WAKEUP_SIGNAL));
-        }
-
         let mut exec = fasync::TestExecutor::new();
 
         let wake_groups = WakeGroups::default();
@@ -399,7 +399,7 @@ mod tests {
         wake_watcher_signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
 
         let (data_watcher, data_notifier) = DataWatcher::new();
-        let mut wake_group =
+        let wake_group =
             WakeGroup::new("test-group".to_string(), data_watcher, wake_watcher_observer);
         let id = wake_group.id.duplicate_for_client();
         let token = &id.token;
@@ -435,6 +435,62 @@ mod tests {
 
         wake_watcher_signaller.signal_peer(WAITER_ASLEEP_SIGNAL, WAITER_AWAKE_SIGNAL).unwrap();
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        assert_wake_signal_clear(token);
+    }
+
+    #[test_case(ShutdownTrigger::DropWaker; "drop_waker")]
+    #[test_case(ShutdownTrigger::AssertInvalidSignals; "assert_invalid_signals")]
+    fn wake_group_shutdown_deasserts_wake_signal(shutdown_trigger: ShutdownTrigger) {
+        let expected_reason = match shutdown_trigger {
+            ShutdownTrigger::DropWaker => WakeGroupShutdownReason::WakeWatcherClosed,
+            ShutdownTrigger::AssertInvalidSignals => {
+                WakeGroupShutdownReason::AwakeAndAsleepAsserted
+            }
+        };
+
+        let mut exec = fasync::TestExecutor::new();
+
+        let wake_groups = WakeGroups::default();
+        let (wake_watcher_observer, wake_watcher_signaller) = zx::EventPair::create();
+        wake_watcher_signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
+
+        let (data_watcher, data_notifier) = DataWatcher::new();
+        let wake_group =
+            WakeGroup::new("test-group".to_string(), data_watcher, wake_watcher_observer);
+        let id = wake_group.id.duplicate_for_client();
+        let token = &id.token;
+
+        assert_matches!(
+            wake_groups.0.lock().wake_groups.insert(id.koid, data_notifier.clone()),
+            None
+        );
+
+        let serve_fut = wake_group.serve(wake_groups.clone());
+        let mut serve_fut = pin!(serve_fut);
+
+        // State machine is waiting for the client to signal it's asleep.
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        assert_wake_signal_clear(token);
+
+        // Client signals that it is asleep.
+        wake_watcher_signaller.signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL).unwrap();
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        assert_wake_signal_clear(token);
+
+        // Incoming data triggers the wake signal.
+        data_notifier.notify();
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        assert_wake_signal_set(token);
+
+        match shutdown_trigger {
+            ShutdownTrigger::DropWaker => drop(wake_watcher_signaller),
+            ShutdownTrigger::AssertInvalidSignals => wake_watcher_signaller
+                .signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL | WAITER_ASLEEP_SIGNAL)
+                .unwrap(),
+        }
+
+        assert_eq!(exec.run_until_stalled(&mut serve_fut), Poll::Ready(Err(expected_reason)));
+        assert_matches!(wake_groups.0.lock().wake_groups.get(&id.koid), None);
         assert_wake_signal_clear(token);
     }
 }
