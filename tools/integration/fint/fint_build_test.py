@@ -530,28 +530,6 @@ class NinjaBuildWrapTest(unittest.TestCase):
         targets = ctx._get_targets()
         self.assertEqual(targets, ["bar", "foo"])
 
-    def test_resolve_targets_host_tests(self) -> None:
-        """Verifies that host test targets are correctly filtered and resolved."""
-        static_spec = static_pb2.Static(include_host_tests=True)
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            context_spec = context_pb2.Context(
-                checkout_dir="fake_checkout", build_dir=tmp_dir
-            )
-
-            test_specs_path = os.path.join(tmp_dir, fint_build.TESTS_JSON)
-            test_specs_data = [
-                {"test": {"os": "fuchsia", "path": "fuchsia_test"}},
-                {"test": {"os": "linux", "path": "host_test_1"}},
-                {"test": {"os": "mac", "path": "host_test_2"}},
-            ]
-            with open(test_specs_path, "w") as f:
-                json.dump(test_specs_data, f)
-
-            host = fint_build.HostProperties(os="linux", cpu="x64")
-            ctx = fint_build.BuildContext(static_spec, context_spec, host)
-            targets = ctx._get_targets()
-            self.assertEqual(targets, ["host_test_1", "host_test_2"])
-
     @mock.patch.object(subprocess, "run")
     def test_lifecycle_context_manager(self, mock_run: MagicMock) -> None:
         """Verifies wrap_ninja touches files and manages success stamp correctly."""

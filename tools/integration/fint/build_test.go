@@ -493,20 +493,6 @@ func TestBuild(t *testing.T) {
 			expectedTargets: []string{":default"},
 		},
 		{
-			name: "host tests included",
-			staticSpec: &fintpb.Static{
-				IncludeHostTests: true,
-			},
-			modules: fakeBuildModules{
-				testSpecs: []build.TestSpec{
-					{Test: build.Test{OS: "fuchsia", Path: "fuchsia_path"}},
-					{Test: build.Test{OS: "linux", Path: "linux_path"}},
-					{Test: build.Test{OS: "mac", Path: "mac_path"}},
-				},
-			},
-			expectedTargets: []string{"linux_path", "mac_path"},
-		},
-		{
 			name: "generated sources included",
 			staticSpec: &fintpb.Static{
 				IncludeGeneratedSources: true,

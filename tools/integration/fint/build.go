@@ -793,15 +793,6 @@ func constructNinjaTargets(
 
 	if staticSpec.IncludeDefaultNinjaTarget {
 		targets = append(targets, ":default")
-	} else {
-		// "//:host" is a dep of "//:default"
-		if staticSpec.IncludeHostTests {
-			for _, testSpec := range modules.TestSpecs() {
-				if testSpec.OS != "fuchsia" {
-					targets = append(targets, testSpec.Path)
-				}
-			}
-		}
 	}
 
 	if staticSpec.IncludeGeneratedSources {

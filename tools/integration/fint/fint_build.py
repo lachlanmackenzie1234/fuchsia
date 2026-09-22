@@ -532,13 +532,6 @@ class BuildContext:
         """Yields default targets or host test targets if configured."""
         if self.static_spec.include_default_ninja_target:
             yield ":default"
-        elif self.static_spec.include_host_tests:
-            for spec in self.test_specs:
-                test_spec = spec.get("test", {})
-                if test_spec.get("os") != "fuchsia":
-                    path = test_spec.get("path")
-                    if path:
-                        yield path
 
     def _generated_source_targets(self) -> Iterable[str]:
         """Yields generated C++ source targets if configured."""
