@@ -56,9 +56,6 @@ source_set("common") {
 fuchsia_cc_driver("ti-lp8556-driver") {
   output_name = "ti-lp8556"
   deps = [ ":common" ]
-
-  # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
 }
 
 fuchsia_driver_component("ti-lp8556") {
@@ -94,9 +91,6 @@ test("ti-lp8556-test-bin") {
     "//src/lib/testing/predicates",
     "//zircon/system/ulib/ddk-platform-defs",
   ]
-
-  # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
 }
 
 fuchsia_unittest_package("ti-lp8556-test") {
