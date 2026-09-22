@@ -249,7 +249,7 @@ impl NetdeviceWorker {
             // significant problem since ports are seldom added or removed.
             let state = state.lock().await;
             let mut rx_buffers = ShortCircuit::new(rx_buffers.map(build_gro_input));
-            let mut gro = gro_storage.coalesce(&mut rx_buffers);
+            let mut gro = gro_storage.coalesce(&mut rx_buffers, false);
             while let Some(item) = gro.next() {
                 let GroOutputItem {
                     target: GroPortTarget { port, frame_type },
