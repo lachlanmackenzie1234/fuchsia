@@ -44,7 +44,6 @@
 #include "fidl/fuchsia.wlan.fullmac/cpp/wire_types.h"
 #include "fidl/fuchsia.wlan.ieee80211/cpp/common_types.h"
 #include "fidl/fuchsia.wlan.ieee80211/cpp/wire_types.h"
-#include "fuchsia/wlan/ieee80211/cpp/fidl.h"
 #include "lib/fidl/cpp/wire/vector_view.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/bcdc.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/bits.h"
@@ -4839,7 +4838,7 @@ static void brcmf_dump_if_band_cap(fuchsia_wlan_fullmac::BandCapability* band_ca
   }
   BRCMF_DBG_UNFILTERED("   band: %s", band_str);
 
-  char rates_str[fuchsia::wlan::ieee80211::MAX_SUPPORTED_BASIC_RATES * 6 + 1];
+  char rates_str[fuchsia_wlan_ieee80211::kMaxSupportedBasicRates * 6 + 1];
   char* str = rates_str;
   for (unsigned i = 0; i < band_cap->basic_rates()->size(); i++) {
     str += sprintf(str, "%s%d", i > 0 ? " " : "", band_cap->basic_rates()->at(i));
@@ -4847,13 +4846,13 @@ static void brcmf_dump_if_band_cap(fuchsia_wlan_fullmac::BandCapability* band_ca
   BRCMF_DBG_UNFILTERED("     basic_rates: %s", rates_str);
 
   size_t num_primary_channels = band_cap->primary_channels()->size();
-  if (num_primary_channels > fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS) {
+  if (num_primary_channels > fuchsia_wlan_ieee80211::kMaxUniqueChannelNumbers) {
     BRCMF_DBG_UNFILTERED("Number of channels reported (%zu) exceeds limit (%u), truncating",
                          band_cap->primary_channels()->size(),
-                         fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS);
-    num_primary_channels = fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS;
+                         fuchsia_wlan_ieee80211::kMaxUniqueChannelNumbers);
+    num_primary_channels = fuchsia_wlan_ieee80211::kMaxUniqueChannelNumbers;
   }
-  char channels_str[fuchsia::wlan::ieee80211::MAX_UNIQUE_CHANNEL_NUMBERS * 4 + 1];
+  char channels_str[fuchsia_wlan_ieee80211::kMaxUniqueChannelNumbers * 4 + 1];
   str = channels_str;
   for (unsigned i = 0; i < num_primary_channels; i++) {
     str += sprintf(str, "%s%d", i > 0 ? " " : "",
@@ -4957,7 +4956,7 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
       band_cap->band(fuchsia_wlan_ieee80211::WlanBand::kTwoGhz);
 
       constexpr uint8_t kNumSupported2GRates =
-          std::min<size_t>(fuchsia::wlan::ieee80211::MAX_SUPPORTED_BASIC_RATES, wl_g_rates_size);
+          std::min<size_t>(fuchsia_wlan_ieee80211::kMaxSupportedBasicRates, wl_g_rates_size);
       band_cap->basic_rates()->resize(kNumSupported2GRates);
 
       // Ensure that element sizes are identical because we will memcpy them.
@@ -4970,7 +4969,7 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
       band_cap->band(fuchsia_wlan_ieee80211::WlanBand::kFiveGhz);
 
       constexpr uint8_t kNumSupported5GRates =
-          std::min<size_t>(fuchsia::wlan::ieee80211::MAX_SUPPORTED_BASIC_RATES, wl_a_rates_size);
+          std::min<size_t>(fuchsia_wlan_ieee80211::kMaxSupportedBasicRates, wl_a_rates_size);
       band_cap->basic_rates()->resize(kNumSupported5GRates);
 
       // Ensure that element sizes are identical because we will memcpy them.
@@ -6863,7 +6862,7 @@ static zx_status_t brcmf_handle_assoc_ind(struct brcmf_if* ifp, const struct brc
   }
 
   const struct brcmf_tlv* rsn_ie = brcmf_parse_tlvs(data, e->datalen, WLAN_IE_TYPE_RSNE);
-  if (rsn_ie && rsn_ie->len > fuchsia::wlan::ieee80211::WLAN_IE_BODY_MAX_LEN) {
+  if (rsn_ie && rsn_ie->len > fuchsia_wlan_ieee80211::kWlanIeBodyMaxLen) {
     BRCMF_ERR("Received ASSOC_IND with invalid RSN IE");
     return ZX_ERR_INVALID_ARGS;
   }

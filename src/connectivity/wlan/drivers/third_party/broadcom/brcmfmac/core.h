@@ -23,6 +23,7 @@
 
 #include <fidl/fuchsia.wlan.fullmac/cpp/driver/wire.h>
 #include <fidl/fuchsia.wlan.fullmac/cpp/fidl.h>
+#include <fidl/fuchsia.wlan.ieee80211/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.phy/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.phy/cpp/wire.h>
 #include <lib/stdcompat/span.h>
@@ -42,7 +43,6 @@
 #include <wlan/drivers/components/frame_container.h>
 
 #include "bus.h"
-#include "fuchsia/wlan/ieee80211/cpp/fidl.h"
 #include "fweh.h"
 #include "fwil_types.h"
 #include "linuxisms.h"

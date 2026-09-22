@@ -6,8 +6,8 @@
 
 #include <fidl/fuchsia.wlan.common/cpp/wire_types.h>
 #include <fidl/fuchsia.wlan.fullmac/cpp/markers.h>
+#include <fidl/fuchsia.wlan.ieee80211/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.phy/cpp/markers.h>
-#include <fuchsia/wlan/ieee80211/cpp/fidl.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/internal/test_environment.h>
 #include <lib/fdf/dispatcher.h>
