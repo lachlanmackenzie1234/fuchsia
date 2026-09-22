@@ -173,7 +173,15 @@ template("rustc_test_internal") {
   } else {
     # if not a host-side target, we don't need this since it doesn't
     # propogate to package.gni
-    not_needed(invoker, [ "test_environments" ])
+    #
+    # `args` is only read in the is_host branch above. A BUILD.gn file is
+    # evaluated in both toolchains, so callers that set it unconditionally would
+    # otherwise trip GN's "Assignment had no effect" check here.
+    not_needed(invoker,
+               [
+                 "args",
+                 "test_environments",
+               ])
   }
 
   rustflags = []
