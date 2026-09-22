@@ -2887,14 +2887,14 @@ alias(
 )
 
 alias(
-    name = "siphasher-1.0.2",
-    actual = "//third_party/rust_crates/vendor/siphasher-1.0.2:siphasher",
+    name = "siphasher-1.0.3",
+    actual = "//third_party/rust_crates/vendor/siphasher-1.0.3:siphasher",
     tags = ["manual"],
 )
 
 alias(
     name = "siphasher",
-    actual = "//third_party/rust_crates/vendor/siphasher-1.0.2:siphasher",
+    actual = "//third_party/rust_crates/vendor/siphasher-1.0.3:siphasher",
     tags = ["manual"],
 )
 
