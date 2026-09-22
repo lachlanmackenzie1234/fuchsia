@@ -997,23 +997,12 @@ group("full_drivers") {
 }
 
 group("starnix_support") {
-  deps = [
-    ":starnix_support.bootfs_files_package.bazel_input",
-    "//bundles/assembly/bazel_inputs/src/starnix/runner:starnix_package",
-  ]
+  deps =
+      [ "//bundles/assembly/bazel_inputs/src/starnix/runner:starnix_package" ]
 }
 
 group("erofs_support") {
   deps = [ "//bundles/assembly/bazel_inputs/src/storage/erofs" ]
-}
-
-fuchsia_package("starnix_support.bootfs_files_package") {
-  deps = [ "//src/starnix/config:bootfs" ]
-}
-
-export_fuchsia_package_to_bazel(
-    "starnix_support.bootfs_files_package.bazel_input") {
-  package = ":starnix_support.bootfs_files_package"
 }
 
 group("usb_adb_function") {

@@ -2914,7 +2914,7 @@ assembly_input_bundle(
     core_shards = [
         "//src/starnix/runner:meta/starnix_runner.core_shard.cml",
     ],
-    bootfs_files_package = "//bundles/assembly/bazel_inputs:starnix_support.bootfs_files_package",
+    bootfs_files_package = "//src/starnix/config:starnix_support.bootfs_files_package",
     memory_buckets = ["//src/developer/memory/buckets:starnix.json5"],
 )
 
