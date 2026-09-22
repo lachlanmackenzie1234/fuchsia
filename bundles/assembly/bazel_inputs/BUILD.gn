@@ -1028,20 +1028,15 @@ group("fastbootd_usb_support") {
 }
 
 group("nanohub_support") {
-  deps = [
-    "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:google_backlight",
-    "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:google_display",
-    "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:google_nanohub",
-    "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:sockettunnel",
-  ]
+  deps = []
 }
 
 group("fastrpc_support") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/starnix/modules/fastrpc:google_fastrpc" ]
+  deps = []
 }
 
 group("hvdcp_opti_support") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/starnix/modules/hvdcp_opti" ]
+  deps = []
 }
 
 group("testing_support_bootstrap") {

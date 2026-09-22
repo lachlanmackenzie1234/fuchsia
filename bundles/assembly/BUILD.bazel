@@ -2987,10 +2987,10 @@ assembly_input_bundle(
         "eng",
     ],
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:google_backlight",
-        "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:google_display",
-        "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:google_nanohub",
-        "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:sockettunnel",
+        "//src/starnix/modules/nanohub:google_backlight",
+        "//src/starnix/modules/nanohub:google_display",
+        "//src/starnix/modules/nanohub:google_nanohub",
+        "//src/starnix/modules/nanohub:sockettunnel",
     ],
     core_shards = [
         "//src/starnix/modules/nanohub:meta/backlight.core_shard.cml",
@@ -3010,7 +3010,7 @@ assembly_input_bundle(
         "eng",
     ],
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/starnix/modules/fastrpc:google_fastrpc",
+        "//src/starnix/modules/fastrpc:google_fastrpc",
     ],
     core_shards = [
         "//src/starnix/modules/fastrpc:meta/fastrpc.core_shard.cml",
@@ -3030,7 +3030,7 @@ assembly_input_bundle(
         "eng",
     ],
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/starnix/modules/hvdcp_opti:hvdcp_opti",
+        "//src/starnix/modules/hvdcp_opti:hvdcp_opti",
     ],
     core_shards = [
         "//src/starnix/modules/hvdcp_opti:meta/hvdcp_opti.core_shard.cml",
