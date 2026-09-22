@@ -91,7 +91,7 @@ impl Session {
     pub async fn recv<'a>(
         &'a self,
         ready_storage: &'a mut RxReadyStorage,
-    ) -> Result<impl Iterator<Item = Result<Buffer<Rx>>> + 'a> {
+    ) -> Result<impl ExactSizeIterator<Item = Result<Buffer<Rx>>> + 'a> {
         self.inner.recv(ready_storage).await
     }
 
@@ -383,7 +383,7 @@ impl Inner {
     async fn recv<'a>(
         &'a self,
         ready_storage: &'a mut RxReadyStorage,
-    ) -> Result<impl Iterator<Item = Result<Buffer<Rx>>> + 'a> {
+    ) -> Result<impl ExactSizeIterator<Item = Result<Buffer<Rx>>> + 'a> {
         poll_fn(|cx| ready_storage.poll_fifo(cx, &self.rx))
             .await
             .map_err(|status| Error::Fifo("read", "rx", status))?;
@@ -924,7 +924,14 @@ impl<'a, T> Iterator for Drain<'a, T> {
             None
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.ready.available.len();
+        (len, Some(len))
+    }
 }
+
+impl<'a, T> ExactSizeIterator for Drain<'a, T> {}
 
 impl<'a, T> Drop for Drain<'a, T> {
     fn drop(&mut self) {

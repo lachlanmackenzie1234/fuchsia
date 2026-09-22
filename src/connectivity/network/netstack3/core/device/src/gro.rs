@@ -1021,6 +1021,10 @@ impl<B: MaybeContiguousBuffer> GroBufferStorage<B> {
         I: Iterator<Item = GroInputItem<B, T>>,
         T: GroBufferDestination,
     {
+        let enable_tcp_gro = match iter.size_hint() {
+            (_, Some(1)) => false,
+            _ => enable_tcp_gro,
+        };
         GroIter::new(iter, self, enable_tcp_gro)
     }
 
