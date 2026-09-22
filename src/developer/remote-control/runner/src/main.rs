@@ -19,7 +19,13 @@ use std::task::{Poll, ready};
 use version_history::AbiRevision;
 use version_history_data::HISTORY;
 
-const BUFFER_SIZE: usize = 65536;
+// LINT.IfChange
+const BUFFER_SIZE: usize = 256 * 1024;
+// LINT.ThenChange(
+//     //src/developer/ffx/lib/target/src/target_connector.rs,
+//     //src/developer/remote-control/fdomain-runner/src/main.rs,
+//     //src/lib/fdomain/container/src/lib.rs
+// )
 
 #[derive(Copy, Clone)]
 enum CopyDirection {
