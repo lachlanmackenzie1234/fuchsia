@@ -262,6 +262,19 @@ class DefaultBuildFlagsMap(dict[str, DefaultBuildFlagsSet]):
 load("@fuchsia_rules_common//build_flags:toolchain.bzl", "build_flags_toolchain_instance")
 load("@@//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 """
+
+        def format_labels(labels: list[str]) -> str:
+            # Since this BUILD.bazel file is generated inside an external
+            # repository (@fuchsia_build_info), prepend "@@" to labels starting
+            # with "//" so Bazel resolves them relative to the main workspace root.
+            # Use json.dumps() to use double-quote formatting.
+            return json.dumps(
+                [
+                    f"@@{label}" if label.startswith("//") else label
+                    for label in labels
+                ]
+            )
+
         for name, info in self.items():
             content += """
 build_flags_toolchain_instance(
@@ -282,21 +295,22 @@ toolchain(
 )
 """.format(
                 name=name,
-                # Use json.dumps() to use double-quote formatting.
-                cxx_common_build_flags=json.dumps(info.cxx_common_build_flags),
-                cxx_executable_build_flags=json.dumps(
+                cxx_common_build_flags=format_labels(
+                    info.cxx_common_build_flags
+                ),
+                cxx_executable_build_flags=format_labels(
                     info.cxx_executable_build_flags
                 ),
-                cxx_shared_library_build_flags=json.dumps(
+                cxx_shared_library_build_flags=format_labels(
                     info.cxx_shared_library_build_flags
                 ),
-                rust_common_build_flags=json.dumps(
+                rust_common_build_flags=format_labels(
                     info.rust_common_build_flags
                 ),
-                rust_executable_build_flags=json.dumps(
+                rust_executable_build_flags=format_labels(
                     info.rust_executable_build_flags
                 ),
-                rust_shared_library_build_flags=json.dumps(
+                rust_shared_library_build_flags=format_labels(
                     info.rust_shared_library_build_flags
                 ),
                 target_compatible_with=info.target_compatible_with,

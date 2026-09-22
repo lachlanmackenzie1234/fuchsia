@@ -165,27 +165,27 @@ build_flags(
             'name = "target_a_default_build_flags"', generated_content
         )
         self.assertIn(
-            'cxx_common_build_flags = ["//build/flags:cxx_common1"]',
+            'cxx_common_build_flags = ["@@//build/flags:cxx_common1"]',
             generated_content,
         )
         self.assertIn(
-            'cxx_executable_build_flags = ["//build/flags:cxx_exec1"]',
+            'cxx_executable_build_flags = ["@@//build/flags:cxx_exec1"]',
             generated_content,
         )
         self.assertIn(
-            'cxx_shared_library_build_flags = ["//build/flags:cxx_shlib1"]',
+            'cxx_shared_library_build_flags = ["@@//build/flags:cxx_shlib1"]',
             generated_content,
         )
         self.assertIn(
-            'rust_common_build_flags = ["//build/flags:rust_common1"]',
+            'rust_common_build_flags = ["@@//build/flags:rust_common1"]',
             generated_content,
         )
         self.assertIn(
-            'rust_executable_build_flags = ["//build/flags:rust_exec1"]',
+            'rust_executable_build_flags = ["@@//build/flags:rust_exec1"]',
             generated_content,
         )
         self.assertIn(
-            'rust_shared_library_build_flags = ["//build/flags:rust_shlib1"]',
+            'rust_shared_library_build_flags = ["@@//build/flags:rust_shlib1"]',
             generated_content,
         )
         self.assertIn('name = "target_a_toolchain"', generated_content)
