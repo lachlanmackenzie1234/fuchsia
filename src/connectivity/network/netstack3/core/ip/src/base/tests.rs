@@ -490,3 +490,68 @@ fn send_respects_device_mtu<I: IpLayerIpExt + TestIpExt>() {
     )
     .expect("send ip packet")
 }
+
+#[ip_test(I)]
+fn test_ip_layer_packet_metadata_multicast_and_device_conversion<
+    I: IpLayerIpExt + crate::internal::device::state::IpDeviceStateIpExt + TestIpExt,
+>() {
+    let mut core_ctx = FakeCoreCtx::<I>::default();
+    let marks = Marks::new([(MarkDomain::Mark1, 100), (MarkDomain::Mark2, 200)]);
+
+    // Verify `from_device_ip_layer_metadata` sets `socket_info` to `None` even if
+    // `marks` are present.
+    let device_meta = DeviceIpLayerMetadata::<FakeBindingsCtx>::with_marks(marks);
+    let rx_meta =
+        IpLayerPacketMetadata::<
+            I,
+            crate::internal::device::state::WeakAddressId<I, FakeBindingsCtx>,
+            FakeBindingsCtx,
+        >::from_device_ip_layer_metadata(&mut core_ctx, &MultipleDevicesId::A, device_meta);
+    let (_, _, rx_marks, rx_socket_info) = rx_meta.into_parts();
+    assert_eq!(rx_marks, marks);
+    assert_eq!(rx_socket_info, None);
+
+    // Verify `split_for_multicast` preserves marks and socket_info across multiple splits.
+    let mut tx_meta =
+        IpLayerPacketMetadata::<I, Never, FakeBindingsCtx>::from_tx_metadata_and_marks(
+            Default::default(),
+            marks,
+        );
+    let primary_rc = PrimaryRc::new(());
+    let socket_info = SocketInfo {
+        proto: I::map_ip(
+            (),
+            |()| {
+                netstack3_filter::EitherIpProto::V4(packet_formats::ip::Ipv4Proto::Proto(
+                    IpProto::Udp,
+                ))
+            },
+            |()| {
+                netstack3_filter::EitherIpProto::V6(packet_formats::ip::Ipv6Proto::Proto(
+                    IpProto::Udp,
+                ))
+            },
+        ),
+        cookie: netstack3_base::socket::SocketCookie::new(
+            PrimaryRc::clone_strong(&primary_rc).resource_token(),
+        ),
+    };
+    tx_meta.socket_info = Some(socket_info.clone());
+
+    let SplitMulticastPacketMetadata { primary: split1, secondary: tx_meta } =
+        tx_meta.split_for_multicast();
+    let SplitMulticastPacketMetadata { primary: split2, secondary: tx_meta } =
+        tx_meta.split_for_multicast();
+
+    let (_, _, marks1, sock1) = split1.into_parts();
+    assert_eq!(marks1, marks);
+    assert_eq!(sock1, Some(socket_info.clone()));
+
+    let (_, _, marks2, sock2) = split2.into_parts();
+    assert_eq!(marks2, marks);
+    assert_eq!(sock2, Some(socket_info.clone()));
+
+    let (_, _, marks_rem, sock_rem) = tx_meta.into_parts();
+    assert_eq!(marks_rem, marks);
+    assert_eq!(sock_rem, Some(socket_info));
+}

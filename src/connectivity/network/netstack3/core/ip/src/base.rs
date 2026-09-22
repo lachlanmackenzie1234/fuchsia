@@ -247,22 +247,52 @@ impl<
             }
         };
 
-        let socket_info = tx_metadata.socket_info();
-
         Self {
             conntrack_connection_and_direction,
             tx_metadata,
             marks,
-            socket_info,
+            // `tx_metadata` belongs to the sending socket (preserved across
+            // loopback for TX buffer accounting). On ingress, `socket_info` must
+            // only reflect the receiving socket (populated later by early demux).
+            socket_info: None,
             #[cfg(debug_assertions)]
             drop_check: Default::default(),
         }
     }
 }
 
+/// The result of splitting metadata for multicast replication via
+/// [`IpLayerPacketMetadata::split_for_multicast`].
+pub(crate) struct SplitMulticastPacketMetadata<I, A, BT>
+where
+    I: packet_formats::ip::IpExt,
+    BT: FilterBindingsTypes + TxMetadataBindingsTypes,
+{
+    pub(crate) primary: IpLayerPacketMetadata<I, A, BT>,
+    pub(crate) secondary: IpLayerPacketMetadata<I, A, BT>,
+}
+
 impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
     IpLayerPacketMetadata<I, A, BT>
 {
+    /// Splits metadata for multicast replication into [`SplitMulticastPacketMetadata`].
+    ///
+    /// The `primary` instance retains unique resources
+    /// (`conntrack_connection_and_direction` and `tx_metadata`), while the
+    /// `secondary` instance receives a copy of shareable metadata (`marks` and
+    /// `socket_info`) with default unique resources for subsequent replications.
+    pub(crate) fn split_for_multicast(self) -> SplitMulticastPacketMetadata<I, A, BT> {
+        let secondary = Self {
+            conntrack_connection_and_direction: None,
+            tx_metadata: Default::default(),
+            marks: self.marks,
+            socket_info: self.socket_info.clone(),
+            #[cfg(debug_assertions)]
+            drop_check: Default::default(),
+        };
+        SplitMulticastPacketMetadata { primary: self, secondary }
+    }
+
     pub(crate) fn from_tx_metadata_and_marks(tx_metadata: BT::TxMetadata, marks: Marks) -> Self {
         let socket_info = tx_metadata.socket_info();
         Self {
