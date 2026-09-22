@@ -185,6 +185,28 @@ async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
             let result = result.as_ref().map_err(|status| *status);
             responder.send(result).context("send ReadApfPacketFilterData response")?;
         }
+        fidl_wlanix::WifiStaIfaceRequest::GetLinkLayerStats { responder } => {
+            let _wake_lease = power_manager.take_wake_lease("wlanix-get-link-layer-stats").await;
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::WifiStaIfaceRequest::GetLinkLayerStats",
+                iface_manager,
+                IFACE_NAME,
+            )
+            .await?;
+            let result = iface
+                .get_link_layer_stats()
+                .await
+                .map(|stats| fidl_wlanix::WifiStaIfaceGetLinkLayerStatsResponse {
+                    stats: Some(stats),
+                    ..Default::default()
+                })
+                .map_err(|e| {
+                    warn!("Failed to get link layer stats: {:?}", e);
+                    zx::sys::ZX_ERR_INTERNAL
+                });
+            let result = result.as_ref().map_err(|status| *status);
+            responder.send(result).context("send GetLinkLayerStats response")?;
+        }
         fidl_wlanix::WifiStaIfaceRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WifiStaIfaceRequest ordinal: {}", ordinal);
         }
@@ -2514,6 +2536,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                 Ok((client_iface, iface_id)) => {
                     let results = client_iface.get_last_scan_results();
                     info!("Processing {} scan results", results.len());
+
                     let connected_bssid =
                         client_iface.get_connected_network().map(|network| network.bssid);
                     let mut resp = vec![];
