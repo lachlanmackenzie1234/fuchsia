@@ -36,9 +36,7 @@ cc_library(
     includes = ["include"],
     deps = [
         "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
-        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_hlcpp",
-        "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_hlcpp",
-        "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_hlcpp",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
         "//src/connectivity/wlan/drivers/lib/macaddr",
         "//zircon/system/ulib/fbl",
         "//zircon/system/ulib/zx",
