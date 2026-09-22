@@ -113,11 +113,16 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 		// pubspec.yaml, go.mod) only register if no ancestor directory already has a README.fuchsia.
 		for dir, readmePaths := range physicalReadmes {
 			isManifestOnly := true
+			var filteredPaths []string
 			for _, p := range readmePaths {
 				if filepath.Base(p) == "README.fuchsia" {
 					isManifestOnly = false
-					break
+					filteredPaths = append(filteredPaths, p)
 				}
+			}
+			if !isManifestOnly {
+				readmePaths = filteredPaths
+				physicalReadmes[dir] = filteredPaths
 			}
 
 			if isManifestOnly {
