@@ -1,17 +1,19 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::kobject::DeviceMetadata;
-use crate::device::terminal::{Terminal, TtyState};
-use crate::device::{DeviceMode, DeviceOps};
-use crate::fs::devpts::{TtyFile, new_pts_fs_with_state};
-use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use crate::task::{CurrentTask, EventHandler, Kernel, ThreadLockupDetector, Waiter};
-use crate::vfs::{FileOps, FsString, NamespaceNode, VecInputBuffer, VecOutputBuffer};
+#![recursion_limit = "512"]
+
 use anyhow::Error;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_hardware_serial as fserial;
+use starnix_core::device::kobject::DeviceMetadata;
+use starnix_core::device::terminal::{Terminal, TtyState};
+use starnix_core::device::{DeviceMode, DeviceOps};
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use starnix_core::task::{CurrentTask, EventHandler, Kernel, ThreadLockupDetector, Waiter};
+use starnix_core::vfs::{FileOps, FsString, NamespaceNode, VecInputBuffer, VecOutputBuffer};
+use starnix_modules_devpts::{TtyFile, new_pts_fs_with_state};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::{DeviceId, TTY_MAJOR};
 use starnix_uapi::errors::Errno;
@@ -104,9 +106,10 @@ impl Drop for ForwardTask {
     }
 }
 
+#[derive(Clone)]
 pub struct SerialDevice {
     terminal: Arc<Terminal>,
-    _forward_task: ForwardTask,
+    _forward_task: Arc<ForwardTask>,
 }
 
 impl SerialDevice {
@@ -117,7 +120,7 @@ impl SerialDevice {
         kernel: &Kernel,
         serial_device: ClientEnd<fserial::DeviceMarker>,
         creds: FsCred,
-    ) -> Result<Arc<Self>, Errno> {
+    ) -> Result<Self, Errno> {
         let state = Arc::new(TtyState::default());
         let fs = new_pts_fs_with_state(kernel, Default::default(), state.clone())?;
         let terminal = state.get_next_terminal(fs.root().clone(), creds)?;
@@ -127,11 +130,11 @@ impl SerialDevice {
         forward_task.spawn_reader(kernel);
         forward_task.spawn_writer(kernel);
 
-        Ok(Arc::new(Self { terminal, _forward_task: forward_task }))
+        Ok(Self { terminal, _forward_task: Arc::new(forward_task) })
     }
 }
 
-impl DeviceOps for Arc<SerialDevice> {
+impl DeviceOps for SerialDevice {
     fn open(
         &self,
         _current_task: &CurrentTask,
@@ -150,7 +153,7 @@ impl DeviceOps for Arc<SerialDevice> {
 pub fn register_serial_device(
     kernel: &Kernel,
     index: u32,
-    serial_device: Arc<SerialDevice>,
+    serial_device: SerialDevice,
 ) -> Result<(), Errno> {
     // See https://www.kernel.org/doc/Documentation/admin-guide/devices.txt
     //  64 = /dev/ttyS0    First UART serial port

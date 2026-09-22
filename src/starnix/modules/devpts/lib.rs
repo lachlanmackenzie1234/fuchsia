@@ -1,21 +1,25 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::DeviceMode;
-use crate::device::kobject::DeviceMetadata;
-use crate::device::terminal::{Terminal, TtyState};
-use crate::fs::sysfs::build_device_directory;
-use crate::mm::MemoryAccessorExt;
-use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
-use crate::vfs::buffers::{InputBuffer, OutputBuffer};
-use crate::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
-use crate::vfs::{
+#![recursion_limit = "512"]
+
+use starnix_core::device::DeviceMode;
+use starnix_core::device::kobject::DeviceMetadata;
+pub use starnix_core::device::terminal::DEVPTS_COUNT;
+use starnix_core::device::terminal::{Terminal, TtyState, get_device_type_for_pts};
+use starnix_core::fs::sysfs::build_device_directory;
+use starnix_core::mm::MemoryAccessorExt;
+use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
+use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
+use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
+use starnix_core::vfs::{
     CacheMode, DirectoryEntryType, FdFlags, FileHandle, FileObject, FileObjectState, FileOps,
     FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
     FsNodeInfo, FsNodeOps, FsStr, FsString, LookupContext, MountInfo, NamespaceNode, SpecialNode,
-    SymlinkMode, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly,
+    SymlinkMode,
 };
+use starnix_core::{fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly};
 use starnix_logging::track_stub;
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
@@ -48,9 +52,6 @@ use std::sync::{Arc, Weak};
 // See https://www.kernel.org/doc/Documentation/admin-guide/devices.txt
 const DEVPTS_FIRST_MAJOR: u32 = 136;
 const DEVPTS_MAJOR_COUNT: u32 = 4;
-// The device identifier is encoded through the major and minor device identifier of the
-// device. Each major identifier can contain 256 pts replicas.
-pub const DEVPTS_COUNT: u32 = DEVPTS_MAJOR_COUNT * 256;
 // The block size of the node in the devpts file system. Value has been taken from
 // https://github.com/google/gvisor/blob/master/test/syscalls/linux/pty.cc
 const BLOCK_SIZE: usize = 1024;
@@ -184,11 +185,6 @@ impl DevPtsFs {
         let gid = self.gid.unwrap_or_else(|| creds.gid);
         FsCred { uid, gid }
     }
-}
-
-// Construct the DeviceId associated with the given pts replicas.
-pub fn get_device_type_for_pts(id: u32) -> DeviceId {
-    DeviceId::new(DEVPTS_FIRST_MAJOR + id / 256, id % 256)
 }
 
 struct DevPtsRootDir {
@@ -915,12 +911,12 @@ fn shared_ioctl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fs::devpts::tty_device_init;
-    use crate::fs::tmpfs::TmpFs;
-    use crate::testing::*;
-    use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
-    use crate::vfs::fs_args::MountParams;
-    use crate::vfs::{MountInfo, NamespaceNode, OpenAccessCheck};
+    use crate::tty_device_init;
+    use starnix_core::fs::tmpfs::TmpFs;
+    use starnix_core::testing::*;
+    use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
+    use starnix_core::vfs::fs_args::MountParams;
+    use starnix_core::vfs::{MountInfo, NamespaceNode, OpenAccessCheck};
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::file_mode::FileMode;
     use starnix_uapi::signals::{SIGCHLD, SIGTTOU};
@@ -1082,7 +1078,7 @@ mod tests {
             let kernel = task.kernel();
             tty_device_init(kernel).expect("tty_device_init");
             let fs = new_pts_fs(kernel);
-            let devfs = crate::fs::devtmpfs::DevTmpFs::from_kernel(kernel);
+            let devfs = starnix_core::fs::devtmpfs::DevTmpFs::from_kernel(kernel);
 
             let ptmx = open_ptmx_and_unlock(task, &fs).expect("ptmx");
             set_controlling_terminal(task, &ptmx, false).expect("set_controlling_terminal");
