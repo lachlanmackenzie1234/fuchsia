@@ -1821,8 +1821,9 @@ TEST_F(ScmCredentialsTest, ZombiePidForgeryFails) {
   fbl::unique_fd pid_fd(static_cast<int>(syscall(SYS_pidfd_open, zombie_pid, 0u)));
   ASSERT_THAT(pid_fd.get(), SyscallSucceeds());
 
+  // The child's SIGCHLD can interrupt the wait, so retry on EINTR.
   pollfd pfd = {.fd = pid_fd.get(), .events = POLLIN};
-  ASSERT_EQ(poll(&pfd, 1, -1), 1);
+  ASSERT_THAT(HANDLE_EINTR(poll(&pfd, 1, -1)), SyscallSucceedsWithValue(1));
   EXPECT_EQ(pfd.revents, POLLIN);
 
   // Without CAP_SYS_ADMIN, it should fail with EPERM (forgery not allowed).
