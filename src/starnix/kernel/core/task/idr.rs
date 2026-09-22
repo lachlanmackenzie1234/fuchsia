@@ -934,7 +934,7 @@ mod tests {
         let running_clone = Arc::clone(&running);
         let rcu_advancer = std::thread::spawn(move || {
             while running_clone.load(Ordering::Relaxed) {
-                fuchsia_rcu::rcu_synchronize();
+                fuchsia_rcu::rcu_run_callbacks();
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
         });

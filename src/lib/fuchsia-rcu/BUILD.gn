@@ -71,4 +71,10 @@ rustc_library("fuchsia-rcu") {
 
 fuchsia_unittest_package("fuchsia-rcu-tests") {
   deps = [ ":fuchsia-rcu_test" ]
+
+  # The state machine tests spawn multiple threads and make assertion about
+  # shared global state, so we can't run multiple tests in parallel.
+  test_specs = {
+    parallel = 1
+  }
 }

@@ -4,8 +4,7 @@
 
 use crate::atomic_stack::{AtomicListIterator, AtomicStack};
 use crate::rcu_droppable::RcuDroppable;
-use fuchsia_sync::Mutex;
-use std::cell::Cell;
+use fuchsia_sync::{Completion, Mutex};
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 use std::thread_local;
 use std::time::Duration;
@@ -79,10 +78,6 @@ struct RcuThreadBlock {
     /// The index of the read counter that the thread incremented when it entered its outermost read
     /// lock.
     counter_index: AtomicU8,
-
-    /// Whether this thread has scheduled callbacks since the last time the thread called
-    /// `rcu_synchronize`.
-    has_pending_callbacks: Cell<bool>,
 }
 
 impl RcuThreadBlock {
@@ -97,11 +92,7 @@ impl Default for RcuThreadBlock {
         #[cfg(feature = "rseq_backend")]
         fuchsia_rseq::rseq_register_thread();
 
-        Self {
-            nesting_level: AtomicUsize::new(0),
-            counter_index: AtomicU8::new(0),
-            has_pending_callbacks: Cell::new(false),
-        }
+        Self { nesting_level: AtomicUsize::new(0), counter_index: AtomicU8::new(0) }
     }
 }
 
@@ -239,16 +230,13 @@ pub(crate) fn rcu_replace_pointer<T>(ptr: &AtomicPtr<T>, new_ptr: *mut T) -> *mu
 
 /// Call a callback to run after all in-flight read operations have completed.
 ///
-/// To wait until the callback is ready to run, call `rcu_synchronize()`. The callback might be
-/// called from an arbitrary thread.
+/// To wait until the callback is ready to run, call `rcu_synchronize()`. Note that
+/// `rcu_synchronize()` requires an advancer thread or a thread calling `rcu_run_callbacks()` to
+/// make progress and invoke callbacks. The callback might be called from an arbitrary thread.
 ///
 /// NOTE: The order in which callbacks are called is not guaranteed since they can be called
 /// concurrently from multiple threads.
 pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
-    RCU_THREAD_BLOCK.with(|block| {
-        block.has_pending_callbacks.set(true);
-    });
-
     #[cfg(not(feature = "rseq_backend"))]
     {
         // We need to synchronize with rcu_read_lock.  We need to ensure that all prior stores are
@@ -260,24 +248,22 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
         RCU_CONTROL_BLOCK.read_counters[1].fetch_add(0, Ordering::Relaxed);
     }
 
-    // Even though we push the callback to the front of the stack, we reverse the order of the stack
-    // when we pop the callbacks from the stack to ensure that the callbacks are run in the order in
-    // which they were scheduled.
-
     // Synchronization point [G] (see design.md)
     RCU_CONTROL_BLOCK.callback_chain.push_front(Box::new(callback));
 }
 
 /// Schedule the object to be dropped after all in-flight read operations have completed.
 ///
-/// To wait until the object is dropped, call `rcu_synchronize()`.
+/// To wait until the object is dropped, call `rcu_synchronize()`. Note that `rcu_synchronize()`
+/// requires an advancer thread or a thread calling `rcu_run_callbacks()` to make progress and drop
+/// the object.
 ///
 /// To be safely passed to [rcu_drop] either directly, or indirectly by an rcu container, the type
 /// must implement the marker trait [RcuDroppable] to indicate:
 /// - Dropping T must not take locks or otherwise block.
 /// - It is safe to drop T from an arbitrary thread.
-/// - There is no guarantee as to _when_ T will actually be dropped unless rcu_synchornize is
-///   called.
+/// - There is no guarantee as to _when_ T will actually be dropped unless `rcu_synchronize()` or
+///   `rcu_run_callbacks()` is called.
 pub fn rcu_drop<T: RcuDroppable + Sync>(value: T) {
     rcu_call(move || {
         std::mem::drop(value);
@@ -368,40 +354,51 @@ fn rcu_grace_period() {
     }
 }
 
-/// Block until all in-flight read operations have completed.  When this returns, the callbacks that
-/// are unblocked by those in-flight operations might still be running (or even not yet started) on
-/// another thread.
+/// Block until all in-flight read operations have completed for callbacks registered prior to this
+/// call.
+///
+/// Note: This function does not advance the RCU state machine itself; it registers a callback and
+/// blocks until that callback is run. If no thread is calling `rcu_run_callbacks()` (for example,
+/// via a dedicated advancer thread), this function will block indefinitely.
 pub fn rcu_synchronize() {
     RCU_THREAD_BLOCK.with(|block| {
         assert!(!block.holding_read_lock());
-        block.has_pending_callbacks.set(false);
     });
 
-    // We need to run at least two grace periods to flush out all pending callbacks.  See the
-    // comment in `rcu_read_lock` and the design to understand why.
-    rcu_grace_period();
-    rcu_grace_period();
+    let completion = std::sync::Arc::new(Completion::new());
+    let c = completion.clone();
+    rcu_call(move || {
+        c.signal();
+    });
+
+    // If callbacks have run, then we know all read operations must have completed for the
+    // generation we registered the callback on.
+    completion.wait();
 }
 
-/// If any callbacks have been scheduled from this thread, call `rcu_synchronize`.
+/// Check if there is any work waiting to be processed by the RCU advancer.
+fn has_pending_work() -> bool {
+    !RCU_CONTROL_BLOCK.callback_chain.is_empty()
+        || !RCU_CONTROL_BLOCK.waiting_callbacks.lock().is_empty()
+}
+
+/// Advances the RCU state machine if work is pending and runs ready callbacks.
 ///
-/// If any callbacks have been scheduled from this thread, this function blocks until the
-/// callbacks are unblocked and ready to be run (but have not yet necessarily finished, or even
-/// started). If no callbacks have been scheduled from this thread, this function returns
-/// immediately.
+/// If callbacks are pending, this runs two grace periods and invokes any ready callbacks.
 ///
-/// Returns `true` if callbacks were run, which indicates that new callbacks might have been
-/// scheduled as a result of executing the existing callbacks. Returns `false` otherwise.
+/// Returns `true` if callbacks were processed, or `false` if no work was pending.
 pub fn rcu_run_callbacks() -> bool {
     RCU_THREAD_BLOCK.with(|block| {
         assert!(!block.holding_read_lock());
-        if block.has_pending_callbacks.get() {
-            rcu_synchronize();
-            true
-        } else {
-            false
-        }
-    })
+    });
+
+    if has_pending_work() {
+        rcu_grace_period();
+        rcu_grace_period();
+        true
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -412,9 +409,6 @@ mod tests {
 
     #[test]
     fn test_rcu_delay_regression() {
-        // This test relies on the global RCU state machine.
-        // It verifies that callbacks are NOT executed immediately after one grace period.
-
         let flag = Arc::new(AtomicBool::new(false));
         let moved_flag = flag.clone();
 
@@ -435,28 +429,35 @@ mod tests {
 
     #[test]
     fn test_rcu_synchronize() {
-        // This test relies on the global RCU state machine.
-        // It verifies that rcu_synchronize() blocks until all callbacks have been run.
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
 
-        let flag = Arc::new(AtomicBool::new(false));
-        let moved_flag = flag.clone();
+        let handle = std::thread::spawn(move || {
+            while !stop_clone.load(Ordering::Relaxed) {
+                rcu_run_callbacks();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        });
+
+        let completion = Arc::new(Completion::new());
+        let c = completion.clone();
 
         rcu_call(move || {
-            moved_flag.store(true, Ordering::SeqCst);
+            c.signal();
         });
 
         rcu_synchronize();
-        assert!(
-            flag.load(Ordering::SeqCst),
-            "Callback should have executed after rcu_synchronize()"
-        );
+
+        // Callbacks within a batch are not guaranteed to execute in a specific order,
+        // so the callback may complete slightly before or after rcu_synchronize() returns.
+        completion.wait();
+
+        stop.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
     }
 
     #[test]
     fn test_rcu_run_callbacks() {
-        // This test relies on the global RCU state machine.
-        // It verifies that rcu_run_callbacks() blocks until all callbacks have been run.
-
         let flag = Arc::new(AtomicBool::new(false));
         let moved_flag = flag.clone();
 
@@ -464,10 +465,12 @@ mod tests {
             moved_flag.store(true, Ordering::SeqCst);
         });
 
-        rcu_run_callbacks();
+        assert!(rcu_run_callbacks());
         assert!(
             flag.load(Ordering::SeqCst),
             "Callback should have executed after rcu_run_callbacks()"
         );
+        // Second step has no pending work.
+        assert!(!rcu_run_callbacks());
     }
 }
