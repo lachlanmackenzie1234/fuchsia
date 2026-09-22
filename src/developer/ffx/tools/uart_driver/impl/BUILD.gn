@@ -20,6 +20,7 @@ if (is_host) {
       "//src/developer/ffx/lib/uart_driver_api:lib",
       "//src/developer/ffx/tools/uart:lib",
       "//src/developer/lib/uart_fpl",
+      "//src/lib/fuchsia-async",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:futures",
       "//third_party/rust_crates:libc",
