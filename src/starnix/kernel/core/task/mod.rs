@@ -32,6 +32,7 @@ mod thread_state;
 pub mod tracing;
 mod uts_namespace;
 pub mod waiter;
+mod zombie;
 
 pub use abstract_socket_namespace::*;
 pub use cgroup::*;
@@ -59,6 +60,7 @@ pub use thread_lockup_detector::*;
 pub use thread_state::*;
 pub use uts_namespace::*;
 pub use waiter::*;
+pub use zombie::*;
 
 pub mod limits;
 pub mod syscalls;

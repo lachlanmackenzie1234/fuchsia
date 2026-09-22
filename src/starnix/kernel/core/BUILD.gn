@@ -157,6 +157,7 @@ _starnix_core_sources = [
   "task/tracing.rs",
   "task/uts_namespace.rs",
   "task/waiter.rs",
+  "task/zombie.rs",
   "testing.rs",
   "time/hr_timer_manager.rs",
   "time/interval_timer.rs",
