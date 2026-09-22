@@ -234,13 +234,15 @@ impl WakeGroup {
             debug!("wake group '{name}' {id:?} waiting for suspend");
             wait_for_client_state(&wake_watcher, ClientState::Asleep).await?;
 
-            futures::select! {
-                () = data_watcher.reset_and_wait().fuse() => (),
+            // Bias in favor of client wakeup. In that case, raising the
+            // wake signal is pointless.
+            futures::select_biased! {
                 res = wait_for_client_state(&wake_watcher, ClientState::Awake).fuse() => {
                     res?;
                     // The other side woke up without us. Nothing left to do here.
                     continue;
                 }
+                () = data_watcher.reset_and_wait().fuse() => (),
             }
 
             // Assert the wake signal to wake up the other side.
