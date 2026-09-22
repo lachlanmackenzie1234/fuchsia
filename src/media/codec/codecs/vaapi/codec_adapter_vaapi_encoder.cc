@@ -154,10 +154,9 @@ bool CodecAdapterVaApiEncoder::HandleInputFormatChange(
   // onCoreCodecMidStreamOutputConstraintsChange(true) so output buffers are
   // resized if GetEncodeBitstreamBufferSize(coded_size_) changed. Note that
   // mid-stream input sysmem buffers are not renegotiated (input constraints
-  // specify max_size up to 3840x3840 upfront).
-  // TODO(https://fxbug.dev/525125209): Verify that each input packet buffer is
-  // large enough for coded_size and stride (addressed in an upcoming separate
-  // change in UploadVideoFrameToSurface).
+  // specify max_size up to 3840x3840 upfront, and UploadVideoFrameToSurface
+  // verifies that each input packet buffer is large enough for coded_size and
+  // stride).
   // Mid-stream resize is unit-tested with VA-API stubs in
   // H264EncoderTestFixture.Resize, though not yet covered by real-HW tests in
   // stream_processors/test/h264_encoder_test.

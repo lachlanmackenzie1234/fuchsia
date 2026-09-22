@@ -713,4 +713,93 @@ TEST(H264Encoder, DelegateRejectsOverflowingVisibleSize) {
   EXPECT_EQ(2147483646, CheckedRoundUp(2147483646, 3).ValueOrDie());
 }
 
+TEST(H264Encoder, UploadVideoFrameToSurfaceBoundsCheck) {
+  EXPECT_TRUE(VADisplayWrapper::InitializeSingletonForTesting());
+  vaDefaultStubSetReturn();
+
+  auto vaapi_wrapper = std::make_shared<media::VaapiWrapper>();
+  VASurfaceID surface_id = 0;
+  ASSERT_EQ(VA_STATUS_SUCCESS,
+            vaCreateSurfaces(VADisplayWrapper::GetSingleton()->display(), VA_RT_FORMAT_YUV420, 16,
+                             16, &surface_id, 1, nullptr, 0));
+  ScopedSurfaceID scoped_surface(surface_id);
+
+  // Buffer sized for 10x10 surface (240 bytes), but coded_size height is 20 so
+  // UV plane starts at offset 20 * 16 = 320 bytes (requiring 480 bytes total).
+  std::vector<uint8_t> small_buffer(240, 0);
+  media::VideoFrame frame;
+  frame.display_size = gfx::Size(10, 10);
+  frame.coded_size = gfx::Size(16, 20);
+  frame.stride = 16;
+  frame.base = small_buffer.data();
+  frame.size_bytes = small_buffer.size();
+
+  EXPECT_FALSE(vaapi_wrapper->UploadVideoFrameToSurface(frame, surface_id, gfx::Size(10, 10)));
+
+  // With sufficient buffer size for coded_size (16 * 20 + 16 * 10 = 480 bytes), upload succeeds.
+  // Populate distinct byte patterns to verify UV plane bytes are copied from
+  // coded_size.height() * stride (offset 320) rather than display_size.height() * stride (offset
+  // 160).
+  std::vector<uint8_t> valid_buffer(480, 0);
+  std::fill(valid_buffer.begin(), valid_buffer.begin() + 160, 0xAA);
+  std::fill(valid_buffer.begin() + 160, valid_buffer.begin() + 320, 0xDE);
+  std::fill(valid_buffer.begin() + 320, valid_buffer.end(), 0x55);
+  frame.base = valid_buffer.data();
+  frame.size_bytes = valid_buffer.size();
+  EXPECT_TRUE(vaapi_wrapper->UploadVideoFrameToSurface(frame, surface_id, gfx::Size(10, 10)));
+
+  // Map back the destination surface and verify Y and UV plane pixel bytes.
+  {
+    VAImage image{};
+    ASSERT_EQ(VA_STATUS_SUCCESS,
+              vaDeriveImage(VADisplayWrapper::GetSingleton()->display(), surface_id, &image));
+    ScopedImageID scoped_image(image.image_id);
+    uint8_t *mapped_ptr = nullptr;
+    ASSERT_EQ(VA_STATUS_SUCCESS, vaMapBuffer(VADisplayWrapper::GetSingleton()->display(), image.buf,
+                                             reinterpret_cast<void **>(&mapped_ptr)));
+    ASSERT_NE(nullptr, mapped_ptr);
+    for (uint32_t y = 0; y < 10; ++y) {
+      for (uint32_t x = 0; x < 10; ++x) {
+        EXPECT_EQ(0xAA, mapped_ptr[image.offsets[0] + y * image.pitches[0] + x]);
+      }
+    }
+    for (uint32_t y = 0; y < 5; ++y) {
+      for (uint32_t x = 0; x < 10; ++x) {
+        EXPECT_EQ(0x55, mapped_ptr[image.offsets[1] + y * image.pitches[1] + x]);
+      }
+    }
+    EXPECT_EQ(VA_STATUS_SUCCESS,
+              vaUnmapBuffer(VADisplayWrapper::GetSingleton()->display(), image.buf));
+  }
+
+  // Empty display_size is rejected.
+  frame.display_size = gfx::Size(0, 10);
+  EXPECT_FALSE(vaapi_wrapper->UploadVideoFrameToSurface(frame, surface_id, gfx::Size(10, 10)));
+
+  // display_size exceeding coded_size is rejected.
+  frame.display_size = gfx::Size(20, 10);
+  EXPECT_FALSE(vaapi_wrapper->UploadVideoFrameToSurface(frame, surface_id, gfx::Size(10, 10)));
+
+  // display_size exceeding input_surface_size is rejected.
+  frame.display_size = gfx::Size(12, 12);
+  EXPECT_FALSE(vaapi_wrapper->UploadVideoFrameToSurface(frame, surface_id, gfx::Size(10, 10)));
+
+  // Restore valid display_size for remaining checks.
+  frame.display_size = gfx::Size(10, 10);
+
+  // Stride smaller than coded_size.width() is rejected.
+  frame.stride = 12;
+  EXPECT_FALSE(vaapi_wrapper->UploadVideoFrameToSurface(frame, surface_id, gfx::Size(10, 10)));
+
+  // Destination VAImage smaller than display_size is rejected by VAImage bounds check.
+  frame.stride = 16;
+  VASurfaceID small_surface_id = 0;
+  ASSERT_EQ(VA_STATUS_SUCCESS,
+            vaCreateSurfaces(VADisplayWrapper::GetSingleton()->display(), VA_RT_FORMAT_YUV420, 8, 8,
+                             &small_surface_id, 1, nullptr, 0));
+  ScopedSurfaceID scoped_small_surface(small_surface_id);
+  EXPECT_FALSE(
+      vaapi_wrapper->UploadVideoFrameToSurface(frame, small_surface_id, gfx::Size(10, 10)));
+}
+
 }  // namespace
