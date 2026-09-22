@@ -49,6 +49,7 @@ import argparse
 import functools
 import json
 import platform
+import shutil
 import subprocess
 import tempfile
 import time
@@ -208,26 +209,6 @@ def load_json_list(path: pathlib.Path) -> JSONArray:
             f"Expected JSON list in file {path}, but got: {type(data).__name__}"
         )
     return data
-
-
-def produce_build_artifacts(
-    artifact_dir: pathlib.Path,
-    duration_seconds: int,
-    failure_summary: str | None = None,
-) -> None:
-    """Serializes and writes the build_artifacts.json manifest to the artifact directory."""
-    artifacts = build_artifacts_pb2.BuildArtifacts()
-    artifacts.ninja_duration_seconds = duration_seconds
-    if failure_summary:
-        artifacts.failure_summary = failure_summary
-
-    json_manifest_path = artifact_dir / BUILD_ARTIFACTS_JSON
-    # MessageToJson formats with nice spacing/indentation
-    json_data = json_format.MessageToJson(
-        artifacts, always_print_fields_with_no_presence=True
-    )
-    json_manifest_path.write_text(json_data)
-    msg(f"Successfully wrote build artifacts manifest to {json_manifest_path}")
 
 
 @dataclass(frozen=True)
@@ -467,6 +448,57 @@ class BuildContext:
         """Returns the path to the checkout directory."""
         return pathlib.Path(self.context_spec.checkout_dir)
 
+    @property
+    def api_client_path(self) -> pathlib.Path:
+        """Returns the absolute path to the build API client executable."""
+        return self.checkout_dir / "build" / "api" / "client"
+
+    @property
+    def debug_symbols_dir(self) -> pathlib.Path:
+        """Returns the path to the debug symbols export directory."""
+        return self.build_dir / "debug_symbols"
+
+    @property
+    def debug_symbols_manifest(self) -> pathlib.Path:
+        """Returns the path to the debug symbols JSON manifest file."""
+        return self.debug_symbols_dir / "debug_symbols.json"
+
+    @property
+    def last_ninja_build_targets_path(self) -> pathlib.Path:
+        """Returns the absolute path to the last ninja build targets file."""
+        return self.build_dir / "last_ninja_build_targets.txt"
+
+    @property
+    def artifact_dir(self) -> pathlib.Path | None:
+        """Returns the path to the artifact directory if specified in the context spec."""
+        return (
+            pathlib.Path(self.context_spec.artifact_dir)
+            if self.context_spec.artifact_dir
+            else None
+        )
+
+    @property
+    def artifact_debug_symbols_manifest(self) -> pathlib.Path | None:
+        """Returns the path to the debug symbols JSON manifest inside the artifact directory."""
+        if self.artifact_dir:
+            return self.artifact_dir / "debug_symbols.json"
+        return None
+
+    @property
+    def should_export_breakpad_symbols(self) -> bool:
+        """Returns True if output_breakpad_syms is set to true in the static spec's GN args."""
+        # TODO: Use a centralized, shared GN parsing utility module here in the future
+        # to parse GN arguments robustly across different build tools and integrators.
+        for arg in self.static_spec.gn_args:
+            key, eq, value = arg.partition("=")
+            if (
+                eq
+                and key.strip() == "output_breakpad_syms"
+                and value.strip().lower() == "true"
+            ):
+                return True
+        return False
+
     @functools.cached_property
     def tool_paths(self) -> JSONArray:
         """Loads and returns the tool paths config list."""
@@ -625,6 +657,14 @@ class BuildContext:
         success_stamp_path: pathlib.Path,
     ) -> None:
         """Runs post-build tests and validation checks for Ninja, modifying result.exit_code if any fail."""
+        # Update last_ninja_build_targets.txt cleanly to prevent unnecessary Ninja artifacts invalidations.
+        targets_str = " ".join(targets)
+        if (
+            not self.last_ninja_build_targets_path.exists()
+            or self.last_ninja_build_targets_path.read_text() != targets_str
+        ):
+            self.last_ninja_build_targets_path.write_text(targets_str)
+
         self._build_bazel_host_tests()
 
         # Post-build success stamp
@@ -653,6 +693,15 @@ class BuildContext:
                 result.exit_code = noop_status
                 return
 
+        # Export debug symbols at the very end to avoid spending time on symbols
+        # dumping/exporting if the gn_check or ninja_noop verifications fail.
+        try:
+            self._export_debug_symbols()
+        except RuntimeError as e:
+            msg(f"Error: {e}", file=sys.stderr)
+            result.exit_code = 1
+            return
+
     @contextmanager
     def wrap_bazel(
         self,
@@ -676,6 +725,76 @@ class BuildContext:
             if not success:
                 # TODO: Implement Bazel-specific post-build failure/diagnostic collections
                 pass
+
+    def _export_debug_symbols(self) -> None:
+        """Invokes the build API to export last build's debug symbols."""
+        if self.debug_symbols_dir.exists():
+            shutil.rmtree(self.debug_symbols_dir)
+        self.debug_symbols_dir.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            str(self.api_client_path),
+            "--build-dir",
+            str(self.build_dir),
+            "export_last_build_debug_symbols",
+            f"--output-dir={self.debug_symbols_dir}",
+        ]
+        if self.should_export_breakpad_symbols:
+            cmd.append("--with-breakpad-symbols")
+
+        msg("Exporting last build debug symbols...")
+        if self.verbose:
+            msg(f"Command: {shlex.join(cmd)}")
+
+        res = subprocess.run(cmd)
+        if res.returncode != 0:
+            raise RuntimeError(
+                f"export_last_build_debug_symbols failed with exit code {res.returncode}"
+            )
+
+    def produce_build_artifacts(
+        self,
+        duration_seconds: int,
+        failure_summary: str | None = None,
+    ) -> None:
+        """Serializes and writes the build_artifacts.json manifest to the artifact directory."""
+        if not self.artifact_dir:
+            return
+
+        artifacts = build_artifacts_pb2.BuildArtifacts()
+        artifacts.ninja_duration_seconds = duration_seconds
+        if failure_summary:
+            artifacts.failure_summary = failure_summary
+
+        # Copy debug_symbols.json from build_dir/debug_symbols to artifact_dir if present,
+        # and register it in log_files.
+        if (
+            self.debug_symbols_manifest.is_file()
+            and self.artifact_debug_symbols_manifest
+        ):
+            try:
+                shutil.copy2(
+                    self.debug_symbols_manifest,
+                    self.artifact_debug_symbols_manifest,
+                )
+                artifacts.log_files["debug_symbols.json"] = str(
+                    self.artifact_debug_symbols_manifest
+                )
+            except OSError as e:
+                msg(
+                    f"Warning: Failed to copy debug_symbols.json: {e}",
+                    file=sys.stderr,
+                )
+
+        # MessageToJson formats with nice spacing/indentation
+        json_data = json_format.MessageToJson(
+            artifacts, always_print_fields_with_no_presence=True
+        )
+        json_manifest_path = self.artifact_dir / BUILD_ARTIFACTS_JSON
+        json_manifest_path.write_text(json_data)
+        msg(
+            f"Successfully wrote build artifacts manifest to {json_manifest_path}"
+        )
 
 
 def lookup_tool_path(
@@ -853,8 +972,7 @@ def main(argv: list[str]) -> int:
                         f"Fuchsia build failed: delegated command "
                         f"'{shlex.join(run.command)}' exited with status {run.exit_code}"
                     )
-            produce_build_artifacts(
-                pathlib.Path(ctx.context_spec.artifact_dir),
+            ctx.produce_build_artifacts(
                 duration_seconds,
                 failure_summary=failure_summary,
             )

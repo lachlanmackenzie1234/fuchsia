@@ -68,15 +68,29 @@ class SpecificationsParserTest(unittest.TestCase):
 
 
 class BuildArtifactsTest(unittest.TestCase):
-    """Tests the produce_build_artifacts helper function."""
+    """Tests the produce_build_artifacts method on BuildContext."""
 
     def test_produce_build_artifacts(self) -> None:
         """Verifies that produce_build_artifacts successfully writes build_artifacts.json."""
-        with tempfile.TemporaryDirectory() as artifact_dir:
-            fint_build.produce_build_artifacts(pathlib.Path(artifact_dir), 42)
-            manifest_path = (
-                pathlib.Path(artifact_dir) / fint_build.BUILD_ARTIFACTS_JSON
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            build_dir = temp_path / "build"
+            artifact_dir = temp_path / "artifact"
+            build_dir.mkdir()
+            artifact_dir.mkdir()
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(
+                build_dir=str(build_dir),
+                artifact_dir=str(artifact_dir),
             )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(
+                static_spec, context_spec, host, verbose=False
+            )
+
+            ctx.produce_build_artifacts(42)
+            manifest_path = artifact_dir / fint_build.BUILD_ARTIFACTS_JSON
             self.assertTrue(manifest_path.exists())
 
             # Load and verify content
@@ -85,13 +99,25 @@ class BuildArtifactsTest(unittest.TestCase):
 
     def test_produce_build_artifacts_with_failure(self) -> None:
         """Verifies that produce_build_artifacts successfully writes build_artifacts.json with a failure_summary."""
-        with tempfile.TemporaryDirectory() as artifact_dir:
-            fint_build.produce_build_artifacts(
-                pathlib.Path(artifact_dir), 42, failure_summary="test failure"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            build_dir = temp_path / "build"
+            artifact_dir = temp_path / "artifact"
+            build_dir.mkdir()
+            artifact_dir.mkdir()
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(
+                build_dir=str(build_dir),
+                artifact_dir=str(artifact_dir),
             )
-            manifest_path = (
-                pathlib.Path(artifact_dir) / fint_build.BUILD_ARTIFACTS_JSON
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(
+                static_spec, context_spec, host, verbose=False
             )
+
+            ctx.produce_build_artifacts(42, failure_summary="test failure")
+            manifest_path = artifact_dir / fint_build.BUILD_ARTIFACTS_JSON
             self.assertTrue(manifest_path.exists())
 
             # Load and verify content
@@ -100,6 +126,118 @@ class BuildArtifactsTest(unittest.TestCase):
             self.assertEqual(
                 manifest_content.get("failureSummary"), "test failure"
             )
+
+    def test_produce_build_artifacts_with_debug_symbols(self) -> None:
+        """Verifies that produce_build_artifacts copies debug_symbols.json and populates log_files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            build_dir = temp_path / "build"
+            artifact_dir = temp_path / "artifact"
+            build_dir.mkdir()
+            artifact_dir.mkdir()
+
+            # Create fake debug_symbols.json inside build_dir/debug_symbols
+            debug_symbols_dir = build_dir / "debug_symbols"
+            debug_symbols_dir.mkdir()
+            manifest_src = debug_symbols_dir / "debug_symbols.json"
+            manifest_src.write_text("[]")
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(
+                build_dir=str(build_dir),
+                artifact_dir=str(artifact_dir),
+            )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(
+                static_spec, context_spec, host, verbose=False
+            )
+
+            ctx.produce_build_artifacts(42)
+
+            manifest_path = artifact_dir / fint_build.BUILD_ARTIFACTS_JSON
+            self.assertTrue(manifest_path.exists())
+
+            # Verify debug_symbols.json was copied
+            symbols_dest = artifact_dir / "debug_symbols.json"
+            self.assertTrue(symbols_dest.exists())
+            self.assertEqual(symbols_dest.read_text(), "[]")
+
+            # Load and verify content
+            manifest_content = json.loads(manifest_path.read_text())
+            self.assertEqual(manifest_content.get("ninjaDurationSeconds"), 42)
+            self.assertIn(
+                "debug_symbols.json", manifest_content.get("logFiles", {})
+            )
+            self.assertEqual(
+                manifest_content.get("logFiles", {}).get("debug_symbols.json"),
+                str(symbols_dest),
+            )
+
+
+class ExportDebugSymbolsTest(unittest.TestCase):
+    """Tests the _export_debug_symbols method on BuildContext."""
+
+    def test_should_export_breakpad_symbols(self) -> None:
+        """Verifies that should_export_breakpad_symbols handles whitespace and formatting robustly."""
+        test_cases = [
+            (["output_breakpad_syms=true"], True),
+            (["output_breakpad_syms = true"], True),
+            (["output_breakpad_syms=True"], True),
+            (["  output_breakpad_syms  =  true  "], True),
+            (["output_breakpad_syms=false"], False),
+            (["output_breakpad_syms = false"], False),
+            (["other_arg=true"], False),
+            ([], False),
+        ]
+        for gn_args, expected in test_cases:
+            with self.subTest(gn_args=gn_args):
+                static_spec = static_pb2.Static(gn_args=gn_args)
+                context_spec = context_pb2.Context()
+                host = fint_build.HostProperties(os="linux", cpu="x64")
+                ctx = fint_build.BuildContext(static_spec, context_spec, host)
+                self.assertEqual(ctx.should_export_breakpad_symbols, expected)
+
+    @mock.patch.object(subprocess, "run")
+    def test_export_debug_symbols_success(self, mock_run: mock.Mock) -> None:
+        """Verifies successful invocation of export_last_build_debug_symbols command."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            build_dir = temp_path / "build"
+            checkout_dir = temp_path / "checkout"
+            build_dir.mkdir()
+            checkout_dir.mkdir()
+
+            # Test using the spaces-formatted GN argument used in production infra
+            static_spec = static_pb2.Static(
+                gn_args=["output_breakpad_syms = true"]
+            )
+            context_spec = context_pb2.Context(
+                build_dir=str(build_dir),
+                checkout_dir=str(checkout_dir),
+            )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(
+                static_spec, context_spec, host, verbose=False
+            )
+
+            # Mock subprocess run to simulate successful execution
+            mock_proc = mock.Mock()
+            mock_proc.returncode = 0
+            mock_run.return_value = mock_proc
+
+            ctx._export_debug_symbols()
+
+            mock_run.assert_called_once_with(
+                [
+                    str(checkout_dir / "build" / "api" / "client"),
+                    "--build-dir",
+                    str(build_dir),
+                    "export_last_build_debug_symbols",
+                    f"--output-dir={build_dir / 'debug_symbols'}",
+                    "--with-breakpad-symbols",
+                ]
+            )
+            self.assertTrue((build_dir / "debug_symbols").is_dir())
 
 
 class ParseNinjaFailuresTest(unittest.TestCase):
@@ -417,34 +555,40 @@ class NinjaBuildWrapTest(unittest.TestCase):
     @mock.patch.object(subprocess, "run")
     def test_lifecycle_context_manager(self, mock_run: MagicMock) -> None:
         """Verifies wrap_ninja touches files and manages success stamp correctly."""
+        # Mock subprocess run to simulate successful execution of GN check and Ninja no-op check
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "ninja: no work to do."
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             static_spec = static_pb2.Static(incremental=True)
             context_spec = context_pb2.Context(
                 checkout_dir="fake_checkout", build_dir=tmp_dir
             )
 
-            stamp_path = os.path.join(
-                tmp_dir, fint_build.LAST_NINJA_BUILD_SUCCESS_STAMP
-            )
-            with open(stamp_path, "w") as f:
-                f.write("old-content")
+            tmp_path = pathlib.Path(tmp_dir)
+            stamp_path = tmp_path / fint_build.LAST_NINJA_BUILD_SUCCESS_STAMP
+            stamp_path.write_text("old-content")
 
             host = fint_build.HostProperties(os="linux", cpu="x64")
             ctx = fint_build.BuildContext(static_spec, context_spec, host)
-            with ctx.wrap_ninja(["ninja"]) as run:
-                # Entering should remove the success stamp
-                self.assertFalse(os.path.exists(stamp_path))
+            with mock.patch.object(
+                fint_build.BuildContext, "_export_debug_symbols"
+            ) as mock_export:
+                with ctx.wrap_ninja(["ninja"]) as run:
+                    # Entering should remove the success stamp
+                    self.assertFalse(stamp_path.exists())
 
-                # Rebuild sentinel should be touched on incremental builds
-                sentinel = os.path.join(
-                    tmp_dir, fint_build.FORCE_NONHERMETIC_REBUILD_SENTINEL
-                )
-                self.assertTrue(os.path.exists(sentinel))
+                    # Rebuild sentinel should be touched on incremental builds
+                    sentinel = (
+                        tmp_path / fint_build.FORCE_NONHERMETIC_REBUILD_SENTINEL
+                    )
+                    self.assertTrue(sentinel.exists())
 
-                run.exit_code = 0
+                    run.exit_code = 0
 
-            # Exiting with success should write a new success stamp
-            self.assertTrue(os.path.exists(stamp_path))
+                # Exiting with success should write a new success stamp
+                self.assertTrue(stamp_path.exists())
+                mock_export.assert_called_once()
 
     @mock.patch.object(subprocess, "run")
     def test_build_bazel_host_tests(self, mock_run: MagicMock) -> None:
