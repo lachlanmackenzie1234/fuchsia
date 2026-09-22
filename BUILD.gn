@@ -2494,6 +2494,7 @@ group("root_targets") {
     # needed to replicate the GN build configuration. Necessary to implement
     # `fx build @<bazel_label>` properly.
     "//build/bazel:bazel_args_json",
+    "//build/bazel:bazel_default_configs_json",
 
     # It must be possible to run the versioning scripts without them being part
     # of the default build.

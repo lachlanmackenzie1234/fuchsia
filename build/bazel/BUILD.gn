@@ -329,4 +329,11 @@ if (current_toolchain == default_toolchain) {
       "//build/bazel/config:bazel_args_json($host_toolchain)",
     ]
   }
+
+  group("bazel_default_configs_json") {
+    deps = [
+      "//build/bazel/config:bazel_default_configs_json($default_toolchain)",
+      "//build/bazel/config:bazel_default_configs_json($host_toolchain)",
+    ]
+  }
 }

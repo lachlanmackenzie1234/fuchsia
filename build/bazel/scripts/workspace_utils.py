@@ -826,8 +826,9 @@ bazel_dep(name = "fuchsia_rules_common", version = "0.0")
         # Generate BUILD.bazel which contains the definitions of toolchains
         # for default build_flags().
 
-        # TODO(digit): Generate this to reflect GN build configuration.
-        default_flags_map = DefaultBuildFlagsMap.new_from_gn_config(build_dir)
+        default_flags_map = DefaultBuildFlagsMap.new_from_gn_config(
+            build_dir, fuchsia_dir
+        )
         generated.record_file_content(
             "default_build_flags/BUILD.bazel",
             default_flags_map.generate_bazel_toolchain_definitions(),

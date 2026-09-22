@@ -412,6 +412,11 @@ absolute_fizz = "/path/to/prebuilt/third_party/fuzz"
             )
         )
 
+        default_configs_dir = self._build_root / "bazel_default_configs"
+        default_configs_dir.mkdir(parents=True)
+        (default_configs_dir / "fuchsia.json").write_text("{}")
+        (default_configs_dir / "host.json").write_text("{}")
+
         GnBuildArgs.record_fuchsia_build_info_dir(
             self._root, self._build_root, generated
         )
