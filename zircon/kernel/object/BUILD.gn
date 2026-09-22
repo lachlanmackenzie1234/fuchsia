@@ -48,7 +48,6 @@ source_set("object") {
     "log_dispatcher.cc",
     "log_dispatcher_ffi.cc",
     "memory_watchdog.cc",
-    "message_packet.cc",
     "msi_allocation_ffi.cc",
     "msi_dispatcher.cc",
     "msi_dispatcher_ffi.cc",
