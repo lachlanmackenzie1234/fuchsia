@@ -434,7 +434,8 @@ namespace {{
             let mut sorted_fields = struct_def.fields.clone();
             sorted_fields.sort_by(|a, b| a.name.cmp(&b.name));
 
-            let all_optional = !sorted_fields.is_empty() && sorted_fields.iter().all(|f| f.optional);
+            let all_optional =
+                !sorted_fields.is_empty() && sorted_fields.iter().all(|f| f.optional);
             if all_optional {
                 cc_code.push_str("    bool has_any_field = false;\n");
             }
@@ -578,6 +579,44 @@ fn get_value_getter(
             )
         }
         Type::Vector(inner) => match &**inner {
+            Type::Enum(name) => {
+                let enum_def = schema
+                    .enums
+                    .get(name)
+                    .ok_or_else(|| anyhow::anyhow!("Enum '{}' not found in schema", name))?;
+                let num_variants = enum_def.variants.len();
+                let mut str_checks = String::new();
+                for variant in &enum_def.variants {
+                    str_checks.push_str(&format!(
+                        "if (s == \"{variant}\") {{ res.push_back({name}::k{variant}); }} else "
+                    ));
+                }
+                format!(
+                    "[&]() -> std::optional<std::vector<{name}>> {{ \
+                        if (auto str_vec = GetStrVec({dict_expr}, {key_expr}); str_vec) {{ \
+                            std::vector<{name}> res; \
+                            for (const auto& s : *str_vec) {{ \
+                                {str_checks}{{ return std::nullopt; }} \
+                            }} \
+                            return res; \
+                        }} \
+                        if (auto uint8_vec = GetUint8Vec({dict_expr}, {key_expr}); uint8_vec) {{ \
+                            std::vector<{name}> res; \
+                            for (auto v : *uint8_vec) {{ \
+                                if (v >= {num_variants}) return std::nullopt; \
+                                res.push_back(static_cast<{name}>(v)); \
+                            }} \
+                            return res; \
+                        }} \
+                        return std::nullopt; \
+                    }}()",
+                    name = name,
+                    dict_expr = dict_expr,
+                    key_expr = key_expr,
+                    str_checks = str_checks,
+                    num_variants = num_variants
+                )
+            }
             Type::Struct(name) => {
                 let struct_def = schema.structs.get(name).ok_or_else(|| {
                     anyhow::anyhow!("Struct {} referenced in vector not found in schema", name)
@@ -1029,5 +1068,41 @@ mod tests {
             "Generated code missing !has_any_field check:\n{}",
             cc_code
         );
+    }
+
+    #[test]
+    fn test_vector_of_enums_cpp_generation() {
+        let mut enums = HashMap::new();
+        enums.insert(
+            "MyEnum".to_string(),
+            EnumDef {
+                name: "MyEnum".to_string(),
+                variants: vec!["FOO".to_string(), "BAR".to_string()],
+            },
+        );
+
+        let schema = Schema {
+            id: "fuchsia.test.Metadata".to_string(),
+            enums,
+            structs: HashMap::new(),
+            root_layout: StructDef {
+                name: "Metadata".to_string(),
+                fields: vec![Field {
+                    name: "items".to_string(),
+                    ty: Type::Vector(Box::new(Type::Enum("MyEnum".to_string()))),
+                    optional: false,
+                }],
+            },
+        };
+
+        let res = generate_cpp_parser(&[schema], "test_driver", "test_driver", "2026");
+        assert!(res.is_ok());
+        let (h_code, cc_code) = res.unwrap();
+        assert!(h_code.contains("enum class MyEnum : uint8_t {"));
+        assert!(h_code.contains("std::vector<MyEnum> items;"));
+        assert!(
+            cc_code.contains("if (auto str_vec = GetStrVec(dict, (prefix.empty() ? \"items\" : prefix + \".items\")); str_vec)")
+        );
+        assert!(cc_code.contains("if (s == \"FOO\") { res.push_back(MyEnum::kFOO); } else if (s == \"BAR\") { res.push_back(MyEnum::kBAR); }"));
     }
 }

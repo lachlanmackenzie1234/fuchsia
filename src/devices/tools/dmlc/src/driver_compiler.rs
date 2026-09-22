@@ -36,32 +36,44 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     let driver_dml = load_driver_dml(Path::new(&args.input_file))?;
     let driver_name = &driver_dml.name;
 
-    // Find the schemas for this driver
+    let mut parsed_schemas = Vec::new();
+
+    for config in &driver_dml.driver_configs {
+        let parsed_schema = parse_driver_config_schema(config)?;
+        parsed_schemas.push(parsed_schema);
+    }
+
+    for constraint in &driver_dml.service_constraints {
+        let parsed_schema = parse_service_constraint_schema(constraint)?;
+        parsed_schemas.push(parsed_schema);
+    }
+
+    // Find legacy schemas for this driver
     let mut schema_defs = Vec::new();
     for cap_val in &driver_dml.capabilities {
         let Some(obj) = cap_val.as_object() else {
             continue;
         };
-        if !obj.contains_key("metadata") {
+        if !obj.contains_key("constraints") && !obj.contains_key("metadata") {
             continue;
         }
         let cap: DriverCapability = serde_json::from_value(cap_val.clone()).context(
-            "Failed to deserialize DriverCapability from capability containing 'metadata' key",
+            "Failed to deserialize DriverCapability from capability containing metadata or constraints",
         )?;
-        let Some(meta) = cap.metadata else {
+        let Some(meta) = cap.constraints else {
             continue;
         };
         if meta.schema.is_some() {
             schema_defs.push(meta);
         }
     }
-    if !schema_defs.is_empty() {
-        let mut parsed_schemas = Vec::new();
-        for schema_def in &schema_defs {
-            let parsed_schema =
-                parse_json_schema(schema_def.schema.as_ref().unwrap(), &schema_def.id)?;
-            parsed_schemas.push(parsed_schema);
-        }
+    for schema_def in &schema_defs {
+        let config_id = schema_def.id().unwrap_or("config");
+        let parsed_schema = parse_json_schema(schema_def.schema.as_ref().unwrap(), config_id)?;
+        parsed_schemas.push(parsed_schema);
+    }
+
+    if !parsed_schemas.is_empty() {
         let namespace = args.namespace.as_deref().unwrap_or(driver_name);
         let (h_code, cc_code) =
             cpp_generator::generate_cpp_parser(&parsed_schemas, driver_name, namespace, year)?;
@@ -357,9 +369,13 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
         let mut capabilities = driver_dml.capabilities.clone();
 
         // We need to clean up metadata capability from capabilities before writing to CML
+        capabilities.retain(|cap| {
+            if let Some(obj) = cap.as_object() { !obj.contains_key("driver_config") } else { true }
+        });
         for cap in &mut capabilities {
             if let Some(obj) = cap.as_object_mut() {
                 obj.remove("metadata");
+                obj.remove("constraints");
             }
         }
 

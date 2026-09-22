@@ -10,7 +10,7 @@ use anyhow::Context;
 use dml_config as fbdc;
 use fidl_fuchsia_driver_metadata as fdr;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -26,11 +26,10 @@ struct LocalResourceEntry {
 /// Strips the leading '#' from a node/component reference name if present.
 /// In DML/CML, child nodes are often referenced with a leading '#'.
 fn strip_hash(s: &str) -> String {
-    if let Some(stripped) = s.strip_prefix('#') {
-        stripped.to_string()
-    } else {
-        s.to_string()
-    }
+    if let Some(stripped) = s.strip_prefix('#') { stripped.to_string() } else { s.to_string() }
+}
+fn normalize_config_id(id: &str) -> String {
+    id.trim().trim_start_matches(['#', '/']).to_string()
 }
 
 pub fn compute_global_id(provider: &str, name: &str) -> u32 {
@@ -249,10 +248,21 @@ fn flatten_value(
             }
         }
         Value::Object(obj) => {
-            for (key, child_val) in obj {
-                let child_prefix =
-                    if prefix.is_empty() { key.clone() } else { format!("{}.{}", prefix, key) };
-                flatten_value(child_val, &child_prefix, entries)?;
+            // Empty objects (e.g. `direct: {}`) are used to represent unit variants in FIDL
+            // unions or empty marker structs. We emit them as a boolean `true` entry to indicate
+            // presence.
+            if obj.is_empty() && !prefix.is_empty() {
+                entries.push(fdr::DictionaryEntry {
+                    key: prefix.to_string(),
+                    value: fdr::DictionaryValue::Boolean(true),
+                });
+            } else {
+                // Non-empty objects are recursively flattened using dot-separated keys.
+                for (key, child_val) in obj {
+                    let child_prefix =
+                        if prefix.is_empty() { key.clone() } else { format!("{}.{}", prefix, key) };
+                    flatten_value(child_val, &child_prefix, entries)?;
+                }
             }
         }
     }
@@ -302,6 +312,129 @@ fn build_generic_metadata_value(
     Ok(Value::Object(root_obj))
 }
 
+fn resolve_offer_config_id(
+    offer: &DmlOffer,
+    to_name: &str,
+    driver_config_map: &HashMap<String, String>,
+) -> Option<String> {
+    if let Some(config_id) = &offer.driver_config {
+        return Some(normalize_config_id(config_id));
+    }
+    if let Some(meta) = &offer.metadata {
+        if let Some(id_str) = meta.id() {
+            return Some(normalize_config_id(id_str));
+        }
+        return driver_config_map.get(to_name).cloned();
+    }
+    if offer.service.is_none() && (!offer.extra.is_empty() || offer.properties.is_some()) {
+        return driver_config_map.get(to_name).cloned();
+    }
+    if offer.properties.is_some() && offer.service.is_some() {
+        return offer.service.as_ref().map(|s| normalize_config_id(s));
+    }
+    None
+}
+
+fn extract_offer_config_val(offer: &DmlOffer) -> Value {
+    if let Some(meta) = &offer.metadata {
+        if let Some(data) = meta.extra.get("data") {
+            return data.clone();
+        }
+        if let Some(props) = meta.extra.get("properties") {
+            return props.clone();
+        }
+        if !meta.extra.is_empty() {
+            return Value::Object(meta.extra.clone().into_iter().collect());
+        }
+        return Value::Object(serde_json::Map::new());
+    }
+    if let Some(props) = &offer.properties {
+        return props.clone();
+    }
+    if !offer.extra.is_empty() {
+        return Value::Object(offer.extra.clone().into_iter().collect());
+    }
+    Value::Object(serde_json::Map::new())
+}
+
+fn process_offer_driver_config(
+    offer: &DmlOffer,
+    to_name: &str,
+    driver_config_map: &HashMap<String, String>,
+    device: &mut fbdc::Device,
+) -> Result<(), anyhow::Error> {
+    let Some(config_id) = resolve_offer_config_id(offer, to_name, driver_config_map) else {
+        return Ok(());
+    };
+
+    let config_val = extract_offer_config_val(offer);
+    let mut entries = Vec::new();
+    flatten_value(&config_val, "", &mut entries)?;
+    let dictionary = fdr::Dictionary { entries: Some(entries), ..Default::default() };
+    let serialized_bytes =
+        fidl::persist(&dictionary).context("Failed to serialize Dictionary to FIDL")?;
+
+    let dev_metadata = device.metadata.get_or_insert_with(Vec::new);
+    if let Some(existing) = dev_metadata.iter_mut().find(|m| m.id.as_deref() == Some(&config_id)) {
+        existing.data = Some(serialized_bytes);
+    } else {
+        dev_metadata.push(fbdc::StaticMetadata {
+            id: Some(config_id),
+            data: Some(serialized_bytes),
+            ..Default::default()
+        });
+    }
+
+    Ok(())
+}
+
+fn process_service_offer(
+    offer: &DmlOffer,
+    to_name: &str,
+    devices: &[fbdc::Device],
+    auto_incrementer: &mut crate::workarounds::AutoIncrementer,
+    aggregates_list: &mut Vec<((String, String), Vec<LocalResourceEntry>)>,
+) -> Result<(), anyhow::Error> {
+    let Some(service_name) = &offer.service else {
+        return Ok(());
+    };
+
+    let from = offer
+        .from
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("'from' is missing in service offer for '{}'", to_name))?;
+
+    let provider = if from == "parent" { "pdev".to_string() } else { strip_hash(from) };
+
+    let mut constraint_val =
+        offer.constraints.clone().unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+
+    auto_incrementer.apply(service_name, &provider, &mut constraint_val)?;
+    resolve_interrupt_controllers(&mut constraint_val, devices)?;
+
+    let global_id = compute_global_id(&provider, offer.name.as_deref().unwrap_or(to_name));
+    if let Some(obj) = constraint_val.as_object_mut() {
+        if !obj.contains_key("id") && !obj.contains_key("pin") {
+            obj.insert("id".to_string(), Value::Number(global_id.into()));
+        }
+    }
+
+    let entry = LocalResourceEntry {
+        node: to_name.to_string(),
+        constraint: constraint_val,
+        name: offer.name.clone(),
+        service: service_name.clone(),
+    };
+    let key = (provider, service_name.clone());
+    if let Some(existing) = aggregates_list.iter_mut().find(|(k, _)| *k == key) {
+        existing.1.push(entry);
+    } else {
+        aggregates_list.push((key, vec![entry]));
+    }
+
+    Ok(())
+}
+
 pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::Error> {
     if args.out_dir.is_none()
         && (args.fidl_output.is_none() || args.bind_output.is_none() || args.cml_output.is_none())
@@ -335,6 +468,21 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
 
     let board_dml = load_dml_file_root(input_path)?;
 
+    // Build a mapping from driver DML names and child device names to their config IDs.
+    // 1. Initial mapping: Load each driver DML file and map the driver's DML name to its primary
+    // configuration ID
+    // 2. Child device mapping: In the child processing loop below, extract the driver name from
+    //    each child's component URL and insert a mapping from `child.name` to that `config_id`.
+    // This enables subsequent offer processing to resolve the config ID for a target device
+    // even when an offer does not specify an explicit `config` or metadata ID.
+    let mut driver_config_map: HashMap<String, String> = HashMap::new();
+    for dml_path in &args.driver_dml {
+        let driver_dml = load_driver_dml(Path::new(dml_path))?;
+        if let Some(config) = driver_dml.driver_configs.first() {
+            driver_config_map.insert(driver_dml.name, config.driver_config.clone());
+        }
+    }
+
     let mut devices = Vec::new();
     let mut aggregates = Vec::new();
 
@@ -343,6 +491,16 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
         let idx = get_or_create_device_idx(&mut devices, &child.name, child.url.clone());
         devices[idx].compatible = child.compatible.clone();
         devices[idx].id = child.id;
+        // Map the child device name to its driver's config ID in `driver_config_map`.
+        if let Some(url) = &child.url {
+            // Extract driver name from component URL (e.g. "fuchsia-pkg://.../buttons#meta/buttons.cm" -> "buttons").
+            let driver_name =
+                url.split('#').next().and_then(|u| u.split('/').next_back()).unwrap_or("");
+            if let Some(config_id) = driver_config_map.get(driver_name) {
+                driver_config_map.insert(child.name.clone(), config_id.clone());
+            }
+        }
+
         if !child.metadata.is_empty() {
             let new_meta: Vec<_> = child
                 .metadata
@@ -416,41 +574,15 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
             continue;
         }
         let to_name = strip_hash(&offer.to);
-        let _ = get_or_create_device_idx(&mut devices, &to_name, None);
-
-        if let Some(service_name) = &offer.service {
-            let from = offer.from.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("'from' is missing in service offer for '{}'", to_name)
-            })?;
-
-            let provider = if from == "parent" { "pdev".to_string() } else { strip_hash(from) };
-
-            let mut constraint_val =
-                offer.constraints.clone().unwrap_or_else(|| Value::Object(serde_json::Map::new()));
-
-            auto_incrementer.apply(service_name, &provider, &mut constraint_val)?;
-            resolve_interrupt_controllers(&mut constraint_val, &devices)?;
-
-            let global_id = compute_global_id(&provider, offer.name.as_deref().unwrap_or(&to_name));
-            if let Some(obj) = constraint_val.as_object_mut() {
-                if !obj.contains_key("id") {
-                    obj.insert("id".to_string(), Value::Number(global_id.into()));
-                }
-            }
-
-            let entry = LocalResourceEntry {
-                node: to_name.clone(),
-                constraint: constraint_val,
-                name: offer.name.clone(),
-                service: service_name.clone(),
-            };
-            let key = (provider, service_name.clone());
-            if let Some(existing) = aggregates_list.iter_mut().find(|(k, _)| *k == key) {
-                existing.1.push(entry);
-            } else {
-                aggregates_list.push((key, vec![entry]));
-            }
-        }
+        let dev_idx = get_or_create_device_idx(&mut devices, &to_name, None);
+        process_offer_driver_config(offer, &to_name, &driver_config_map, &mut devices[dev_idx])?;
+        process_service_offer(
+            offer,
+            &to_name,
+            &devices,
+            &mut auto_incrementer,
+            &mut aggregates_list,
+        )?;
     }
 
     for ((provider, service), resources) in &aggregates_list {
@@ -873,7 +1005,6 @@ mod tests {
         let retrieved = fbdc::get_uint64(&dict, "large_uint").unwrap();
         assert_eq!(retrieved, 18446744073709551615u64);
     }
-
     #[test]
     fn test_compute_global_id() {
         let id1 = compute_global_id("pdev", "gpio-pin-1");
@@ -1524,7 +1655,6 @@ mod tests {
         let fidl_out = temp_dir.join("board-config.fidl");
         let bind_out = temp_dir.join("board.bind");
         let cml_out = temp_dir.join("board.cml");
-
         let args = CompileBoardArgs {
             input_file: main_file.to_str().unwrap().to_string(),
             out_dir: None,
@@ -1791,7 +1921,9 @@ mod tests {
         assert!(res.is_err());
         let err_msg = format!("{}", res.err().unwrap());
         assert!(
-            err_msg.contains("'name' is missing in fuchsia.hardware.interrupt.ControllerRegistryService offer"),
+            err_msg.contains(
+                "'name' is missing in fuchsia.hardware.interrupt.ControllerRegistryService offer"
+            ),
             "Expected missing name error, got: {}",
             err_msg
         );
@@ -1867,5 +1999,133 @@ mod tests {
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_compile_board_offer_metadata() {
+        use std::collections::HashMap;
+        let temp_dir = std::env::temp_dir().join("test_temp_offer_metadata");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "gpio-buttons",
+                        "url": "fuchsia-pkg://fuchsia.com/buttons#meta/buttons.cm",
+                        "compatible": "fuchsia,gpio-buttons"
+                    }
+                ],
+                "offers": [
+                    {
+                        "service": "fuchsia.hardware.gpio.Service",
+                        "name": "power",
+                        "from": "#gpio-controller-ff634400",
+                        "to": "#gpio-buttons",
+                        "constraints": {
+                            "pin": 92,
+                            "name": "power"
+                        }
+                    },
+                    {
+                        "driver_config": "fuchsia.buttons.GpioButtonsMetadata",
+                        "from": "#gpio-controller-ff634400",
+                        "to": "#gpio-buttons",
+                        "buttons": [
+                            {
+                                "type": {
+                                    "direct": {}
+                                 },
+                                "gpio_a_index": 0,
+                                "id": "POWER"
+                            }
+                        ],
+                        "gpios": [
+                            {
+                                "type": {
+                                    "interrupt": {}
+                                },
+                                "flags": 128
+                            }
+                        ]
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let driver_file = temp_dir.join("buttons.dml");
+        fs::write(
+            &driver_file,
+            r##"{
+                "name": "buttons",
+                "capabilities": [
+                    {
+                        "service": "fuchsia.hardware.buttons.Service"
+                    },
+                    {
+                        "driver_config": "fuchsia.buttons.GpioButtonsMetadata",
+                        "properties": {
+                            "buttons": {
+                                "type": "vector",
+                                "max_count": 10,
+                                "element": { "type": "object" }
+                            },
+                            "gpios": {
+                                "type": "vector",
+                                "max_count": 10,
+                                "element": { "type": "object" }
+                            }
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![driver_file.to_str().unwrap().to_string()],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let bytes = fs::read(&fidl_out).unwrap();
+        let board_config = fidl::unpersist::<fbdc::BoardConfig>(&bytes).unwrap();
+        let devices = board_config.devices.unwrap();
+        let gpio_buttons =
+            devices.iter().find(|d| d.name.as_deref() == Some("gpio-buttons")).unwrap();
+        let metadata = gpio_buttons.metadata.as_ref().unwrap();
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].id.as_deref(), Some("fuchsia.buttons.GpioButtonsMetadata"));
+        let dict = fidl::unpersist::<fdr::Dictionary>(metadata[0].data.as_ref().unwrap()).unwrap();
+        let flat =
+            dict.entries.unwrap().into_iter().map(|e| (e.key, e.value)).collect::<HashMap<_, _>>();
+        assert_eq!(flat.get("buttons._count"), Some(&fdr::DictionaryValue::Int64(1)));
+        assert_eq!(flat.get("buttons.0.id"), Some(&fdr::DictionaryValue::Str("POWER".to_string())));
+        assert_eq!(flat.get("buttons.0.gpio_a_index"), Some(&fdr::DictionaryValue::Int64(0)));
+        assert_eq!(flat.get("buttons.0.type.direct"), Some(&fdr::DictionaryValue::Boolean(true)));
+        assert_eq!(flat.get("gpios._count"), Some(&fdr::DictionaryValue::Int64(1)));
+        assert_eq!(flat.get("gpios.0.flags"), Some(&fdr::DictionaryValue::Int64(128)));
+        assert_eq!(flat.get("gpios.0.type.interrupt"), Some(&fdr::DictionaryValue::Boolean(true)));
+
+        // Clean up
+        let _ = fs::remove_file(&main_file);
+        let _ = fs::remove_file(&driver_file);
+        let _ = fs::remove_file(&fidl_out);
+        let _ = fs::remove_file(&bind_out);
+        let _ = fs::remove_file(&cml_out);
+        let _ = fs::remove_dir(&temp_dir);
     }
 }
