@@ -60,11 +60,9 @@ bool PerformanceCounters::Enable() {
     if (!buffer) {
       return DRETF(false, "Unable to create perf counter buffer");
     }
-    auto gpu_mapping = std::make_unique<GpuMapping>(
+    bool result = connection->CreateMapping(
         kPerfBufferStartOffset, 0, kPerfBufferSize,
-        MAGMA_MAP_FLAG_WRITE | MAGMA_MAP_FLAG_READ | kMagmaArmMaliGpuMapFlagInnerShareable,
-        connection.get(), buffer);
-    bool result = connection->AddMapping(std::move(gpu_mapping));
+        MAGMA_MAP_FLAG_WRITE | MAGMA_MAP_FLAG_READ | kMagmaArmMaliGpuMapFlagInnerShareable, buffer);
     if (!result) {
       return DRETF(false, "Unable to map perf counter buffer");
     }

@@ -37,7 +37,9 @@ struct magma_arm_mali_atom;
 class MsdArmPerfCountPool;
 class PerformanceCounters;
 
-// This can only be accessed on the connection thread.
+// Most methods are called on the connection thread, but some (like PageInMemory)
+// are called on the device thread. Access to shared state (such as address_space_
+// and gpu_mappings_) must be protected by address_lock_.
 class MsdArmConnection : public std::enable_shared_from_this<MsdArmConnection>,
                          public GpuMapping::Owner,
                          public AddressSpace::Owner {
@@ -80,7 +82,9 @@ class MsdArmConnection : public std::enable_shared_from_this<MsdArmConnection>,
   bool RemoveMapping(uint64_t gpu_va) override;
   bool UpdateCommittedMemory(GpuMapping* mapping) override;
 
-  bool AddMapping(std::unique_ptr<GpuMapping> mapping);
+  bool CreateMapping(uint64_t gpu_va, uint64_t page_offset, uint64_t size, uint64_t flags,
+                     std::shared_ptr<MsdArmBuffer> buffer,
+                     std::optional<uint64_t> pages_to_grow_on_fault = std::nullopt);
   bool ExecuteAtom(size_t* remaining_data_size, magma_arm_mali_atom* atom,
                    std::vector<std::shared_ptr<magma::PlatformSemaphore>>& semaphores,
                    std::deque<std::shared_ptr<magma::PlatformSemaphore>>* deprecated_semaphores);

@@ -16,7 +16,9 @@
 
 class GpuMapping;
 
-// This can only be accessed on the connection thread.
+// This is connection-specific but can be accessed on both the connection thread and
+// the device thread (e.g., during page faults). All accesses to its mutable state
+// must be protected by the owning connection's address_lock_.
 class MsdArmBuffer {
  public:
   static std::unique_ptr<MsdArmBuffer> Import(zx::vmo handle, uint64_t client_id);
