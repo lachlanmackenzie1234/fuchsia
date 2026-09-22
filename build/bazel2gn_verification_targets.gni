@@ -106,6 +106,7 @@ bazel2gn_verification_targets = [
   "//src/lib/diagnostics/log/rust:verify_bazel2gn",
   "//src/lib/diagnostics/log/types:verify_bazel2gn",
   "//src/lib/diagnostics/selectors:verify_bazel2gn",
+  "//src/lib/diagnostics/testing/diagnostics-assertions/rust:verify_bazel2gn",
   "//src/lib/directed_graph:verify_bazel2gn",
   "//src/lib/elflib:verify_bazel2gn",
   "//src/lib/fdio/rust:verify_bazel2gn",
