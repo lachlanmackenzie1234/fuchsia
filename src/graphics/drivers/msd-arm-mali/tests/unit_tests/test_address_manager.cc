@@ -176,6 +176,15 @@ TEST_F(AddressManagerTest, FlushAddressRange) {
 
   const size_t page_size = zx_system_get_page_size();
   uint64_t addr = page_size * 0xbdefcccec;
+
+  // Keep dummy mapped to prevent GC of the page table.
+  uint64_t dummy_addr = page_size * 0xbdefccc00;
+  auto dummy_buffer = magma::PlatformBuffer::Create(page_size, "dummy");
+  auto dummy_bus_mapping =
+      connection_owner.NdtGetBusMapper()->MapPageRangeBus(dummy_buffer.get(), 0, 1);
+  EXPECT_TRUE(connection->address_space_for_testing()->Insert(dummy_addr, dummy_bus_mapping.get(),
+                                                              0, page_size, kAccessFlagRead));
+
   std::unique_ptr<magma::PlatformBuffer> buffer;
 
   buffer = magma::PlatformBuffer::Create(page_size * 3, "test");
@@ -223,6 +232,15 @@ TEST_F(AddressManagerTest, FlushAddressRangeMisaligned) {
 
   const size_t page_size = zx_system_get_page_size();
   uint64_t addr = page_size * 0xbdefcccef;
+
+  // Keep dummy mapped to prevent GC of the page table.
+  uint64_t dummy_addr = page_size * 0xbdefccc00;
+  auto dummy_buffer = magma::PlatformBuffer::Create(page_size, "dummy");
+  auto dummy_bus_mapping =
+      connection_owner.NdtGetBusMapper()->MapPageRangeBus(dummy_buffer.get(), 0, 1);
+  EXPECT_TRUE(connection->address_space_for_testing()->Insert(dummy_addr, dummy_bus_mapping.get(),
+                                                              0, page_size, kAccessFlagRead));
+
   std::unique_ptr<magma::PlatformBuffer> buffer;
 
   buffer = magma::PlatformBuffer::Create(page_size * 3, "test");
@@ -251,6 +269,75 @@ TEST_F(AddressManagerTest, FlushAddressRangeMisaligned) {
   connection.reset();
 
   // Clear entire address range.
+  EXPECT_EQ(10u + (48 - kMaliPageShift) + 1,
+            as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
+  EXPECT_EQ(registers::AsCommand::kCmdUpdate, as_regs.Command().ReadFrom(reg_io.get()).reg_value());
+}
+
+TEST_F(AddressManagerTest, FlushAddressRangeReaped) {
+  auto reg_io = std::make_unique<mali::RegisterIo>(MockMmio::Create(1024 * 1024));
+  FakeOwner owner(reg_io.get());
+  auto mapper = std::unique_ptr<MockBusMapper>();
+
+  const uint32_t kNumberAddressSpaces = 8;
+  AddressManager address_manager(&owner, kNumberAddressSpaces);
+  TestConnectionOwner connection_owner(&address_manager);
+  std::shared_ptr<MsdArmConnection> connection = MsdArmConnection::Create(0, &connection_owner);
+
+  auto atom = std::make_unique<MsdArmAtom>(connection, 0, 0, 0, magma_arm_mali_user_data(), 0);
+  EXPECT_TRUE(address_manager.AssignAddressSpace(atom.get()));
+
+  const size_t page_size = zx_system_get_page_size();
+  uint64_t addr = page_size * 0xbdefcccec;
+
+  // Keep dummy mapped in the next level 0 page table to prevent GC of the level 1 page table.
+  uint64_t dummy_addr = page_size * 0xbdefcce00;
+  auto dummy_buffer = magma::PlatformBuffer::Create(page_size, "dummy");
+  auto dummy_bus_mapping =
+      connection_owner.NdtGetBusMapper()->MapPageRangeBus(dummy_buffer.get(), 0, 1);
+  EXPECT_TRUE(connection->address_space_for_testing()->Insert(dummy_addr, dummy_bus_mapping.get(),
+                                                              0, page_size, kAccessFlagRead));
+
+  std::unique_ptr<magma::PlatformBuffer> buffer;
+
+  buffer = magma::PlatformBuffer::Create(page_size * 3, "test");
+
+  auto bus_mapping = connection_owner.NdtGetBusMapper()->MapPageRangeBus(
+      buffer.get(), 0, buffer->size() / page_size);
+  ASSERT_NE(nullptr, bus_mapping);
+
+  EXPECT_TRUE(connection->address_space_for_testing()->Insert(
+      addr, bus_mapping.get(), 0, buffer->size(), kAccessFlagRead | kAccessFlagNoExecute));
+
+  // The insert should have flushed the range [addr, 3 pages).
+  // 3 pages aligned to 4 -> width 13.
+  constexpr uint64_t kLockOffset = 13;
+  registers::AsRegisters as_regs(0);
+  EXPECT_EQ(addr | kLockOffset, as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
+  EXPECT_EQ(registers::AsCommand::kCmdFlushPageTable,
+            as_regs.Command().ReadFrom(reg_io.get()).reg_value());
+
+  // Now clear. Since there is no other mapping in the level 0 page table,
+  // it should be reaped.
+  // The reaped table covers [0xbdefccc00 * page_size, 2MB).
+  // So the flush range should be widened to cover it.
+  // Start: 0xbdefccc00 * page_size = 0xbdefccc00000.
+  // Size: 2MB (512 pages).
+  // Width: log2(512) + 11 = 9 + 11 = 20.
+  // Expected LockAddress: 0xbdefccc00000 | 20 = 0xbdefccc00014.
+  EXPECT_TRUE(connection->address_space_for_testing()->Clear(addr, buffer->size()));
+
+  uint64_t expected_reaped_addr = page_size * 0xbdefccc00;
+  constexpr uint64_t kReapedLockOffset = 20;  // log2(512) + 11
+  EXPECT_EQ(expected_reaped_addr | kReapedLockOffset,
+            as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
+  EXPECT_EQ(registers::AsCommand::kCmdFlushMem,
+            as_regs.Command().ReadFrom(reg_io.get()).reg_value());
+
+  address_manager.AtomFinished(atom.get());
+  connection.reset();
+
+  // Clear entire address range on connection destruction.
   EXPECT_EQ(10u + (48 - kMaliPageShift) + 1,
             as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
   EXPECT_EQ(registers::AsCommand::kCmdUpdate, as_regs.Command().ReadFrom(reg_io.get()).reg_value());
