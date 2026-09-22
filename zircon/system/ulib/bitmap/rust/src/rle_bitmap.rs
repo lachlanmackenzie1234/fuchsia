@@ -166,12 +166,8 @@ where
         new_elem.bitlen = bitlen;
 
         let mut cursor = self.elems.cursor_front_mut();
-        loop {
-            let (e_bitoff, e_bitlen) = match cursor.get() {
-                Some(e) => (e.bitoff, e.bitlen),
-                None => break,
-            };
-            if e_bitoff + e_bitlen >= bitoff {
+        while let Some(e) = cursor.get() {
+            if e.bitoff + e.bitlen >= bitoff {
                 break;
             }
             cursor.move_next();
@@ -203,11 +199,8 @@ where
 
         cursor.move_next();
         let mut max = elem_bitoff + elem_bitlen;
-        loop {
-            let (succ_bitoff, succ_bitlen) = match cursor.get() {
-                Some(s) => (s.bitoff, s.bitlen),
-                None => break,
-            };
+        while let Some(s) = cursor.get() {
+            let (succ_bitoff, succ_bitlen) = (s.bitoff, s.bitlen);
             if succ_bitoff > max {
                 break;
             }
@@ -241,11 +234,8 @@ where
         }
 
         let mut cursor = self.elems.cursor_front_mut();
-        loop {
-            let (elem_bitoff, elem_bitlen) = match cursor.get() {
-                Some(e) => (e.bitoff, e.bitlen),
-                None => break,
-            };
+        while let Some(e) = cursor.get() {
+            let (elem_bitoff, elem_bitlen) = (e.bitoff, e.bitlen);
 
             if elem_bitoff + elem_bitlen < bitoff {
                 cursor.move_next();

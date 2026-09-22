@@ -649,7 +649,6 @@ clippy_lints = [
   "type-complexity",
   "unnecessary-cast",
   "unnecessary-unwrap",
-  "while-let-loop",
   "write-with-newline",
 ]
 foreach(lint, clippy_lints) {
