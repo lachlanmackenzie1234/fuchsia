@@ -30,6 +30,27 @@ constexpr uint64_t kMemoryAttributes =
     SlotAttribute(AddressSpace::kNormalMemoryAttributeSlot, kMmuNormalMemoryAttr) |
     SlotAttribute(AddressSpace::kOuterCacheableAttributeSlot, kMmuOuterCacheableMemoryAttr);
 
+// Takes a `start` and `end` address and returns the log base 2 of the number of
+// pages in the naturally aligned region that covers the range.
+// This will round up and align, so that the full range is always covered.
+uint8_t GetLog2FlushRegionPages(uint64_t start, uint64_t end) {
+  DASSERT(start <= end);
+  DASSERT(magma::is_page_aligned(start));
+
+  uint64_t length = end - start;
+  uint64_t start_page = start >> kMaliPageShift;
+  uint64_t num_pages = length >> kMaliPageShift;
+
+  if (num_pages <= 1) {
+    return 0;
+  }
+
+  uint64_t last_page = start_page + num_pages - 1;
+  uint64_t diff = start_page ^ last_page;
+  uint8_t log2_num_pages = static_cast<uint8_t>(63 - __builtin_clzl(diff)) + 1;
+  return log2_num_pages;
+}
+
 AddressManager::AddressManager(Owner* owner, uint32_t address_slot_count) : owner_(owner) {
   address_slots_.resize(address_slot_count);
   for (uint32_t i = 0; i < address_slot_count; i++) {
@@ -286,13 +307,8 @@ void AddressManager::HardwareSlot::FlushMmuRange(mali::RegisterIo* io, uint64_t 
   DASSERT(magma::is_page_aligned(start));
   DASSERT(AddressSpace::is_mali_page_aligned(start));
   uint64_t region = start;
-  uint64_t num_pages = length >> kMaliPageShift;
-  uint8_t log2_num_pages = 0;
-  if (num_pages > 0) {
-    log2_num_pages = static_cast<uint8_t>(63 - __builtin_clzl(num_pages));
-    if ((1ul << log2_num_pages) < num_pages)
-      log2_num_pages++;
-  }
+
+  uint8_t log2_num_pages = GetLog2FlushRegionPages(start, start + length);
 
   // Ensure page table writes are completed before the hardware tries to
   // access the buffer.

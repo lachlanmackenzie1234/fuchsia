@@ -175,7 +175,7 @@ TEST_F(AddressManagerTest, FlushAddressRange) {
   EXPECT_TRUE(address_manager.AssignAddressSpace(atom.get()));
 
   const size_t page_size = zx_system_get_page_size();
-  uint64_t addr = page_size * 0xbdefcccef;
+  uint64_t addr = page_size * 0xbdefcccec;
   std::unique_ptr<magma::PlatformBuffer> buffer;
 
   buffer = magma::PlatformBuffer::Create(page_size * 3, "test");
@@ -186,8 +186,8 @@ TEST_F(AddressManagerTest, FlushAddressRange) {
 
   EXPECT_TRUE(connection->address_space_for_testing()->Insert(
       addr, bus_mapping.get(), 0, buffer->size(), kAccessFlagRead | kAccessFlagNoExecute));
-  // 3 pages should be cleared, so it should be rounded up to 4 (and log
-  // base 2 is 2).
+  // 3 pages should be cleared. Since the address is aligned to 4 pages,
+  // it should be rounded up to 4 (log base 2 is 2). Width is 2 + 11 = 13.
   constexpr uint64_t kLockOffset = 13;
   registers::AsRegisters as_regs(0);
   EXPECT_EQ(addr | kLockOffset, as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
@@ -207,4 +207,93 @@ TEST_F(AddressManagerTest, FlushAddressRange) {
             as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
   EXPECT_EQ(registers::AsCommand::kCmdUpdate, as_regs.Command().ReadFrom(reg_io.get()).reg_value());
 }
+
+TEST_F(AddressManagerTest, FlushAddressRangeMisaligned) {
+  auto reg_io = std::make_unique<mali::RegisterIo>(MockMmio::Create(1024 * 1024));
+  FakeOwner owner(reg_io.get());
+  auto mapper = std::unique_ptr<MockBusMapper>();
+
+  const uint32_t kNumberAddressSpaces = 8;
+  AddressManager address_manager(&owner, kNumberAddressSpaces);
+  TestConnectionOwner connection_owner(&address_manager);
+  std::shared_ptr<MsdArmConnection> connection = MsdArmConnection::Create(0, &connection_owner);
+
+  auto atom = std::make_unique<MsdArmAtom>(connection, 0, 0, 0, magma_arm_mali_user_data(), 0);
+  EXPECT_TRUE(address_manager.AssignAddressSpace(atom.get()));
+
+  const size_t page_size = zx_system_get_page_size();
+  uint64_t addr = page_size * 0xbdefcccef;
+  std::unique_ptr<magma::PlatformBuffer> buffer;
+
+  buffer = magma::PlatformBuffer::Create(page_size * 3, "test");
+
+  auto bus_mapping = connection_owner.NdtGetBusMapper()->MapPageRangeBus(
+      buffer.get(), 0, buffer->size() / page_size);
+  ASSERT_NE(nullptr, bus_mapping);
+
+  EXPECT_TRUE(connection->address_space_for_testing()->Insert(
+      addr, bus_mapping.get(), 0, buffer->size(), kAccessFlagRead | kAccessFlagNoExecute));
+  // 3 pages should be cleared. Since the address is not aligned to 4 pages,
+  // it crosses a boundary and needs to be rounded up to 32 pages to cover the range.
+  // log base 2 of 32 is 5. Width is 5 + 11 = 16.
+  constexpr uint64_t kLockOffset = 16;
+  registers::AsRegisters as_regs(0);
+  EXPECT_EQ(addr | kLockOffset, as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
+  EXPECT_EQ(registers::AsCommand::kCmdFlushPageTable,
+            as_regs.Command().ReadFrom(reg_io.get()).reg_value());
+
+  EXPECT_TRUE(connection->address_space_for_testing()->Clear(addr, buffer->size()));
+
+  EXPECT_EQ(addr | kLockOffset, as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
+  EXPECT_EQ(registers::AsCommand::kCmdFlushMem,
+            as_regs.Command().ReadFrom(reg_io.get()).reg_value());
+  address_manager.AtomFinished(atom.get());
+  connection.reset();
+
+  // Clear entire address range.
+  EXPECT_EQ(10u + (48 - kMaliPageShift) + 1,
+            as_regs.LockAddress().ReadFrom(reg_io.get()).reg_value());
+  EXPECT_EQ(registers::AsCommand::kCmdUpdate, as_regs.Command().ReadFrom(reg_io.get()).reg_value());
+}
+
+TEST(AddressManager, GetLog2FlushRegionPages) {
+  constexpr uint64_t kPageSize = 4096;
+
+  // 0 pages
+  EXPECT_EQ(0u, GetLog2FlushRegionPages(0, 0));
+  EXPECT_EQ(0u, GetLog2FlushRegionPages(kPageSize, kPageSize));
+
+  // 1 page
+  EXPECT_EQ(0u, GetLog2FlushRegionPages(0, kPageSize));
+  EXPECT_EQ(0u, GetLog2FlushRegionPages(kPageSize, kPageSize * 2));
+  EXPECT_EQ(0u, GetLog2FlushRegionPages(kPageSize * 100, kPageSize * 101));
+
+  // 2 pages
+  // Aligned
+  EXPECT_EQ(1u, GetLog2FlushRegionPages(0, kPageSize * 2));
+  EXPECT_EQ(1u, GetLog2FlushRegionPages(kPageSize * 2, kPageSize * 4));
+  // Misaligned
+  EXPECT_EQ(2u, GetLog2FlushRegionPages(kPageSize, kPageSize * 3));
+  EXPECT_EQ(3u, GetLog2FlushRegionPages(kPageSize * 3, kPageSize * 5));
+  EXPECT_EQ(2u, GetLog2FlushRegionPages(kPageSize * 5, kPageSize * 7));
+
+  // 3 pages
+  EXPECT_EQ(2u, GetLog2FlushRegionPages(0, kPageSize * 3));
+  EXPECT_EQ(2u, GetLog2FlushRegionPages(kPageSize, kPageSize * 4));
+  EXPECT_EQ(3u, GetLog2FlushRegionPages(kPageSize * 2, kPageSize * 5));
+
+  // 4 pages
+  // Aligned
+  EXPECT_EQ(2u, GetLog2FlushRegionPages(0, kPageSize * 4));
+  EXPECT_EQ(2u, GetLog2FlushRegionPages(kPageSize * 4, kPageSize * 8));
+  // Misaligned
+  EXPECT_EQ(3u, GetLog2FlushRegionPages(kPageSize, kPageSize * 5));
+  EXPECT_EQ(3u, GetLog2FlushRegionPages(kPageSize * 2, kPageSize * 6));
+  EXPECT_EQ(3u, GetLog2FlushRegionPages(kPageSize * 3, kPageSize * 7));
+
+  // Large ranges
+  EXPECT_EQ(5u, GetLog2FlushRegionPages(0, kPageSize * 32));
+  EXPECT_EQ(6u, GetLog2FlushRegionPages(kPageSize, kPageSize * 33));
+}
+
 }  // namespace
