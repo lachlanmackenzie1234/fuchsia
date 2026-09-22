@@ -9,7 +9,7 @@ use console_env as _;
 #[cfg(console_enabled)]
 pub mod console {
     use console_env::BOOT_TEST_SUCCESS_STRING;
-    use core::ffi::{c_char, c_int, c_void};
+    use core::ffi::{CStr, c_char, c_int, c_void};
     use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
     #[cfg(feature = "console_enable_history")]
     use core::sync::atomic::{AtomicU8, AtomicUsize};
@@ -318,17 +318,21 @@ pub mod console {
         );
     }
 
+    pub fn boot_test_success(success_str: &CStr) -> c_int {
+        let last = LAST_RESULT.load(Ordering::Relaxed);
+        kprintln!("*** Last script command result: {} ***", last);
+        if last == 0 {
+            kprintln!("{:s}", success_str);
+        }
+        last
+    }
+
     unsafe extern "C" fn cmd_boot_test_success(
         _argc: c_int,
         _argv: *const CmdArgs,
         _flags: u32,
     ) -> c_int {
-        let last = LAST_RESULT.load(Ordering::Relaxed);
-        kprintln!("*** Last script command result: {} ***", last);
-        if last == 0 {
-            kprintln!("{:s}", BOOT_TEST_SUCCESS_STRING);
-        }
-        last
+        boot_test_success(BOOT_TEST_SUCCESS_STRING)
     }
 
     unsafe fn get_commands() -> &'static [Cmd] {
