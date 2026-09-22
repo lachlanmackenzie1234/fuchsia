@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use zx as _;
+
 mod atomic_stack;
 mod rcu_arc;
 mod rcu_box;

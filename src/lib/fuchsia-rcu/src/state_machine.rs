@@ -8,6 +8,7 @@ use fuchsia_sync::Mutex;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 use std::thread_local;
+use std::time::Duration;
 
 #[cfg(feature = "rseq_backend")]
 use crate::read_counters::RcuReadCounters;
@@ -37,15 +38,18 @@ struct RcuControlBlock {
     /// all currently in-flight read operations have completed.
     callback_chain: AtomicStack<RcuCallback>,
 
-    /// The futex used to wait for the state machine to advance.
-    advancer: zx::Futex,
-
     /// Callbacks that are ready to run after the next grace period.
     waiting_callbacks: Mutex<AtomicListIterator<RcuCallback>>,
 }
 
-const ADVANCER_IDLE: i32 = 0;
-const ADVANCER_WAITING: i32 = 1;
+/// The number of times to spin checking for active readers before yielding.
+const ADVANCER_SPIN_LIMIT: u32 = 64;
+/// The number of spin/yield iterations before falling back to sleeping.
+const ADVANCER_YIELD_LIMIT: u32 = 66;
+/// Initial sleep duration when active readers are still present after spinning and yielding.
+const ADVANCER_INITIAL_SLEEP: Duration = Duration::from_micros(50);
+/// Maximum sleep duration for exponential backoff during long stalls.
+const ADVANCER_MAX_SLEEP: Duration = Duration::from_millis(1);
 
 impl RcuControlBlock {
     /// Create a new control block for the RCU state machine.
@@ -60,7 +64,6 @@ impl RcuControlBlock {
             generation: AtomicUsize::new(0),
             read_counters,
             callback_chain: AtomicStack::new(),
-            advancer: zx::Futex::new(ADVANCER_IDLE),
             waiting_callbacks: Mutex::new(AtomicListIterator::empty()),
         }
     }
@@ -191,22 +194,12 @@ pub(crate) fn rcu_read_unlock() {
             {
                 std::sync::atomic::compiler_fence(Ordering::SeqCst);
                 control_block.read_counters.end(index);
-
-                // We cannot tell if this thread is the last thread to exit its read lock, so we
-                // always wake the advancer. The advancer will check if there are any active
-                // readers and will only advance the state machine if there are no active
-                // readers.
-                rcu_advancer_wake_all();
             }
 
             #[cfg(not(feature = "rseq_backend"))]
             {
                 // Synchronization point [B] (see design.md)
-                let previous_count =
-                    control_block.read_counters[index].fetch_sub(1, Ordering::SeqCst);
-                if previous_count == 1 {
-                    rcu_advancer_wake_all();
-                }
+                control_block.read_counters[index].fetch_sub(1, Ordering::SeqCst);
             }
 
             thread_block.nesting_level.store(0, Ordering::Relaxed);
@@ -307,44 +300,32 @@ fn has_active_readers(generation: usize) -> bool {
     }
 }
 
-/// Wake up all the threads that are waiting to advance the state machine.
-///
-/// Does nothing if no threads are waiting.
-fn rcu_advancer_wake_all() {
-    let advancer = &RCU_CONTROL_BLOCK.advancer;
-    if advancer.load(Ordering::SeqCst) == ADVANCER_WAITING {
-        advancer.store(ADVANCER_IDLE, Ordering::Relaxed);
-        advancer.wake_all();
-    }
-}
-
 /// Blocks the current thread until all in-flight read operations have completed for the given
 /// generation.
 ///
-/// Postcondition: The number of active readers for the given generation is zero and the advancer
-/// futex contains `ADVANCER_IDLE`.
-fn rcu_advancer_wait(generation: usize) {
-    let advancer = &RCU_CONTROL_BLOCK.advancer;
-    loop {
-        // In order to avoid a race with `rcu_advancer_wake_all`, we must store `ADVANCER_WAITING`
-        // before checking if there are any active readers.
+/// Postcondition: The number of active readers for the given generation is zero.
+fn rcu_advancer_wait_for_readers(generation: usize) {
+    let mut spins = 0u32;
+    let mut sleep_duration = ADVANCER_INITIAL_SLEEP;
+    while has_active_readers(generation) {
+        // In practice, we tend to see a bimodel distribution of read locks that either release
+        // within a few hundred ns, or around a few µs.
         //
-        // In the single total order, either this store or the last decrement to the reader counter
-        // must happen first.
+        // Then, we see long tail of cases where the release can take > 1ms because a thread got
+        // context switched out while holding a read lock.
         //
-        //  (1) If this store happens first, then the last thread to decrement the reader counter
-        //      for this generation will observe `ADVANCER_WAITING` and will reset the value to
-        //      `ADVANCER_IDLE` and wake the futex, unblocking this thread.
-        //
-        //  (2) If the last decrement to the reader counter happens first, then this thread will see
-        //      that there are no active readers in this generation and avoid blocking on the futex.
-        advancer.store(ADVANCER_WAITING, Ordering::SeqCst);
-        if !has_active_readers(generation) {
-            break;
+        // We attempt to model this behavior by first spinning, then slowly backing off.
+        if spins < ADVANCER_SPIN_LIMIT {
+            std::hint::spin_loop();
+            spins += 1;
+        } else if spins < ADVANCER_YIELD_LIMIT {
+            std::thread::yield_now();
+            spins += 1;
+        } else {
+            std::thread::sleep(sleep_duration);
+            sleep_duration = std::cmp::min(sleep_duration * 2, ADVANCER_MAX_SLEEP);
         }
-        let _ = advancer.wait(ADVANCER_WAITING, None, zx::MonotonicInstant::INFINITE);
     }
-    advancer.store(ADVANCER_IDLE, Ordering::SeqCst);
 }
 
 /// Advance the RCU state machine.
@@ -374,7 +355,7 @@ fn rcu_grace_period() {
         let generation = RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
 
         // Enter the *Waiting* state.
-        rcu_advancer_wait(generation);
+        rcu_advancer_wait_for_readers(generation);
 
         // Return to the *Idle* state.
         callbacks
