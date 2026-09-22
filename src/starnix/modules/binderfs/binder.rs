@@ -1723,11 +1723,11 @@ impl BinderDriver {
                             // to translate this address to some handle.
 
                             // Register this binder object if it hasn't already been registered.
-                            let guard = source.binder_proc.lock().find_or_register_object(
-                                source.binder_thread,
-                                local,
-                                flags,
-                            );
+                            let guard = source
+                                .binder_proc
+                                .lock()
+                                .find_or_register_object(source.binder_thread, local, flags)
+                                .map_err(|_| TransactionError::Failure)?;
                             // Create a handle in the receiving process that references the binder object
                             // in the sender's process.
                             let handle =
@@ -1736,8 +1736,10 @@ impl BinderDriver {
                             transaction_state.push_handle(handle);
 
                             // Translate the serialized object into a handle.
-                            SerializedBinderObject::Handle { handle, flags, cookie: 0 }
-                        })
+                            Result::<SerializedBinderObject, TransactionError>::Ok(
+                                SerializedBinderObject::Handle { handle, flags, cookie: 0 },
+                            )
+                        })?
                     }
                     SerializedBinderObject::File { fd, cookie } => {
                         files.push(TransientFile { object_offset, fd, cookie });

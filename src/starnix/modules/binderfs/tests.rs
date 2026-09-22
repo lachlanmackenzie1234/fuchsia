@@ -2865,14 +2865,18 @@ pub mod tests {
             let client = BinderProcessFixture::new(current_task, &device);
 
             // Register an object with the owner.
-            let guard = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = owner
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &owner.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             // Keep a weak reference to the object.
             let weak_object = Arc::downgrade(&guard.binder_object);
@@ -2943,14 +2947,18 @@ pub mod tests {
             let receiver = BinderProcessFixture::new(current_task, &device);
 
             // Register an object with the owner.
-            let guard = sender.proc.lock().find_or_register_object(
-                &sender.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = sender
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &sender.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             // Insert a handle to the object in the client. This also retains a strong reference.
             let handle = receiver
@@ -2987,14 +2995,18 @@ pub mod tests {
             let receiver = BinderProcessFixture::new(current_task, &device);
 
             // Register an object with the sender.
-            let guard = sender.proc.lock().find_or_register_object(
-                &sender.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = sender
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &sender.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             // Insert a handle to the object in the receiver. This also retains a strong reference.
             let handle = receiver
@@ -3033,14 +3045,18 @@ pub mod tests {
             let client = BinderProcessFixture::new(current_task, &device);
 
             // Register an object with the owner.
-            let guard = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = owner
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &owner.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             // Insert a handle to the object in the client. This also retains a strong reference.
             let handle = client
@@ -4613,14 +4629,18 @@ pub mod tests {
             let client = BinderProcessFixture::new(current_task, &device);
 
             // Register an object with the owner.
-            let guard = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = owner
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &owner.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             // Insert a handle to the object in the client. This also retains a strong reference.
             let handle = client
@@ -4672,14 +4692,18 @@ pub mod tests {
             let client = BinderProcessFixture::new(current_task, &device);
 
             // Register an object with the owner.
-            let guard = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = owner
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &owner.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             // Insert a handle to the object in the receiver. This also retains a strong reference.
             let handle = client
@@ -4741,14 +4765,18 @@ pub mod tests {
             let client = BinderProcessFixture::new(current_task, &device);
 
             // Register an object with the owner.
-            let guard = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = owner
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &owner.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             // Insert a handle to the object in the receiver. This also retains a strong reference.
             let handle = client
@@ -4803,14 +4831,18 @@ pub mod tests {
             let owner = BinderProcessFixture::new(current_task, &device);
             let client = BinderProcessFixture::new(current_task, &device);
 
-            let guard = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                LocalBinderObject {
-                    weak_ref_addr: UserAddress::from(0x0000000000000001),
-                    strong_ref_addr: UserAddress::from(0x0000000000000002),
-                },
-                BinderObjectFlags::empty(),
-            );
+            let guard = owner
+                .proc
+                .lock()
+                .find_or_register_object(
+                    &owner.thread,
+                    LocalBinderObject {
+                        weak_ref_addr: UserAddress::from(0x0000000000000001),
+                        strong_ref_addr: UserAddress::from(0x0000000000000002),
+                    },
+                    BinderObjectFlags::empty(),
+                )
+                .expect("find_or_register_object");
 
             let handle = client
                 .proc
@@ -5029,19 +5061,19 @@ pub mod tests {
             };
 
             // Register the object once.
-            let _guard1 = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                local,
-                BinderObjectFlags::empty(),
-            );
+            let _guard1 = owner
+                .proc
+                .lock()
+                .find_or_register_object(&owner.thread, local, BinderObjectFlags::empty())
+                .expect("find_or_register_object");
 
             // Register the same object again. This will find the existing object
             // and call `inc_strong_unchecked`, which triggered the deadlock.
-            let _guard2 = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                local,
-                BinderObjectFlags::empty(),
-            );
+            let _guard2 = owner
+                .proc
+                .lock()
+                .find_or_register_object(&owner.thread, local, BinderObjectFlags::empty())
+                .expect("find_or_register_object");
         })
         .await;
     }
