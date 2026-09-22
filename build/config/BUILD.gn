@@ -1101,7 +1101,6 @@ config("Wno-conversion") {
     "//src/media/sounds/soundplayer:*",
     "//src/performance/lib/gperftools:*",
     "//src/performance/lib/gperftools/tests:*",
-    "//src/sys/pkg/lib/far/cpp:*",
     "//src/ui/a11y/bin/a11y_manager/tests:*",
     "//src/ui/a11y/lib/annotation:*",
     "//src/ui/a11y/lib/configuration:*",
