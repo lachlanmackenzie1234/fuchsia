@@ -89,6 +89,8 @@ bool MsdArmBuffer::DecommitPageRange(uint64_t start_page, uint64_t page_count) {
     DLOG("Trying to decommit region in middle, ignoring");
   }
   committed_region_ = new_region;
+  flushed_region_.Intersect(Region::FromStartAndLength(committed_region_.start() * page_size,
+                                                       committed_region_.length() * page_size));
   bool success = true;
   for (auto& mapping : gpu_mappings_) {
     if (!mapping->UpdateCommittedMemory())
