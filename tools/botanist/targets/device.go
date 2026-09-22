@@ -298,6 +298,8 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 			// when USB hubs are busy.
 			if os.Getenv("FUCHSIA_DEVICE_TYPE") == "Sorrel" {
 				bootTimeout = 20 * time.Minute
+			} else if os.Getenv("FUCHSIA_DEVICE_TYPE") == "Iris" {
+				bootTimeout = 20 * time.Minute
 			}
 			bootCtx, cancel := context.WithTimeout(ctx, bootTimeout)
 			defer cancel()
