@@ -4,18 +4,17 @@
 
 use crate::mm::{MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::mutable_state::{state_accessor, state_implementation};
-use crate::ptrace::{
-    AtomicStopState, PtraceEvent, PtraceEventData, PtraceState, PtraceStatus, StopState,
-};
+use crate::ptrace::{AtomicStopState, PtraceEventData, PtraceState, PtraceStatus, StopState};
 use crate::signals::{KernelSignal, SignalDetail, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::run_state::RunState;
 use crate::task::tracing::ZirconIdentity;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentCreds, CurrentTask,
-    EventHandler, Kernel, NormalPriority, Pid, ProcessExitInfo, RealtimePriority, SchedulerState,
-    SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState,
-    ThreadGroup, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
+    EventHandler, ExitStatus, Kernel, NormalPriority, Pid, ProcessExitInfo, RealtimePriority,
+    SchedulerState, SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue,
+    TaskRunningState, ThreadGroup, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter,
+    ZombieProcess,
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
@@ -37,9 +36,8 @@ use starnix_uapi::user_address::{
     ArchSpecific, MappingMultiArchUserRef, UserAddress, UserCString, UserRef,
 };
 use starnix_uapi::{
-    CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, CLD_TRAPPED,
-    FUTEX_BITSET_MATCH_ANY, errno, error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack,
-    tid_t, uapi,
+    CLD_TRAPPED, FUTEX_BITSET_MATCH_ANY, errno, error, from_status_like_fdio, pid_t, sigaction_t,
+    sigaltstack, tid_t, uapi,
 };
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
@@ -48,60 +46,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::{cmp, fmt};
 use zx::{Signals, Task as _};
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ExitStatus {
-    Exit(u8),
-    Kill(SignalInfo),
-    CoreDump(SignalInfo),
-    // The second field for Stop and Continue contains the type of ptrace stop
-    // event that made it stop / continue, if applicable (PTRACE_EVENT_STOP,
-    // PTRACE_EVENT_FORK, etc)
-    Stop(SignalInfo, PtraceEvent),
-    Continue(SignalInfo, PtraceEvent),
-}
-impl ExitStatus {
-    /// Converts the given exit status to a status code suitable for returning from wait syscalls.
-    pub fn wait_status(&self) -> i32 {
-        match self {
-            ExitStatus::Exit(status) => (*status as i32) << 8,
-            ExitStatus::Kill(siginfo) => siginfo.signal.number() as i32,
-            ExitStatus::CoreDump(siginfo) => (siginfo.signal.number() as i32) | 0x80,
-            ExitStatus::Continue(siginfo, trace_event) => {
-                let trace_event_val = *trace_event as u32;
-                if trace_event_val != 0 {
-                    (siginfo.signal.number() as i32) | (trace_event_val << 16) as i32
-                } else {
-                    0xffff
-                }
-            }
-            ExitStatus::Stop(siginfo, trace_event) => {
-                let trace_event_val = *trace_event as u32;
-                (0x7f + ((siginfo.signal.number() as i32) << 8)) | (trace_event_val << 16) as i32
-            }
-        }
-    }
-
-    pub fn signal_info_code(&self) -> i32 {
-        match self {
-            ExitStatus::Exit(_) => CLD_EXITED as i32,
-            ExitStatus::Kill(_) => CLD_KILLED as i32,
-            ExitStatus::CoreDump(_) => CLD_DUMPED as i32,
-            ExitStatus::Stop(_, _) => CLD_STOPPED as i32,
-            ExitStatus::Continue(_, _) => CLD_CONTINUED as i32,
-        }
-    }
-
-    pub fn signal_info_status(&self) -> i32 {
-        match self {
-            ExitStatus::Exit(status) => *status as i32,
-            ExitStatus::Kill(siginfo)
-            | ExitStatus::CoreDump(siginfo)
-            | ExitStatus::Continue(siginfo, _)
-            | ExitStatus::Stop(siginfo, _) => siginfo.signal.number() as i32,
-        }
-    }
-}
 
 atomic_bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
