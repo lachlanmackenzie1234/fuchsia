@@ -555,9 +555,9 @@ std::optional<fuchsia_hardware_pin::DriveType> ConvertDriveType(
 
 std::optional<fuchsia_hardware_pinimpl::InitCall> ConvertInitCall(
     const gpio_metadata::InitCall& gc) {
-  if (gc.pin_config &&
-      (gc.pin_config->pull || gc.pin_config->function || gc.pin_config->function_name ||
-       gc.pin_config->drive_strength_ua || gc.pin_config->drive_type)) {
+  if (gc.pin_config && (gc.pin_config->pull || gc.pin_config->function ||
+                        gc.pin_config->function_name || gc.pin_config->drive_strength_ua ||
+                        gc.pin_config->drive_type || gc.pin_config->power_source)) {
     fuchsia_hardware_pin::Configuration config;
     if (auto pull = ConvertPull(gc.pin_config->pull)) {
       config.pull(*pull);
@@ -573,6 +573,9 @@ std::optional<fuchsia_hardware_pinimpl::InitCall> ConvertInitCall(
     }
     if (auto drive_type = ConvertDriveType(gc.pin_config->drive_type)) {
       config.drive_type(*drive_type);
+    }
+    if (gc.pin_config->power_source) {
+      config.power_source(*gc.pin_config->power_source);
     }
     return fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(config));
   } else if (auto mode = ConvertBufferMode(gc.buffer_mode)) {
@@ -657,6 +660,10 @@ std::optional<fuchsia_hardware_pinimpl::Metadata> ConvertMetadata(
     }
     if (auto drive_type = ConvertDriveType(p.drive_type)) {
       config.drive_type(*drive_type);
+      has_config = true;
+    }
+    if (p.power_source) {
+      config.power_source(*p.power_source);
       has_config = true;
     }
 
