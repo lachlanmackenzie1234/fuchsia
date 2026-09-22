@@ -1066,7 +1066,6 @@ config("Wno-conversion") {
     "//src/devices/testing/fake-msi:*",
     "//src/devices/tpm/drivers/cr50-spi:*",
     "//src/devices/tpm/drivers/tpm:*",
-    "//src/diagnostics/validator/inspect/lib/cpp:*",
     "//src/graphics/display/drivers/goldfish-display:*",
     "//src/graphics/drivers/misc/goldfish:*",
     "//src/graphics/drivers/misc/goldfish_address_space:*",
