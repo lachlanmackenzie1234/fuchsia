@@ -124,15 +124,6 @@
                 "fs_filesystem/081",
                 "fs_filesystem/082",
 
-                // TODO: https://fxbug.dev/398699134
-                "glblub/001",
-                "glblub/002",
-                "glblub/003",
-                "glblub/004",
-                "glblub/005",
-                "glblub/008",
-                "glblub/009",
-
                 // TODO: https://fxbug.dev/398663317
                 "inet_socket/tcp/001",
                 "inet_socket/tcp/003",
