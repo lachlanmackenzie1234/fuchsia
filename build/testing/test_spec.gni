@@ -367,16 +367,10 @@ template("test_spec") {
         "Invalid 'log_settings.max_severity': ${_log_settings.max_severity}, valid values are ${_log_severity_allowed_val}")
 
     if (defined(invoker.package_url)) {
-      s = string_split(invoker.package_url, ".cm")
-      is_v2_component = false
-      foreach(s, string_split(invoker.package_url, ".cm")) {
-        is_v2_component = s == ""
-      }
-
       # Running test cases in parallel is slow (https://fxbug.dev/42167081) for
       # "coverage" variant. Run cases serially for that variant by default.
       # Also let devs override the default if needed.
-      if (!defined(invoker.parallel) && is_v2_component &&
+      if (!defined(invoker.parallel) &&
           select_variant + [ "coverage" ] - [ "coverage" ] != select_variant) {
         _parallel = 1
       }
@@ -389,7 +383,6 @@ template("test_spec") {
     assert(is_fuchsia, "'parallel' can only be used when target is fuchsia.")
     assert(invoker.parallel > 0)
     assert(defined(invoker.package_url))
-    assert(is_v2_component, "'parallel' only works for v2 test components.")
     _parallel = invoker.parallel
   }
 
@@ -398,8 +391,6 @@ template("test_spec") {
         is_fuchsia,
         "'create_no_exception_channel' can only be used when target is fuchsia.")
     assert(defined(invoker.package_url))
-    assert(is_v2_component,
-           "'create_no_exception_channel' only works for v2 test components.")
     _create_no_exception_channel = invoker.create_no_exception_channel
   }
 
