@@ -8,7 +8,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../../lib
 BT_FILE_DEPS=(
     "prebuilt/third_party/jq/${HOST_PLATFORM}/bin/jq"
     "scripts/fx"
-    "scripts/fuchsia-vendored-python3.11"
+    "scripts/fuchsia-vendored-python3.13"
     "scripts/hermetic-env"
     "build/scripts/main_build.py"
     "build/scripts/signal_utils.py"
