@@ -100,8 +100,10 @@ bool AddressSpace::Insert(gpu_addr_t addr, magma::PlatformBusMapper::BusMapping*
     // TODO(https://fxbug.dev/42080175): optimize walk to not get page table every time.
     uint64_t page_index = i + addr / kMaliPageSize;
     PageTable* page_table = root_page_directory_->GetPageTableLevel0(page_index, true);
-    if (!page_table)
-      return DRETF(false, "Faied to get page table");
+    if (!page_table) {
+      Clear(addr, i * kMaliPageSize);
+      return DRETF(false, "Failed to get page table");
+    }
 
     uint64_t cpu_page_offset = (i % cpu_pages_per_gpu_page) * kMaliPageSize;
     uint64_t bus_addr = bus_addr_array[(start_page_index - bus_mapping->page_offset() + i) /
