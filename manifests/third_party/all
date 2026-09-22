@@ -549,7 +549,7 @@
     <project name="third_party/Vulkan-Loader"
              path="third_party/Vulkan-Loader/src"
              remote="https://fuchsia.googlesource.com/third_party/Vulkan-Loader"
-             revision="7cf17ccc5b95ba57cc766c9984d5cb2a0c76cc9c"
+             revision="9c200672adf2482f3bf50b68af06dcd8a35e8e57"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/Vulkan-ValidationLayers"
              path="third_party/Vulkan-ValidationLayers/src"
@@ -575,7 +575,7 @@
              path="third_party/zlib"
              remote="https://fuchsia.googlesource.com/third_party/zlib"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="270412940ecb3f1796deec45d594f4e69e165c89"/>
+             revision="903e73377f5a7097bd56c05e1a3aa64230fcc606"/>
     <project name="third_party/zstd"
              path="third_party/zstd/src"
              remote="https://fuchsia.googlesource.com/third_party/zstd"
