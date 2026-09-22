@@ -834,7 +834,7 @@ mod tests {
         let (session_proxy, server) = fidl::endpoints::create_proxy::<SessionMarker>();
         volume.open_session(server).unwrap();
 
-        let vmo = zx::Vmo::create(storage_units::PAGE_SIZE.get()).unwrap();
+        let vmo = zx::Vmo::create(storage_units::page_size().get()).unwrap();
         let vmo_id = session_proxy
             .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
             .await

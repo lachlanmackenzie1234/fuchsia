@@ -575,7 +575,7 @@ mod tests {
     use fxfs_make_blob_image::FxBlobBuilder;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-    use storage_units::PAGE_SIZE;
+    use storage_units::page_size;
 
     const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
     const CHUNK_SIZE: usize = 32 * 1024;
@@ -677,7 +677,7 @@ mod tests {
     async fn test_non_page_aligned_blob() {
         let fixture = new_blob_fixture().await;
 
-        let page_size = PAGE_SIZE.get() as usize;
+        let page_size = page_size().get() as usize;
         let data = vec![0xffu8; page_size - 1];
         let hash = fixture.write_blob(&data, CompressionMode::Never).await;
         assert_eq!(fixture.read_blob(hash).await, data);

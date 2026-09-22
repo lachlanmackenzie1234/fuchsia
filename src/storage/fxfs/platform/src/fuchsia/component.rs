@@ -44,7 +44,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
-use storage_units::PAGE_SIZE;
+use storage_units::page_size;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 
@@ -323,8 +323,9 @@ impl Component {
         let client = RemoteBlockClient::new(block_proxy).await?;
 
         // TODO(https://fxbug.dev/42063349) Add support for block sizes greater than the page size.
-        assert!(client.block_size() <= PAGE_SIZE.get() as u32);
-        assert!(PAGE_SIZE == MIN_BLOCK_SIZE);
+        let page_size = page_size();
+        assert!(client.block_size() <= page_size.get() as u32);
+        assert!(page_size == MIN_BLOCK_SIZE);
 
         let fs = FxFilesystemBuilder::new()
             .fsck_after_every_transaction(options.fsck_after_every_transaction.unwrap_or(false))

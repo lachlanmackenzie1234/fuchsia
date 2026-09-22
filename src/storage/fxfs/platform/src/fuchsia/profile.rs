@@ -35,7 +35,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use storage_device::buffer::{BufferFuture, BufferRef};
 use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
-use storage_units::PAGE_SIZE;
+use storage_units::page_size;
 use vfs::execution_scope::ActiveGuard;
 
 const FILE_OPEN_MARKER: u64 = u64::MAX;
@@ -794,9 +794,9 @@ impl<T: RecordedVolume> ReplayState<T> {
     }
 
     fn page_in_thread(queue: async_channel::Receiver<Request<T::NodeType>>) {
+        let page_size = page_size().get();
         while let Ok(request) = queue.recv_blocking() {
-            let res =
-                request.file.vmo().op_range(zx::VmoOp::PREFETCH, request.offset, PAGE_SIZE.get());
+            let res = request.file.vmo().op_range(zx::VmoOp::PREFETCH, request.offset, page_size);
             if let Err(e) = res {
                 warn!("Failed to prefetch page: {:?}", e);
             }

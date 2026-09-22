@@ -901,7 +901,7 @@ macro_rules! seek_impl {
 fn page_size() -> BlockSize {
     #[cfg(target_os = "fuchsia")]
     {
-        storage_units::PAGE_SIZE.into()
+        storage_units::page_size().into()
     }
     #[cfg(not(target_os = "fuchsia"))]
     {
