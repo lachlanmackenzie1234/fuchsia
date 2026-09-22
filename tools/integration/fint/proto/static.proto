@@ -61,9 +61,6 @@ message Static {
   // Whether to build generated source files specified in the generated sources manifest.
   bool include_generated_sources = 11;
 
-  // Whether to include archives in the build.
-  bool include_archives = 12;
-
   // Names of tools referenced in tool_paths.json that we should build with
   // Ninja. We assume that we should build each tool for the current OS and CPU.
   repeated string tools = 13;

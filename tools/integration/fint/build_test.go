@@ -615,13 +615,6 @@ func TestBuild(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "include_archives not supported",
-			staticSpec: &fintpb.Static{
-				IncludeArchives: true,
-			},
-			expectErr: true,
-		},
-		{
 			name:       "export debug symbols",
 			staticSpec: &fintpb.Static{},
 			modules: fakeBuildModules{

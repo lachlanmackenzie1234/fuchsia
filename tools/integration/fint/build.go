@@ -787,10 +787,6 @@ func constructNinjaTargets(
 	var targets []string
 	var artifacts fintpb.BuildArtifacts
 
-	if staticSpec.IncludeArchives {
-		return nil, nil, fmt.Errorf("include_archives=true is no longer supported")
-	}
-
 	if staticSpec.IncludeDefaultNinjaTarget {
 		targets = append(targets, ":default")
 	}

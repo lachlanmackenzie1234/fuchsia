@@ -25,7 +25,6 @@ func TestReadStatic(t *testing.T) {
 		Product:          "workstation",
 		NinjaTargets:     []string{"default"},
 		TargetArch:       fintpb.Static_X64,
-		IncludeArchives:  false,
 		SkipIfUnaffected: true,
 	}
 
