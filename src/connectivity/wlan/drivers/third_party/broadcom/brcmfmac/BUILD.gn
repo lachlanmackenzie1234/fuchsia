@@ -210,8 +210,18 @@ bind_library("fuchsia.brcmfmac") {
   source = "fuchsia.brcmfmac.bind"
 }
 
+fuchsia_driver_dml("brcmfmac-dml") {
+  dml = "meta/brcmfmac.dml"
+  driver_name = "brcmfmac"
+}
+
+fuchsia_driver_dml("brcmfmac-test-dml") {
+  dml = "meta/brcmfmac-test.dml"
+  driver_name = "brcmfmac-test"
+}
+
 driver_bind_rules("brcmfmac_sdio_bind") {
-  rules = "meta/brcmfmac_sdio.bind"
+  dml_label = ":brcmfmac-dml"
   bind_output = "brcmfmac_sdio.bindbc"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -237,7 +247,7 @@ fuchsia_cc_driver("fuchsia_driver-driver") {
 
 fuchsia_driver_component("fuchsia_driver") {
   component_name = "brcmfmac"
-  manifest = "meta/brcmfmac.cml"
+  dml_label = ":brcmfmac-dml"
   deps = [ ":fuchsia_driver-driver" ]
   visibility += [
     "//bundles/drivers/pci",
@@ -266,7 +276,7 @@ fuchsia_driver_component("test_fuchsia_driver") {
   deps = [ ":test_fuchsia_driver-driver" ]
   visibility += [ "//src/connectivity/wlan:drivers" ]
   info = "meta/test_fuchsia_driver-info.json"
-  manifest = "meta/brcmfmac-test.cml"
+  dml_label = ":brcmfmac-test-dml"
 }
 
 brcmfmac_driver("brcmfmac-astro") {
