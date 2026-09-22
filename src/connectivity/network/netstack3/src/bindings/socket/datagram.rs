@@ -1322,14 +1322,9 @@ where
     ) -> Self {
         let (local_event, peer_event) = SocketEventPair::create();
 
-        let notifier = wake_group.as_ref().and_then(|group| {
-            if let Some(notifier) = ctx.bindings_ctx().wake_groups.get_data_notifier(&group) {
-                Some(notifier)
-            } else {
-                warn!("could not attach socket to nonexistent wake group {group:?}");
-                None
-            }
-        });
+        let notifier = wake_group
+            .as_ref()
+            .and_then(|group| ctx.bindings_ctx().wake_groups.data_notifier(group));
 
         let external_data = DatagramSocketExternalData {
             message_queue: CoreMutex::new(MessageQueue::new(

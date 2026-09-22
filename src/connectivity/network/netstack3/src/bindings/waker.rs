@@ -106,10 +106,13 @@ impl WakeGroups {
         assert_matches!(inner.lock().wake_groups.remove(&koid), Some(_));
     }
 
-    pub(crate) fn get_data_notifier(&self, wake_group: &WakeGroupId) -> Option<DataNotifier> {
+    pub(crate) fn data_notifier(&self, wake_group: &WakeGroupId) -> Option<DataNotifier> {
         let Self(inner) = self;
         let wake_groups = &inner.lock().wake_groups;
-        let data_notifier = wake_groups.get(&wake_group.koid)?;
+        let Some(data_notifier) = wake_groups.get(&wake_group.koid) else {
+            warn!("could not attach socket to nonexistent wake group {wake_group:?}");
+            return None;
+        };
         Some(data_notifier.clone())
     }
 }
