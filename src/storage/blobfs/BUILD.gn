@@ -145,8 +145,6 @@ static_library("blobfs") {
       "mount.cc",
       "page_loader.cc",
       "page_loader.h",
-      "service/admin.cc",
-      "service/admin.h",
       "service/lifecycle.cc",
       "service/lifecycle.h",
       "service/ota_health_check.cc",

@@ -5,6 +5,7 @@
 #ifndef SRC_STORAGE_BLOBFS_COMPONENT_RUNNER_H_
 #define SRC_STORAGE_BLOBFS_COMPONENT_RUNNER_H_
 
+#include <fidl/fuchsia.fs/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/markers.h>
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -34,7 +35,7 @@ namespace blobfs {
 
 // The Runner class *has* to be final because it calls PagedVfs::TearDown from
 // its destructor which is required to ensure thread-safety at destruction time.
-class ComponentRunner final : public fs::PagedVfs {
+class ComponentRunner final : public fs::PagedVfs, public fidl::WireServer<fuchsia_fs::Admin> {
  public:
   ComponentRunner(async::Loop& loop, ComponentOptions config);
 
@@ -46,6 +47,9 @@ class ComponentRunner final : public fs::PagedVfs {
   // fs::PagedVfs interface.
   void Shutdown(fs::FuchsiaVfs::ShutdownCallback cb) final;
   zx::result<fs::FilesystemInfo> GetFilesystemInfo() final;
+
+  // fuchsia_fs::Admin interface
+  void Shutdown(ShutdownCompleter::Sync& completer) final;
 
   zx::result<> ServeRoot(fidl::ServerEnd<fuchsia_io::Directory> root,
                          fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle);
@@ -74,6 +78,8 @@ class ComponentRunner final : public fs::PagedVfs {
   std::vector<fs::FuchsiaVfs::ShutdownCallback> shutdown_callbacks_ __TA_GUARDED(shutdown_lock_);
 
   std::optional<inspect::ComponentInspector> exposed_inspector_;
+
+  fidl::ServerBindingGroup<fuchsia_fs::Admin> admin_bindings_;
 };
 
 }  // namespace blobfs
