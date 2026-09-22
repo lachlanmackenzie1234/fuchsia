@@ -310,6 +310,48 @@ TEST(SignalHandling, GetSIGSEGVOnMainStackUnderflowHandledInAltStack) {
       testing::ExitedWithCode(kRaisedSIGSEGV), "");
 }
 
+// Check that if delivering a signal with SA_RESETHAND fails (e.g. due to a
+// stack fault), its disposition is still reset to SIG_DFL before the resulting
+// SIGSEGV handler runs.
+TEST(SignalHandling, FailedSignalDeliveryWithSaResethandResetsHandler) {
+  EXPECT_EXIT(
+      []() {
+        constexpr size_t kStackSize = 0x20000;
+        setup_sigaltstack(kStackSize);
+
+        // Set up a handler for SIGUSR1 on the main stack with SA_RESETHAND.
+        struct sigaction sa = {};
+        sa.sa_handler = [](int) { _exit(kExitTestFailure); };
+        sa.sa_flags = SA_RESETHAND;
+        if (sigaction(SIGUSR1, &sa, nullptr)) {
+          _exit(kExitTestFailure);
+        }
+
+        // Catch the resulting SIGSEGV on the alternate stack and verify that
+        // SIGUSR1's disposition has been reset to SIG_DFL.
+        struct sigaction sa_sigsegv = {};
+        sa_sigsegv.sa_handler = [](int) {
+          struct sigaction old_sa = {};
+          if (sigaction(SIGUSR1, nullptr, &old_sa) != 0) {
+            _exit(kExitTestFailure);
+          }
+          if (old_sa.sa_handler == SIG_DFL) {
+            _exit(kExitTestSuccess);
+          }
+          _exit(kExitTestFailure);
+        };
+        sa_sigsegv.sa_flags = SA_ONSTACK;
+        if (sigaction(SIGSEGV, &sa_sigsegv, nullptr)) {
+          _exit(kExitTestFailure);
+        }
+
+        // Raise SIGUSR1 with a bogus stack so signal frame setup fails.
+        raise_with_stack(SIGUSR1, 0x0);
+        _exit(kExitTestFailure);
+      }(),
+      testing::ExitedWithCode(kExitTestSuccess), "");
+}
+
 // Check that if we fail to deliver a signal, and SIGSEGV is masked, we unmask
 // it, and reset the SIGSEGV signal disposition as well.
 TEST(SignalHandling, SignalFailureUnmasksSIGSEGVAndResetsHandler) {
