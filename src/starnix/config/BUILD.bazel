@@ -6,6 +6,7 @@ load(
     "@fuchsia_rules_common//packages:resources.bzl",
     "resource",
 )
+load("@rules_rust//rust:defs.bzl", "rust_lint_config")
 load(
     "//build/bazel/rules/packages:fx_package.bzl",
     "fx_package",
@@ -24,4 +25,53 @@ resource(
     name = "starnix_profiles_resource",
     src = "starnix.profiles",
     dest = "config/profiles/starnix.profiles",
+)
+
+_STARNIX_CLIPPY_COMMON = {
+    "all": "allow",
+    "await_holding_lock": "warn",
+    "clear_with_drain": "warn",
+    "collection_is_never_read": "warn",
+    "confusing_method_to_numeric_cast": "warn",
+    "correctness": "warn",
+    "expect_fun_call": "warn",
+    "fn_to_numeric_cast_with_truncation": "warn",
+    "into_iter_on_ref": "warn",
+    "large_enum_variant": "warn",
+    "large_futures": "warn",
+    "missing_safety_doc": "warn",
+    "needless_collect": "warn",
+    "or_fun_call": "warn",
+    "perf": "warn",
+    "redundant_clone": "warn",
+    "set_contains_or_insert": "warn",
+    "unnecessary_lazy_evaluations": "warn",
+    "unnecessary_mut_passed": "warn",
+    "wildcard_imports": "warn",
+}
+
+_STARNIX_RUSTC_LINTS = {
+    "deref_nullptr": "deny",
+    "invalid_value": "deny",
+    "mismatched_lifetime_syntaxes": "allow",
+    "missing_unsafe_on_extern": "warn",
+    "non_local_definitions": "allow",
+    "renamed_and_removed_lints": "allow",
+    "rustdoc::redundant_explicit_links": "allow",
+    "unknown_lints": "allow",
+    "unsafe_attr_outside_unsafe": "warn",
+    "unused_crate_dependencies": "warn",
+    "unused_must_use": "deny",
+}
+
+rust_lint_config(
+    name = "starnix_clippy_lints",
+    clippy = select({
+        "@platforms//cpu:riscv64": _STARNIX_CLIPPY_COMMON,
+        "//conditions:default": _STARNIX_CLIPPY_COMMON | {
+            "undocumented_unsafe_blocks": "warn",
+        },
+    }),
+    rustc = _STARNIX_RUSTC_LINTS,
+    visibility = ["//src/starnix:__subpackages__"],
 )
