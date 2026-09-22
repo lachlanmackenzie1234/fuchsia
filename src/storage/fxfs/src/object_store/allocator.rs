@@ -321,7 +321,7 @@ pub struct AllocatorKeyV32 {
 
 impl SortByU64 for AllocatorKey {
     fn get_leading_u64(&self) -> u64 {
-        self.device_range.end
+        self.device_range.end / crate::object_store::extent::MIN_BLOCK_SIZE
     }
 }
 

@@ -51,11 +51,9 @@
 // wasting padding bytes.  Note that the seek table can be absent from the file for small layer
 // files (but there will always be one block for the LayerInfo).
 //
-// The seek table consists of a little-endian u64 for every data block except for the first one. The
-// entries should be monotonically increasing, as they represent some mapping for how the keys for
-// the first item in each block would be predominantly sorted, and there may be duplicate entries.
-// There should be exactly as many seek blocks as are required to house one entry fewer than the
-// number of data blocks.
+// The seek table contains a little-endian u64 for each data block, recording the leading u64 of
+// that block's first key. Entries are in sorted order (duplicates are possible when an object
+// spans multiple blocks).
 
 use crate::drop_event::DropEvent;
 use crate::errors::FxfsError;
@@ -70,7 +68,10 @@ use crate::object_handle::{LayerObject, ObjectHandle, ReadObjectHandle, WriteByt
 use crate::object_store::caching_object_handle::{CHUNK_SIZE, CachedChunk, CachingObjectHandle};
 use crate::object_store::extent::MIN_BLOCK_SIZE;
 use crate::object_store::{DataObjectHandle, HandleOptions, ObjectStore};
-use crate::serialized_types::{LATEST_VERSION, Version, Versioned, VersionedLatest};
+use crate::serialized_types::serialized_key::{KeyDeserializer, compare_keys};
+use crate::serialized_types::{
+    LATEST_VERSION, OLD_KEY_SERIALIZATION_VERSION, Version, Versioned, VersionedLatest,
+};
 use anyhow::{Context, Error, anyhow, ensure};
 use async_trait::async_trait;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -160,6 +161,12 @@ struct BufferCursor<B> {
     pos: usize,
 }
 
+impl<B: LayerBuffer> BufferCursor<B> {
+    fn as_bytes(&self) -> &[u8] {
+        self.buffer.as_bytes_from(self.pos)
+    }
+}
+
 impl<B: LayerBuffer> std::io::Read for BufferCursor<B> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let to_read = self.buffer.read_at(self.pos, buf);
@@ -170,6 +177,8 @@ impl<B: LayerBuffer> std::io::Read for BufferCursor<B> {
 
 trait LayerBuffer {
     fn read_at(&self, pos: usize, buf: &mut [u8]) -> usize;
+
+    fn as_bytes_from(&self, pos: usize) -> &[u8];
 
     fn has_io_error(&self) -> bool {
         false
@@ -192,6 +201,10 @@ impl LayerBuffer for ChunkBuffer<'_> {
         }
         to_read
     }
+
+    fn as_bytes_from(&self, pos: usize) -> &[u8] {
+        self.chunk.as_ref().and_then(|c| c.get(pos..)).unwrap_or(&[])
+    }
 }
 
 struct SliceBuffer<'iter> {
@@ -206,6 +219,10 @@ impl LayerBuffer for SliceBuffer<'_> {
             buf[..to_read].copy_from_slice(&self.slice[pos..pos + to_read]);
         }
         to_read
+    }
+
+    fn as_bytes_from(&self, pos: usize) -> &[u8] {
+        self.slice.get(pos..).unwrap_or(&[])
     }
 
     fn has_io_error(&self) -> bool {
@@ -232,6 +249,12 @@ const MAX_SEEK_TABLE_SIZE: usize = 64 * 1024 * 1024;
 const PER_DATA_BLOCK_HEADER_SIZE: usize = 2;
 const PER_DATA_BLOCK_SEEK_ENTRY_SIZE: usize = 2;
 
+enum KeyState<K> {
+    None,
+    Deserialized(K),
+    InPlace,
+}
+
 // A key-only iterator, used while seeking through the tree.
 struct KeyOnlyIterator<'iter, K: Key, V: LayerValue, B> {
     // Allocated out of |layer|.
@@ -248,12 +271,11 @@ struct KeyOnlyIterator<'iter, K: Key, V: LayerValue, B> {
     // The number of items in the current block.
     item_count: u16,
 
-    // The current key.
-    key: Option<K>,
+    // The current key state.
+    key: KeyState<K>,
 
-    // Set by a wrapping iterator once the value has been deserialized, so the KeyOnlyIterator knows
-    // whether it is pointing at the next key or not.
-    value_deserialized: bool,
+    // The base value used for decoding keys in the current block.
+    current_block_base_u64: u64,
 
     _value_type: PhantomData<V>,
 }
@@ -272,7 +294,7 @@ impl<K: Key, V: LayerValue, B: LayerBuffer> KeyOnlyIterator<'_, K, V, B> {
     // invalid value.
     fn seek_to_block_item(&mut self, index: u16) -> Result<(), Error> {
         ensure!(index < self.item_count, FxfsError::OutOfRange);
-        if index == self.item_index && self.value_deserialized {
+        if index == self.item_index && matches!(self.key, KeyState::None) {
             // Fast-path when we are seeking in a linear manner, as is the case when advancing a
             // wrapping iterator that also deserializes the values.
             return Ok(());
@@ -314,25 +336,34 @@ impl<K: Key, V: LayerValue, B: LayerBuffer> KeyOnlyIterator<'_, K, V, B> {
             offset_in_block
         };
         self.item_index = index;
+        self.key = KeyState::None;
         self.buffer.pos = block_start + offset_in_block;
         Ok(())
     }
 
-    fn get(&self) -> Option<&K> {
-        self.key.as_ref()
-    }
-
     fn take_item(&mut self) -> Result<Option<Item<K, V>>, Error> {
-        let key = std::mem::take(&mut self.key);
-        if let Some(key) = key {
-            self.value_deserialized = true;
-            let value = V::deserialize_from_version(self.buffer.by_ref(), self.layer.version)
-                .map_err(|e| self.corruption_error(e))
-                .context("Corrupt layer (value)")?;
-            Ok(Some(Item { key, value }))
-        } else {
-            Ok(None)
-        }
+        let key = match std::mem::replace(&mut self.key, KeyState::None) {
+            KeyState::None => return Ok(None),
+            KeyState::InPlace => {
+                let (mut deserializer, key_len) =
+                    KeyDeserializer::new(self.buffer.as_bytes(), Some(self.current_block_base_u64))
+                        .map_err(|e| self.corruption_error(e))
+                        .context("Corrupt layer (key format)")?;
+                let key = K::deserialize_key_from(&mut deserializer)
+                    .map_err(|e| self.corruption_error(e))
+                    .context("Corrupt layer (key)")?;
+                if !deserializer.is_empty() {
+                    return Err(self.corruption_error("Trailing bytes in serialized key"));
+                }
+                self.buffer.pos += key_len;
+                key
+            }
+            KeyState::Deserialized(key) => key,
+        };
+        let value = V::deserialize_from_version(self.buffer.by_ref(), self.layer.version)
+            .map_err(|e| self.corruption_error(e))
+            .context("Corrupt layer (value)")?;
+        Ok(Some(Item { key, value }))
     }
 
     fn read_block_header(&mut self) -> Result<(), Error> {
@@ -344,27 +375,44 @@ impl<K: Key, V: LayerValue, B: LayerBuffer> KeyOnlyIterator<'_, K, V, B> {
                 self.layer.object_id, self.pos
             )));
         }
+        if PER_DATA_BLOCK_HEADER_SIZE
+            + (usize::from(self.item_count) - 1) * PER_DATA_BLOCK_SEEK_ENTRY_SIZE
+            >= self.layer.block_size.get() as usize
+        {
+            return Err(self.corruption_error("Block seek table overlaps header"));
+        }
         debug!(
             pos = self.pos,
             object_size = self.layer.data_offset() + self.layer.data_size,
             oid = self.layer.object_id;
             ""
         );
+        if self.layer.version > OLD_KEY_SERIALIZATION_VERSION {
+            let block_index = (self.pos - self.layer.data_offset()) / self.layer.block_size;
+            self.current_block_base_u64 = *self
+                .layer
+                .seek_table
+                .get(block_index as usize)
+                .ok_or_else(|| self.corruption_error("Block index out of bounds"))?;
+        }
         self.pos += self.layer.block_size;
         self.item_index = 0;
-        self.value_deserialized = true;
+        self.key = KeyState::None;
         Ok(())
     }
 
     fn deserialize_current_key(&mut self) -> Result<(), Error> {
         self.seek_to_block_item(self.item_index)?;
-        self.key = Some(
-            K::deserialize_from_version(self.buffer.by_ref(), self.layer.version)
-                .map_err(|e| self.corruption_error(e))
-                .context("Corrupt layer (key)")?,
-        );
+        self.key = if self.layer.version <= OLD_KEY_SERIALIZATION_VERSION {
+            KeyState::Deserialized(
+                K::deserialize_from_version(self.buffer.by_ref(), self.layer.version)
+                    .map_err(|e| self.corruption_error(e))
+                    .context("Corrupt layer (key)")?,
+            )
+        } else {
+            KeyState::InPlace
+        };
         self.item_index += 1;
-        self.value_deserialized = false;
         Ok(())
     }
 }
@@ -381,8 +429,8 @@ impl<'iter, K: Key, V: LayerValue> KeyOnlyIterator<'iter, K, V, ChunkBuffer<'ite
             pos,
             item_index: 0,
             item_count: 0,
-            key: None,
-            value_deserialized: false,
+            key: KeyState::None,
+            current_block_base_u64: 0,
             _value_type: PhantomData,
         }
     }
@@ -390,7 +438,7 @@ impl<'iter, K: Key, V: LayerValue> KeyOnlyIterator<'iter, K, V, ChunkBuffer<'ite
     async fn advance(&mut self) -> Result<(), Error> {
         if self.item_index >= self.item_count {
             if self.pos >= self.layer.data_offset() + self.layer.data_size {
-                self.key = None;
+                self.key = KeyState::None;
                 return Ok(());
             }
             if self.buffer.buffer.chunk.is_none() || CHUNK_SIZE.is_aligned(self.pos) {
@@ -412,7 +460,7 @@ impl<'iter, K: Key, V: LayerValue> KeyOnlyIterator<'iter, K, V, ChunkBuffer<'ite
     fn try_advance(&mut self) -> Result<bool, Error> {
         if self.item_index >= self.item_count {
             if self.pos >= self.layer.data_offset() + self.layer.data_size {
-                self.key = None;
+                self.key = KeyState::None;
                 return Ok(true);
             }
             if self.buffer.buffer.chunk.is_none() || CHUNK_SIZE.is_aligned(self.pos) {
@@ -442,8 +490,8 @@ impl<'iter, K: Key, V: LayerValue> KeyOnlyIterator<'iter, K, V, SliceBuffer<'ite
             pos,
             item_index: 0,
             item_count: 0,
-            key: None,
-            value_deserialized: false,
+            key: KeyState::None,
+            current_block_base_u64: 0,
             _value_type: PhantomData,
         }
     }
@@ -451,7 +499,7 @@ impl<'iter, K: Key, V: LayerValue> KeyOnlyIterator<'iter, K, V, SliceBuffer<'ite
     fn advance(&mut self) -> Result<(), Error> {
         if self.item_index >= self.item_count {
             if self.pos >= self.layer.data_offset() + self.layer.data_size {
-                self.key = None;
+                self.key = KeyState::None;
                 return Ok(());
             }
             self.buffer.pos = self.pos as usize;
@@ -517,26 +565,19 @@ impl<'iter, K: Key, V: LayerValue> LayerIterator<K, V>
     }
 }
 
-// Returns the size of the seek table in bytes.
-fn seek_table_size(num_data_blocks: u64) -> usize {
-    // The first data block doesn't have an entry.
-    let seek_table_entries = num_data_blocks.saturating_sub(1) as usize;
-    if seek_table_entries == 0 {
-        return 0;
-    }
-    let entry_size = std::mem::size_of::<u64>();
-    seek_table_entries * entry_size
-}
-
 async fn load_seek_table(
     object_handle: &(impl ReadObjectHandle + 'static),
     seek_table_offset: u64,
     num_data_blocks: u64,
+    version: Version,
 ) -> Result<Vec<u64>, Error> {
-    let seek_table_size = seek_table_size(num_data_blocks);
-    if seek_table_size == 0 {
-        return Ok(vec![]);
+    if num_data_blocks == 0 || version <= OLD_KEY_SERIALIZATION_VERSION {
+        // Ignore the seek table on older versions because AllocatorKey::get_leading_u64()
+        // changed from bytes to blocks.
+        return Ok(Vec::new());
     }
+
+    let seek_table_size = (num_data_blocks as usize) * std::mem::size_of::<u64>();
     if seek_table_size > MAX_SEEK_TABLE_SIZE {
         return Err(anyhow!(FxfsError::NotSupported)).context("Seek table too large");
     }
@@ -548,8 +589,6 @@ async fn load_seek_table(
     ensure!(bytes_read == seek_table_size, "Short read");
 
     let mut seek_table = Vec::with_capacity(num_data_blocks as usize);
-    // No entry for the first data block, assume a lower bound 0.
-    seek_table.push(0);
     let mut prev = 0;
     for chunk in buffer.subslice(0..seek_table_size).as_ptr_slice().iter_as::<[u8; 8]>() {
         let next = u64::from_le_bytes(chunk);
@@ -595,6 +634,43 @@ async fn load_bloom_filter<K: FuzzyHash>(
         layer_info.bloom_filter_seed,
         layer_info.bloom_filter_num_hashes,
     )?))
+}
+
+struct SearchKey<'a, K: Key> {
+    key: &'a K,
+    buf: Vec<u8>,
+    cached_base: Option<u64>,
+}
+
+impl<'a, K: Key> SearchKey<'a, K> {
+    fn new(key: &'a K) -> Self {
+        Self { key, buf: Vec::new(), cached_base: None }
+    }
+
+    fn compare<V: LayerValue, B: LayerBuffer>(
+        &mut self,
+        iter: &KeyOnlyIterator<'_, K, V, B>,
+    ) -> Result<Option<Ordering>, Error> {
+        match &iter.key {
+            KeyState::None => Ok(None),
+            KeyState::Deserialized(k) => Ok(Some(k.cmp_upper_bound(self.key))),
+            KeyState::InPlace => {
+                let base = iter.current_block_base_u64;
+                if self.key.get_leading_u64() < base {
+                    return Ok(Some(Ordering::Greater));
+                }
+                if self.cached_base != Some(base) {
+                    self.buf.clear();
+                    self.key.serialize_key_with_base_into(&mut self.buf, base);
+                    self.cached_base = Some(base);
+                }
+                Ok(Some(
+                    compare_keys(iter.buffer.as_bytes(), &self.buf)
+                        .map_err(|e| iter.corruption_error(e))?,
+                ))
+            }
+        }
+    }
 }
 
 impl<K: FuzzyHash> LayerData<K> {
@@ -677,7 +753,7 @@ impl<K: FuzzyHash> LayerData<K> {
 
         let seek_offset =
             block_size * (NUM_HEADER_BLOCKS + layer_info.num_data_blocks + bloom_filter_blocks);
-        let seek_table = load_seek_table(handle, seek_offset, layer_info.num_data_blocks)
+        let seek_table = load_seek_table(handle, seek_offset, layer_info.num_data_blocks, version)
             .await
             .context("Failed to load seek table")?;
 
@@ -708,15 +784,22 @@ macro_rules! seek_impl {
         };
         let first_data_block_index = $self.data_offset() / $self.data.block_size;
 
-        let (mut left_offset, mut right_offset) = {
+        let (mut left_offset, mut right_offset) = if $self.data.seek_table.is_empty() {
+            ($self.data_offset(), $self.data_offset() + $self.data.data_size)
+        } else {
             // We are searching for a range here, as multiple items can have the same value in
-            // this approximate search. Since the values used are the smallest in the associated
-            // block it means that if the value equals the target you should also search the
-            // one before it. The goal is for table[left] < target < table[right].
+            // this approximate search. Since the values in the seek table represent the first
+            // key in each block (ordered by cmp_upper_bound), if the value equals the target
+            // we must also search the block before it. The goal is for
+            // table[left] < target < table[right].
             let target = key.get_leading_u64();
-            // Because the first entry in the table is always 0, right_index will never be 0.
             let right_index =
                 $self.data.seek_table.as_slice().partition_point(|&x| x <= target) as u64;
+            if right_index == 0 {
+                let mut iterator = $self.key_only_iterator($self.data_offset());
+                iterator.advance()$(.$await)? .context("Initial seek advance")?;
+                return Ok(Iterator::new(iterator)?);
+            }
             // Since partition_point will find the index of the first place where the predicate
             // is false, we subtract 1 to get the index where it was last true.
             let left_index = $self.data.seek_table.as_slice()[..right_index as usize]
@@ -730,18 +813,14 @@ macro_rules! seek_impl {
         };
         let mut left = $self.key_only_iterator(left_offset);
         left.advance()$(.$await)? .context("Initial seek advance")?;
-        match left.get() {
-            None => return Ok(Iterator::new(left)?),
-            Some(left_key) => match left_key.cmp_upper_bound(key) {
-                Ordering::Greater => return Ok(Iterator::new(left)?),
-                Ordering::Equal => {
-                    if excluded {
-                        left.advance()$(.$await)??;
-                    }
-                    return Ok(Iterator::new(left)?);
-                }
-                Ordering::Less => {}
-            },
+        let mut search_key = SearchKey::new(key);
+        match search_key.compare(&left)? {
+            Some(Ordering::Less) => {}
+            Some(Ordering::Equal) if excluded => {
+                left.advance()$(.$await)??;
+                return Ok(Iterator::new(left)?);
+            }
+            _ => return Ok(Iterator::new(left)?),
         }
         let mut right = None;
         while right_offset - left_offset > $self.data.block_size {
@@ -750,8 +829,7 @@ macro_rules! seek_impl {
                 $self.data.block_size.align_down(left_offset + (right_offset - left_offset) / 2);
             let mut iterator = $self.key_only_iterator(mid_offset);
             iterator.advance()$(.$await)??;
-            let iter_key: &K = iterator.get().unwrap();
-            match iter_key.cmp_upper_bound(key) {
+            match search_key.compare(&iterator)?.context("Unexpected EOF")? {
                 Ordering::Greater => {
                     right_offset = mid_offset;
                     right = Some(iterator);
@@ -777,7 +855,7 @@ macro_rules! seek_impl {
             let mid_index = left_index + ((right_index - left_index) / 2);
             left.seek_to_block_item(mid_index).context("Read index offset for binary search")?;
             left.advance()$(.$await)??;
-            match left.get().unwrap().cmp_upper_bound(key) {
+            match search_key.compare(&left)?.context("Unexpected EOF")? {
                 Ordering::Greater => {
                     right_index = mid_index;
                 }
@@ -1135,6 +1213,7 @@ const_assert!(MAX_BLOCK_SIZE.size() <= u16::MAX as u64 + 1);
 
 pub struct PersistentLayerWriter<W: WriteBytes, K: Key, V: LayerValue> {
     writer: W,
+    version: Version,
     block_size: BlockSize,
     buf: Vec<u8>,
     buf_item_count: LayerWriterBufItemCount,
@@ -1174,6 +1253,7 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
         let seed: u64 = rand::random();
         Ok(Self {
             writer,
+            version,
             block_size,
             buf: Vec::new(),
             buf_item_count: LayerWriterBufItemCount(0),
@@ -1185,28 +1265,30 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
         })
     }
 
-    /// Writes 'buf[..len]' out as a block.
+    /// Writes `self.buf` out as a block.
     ///
     /// Blocks are fixed size, consisting of a 16-bit item count, data, zero padding
     /// and seek table at the end.
-    async fn write_block(&mut self, len: usize) -> Result<(), Error> {
+    async fn write_block(&mut self) -> Result<(), Error> {
         if *self.buf_item_count == 0 {
             return Ok(());
         }
         let seek_table_size = self.block_offsets.len() * PER_DATA_BLOCK_SEEK_ENTRY_SIZE;
         assert!(
-            PER_DATA_BLOCK_HEADER_SIZE + seek_table_size + len <= self.block_size.get() as usize
+            PER_DATA_BLOCK_HEADER_SIZE + seek_table_size + self.buf.len()
+                <= self.block_size.get() as usize
         );
         let mut cursor = std::io::Cursor::new(vec![0u8; self.block_size.get() as usize]);
         cursor.write_u16::<LittleEndian>(*self.buf_item_count)?;
-        cursor.write_all(self.buf.drain(..len).as_ref())?;
+        cursor.write_all(&self.buf)?;
         cursor.set_position(self.block_size - seek_table_size as u64);
         // Write the seek table. Entries are 2 bytes each and items are always at least 10.
         for &offset in &self.block_offsets {
             cursor.write_u16::<LittleEndian>(offset)?;
         }
         self.writer.write_bytes(cursor.get_ref()).await?;
-        debug!(item_count = *self.buf_item_count, byte_count = len; "wrote items");
+        debug!(item_count = *self.buf_item_count, byte_count = self.buf.len(); "wrote items");
+        self.buf.clear();
         *self.buf_item_count = 0;
         self.block_offsets.clear();
         Ok(())
@@ -1217,13 +1299,18 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
     // Note that the writer will be positioned to exactly the end of the seek table, not to the end
     // of a block.
     async fn write_seek_table(&mut self) -> Result<usize, Error> {
-        if self.block_keys.len() == 0 {
+        let keys = if self.version <= OLD_KEY_SERIALIZATION_VERSION {
+            self.block_keys.get(1..).unwrap_or(&[])
+        } else {
+            &self.block_keys
+        };
+        if keys.len() == 0 {
             return Ok(0);
         }
-        let size = self.block_keys.len() * std::mem::size_of::<u64>();
+        let size = keys.len() * std::mem::size_of::<u64>();
         self.buf.resize(size, 0);
         let mut len = 0;
-        for key in &self.block_keys {
+        for key in keys {
             LittleEndian::write_u64(&mut self.buf[len..len + std::mem::size_of::<u64>()], *key);
             len += std::mem::size_of::<u64>();
         }
@@ -1247,13 +1334,11 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
             bloom_filter_seed: self.bloom_filter.seed(),
             bloom_filter_num_hashes: self.bloom_filter.num_hashes(),
         };
-        let actual_len = {
-            let mut cursor = std::io::Cursor::new(&mut self.buf);
-            layer_info.serialize_into(&mut cursor)?;
-            let layer_info_len = cursor.position();
-            cursor.write_u64::<LittleEndian>(layer_info_len)?;
-            cursor.position() as usize
-        };
+        self.buf.clear();
+        layer_info.serialize_into(&mut self.buf)?;
+        let layer_info_len = self.buf.len() as u64;
+        self.buf.write_u64::<LittleEndian>(layer_info_len)?;
+        let actual_len = self.buf.len();
 
         // We want the LayerInfo to be at the end of the last block.  That might require creating a
         // new block if we don't have enough room.
@@ -1263,9 +1348,11 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
             block_size + avail_in_block - actual_len
         } else {
             avail_in_block - actual_len
-        } as u64;
-        self.writer.skip(to_skip).await?;
-        self.writer.write_bytes(&self.buf[..actual_len]).await?;
+        };
+        self.buf.resize(to_skip + actual_len, 0);
+        self.buf.copy_within(0..actual_len, to_skip);
+        self.buf[..to_skip].fill(0);
+        self.writer.write_bytes(&self.buf).await?;
         Ok(())
     }
 
@@ -1292,8 +1379,18 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
         &mut self.bloom_filter
     }
 
+    fn serialize_item(&mut self, item: ItemRef<'_, K, V>) -> Result<(), Error> {
+        if self.version <= OLD_KEY_SERIALIZATION_VERSION {
+            item.key.serialize_into(&mut self.buf)?;
+        } else {
+            item.key.serialize_key_with_base_into(&mut self.buf, *self.block_keys.last().unwrap());
+        }
+        item.value.serialize_into(&mut self.buf)?;
+        Ok(())
+    }
+
     fn data_blocks(&self) -> usize {
-        if self.item_count == 0 { 0 } else { self.block_keys.len() + 1 }
+        self.block_keys.len()
     }
 }
 
@@ -1303,8 +1400,13 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
     async fn write(&mut self, item: ItemRef<'_, K, V>) -> Result<(), Error> {
         // Note the length before we write this item.
         let len = self.buf.len();
-        item.key.serialize_into(&mut self.buf)?;
-        item.value.serialize_into(&mut self.buf)?;
+        // Each data block's keys are delta-encoded relative to the leading u64 of that block's
+        // first key (stored in `block_keys`). Record the base key for the first block here before
+        // serializing; for subsequent blocks, `block_keys` is updated below when a block overflows.
+        if self.block_keys.is_empty() {
+            self.block_keys.push(item.key.get_leading_u64());
+        }
+        self.serialize_item(item)?;
 
         let mut added_offset = false;
         // Never record the first item. The offset is always the same.
@@ -1325,10 +1427,12 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
                 // on the next block and have a known offset there.
                 self.block_offsets.pop();
             }
-            self.write_block(len).await?;
+            self.buf.truncate(len);
+            self.write_block().await?;
 
-            // Note that this will not insert an entry for the first data block.
+            // Start a new block with `item` as its first entry and re-serialize using the new base.
             self.block_keys.push(item.key.get_leading_u64());
+            self.serialize_item(item)?;
         }
 
         self.bloom_filter.insert(&item.key);
@@ -1338,7 +1442,7 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
     }
 
     async fn complete(mut self) -> Result<u64, Error> {
-        self.write_block(self.buf.len()).await?;
+        self.write_block().await?;
         let data_blocks = self.data_blocks() as u64;
         let bloom_filter_len = self.write_bloom_filter().await?;
         let seek_table_len = self.write_seek_table().await?;
@@ -1389,10 +1493,11 @@ mod tests {
         LayerObject, ObjectHandle, ReadObjectHandle, WriteBytes, WriteObjectHandle,
     };
     use crate::object_store::AttributeId;
-    use crate::object_store::extent::MIN_BLOCK_SIZE;
+    use crate::object_store::allocator::AllocatorKey;
+    use crate::object_store::extent::{Extent, MIN_BLOCK_SIZE};
     use crate::object_store::object_record::ObjectKey;
     use crate::round::round_up;
-    use crate::serialized_types::{LATEST_VERSION, Version};
+    use crate::serialized_types::OLD_KEY_SERIALIZATION_VERSION;
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;
     use anyhow::Error;
@@ -1970,13 +2075,15 @@ mod tests {
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         let current_version_handle =
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
+        // Make all values take up maximum space for varint encoding.
+        let initial_value = u32::MAX as u64 + 1;
         {
             let mut old_version_writer =
                 PersistentLayerWriter::<_, TestKey, u64>::new_with_version(
                     Writer::new(&old_version_handle).await,
                     ITEM_COUNT as usize,
                     BLOCK_SIZE,
-                    Version { major: LATEST_VERSION.major - 1, minor: 0 },
+                    OLD_KEY_SERIALIZATION_VERSION,
                 )
                 .await
                 .expect("writer new");
@@ -1988,8 +2095,6 @@ mod tests {
             .await
             .expect("writer new");
 
-            // Make all values take up maximum space for varint encoding.
-            let initial_value = u32::MAX as u64 + 1;
             for i in 0..ITEM_COUNT {
                 old_version_writer
                     .write(
@@ -2018,6 +2123,102 @@ mod tests {
             .expect("open failed");
         assert!(!old_layer.has_bloom_filter());
         assert!(current_layer.has_bloom_filter());
+
+        // Verify seeking works in both layers (including before the first block's key).
+        let iter = old_layer.seek(Bound::Included(&TestKey(0..0))).await.expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key.0.start, initial_value);
+
+        let iter = current_layer.seek(Bound::Included(&TestKey(0..0))).await.expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key.0.start, initial_value);
+
+        let iter = old_layer.seek(Bound::Unbounded).await.expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key.0.start, initial_value);
+
+        let iter = current_layer.seek(Bound::Unbounded).await.expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key.0.start, initial_value);
+
+        let target_val = initial_value + ITEM_COUNT / 2;
+        let iter = old_layer
+            .seek(Bound::Included(&TestKey(target_val..target_val)))
+            .await
+            .expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key.0.start, target_val);
+
+        let iter = current_layer
+            .seek(Bound::Included(&TestKey(target_val..target_val)))
+            .await
+            .expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key.0.start, target_val);
+    }
+
+    #[fuchsia::test]
+    async fn test_allocator_key_older_version_seek() {
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
+        const ITEM_COUNT: u64 = 100;
+
+        let old_version_handle =
+            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
+        let current_version_handle =
+            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
+        let step = MIN_BLOCK_SIZE.get();
+        {
+            let mut old_version_writer =
+                PersistentLayerWriter::<_, AllocatorKey, i64>::new_with_version(
+                    Writer::new(&old_version_handle).await,
+                    ITEM_COUNT as usize,
+                    BLOCK_SIZE,
+                    OLD_KEY_SERIALIZATION_VERSION,
+                )
+                .await
+                .expect("writer new");
+            let mut current_version_writer = PersistentLayerWriter::<_, AllocatorKey, i64>::new(
+                Writer::new(&current_version_handle).await,
+                ITEM_COUNT as usize,
+                BLOCK_SIZE,
+            )
+            .await
+            .expect("writer new");
+
+            for i in 0..ITEM_COUNT {
+                let key = AllocatorKey { device_range: Extent(i * step..(i + 1) * step) };
+                old_version_writer
+                    .write(Item::new(key.clone(), i as i64).as_item_ref())
+                    .await
+                    .expect("write failed");
+                current_version_writer
+                    .write(Item::new(key, i as i64).as_item_ref())
+                    .await
+                    .expect("write failed");
+            }
+
+            old_version_writer.complete().await.expect("flush failed");
+            current_version_writer.complete().await.expect("flush failed");
+        }
+
+        let old_layer = PersistentLayer::<AllocatorKey, i64>::open(old_version_handle)
+            .await
+            .expect("open failed");
+        let current_layer = PersistentLayer::<AllocatorKey, i64>::open(current_version_handle)
+            .await
+            .expect("open failed");
+
+        let target_idx = ITEM_COUNT / 2;
+        let target_key =
+            AllocatorKey { device_range: Extent(target_idx * step..(target_idx + 1) * step) };
+
+        let iter = old_layer.seek(Bound::Included(&target_key)).await.expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key, &target_key);
+
+        let iter = current_layer.seek(Bound::Included(&target_key)).await.expect("seek failed");
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key, &target_key);
     }
 
     #[fuchsia::test]
@@ -2035,7 +2236,7 @@ mod tests {
             )
             .await
             .expect("writer new");
-            for i in 0..ITEM_COUNT {
+            for i in 1..ITEM_COUNT {
                 writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
             }
             writer.complete().await.expect("flush failed");
@@ -2043,7 +2244,9 @@ mod tests {
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
         assert!(!layer.has_bloom_filter());
 
-        for i in 0..ITEM_COUNT {
+        assert_eq!(layer.key_exists(&0).await.expect("key_exists failed"), Existence::Missing);
+        assert_eq!(layer.key_exists(&1).await.expect("key_exists failed"), Existence::Missing);
+        for i in 1..ITEM_COUNT {
             assert_eq!(
                 layer.key_exists(&(i * 2)).await.expect("key_exists failed"),
                 Existence::Exists

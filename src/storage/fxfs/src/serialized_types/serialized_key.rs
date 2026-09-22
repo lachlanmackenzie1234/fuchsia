@@ -543,6 +543,13 @@ mod tests {
         // Compare all pairs. We compare against `cmp_upper_bound` which is now a total order
         // for ranges, matching serialization order.
         for i in 0..keys.len() {
+            let base = crate::lsm_tree::types::SortByU64::get_leading_u64(&keys[i]);
+            let mut buf_base = Vec::new();
+            keys[i].serialize_key_with_base_into(&mut buf_base, base);
+            let (mut deser, _) = KeyDeserializer::new(&buf_base, Some(base)).unwrap();
+            assert_eq!(AllocatorKey::deserialize_key_from(&mut deser).unwrap(), keys[i]);
+            assert!(deser.is_empty());
+
             for j in 0..keys.len() {
                 let mut buf_a = Vec::new();
                 keys[i].serialize_key_with_base_into(&mut buf_a, 0);
