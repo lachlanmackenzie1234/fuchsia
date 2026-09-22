@@ -822,6 +822,11 @@
                 "NetdeviceTest.EthtoolGetTSInfo",
 
                 // socket_netlink_route_test
+                // TODO(https://fxbug.dev/564917704)
+                "NetlinkRouteTest.BridgeAddUnnamed",
+                "NetlinkRouteTest.VethAddUnnamed",
+                "NetlinkRouteTest.VethAddUnnamedPeer",
+
                 // TODO(https://fxbug.dev/564606567)
                 "NetlinkRouteTest.VethAddRefusedPeerNetnsLeavesNothing",
 
