@@ -763,14 +763,19 @@ impl Type {
                     Err(format!("{id2:?} Resource already released for index {index}"))
                 }
             }
-            (_, Type::Releasable { inner, .. }) => inner.match_parameter_type(
-                verification_context,
-                context,
-                helper_name,
-                parameter_type,
-                index,
-                next,
-            ),
+            (_, Type::Releasable { id, inner }) => {
+                if !next.resources.contains(id) {
+                    return Err(format!("Resource already released for index {index}"));
+                }
+                inner.match_parameter_type(
+                    verification_context,
+                    context,
+                    helper_name,
+                    parameter_type,
+                    index,
+                    next,
+                )
+            }
             (Type::AnyParameter, _) => Ok(()),
 
             _ => Err(format!("incorrect parameter for index {index}")),
@@ -956,16 +961,7 @@ pub fn verify_program(
         context.set_reg((i + 1) as u8, t.clone()).map_err(EbpfError::ProgramVerifyError)?;
     }
     let states = vec![context];
-    let mut verification_context = VerificationContext {
-        calling_context,
-        logger,
-        states,
-        code: &code,
-        counter: 0,
-        iteration: 0,
-        terminating_contexts: Default::default(),
-        struct_access_instructions: Default::default(),
-    };
+    let mut verification_context = VerificationContext::new(calling_context, logger, &code, states);
     while let Some(mut context) = verification_context.states.pop() {
         if let Some(terminating_contexts) =
             verification_context.terminating_contexts.get(&context.pc)
@@ -1036,6 +1032,24 @@ struct VerificationContext<'a> {
 }
 
 impl<'a> VerificationContext<'a> {
+    fn new(
+        calling_context: CallingContext,
+        logger: &'a mut dyn VerifierLogger,
+        code: &'a [EbpfInstruction],
+        states: Vec<ComputationContext>,
+    ) -> Self {
+        Self {
+            calling_context,
+            logger,
+            states,
+            code,
+            counter: 0,
+            iteration: 0,
+            terminating_contexts: Default::default(),
+            struct_access_instructions: Default::default(),
+        }
+    }
+
     fn next_id(&mut self) -> MemoryId {
         let id = self.counter;
         self.counter += 1;
@@ -1692,6 +1706,14 @@ impl ComputationContext {
                 let buffer_size = size.size(self)?;
                 let id = verification_context.next_id();
                 Ok(Type::PtrToMemory { id, offset: 0.into(), buffer_size })
+            }
+            Type::PtrToMemory { id, offset, buffer_size } => {
+                let id = id.prepended(verification_context.next_id());
+                Ok(Type::PtrToMemory { id, offset: *offset, buffer_size: *buffer_size })
+            }
+            Type::PtrToStruct { id, offset, descriptor } => {
+                let id = id.prepended(verification_context.next_id());
+                Ok(Type::PtrToStruct { id, offset: *offset, descriptor: descriptor.clone() })
             }
             t => Ok(t.clone()),
         }
@@ -4805,5 +4827,112 @@ mod tests {
         )
         .unwrap();
         assert_eq!(context.array_bounds.get(&id), Some(&22));
+    }
+
+    fn make_verification_context<'a>(
+        logger: &'a mut dyn VerifierLogger,
+    ) -> VerificationContext<'a> {
+        VerificationContext::new(CallingContext::default(), logger, &[], vec![])
+    }
+
+    /// Verifies that multiple invocations returning PtrToMemory receive
+    /// distinct MemoryIds to prevent ASLR pointer arithmetic between separate
+    /// allocations, while still matching the static parameter templates.
+    #[test]
+    fn test_resolve_return_value_unique_ids() {
+        let mut logger = NullVerifierLogger;
+        let mut verification_context = make_verification_context(&mut logger);
+        let comp_ctx = ComputationContext::default();
+
+        let static_id = MemoryId::from_raw(42);
+        let ret_template =
+            Type::PtrToMemory { id: static_id.clone(), offset: 0.into(), buffer_size: 64 };
+
+        let mut next1 = ComputationContext::default();
+        let t1 = comp_ctx
+            .resolve_return_value(&mut verification_context, &ret_template, &mut next1, false)
+            .unwrap();
+        let mut next2 = ComputationContext::default();
+        let t2 = comp_ctx
+            .resolve_return_value(&mut verification_context, &ret_template, &mut next2, false)
+            .unwrap();
+
+        assert_ne!(t1, t2);
+        let (Type::PtrToMemory { id: id1, .. }, Type::PtrToMemory { id: id2, .. }) = (&t1, &t2)
+        else {
+            panic!("Expected PtrToMemory");
+        };
+        assert_ne!(id1, id2);
+        assert!(static_id.matches(id1));
+        assert!(static_id.matches(id2));
+    }
+
+    /// Verifies that multiple releasable allocations are tracked individually
+    /// in resources, releasing one does not remove the other, and passing a
+    /// released resource to a helper parameter is rejected.
+    #[test]
+    fn test_resolve_return_value_releasable_resource_tracking() {
+        let mut logger = NullVerifierLogger;
+        let mut verification_context = make_verification_context(&mut logger);
+        let comp_ctx = ComputationContext::default();
+
+        let static_id = MemoryId::from_raw(99);
+        let releasable_template = Type::ReleasableParameter {
+            id: static_id.clone(),
+            inner: Box::new(Type::PtrToMemory {
+                id: static_id.clone(),
+                offset: 0.into(),
+                buffer_size: 64,
+            }),
+        };
+
+        let mut next = ComputationContext::default();
+        let t1 = comp_ctx
+            .resolve_return_value(&mut verification_context, &releasable_template, &mut next, false)
+            .unwrap();
+        let t2 = comp_ctx
+            .resolve_return_value(&mut verification_context, &releasable_template, &mut next, false)
+            .unwrap();
+
+        assert_eq!(next.resources.len(), 2);
+        let (Type::Releasable { id: id1, .. }, Type::Releasable { id: id2, .. }) = (&t1, &t2)
+        else {
+            panic!("Expected Releasable");
+        };
+        assert_ne!(id1, id2);
+        assert!(next.resources.contains(id1));
+        assert!(next.resources.contains(id2));
+
+        // Release one
+        let mut next_after_free = next.clone();
+        t1.match_parameter_type(
+            &verification_context,
+            &comp_ctx,
+            "test_free",
+            &Type::ReleaseParameter { id: static_id.clone() },
+            0,
+            &mut next_after_free,
+        )
+        .unwrap();
+        assert_eq!(next_after_free.resources.len(), 1);
+        assert!(!next_after_free.resources.contains(id1));
+        assert!(next_after_free.resources.contains(id2));
+
+        // Passing released t1 to general helper must fail
+        let mut next_uaf = next_after_free.clone();
+        let err = t1.match_parameter_type(
+            &verification_context,
+            &comp_ctx,
+            "test_helper",
+            &Type::MemoryParameter {
+                size: MemoryParameterSize::Value(64),
+                input: true,
+                output: false,
+            },
+            0,
+            &mut next_uaf,
+        );
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err(), "Resource already released for index 0");
     }
 }
