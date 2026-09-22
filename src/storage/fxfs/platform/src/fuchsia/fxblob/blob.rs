@@ -258,7 +258,7 @@ impl FxBlob {
                 AttributeId::DATA,
             )])
             .await;
-        self.handle.read_unchecked(AttributeId::DATA, offset, buf, &guard).await
+        self.handle.read_aligned_unchecked(AttributeId::DATA, offset, buf, &guard).await
     }
 }
 

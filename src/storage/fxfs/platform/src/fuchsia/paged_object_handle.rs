@@ -569,7 +569,7 @@ impl PagedObjectHandle {
 
     pub async fn read_uncached(&self, range: std::ops::Range<u64>) -> Result<Buffer<'_>, Error> {
         let mut buffer = self.handle.allocate_buffer((range.end - range.start) as usize).await;
-        let read = self.handle.read(range.start, buffer.as_mut()).await?;
+        let read = self.handle.read_aligned(range.start, buffer.as_mut()).await?;
         buffer.subslice_mut(read..).fill(0);
 
         #[cfg(test)]

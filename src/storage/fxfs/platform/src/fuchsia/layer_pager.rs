@@ -116,8 +116,8 @@ impl ObjectHandle for PagedLayerObject {
 
 #[async_trait]
 impl ReadObjectHandle for PagedLayerObject {
-    async fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
-        self.handle.read(offset, buf).await
+    async fn read_aligned(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+        self.handle.read_aligned(offset, buf).await
     }
 
     fn get_size(&self) -> u64 {

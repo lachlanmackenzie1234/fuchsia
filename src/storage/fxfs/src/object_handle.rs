@@ -59,9 +59,14 @@ pub struct ObjectProperties {
 
 #[async_trait]
 pub trait ReadObjectHandle: ObjectHandle {
-    /// Fills |buf| with up to |buf.len()| bytes read from |offset| on the underlying device.
-    /// |offset| and |buf| must both be block-aligned.
-    async fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error>;
+    /// Fills `buf` with bytes read from `offset` on the underlying device.
+    ///
+    /// Both `offset` and `buf.len()` must be aligned to the object's `block_size()`.
+    ///
+    /// Returns the number of bytes read. If `offset >= size`, returns 0. Holes/sparse extents
+    /// within the read range are zero-filled. Callers should not make any assumptions about the
+    /// contents of the buffer past the returned read amount.
+    async fn read_aligned(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error>;
 
     /// Returns the size of the object.
     fn get_size(&self) -> u64;
@@ -147,8 +152,8 @@ impl<T: ObjectHandle + ?Sized> ObjectHandle for Arc<T> {
 
 #[async_trait]
 impl<T: ReadObjectHandle + ?Sized> ReadObjectHandle for Arc<T> {
-    async fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
-        (**self).read(offset, buf).await
+    async fn read_aligned(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+        (**self).read_aligned(offset, buf).await
     }
 
     fn get_size(&self) -> u64 {
@@ -195,8 +200,8 @@ impl<T: ObjectHandle + ?Sized> ObjectHandle for Box<T> {
 
 #[async_trait]
 impl<T: ReadObjectHandle + ?Sized> ReadObjectHandle for Box<T> {
-    async fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
-        (**self).read(offset, buf).await
+    async fn read_aligned(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+        (**self).read_aligned(offset, buf).await
     }
 
     fn get_size(&self) -> u64 {

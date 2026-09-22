@@ -306,7 +306,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
             let mut offset = 0;
             while offset < file_size {
                 let actual = handle
-                    .read(offset as u64, io_buf.as_mut())
+                    .read_aligned(offset as u64, io_buf.as_mut())
                     .await
                     .map_err(|e| e.context(format!("Failed to read at offset: {}", offset)))?;
                 offset += actual;
@@ -918,7 +918,7 @@ mod tests {
     use crate::fuchsia::pager::PagerBacked;
     use crate::fuchsia::testing::{TestFixture, TestFixtureOptions, open_file_checked};
     use crate::fuchsia::volume::FxVolume;
-    use anyhow::Error;
+    use anyhow::{Error, ensure};
     use async_trait::async_trait;
     use delivery_blob::CompressionMode;
     use event_listener::{Event, EventListener};
@@ -927,6 +927,7 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_hash::Hash;
     use fuchsia_sync::Mutex;
+    use fxfs::errors::FxfsError;
     use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
     use fxfs::object_store::object_record::ObjectItem;
     use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
@@ -1045,7 +1046,14 @@ mod tests {
 
     #[async_trait]
     impl ReadObjectHandle for FakeReaderWriter {
-        async fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+        async fn read_aligned(
+            &self,
+            offset: u64,
+            buf: MutableBufferRef<'_>,
+        ) -> Result<usize, Error> {
+            let block_size = self.block_size();
+            ensure!(block_size.is_aligned(offset), FxfsError::InvalidArgs);
+            ensure!(block_size.is_aligned(buf.len() as u64), FxfsError::InvalidArgs);
             let delay = self.inner.lock().delays.pop();
             if let Some(delay) = delay {
                 delay.await;

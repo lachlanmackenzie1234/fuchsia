@@ -581,12 +581,15 @@ async fn load_seek_table(
     if seek_table_size > MAX_SEEK_TABLE_SIZE {
         return Err(anyhow!(FxfsError::NotSupported)).context("Seek table too large");
     }
-    let mut buffer = object_handle.allocate_buffer(seek_table_size).await;
+    let aligned_size =
+        object_handle.block_size().align_up(seek_table_size as u64).ok_or(FxfsError::TooBig)?
+            as usize;
+    let mut buffer = object_handle.allocate_buffer(aligned_size).await;
     let bytes_read = object_handle
-        .read(seek_table_offset, buffer.as_mut())
+        .read_aligned(seek_table_offset, buffer.as_mut())
         .await
         .context("Reading seek table blocks")?;
-    ensure!(bytes_read == seek_table_size, "Short read");
+    ensure!(bytes_read >= seek_table_size, "Short read");
 
     let mut seek_table = Vec::with_capacity(num_data_blocks as usize);
     let mut prev = 0;
@@ -617,13 +620,17 @@ async fn load_bloom_filter<K: FuzzyHash>(
     if layer_info.bloom_filter_size_bytes > MAX_BLOOM_FILTER_SIZE {
         return Err(anyhow!(FxfsError::NotSupported)).context("Bloom filter too large");
     }
-    let mut buffer = handle.allocate_buffer(layer_info.bloom_filter_size_bytes).await;
+    let aligned_size = handle
+        .block_size()
+        .align_up(layer_info.bloom_filter_size_bytes as u64)
+        .ok_or(FxfsError::TooBig)? as usize;
+    let mut buffer = handle.allocate_buffer(aligned_size).await;
     let reads = FuturesUnordered::new();
     let mut offset = bloom_filter_offset;
     for chunk in buffer.as_mut().chunks_mut(BLOOM_FILTER_READ_CHUNK_SIZE) {
         let chunk_len = chunk.len() as u64;
         reads.push(async move {
-            handle.read(offset, chunk).await.context("Failed to read")?;
+            handle.read_aligned(offset, chunk).await.context("Failed to read")?;
             Ok::<(), Error>(())
         });
         offset += chunk_len;
@@ -677,7 +684,7 @@ impl<K: FuzzyHash> LayerData<K> {
     async fn open(handle: &Arc<dyn LayerObject>) -> Result<Self, Error> {
         let handle_block_size = handle.block_size();
         let mut buffer = handle.allocate_buffer(handle_block_size.get() as usize).await;
-        handle.read(0, buffer.as_mut()).await.context("Failed to read first block")?;
+        handle.read_aligned(0, buffer.as_mut()).await.context("Failed to read first block")?;
         let mut reader = buffer.as_ptr_slice();
         let version = Version::deserialize_from(&mut reader)?;
 
@@ -711,7 +718,7 @@ impl<K: FuzzyHash> LayerData<K> {
                 .ok_or(FxfsError::Inconsistent)
                 .context("Layer file unexpectedly short")?;
             handle
-                .read(last_block_offset, buffer.subslice_mut(0..bs))
+                .read_aligned(last_block_offset, buffer.subslice_mut(0..bs))
                 .await
                 .context("Failed to read layer info")?;
             let layer_info_len =
@@ -2389,8 +2396,12 @@ mod tests {
 
     #[async_trait]
     impl ReadObjectHandle for SliceLayerObject {
-        async fn read(&self, offset: u64, buf: MutableBufferRef<'_>) -> Result<usize, Error> {
-            self.handle.read(offset, buf).await
+        async fn read_aligned(
+            &self,
+            offset: u64,
+            buf: MutableBufferRef<'_>,
+        ) -> Result<usize, Error> {
+            self.handle.read_aligned(offset, buf).await
         }
         fn get_size(&self) -> u64 {
             self.handle.get_size()
@@ -2435,7 +2446,7 @@ mod tests {
 
         let size = handle.get_size() as usize;
         let mut buf = handle.allocate_buffer(size).await;
-        handle.read(0, buf.as_mut()).await.expect("read failed");
+        handle.read_aligned(0, buf.as_mut()).await.expect("read failed");
         let slice = buf.subslice(..).to_vec();
         drop(buf);
         let slice_obj = Arc::new(SliceLayerObject {
@@ -2537,7 +2548,7 @@ mod tests {
 
         let size = handle.get_size() as usize;
         let mut buf = handle.allocate_buffer(size).await;
-        handle.read(0, buf.as_mut()).await.expect("read failed");
+        handle.read_aligned(0, buf.as_mut()).await.expect("read failed");
         let slice = buf.subslice(..).to_vec();
         drop(buf);
         let slice_obj = Arc::new(SliceLayerObject {

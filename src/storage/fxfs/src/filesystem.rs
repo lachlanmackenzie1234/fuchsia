@@ -1840,7 +1840,8 @@ mod tests {
                 {
                     // Check it has the contents we expect.
                     let mut buffer = test_file.allocate_buffer(4096).await;
-                    let bytes = test_file.read(0, buffer.as_mut()).await.expect("read failed");
+                    let bytes =
+                        test_file.read_aligned(0, buffer.as_mut()).await.expect("read failed");
                     if bytes == 4096 {
                         let expected = [0xed; 4096];
                         assert_eq!(buffer.to_vec(), expected);
@@ -1911,7 +1912,7 @@ mod tests {
                     .expect("open_object failed");
                     let mut buffer = test_file.allocate_buffer(4096).await;
                     assert_eq!(
-                        test_file.read(0, buffer.as_mut()).await.expect("read failed"),
+                        test_file.read_aligned(0, buffer.as_mut()).await.expect("read failed"),
                         4096
                     );
                     let expected = [0x37; 4096];
@@ -2219,7 +2220,7 @@ mod tests {
                 .expect("open failed");
             let mut buffer = test_file.allocate_buffer(8192).await;
             assert_eq!(
-                test_file.read(0, buffer.as_mut()).await.expect("read failed"),
+                test_file.read_aligned(0, buffer.as_mut()).await.expect("read failed"),
                 8192,
                 "short read"
             );
@@ -2321,7 +2322,7 @@ mod tests {
                 .expect("open failed");
         let mut read_buf =
             test_file.allocate_buffer(EXISTING_FILE_RANGE.length().unwrap() as usize).await;
-        test_file.read(0, read_buf.as_mut()).await.expect("read failed");
+        test_file.read_aligned(0, read_buf.as_mut()).await.expect("read failed");
         let data = read_buf.to_vec();
         assert_eq!(data, [0xf0; 4096]);
         fs.close().await.expect("closed");

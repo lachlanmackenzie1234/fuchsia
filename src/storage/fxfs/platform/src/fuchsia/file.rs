@@ -246,8 +246,14 @@ impl FxFile {
         self.handle.uncached_handle().is_allocated(start_offset).await.map_err(map_to_status)
     }
 
-    // TODO(https://fxbug.dev/42171261): might be better to have a cached/uncached mode for file and call
-    // this when in uncached mode
+    /// Writes `content` to the file at `offset` directly through the uncached handle, bypassing the
+    /// pager cache.
+    ///
+    /// Both `offset` and `content.len()` must be block-aligned (`self.get_block_size()`). If the
+    /// write extends beyond the current end of the file, new extents are allocated and the file
+    /// size is grown to `offset + content.len()`.
+    // TODO(https://fxbug.dev/42171261): Might be better to have a cached/uncached mode for file and
+    // call this when in uncached mode.
     pub async fn write_at_uncached(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
         let mut buf = self.handle.uncached_handle().allocate_buffer(content.len()).await;
         buf.copy_from_slice(content);
@@ -264,19 +270,25 @@ impl FxFile {
         Ok(content.len() as u64)
     }
 
-    // TODO(https://fxbug.dev/42171261): might be better to have a cached/uncached mode for file and call
-    // this when in uncached mode
-    pub async fn read_at_uncached(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
-        let mut buf = self.handle.uncached_handle().allocate_buffer(buffer.len()).await;
-        buf.fill(0);
-        let bytes_read = self
-            .handle
-            .uncached_handle()
-            .read(offset, buf.as_mut())
-            .await
-            .map_err(map_to_status)?;
-        buf.copy_to_slice(buffer);
-        Ok(bytes_read as u64)
+    /// Reads `length` bytes from the file starting at `offset` directly from the uncached handle,
+    /// bypassing the pager cache.
+    ///
+    /// Both `offset` and `length` must be block-aligned (`self.get_block_size()`). Any portion of
+    /// the requested range beyond the end of the file (or in unallocated ranges) is zero-filled in
+    /// the returned buffer.
+    // TODO(https://fxbug.dev/42171261): Might be better to have a cached/uncached mode for file and
+    // call this when in uncached mode.
+    pub async fn read_at_uncached(
+        &self,
+        offset: u64,
+        length: usize,
+    ) -> Result<buffer::Buffer<'_>, Status> {
+        let block_size = self.get_block_size();
+        if !block_size.is_aligned(offset) || !block_size.is_aligned(length as u64) {
+            return Err(Status::INVALID_ARGS);
+        }
+        let end = offset.checked_add(length as u64).ok_or(Status::INVALID_ARGS)?;
+        self.handle.read_uncached(offset..end).await.map_err(map_to_status)
     }
 
     pub fn get_size_uncached(&self) -> u64 {
