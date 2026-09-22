@@ -146,6 +146,7 @@ bazel2gn_verification_targets = [
   "//src/lib/injectable-time:verify_bazel2gn",
   "//src/lib/line_input:verify_bazel2gn",
   "//src/lib/mundane:verify_bazel2gn",
+  "//src/lib/shared-buffer:verify_bazel2gn",
   "//src/lib/structured_ui:verify_bazel2gn",
   "//src/lib/tempfile-ext:verify_bazel2gn",
   "//src/lib/test_util:verify_bazel2gn",
