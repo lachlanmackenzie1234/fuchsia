@@ -582,7 +582,7 @@ _NORMAL_DEPENDENCIES = {
             "vk-sys": Label("//third_party/rust_crates/vendor/vk-sys-0.7.0:vk_sys"),
             "x509-cert": Label("//third_party/rust_crates/vendor/x509-cert-0.3.0:x509_cert"),
             "x509_cert_0_2_5": Label("//third_party/rust_crates/vendor/x509-cert-0.2.5:x509_cert"),
-            "zeroize": Label("//third_party/rust_crates/vendor/zeroize-1.8.1:zeroize"),
+            "zeroize": Label("//third_party/rust_crates/vendor/zeroize-1.9.0:zeroize"),
         },
     },
     "third_party/rust_crates/forks/tuf-0.3.0-beta14": {

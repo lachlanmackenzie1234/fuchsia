@@ -2791,15 +2791,15 @@ group("zerocopy-0.8.48") {
 
 if (current_os == "fuchsia") {
   group("zeroize") {
-    public_deps = [ ":zeroize-v1_8_1" ]
+    public_deps = [ ":zeroize-v1_9_0" ]
 
     visibility = zeroize_visibility
   }
 }
 
 if (current_os == "fuchsia") {
-  group("zeroize-1.8.1") {
-    public_deps = [ ":zeroize-v1_8_1" ]
+  group("zeroize-1.9.0") {
+    public_deps = [ ":zeroize-v1_9_0" ]
 
     visibility = zeroize_visibility
   }
@@ -7129,7 +7129,7 @@ rustc_library("crypto-bigint-v0_4_9") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":rand_core-v0_6_4" ]
   deps += [ ":subtle-v2_6_1" ]
@@ -7169,7 +7169,7 @@ rustc_library("crypto-bigint-v0_7_5") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":cpubits-v0_1_1" ]
   deps += [ ":ctutils-v0_4_2" ]
   deps += [ ":getrandom-v0_4_3" ]
@@ -7698,7 +7698,7 @@ rustc_library("der-v0_6_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":const-oid-v0_9_6" ]
   deps += [ ":pem-rfc7468-v0_6_0" ]
 
@@ -7739,7 +7739,7 @@ rustc_library("der-v0_7_10") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":const-oid-v0_9_6" ]
   deps += [ ":der_derive-v0_7_3($host_toolchain)" ]
   deps += [ ":flagset-v0_4_7" ]
@@ -7783,7 +7783,7 @@ rustc_library("der-v0_8_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":const-oid-v0_10_2" ]
   deps += [ ":der_derive-v0_8_0($host_toolchain)" ]
   deps += [ ":flagset-v0_4_7" ]
@@ -8505,7 +8505,7 @@ rustc_library("ecdsa-v0_17_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":der-v0_8_1" ]
   deps += [ ":digest-v0_11_3" ]
   deps += [ ":elliptic-curve-v0_14_1" ]
@@ -8591,7 +8591,7 @@ rustc_library("elliptic-curve-v0_12_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":base16ct-v0_1_1" ]
   deps += [ ":crypto-bigint-v0_4_9" ]
   deps += [ ":der-v0_6_1" ]
@@ -8654,7 +8654,7 @@ rustc_library("elliptic-curve-v0_14_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":base16ct-v1_0_0" ]
   deps += [ ":crypto-bigint-v0_7_5" ]
   deps += [ ":crypto-common-v0_2_2" ]
@@ -11601,7 +11601,7 @@ rustc_library("hybrid-array-v0_4_13") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":subtle-v2_6_1" ]
   deps += [ ":typenum-v1_20_1" ]
 
@@ -14552,7 +14552,7 @@ rustc_library("num-bigint-dig-v0_8_6") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":libm-v0_2_16" ]
   deps += [ ":num-integer-v0_1_46" ]
@@ -17072,7 +17072,7 @@ rustc_library("primefield-v0_14_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":crypto-bigint-v0_7_5" ]
   deps += [ ":crypto-common-v0_2_2" ]
   deps += [ ":ff-v0_14_0" ]
@@ -18689,7 +18689,7 @@ rustc_library("rfc6979-v0_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":crypto-bigint-v0_4_9" ]
   deps += [ ":hmac-v0_12_1" ]
 
@@ -18990,7 +18990,7 @@ rustc_library("rsa-v0_9_10") {
 
   deps = []
   deps += [ ":num-bigint-dig-v0_8_6" ]
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":const-oid-v0_9_6" ]
   deps += [ ":digest-v0_10_7" ]
   deps += [ ":num-integer-v0_1_46" ]
@@ -19550,7 +19550,7 @@ rustc_library("rustls-v0_23_42") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":once_cell-v1_21_4" ]
   deps += [ ":ring-v0_17_14" ]
@@ -19688,7 +19688,7 @@ rustc_library("rustls-pki-types-v1_15_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
 
   rustenv = []
 
@@ -20710,7 +20710,7 @@ rustc_library("sec1-v0_3_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":base16ct-v0_1_1" ]
   deps += [ ":der-v0_6_1" ]
   deps += [ ":generic-array-v0_14_9" ]
@@ -20761,7 +20761,7 @@ rustc_library("sec1-v0_7_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":base16ct-v0_2_0" ]
   deps += [ ":der-v0_7_10" ]
   deps += [ ":generic-array-v0_14_9" ]
@@ -20804,7 +20804,7 @@ rustc_library("sec1-v0_8_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":base16ct-v1_0_0" ]
   deps += [ ":ctutils-v0_4_2" ]
   deps += [ ":der-v0_8_1" ]
@@ -23487,7 +23487,7 @@ rustc_library("tls_codec-v0_4_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zeroize-v1_8_1" ]
+  deps += [ ":zeroize-v1_9_0" ]
   deps += [ ":tls_codec_derive-v0_4_2($host_toolchain)" ]
 
   rustenv = []
@@ -26846,7 +26846,7 @@ rustc_macro("zerofrom-derive-v0_1_7") {
   applicable_licenses = [ ":zerofrom-derive-v0_1_7.license" ]
 }
 
-license("zeroize-v1_8_1.license") {
+license("zeroize-v1_9_0.license") {
   public_package_name = "zeroize"
   license_files = [
     "//third_party/rust_crates/forks/zeroize/LICENSE-APACHE",
@@ -26854,11 +26854,11 @@ license("zeroize-v1_8_1.license") {
   ]
 }
 
-rustc_library("zeroize-v1_8_1") {
+rustc_library("zeroize-v1_9_0") {
   crate_name = "zeroize"
   source_root = "//third_party/rust_crates/forks/zeroize/src/lib.rs"
-  output_name = "zeroize-dcb1c3339d7d0fd8"
-  edition = "2021"
+  output_name = "zeroize-f14d8b772224b99e"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -26870,8 +26870,8 @@ rustc_library("zeroize-v1_8_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=dcb1c3339d7d0fd8",
-    "-Cextra-filename=-dcb1c3339d7d0fd8",
+    "-Cmetadata=f14d8b772224b99e",
+    "-Cextra-filename=-f14d8b772224b99e",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"zeroize_derive\"",
@@ -26879,7 +26879,7 @@ rustc_library("zeroize-v1_8_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zeroize-v1_8_1.license" ]
+  applicable_licenses = [ ":zeroize-v1_9_0.license" ]
 }
 
 license("zeroize_derive-v1_5_0.license") {

@@ -3583,7 +3583,7 @@ alias(
 )
 
 alias(
-    name = "zeroize-1.8.1",
+    name = "zeroize-1.9.0",
     actual = "//third_party/rust_crates/forks/zeroize:zeroize",
     tags = ["manual"],
 )

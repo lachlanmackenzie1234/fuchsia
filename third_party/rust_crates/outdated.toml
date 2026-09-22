@@ -451,7 +451,6 @@ skip_updating = [
     "xts-mode",
     "zerocopy",
     "zerocopy-derive",
-    "zeroize",
     "zip",
     "zstd",
     "zstd-safe",

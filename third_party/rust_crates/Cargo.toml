@@ -333,7 +333,7 @@ unicode-normalization = "0.1"
 vk-sys = "0.7.0"
 x509-cert = "0.3.0"
 x509-cert-0_2_5 = { package = "x509-cert", version = "0.2.5" }
-zeroize = "1.8.1"
+zeroize = "1.9.0"
 # keep-sorted end
 
 # Host-side only dependencies
@@ -1456,7 +1456,7 @@ features = [ "alloc", "std" ]
 # See https://github.com/google/zerocopy/issues/1792
 rustflags = [ "--cfg=zerocopy_derive_union_into_bytes" ]
 
-[gn.package.zeroize."1.8.1"]
+[gn.package.zeroize."1.9.0"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "zeroize_visibility" }
 
 [gn.package.zip."8.6.0"]
