@@ -59,6 +59,7 @@ struct RcuAdvancer {
 impl Drop for RcuAdvancer {
     fn drop(&mut self) {
         self.stop.signal();
+        fuchsia_rcu::rcu_advancer_wake();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -100,12 +101,17 @@ impl KernelThreads {
             .name("starnix-rcu".to_string())
             .spawn(move || {
                 while !stop_clone.is_signaled() {
-                    let start = std::time::Instant::now();
-                    fuchsia_rcu::rcu_run_callbacks();
-                    let elapsed = start.elapsed();
-                    if elapsed < RCU_RATE_LIMIT {
-                        if stop_clone.wait_for(RCU_RATE_LIMIT - elapsed) {
+                    fuchsia_rcu::rcu_advancer_wait_for_work();
+                    while !stop_clone.is_signaled() {
+                        let start = std::time::Instant::now();
+                        if !fuchsia_rcu::rcu_run_callbacks() {
                             break;
+                        }
+                        let elapsed = start.elapsed();
+                        if elapsed < RCU_RATE_LIMIT {
+                            if stop_clone.wait_for(RCU_RATE_LIMIT - elapsed) {
+                                break;
+                            }
                         }
                     }
                 }

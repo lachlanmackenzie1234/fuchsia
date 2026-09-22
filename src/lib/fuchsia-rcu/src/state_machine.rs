@@ -37,9 +37,15 @@ struct RcuControlBlock {
     /// all currently in-flight read operations have completed.
     callback_chain: AtomicStack<RcuCallback>,
 
+    /// The futex used to put the background advancer thread to sleep when there are no callbacks.
+    advancer_thread_state: zx::Futex,
+
     /// Callbacks that are ready to run after the next grace period.
     waiting_callbacks: Mutex<AtomicListIterator<RcuCallback>>,
 }
+
+const ADVANCER_THREAD_SLEEPING: i32 = 0;
+const ADVANCER_THREAD_ACTIVE: i32 = 1;
 
 /// The number of times to spin checking for active readers before yielding.
 const ADVANCER_SPIN_LIMIT: u32 = 64;
@@ -63,6 +69,7 @@ impl RcuControlBlock {
             generation: AtomicUsize::new(0),
             read_counters,
             callback_chain: AtomicStack::new(),
+            advancer_thread_state: zx::Futex::new(ADVANCER_THREAD_SLEEPING),
             waiting_callbacks: Mutex::new(AtomicListIterator::empty()),
         }
     }
@@ -250,6 +257,15 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
 
     // Synchronization point [G] (see design.md)
     RCU_CONTROL_BLOCK.callback_chain.push_front(Box::new(callback));
+
+    // Wake the rcu advancer thread if it is sleeping on the futex.
+    let thread_state = &RCU_CONTROL_BLOCK.advancer_thread_state;
+
+    // This write is required to be SeqCst to ensure total ordering with additions to the
+    // callback_chain. See the comment in rcu_advancer_wait_for_work for details.
+    if thread_state.swap(ADVANCER_THREAD_ACTIVE, Ordering::SeqCst) == ADVANCER_THREAD_SLEEPING {
+        thread_state.wake(1);
+    }
 }
 
 /// Schedule the object to be dropped after all in-flight read operations have completed.
@@ -284,6 +300,13 @@ fn has_active_readers(generation: usize) -> bool {
         // Synchronization point [C] (see design.md)
         RCU_CONTROL_BLOCK.read_counters[index].load(Ordering::SeqCst) > 0
     }
+}
+
+/// Wake the rcu advancer thread if it's sleeping.
+pub fn rcu_advancer_wake() {
+    // Scheduling a no-op callback is a convenient way to both wake the rcu advancer and also have
+    // it consider the wakeup to be non spurious so it doesn't immediately go back to sleep.
+    rcu_call(|| {});
 }
 
 /// Blocks the current thread until all in-flight read operations have completed for the given
@@ -340,15 +363,13 @@ fn rcu_grace_period() {
 
         let generation = RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
 
-        // Enter the *Waiting* state.
+        // Enter the *Waiting* state
         rcu_advancer_wait_for_readers(generation);
 
         // Return to the *Idle* state.
         callbacks
     };
 
-    // We cannot control the order in which callbacks run since callbacks can be running on multiple
-    // threads concurrently.
     for callback in callbacks {
         callback();
     }
@@ -382,6 +403,33 @@ fn has_pending_work() -> bool {
         || !RCU_CONTROL_BLOCK.waiting_callbacks.lock().is_empty()
 }
 
+/// Blocks the calling advancer thread until RCU callbacks are scheduled.
+pub fn rcu_advancer_wait_for_work() {
+    let thread_state = &RCU_CONTROL_BLOCK.advancer_thread_state;
+    while !has_pending_work() {
+        // This needs to be SeqCst to make the has_pending_work() call synchronize properly, as
+        // with the write in rcu_call. Without a SeqCst, it's possible that a waker sees our write,
+        // and thus doesn't wake us, and simultaneously, we don't see the pending work, and thus go
+        // to sleep, causing a lost wakeup.
+        //
+        // With the SeqCst total ordering, we're guaranteed that either a thread scheduling
+        // callbacks doesn't observe our write, and thus tries to wake us, or that we observe the
+        // added callback, and thus don't sleep.
+        thread_state.store(ADVANCER_THREAD_SLEEPING, Ordering::SeqCst);
+
+        // Double-check after storing SLEEPING to prevent race with rcu_call, rcu_synchronize, or
+        // rcu_advancer_wake.
+        if has_pending_work() {
+            break;
+        }
+
+        // In the case of a spurious wakeup, we recheck has_pending_work and if there is no work to
+        // be done, attempt to return to sleep.
+        let _ = thread_state.wait(ADVANCER_THREAD_SLEEPING, None, zx::MonotonicInstant::INFINITE);
+    }
+    thread_state.store(ADVANCER_THREAD_ACTIVE, Ordering::Relaxed);
+}
+
 /// Advances the RCU state machine if work is pending and runs ready callbacks.
 ///
 /// If callbacks are pending, this runs two grace periods and invokes any ready callbacks.
@@ -391,6 +439,9 @@ pub fn rcu_run_callbacks() -> bool {
     RCU_THREAD_BLOCK.with(|block| {
         assert!(!block.holding_read_lock());
     });
+
+    let thread_state = &RCU_CONTROL_BLOCK.advancer_thread_state;
+    thread_state.store(ADVANCER_THREAD_ACTIVE, Ordering::Relaxed);
 
     if has_pending_work() {
         rcu_grace_period();
@@ -407,8 +458,11 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_rcu_delay_regression() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         let flag = Arc::new(AtomicBool::new(false));
         let moved_flag = flag.clone();
 
@@ -429,14 +483,16 @@ mod tests {
 
     #[test]
     fn test_rcu_synchronize() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         let stop = Arc::new(AtomicBool::new(false));
         let stop_clone = stop.clone();
 
         let handle = std::thread::spawn(move || {
             while !stop_clone.load(Ordering::Relaxed) {
+                rcu_advancer_wait_for_work();
                 rcu_run_callbacks();
-                std::thread::sleep(std::time::Duration::from_millis(1));
             }
+            rcu_run_callbacks();
         });
 
         let completion = Arc::new(Completion::new());
@@ -453,11 +509,14 @@ mod tests {
         completion.wait();
 
         stop.store(true, Ordering::Relaxed);
+        rcu_advancer_wake();
         handle.join().unwrap();
+        RCU_CONTROL_BLOCK.advancer_thread_state.store(ADVANCER_THREAD_SLEEPING, Ordering::SeqCst);
     }
 
     #[test]
     fn test_rcu_run_callbacks() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         let flag = Arc::new(AtomicBool::new(false));
         let moved_flag = flag.clone();
 
@@ -472,5 +531,68 @@ mod tests {
         );
         // Second step has no pending work.
         assert!(!rcu_run_callbacks());
+        RCU_CONTROL_BLOCK.advancer_thread_state.store(ADVANCER_THREAD_SLEEPING, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_rcu_advancer_thread_wake() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = flag.clone();
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+
+        let handle = std::thread::spawn(move || {
+            while !stop_clone.load(Ordering::Relaxed) {
+                rcu_advancer_wait_for_work();
+                rcu_run_callbacks();
+            }
+            rcu_run_callbacks();
+        });
+
+        rcu_call(move || {
+            flag_clone.store(true, Ordering::SeqCst);
+        });
+
+        // Wait for advancer thread to wake up and process callback.
+        let start = std::time::Instant::now();
+        while !flag.load(Ordering::SeqCst) {
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(5),
+                "Timed out waiting for advancer thread to process callback"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        stop.store(true, Ordering::Relaxed);
+        // Wake the thread if it went back to sleep so it can terminate.
+        rcu_advancer_wake();
+        handle.join().unwrap();
+        RCU_CONTROL_BLOCK.advancer_thread_state.store(ADVANCER_THREAD_SLEEPING, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_rcu_synchronize_no_callbacks() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+
+        let handle = std::thread::spawn(move || {
+            while !stop_clone.load(Ordering::Relaxed) {
+                rcu_advancer_wait_for_work();
+                rcu_run_callbacks();
+            }
+            rcu_run_callbacks();
+        });
+
+        // Calling rcu_synchronize() with no prior callbacks should wake the advancer,
+        // wait for the grace periods to complete, and return successfully.
+        rcu_synchronize();
+
+        stop.store(true, Ordering::Relaxed);
+        rcu_advancer_wake();
+        handle.join().unwrap();
+        RCU_CONTROL_BLOCK.advancer_thread_state.store(ADVANCER_THREAD_SLEEPING, Ordering::SeqCst);
     }
 }

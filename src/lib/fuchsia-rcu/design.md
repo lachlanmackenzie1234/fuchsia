@@ -60,8 +60,8 @@ In order for the RCU state machine to make progress, the program using
 `fuchsia-rcu` must periodically call `rcu_run_callbacks`. Otherwise, memory
 allocated during `RcuBox::set` will never be freed.
 
-One way to do this is with a dedicated thread which periodically calls
-`rcu_run_callbacks`.
+One way to do this is with a dedicated thread which alternates between calling
+`rcu_advancer_wait_for_work` and `rcu_run_callbacks`.
 
 ## Low-level interface
 
@@ -126,11 +126,15 @@ The interface for progressing the RCU state machine is as follows:
 
 ```rust
 fn rcu_run_callbacks() -> bool
+fn rcu_advancer_wait_for_work()
+fn rcu_advancer_wake()
 fn rcu_synchronize()
 ```
 
 Clients must call `rcu_run_callbacks` periodically to ensure that callbacks
-scheduled with `rcu_call()` eventually happen.
+scheduled with `rcu_call()` eventually happen. Clients should use
+`rcu_advancer_wait_for_work()` to block until there are callbacks ready to be run,
+and `rcu_advancer_wake()` to wake the advancer thread when shutting down.
 
 The `rcu_synchronize()` function blocks until all in-flight read operations
 prior to calling `rcu_synchronize()` have completed. Note that `rcu_synchronize()`
