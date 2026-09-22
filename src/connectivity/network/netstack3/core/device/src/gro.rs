@@ -1028,24 +1028,113 @@ impl<B: MaybeContiguousBuffer> GroBufferStorage<B> {
         GroIter::new(iter, self, enable_tcp_gro)
     }
 
-    fn hold(&mut self, buffer: B) {
-        self.coalesced_buffers.push(buffer);
-    }
-
     fn build_output<'a, T: Eq>(
         &'a mut self,
-        flow: GroFlow<T>,
+        ActiveFlow { flow, buffers }: ActiveFlow<B, T>,
     ) -> GroOutputItem<'a, B, T, alloc::vec::Drain<'a, B>> {
-        let GroBufferStorage { coalescing_vec, coalesced_buffers, .. } = self;
+        match buffers {
+            // Nothing was ever merged into this flow, so its buffer was never
+            // copied into the coalescing buffer; hand it back untouched.
+            ActiveFlowBuffers::Single { buffer, payload_end: _ } => GroOutputItem {
+                target: flow.target,
+                checksum_offload: flow.checksum_offload,
+                buffers: GroOutputBuffers::Contiguous(buffer),
+            },
+            ActiveFlowBuffers::Coalesced => {
+                let GroBufferStorage { coalescing_vec, coalesced_buffers, .. } = self;
 
-        flow.finalize(&mut coalescing_vec[..]);
+                flow.finalize(&mut coalescing_vec[..]);
 
-        let GroFlow { target, checksum_offload, num_coalesced, .. } = flow;
-        let buffers = GroOutputBuffers::Coalesced {
-            slice: &mut coalescing_vec[..],
-            buffers: coalesced_buffers.drain(..num_coalesced),
-        };
-        GroOutputItem { target, checksum_offload, buffers }
+                let GroFlow { target, checksum_offload, num_coalesced, .. } = flow;
+                let buffers = GroOutputBuffers::Coalesced {
+                    slice: &mut coalescing_vec[..],
+                    buffers: coalesced_buffers.drain(..num_coalesced),
+                };
+                GroOutputItem { target, checksum_offload, buffers }
+            }
+        }
+    }
+}
+
+/// The buffers held by an [`ActiveFlow`].
+enum ActiveFlowBuffers<B> {
+    /// Nothing has been merged into the flow yet, so its seed buffer is still
+    /// held verbatim and has not been copied into the coalescing buffer.
+    Single {
+        buffer: B,
+        /// The seed frame's [`GroPacket::payload_end`]; only the bytes before
+        /// this point are copied into the coalescing buffer, since any trailing
+        /// bytes would be stranded in the middle of the coalesced payload.
+        payload_end: usize,
+    },
+    /// The flow's frame lives in the coalescing buffer and the buffers that
+    /// formed it are held by [`GroBufferStorage`].
+    Coalesced,
+}
+
+/// A [`GroFlow`] along with the buffers it currently holds.
+struct ActiveFlow<B, T> {
+    flow: GroFlow<T>,
+    buffers: ActiveFlowBuffers<B>,
+}
+
+impl<B, T> ActiveFlow<B, T> {
+    /// The length the frame for this flow would have if a payload were merged
+    /// into it right now.
+    fn frame_len(&self, coalescing_vec_len: usize) -> usize {
+        match &self.buffers {
+            // Nothing has been merged in yet, so the buffer still holds the
+            // seed frame verbatim. Any trailing bytes it carries are dropped on
+            // the first merge, so they don't count towards the frame length.
+            ActiveFlowBuffers::Single { payload_end, .. } => *payload_end,
+            ActiveFlowBuffers::Coalesced => coalescing_vec_len,
+        }
+    }
+}
+
+impl<B: MaybeContiguousBuffer, T: Eq> ActiveFlow<B, T> {
+    fn matches(
+        &self,
+        target: &T,
+        flow_id: &GroFlowId,
+        checksum_offload: ChecksumRxOffloading,
+    ) -> bool {
+        self.flow.matches(target, flow_id, checksum_offload)
+    }
+
+    fn can_coalesce(&self, coalescing_vec_len: usize, parsed: &GroPacket<'_>) -> bool {
+        self.flow.can_coalesce(self.frame_len(coalescing_vec_len), parsed)
+    }
+
+    /// Merges `parsed` into the flow's frame in `coalesce_into`.
+    ///
+    /// If the flow is still holding its seed buffer verbatim, the seed is first
+    /// copied into `coalesce_into` and the buffer is moved into `hold_buffers`,
+    /// which must keep the buffers alive until the frame is handed to the
+    /// stack.
+    fn coalesce(
+        &mut self,
+        parsed: GroPacket<'_>,
+        coalesce_into: &mut Vec<u8>,
+        hold_buffers: &mut Vec<B>,
+    ) -> CoalesceResult {
+        match core::mem::replace(&mut self.buffers, ActiveFlowBuffers::Coalesced) {
+            ActiveFlowBuffers::Single { mut buffer, payload_end } => {
+                coalesce_into.clear();
+                // Unwrapping is okay here because `ActiveFlowBuffers::Single`
+                // is only ever constructed for a buffer that was found to be
+                // contiguous; a fragmented buffer is linearized into the
+                // coalescing buffer up front and recorded as
+                // `ActiveFlowBuffers::Coalesced`.
+                //
+                // Any trailing bytes (e.g. link layer padding) are dropped;
+                // only the packet itself may be coalesced against.
+                coalesce_into.extend_from_slice(&buffer.unwrap_contiguous()[..payload_end]);
+                hold_buffers.push(buffer);
+            }
+            ActiveFlowBuffers::Coalesced => {}
+        }
+        self.flow.coalesce(parsed, coalesce_into)
     }
 }
 
@@ -1093,7 +1182,7 @@ pub struct GroIter<'a, I, B, T> {
     iter: I,
     storage: &'a mut GroBufferStorage<B>,
     /// The active GRO flow that GRO is attempting to match.
-    active_flow: Option<GroFlow<T>>,
+    active_flow: Option<ActiveFlow<B, T>>,
     /// Item pending processing on next iteration.
     pending_item: Option<PendingItem<B, T>>,
     enable_tcp_gro: bool,
@@ -1153,20 +1242,37 @@ where
     ) -> ProcessingResult<'b, B, T, alloc::vec::Drain<'b, B>> {
         let Self { storage, active_flow, .. } = self;
         match pending {
-            PendingItem::NewFlow(flow) => {
-                let PendingFlow { mut buffer, flow, seed_payload_end, linearization } = flow;
-                let slice = match linearization {
-                    BufferLinearization::Contiguous => buffer.unwrap_contiguous(),
-                    BufferLinearization::Linearized => &mut storage.linearization_vec,
+            PendingItem::NewFlow(pending) => {
+                let PendingFlow { buffer, flow, seed_payload_end, linearization } = pending;
+                let buffers = match linearization {
+                    // The buffer is contiguous, so the flow can hold onto it
+                    // verbatim and defer copying it into the coalescing buffer
+                    // until something merges into the flow.
+                    BufferLinearization::Contiguous => {
+                        ActiveFlowBuffers::Single { buffer, payload_end: seed_payload_end }
+                    }
+                    BufferLinearization::Linearized => {
+                        // The buffer is fragmented and its linearization is
+                        // already in the linearization buffer; move it into the
+                        // coalescing buffer, which the previous active flow has
+                        // now released.
+                        //
+                        // Drop any trailing bytes (e.g. link layer padding)
+                        // from the seed frame; only the packet itself may be
+                        // coalesced against.
+                        let GroBufferStorage {
+                            coalescing_vec,
+                            coalesced_buffers,
+                            linearization_vec,
+                        } = storage;
+                        coalescing_vec.clear();
+                        coalescing_vec.extend_from_slice(&linearization_vec[..seed_payload_end]);
+                        coalesced_buffers.push(buffer);
+                        ActiveFlowBuffers::Coalesced
+                    }
                 };
 
-                storage.coalescing_vec.clear();
-                // Drop any trailing bytes (e.g. link layer padding) from the
-                // seed frame; only the packet itself may be coalesced against.
-                storage.coalescing_vec.extend_from_slice(&slice[..seed_payload_end]);
-
-                storage.hold(buffer);
-                *active_flow = Some(flow);
+                *active_flow = Some(ActiveFlow { flow, buffers });
                 ProcessingResult::Continue
             }
             PendingItem::Flush(pending) => {
@@ -1240,23 +1346,35 @@ where
 
         let flush_if_not_merged = parsed.flush_if_not_merged(buffer_slice.as_slice().len());
         let Some(mut active) = active_flow.take() else {
-            // There's no active flow. Establish the active flow unless the
-            // buffer needs to be flushed immediately.
+            // There's no active flow, so the buffer was not merged. Establish
+            // it as the active flow unless it must be flushed immediately.
 
             if flush_if_not_merged {
                 return_single_buffer!(checksum_offload);
             }
 
             let seed_payload_end = parsed.payload_end();
-
-            storage.coalescing_vec.clear();
-            // Drop any trailing bytes (e.g. link layer padding) from the seed
-            // frame; only the packet itself may be coalesced against.
-            storage.coalescing_vec.extend_from_slice(&buffer_slice.as_slice()[..seed_payload_end]);
-
             let flow = GroFlow::new(target, parsed, checksum_offload);
-            storage.hold(buffer);
-            *active_flow = Some(flow);
+            let buffers = match linearization {
+                // The buffer is contiguous, so the flow can hold onto it
+                // verbatim and defer copying it into the coalescing buffer
+                // until something merges into the flow.
+                BufferLinearization::Contiguous => {
+                    ActiveFlowBuffers::Single { buffer, payload_end: seed_payload_end }
+                }
+                BufferLinearization::Linearized => {
+                    storage.coalescing_vec.clear();
+                    // Drop any trailing bytes (e.g. link layer padding) from
+                    // the seed frame; only the packet itself may be coalesced
+                    // against.
+                    storage
+                        .coalescing_vec
+                        .extend_from_slice(&buffer_slice.as_slice()[..seed_payload_end]);
+                    storage.coalesced_buffers.push(buffer);
+                    ActiveFlowBuffers::Coalesced
+                }
+            };
+            *active_flow = Some(ActiveFlow { flow, buffers });
             return ProcessingResult::Continue;
         };
 
@@ -1285,8 +1403,13 @@ where
         }
 
         if active.can_coalesce(storage.coalescing_vec.len(), &parsed) {
-            let coalesce_result = active.coalesce(parsed, &mut storage.coalescing_vec);
-            storage.hold(buffer);
+            let coalesce_result = active.coalesce(
+                parsed,
+                &mut storage.coalescing_vec,
+                &mut storage.coalesced_buffers,
+            );
+
+            storage.coalesced_buffers.push(buffer);
 
             match coalesce_result {
                 CoalesceResult::Flush => ProcessingResult::Return(storage.build_output(active)),
@@ -1780,13 +1903,13 @@ mod tests {
         vec![b"abcde"]; "linearized_padded_seed_frame_is_trimmed")]
     #[test_case(
         vec![FrameSpec { min_body_len: 46, ..v4(100, b"a") }, v4(101, b"normal")],
-        vec![b"a", b"normal"]; "unmerged_padded_frame_is_trimmed")]
+        vec![b"a", b"normal"]; "unmerged_padded_frame_is_emitted_verbatim")]
     #[test_case(
         vec![v4(100, b"first "), FrameSpec { min_body_len: 46, ..v4(106, b"b") }],
         vec![b"first b"]; "padded_second_frame_is_trimmed")]
     #[test_case(
         vec![FrameSpec { min_body_len: 70, ..v6(200, b"c") }, v6(201, b"ipv6_normal")],
-        vec![b"c", b"ipv6_normal"]; "unmerged_padded_ipv6_frame_is_trimmed")]
+        vec![b"c", b"ipv6_normal"]; "unmerged_padded_ipv6_frame_is_emitted_verbatim")]
     #[test_case(
         vec![v4(100, b"short"), v4(105, b"longer_payload")],
         vec![b"short", b"longer_payload"]; "payload_larger_than_gso_size_flushes")]
@@ -1905,6 +2028,31 @@ mod tests {
         // associated buffers) must be dropped before the next call to `next()`.
         let next_item = gro.next();
         assert!(next_item.is_none());
+    }
+
+    #[test]
+    fn gro_unmerged_flows_are_not_copied() {
+        // Nothing merges into either flow, so each hands its buffer back
+        // verbatim rather than copying it into the coalescing buffer.
+        let first = v4(100, b"one").build();
+        // Not sequential with `first`, so it starts a new flow rather than
+        // merging into it.
+        let second = v4(500, b"two").build();
+        let items = vec![
+            input_item(TrackedBuffer::new(first.clone(), true)),
+            input_item(TrackedBuffer::new(second.clone(), true)),
+        ];
+
+        let mut gro_state = GroBufferStorage::new();
+        let mut gro = gro_state.coalesce(items.into_iter(), true);
+
+        for expected in [first, second] {
+            let mut item = gro.next().expect("emits a frame");
+            assert_matches!(&mut item.buffers, GroOutputBuffers::Contiguous(buffer) => {
+                assert_eq!(buffer.unwrap_contiguous(), &expected[..]);
+            });
+        }
+        assert!(gro.next().is_none());
     }
 
     #[test]
