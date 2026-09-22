@@ -63,6 +63,11 @@ const IFACE_NAME: &str = "wlan";
 const MIN_MINUTES_BETWEEN_FREQUENT_ERRORS: i64 = 60;
 const INVALID_RSSI: i8 = -127;
 
+// The WW country code is used in Fuchsia for worldwide mode.
+const COUNTRY_CODE_WORLDWIDE_FUCHSIA: [u8; 2] = *b"WW";
+// The 00 country code is commonly used for worldwide mode, so this is the one wlanix sends up.
+const COUNTRY_CODE_WORLDWIDE_COMMON: [u8; 2] = *b"00";
+
 async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WifiStaIfaceRequest,
     iface_manager: Arc<I>,
@@ -698,6 +703,46 @@ impl MlmeMulticastProxySet {
 }
 
 #[derive(Default)]
+struct RegulatoryMulticastProxySet {
+    proxies: Vec<fidl_wlanix::Nl80211MulticastProxy>,
+}
+
+impl MulticastProxySet for RegulatoryMulticastProxySet {
+    const NAME: &'static str = "regulatory";
+
+    fn proxies(&mut self) -> &mut Vec<fidl_wlanix::Nl80211MulticastProxy> {
+        &mut self.proxies
+    }
+}
+
+impl RegulatoryMulticastProxySet {
+    fn send_regulatory_event(&mut self, alpha2: [u8; 2]) {
+        // Fuchsia has used "WW" by convention, but the more broadly accepted value
+        // for worldwide is "00".  Report that instead.
+        let reg_domain = if alpha2 == COUNTRY_CODE_WORLDWIDE_FUCHSIA {
+            info!("Converting country code from WW to 00 for RegChange event.");
+            COUNTRY_CODE_WORLDWIDE_COMMON
+        } else {
+            alpha2
+        };
+
+        // Regulatory domain type 0 is country, 1 is world.
+        let reg_type = if reg_domain == COUNTRY_CODE_WORLDWIDE_COMMON { 1 } else { 0 };
+
+        self.send(|| fidl_wlanix::Nl80211MulticastMessageRequest {
+            message: Some(build_nl80211_message(
+                Nl80211Cmd::RegChange,
+                vec![
+                    Nl80211Attr::RegulatoryRegionAlpha2(reg_domain),
+                    Nl80211Attr::RegulatoryRegionType(reg_type),
+                ],
+            )),
+            ..Default::default()
+        })
+    }
+}
+
+#[derive(Default)]
 struct WifiState {
     started: bool,
     callback: Option<fidl_wlanix::WifiEventCallbackProxy>,
@@ -708,6 +753,7 @@ struct WifiState {
         fidl_fuchsia_power_broker::DependencyToken,
         fidl_fuchsia_power_broker::LeaseToken,
     )>,
+    regulatory_multicast_proxies: RegulatoryMulticastProxySet,
 }
 
 async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
@@ -2503,8 +2549,8 @@ async fn handle_nl80211_message<I: IfaceManager>(
                     Ok(mut country) => {
                         // Fuchsia has used "WW" by convention, but the more broadly accepted value
                         // for worldwide is "00".  Report that instead.
-                        if country == *b"WW" {
-                            country = *b"00";
+                        if country == COUNTRY_CODE_WORLDWIDE_FUCHSIA {
+                            country = COUNTRY_CODE_WORLDWIDE_COMMON;
                             info!("Converting country code from WW to 00 for GetReg response.");
                         }
 
@@ -2692,6 +2738,8 @@ async fn handle_nl80211_request<I: IfaceManager>(
                     state.scan_multicast_proxies.add_proxy(multicast.into_proxy());
                 } else if payload.group == Some("mlme".to_string()) {
                     state.mlme_multicast_proxies.add_proxy(multicast.into_proxy());
+                } else if payload.group == Some("regulatory".to_string()) {
+                    state.regulatory_multicast_proxies.add_proxy(multicast.into_proxy());
                 } else {
                     warn!("Dropping channel for unsupported multicast group {:?}", payload.group);
                 }
@@ -3165,6 +3213,11 @@ async fn serve_phy_events(
                     },
                     &mut state.callback,
                 );
+            }
+            fidl_device_service::PhyEventWatcherEvent::OnCountryCodeChange { alpha2, .. } => {
+                let mut state = state.lock();
+
+                state.regulatory_multicast_proxies.send_regulatory_event(alpha2);
             }
             other => {
                 warn!("Unknown phy event: {:?}", other);
@@ -6928,8 +6981,9 @@ mod tests {
         assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2(*b"XX")));
     }
 
-    #[fuchsia::test]
-    fn get_reg_worldwide_is_zeroes() {
+    #[test_case(COUNTRY_CODE_WORLDWIDE_FUCHSIA; "WW")]
+    #[test_case(COUNTRY_CODE_WORLDWIDE_COMMON; "00")]
+    fn get_reg_worldwide_is_zeroes(country_code: [u8; 2]) {
         let mut exec = fasync::TestExecutor::new();
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
 
@@ -6937,7 +6991,7 @@ mod tests {
         let iface_manager = Arc::new(TestIfaceManager::new_with_client());
         {
             // Set the Fake IfaceManager to return country code WW
-            let set_country_fut = iface_manager.set_country(0, *b"WW");
+            let set_country_fut = iface_manager.set_country(0, country_code);
             let mut set_country_fut = pin!(set_country_fut);
             assert_matches!(
                 exec.run_until_stalled(&mut set_country_fut),
@@ -6977,7 +7031,125 @@ mod tests {
         let message = expect_nl80211_message(&responses[0]);
         assert_eq!(message.payload.cmd, Nl80211Cmd::GetReg);
         // The country code 00 should be returned instead of WW
+        assert!(
+            message
+                .payload
+                .attrs
+                .contains(&Nl80211Attr::RegulatoryRegionAlpha2(COUNTRY_CODE_WORLDWIDE_COMMON))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_serve_phy_events_on_country_code_change() {
+        let mut exec = fasync::TestExecutor::new();
+        let state = Arc::new(Mutex::new(WifiState::default()));
+        let (phy_events_proxy, phy_events_server) =
+            create_proxy::<fidl_device_service::PhyEventWatcherMarker>();
+        let (_phy_events_stream, phy_events_handle) =
+            phy_events_server.into_stream_and_control_handle();
+
+        // Setup the regulatory multicast proxy
+        let (mcast_proxy, mut mcast_stream) =
+            create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
+        state.lock().regulatory_multicast_proxies.add_proxy(mcast_proxy);
+
+        let serve_fut = serve_phy_events(phy_events_proxy, Arc::clone(&state));
+        let mut serve_fut = pin!(serve_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+
+        {
+            // There should be no multicase messages when there have been no events.
+            assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+            let next_mcast_fut = next_mcast_message(&mut mcast_stream);
+            let mut next_mcast_fut = pin!(next_mcast_fut);
+            assert_matches!(exec.run_until_stalled(&mut next_mcast_fut), Poll::Pending);
+        }
+
+        // Test with "US". Send the code up from the phy.
+        phy_events_handle.send_on_country_code_change(1, b"US").expect("Failed to send event");
+
+        {
+            // We should see a multicast message.
+            assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+            let next_mcast_fut = next_mcast_message(&mut mcast_stream);
+            let mut next_mcast_fut = pin!(next_mcast_fut);
+            let message = assert_matches!(
+                exec.run_until_stalled(&mut next_mcast_fut),
+                Poll::Ready(message) => message
+            );
+
+            assert_eq!(message.payload.cmd, Nl80211Cmd::RegChange);
+            assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2(*b"US")));
+            assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionType(0)));
+        }
+
+        {
+            // There should be no more messages to get
+            assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+            let next_mcast_fut = next_mcast_message(&mut mcast_stream);
+            let mut next_mcast_fut = pin!(next_mcast_fut);
+            assert_matches!(exec.run_until_stalled(&mut next_mcast_fut), Poll::Pending);
+        }
+
+        // Test with "CA". Send the code up from the phy.
+        phy_events_handle.send_on_country_code_change(1, b"CA").expect("Failed to send event");
+
+        {
+            // We should see another multicast message.
+            assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+            let next_mcast_fut = next_mcast_message(&mut mcast_stream);
+            let mut next_mcast_fut = pin!(next_mcast_fut);
+            let message = assert_matches!(
+                exec.run_until_stalled(&mut next_mcast_fut),
+                Poll::Ready(message) => message
+            );
+
+            assert_eq!(message.payload.cmd, Nl80211Cmd::RegChange);
+            assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2(*b"CA")));
+            assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionType(0)));
+        }
+    }
+
+    #[test_case(COUNTRY_CODE_WORLDWIDE_FUCHSIA; "WW")]
+    #[test_case(COUNTRY_CODE_WORLDWIDE_COMMON; "00")]
+    fn test_on_country_code_change_world_wide_ww(country_code: [u8; 2]) {
+        let mut exec = fasync::TestExecutor::new();
+        let state = Arc::new(Mutex::new(WifiState::default()));
+        let (phy_events_proxy, phy_events_server) =
+            create_proxy::<fidl_device_service::PhyEventWatcherMarker>();
+        let (_phy_events_stream, phy_events_handle) =
+            phy_events_server.into_stream_and_control_handle();
+
+        // Setup the regulatory multicast proxy
+        let (mcast_proxy, mut mcast_stream) =
+            create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
+        state.lock().regulatory_multicast_proxies.add_proxy(mcast_proxy);
+
+        let serve_fut = serve_phy_events(phy_events_proxy, Arc::clone(&state));
+        let mut serve_fut = pin!(serve_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+
+        // Send up WW from the phy for worldwide mode
+        phy_events_handle
+            .send_on_country_code_change(1, &country_code)
+            .expect("Failed to send event");
+
+        // We should see a multicast message.
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        let next_mcast_fut = next_mcast_message(&mut mcast_stream);
+        let mut next_mcast_fut = pin!(next_mcast_fut);
+        let message = assert_matches!(
+            exec.run_until_stalled(&mut next_mcast_fut),
+            Poll::Ready(message) => message
+        );
+
+        // Wlanix should send up 00 with the "country" domain type. 00 should be sent up as
+        // is or if WW is sent up, it will be replaced with 00.
+        assert_eq!(message.payload.cmd, Nl80211Cmd::RegChange);
         assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2(*b"00")));
+        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionType(1)));
     }
 
     #[test]
