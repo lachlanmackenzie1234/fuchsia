@@ -8,7 +8,6 @@ use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersionMarker};
 use net_types::{BroadcastAddr, MulticastAddr};
 
-use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use packet::{BufferMut, SerializeError};
 use thiserror::Error;
@@ -34,7 +33,7 @@ pub trait RecvFrameContext<Meta, BC> {
     );
 }
 
-impl<CC, BC> ReceivableFrameMeta<CC, BC> for Never {
+impl<CC, BC> ReceivableFrameMeta<CC, BC> for ! {
     fn receive_meta<B: BufferMut + Debug>(
         self,
         _core_ctx: &mut CC,
@@ -319,9 +318,9 @@ pub trait CoreTxMetadataContext<T, BT: TxMetadataBindingsTypes> {
 /// Note that this is needed because of the [`AsMut<[u8]>`] bound required.
 /// It is not possible work around this with a local trait. That approach
 /// requires a blanket impl which the compiler will complain that the core
-/// crate can eventually add a impl for the `Infallible` type. When that
-/// happens, we can remove this local type.
-pub struct NeverBuffer(core::convert::Infallible);
+/// crate can eventually add a impl for the `!` type. When that happens, we can
+/// remove this local type.
+pub struct NeverBuffer(!);
 
 impl packet::FragmentedBuffer for NeverBuffer {
     fn len(&self) -> usize {

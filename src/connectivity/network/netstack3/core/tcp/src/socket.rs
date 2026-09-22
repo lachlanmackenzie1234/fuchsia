@@ -23,7 +23,6 @@ pub(crate) mod diagnostics;
 pub(crate) mod generators;
 
 use alloc::vec::Vec;
-use core::convert::Infallible as Never;
 use core::fmt::{self, Debug};
 use core::marker::PhantomData;
 use core::num::{NonZeroU16, NonZeroUsize};
@@ -991,7 +990,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> SpecSocke
 impl<A: SpecSocketId, B: SpecSocketId> SpecSocketId for EitherStack<A, B> {}
 
 /// Uninstantiatable type for implementing [`SocketMapStateSpec`].
-struct TcpSocketSpec<I, D, BT>(PhantomData<(I, D, BT)>, Never);
+struct TcpSocketSpec<I, D, BT>(PhantomData<(I, D, BT)>, !);
 
 impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> SocketMapStateSpec
     for TcpSocketSpec<I, D, BT>
@@ -1470,7 +1469,7 @@ impl<S: SpecSocketId> ConnAddrState<S> {
 
 impl<S: SpecSocketId> SocketMapAddrStateSpec for ConnAddrState<S> {
     type Id = S;
-    type Inserter<'a> = Never;
+    type Inserter<'a> = !;
     type SharingState = SharingState;
 
     fn new(new_sharing_state: &Self::SharingState, id: Self::Id) -> Self {
@@ -5970,7 +5969,7 @@ mod tests {
 
     pub(crate) type TcpCtx<D> = CtxPair<TcpCoreCtx<D, TcpBindingsCtx<D>>, TcpBindingsCtx<D>>;
 
-    pub(crate) struct FakeTcpNetworkSpec<D: FakeStrongDeviceId>(PhantomData<D>, Never);
+    pub(crate) struct FakeTcpNetworkSpec<D: FakeStrongDeviceId>(PhantomData<D>, !);
     impl<D: FakeStrongDeviceId> FakeNetworkSpec for FakeTcpNetworkSpec<D> {
         type Context = TcpCtx<D>;
         type TimerId = TcpTimerId<D::Weak, TcpBindingsCtx<D>>;
@@ -6143,9 +6142,9 @@ mod tests {
     }
 
     impl<D: FakeStrongDeviceId> ReferenceNotifiers for TcpBindingsCtx<D> {
-        type ReferenceReceiver<T: 'static> = Never;
+        type ReferenceReceiver<T: 'static> = !;
 
-        type ReferenceNotifier<T: Send + 'static> = Never;
+        type ReferenceNotifier<T: Send + 'static> = !;
 
         fn new_reference_notifier<T: Send + 'static>(
             debug_references: DynDebugReferences,
@@ -6178,7 +6177,7 @@ mod tests {
 
     impl<D: FakeStrongDeviceId> MatcherBindingsTypes for TcpBindingsCtx<D> {
         type DeviceClass = ();
-        type BindingsPacketMatcher = Never;
+        type BindingsPacketMatcher = !;
     }
 
     impl<D: FakeStrongDeviceId> MarksBindingsContext for TcpBindingsCtx<D> {

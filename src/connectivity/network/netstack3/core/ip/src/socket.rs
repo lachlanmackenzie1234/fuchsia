@@ -5,7 +5,6 @@
 //! IPv4 and IPv6 sockets.
 
 use core::cmp::Ordering;
-use core::convert::Infallible;
 use core::num::NonZeroU8;
 
 use log::{debug, error};
@@ -218,7 +217,7 @@ pub trait IpSocketHandler<I: IpExt + FilterIpExt, BC: TxMetadataBindingsTypes>:
             bindings_ctx,
             args,
             tx_metadata,
-            |ip| Ok::<_, Infallible>(get_body_from_src_ip(ip)),
+            |ip| Ok::<_, !>(get_body_from_src_ip(ip)),
         )
         .map_err(|err| match err {
             SendOneShotIpPacketError::CreateAndSendError { err } => err,
@@ -246,7 +245,7 @@ pub trait IpSocketHandler<I: IpExt + FilterIpExt, BC: TxMetadataBindingsTypes>:
             bindings_ctx,
             args,
             tx_metadata,
-            |ip| Ok::<_, Infallible>(get_body_from_src_ip(ip)),
+            |ip| Ok::<_, !>(get_body_from_src_ip(ip)),
         )
         .map_err(|err| match err {
             SendOneShotIpPacketError::CreateAndSendError { err } => err,
@@ -275,8 +274,8 @@ pub enum IpSockSendError {
     BroadcastNotAllowed,
 }
 
-impl From<SerializeError<Infallible>> for IpSockSendError {
-    fn from(err: SerializeError<Infallible>) -> IpSockSendError {
+impl From<SerializeError<!>> for IpSockSendError {
+    fn from(err: SerializeError<!>) -> IpSockSendError {
         match err {
             SerializeError::SizeLimitExceeded => IpSockSendError::Mtu,
         }

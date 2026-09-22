@@ -7,7 +7,6 @@
 pub mod counters;
 
 use alloc::boxed::Box;
-use core::convert::{Infallible as Never, TryInto as _};
 use core::fmt::Debug;
 use core::num::{NonZeroU8, NonZeroU16};
 
@@ -930,7 +929,7 @@ impl<
         + CounterContext<IcmpTxCounters<Ipv4>>,
 > IpTransportContext<Ipv4, BC, CC> for IcmpIpTransportContext
 {
-    type EarlyDemuxSocket = Never;
+    type EarlyDemuxSocket = !;
 
     fn early_demux<B: ParseBuffer>(
         _core_ctx: &mut CC,
@@ -970,7 +969,7 @@ impl<
         dst_ip: SpecifiedAddr<Ipv4Addr>,
         mut buffer: B,
         info: &mut LocalDeliveryPacketInfo<Ipv4, H>,
-        _early_demux_socket: Option<Never>,
+        _early_demux_socket: Option<!>,
     ) -> Result<(), (B, Icmpv4Error)> {
         let LocalDeliveryPacketInfo { meta, header_info: _, marks } = info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
@@ -1941,7 +1940,7 @@ impl<
         + CounterContext<NdpCounters>,
 > IpTransportContext<Ipv6, BC, CC> for IcmpIpTransportContext
 {
-    type EarlyDemuxSocket = Never;
+    type EarlyDemuxSocket = !;
 
     fn early_demux<B: ParseBuffer>(
         _core_ctx: &mut CC,
@@ -1981,7 +1980,7 @@ impl<
         dst_ip: SpecifiedAddr<Ipv6Addr>,
         mut buffer: B,
         info: &mut LocalDeliveryPacketInfo<Ipv6, H>,
-        _early_demux_socket: Option<Never>,
+        _early_demux_socket: Option<!>,
     ) -> Result<(), (B, Icmpv6Error)> {
         let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
@@ -2810,7 +2809,7 @@ mod tests {
     where
         I: IcmpTestIpExt + IpLayerIpExt,
     {
-        type EarlyDemuxSocket = Never;
+        type EarlyDemuxSocket = !;
 
         fn early_demux<B: ParseBuffer>(
             _core_ctx: &mut FakeIcmpCoreCtx<I>,
@@ -2842,7 +2841,7 @@ mod tests {
             _dst_ip: SpecifiedAddr<I::Addr>,
             _buffer: B,
             _info: &mut LocalDeliveryPacketInfo<I, H>,
-            _early_demux_socket: Option<Never>,
+            _early_demux_socket: Option<!>,
         ) -> Result<(), (B, I::IcmpError)> {
             unimplemented!()
         }

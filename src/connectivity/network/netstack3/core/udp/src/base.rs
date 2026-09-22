@@ -6,7 +6,6 @@
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
-use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
@@ -134,7 +133,7 @@ pub struct UdpState<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> {
 }
 
 /// Uninstantiatable type for implementing [`DatagramSocketSpec`].
-pub struct Udp<BT>(PhantomData<BT>, Never);
+pub struct Udp<BT>(PhantomData<BT>, !);
 
 /// Produces an iterator over eligible receiving socket addresses.
 #[cfg(test)]
@@ -408,7 +407,7 @@ impl SocketMapAddrSpec for UdpAddrSpec {
 
 pub struct UdpSocketMapStateSpec<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>(
     PhantomData<(I, D, BT)>,
-    Never,
+    !,
 );
 
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> SocketMapStateSpec

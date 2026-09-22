@@ -6,7 +6,6 @@
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
-use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::marker::PhantomData;
 use core::num::{NonZeroU8, NonZeroU16};
@@ -388,7 +387,7 @@ pub trait IcmpEchoStateContext<I: IcmpIpExt + IpExt, BC: IcmpEchoBindingsTypes>:
 }
 
 /// Uninstantiatable type for implementing [`DatagramSocketSpec`].
-pub struct Icmp<BT>(PhantomData<BT>, Never);
+pub struct Icmp<BT>(PhantomData<BT>, !);
 
 impl<BT: IcmpEchoBindingsTypes> DatagramSocketSpec for Icmp<BT> {
     const NAME: &'static str = "ICMP_ECHO";
@@ -706,7 +705,7 @@ where
 
 /// An uninstantiable type providing a [`SocketMapStateSpec`] implementation for
 /// ICMP.
-pub struct IcmpSocketMapStateSpec<I, D, BT>(PhantomData<(I, D, BT)>, Never);
+pub struct IcmpSocketMapStateSpec<I, D, BT>(PhantomData<(I, D, BT)>, !);
 
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes> SocketMapStateSpec
     for IcmpSocketMapStateSpec<I, D, BT>
@@ -741,7 +740,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes> SocketMapAddr
     type SharingState = ();
 
     type Inserter<'a>
-        = core::convert::Infallible
+        = !
     where
         Self: 'a;
 
@@ -1089,7 +1088,7 @@ impl EchoTransportContextMarker for IcmpEchoIpTransportContext {}
 impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundStateContext<I, BC>>
     IpTransportContext<I, BC, CC> for IcmpEchoIpTransportContext
 {
-    type EarlyDemuxSocket = Never;
+    type EarlyDemuxSocket = !;
 
     fn early_demux<B: ParseBuffer>(
         _core_ctx: &mut CC,
@@ -1178,7 +1177,7 @@ impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundSt
         dst_ip: SpecifiedAddr<I::Addr>,
         mut buffer: B,
         info: &mut LocalDeliveryPacketInfo<I, H>,
-        _early_demux_socket: Option<Never>,
+        _early_demux_socket: Option<!>,
     ) -> Result<(), (B, I::IcmpError)> {
         let LocalDeliveryPacketInfo { meta, header_info: _, marks: _ } = info;
         let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;

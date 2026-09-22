@@ -4,7 +4,6 @@
 
 //! Datagram socket bindings.
 
-use std::convert::{Infallible as Never, TryInto as _};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::{NonZeroU8, NonZeroU16, NonZeroU64, NonZeroUsize, TryFromIntError};
@@ -405,8 +404,8 @@ where
     type MulticastLoopError = NotDualStackCapableError;
     type SetReuseAddrError = ExpectedUnboundError;
     type SetReusePortError = ExpectedUnboundError;
-    type SetIpTransparentError = Never;
-    type SetBroadcastError = Never;
+    type SetIpTransparentError = !;
+    type SetBroadcastError = !;
     type LocalIdentifier = NonZeroU16;
     type RemoteIdentifier = udp::UdpRemotePort;
     type SocketInfo = SocketInfo<I::Addr, WeakDeviceId<BindingsCtx>>;

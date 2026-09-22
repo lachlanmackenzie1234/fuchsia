@@ -5,7 +5,6 @@
 use alloc::rc::Rc;
 use alloc::vec;
 use core::cell::RefCell;
-use core::convert::Infallible as Never;
 
 use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
@@ -326,7 +325,7 @@ fn test_walk_rules<I: IpLayerIpExt + TestIpExt>() {
                 },
                 |(), _core_ctx, _table| panic!("should not be able to look up tables")
             ),
-            ControlFlow::Break(RuleAction::<RuleWalkInfo<Never>>::Unreachable)
+            ControlFlow::Break(RuleAction::<RuleWalkInfo<!>>::Unreachable)
         );
     });
 
@@ -512,11 +511,10 @@ fn test_ip_layer_packet_metadata_multicast_and_device_conversion<
     assert_eq!(rx_socket_info, None);
 
     // Verify `split_for_multicast` preserves marks and socket_info across multiple splits.
-    let mut tx_meta =
-        IpLayerPacketMetadata::<I, Never, FakeBindingsCtx>::from_tx_metadata_and_marks(
-            Default::default(),
-            marks,
-        );
+    let mut tx_meta = IpLayerPacketMetadata::<I, !, FakeBindingsCtx>::from_tx_metadata_and_marks(
+        Default::default(),
+        marks,
+    );
     let primary_rc = PrimaryRc::new(());
     let socket_info = SocketInfo {
         proto: I::map_ip(

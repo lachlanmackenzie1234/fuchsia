@@ -4,7 +4,6 @@
 
 //! Socket features exposed by netstack3.
 
-use std::convert::Infallible as Never;
 use std::fmt::Debug;
 use std::num::NonZeroU64;
 use std::panic::Location;
@@ -561,7 +560,7 @@ pub(crate) trait IntoErrno: Sized + Debug + Into<Error> {
     }
 }
 
-impl IntoErrno for Never {
+impl IntoErrno for ! {
     fn to_errno(&self) -> Errno {
         match *self {}
     }

@@ -32,7 +32,6 @@
 //! protocol does not remove the interface).
 
 use std::collections::hash_map;
-use std::convert::Infallible as Never;
 use std::fmt::Debug;
 use std::ops::DerefMut as _;
 use std::pin::pin;
@@ -247,7 +246,7 @@ async fn run_blackhole_interface(
                 // Already stopped, we should be going down.
                 let _: fnet_interfaces_admin::InterfaceRemovedReason = reason;
             });
-        futures::future::pending::<Never>()
+        futures::future::pending::<!>()
     });
     {
         let stop_fut = pin!(stop_fut);

@@ -15,7 +15,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use core::borrow::Borrow;
-use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::ops::{Deref, DerefMut};
@@ -817,7 +816,7 @@ impl FakeBindingsCtx {
 
 impl MatcherBindingsTypes for FakeBindingsCtx {
     type DeviceClass = ();
-    type BindingsPacketMatcher = Never;
+    type BindingsPacketMatcher = !;
 }
 
 impl DeviceBufferBindingsTypes for FakeBindingsCtx {
@@ -995,14 +994,13 @@ impl MarksBindingsContext for FakeBindingsCtx {
 
 #[cfg(not(loom))]
 mod fake_notifiers {
-    use core::convert::Infallible as Never;
 
     use super::*;
 
     impl ReferenceNotifiers for FakeBindingsCtx {
-        type ReferenceReceiver<T: 'static> = Never;
+        type ReferenceReceiver<T: 'static> = !;
 
-        type ReferenceNotifier<T: Send + 'static> = Never;
+        type ReferenceNotifier<T: Send + 'static> = !;
 
         fn new_reference_notifier<T: Send + 'static>(
             debug_references: DynDebugReferences,

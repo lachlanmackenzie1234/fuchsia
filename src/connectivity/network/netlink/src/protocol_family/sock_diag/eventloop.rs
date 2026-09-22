@@ -4,8 +4,6 @@
 
 use super::{NetlinkSockDiag, NetlinkSockDiagNotifiedGroup};
 
-use std::convert::Infallible as Never;
-
 use derivative::Derivative;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_sockets as fnet_sockets;
@@ -230,7 +228,7 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
         }
     }
 
-    pub(crate) async fn run(mut self) -> Never {
+    pub(crate) async fn run(mut self) -> ! {
         loop {
             self.run_one_step().await;
         }

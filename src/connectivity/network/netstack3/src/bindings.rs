@@ -523,7 +523,7 @@ impl RngImpl {
 ///
 /// [`SysRng`] is a zero-sized type that provides randomness from the OS.
 impl rand::TryRng for RngImpl {
-    type Error = core::convert::Infallible;
+    type Error = !;
 
     fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
         Ok(SysRng.try_next_u32().unwrap())

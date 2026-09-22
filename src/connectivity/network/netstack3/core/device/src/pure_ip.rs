@@ -4,7 +4,6 @@
 
 //! A pure IP device, capable of directly sending/receiving IPv4 & IPv6 packets.
 
-use core::convert::Infallible as Never;
 use core::fmt::Debug;
 
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
@@ -127,7 +126,7 @@ impl DeviceStateSpec for PureIpDevice {
     type Counters = PureIpDeviceCounters;
     const IS_LOOPBACK: bool = false;
     const DEBUG_TYPE: &'static str = "PureIP";
-    type TimerId<D: WeakDeviceIdentifier> = Never;
+    type TimerId<D: WeakDeviceIdentifier> = !;
 
     fn new_device_state<
         CC: CoreTimerContext<Self::TimerId<CC::WeakDeviceId>, BC> + DeviceIdContext<Self>,

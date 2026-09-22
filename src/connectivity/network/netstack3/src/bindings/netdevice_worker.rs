@@ -198,7 +198,7 @@ impl NetdeviceWorker {
         DeviceHandler { inner: self.inner.clone() }
     }
 
-    pub(crate) async fn run(self) -> Result<std::convert::Infallible, Error> {
+    pub(crate) async fn run(self) -> Result<!, Error> {
         let Self { mut ctx, inner: Inner { device: _, session, state }, task, watch_rx_leases } =
             self;
         // Allow buffer shuttling to happen in other threads.

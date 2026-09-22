@@ -4,8 +4,6 @@
 
 //! Provides an [`Error`] type for all errors observable by bindings.
 
-use std::convert::Infallible as Never;
-
 use netstack3_core::device_socket::SendFrameErrorReason;
 use netstack3_core::error::{
     LocalAddressError, NotFoundError, NotSupportedError, RemoteAddressError, SocketError,
@@ -120,8 +118,8 @@ impl<A: Into<Error>, B: Into<Error>> From<either::Either<A, B>> for Error {
     }
 }
 
-impl From<Never> for Error {
-    fn from(value: Never) -> Self {
+impl From<!> for Error {
+    fn from(value: !) -> Self {
         match value {}
     }
 }

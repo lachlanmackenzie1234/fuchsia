@@ -1980,7 +1980,7 @@ mod tests {
             let frame = match frame.serialize_vec_outer(&mut NetworkSerializationContext::default())
             {
                 Err(e) => {
-                    let _: (packet::SerializeError<core::convert::Infallible>, _) = e;
+                    let _: (packet::SerializeError<!>, _) = e;
                     unreachable!()
                 }
                 Ok(frame) => frame.unwrap_a().as_ref().to_vec(),

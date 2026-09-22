@@ -4,7 +4,6 @@
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::marker::PhantomData;
@@ -3368,14 +3367,9 @@ where
 /// fact serializing the buffer.
 struct AlwaysFailBufferAlloc;
 
-impl LayoutBufferAlloc<Never> for AlwaysFailBufferAlloc {
+impl LayoutBufferAlloc<!> for AlwaysFailBufferAlloc {
     type Error = ();
-    fn layout_alloc(
-        self,
-        _prefix: usize,
-        _body: usize,
-        _suffix: usize,
-    ) -> Result<Never, Self::Error> {
+    fn layout_alloc(self, _prefix: usize, _body: usize, _suffix: usize) -> Result<!, Self::Error> {
         Err(())
     }
 }

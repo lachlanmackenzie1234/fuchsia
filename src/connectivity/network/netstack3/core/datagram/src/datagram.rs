@@ -6,7 +6,6 @@
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
-use core::convert::Infallible as Never;
 use core::error::Error;
 use core::fmt::Debug;
 use core::hash::Hash;
@@ -4207,7 +4206,7 @@ where
                 ),
                 // Allow `Operation` to be generic over `B` and `C` so that they can
                 // be used in trait bounds for `DualStackSC` and `SC`.
-                _Phantom((Never, PhantomData<BC>)),
+                _Phantom((!, PhantomData<BC>)),
             }
 
             let (shutdown, operation) = match core_ctx.dual_stack_context_mut() {
@@ -4354,7 +4353,7 @@ where
                 ),
                 // Allow `Operation` to be generic over `B` and `C` so that they can
                 // be used in trait bounds for `DualStackSC` and `SC`.
-                _Phantom((Never, PhantomData<BC>)),
+                _Phantom((!, PhantomData<BC>)),
             }
 
             let (operation, shutdown) = match (
@@ -5206,7 +5205,6 @@ pub(crate) mod testutil {
 
 #[cfg(test)]
 mod test {
-    use core::convert::Infallible as Never;
 
     use alloc::vec;
     use assert_matches::assert_matches;
@@ -5307,7 +5305,7 @@ mod test {
     #[derive(Debug)]
     struct AddrState<T>(T);
 
-    struct FakeSocketMapStateSpec<I, D>(PhantomData<(I, D)>, Never);
+    struct FakeSocketMapStateSpec<I, D>(PhantomData<(I, D)>, !);
 
     impl<I: IpExt, D: WeakDeviceIdentifier> SocketMapStateSpec for FakeSocketMapStateSpec<I, D> {
         type AddrVecTag = Tag;
@@ -5362,7 +5360,7 @@ mod test {
         }
 
         type Serializer<I: IpExt, B: BufferMut> = packet::Nested<B, ()>;
-        type SerializeError = Never;
+        type SerializeError = !;
         const FIXED_HEADER_SIZE: usize = 0;
         fn make_packet<I: IpExt, B: BufferMut>(
             body: B,
@@ -5371,7 +5369,7 @@ mod test {
                 <FakeAddrSpec as SocketMapAddrSpec>::LocalIdentifier,
                 <FakeAddrSpec as SocketMapAddrSpec>::RemoteIdentifier,
             >,
-        ) -> Result<Self::Serializer<I, B>, Never> {
+        ) -> Result<Self::Serializer<I, B>, !> {
             Ok(body.wrap_in(()))
         }
         fn try_alloc_listen_identifier<I: Ip, D: WeakDeviceIdentifier>(
@@ -5510,7 +5508,7 @@ mod test {
         type Id = T;
         type SharingState = Sharing;
         type Inserter<'a>
-            = Never
+            = !
         where
             Self: 'a;
 

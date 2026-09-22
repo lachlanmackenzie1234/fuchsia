@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use std::collections::HashMap;
-use std::convert::Infallible as Never;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -215,7 +214,7 @@ impl WakeGroup {
         Self { name, id: WakeGroupId::new(), data_watcher, wake_watcher }
     }
 
-    async fn serve(self, wake_groups: WakeGroups) -> Result<Never, WakeGroupShutdownReason> {
+    async fn serve(self, wake_groups: WakeGroups) -> Result<!, WakeGroupShutdownReason> {
         let Self { name, id, mut data_watcher, wake_watcher } = self;
         let WakeGroupId { token, koid: _ } = &id;
 

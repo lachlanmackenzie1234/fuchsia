@@ -968,7 +968,6 @@ pub(crate) mod testutil {
 mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
-    use core::convert::Infallible as Never;
     use netstack3_hashmap::HashSet;
 
     use net_types::SpecifiedAddr;
@@ -1353,7 +1352,7 @@ mod tests {
     impl TransmitQueueCommon<EthernetLinkDevice, FakeBindingsCtx> for FakeCoreCtx {
         type Meta = FakeTxMetadata;
 
-        type DequeueContext = Never;
+        type DequeueContext = !;
 
         fn parse_outgoing_frame<'a>(
             buf: &'a [u8],
@@ -1366,7 +1365,7 @@ mod tests {
     impl TransmitQueueCommon<EthernetLinkDevice, FakeBindingsCtx> for FakeInnerCtx {
         type Meta = FakeTxMetadata;
 
-        type DequeueContext = Never;
+        type DequeueContext = !;
 
         fn parse_outgoing_frame<'a, 'b>(
             buf: &'a [u8],
@@ -1405,7 +1404,7 @@ mod tests {
             &mut self,
             bindings_ctx: &mut FakeBindingsCtx,
             device_id: &Self::DeviceId,
-            dequeue_context: Option<&mut Never>,
+            dequeue_context: Option<&mut !>,
             tx_meta: Self::Meta,
             buf: packet::Buf<Vec<u8>>,
         ) -> Result<(), DeviceSendFrameError> {
@@ -1462,7 +1461,7 @@ mod tests {
             &mut self,
             _bindings_ctx: &mut FakeBindingsCtx,
             device_id: &Self::DeviceId,
-            dequeue_context: Option<&mut Never>,
+            dequeue_context: Option<&mut !>,
             _tx_meta: Self::Meta,
             buf: packet::Buf<Vec<u8>>,
         ) -> Result<(), DeviceSendFrameError> {

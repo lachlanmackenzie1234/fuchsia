@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::convert::Infallible as Never;
 use core::num::NonZeroU16;
 
 use net_types::Witness as _;
@@ -41,7 +40,7 @@ impl<'a, I: DualStackIpExt, D: netstack3_base::WeakDeviceIdentifier, BT: TcpBind
         Self: 'b;
 
     type UdpProps<'b>
-        = Never
+        = !
     where
         Self: 'b;
 
