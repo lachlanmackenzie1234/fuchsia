@@ -899,6 +899,10 @@ config("Wno-strict-prototypes") {
   cflags = [ "-Wno-strict-prototypes" ]
 }
 
+config("Wno-call-graph-section-no-prototype") {
+  cflags = [ "-Wno-call-graph-section-no-prototype" ]
+}
+
 config("Wno-undef") {
   cflags = [ "-Wno-undef" ]
   visibility = [ "//third_party/googletest:*" ]

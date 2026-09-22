@@ -396,7 +396,10 @@ def get_default_compile_flags_feature(
                             # strict-prototypes on host when we have a better
                             # way to address Go SDK compilation failure.
                             _make_flag_config(
-                                cflags = ["-Wno-strict-prototypes"],
+                                cflags = [
+                                    "-Wno-strict-prototypes",
+                                    "-Wno-call-graph-section-no-prototype",
+                                ],
                             ),
                         ] if is_host else [_flag_configs.werror]
                     ),

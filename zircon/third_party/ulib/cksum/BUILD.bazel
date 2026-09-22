@@ -21,6 +21,7 @@ cc_library(
     ],
     copts = [
         "-Wno-strict-prototypes",
+        "-Wno-call-graph-section-no-prototype",
     ],
     includes = [
         "include",

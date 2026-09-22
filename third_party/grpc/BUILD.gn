@@ -102,6 +102,8 @@ config("grpc_config") {
 }
 
 config("grpc_config_private") {
+  configs = [ "//build/config:Wno-call-graph-section-no-prototype" ]
+
   # TODO(b/311287092): Clean up the code and remove this list.
   cflags = [
     "-Wno-c++98-compat-extra-semi",
