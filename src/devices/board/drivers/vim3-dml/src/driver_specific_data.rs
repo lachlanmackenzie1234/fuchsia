@@ -13,9 +13,6 @@ pub static VIM3_DRIVER_METADATA: dml_config::parser::DriverSpecificMetadata = ph
     "adc-buttons" => &[
         ("fuchsia.buttons.AdcButtonsMetadata", get_adc_buttons_metadata),
     ],
-    "gpio-buttons" => &[
-        ("fuchsia.buttons.GpioButtonsMetadata", get_gpio_buttons_metadata),
-    ],
     "power-controller" => &[
         ("fuchsia.hardware.power.DomainMetadata", get_power_domain_metadata),
     ],
@@ -184,30 +181,6 @@ fn get_adc_buttons_metadata() -> anyhow::Result<Vec<u8>> {
     };
 
     fidl::persist(&metadata).context("Failed to serialize adc buttons metadata")
-}
-
-fn get_gpio_buttons_metadata() -> anyhow::Result<Vec<u8>> {
-    use fidl_fuchsia_buttons::{
-        DirectGpioButton, GpioButtonConfig, GpioButtonId, GpioButtonType, GpioButtonsMetadata,
-        GpioConfig, GpioFlag, GpioType, InterruptGpio,
-    };
-
-    let metadata = GpioButtonsMetadata {
-        buttons: Some(vec![GpioButtonConfig {
-            type_: Some(GpioButtonType::Direct(DirectGpioButton::default())),
-            gpio_a_index: Some(0),
-            id: Some(GpioButtonId::Power),
-            ..Default::default()
-        }]),
-        gpios: Some(vec![GpioConfig {
-            type_: Some(GpioType::Interrupt(InterruptGpio::default())),
-            flags: Some(GpioFlag::INVERTED),
-            ..Default::default()
-        }]),
-        ..Default::default()
-    };
-
-    fidl::persist(&metadata).context("Failed to serialize gpio buttons metadata")
 }
 
 fn get_power_domain_metadata() -> anyhow::Result<Vec<u8>> {
