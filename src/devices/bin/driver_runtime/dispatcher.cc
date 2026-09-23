@@ -185,8 +185,10 @@ extern const async_ops_t g_veneer_ops = {
 
 Dispatcher::Dispatcher(uint32_t options, std::string_view name, bool unsynchronized,
                        bool allow_sync_calls, const void* owner,
-                       fdf_dispatcher_shutdown_observer_t* observer)
+                       fdf_dispatcher_shutdown_observer_t* observer,
+                       std::string_view scheduler_role)
     : DispatcherInterface{&g_dispatcher_ops},
+      scheduler_role_(scheduler_role),
       options_(options),
       unsynchronized_(unsynchronized),
       allow_sync_calls_(allow_sync_calls),
@@ -215,7 +217,7 @@ zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
   bool allow_sync_calls = options & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
 
   auto dispatcher = fbl::MakeRefCounted<Dispatcher>(options, name, unsynchronized, allow_sync_calls,
-                                                    owner, observer);
+                                                    owner, observer, scheduler_role);
 
   zx::event event;
   if (zx_status_t status = zx::event::create(0, &event); status != ZX_OK) {
