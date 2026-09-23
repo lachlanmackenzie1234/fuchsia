@@ -65,23 +65,33 @@ impl parse::Parse for Destructure {
     }
 }
 
-fn rest_check(crate_path: &Path, rest: &PatRest) -> (TokenStream, TokenStream) {
+fn make_rest_check(crate_path: &Path, rest: &PatRest) -> TokenStream {
     let span = rest.dot2_token.span();
     let destructurer = quote! { destructurer };
 
-    let expr = quote_spanned! { span => {
-        let phantom = #crate_path::__macro::get_destructure(&#destructurer);
-        #crate_path::__macro::only_borrow_destructuring_may_use_rest_patterns(
-            phantom
-        )
-    } };
-    (quote_spanned! { span => _ }, expr)
+    quote_spanned! { span => {
+        if false {
+            let ptr = #crate_path::__macro::get_destructuring_ptr(
+                &#destructurer
+            );
+            // SAFETY: This code can never be called.
+            let _ = unsafe { &*ptr } as &dyn #crate_path::__macro::MustBeBorrow;
+        }
+    } }
 }
 
 fn parse_pat(
     crate_path: &Path,
     pat: &Pat,
 ) -> Result<(TokenStream, TokenStream), Error> {
+    let test_ident = quote_spanned!(pat.span() => test);
+    let test_ident_ref = quote_spanned!(pat.span() => &test);
+    let test = quote! {
+        let #test_ident =
+            #crate_path::__macro::IsReference::for_ptr(ptr).test();
+        let _: &dyn #crate_path::__macro::MustBeAValue = #test_ident_ref;
+    };
+
     Ok(match pat {
         Pat::Ident(pat_ident) => {
             let mutability = &pat_ident.mutability;
@@ -103,6 +113,8 @@ fn parse_pat(
             (
                 quote! { #mutability #ident },
                 quote! {
+                    #test
+
                     // SAFETY: `ptr` is a properly-aligned pointer to a subfield
                     // of the pointer underlying `destructurer`.
                     unsafe {
@@ -116,8 +128,16 @@ fn parse_pat(
         }
         Pat::Tuple(PatTuple { elems, .. })
         | Pat::TupleStruct(PatTupleStruct { elems, .. }) => {
+            let rest_check = elems.iter().find_map(|e| {
+                if let Pat::Rest(rest) = e {
+                    Some(make_rest_check(crate_path, rest))
+                } else {
+                    None
+                }
+            });
             let parsed = elems
                 .iter()
+                .filter(|e| !matches!(e, Pat::Rest(_)))
                 .map(|e| parse_pat(crate_path, e))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (bindings, (exprs, indices)) = parsed
@@ -127,22 +147,34 @@ fn parse_pat(
                 .unzip::<_, _, Vec<_>, (Vec<_>, Vec<_>)>();
             (
                 quote! { (#(#bindings,)*) },
-                quote! { (
-                    #({
+                quote! { {
+                    #rest_check
+                    #test
+
+                    ( #({
                         // SAFETY: `ptr` is guaranteed to always be non-null,
                         // properly-aligned, and valid for reads.
                         let ptr = unsafe {
                             ::core::ptr::addr_of_mut!((*ptr).#indices)
                         };
+
                         #exprs
-                    },)*
-                ) },
+                    },)* )
+                } },
             )
         }
         Pat::Slice(pat_slice) => {
+            let rest_check = pat_slice.elems.iter().find_map(|e| {
+                if let Pat::Rest(rest) = e {
+                    Some(make_rest_check(crate_path, rest))
+                } else {
+                    None
+                }
+            });
             let parsed = pat_slice
                 .elems
                 .iter()
+                .filter(|e| !matches!(e, Pat::Rest(_)))
                 .map(|e| parse_pat(crate_path, e))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (bindings, (exprs, indices)) = parsed
@@ -152,16 +184,20 @@ fn parse_pat(
                 .unzip::<_, _, Vec<_>, (Vec<_>, Vec<_>)>();
             (
                 quote! { (#(#bindings,)*) },
-                quote! { (
-                    #({
+                quote! { {
+                    #rest_check
+                    #test
+
+                    ( #({
                         // SAFETY: `ptr` is guaranteed to always be non-null,
                         // properly-aligned, and valid for reads.
                         let ptr = unsafe {
                             ::core::ptr::addr_of_mut!((*ptr)[#indices])
                         };
+
                         #exprs
-                    },)*
-                ) },
+                    },)* )
+                } },
             )
         }
         Pat::Struct(pat_struct) => {
@@ -175,38 +211,41 @@ fn parse_pat(
             let (members, (bindings, exprs)) =
                 parsed.into_iter().unzip::<_, _, Vec<_>, (Vec<_>, Vec<_>)>();
 
-            let (rest_binding, rest_expr) = if let Some(rest) = &pat_struct.rest
-            {
-                let (binding, expr) = rest_check(crate_path, rest);
-                (Some(binding), Some(expr))
-            } else {
-                (None, None)
-            };
+            let rest_check = pat_struct
+                .rest
+                .as_ref()
+                .map(|rest| make_rest_check(crate_path, rest));
 
             (
                 quote! { (
                     #(#bindings,)*
-                    #rest_binding
                 ) },
-                quote! { (
-                    #({
+                quote! { {
+                    #rest_check
+                    #test
+
+                    ( #({
                         // SAFETY: `ptr` is guaranteed to always be non-null,
                         // properly-aligned, and valid for reads.
                         let ptr = unsafe {
                             ::core::ptr::addr_of_mut!((*ptr).#members)
                         };
+
                         #exprs
-                    },)*
-                    #rest_expr
-                ) },
+                    },)* )
+                } },
             )
         }
-        Pat::Rest(pat_rest) => rest_check(crate_path, pat_rest),
+        Pat::Rest(_) => unreachable!(
+            "rest patterns only occur in tuples, tuple structs, and slices"
+        ),
         Pat::Wild(pat_wild) => {
             let token = &pat_wild.underscore_token;
             (
                 quote! { #token },
                 quote! {
+                    #test
+
                     // SAFETY: `ptr` is a properly-aligned pointer to a subfield
                     // of the pointer underlying `destructurer`.
                     unsafe {
@@ -243,7 +282,8 @@ fn strip_mut(pat: &Pat) -> Result<Pat, Error> {
         Pat::Tuple(pat_tuple) => {
             let mut elems = Punctuated::new();
             for elem in pat_tuple.elems.iter() {
-                elems.push(strip_mut(elem)?);
+                elems.push_value(strip_mut(elem)?);
+                elems.push_punct(Default::default());
             }
             Pat::Tuple(PatTuple {
                 attrs: pat_tuple.attrs.clone(),
@@ -323,6 +363,8 @@ fn destructure(input: Input) -> Result<TokenStream, Error> {
                     clippy::undocumented_unsafe_blocks,
                 )]
                 {
+                    use #crate_path::__macro::MaybeReference as _;
+
                     let ptr = #crate_path::__macro::destructurer_ptr(
                         &mut destructurer
                     );
@@ -330,13 +372,13 @@ fn destructure(input: Input) -> Result<TokenStream, Error> {
                     #[allow(unreachable_code, unused_variables)]
                     if false {
                         // SAFETY: This can never be called.
-                        unsafe {
-                            ::core::hint::unreachable_unchecked();
-                            let #test_pat =
-                                #crate_path::__macro::test_destructurer(
-                                    &mut destructurer,
-                                );
-                        }
+                        unsafe { ::core::hint::unreachable_unchecked() };
+                        // SAFETY: This can never be called.
+                        let #test_pat = unsafe {
+                            #crate_path::__macro::test_destructurer(
+                                &mut destructurer,
+                            )
+                        };
                     }
 
                     #exprs

@@ -161,7 +161,7 @@ md-5 = "0.11.0"
 memchr = "2.8.3"
 memoffset = "0.9.1"
 mockall = "0.15"
-munge = "0.4.4"
+munge = "0.4.7"
 nix = { version = "0.31.3", features = ["feature", "fs", "hostname", "net", "process", "signal", "user"] }
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
 nom-language = "0.1.0"

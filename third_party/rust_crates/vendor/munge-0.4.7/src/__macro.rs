@@ -20,7 +20,9 @@ pub fn destructurer_ptr<T: internal::Destructurer>(
 /// # Safety
 ///
 /// `test_destructurer` may not be called.
-pub fn test_destructurer<'a, T: internal::Test<'a>>(_: &'a mut T) -> T::Test {
+pub unsafe fn test_destructurer<'a, T: internal::Test<'a>>(
+    _: &'a mut T,
+) -> T::Test {
     // SAFETY: `test_destructurer` may not be called.
     unsafe { unreachable_unchecked() }
 }
@@ -47,16 +49,65 @@ where
     }
 }
 
-pub fn get_destructure<T>(_: &T) -> PhantomData<T::Inner>
+#[diagnostic::on_unimplemented(
+    message = "munge may not destructure a rest pattern by move",
+    label = "this rest pattern requires destructuring by borrow"
+)]
+pub trait MustBeBorrow {}
+
+#[diagnostic::do_not_recommend]
+impl MustBeBorrow for Borrow {}
+
+pub fn get_destructuring_ptr<T>(
+    _: &T,
+) -> *const <T::Inner as Destructure>::Destructuring
 where
     T: internal::Destructurer,
+    T::Inner: Destructure,
 {
-    PhantomData
+    core::ptr::null()
 }
 
-pub fn only_borrow_destructuring_may_use_rest_patterns<
-    T: Destructure<Destructuring = Borrow>,
->(
-    _: PhantomData<T>,
-) {
+pub struct Value;
+
+pub struct Reference;
+
+#[diagnostic::on_unimplemented(
+    message = "munge may not destructure through references",
+    label = "destructuring with this pattern causes an implicit dereference",
+    note = "only values may be destructured"
+)]
+pub trait MustBeAValue {
+    fn check(&self) {}
+}
+
+#[diagnostic::do_not_recommend]
+impl MustBeAValue for Value {}
+
+pub trait MaybeReference {
+    fn test(&self) -> Value {
+        Value
+    }
+}
+
+impl<T: ?Sized> MaybeReference for T {}
+
+pub struct IsReference<T: ?Sized>(PhantomData<T>);
+
+impl<T: ?Sized> IsReference<T> {
+    pub fn for_ptr(_: *mut T) -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<T: ?Sized> IsReference<&mut T> {
+    pub fn test(&self) -> Reference {
+        Reference
+    }
+}
+
+impl<T: ?Sized> IsReference<&T> {
+    pub fn test(&self) -> Reference {
+        Reference
+    }
 }

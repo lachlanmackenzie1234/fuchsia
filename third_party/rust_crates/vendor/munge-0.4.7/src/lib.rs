@@ -25,7 +25,7 @@
     rustdoc::broken_intra_doc_links,
     rustdoc::missing_crate_level_docs
 )]
-#![cfg_attr(all(docsrs, not(doctest)), feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(all(docsrs, not(doctest)), feature(doc_cfg))]
 
 #[doc(hidden)]
 pub mod __macro;
@@ -35,7 +35,13 @@ mod internal;
 #[doc(hidden)]
 pub use munge_macro::munge_with_path;
 
-/// Destructures a type into
+/// Destructures a type using a pattern.
+///
+/// To prevent unsound union destructurings, this macro emits field accesses
+/// which fail to compile in safe Rust. However, if `munge!` is used inside of
+/// an `unsafe` block, these accesses will compile without emitting an error.
+/// This matches the behavior of regular destructuring, but may be surprising in
+/// some situations.
 ///
 /// # Example
 ///
@@ -611,5 +617,35 @@ mod tests {
         munge!(let [_] = value);
 
         assert!(flag);
+    }
+
+    #[test]
+    fn rest_in_full_tuple_pattern() {
+        let (_, _, ..) = (1, 2);
+
+        let value = Cell::new((1, 2));
+        munge!(let (_, _, ..) = &value);
+
+        let [_, _, ..] = [1, 2];
+
+        let value = Cell::new([1, 2]);
+        munge!(let [_, _, ..] = &value);
+
+        struct Foo(i32, i32);
+
+        let Foo(_, _, ..) = Foo(1, 2);
+
+        let value = Cell::new(Foo(1, 2));
+        munge!(let Foo(_, _, ..) = &value);
+
+        struct Bar {
+            a: i32,
+            b: i32,
+        }
+
+        let Bar { a: _, b: _, .. } = Bar { a: 1, b: 2 };
+
+        let value = Cell::new(Bar { a: 1, b: 2 });
+        munge!(let Bar { a: _, b: _, .. } = &value);
     }
 }

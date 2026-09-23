@@ -1639,14 +1639,14 @@ alias(
 )
 
 alias(
-    name = "munge-0.4.4",
-    actual = "//third_party/rust_crates/vendor/munge-0.4.4:munge",
+    name = "munge-0.4.7",
+    actual = "//third_party/rust_crates/vendor/munge-0.4.7:munge",
     tags = ["manual"],
 )
 
 alias(
     name = "munge",
-    actual = "//third_party/rust_crates/vendor/munge-0.4.4:munge",
+    actual = "//third_party/rust_crates/vendor/munge-0.4.7:munge",
     tags = ["manual"],
 )
 

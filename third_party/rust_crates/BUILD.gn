@@ -1206,11 +1206,11 @@ group("mockall-0.15.0") {
 }
 
 group("munge") {
-  public_deps = [ ":munge-v0_4_4" ]
+  public_deps = [ ":munge-v0_4_7" ]
 }
 
-group("munge-0.4.4") {
-  public_deps = [ ":munge-v0_4_4" ]
+group("munge-0.4.7") {
+  public_deps = [ ":munge-v0_4_7" ]
 }
 
 import("//src/lib/fuchsia_nix/nix_visibility.gni")
@@ -13969,46 +13969,46 @@ rustc_library("multimap-v0_10_1") {
   applicable_licenses = [ ":multimap-v0_10_1.license" ]
 }
 
-license("munge-v0_4_4.license") {
+license("munge-v0_4_7.license") {
   public_package_name = "munge"
-  license_files = [ "//third_party/rust_crates/vendor/munge-0.4.4/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/munge-0.4.7/LICENSE" ]
 }
 
-rustc_library("munge-v0_4_4") {
+rustc_library("munge-v0_4_7") {
   crate_name = "munge"
-  source_root = "//third_party/rust_crates/vendor/munge-0.4.4/src/lib.rs"
-  output_name = "munge-de316cda25b7056c"
+  source_root = "//third_party/rust_crates/vendor/munge-0.4.7/src/lib.rs"
+  output_name = "munge-e43c92d50bfa3569"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":munge_macro-v0_4_4($host_toolchain)" ]
+  deps += [ ":munge_macro-v0_4_7($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=de316cda25b7056c",
-    "-Cextra-filename=-de316cda25b7056c",
+    "-Cmetadata=e43c92d50bfa3569",
+    "-Cextra-filename=-e43c92d50bfa3569",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":munge-v0_4_4.license" ]
+  applicable_licenses = [ ":munge-v0_4_7.license" ]
 }
 
-license("munge_macro-v0_4_4.license") {
+license("munge_macro-v0_4_7.license") {
   public_package_name = "munge_macro"
   license_files =
-      [ "//third_party/rust_crates/vendor/munge_macro-0.4.4/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/munge_macro-0.4.7/LICENSE" ]
 }
 
-rustc_macro("munge_macro-v0_4_4") {
+rustc_macro("munge_macro-v0_4_7") {
   crate_name = "munge_macro"
-  source_root = "//third_party/rust_crates/vendor/munge_macro-0.4.4/src/lib.rs"
-  output_name = "munge_macro-5a03870dfacec093"
+  source_root = "//third_party/rust_crates/vendor/munge_macro-0.4.7/src/lib.rs"
+  output_name = "munge_macro-3f8c34326c65855"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -14023,13 +14023,13 @@ rustc_macro("munge_macro-v0_4_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5a03870dfacec093",
-    "-Cextra-filename=-5a03870dfacec093",
+    "-Cmetadata=3f8c34326c65855",
+    "-Cextra-filename=-3f8c34326c65855",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":munge_macro-v0_4_4.license" ]
+  applicable_licenses = [ ":munge_macro-v0_4_7.license" ]
 }
 
 license("nibble_vec-v0_1_0.license") {
@@ -18901,7 +18901,7 @@ rustc_library("rkyv-v0_8_18") {
   deps += [ ":bytes-v1_12_1" ]
   deps += [ ":hashbrown-v0_17_1" ]
   deps += [ ":indexmap-v2_14_0" ]
-  deps += [ ":munge-v0_4_4" ]
+  deps += [ ":munge-v0_4_7" ]
   deps += [ ":ptr_meta-v0_3_1" ]
   deps += [ ":rancor-v0_1_1" ]
   deps += [ ":rend-v0_5_3" ]
