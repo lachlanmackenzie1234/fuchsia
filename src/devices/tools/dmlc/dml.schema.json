@@ -618,6 +618,14 @@
                     "type": "string",
                     "description": "Devicetree/platform compatible string for this child."
                 },
+                "disabled": {
+                    "type": "boolean",
+                    "description": "Whether this device node is disabled by default unless enabled at runtime."
+                },
+                "driver_host": {
+                    "type": "string",
+                    "description": "Optional driver host colocation identifier (e.g. '#gpio', '#usb')."
+                },
                 "metadata": {
                     "type": "array",
                     "description": "Static metadata payloads attached to this child node.",

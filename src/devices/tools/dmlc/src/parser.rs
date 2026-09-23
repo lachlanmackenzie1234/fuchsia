@@ -145,6 +145,7 @@ pub struct DmlChild {
     #[serde(default)]
     pub metadata: Vec<DmlStaticMetadata>,
     pub disabled: Option<bool>,
+    pub driver_host: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
@@ -1411,8 +1412,10 @@ mod tests {
             compatible: None,
             metadata: vec![],
             disabled: None,
+            driver_host: None,
         };
         assert_eq!(child_none.disabled, None);
+        assert_eq!(child_none.driver_host, None);
 
         let child_disabled = DmlChild { disabled: Some(true), ..child_none.clone() };
         assert_eq!(child_disabled.disabled, Some(true));
@@ -1422,13 +1425,15 @@ mod tests {
 
         // Test serde deserialization with JSON5 / JSON
         let parsed_disabled: DmlChild = serde_json5::from_str(
-            r#"{
+            r##"{
                 name: "parsed_child",
-                disabled: true
-            }"#,
+                disabled: true,
+                driver_host: "#gpio"
+            }"##,
         )
         .unwrap();
         assert_eq!(parsed_disabled.disabled, Some(true));
+        assert_eq!(parsed_disabled.driver_host.as_deref(), Some("#gpio"));
 
         let parsed_enabled: DmlChild = serde_json5::from_str(
             r#"{

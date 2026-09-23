@@ -28,13 +28,16 @@ struct LocalResourceEntry {
 fn strip_hash(s: &str) -> String {
     if let Some(stripped) = s.strip_prefix('#') { stripped.to_string() } else { s.to_string() }
 }
+
 fn normalize_config_id(id: &str) -> String {
     id.trim().trim_start_matches(['#', '/']).to_string()
 }
 
-pub fn compute_global_id(provider: &str, name: &str) -> u32 {
+/// Computes a deterministic, non-zero 32-bit FNV-1a hash identifying an offer from `provider` to
+/// `to_name` with `name`.
+pub fn compute_global_id(provider: &str, to_name: &str, name: &str) -> u32 {
     let mut hash: u32 = 0x811c9dc5;
-    for b in format!("{}:{}", provider, name).bytes() {
+    for b in format!("{}:{}:{}", provider, to_name, name).bytes() {
         hash ^= b as u32;
         hash = hash.wrapping_mul(0x01000193);
     }
@@ -412,11 +415,11 @@ fn process_service_offer(
     auto_incrementer.apply(service_name, &provider, &mut constraint_val)?;
     resolve_interrupt_controllers(&mut constraint_val, devices)?;
 
-    let global_id = compute_global_id(&provider, offer.name.as_deref().unwrap_or(to_name));
-    if let Some(obj) = constraint_val.as_object_mut() {
-        if !obj.contains_key("id") && !obj.contains_key("pin") {
-            obj.insert("id".to_string(), Value::Number(global_id.into()));
-        }
+    let global_id = compute_global_id(&provider, to_name, offer.name.as_deref().unwrap_or(""));
+    if let Some(obj) = constraint_val.as_object_mut()
+        && !obj.contains_key("id")
+    {
+        obj.insert("id".to_string(), Value::Number(global_id.into()));
     }
 
     let entry = LocalResourceEntry {
@@ -492,6 +495,7 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
         devices[idx].compatible = child.compatible.clone();
         devices[idx].id = child.id;
         devices[idx].disabled = child.disabled;
+        devices[idx].driver_host = child.driver_host.clone();
         // Map the child device name to its driver's config ID in `driver_config_map`.
         if let Some(url) = &child.url {
             // Extract driver name from component URL (e.g. "fuchsia-pkg://.../buttons#meta/buttons.cm" -> "buttons").
@@ -1008,11 +1012,13 @@ mod tests {
     }
     #[test]
     fn test_compute_global_id() {
-        let id1 = compute_global_id("pdev", "gpio-pin-1");
-        let id2 = compute_global_id("pdev", "gpio-pin-1");
-        let id3 = compute_global_id("pdev", "gpio-pin-2");
+        let id1 = compute_global_id("pdev", "to1", "gpio-pin-1");
+        let id2 = compute_global_id("pdev", "to1", "gpio-pin-1");
+        let id3 = compute_global_id("pdev", "to1", "gpio-pin-2");
+        let id4 = compute_global_id("pdev", "to2", "gpio-pin-1");
         assert_eq!(id1, id2);
         assert_ne!(id1, id3);
+        assert_ne!(id1, id4);
         assert_ne!(id1, 0);
     }
     #[test]
@@ -1998,7 +2004,279 @@ mod tests {
         let name_entry = constraint_entries.iter().find(|e| e.key == "name").unwrap();
         assert_eq!(name_entry.value, fdr::DictionaryValue::Str("regulator_1".to_string()));
 
+        let expected_id = compute_global_id("pmic_node", "dpu_node", "test-vreg") as i64;
+        let id_entry = constraint_entries.iter().find(|e| e.key == "id").unwrap();
+        assert_eq!(id_entry.value, fdr::DictionaryValue::Int64(expected_id));
+
         // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_gpio_service_offer_id() {
+        let temp_dir = std::env::temp_dir().join("test_temp_gpio_offer_global_id");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "gpio_controller",
+                        "compatible": "fuchsia,test-gpio"
+                    },
+                    {
+                        "name": "buttons_node",
+                        "compatible": "fuchsia,test-buttons"
+                    }
+                ],
+                "offers": [
+                    {
+                        "from": "#gpio_controller",
+                        "to": "#buttons_node",
+                        "service": "fuchsia.hardware.gpio.Service",
+                        "name": "test-pin",
+                        "constraints": {
+                            "pin": 51,
+                            "name": "test-pin"
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let aggregates = board_config.aggregates.as_ref().unwrap();
+        assert_eq!(aggregates.len(), 1);
+        assert_eq!(aggregates[0].provider.as_deref(), Some("gpio_controller"));
+        assert_eq!(aggregates[0].service.as_deref(), Some("fuchsia.hardware.gpio.Service"));
+
+        let resources = aggregates[0].resources.as_ref().unwrap();
+        assert_eq!(resources.len(), 1);
+
+        let constraint_entries =
+            resources[0].constraint.as_ref().unwrap().entries.as_ref().unwrap();
+
+        let expected_id = compute_global_id("gpio_controller", "buttons_node", "test-pin") as i64;
+        let id_entry = constraint_entries.iter().find(|e| e.key == "id").unwrap();
+        assert_eq!(id_entry.value, fdr::DictionaryValue::Int64(expected_id));
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_service_offer_preserves_explicit_id() {
+        let temp_dir = std::env::temp_dir().join("test_temp_service_offer_preserves_explicit_id");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "pmic_node",
+                        "compatible": "fuchsia,test-pmic"
+                    },
+                    {
+                        "name": "dpu_node",
+                        "compatible": "fuchsia,test-display"
+                    }
+                ],
+                "offers": [
+                    {
+                        "from": "#pmic_node",
+                        "to": "#dpu_node",
+                        "service": "fuchsia.hardware.vreg.Service",
+                        "name": "test-vreg",
+                        "constraints": {
+                            "name": "regulator_1",
+                            "id": 999
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let aggregates = board_config.aggregates.as_ref().unwrap();
+        assert_eq!(aggregates.len(), 1);
+
+        let resources = aggregates[0].resources.as_ref().unwrap();
+        assert_eq!(resources.len(), 1);
+
+        let constraint_entries =
+            resources[0].constraint.as_ref().unwrap().entries.as_ref().unwrap();
+
+        let id_entry = constraint_entries.iter().find(|e| e.key == "id").unwrap();
+        assert_eq!(id_entry.value, fdr::DictionaryValue::Int64(999));
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_duplicate_gpio_pin_enforces_single_consumer_in_metadata() {
+        let temp_dir = std::env::temp_dir().join("test_temp_duplicate_gpio_pin_single_consumer");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "gpio_controller",
+                        "compatible": "fuchsia,test-gpio"
+                    },
+                    {
+                        "name": "consumer_a",
+                        "compatible": "fuchsia,test-a"
+                    },
+                    {
+                        "name": "consumer_b",
+                        "compatible": "fuchsia,test-b"
+                    }
+                ],
+                "offers": [
+                    {
+                        "from": "#gpio_controller",
+                        "to": "#consumer_a",
+                        "service": "fuchsia.hardware.gpio.Service",
+                        "name": "reset-pin",
+                        "constraints": {
+                            "pin": 51
+                        }
+                    },
+                    {
+                        "from": "#gpio_controller",
+                        "to": "#consumer_b",
+                        "service": "fuchsia.hardware.gpio.Service",
+                        "name": "reset-pin",
+                        "constraints": {
+                            "pin": 51
+                        }
+                    }
+                ],
+                "metadata_mappings": [
+                    {
+                        "metadata_id": "fuchsia.hardware.pinimpl.Metadata",
+                        "aggregations": [
+                            {
+                                "service": "fuchsia.hardware.gpio.Service",
+                                "field": "pins"
+                            }
+                        ]
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let aggregates = board_config.aggregates.as_ref().unwrap();
+        assert_eq!(aggregates.len(), 1);
+
+        let resources = aggregates[0].resources.as_ref().unwrap();
+        assert_eq!(resources.len(), 2);
+
+        let id_a = resources[0]
+            .constraint
+            .as_ref()
+            .unwrap()
+            .entries
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|e| e.key == "id")
+            .unwrap();
+        let id_b = resources[1]
+            .constraint
+            .as_ref()
+            .unwrap()
+            .entries
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|e| e.key == "id")
+            .unwrap();
+        // Distinct consumers receive distinct IDs, and deduplicate_metadata_resources keeps only
+        // the first pin entry (`id_a`), ensuring only `consumer_a` can bind to the pin.
+        assert_ne!(id_a.value, id_b.value);
+
+        let gpio_dev = board_config
+            .devices
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|d| d.name.as_deref() == Some("gpio_controller"))
+            .unwrap();
+        let meta_bytes = gpio_dev.metadata.as_ref().unwrap()[0].data.as_ref().unwrap();
+        let meta_dict: fdr::Dictionary = fidl::unpersist(meta_bytes).unwrap();
+        let meta_entries = meta_dict.entries.as_ref().unwrap();
+        let pins_count = meta_entries.iter().find(|e| e.key == "pins._count").unwrap();
+        assert_eq!(pins_count.value, fdr::DictionaryValue::Int64(1));
+        let pin_0_id = meta_entries.iter().find(|e| e.key == "pins.0.id").unwrap();
+        assert_eq!(pin_0_id.value, id_a.value);
+
         let _ = fs::remove_dir_all(&temp_dir);
     }
     #[test]

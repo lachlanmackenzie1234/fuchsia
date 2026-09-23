@@ -27,6 +27,7 @@ pub struct Irq {
 #[derive(Debug, Clone, Default)]
 pub struct Bti {
     pub id: u32,
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -119,7 +120,8 @@ pub fn bti_list(dict: &fdr::Dictionary) -> Vec<Bti> {
     for i in 0.. {
         let prefix = format!("btis.{}", i);
         if let Some(id) = get_uint32(dict, &format!("{}.id", prefix)) {
-            list.push(Bti { id });
+            let name = get_string(dict, &format!("{}.name", prefix));
+            list.push(Bti { id, name });
         } else {
             break;
         }
@@ -229,5 +231,33 @@ mod tests {
 
         // Unrelated enabled_nodes entry leaves it disabled
         assert!(is_device_disabled(&dev_disabled, &["other-node".to_string()]));
+    }
+
+    #[test]
+    fn test_bti_list() {
+        let dict = fdr::Dictionary {
+            entries: Some(vec![
+                fdr::DictionaryEntry {
+                    key: "btis.0.id".to_string(),
+                    value: fdr::DictionaryValue::Int64(1),
+                },
+                fdr::DictionaryEntry {
+                    key: "btis.0.name".to_string(),
+                    value: fdr::DictionaryValue::Str("dma_bti".to_string()),
+                },
+                fdr::DictionaryEntry {
+                    key: "btis.1.id".to_string(),
+                    value: fdr::DictionaryValue::Int64(2),
+                },
+            ]),
+            ..Default::default()
+        };
+
+        let btis = bti_list(&dict);
+        assert_eq!(btis.len(), 2);
+        assert_eq!(btis[0].id, 1);
+        assert_eq!(btis[0].name.as_deref(), Some("dma_bti"));
+        assert_eq!(btis[1].id, 2);
+        assert_eq!(btis[1].name, None);
     }
 }

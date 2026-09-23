@@ -117,13 +117,18 @@ pub struct ServiceBindConfig {
     pub transport: TransportType,
     pub rules: &'static [PropertyRule],
     pub parent_key_sources: &'static [ValueSource],
+    pub bind_id: bool,
 }
 
 pub const DEFAULT_SERVICE_BIND_CONFIG: ServiceBindConfig = ServiceBindConfig {
     transport: TransportType::Zircon,
     rules: &[],
     parent_key_sources: &[ValueSource::ResourceName],
+    bind_id: false,
 };
+
+pub const DEFAULT_ID_SERVICE_BIND_CONFIG: ServiceBindConfig =
+    ServiceBindConfig { bind_id: true, ..DEFAULT_SERVICE_BIND_CONFIG };
 
 pub struct DmlParserConfig {
     pub service_configs: phf::Map<&'static str, ServiceBindConfig>,
@@ -329,7 +334,7 @@ pub fn generate_parent_spec_generic(
         .service_configs
         .get(service_name)
         .or_else(|| STANDARD_SERVICE_CONFIGS.get(service_name))
-        .unwrap_or(&DEFAULT_SERVICE_BIND_CONFIG);
+        .unwrap_or(&DEFAULT_ID_SERVICE_BIND_CONFIG);
 
     match service_config.transport {
         TransportType::Zircon => {
@@ -373,13 +378,11 @@ pub fn generate_parent_spec_generic(
         }
     }
 
-    if service_config.rules.is_empty() && !bind_rules.iter().any(|r| r.key == "fuchsia.ID") {
-        // TODO(https://fxbug.dev/555962083): Remove this hack
-        let id_opt =
-            crate::get_int64(constraint, "node_id").or_else(|| crate::get_int64(constraint, "id"));
-        if let Some(id) = id_opt {
-            bind_rules.push(make_accept_bind_rule("fuchsia.ID", property_int(id as u32)));
-        }
+    if service_config.bind_id
+        && !bind_rules.iter().any(|r| r.key == "fuchsia.ID")
+        && let Some(id) = crate::get_uint32(constraint, "id")
+    {
+        bind_rules.push(make_accept_bind_rule("fuchsia.ID", property_int(id)));
     }
 
     let resolved_key = service_config.parent_key_sources.iter().find_map(|source| {
@@ -525,6 +528,7 @@ pub async fn publish_dml_devices(
                 bti_list.push(fpbus::Bti {
                     iommu_id: Some(0),
                     bti_id: Some(bti.id),
+                    name: bti.name,
                     ..Default::default()
                 });
             }
@@ -641,8 +645,15 @@ pub async fn publish_dml_devices(
             }
         }
 
-        let mut spec =
-            fdf_framework::CompositeNodeSpec { name: dev.name.clone(), ..Default::default() };
+        if resource_parents.is_empty() && dev.driver_host.is_some() {
+            node.driver_host = dev.driver_host.clone();
+        }
+
+        let mut spec = fdf_framework::CompositeNodeSpec {
+            name: dev.name.clone(),
+            driver_host: dev.driver_host.clone(),
+            ..Default::default()
+        };
 
         let mut parents2 = Vec::new();
 
@@ -669,7 +680,10 @@ pub async fn publish_dml_devices(
                     make_accept_bind_rule("fuchsia.COMPATIBLE", property_string(compatible)),
                 ],
                 properties: vec![
-                    make_property2("fuchsia.NAME", property_string("pdev")),
+                    // TODO(https://fxbug.dev/555962083): Restore `fuchsia.NAME = "pdev"` once all
+                    // composite drivers are migrated from `primary parent "devicetree"` to `"pdev"`
+                    // (`driver-index` rejects `ParentSpec2.properties` when `fuchsia.NAME` does not
+                    // equal the `.bind` primary parent symbol name).
                     make_property2("fuchsia.BIND_PROTOCOL", property_int(BIND_PROTOCOL_DEVICE)),
                     make_property2(
                         "fuchsia.BIND_PLATFORM_DEV_VID",
