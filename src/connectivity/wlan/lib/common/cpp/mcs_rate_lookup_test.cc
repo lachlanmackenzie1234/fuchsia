@@ -29,12 +29,10 @@ namespace wlan::common {
 
 namespace {
 
-namespace wlan_common = ::fuchsia_wlan_common;
-
 // Parameters used in HT and VHT tests below.
 const uint8_t kValidMcs = 0;
 const uint8_t kInvalidMcs = 100;
-const auto kValidGi = wlan_common::GuardInterval::kLongGi;
+const auto kValidGi = fuchsia_wlan_ieee80211::GuardInterval::kLongGi;
 
 // HT-specific parameters used in tests below.
 const auto kValidHtCbw = fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20;
@@ -50,13 +48,13 @@ TEST(McsRateLookup, HtLookupSucceedsFor20MhzCbw) {
   const uint8_t mcs = 31;
   const uint32_t expected_long_gi_kbps = 260000;
   ASSERT_EQ(HtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20, mcs,
-                             wlan_common::GuardInterval::kLongGi, &out_kbps),
+                             fuchsia_wlan_ieee80211::GuardInterval::kLongGi, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_long_gi_kbps);
 
   const uint32_t expected_short_gi_kbps = 288900;
   ASSERT_EQ(HtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20, mcs,
-                             wlan_common::GuardInterval::kShortGi, &out_kbps),
+                             fuchsia_wlan_ieee80211::GuardInterval::kShortGi, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_short_gi_kbps);
 }
@@ -66,13 +64,13 @@ TEST(McsRateLookup, HtLookupSucceedsFor40MhzCbw) {
   const uint8_t mcs = 17;
   const uint32_t expected_long_gi_kbps = 81000;
   ASSERT_EQ(HtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40, mcs,
-                             wlan_common::GuardInterval::kLongGi, &out_kbps),
+                             fuchsia_wlan_ieee80211::GuardInterval::kLongGi, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_long_gi_kbps);
 
   const uint32_t expected_short_gi_kbps = 90000;
   ASSERT_EQ(HtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40, mcs,
-                             wlan_common::GuardInterval::kShortGi, &out_kbps),
+                             fuchsia_wlan_ieee80211::GuardInterval::kShortGi, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_short_gi_kbps);
 }
@@ -101,13 +99,13 @@ TEST(McsRateLookup, VhtLookupSucceedsFor20MhzCbw) {
   const uint8_t nss = 1;
   const uint32_t expected_long_gi_kbps = 6500;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20, mcs,
-                              wlan_common::GuardInterval::kLongGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kLongGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_long_gi_kbps);
 
   const uint32_t expected_short_gi_kbps = 7200;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20, mcs,
-                              wlan_common::GuardInterval::kShortGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kShortGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_short_gi_kbps);
 }
@@ -118,13 +116,13 @@ TEST(McsRateLookup, VhtLookupSucceedsFor40MhzCbw) {
   const uint8_t nss = 2;
   const uint32_t expected_long_gi_kbps = 216000;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40, mcs,
-                              wlan_common::GuardInterval::kLongGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kLongGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_long_gi_kbps);
 
   const uint32_t expected_short_gi_kbps = 240000;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40, mcs,
-                              wlan_common::GuardInterval::kShortGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kShortGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_short_gi_kbps);
 }
@@ -135,13 +133,13 @@ TEST(McsRateLookup, VhtLookupSucceedsFor80MhzCbw) {
   const uint8_t nss = 6;
   const uint32_t expected_long_gi_kbps = 2106000;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80, mcs,
-                              wlan_common::GuardInterval::kLongGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kLongGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_long_gi_kbps);
 
   const uint32_t expected_short_gi_kbps = 2340000;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80, mcs,
-                              wlan_common::GuardInterval::kShortGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kShortGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_short_gi_kbps);
 }
@@ -152,13 +150,13 @@ TEST(McsRateLookup, VhtLookupSucceedsFor160MhzCbw) {
   const uint8_t nss = 8;
   const uint32_t expected_long_gi_kbps = 1404000;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw160, mcs,
-                              wlan_common::GuardInterval::kLongGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kLongGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_long_gi_kbps);
 
   const uint32_t expected_short_gi_kbps = 1560000;
   ASSERT_EQ(VhtDataRateLookup(fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw160, mcs,
-                              wlan_common::GuardInterval::kShortGi, nss, &out_kbps),
+                              fuchsia_wlan_ieee80211::GuardInterval::kShortGi, nss, &out_kbps),
             ZX_OK);
   EXPECT_EQ(out_kbps, expected_short_gi_kbps);
 }
@@ -189,9 +187,11 @@ TEST(McsRateLookup, VhtLookupFailsWithSpecialCaseInvalidMcs) {
     const auto& nss = std::get<1>(params);
     const auto& mcs = std::get<2>(params);
     uint32_t out_kbps;
-    EXPECT_EQ(VhtDataRateLookup(cbw, mcs, wlan_common::GuardInterval::kLongGi, nss, &out_kbps),
-              ZX_ERR_OUT_OF_RANGE);
-    EXPECT_EQ(VhtDataRateLookup(cbw, mcs, wlan_common::GuardInterval::kShortGi, nss, &out_kbps),
+    EXPECT_EQ(
+        VhtDataRateLookup(cbw, mcs, fuchsia_wlan_ieee80211::GuardInterval::kLongGi, nss, &out_kbps),
+        ZX_ERR_OUT_OF_RANGE);
+    EXPECT_EQ(VhtDataRateLookup(cbw, mcs, fuchsia_wlan_ieee80211::GuardInterval::kShortGi, nss,
+                                &out_kbps),
               ZX_ERR_OUT_OF_RANGE);
   }
 }

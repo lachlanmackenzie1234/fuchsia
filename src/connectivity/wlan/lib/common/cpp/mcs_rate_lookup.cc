@@ -11,7 +11,6 @@
 // NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
 // OF THIS SOFTWARE.
 
-#include <fidl/fuchsia.wlan.common/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.ieee80211/cpp/fidl.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
@@ -619,7 +618,7 @@ const vht_per_bandwidth_table_t kVht160mhzRateLookup = {
 
 zx_status_t ValidateHtLookupRequestBounds(const ::fuchsia_wlan_ieee80211::ChannelBandwidth& cbw,
                                           uint8_t mcs,
-                                          const ::fuchsia_wlan_common::GuardInterval& gi) {
+                                          const ::fuchsia_wlan_ieee80211::GuardInterval& gi) {
   auto status = ZX_OK;
   if (mcs >= kHtMaxMcsCount) {
     status = ZX_ERR_OUT_OF_RANGE;
@@ -636,8 +635,8 @@ zx_status_t ValidateHtLookupRequestBounds(const ::fuchsia_wlan_ieee80211::Channe
   }
 
   // HT PHY guard intervals must be either short or long, see IEEE 802.11-2016 19.1.1.
-  if (gi != ::fuchsia_wlan_common::GuardInterval::kShortGi &&
-      gi != ::fuchsia_wlan_common::GuardInterval::kLongGi) {
+  if (gi != ::fuchsia_wlan_ieee80211::GuardInterval::kShortGi &&
+      gi != ::fuchsia_wlan_ieee80211::GuardInterval::kLongGi) {
     status = ZX_ERR_OUT_OF_RANGE;
     errorf("Invalid HT guard interval (%s)\n", zx_status_get_string(status));
     return status;
@@ -655,7 +654,7 @@ zx_status_t ValidateHtLookupRequestBounds(const ::fuchsia_wlan_ieee80211::Channe
 
 zx_status_t ValidateVhtLookupRequestBounds(const ::fuchsia_wlan_ieee80211::ChannelBandwidth& cbw,
                                            uint8_t mcs,
-                                           const ::fuchsia_wlan_common::GuardInterval& gi,
+                                           const ::fuchsia_wlan_ieee80211::GuardInterval& gi,
                                            uint8_t nss) {
   auto status = ZX_OK;
   if (nss < 1 || nss > 8) {
@@ -665,8 +664,8 @@ zx_status_t ValidateVhtLookupRequestBounds(const ::fuchsia_wlan_ieee80211::Chann
   }
 
   // VHT PHY guard intervals must be either short or long, see IEEE 802.11-2016 21.1.1.
-  if (gi != ::fuchsia_wlan_common::GuardInterval::kShortGi &&
-      gi != ::fuchsia_wlan_common::GuardInterval::kLongGi) {
+  if (gi != ::fuchsia_wlan_ieee80211::GuardInterval::kShortGi &&
+      gi != ::fuchsia_wlan_ieee80211::GuardInterval::kLongGi) {
     status = ZX_ERR_OUT_OF_RANGE;
     errorf("Invalid VHT guard interval (%s)\n", zx_status_get_string(status));
     return status;
@@ -684,10 +683,10 @@ zx_status_t ValidateVhtLookupRequestBounds(const ::fuchsia_wlan_ieee80211::Chann
 }
 
 // Translate the GI enum value into an index into the lookup table.
-zx_status_t GiEnumToIndex(::fuchsia_wlan_common::GuardInterval gi, uint8_t* gi_index) {
-  if (gi == ::fuchsia_wlan_common::GuardInterval::kLongGi) {
+zx_status_t GiEnumToIndex(::fuchsia_wlan_ieee80211::GuardInterval gi, uint8_t* gi_index) {
+  if (gi == ::fuchsia_wlan_ieee80211::GuardInterval::kLongGi) {
     *gi_index = kLongGiIndex;
-  } else if (gi == ::fuchsia_wlan_common::GuardInterval::kShortGi) {
+  } else if (gi == ::fuchsia_wlan_ieee80211::GuardInterval::kShortGi) {
     *gi_index = kShortGiIndex;
   } else {
     return ZX_ERR_INTERNAL;
@@ -698,7 +697,8 @@ zx_status_t GiEnumToIndex(::fuchsia_wlan_common::GuardInterval gi, uint8_t* gi_i
 }  // namespace
 
 zx_status_t HtDataRateLookup(const ::fuchsia_wlan_ieee80211::ChannelBandwidth& cbw, uint8_t mcs,
-                             const ::fuchsia_wlan_common::GuardInterval& gi, uint32_t* out_kbps) {
+                             const ::fuchsia_wlan_ieee80211::GuardInterval& gi,
+                             uint32_t* out_kbps) {
   auto status = ValidateHtLookupRequestBounds(cbw, mcs, gi);
   if (status != ZX_OK) {
     return status;
@@ -732,7 +732,7 @@ zx_status_t HtDataRateLookup(const ::fuchsia_wlan_ieee80211::ChannelBandwidth& c
 }
 
 zx_status_t VhtDataRateLookup(const ::fuchsia_wlan_ieee80211::ChannelBandwidth& cbw, uint8_t mcs,
-                              const ::fuchsia_wlan_common::GuardInterval& gi, uint8_t num_sts,
+                              const ::fuchsia_wlan_ieee80211::GuardInterval& gi, uint8_t num_sts,
                               uint8_t stbc, uint32_t* out_kbps) {
   // IEEE 802.11-2016 8.3.4.4 defines this formula for finding the VHT NSS.
   const uint8_t nss = num_sts / (stbc + 1);
@@ -740,7 +740,7 @@ zx_status_t VhtDataRateLookup(const ::fuchsia_wlan_ieee80211::ChannelBandwidth& 
 }
 
 zx_status_t VhtDataRateLookup(const ::fuchsia_wlan_ieee80211::ChannelBandwidth& cbw, uint8_t mcs,
-                              const ::fuchsia_wlan_common::GuardInterval& gi, uint8_t nss,
+                              const ::fuchsia_wlan_ieee80211::GuardInterval& gi, uint8_t nss,
                               uint32_t* out_kbps) {
   auto status = ValidateVhtLookupRequestBounds(cbw, mcs, gi, nss);
   if (status != ZX_OK) {

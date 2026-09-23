@@ -35,11 +35,10 @@ cc_library(
     features = ["enable_zircon_asserts"],
     includes = ["include"],
     deps = [
-        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
-        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
         "//src/connectivity/wlan/drivers/lib/macaddr",
         "//zircon/system/ulib/fbl",
         "//zircon/system/ulib/zx",
+        "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
         "@fuchsia_sdk//pkg/async-cpp",
         "@fuchsia_sdk//pkg/async-loop-cpp",
         "@fuchsia_sdk//pkg/async-loop-default",
