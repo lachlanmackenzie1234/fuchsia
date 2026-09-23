@@ -2121,11 +2121,11 @@ group("serde_json5-0.2.1") {
 }
 
 group("serde_repr") {
-  public_deps = [ ":serde_repr-v0_1_20($host_toolchain)" ]
+  public_deps = [ ":serde_repr-v0_1_21($host_toolchain)" ]
 }
 
-group("serde_repr-0.1.20") {
-  public_deps = [ ":serde_repr-v0_1_20" ]
+group("serde_repr-0.1.21") {
+  public_deps = [ ":serde_repr-v0_1_21" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -14983,7 +14983,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":rand-v0_9_4" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_151" ]
-  deps += [ ":serde_repr-v0_1_20($host_toolchain)" ]
+  deps += [ ":serde_repr-v0_1_21($host_toolchain)" ]
   deps += [ ":sha2-v0_11_0" ]
   deps += [ ":signature-v3_0_0" ]
   deps += [ ":thiserror-v2_0_20" ]
@@ -21152,18 +21152,18 @@ rustc_library("serde_json5-v0_2_1") {
   applicable_licenses = [ ":serde_json5-v0_2_1.license" ]
 }
 
-license("serde_repr-v0_1_20.license") {
+license("serde_repr-v0_1_21.license") {
   public_package_name = "serde_repr"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_repr-0.1.20/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_repr-0.1.20/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_repr-0.1.21/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_repr-0.1.21/LICENSE-MIT",
   ]
 }
 
-rustc_macro("serde_repr-v0_1_20") {
+rustc_macro("serde_repr-v0_1_21") {
   crate_name = "serde_repr"
-  source_root = "//third_party/rust_crates/vendor/serde_repr-0.1.20/src/lib.rs"
-  output_name = "serde_repr-72bc72975dca0e5d"
+  source_root = "//third_party/rust_crates/vendor/serde_repr-0.1.21/src/lib.rs"
+  output_name = "serde_repr-aca9b2593582fab1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -21172,19 +21172,19 @@ rustc_macro("serde_repr-v0_1_20") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=72bc72975dca0e5d",
-    "-Cextra-filename=-72bc72975dca0e5d",
+    "-Cmetadata=aca9b2593582fab1",
+    "-Cextra-filename=-aca9b2593582fab1",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_repr-v0_1_20.license" ]
+  applicable_licenses = [ ":serde_repr-v0_1_21.license" ]
 }
 
 license("serde_spanned-v1_1_1.license") {

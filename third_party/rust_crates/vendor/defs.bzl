@@ -670,7 +670,7 @@ _PROC_MACRO_DEPENDENCIES = {
             "proptest-derive": Label("//third_party/rust_crates/vendor/proptest-derive-0.8.0:proptest_derive"),
             "sapphire-rpc-macro": Label("//third_party/rust_crates/vendor/sapphire-rpc-macro-0.1.0:sapphire_rpc_macro"),
             "serde_derive": Label("//third_party/rust_crates/vendor/serde_derive-1.0.229:serde_derive"),
-            "serde_repr": Label("//third_party/rust_crates/vendor/serde_repr-0.1.20:serde_repr"),
+            "serde_repr": Label("//third_party/rust_crates/vendor/serde_repr-0.1.21:serde_repr"),
             "strum_macros": Label("//third_party/rust_crates/vendor/strum_macros-0.28.0:strum_macros"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {
