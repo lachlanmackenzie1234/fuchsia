@@ -7,6 +7,7 @@
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/inspect/testing/cpp/inspect.h>
+#include <lib/sync/cpp/completion.h>
 
 #include <gtest/gtest.h>
 #include <usb-inspect/usb-inspect-test-helper.h>
@@ -20,10 +21,38 @@ namespace {
 constexpr uint32_t kBulkOutEp = 1;
 constexpr uint32_t kBulkInEp = 2;
 
-class FakeUsbFunction
-    : public fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction> {
+class TestEndpoint : public fake_usb_endpoint::FakeEndpoint {
  public:
-  using Base = fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction>;
+  void QueueRequests(QueueRequestsRequest& request,
+                     QueueRequestsCompleter::Sync& completer) override {
+    fake_usb_endpoint::FakeEndpoint::QueueRequests(request, completer);
+    if (on_queue_requests_) {
+      on_queue_requests_();
+    }
+  }
+
+  void SetOnQueueRequests(fit::closure callback) { on_queue_requests_ = std::move(callback); }
+
+  void CancelAll(CancelAllCompleter::Sync& completer) override {
+    if (on_cancel_all_) {
+      on_cancel_all_();
+    }
+    fake_usb_endpoint::FakeEndpoint::CancelAll(completer);
+  }
+
+  void SetOnCancelAll(fit::closure callback) { on_cancel_all_ = std::move(callback); }
+
+ private:
+  fit::closure on_queue_requests_;
+  fit::closure on_cancel_all_;
+};
+
+class FakeUsbFunction
+    : public fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction,
+                                                    TestEndpoint> {
+ public:
+  using Base = fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction,
+                                                      TestEndpoint>;
   using Base::Base;
 
   void Configure(
@@ -51,11 +80,22 @@ class FakeUsbFunction
     completer.Reply(fit::ok(std::move(response)));
   }
 
+  void DisableEndpoint(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>& request,
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>::Sync& completer) override {
+    disabled_endpoints_.push_back(request.endpoint_address());
+    Base::DisableEndpoint(request, completer);
+  }
+
+  const std::vector<uint8_t>& disabled_endpoints() const { return disabled_endpoints_; }
+
   fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> TakeInterface() {
     return std::move(interface_);
   }
 
  private:
+  std::vector<uint8_t> disabled_endpoints_;
   fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> interface_;
 };
 
@@ -363,6 +403,142 @@ TEST_F(UsbFastbootFunctionTest, Inspect) {
       });
 
   ASSERT_TRUE(driver_test_.StopDriver().is_ok());
+}
+
+TEST_F(UsbFastbootFunctionTest, TeardownWithPendingReceiveDrainsCleanly) {
+  EnableUsb();
+
+  libsync::Completion requests_queued;
+  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) {
+    env.fake_dev_.fake_endpoint(kBulkOutEp).SetOnQueueRequests([&]() { requests_queued.Signal(); });
+  });
+
+  std::thread client_thread([&]() {
+    auto res = client()->Receive(1024);
+    ASSERT_TRUE(res.ok());
+    EXPECT_TRUE(res->is_error());
+    if (res->is_error()) {
+      EXPECT_EQ(res->error_value(), ZX_ERR_CANCELED);
+    }
+  });
+
+  // Await requests queued in fake endpoint deterministically.
+  requests_queued.Wait();
+
+  // Verify requests were queued in fake endpoint.
+  driver_test_.RunInEnvironmentTypeContext([](UsbFastbootEnvironment& env) {
+    EXPECT_GT(env.fake_dev_.fake_endpoint(kBulkOutEp).pending_request_count(), 0u);
+  });
+
+  // StopDriver should drain requests and complete pending client call.
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
+
+  client_thread.join();
+
+  // Verify fake endpoint has no pending requests remaining and was disabled.
+  driver_test_.RunInEnvironmentTypeContext([](UsbFastbootEnvironment& env) {
+    EXPECT_EQ(env.fake_dev_.fake_endpoint(kBulkOutEp).pending_request_count(), 0u);
+    EXPECT_EQ(env.fake_dev_.disabled_endpoints().size(), 2u);
+  });
+}
+
+TEST_F(UsbFastbootFunctionTest, TeardownWithPendingSendDrainsCleanly) {
+  EnableUsb();
+
+  const std::string_view send_data = "PENDING_SEND_DATA";
+  fzl::OwnedVmoMapper send_vmo;
+  InitializeSendVmo(send_vmo, send_data);
+
+  libsync::Completion requests_queued;
+  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) {
+    env.fake_dev_.fake_endpoint(kBulkInEp).SetOnQueueRequests([&]() { requests_queued.Signal(); });
+  });
+
+  std::thread client_thread([&]() {
+    auto res = client()->Send(send_vmo.Release());
+    ASSERT_TRUE(res.ok());
+    EXPECT_TRUE(res->is_error());
+    if (res->is_error()) {
+      EXPECT_EQ(res->error_value(), ZX_ERR_CANCELED);
+    }
+  });
+
+  // Await requests queued in fake endpoint deterministically.
+  requests_queued.Wait();
+
+  // Verify requests were queued in fake endpoint.
+  driver_test_.RunInEnvironmentTypeContext([](UsbFastbootEnvironment& env) {
+    EXPECT_GT(env.fake_dev_.fake_endpoint(kBulkInEp).pending_request_count(), 0u);
+  });
+
+  // StopDriver should drain requests and complete pending client call.
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
+
+  client_thread.join();
+
+  // Verify fake endpoint has no pending requests remaining and was disabled.
+  driver_test_.RunInEnvironmentTypeContext([](UsbFastbootEnvironment& env) {
+    EXPECT_EQ(env.fake_dev_.fake_endpoint(kBulkInEp).pending_request_count(), 0u);
+    EXPECT_EQ(env.fake_dev_.disabled_endpoints().size(), 2u);
+  });
+}
+
+TEST_F(UsbFastbootFunctionTest, TeardownWhileIdleDisablesEndpoints) {
+  EnableUsb();
+
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
+
+  // Verify fake endpoints were disabled during teardown.
+  driver_test_.RunInEnvironmentTypeContext([](UsbFastbootEnvironment& env) {
+    EXPECT_EQ(env.fake_dev_.disabled_endpoints().size(), 2u);
+  });
+}
+
+TEST_F(UsbFastbootFunctionTest, SendAndReceiveFailWithCanceledWhileStopping) {
+  EnableUsb();
+
+  libsync::Completion cancel_started;
+  libsync::Completion client_calls_done;
+
+  std::thread client_thread([&]() {
+    // Wait until Stop() has set stopping_ = true and invoked CancelAll().
+    cancel_started.Wait();
+
+    // Calls to Receive() and Send() while stopping must return ZX_ERR_CANCELED.
+    {
+      auto res = client()->Receive(1024);
+      ASSERT_TRUE(res.ok());
+      EXPECT_TRUE(res->is_error());
+      if (res->is_error()) {
+        EXPECT_EQ(res->error_value(), ZX_ERR_CANCELED);
+      }
+    }
+    {
+      const std::string_view send_data = "CANCEL_TEST";
+      fzl::OwnedVmoMapper send_vmo;
+      InitializeSendVmo(send_vmo, send_data);
+      auto res = client()->Send(send_vmo.Release());
+      ASSERT_TRUE(res.ok());
+      EXPECT_TRUE(res->is_error());
+      if (res->is_error()) {
+        EXPECT_EQ(res->error_value(), ZX_ERR_CANCELED);
+      }
+    }
+
+    client_calls_done.Signal();
+  });
+
+  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) {
+    env.fake_dev_.fake_endpoint(kBulkOutEp).SetOnCancelAll([&]() {
+      cancel_started.Signal();
+      client_calls_done.Wait();
+    });
+  });
+
+  // StopDriver runs on the main test thread.
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
+
+  client_thread.join();
 }
 
 }  // namespace

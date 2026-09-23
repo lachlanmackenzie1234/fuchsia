@@ -112,6 +112,14 @@ class UsbFastbootFunction
   void QueueTx();
   void QueueRx();
 
+  void CheckStopComplete();
+  void CancelActiveTransfers();
+
+  std::optional<fdf::StopCompleter> stop_completer_;
+  bool stopping_ = false;
+  bool bulk_in_cancelled_ = false;
+  bool bulk_out_cancelled_ = false;
+
   // USB Fastboot interface descriptor.
   struct {
     usb_interface_descriptor_t fastboot_intf;
