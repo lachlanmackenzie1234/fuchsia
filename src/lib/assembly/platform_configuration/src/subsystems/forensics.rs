@@ -103,16 +103,7 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 &serde_json::to_string_pretty(&config.feedback.snapshot_exclusion)?,
             )?;
 
-            // For backward compatibility, legacy configurations specifying `large_disk: true`
-            // map to `Medium`.
-            #[allow(deprecated)]
-            let effective_disk_size = match (config.feedback.disk_size, config.feedback.large_disk)
-            {
-                (_, true) => DiskSize::Medium,
-                (size, _) => size,
-            };
-
-            let disk_sized_params = match effective_disk_size {
+            let disk_sized_params = match config.feedback.disk_size {
                 DiskSize::Small => SMALL_DISK,
                 DiskSize::Medium => MEDIUM_DISK,
                 DiskSize::Large => LARGE_DISK,
@@ -630,27 +621,6 @@ mod test {
         assert_eq!(
             config.snapshot_persistence_max_tmp_size_mib,
             SMALL_DISK.snapshot_storage_size_mib
-        );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn feedback_config_large_disk() {
-        let forensics_config = ForensicsConfig {
-            feedback: FeedbackConfig { large_disk: true, ..Default::default() },
-            ..Default::default()
-        };
-        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
-
-        assert_eq!(config.report_persistence_max_cache_size_kib, MEDIUM_DISK.report_cache_size_kib);
-        assert_eq!(config.report_persistence_max_tmp_size_kib, MEDIUM_DISK.report_tmp_size_kib);
-        assert_eq!(
-            config.snapshot_persistence_max_cache_size_mib,
-            MEDIUM_DISK.snapshot_storage_size_mib
-        );
-        assert_eq!(
-            config.snapshot_persistence_max_tmp_size_mib,
-            MEDIUM_DISK.snapshot_storage_size_mib
         );
     }
 

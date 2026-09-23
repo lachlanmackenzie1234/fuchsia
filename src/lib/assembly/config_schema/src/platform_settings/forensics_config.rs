@@ -28,13 +28,6 @@ pub struct FeedbackConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub disk_size: DiskSize,
 
-    /// If true, Feedback will persist snapshots to disk if the network is unavailable.
-    ///
-    /// NOTE: Deprecated. Use `disk_size` instead.
-    #[deprecated(note = "use disk_size instead")]
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub large_disk: bool,
-
     /// The URL of the component, if any, that exposes the fuchsia.feedback.DeviceIdProvider
     /// protocol and should be added to the core realm.
     ///
