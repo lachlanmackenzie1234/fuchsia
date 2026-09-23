@@ -21,6 +21,7 @@ use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fidl_fuchsia_pkg_http as fpkg_http;
 use fidl_fuchsia_pkg_internal as fpkg_internal;
+use fidl_fuchsia_pkg_resolution as fpkg_resolution;
 use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_verify as fupdate_verify;
 use fuchsia_async as fasync;
@@ -57,6 +58,7 @@ mod retained_blobs;
 mod retained_packages;
 mod space;
 mod sync;
+mod toolbox_resolver;
 mod write_blobs;
 
 static SHELL_COMMANDS_BIN_PATH: &str = "shell-commands-bin";
@@ -925,6 +927,7 @@ where
                     .capability(Capability::protocol::<fpkg::PackageResolverMarker>())
                     .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
                     .capability(Capability::protocol::<fpkg_internal::OtaDownloaderMarker>())
+                    .capability(Capability::protocol::<fpkg_resolution::PackageResolverMarker>())
                     .capability(Capability::protocol::<fcomponent_resolution::ResolverMarker>())
                     .capability(Capability::directory(SHELL_COMMANDS_BIN_PATH))
                     .capability(Capability::directory("pkgfs"))
@@ -1220,6 +1223,23 @@ impl<B: Blobfs> TestEnv<B> {
             .unwrap()
             .map(|fpkg::BlobId { merkle_root }| merkle_root.into())
             .map_err(|i| zx::Status::try_from_raw(i).unwrap())
+    }
+
+    pub async fn resolve_toolbox(
+        &self,
+        url: impl Into<String>,
+    ) -> Result<fpkg_resolution::ResolveResult, fpkg_resolution::ResolveError> {
+        self.apps
+            .realm_instance
+            .root
+            .connect_to_protocol_at_exposed_dir::<fpkg_resolution::PackageResolverProxy>()
+            .unwrap()
+            .resolve(fpkg_resolution::PackageResolverResolveRequest {
+                package_url: Some(url.into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
     }
 
     async fn set_upgradable_urls(

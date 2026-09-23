@@ -22,6 +22,7 @@ use fidl_fuchsia_metrics::{
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_http as fpkg_http;
 use fidl_fuchsia_pkg_internal as fpkg_internal;
+use fidl_fuchsia_pkg_resolution as fpkg_resolution;
 use fidl_fuchsia_update::CommitStatusProviderMarker;
 use fuchsia_async as fasync;
 use fuchsia_async::Task;
@@ -468,6 +469,7 @@ async fn main_inner() -> Result<(), Error> {
             .context("adding fuchsia.pkg/PackageResolver-full to /svc")?;
     }
     {
+        let full_package_resolver = Arc::clone(&full_package_resolver);
         let () = svc_dir
             .add_entry(
                 format!("{}-full", fcomponent_resolution::ResolverMarker::PROTOCOL_NAME),
@@ -483,6 +485,20 @@ async fn main_inner() -> Result<(), Error> {
                 }),
             )
             .context("adding fuchsia.component.resolution/Resolver-full to /svc")?;
+    }
+    {
+        let () = svc_dir
+            .add_entry(
+                fpkg_resolution::PackageResolverMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream: fpkg_resolution::PackageResolverRequestStream| {
+                    Arc::clone(&full_package_resolver)
+                        .serve_toolbox_resolver_request_stream(stream)
+                        .unwrap_or_else(|e: anyhow::Error| {
+                            error!("serving fuchsia.pkg.resolution/PackageResolver: {e:#}")
+                        })
+                }),
+            )
+            .context("adding fuchsia.pkg.resolution/PackageResolver to /svc")?;
     }
 
     let base_package_entry = |name: &'static str| {
