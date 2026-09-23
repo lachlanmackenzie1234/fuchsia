@@ -27,6 +27,11 @@ declare_args() {
   # Use `ffx profile heapdump snapshot --kernel` to produce a symbolized
   # memory profile.
   kernel_memory_profiler = false
+
+  # **NOTE: _For experimental use only._** This gives a list of
+  # compiler_config() labels to include first in the kernel's compilation
+  # configuration / Rust custom target definition.
+  experimental_kernel_abi = [ "//build/config:cpu_baseline" ]
 }
 
 # For any standalone static binary.
@@ -300,8 +305,11 @@ config("instrumented-stack-size") {
 # in this toolchain.  It's paired with //zircon/kernel/lib/rust:kernel-target
 # to roll up the compiler_config() instructions for the custom Rust target.
 compiler_config("abi") {
-  compiler_configs = [
-    "//build/config:cpu_baseline",
+  # These always come first, so they can enable target features that need to be
+  # disabled for ABI purposes later.
+  compiler_configs = experimental_kernel_abi
+
+  compiler_configs += [
     "//zircon/kernel/arch/$zircon_cpu:abi",
     ":standalone",
   ]
