@@ -19,7 +19,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    AccessPointState,
     NetworkIdentifier,
 )
 from honeydew.errors import NotSupportedError
@@ -29,9 +28,8 @@ from honeydew.transports.fuchsia_controller import (
 )
 
 _TEST_SSID = "ThepromisedLAN"
-_TEST_SSID_BYTES = list(str.encode(_TEST_SSID))
 
-_ACCESS_POINT_STATE = AccessPointState(
+_ACCESS_POINT_STATE = f_wlan_policy.AccessPointState(
     state=f_wlan_policy.OperatingState.STARTING,
     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
     band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
@@ -39,18 +37,7 @@ _ACCESS_POINT_STATE = AccessPointState(
     clients=None,
     id_=NetworkIdentifier(
         ssid=_TEST_SSID, security_type=f_wlan_policy.SecurityType.WPA2
-    ),
-)
-_ACCESS_POINT_STATE_FIDL = f_wlan_policy.AccessPointState(
-    state=f_wlan_policy.OperatingState.STARTING,
-    mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
-    band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
-    frequency=None,
-    clients=None,
-    id_=f_wlan_policy.NetworkIdentifier(
-        ssid=list(_TEST_SSID_BYTES),
-        type_=f_wlan_policy.SecurityType.WPA2,
-    ),
+    ).to_fidl(),
 )
 
 
@@ -308,7 +295,7 @@ class WlanPolicyApTests(unittest.IsolatedAsyncioTestCase):
         (
             await self.access_point_state_updates_proxy.on_access_point_state_update(
                 access_points=[
-                    _ACCESS_POINT_STATE_FIDL,
+                    _ACCESS_POINT_STATE,
                 ]
             )
         )
@@ -328,7 +315,7 @@ class WlanPolicyApTests(unittest.IsolatedAsyncioTestCase):
         )
         (
             await self.access_point_state_updates_proxy.on_access_point_state_update(
-                access_points=[_ACCESS_POINT_STATE_FIDL]
+                access_points=[_ACCESS_POINT_STATE]
             )
         )
         self.assertEqual(await self.wlan_policy_ap_obj.get_update(), [])

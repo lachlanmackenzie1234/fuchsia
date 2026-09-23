@@ -8,7 +8,6 @@ import logging
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    AccessPointState,
     NetworkIdentifier,
 )
 from mobly import asserts, test_runner
@@ -44,7 +43,7 @@ class SoftApLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy_ap.get_update(),
             [
-                AccessPointState(
+                f_wlan_policy.AccessPointState(
                     state=f_wlan_policy.OperatingState.STARTING,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                     band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
@@ -53,14 +52,14 @@ class SoftApLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     id_=NetworkIdentifier(
                         ssid=test_ssid,
                         security_type=f_wlan_policy.SecurityType.NONE,
-                    ),
+                    ).to_fidl(),
                 )
             ],
         )
         asserts.assert_equal(
             await self.dut.wlan_policy_ap.get_update(),
             [
-                AccessPointState(
+                f_wlan_policy.AccessPointState(
                     state=f_wlan_policy.OperatingState.ACTIVE,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                     band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
@@ -69,7 +68,7 @@ class SoftApLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     id_=NetworkIdentifier(
                         ssid=test_ssid,
                         security_type=f_wlan_policy.SecurityType.NONE,
-                    ),
+                    ).to_fidl(),
                 )
             ],
         )
@@ -79,7 +78,7 @@ class SoftApLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             got_states,
             [
-                AccessPointState(
+                f_wlan_policy.AccessPointState(
                     state=f_wlan_policy.OperatingState.ACTIVE,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                     band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
@@ -88,7 +87,7 @@ class SoftApLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     id_=NetworkIdentifier(
                         ssid=test_ssid,
                         security_type=f_wlan_policy.SecurityType.NONE,
-                    ),
+                    ).to_fidl(),
                 )
             ],
         )
@@ -100,7 +99,7 @@ class SoftApLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             got_states,
             [
-                AccessPointState(
+                f_wlan_policy.AccessPointState(
                     state=f_wlan_policy.OperatingState.ACTIVE,
                     mode=f_wlan_policy.ConnectivityMode.LOCAL_ONLY,
                     band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
@@ -109,7 +108,7 @@ class SoftApLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     id_=NetworkIdentifier(
                         ssid=test_ssid,
                         security_type=f_wlan_policy.SecurityType.NONE,
-                    ),
+                    ).to_fidl(),
                 )
             ],
         )
