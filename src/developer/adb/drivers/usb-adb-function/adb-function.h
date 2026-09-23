@@ -139,7 +139,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
   // State transition helpers.
   void SetState(State new_state);
   zx::result<> StartUsb();
-  void EnableEndpoints();
+  zx::result<> EnableEndpoints();
   void ResetOrStopUsb(State stop_state);
   void CheckUsbStopComplete();
 

@@ -437,15 +437,15 @@ void UsbAdbDevice::Control(ControlRequest& request, ControlCompleter::Sync& comp
   completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-void UsbAdbDevice::EnableEndpoints() {
+zx::result<> UsbAdbDevice::EnableEndpoints() {
   switch (state_) {
     case State::kOnline:
       zxlogf(INFO, "USB endpoints already enabled");
-      return;
+      return zx::ok();
     case State::kStoppingForUnbind:
     case State::kStoppingForReconnect:
       zxlogf(ERROR, "This is unexpected: UsbFunctionInterface is disconnected while stopping");
-      return;
+      return zx::error(ZX_ERR_BAD_STATE);
     case State::kAwaitingUsbConnection:
       zxlogf(INFO, "Enabling USB endpoints");
       break;
@@ -462,8 +462,11 @@ void UsbAdbDevice::EnableEndpoints() {
   fidl::Result result_out = function_->ConfigureEndpoint(
       {descriptors_.bulk_out_ep.b_endpoint_address, std::move(ep_config_out)});
   if (result_out.is_error()) {
-    ZX_PANIC("Failed to Config BULK OUT ep: %s",
-             result_out.error_value().FormatDescription().c_str());
+    zxlogf(WARNING, "Failed to Config BULK OUT ep: %s",
+           result_out.error_value().FormatDescription().c_str());
+    return zx::error(result_out.error_value().is_domain_error()
+                         ? result_out.error_value().domain_error()
+                         : result_out.error_value().framework_error().status());
   }
 
   fuchsia_hardware_usb_function::EndpointConfiguration ep_config_in;
@@ -477,8 +480,12 @@ void UsbAdbDevice::EnableEndpoints() {
   fidl::Result result_in = function_->ConfigureEndpoint(
       {descriptors_.bulk_in_ep.b_endpoint_address, std::move(ep_config_in)});
   if (result_in.is_error()) {
-    ZX_PANIC("Failed to Config BULK IN ep: %s",
-             result_in.error_value().FormatDescription().c_str());
+    zxlogf(WARNING, "Failed to Config BULK IN ep: %s",
+           result_in.error_value().FormatDescription().c_str());
+    (void)function_->DisableEndpoint({descriptors_.bulk_out_ep.b_endpoint_address});
+    return zx::error(result_in.error_value().is_domain_error()
+                         ? result_in.error_value().domain_error()
+                         : result_in.error_value().framework_error().status());
   }
 
   // queue RX requests
@@ -514,13 +521,17 @@ void UsbAdbDevice::EnableEndpoints() {
 
   SendQueued();
   ReceiveQueued();
+  return zx::ok();
 }
 
 void UsbAdbDevice::SetConfigured(SetConfiguredRequest& request,
                                  SetConfiguredCompleter::Sync& completer) {
   zxlogf(INFO, "configured? - %d", request.configured());
   if (request.configured()) {
-    EnableEndpoints();
+    if (zx::result<> result = EnableEndpoints(); result.is_error()) {
+      completer.Reply(result.take_error());
+      return;
+    }
   } else {
     switch (state_) {
       case State::kAwaitingUsbConnection:
