@@ -61,7 +61,7 @@ fuchsia_test_package("driver_debug_unit_tests") {
   ]
 }
 
-group("driver_debug") {
+fuchsia_package("driver_debug") {
   deps = [ ":debug" ]
 }
 
