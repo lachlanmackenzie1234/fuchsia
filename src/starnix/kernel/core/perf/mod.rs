@@ -16,7 +16,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
 
-use futures::io::{AsyncReadExt, Cursor};
 use fxt::TraceRecord;
 use fxt::profiler::ProfilerRecord;
 use fxt::session::SessionParser;
@@ -70,8 +69,6 @@ const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 16 * 1024 * 1024;
 // Size of a PERF_RECORD_LOST record in bytes:
 // perf_event_header (8) + sample_id (8) + lost_events (8) = 24.
 const LOST_RECORD_SIZE: u64 = 24;
-// FXT magic bytes (little endian).
-const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
 // Register indices in the profiler's register capture block.
 const AARCH64_REG_PC: usize = 32;
 const AARCH64_REG_SP: usize = 31;
@@ -821,109 +818,6 @@ async fn set_up_profiler(
     }
 }
 
-// Collects samples and puts backtrace in VMO.
-// - Reads in the buffer from the socket for that duration in chunks.
-// - Parses the buffer backtraces into PERF_RECORD_SAMPLE format.
-// - Writes the PERF_RECORD_SAMPLE into VMO.
-async fn stop_and_collect_samples(
-    session_proxy: profiler::SessionProxy,
-    mut client: fidl::AsyncSocket,
-    seq_lock: &OnceLock<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>,
-    perf_data_vmo: &zx::Vmo,
-    sample_type: u64,
-    sample_id: u64,
-    sample_period: u64,
-    read_format: u64,
-    sample_regs_user: u64,
-    sample_stack_user: u64,
-    koid_session: Option<&PidKoidSession>,
-    vmo_write_offset: &mut u64,
-) -> Result<(), Errno> {
-    let seq_lock_wrapper = match seq_lock.get() {
-        Some(Ok(l)) => Some(l),
-        // Initialization failed in a previous mmap() call. Propagate the error.
-        Some(Err(e)) => return Err(e.clone()),
-        // Not initialized yet (i.e. mmap() hasn't been called). However, we need to drain the
-        // socket anyway if there is data as to unblock the profiler writing to the socket.
-        None => None,
-    };
-
-    let process_socket = async {
-        let mut header = [0; 8];
-        let mut bytes_read = 0;
-        while bytes_read < 8 {
-            match client.read(&mut header[bytes_read..]).await {
-                Ok(0) => break,
-                Ok(n) => bytes_read += n,
-                Err(e) => {
-                    log_warn!("[perf_event_open] Error reading from socket: {:?}", e);
-                    break;
-                }
-            }
-        }
-
-        if bytes_read != 8 || header != FXT_MAGIC_BYTES {
-            if bytes_read > 0 {
-                log_warn!(
-                    "[perf_event_open] Received invalid or non-FXT sample data (bytes_read={})",
-                    bytes_read
-                );
-            }
-            return;
-        }
-
-        let header_cursor = Cursor::new(header);
-        let reader = header_cursor.chain(client);
-        let (mut stream, _task) = SessionParser::new_async(reader);
-        let mut lost_events: u64 = 0;
-        while let Some(record_result) = stream.next().await {
-            match record_result {
-                Ok(record) => {
-                    if let Some(seq_lock_wrapper) = seq_lock_wrapper {
-                        process_fxt_record(
-                            record,
-                            seq_lock_wrapper,
-                            perf_data_vmo,
-                            sample_type,
-                            sample_id,
-                            sample_period,
-                            read_format,
-                            sample_regs_user,
-                            sample_stack_user,
-                            koid_session,
-                            vmo_write_offset,
-                            &mut lost_events,
-                        );
-                    }
-                }
-                Err(e) => {
-                    log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
-                    break;
-                }
-            }
-        }
-    };
-
-    let (stats, ()) = futures::join!(session_proxy.stop(), process_socket);
-
-    let samples_collected = match stats {
-        Ok(stats) => stats.samples_collected.unwrap_or(0),
-        Err(e) => return error!(EINVAL, e),
-    };
-
-    track_stub!(
-        TODO("https://fxbug.dev/422502681"),
-        "[perf_event_open] symbolize sample output and delete the below log_info"
-    );
-    log_info!("profiler samples_collected: {:?}", samples_collected);
-
-    let reset_status = session_proxy.reset().await;
-    return match reset_status {
-        Ok(_) => Ok(()),
-        Err(e) => error!(EINVAL, e),
-    };
-}
-
 // Converts one FXT record from the profiler into a PERF_RECORD_SAMPLE in
 // the ring buffer and publishes the new data_head. Non-sample records are
 // ignored.
@@ -1343,79 +1237,160 @@ pub fn sys_perf_event_open(
     let mut vmo_write_offset = 0;
 
     let closure = async move |kthread_task: &CurrentTask| {
-        let mut profiler_state: Option<(profiler::SessionProxy, fidl::AsyncSocket)> = None;
-        // Held while sampling is enabled so pid/koid mappings are recorded for the
-        // profiling session. Dropping it (including when this kthread exits with sampling
-        // still enabled) releases this file's interest in the shared manager.
-        let mut pid_koid_session: Option<PidKoidSession> = None;
+        let mut lost_events: u64 = 0;
 
-        // This loop will wait for messages from the sender.
+        // Each iteration waits for an Enable and then runs one session.
         while let Some((command, profiling_complete_receiver)) = receiver.next().await {
-            match command {
-                IoctlOp::Enable => {
-                    match set_up_profiler(zx_sample_period).await {
-                        Ok((session_proxy, client)) => {
-                            // Record pid/koid mappings before the profiler starts sampling
-                            // so every sampled thread can be resolved. If starting the
-                            // profiler fails, dropping the unstored session ends the
-                            // recording interest automatically.
-                            let session = kthread_task.kernel().trace_event_manager.open();
-                            let start_request = profiler::SessionStartRequest {
-                                buffer_results: Some(true),
-                                buffer_size_mb: Some(8 as u64),
-                                ..Default::default()
-                            };
-                            if let Err(e) = session_proxy.start(&start_request).await {
-                                log_warn!("Failed to start profiling: {}", e);
-                            } else {
-                                profiler_state = Some((session_proxy, client));
-                                pid_koid_session = Some(session);
+            // We only expect Enable when no session is active.
+            if command != IoctlOp::Enable {
+                let _ = profiling_complete_receiver.send(());
+                continue;
+            }
+
+            let (session_proxy, client) = match set_up_profiler(zx_sample_period).await {
+                Ok(session) => session,
+                Err(e) => {
+                    log_warn!("Failed to profile: {}", e);
+                    let _ = profiling_complete_receiver.send(());
+                    continue;
+                }
+            };
+
+            // Record pid/koid mappings before the profiler starts sampling
+            // so every sampled thread can be resolved. Dropping the session
+            // at the end of the profiling session ends the recording interest.
+            let pid_koid_session = kthread_task.kernel().trace_event_manager.open();
+            let start_request =
+                profiler::SessionStartRequest { buffer_results: Some(false), ..Default::default() };
+            if let Err(e) = session_proxy.start(&start_request).await {
+                log_warn!("Failed to start profiler: {:?}", e);
+                let _ = profiling_complete_receiver.send(());
+                continue;
+            }
+            let _ = profiling_complete_receiver.send(());
+
+            let vmo = zx::Vmo::from(
+                vmo_handle_copy
+                    .as_mut()
+                    .expect("Failed to get VMO handle")
+                    .as_handle_ref()
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .unwrap(),
+            );
+            let mut handle_record = |record: TraceRecord| {
+                // Records can only be written once mmap() has set up the
+                // ring buffer.
+                if let Some(Ok(seq_lock_wrapper)) = cloned_seq_lock.get() {
+                    process_fxt_record(
+                        record,
+                        seq_lock_wrapper,
+                        &vmo,
+                        perf_event_file.sample_type,
+                        perf_event_file.sample_id,
+                        sample_period_in_ticks,
+                        perf_event_file.attr.read_format,
+                        perf_event_file.attr.sample_regs_user,
+                        perf_event_file.attr.sample_stack_user as u64,
+                        Some(&pid_koid_session),
+                        &mut vmo_write_offset,
+                        &mut lost_events,
+                    );
+                }
+            };
+
+            // Pump records from the profiler into the ring buffer until a
+            // Disable arrives: readers poll the ring during the session, and
+            // the profiler's socket must be drained continuously.
+            let (stream, _parser_task) = SessionParser::new_async(client);
+            let mut stream = stream.fuse();
+            let mut stream_ended = false;
+            let disable_ack = loop {
+                if stream_ended {
+                    // The profiler closed the socket early; only commands
+                    // remain.
+                    match receiver.next().await {
+                        Some((IoctlOp::Disable, ack)) => break Some(ack),
+                        Some((IoctlOp::Enable, ack)) => {
+                            // A session is already active.
+                            let _ = ack.send(());
+                        }
+                        None => break None,
+                    }
+                } else {
+                    futures::select_biased! {
+                        cmd = receiver.next() => match cmd {
+                            Some((IoctlOp::Disable, ack)) => break Some(ack),
+                            Some((IoctlOp::Enable, ack)) => {
+                                // A session is already active.
+                                let _ = ack.send(());
+                            }
+                            None => break None,
+                        },
+                        record = stream.next() => match record {
+                            Some(Ok(record)) => handle_record(record),
+                            Some(Err(e)) => {
+                                // The stream is desynchronized and the parser
+                                // would keep returning this error, so end the
+                                // session. The teardown below drops the
+                                // socket, which unblocks the profiler if it is
+                                // stalled writing to it.
+                                log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
+                                stream_ended = true;
+                                break None;
+                            }
+                            None => {
+                                log_warn!("[perf_event_open] Profiler stream ended mid-session");
+                                stream_ended = true;
+                            }
+                        },
+                    }
+                }
+            };
+
+            // Tear the session down while still draining: the profiler is a
+            // separate process whose socket writes block, so if its socket is
+            // full it is stalled mid-write and cannot service stop() or
+            // reset() until we keep reading. Awaiting either without pumping
+            // would deadlock the two.
+            let stop_and_reset = async {
+                match session_proxy.stop().await {
+                    Ok(stats) => log_info!(
+                        "[perf_event_open] profiler samples_collected: {:?}",
+                        stats.samples_collected.unwrap_or(0)
+                    ),
+                    Err(e) => log_warn!("[perf_event_open] Failed to stop profiler: {:?}", e),
+                }
+                // Reset flushes the remaining data and closes the socket,
+                // which is what ends the drain below.
+                let _ = session_proxy.reset().await;
+            };
+            let drain = async move {
+                if !stream_ended {
+                    while let Some(record) = stream.next().await {
+                        match record {
+                            Ok(record) => handle_record(record),
+                            Err(e) => {
+                                // The stream is desynchronized, so further
+                                // records cannot be parsed.
+                                log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
+                                break;
                             }
                         }
-                        Err(e) => {
-                            log_warn!("Failed to profile: {}", e);
-                        }
-                    };
-                    // Send notification anyway to unblock the ioctl caller.
-                    let _ = profiling_complete_receiver.send(());
-                }
-                IoctlOp::Disable => {
-                    if let Some((session_proxy, client)) = profiler_state.take() {
-                        let handle = vmo_handle_copy
-                            .as_mut()
-                            .expect("Failed to get VMO handle")
-                            .as_handle_ref()
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .unwrap();
-
-                        if let Err(e) = stop_and_collect_samples(
-                            session_proxy,
-                            client,
-                            &cloned_seq_lock,
-                            &zx::Vmo::from(handle),
-                            perf_event_file.sample_type,
-                            perf_event_file.sample_id,
-                            sample_period_in_ticks,
-                            perf_event_file.attr.read_format,
-                            perf_event_file.attr.sample_regs_user,
-                            perf_event_file.attr.sample_stack_user as u64,
-                            pid_koid_session.as_ref(),
-                            &mut vmo_write_offset,
-                        )
-                        .await
-                        {
-                            log_warn!("Failed to collect sample: {:?}", e);
-                        }
                     }
-                    // Sampling is disabled: drop this file's recording session.
-                    pid_koid_session = None;
-                    // Send notification anyway to unblock the ioctl caller.
-                    let _ = profiling_complete_receiver.send(());
                 }
+                // Hand the profiler a closed socket so that a write it is
+                // blocked on fails instead of hanging forever.
+                drop(stream);
+                drop(_parser_task);
+            };
+            futures::join!(stop_and_reset, drain);
+
+            // The Disable ioctl returns only after the drain above, so the
+            // reader sees every record once the ioctl completes.
+            if let Some(ack) = disable_ack {
+                let _ = ack.send(());
             }
         }
-        // If the command channel closed with sampling still enabled (e.g. the perf event
-        // file was closed), dropping pid_koid_session here ends the recording interest.
     };
     let req = SpawnRequestBuilder::new()
         .with_debug_name("perf-event-sampler")
@@ -1476,70 +1451,6 @@ use crate::{fileops_impl_nonseekable, fileops_impl_noop_sync};
 mod tests {
     use super::*;
     use crate::task::tracing::{TracePerformanceEventManager, ZirconIdentity};
-    use fidl::endpoints::create_proxy;
-    use fuchsia_async as fasync;
-
-    #[::fuchsia::test]
-    async fn test_stop_and_collect_samples_socket_full() {
-        let (session_proxy, session_stream) = create_proxy::<profiler::SessionMarker>();
-        let (client_socket, server_socket) = zx::Socket::create_stream();
-
-        // Fill server_socket until it is no longer writable.
-        // Start with FXT_MAGIC_BYTES so process_socket recognizes FXT format.
-        let _ = server_socket.write(&FXT_MAGIC_BYTES);
-        let buf = [0u8; 1024];
-        while match server_socket.write(&buf) {
-            Ok(_) => true,
-            Err(zx::Status::SHOULD_WAIT) => false,
-            Err(e) => panic!("unexpected error filling socket: {:?}", e),
-        } {}
-
-        let mock_service = async move {
-            let mut session_stream = session_stream.into_stream();
-            let mut server_socket = Some(server_socket);
-            // The profiler is currently single threaded and blocks if the socket is full. Model
-            // this here to ensure we don't deadlock if the socket fills up.
-            while let Some(Ok(request)) = session_stream.next().await {
-                match request {
-                    profiler::SessionRequest::Stop { responder } => {
-                        if let Some(socket) = server_socket.take() {
-                            let _ =
-                                fasync::OnSignals::new(&socket, zx::Signals::SOCKET_WRITABLE).await;
-                            drop(socket);
-                        }
-                        let _ = responder.send(&profiler::SessionResult::default());
-                    }
-                    profiler::SessionRequest::Reset { responder } => {
-                        let _ = responder.send();
-                    }
-                    _ => {}
-                }
-            }
-        };
-
-        let client = fidl::AsyncSocket::from_socket(client_socket);
-        let seq_lock = OnceLock::new();
-        let perf_data_vmo = zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap();
-        let mut vmo_write_offset = 0;
-
-        let test_task = stop_and_collect_samples(
-            session_proxy,
-            client,
-            &seq_lock,
-            &perf_data_vmo,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            None,
-            &mut vmo_write_offset,
-        );
-
-        let ((), result) = futures::join!(mock_service, test_task);
-        assert!(result.is_ok());
-    }
 
     #[::fuchsia::test]
     async fn test_process_fxt_record_resolves_pid_tid() {
