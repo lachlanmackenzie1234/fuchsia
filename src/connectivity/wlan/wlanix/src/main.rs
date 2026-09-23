@@ -826,8 +826,8 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                     warn!("Phy {} already started", phy_id);
                 }
 
-                // Query the PHY driver for its power element dependency token to check if power
-                // element control is supported.
+                // Query the PHY driver for its power element dependency token. When the driver
+                // doesn't support control via power elements, this will return None.
                 let power_elem_dependency_token = iface_manager
                     .get_power_element_dependency_token(phy_id)
                     .await
@@ -835,7 +835,7 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                         warn!("Failed to get power dependency token for phy {}: {}", phy_id, e);
                     })
                     .ok();
-                // Duplicate the dependency token (if available) so we can keep a copy.
+                // Duplicate the dependency token (if it's not None) so we can keep a copy.
                 let token_dup = power_elem_dependency_token.as_ref().and_then(|token| {
                     token
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -846,7 +846,8 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                         })
                         .ok()
                 });
-                // If the driver supports power element control, acquire an active lease.
+                // If we've gotten tokens (i.e. the driver support power elements), acquire an
+                // active lease on the power element.
                 if let (Some(token_dup), Some(token_orig)) =
                     (token_dup, power_elem_dependency_token)
                 {
