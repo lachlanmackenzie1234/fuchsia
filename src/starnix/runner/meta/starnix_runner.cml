@@ -56,7 +56,6 @@
         },
         {
             protocol: [
-                "fuchsia.memory.attribution.PageRefaultSink",
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.BootControl",
                 "fuchsia.settings.Privacy",
