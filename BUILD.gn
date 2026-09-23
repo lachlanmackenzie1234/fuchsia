@@ -1829,6 +1829,11 @@ group("rbe_config.metadata") {
 #       - Present: this field is only guaranteed for !disable_clippy
 #       - Type: path relative to $root_build_dir
 #       - Example: host_x64/gen/src/lib/fuchsia-async/fuchsia-async.actual.clippy
+#   crate_name
+#       - Description: the name of the crate
+#       - Present: always
+#       - Type: string
+#       - Example: fuchsia_async
 #   original_label
 #       - Description: The original target name before a possible .actual suffix is added.
 #         May refer to a group.
@@ -1849,26 +1854,11 @@ group("rbe_config.metadata") {
 #       - Present: this field is only guaranteed for !disable_rustdoc
 #       - Type: path relative to $root_build_dir
 #       - Example: host_x64/gen/src/lib/fuchsia-async/fuchsia-async.aux.doc.parts
-#   target_is_fuchsia(optional)
+#   target_is_fuchsia
 #       - Description: whether this is a Fuchsia target (as opposed to a host target)
 #       - Present: always
 #       - Type: boolean
 #       - Example: true
-#   rustdoc_stamp_output(optional)
-#       - Description: this file's mtime is updated when rustdoc is successfully built for a target
-#       - Present: this field is only guaranteed for !disable_rustdoc
-#       - Type: path relative to $root_build_dir
-#       - Example: host_x64/gen/src/lib/fuchsia-async/fuchsia-async.aux.touch
-#   extern(optional)
-#       - Description: command line argument needed to pass to rustc to depend on this target.
-#       - Present: this field is not present on bin targets
-#       - Type: command line argument
-#       - Example: --extern=fuchsia_async=host_x64/obj/src/lib/fuchsia-async/fuchsia-async.actual/libfuchsia_async.rlib
-#   searchdir(optional)
-#       - Description: command line argument needed to pass to rustc to transitively depend on this target.
-#       - Present: this field is not present on bin targets
-#       - Type: command line argument
-#       - Example: -Ldependency=host_x64/obj/src/lib/fuchsia-async/fuchsia-async.actual
 #   src(optional)
 #       - Description: list of rust source code files, relative to $root_build_dir
 #       - Present: this field is only guaranteed for !disable_clippy
