@@ -341,7 +341,7 @@ impl MessagePacket {
         // The first Buffer of a BufferChain will contain the handles (if any are present) and at
         // least some of the message's payload. How much of message payload? Up to CONTIGUOUS_SIZE
         // minus the payload's offset.
-        cmp::min(CONTIGUOUS_SIZE.saturating_sub(self.payload_offset()), self.data_size as usize)
+        cmp::min(CONTIGUOUS_SIZE - self.payload_offset(), self.data_size as usize)
     }
 
     #[inline]
