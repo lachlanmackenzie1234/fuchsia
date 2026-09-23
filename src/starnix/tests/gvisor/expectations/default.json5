@@ -284,10 +284,7 @@
                 "ElfTest.DataSegment",
                 "ElfTest.ELFInterpreter",
                 "ElfTest.ELFInterpreterRelative",
-                "ElfTest.ELFInterpreterWrongArch",
                 "ElfTest.ExtraMemPages",
-                "ElfTest.MissingPhdr",
-                "ElfTest.UnalignedOffset",
                 "ExecveTest.BrkAfterBinary",
                 "InterpreterScriptTest.Execute",
                 "InterpreterScriptTest.MaxRecursion",
@@ -298,6 +295,9 @@
                 "Cases/ElfInterpreterStaticTest.Test/0",
                 "Cases/ElfInterpreterStaticTest.Test/1",
                 "Cases/ElfInterpreterStaticTest.Test/2",
+
+                // TODO(https://fxbug.dev/564993581): Test checks IsRunningOnGvisor() and expects EINVAL rather than Linux's SIGSEGV.
+                "ElfTest.UnalignedOffset",
 
                 // TODO(https://fxbug.dev/528339136): Starnix does not support ARM64 memory tagging.
                 "TaggedAddressesTest.MemoryFault",
