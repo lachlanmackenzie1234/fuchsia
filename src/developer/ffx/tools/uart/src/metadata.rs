@@ -13,8 +13,9 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
 pub use uart_driver_api::{
-    ConnectionError, ConnectionMetadata, ConnectionStatus, METADATA_FILE_EXTENSION,
-    UNIX_SOCKET_EXTENSION, UartProtocol, get_client_socket_path,
+    CONTROL_SOCKET_EXTENSION, ConnectionError, ConnectionMetadata, ConnectionStatus,
+    METADATA_FILE_EXTENSION, UNIX_SOCKET_EXTENSION, UartProtocol, get_client_socket_path,
+    get_control_socket_path,
 };
 use uart_fpl::ProtocolId;
 
@@ -116,6 +117,17 @@ pub fn get_metadata_path(
     target: &str,
 ) -> std::result::Result<PathBuf, fho::Error> {
     Ok(uart_driver_api::get_metadata_path(&get_socket_path(context, target)?))
+}
+
+/// Returns the path to the daemon control socket for a given target.
+///
+/// # Errors
+/// Returns an error if querying the environment context for the shared data directory fails.
+pub fn get_control_path(
+    context: &EnvironmentContext,
+    target: &str,
+) -> std::result::Result<PathBuf, fho::Error> {
+    Ok(get_control_socket_path(&get_socket_path(context, target)?))
 }
 
 /// Atomically writes serializable metadata to `path` using a temporary file in the same parent directory.

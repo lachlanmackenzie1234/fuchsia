@@ -21,6 +21,13 @@ pub const UNIX_SOCKET_EXTENSION: &str = "sock";
 
 /// Standard file extension for companion connection metadata JSON files.
 pub const METADATA_FILE_EXTENSION: &str = "json";
+/// Standard file extension for the driver's companion UNIX control socket.
+pub const CONTROL_SOCKET_EXTENSION: &str = "control";
+
+/// Resolves the UNIX control socket path corresponding to a driver's client socket path.
+pub fn get_control_socket_path(socket_path: &Path) -> PathBuf {
+    socket_path.with_extension(CONTROL_SOCKET_EXTENSION)
+}
 
 /// Resolves the companion metadata file path corresponding to a driver's client socket path.
 pub fn get_metadata_path(socket_path: &Path) -> PathBuf {

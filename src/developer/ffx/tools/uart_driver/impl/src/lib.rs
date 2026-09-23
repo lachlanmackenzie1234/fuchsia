@@ -156,6 +156,10 @@ async fn terminate_process(pid: u32) {
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGTERM);
     }
+    if !ffx_tool_uart::is_running(pid) {
+        log::info!("Orphaned daemon {} exited immediately after SIGTERM.", pid);
+        return;
+    }
     for _ in 0..TERMINATE_POLL_RETRIES {
         tokio::time::sleep(TERMINATE_POLL_INTERVAL).await;
         if !ffx_tool_uart::is_running(pid) {
@@ -1124,11 +1128,17 @@ impl HostDriver {
 
     pub fn cleanup_driver_files(
         local_addr: Option<tokio::net::unix::SocketAddr>,
+        control_socket_path: Option<&PathBuf>,
         meta_path: Option<&PathBuf>,
     ) {
         if let Some(path) = local_addr.as_ref().and_then(|a| a.as_pathname()) {
             if let Err(e) = std::fs::remove_file(path) {
                 log::warn!("Failed to remove socket file at {}: {:?}", path.display(), e);
+            }
+        }
+        if let Some(path) = control_socket_path {
+            if let Err(e) = std::fs::remove_file(path) {
+                log::warn!("Failed to remove control socket file at {}: {:?}", path.display(), e);
             }
         }
         if let Some(path) = meta_path {
@@ -1138,6 +1148,58 @@ impl HostDriver {
         }
     }
 
+    async fn serve_control_listener(
+        scope: &fuchsia_async::Scope,
+        listener: UnixListener,
+        metrics: Arc<Mutex<DaemonMetrics>>,
+    ) {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let metrics = Arc::clone(&metrics);
+            scope.spawn(async move {
+                let json = {
+                    let m = metrics.lock().unwrap_or_else(|e| e.into_inner());
+                    serde_json::to_string(&*m).unwrap_or_default()
+                };
+                if let Err(e) = stream.write_all(json.as_bytes()).await {
+                    log::debug!("Failed to write to control stream: {:?}", e);
+                }
+                let _ = stream.shutdown().await;
+            });
+        }
+    }
+
+    fn setup_control_socket(
+        local_addr: Option<&tokio::net::unix::SocketAddr>,
+        metrics: Arc<Mutex<DaemonMetrics>>,
+    ) -> (Option<PathBuf>, Option<fuchsia_async::Task<()>>) {
+        let Some(path) = local_addr.and_then(|a| a.as_pathname()) else {
+            return (None, None);
+        };
+        let control_path = uart_driver_api::get_control_socket_path(path);
+        if let Err(e) = std::fs::remove_file(&control_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!(
+                    "Failed to remove stale control socket at {}: {:?}",
+                    control_path.display(),
+                    e
+                );
+            }
+        }
+        match UnixListener::bind(&control_path) {
+            Ok(listener) => {
+                log::info!("Control socket listening on: {}", control_path.display());
+                let task = fuchsia_async::Task::local(async move {
+                    let scope = fuchsia_async::Scope::new();
+                    Self::serve_control_listener(&scope, listener, metrics).await;
+                });
+                (Some(control_path), Some(task))
+            }
+            Err(e) => {
+                log::error!("Failed to bind control socket at {}: {:?}", control_path.display(), e);
+                (None, None)
+            }
+        }
+    }
     fn spawn_listener_task(
         listener: UnixListener,
         listener_tx: mpsc::Sender<ClientEvent>,
@@ -1266,6 +1328,8 @@ impl HostDriver {
         let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
         let (shutdown_tx, shutdown_rx) = futures::channel::oneshot::channel::<()>();
         let _meta_watcher = Self::watch_metadata_deletion(&meta_path, shutdown_tx);
+        let (control_sock, control_task) =
+            Self::setup_control_socket(local_addr.as_ref(), metrics.clone());
         let ctx = DriverContext {
             target_path,
             baud,
@@ -1282,7 +1346,8 @@ impl HostDriver {
             _ = main_loop_fut => {},
             _ = shutdown_rx => log::info!("Driver shutdown triggered by metadata deletion."),
         }
-        Self::cleanup_driver_files(local_addr, meta_path.as_ref());
+        Self::cleanup_driver_files(local_addr, control_sock.as_ref(), meta_path.as_ref());
+        drop(control_task);
     }
 }
 
@@ -1883,6 +1948,41 @@ mod tests {
         )
         .await;
     }
+
+    #[test]
+    fn test_host_driver_identity_metadata_lifecycle() {
+        let temp = tempfile::tempdir().unwrap();
+        let sock_path = temp.path().join("ffx_uart_test.sock");
+        let meta_path = temp.path().join("ffx_uart_test.json");
+
+        let meta = make_test_metadata("/dev/ttyUSB0", ConnectionStatus::Connected);
+        std::fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+        uart_driver_api::update_metadata_identity(
+            &sock_path,
+            Some("fuchsia-1234-test".to_string()),
+            Some("SERIAL001".to_string()),
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&meta_path).unwrap();
+        let loaded: ConnectionMetadata = serde_json::from_str(&content).unwrap();
+        assert_eq!(loaded.nodename.as_deref(), Some("fuchsia-1234-test"));
+        assert_eq!(loaded.serial.as_deref(), Some("SERIAL001"));
+
+        let cached = uart_driver_api::load_cached_identity(&sock_path);
+        assert_eq!(cached, Some(("fuchsia-1234-test".to_string(), Some("SERIAL001".to_string()))));
+
+        HostDriver::update_status(
+            &Some(meta_path.clone()),
+            ConnectionStatus::Error(ConnectionError::raw("UART connection lost")),
+        );
+        let content = std::fs::read_to_string(&meta_path).unwrap();
+        let loaded: ConnectionMetadata = serde_json::from_str(&content).unwrap();
+        assert_eq!((loaded.nodename, loaded.serial), (None, None));
+        assert!(uart_driver_api::load_cached_identity(&sock_path).is_none());
+    }
+
     struct MockReader {
         data: Vec<u8>,
         read_ptr: usize,
@@ -1981,6 +2081,104 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_remove_and_bind_socket_kills_stale_daemon() {
+        let temp = tempdir().unwrap();
+        let socket_path = temp.path().join("ffx_uart_test.sock");
+        let json_path = socket_path.with_extension(uart_driver_api::METADATA_FILE_EXTENSION);
+
+        let mut cmd = tokio::process::Command::new("cat");
+        cmd.stdin(std::process::Stdio::piped()).kill_on_drop(true);
+        let mut child = cmd.spawn().unwrap();
+        let pid = child.id().unwrap();
+        write_test_metadata(&json_path, "mock-target", pid, ConnectionStatus::Connecting);
+
+        let _listener = remove_and_bind_socket(socket_path.clone(), false).await.unwrap();
+        let status = child.wait().await.unwrap();
+        assert!(!status.success(), "Child process was expected to be terminated by signal");
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(status.signal(), Some(libc::SIGTERM));
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_control_socket_metrics_exposure() {
+        let temp = tempdir().unwrap();
+        let control_path = temp.path().join("ffx_uart_test.control");
+
+        let metrics = Arc::new(Mutex::new(DaemonMetrics {
+            checksum_errors: 12,
+            retransmissions: 34,
+            active_protocol: UartProtocol::TestProtocol,
+            estimated_rtt_ms: 56,
+            connection_drops: 78,
+            handshake_failures: 90,
+            ..Default::default()
+        }));
+
+        let control_listener = UnixListener::bind(&control_path).unwrap();
+        let metrics_clone = metrics.clone();
+        let server_task = fuchsia_async::Task::local(async move {
+            let scope = fuchsia_async::Scope::new();
+            HostDriver::serve_control_listener(&scope, control_listener, metrics_clone).await;
+        });
+
+        let mut client_stream = UnixStream::connect(&control_path).await.unwrap();
+        let mut content = String::new();
+        client_stream.read_to_string(&mut content).await.unwrap();
+
+        let parsed: DaemonMetrics = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.checksum_errors, 12);
+        assert_eq!(parsed.retransmissions, 34);
+        assert_eq!(parsed.active_protocol, UartProtocol::TestProtocol);
+        assert_eq!(parsed.estimated_rtt_ms, 56);
+        assert_eq!(parsed.connection_drops, 78);
+        assert_eq!(parsed.handshake_failures, 90);
+        drop(server_task);
+    }
+
+    #[fuchsia::test]
+    async fn test_control_socket_concurrent_clients_not_blocked() {
+        let temp = tempdir().unwrap();
+        let control_path = temp.path().join("ffx_uart_test_concurrent.control");
+
+        let metrics =
+            Arc::new(Mutex::new(DaemonMetrics { checksum_errors: 42, ..Default::default() }));
+
+        let control_listener = UnixListener::bind(&control_path).unwrap();
+        let metrics_clone = metrics.clone();
+        let server_task = fuchsia_async::Task::local(async move {
+            let scope = fuchsia_async::Scope::new();
+            HostDriver::serve_control_listener(&scope, control_listener, metrics_clone).await;
+        });
+
+        // Connect first client but do not read immediately (simulating a slow/paused client).
+        let _slow_client = UnixStream::connect(&control_path).await.unwrap();
+
+        // Second client connects concurrently and should receive metrics without being blocked.
+        let mut fast_client = UnixStream::connect(&control_path).await.unwrap();
+        let mut content = String::new();
+        fast_client.read_to_string(&mut content).await.unwrap();
+
+        let parsed: DaemonMetrics = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.checksum_errors, 42);
+
+        drop(server_task);
+    }
+
+    #[fuchsia::test]
+    async fn test_verify_is_uart_driver_logic() {
+        let self_pid = std::process::id();
+        if cfg!(target_os = "linux") {
+            assert!(!ffx_tool_uart::is_driver_running(self_pid));
+            assert!(!ffx_tool_uart::is_driver_running(1));
+        } else {
+            assert!(ffx_tool_uart::is_driver_running(self_pid));
+            assert!(ffx_tool_uart::is_driver_running(1));
+        }
+    }
+    #[fuchsia::test]
     async fn test_uart_reader_with_initial_data() {
         let session_id = 12345u32;
         let payload = b"unconsumed_hello";
@@ -1993,6 +2191,63 @@ mod tests {
         assert_eq!(parsed.session_id, session_id);
         assert_eq!(parsed.channel_id, 1);
         assert_eq!(parsed.payload, payload);
+    }
+
+    #[fuchsia::test]
+    async fn test_host_receiver_task_queue_full_drops_and_does_not_advance_ack() {
+        let (sid, cid) = (55555u32, 1u16);
+        let mut data = encode_frame(sid, cid, 0, FrameType::Data, b"data1").unwrap();
+        data.extend_from_slice(&encode_frame(sid, cid, 1, FrameType::Data, b"data2").unwrap());
+
+        // Channel capacity of 0 so the sender's 1-message slot fills on `data1`,
+        // causing `data2` to fail `try_send` (queue full) and be dropped.
+        let (serial_tx, mut serial_rx) = mpsc::channel(0);
+        let ack_tracker = AckTracker::new();
+        let (incoming_event_tx, _incoming_event_rx) = mpsc::channel(10);
+        let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
+
+        let rx_handle = fuchsia_async::Task::local(receiver_task(
+            UartReader::new(MockReader::new(data)),
+            serial_tx,
+            ack_tracker.clone(),
+            incoming_event_tx,
+            sid,
+            metrics,
+        ));
+
+        let rx_res = rx_handle.await;
+        assert!(matches!(
+            rx_res,
+            Err(TaskError::Receiver(ReceiverTaskError::Reader(ReaderError::Eof)))
+        ));
+
+        let event = serial_rx.next().await.unwrap();
+        assert_eq!(event, UartEvent::UartData { channel_id: cid, data: b"data1".to_vec() });
+        assert!(serial_rx.try_recv().is_err());
+
+        assert_eq!(ack_tracker.take_ack(), Some((sid, 0)));
+        assert_eq!(ack_tracker.take_ack(), None);
+    }
+
+    #[fuchsia::test]
+    async fn test_host_receiver_task_handles_reset_frame() {
+        let sid = 77777u32;
+        let reset = encode_frame(sid, CONTROL_CHANNEL_ID, 0, FrameType::Reset, &[]).unwrap();
+        let (serial_tx, _serial_rx) = mpsc::channel(10);
+        let ack_tracker = AckTracker::new();
+        let (incoming_event_tx, _incoming_event_rx) = mpsc::channel(10);
+        let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
+
+        let res = receiver_task(
+            UartReader::new(MockReader::new(reset)),
+            serial_tx,
+            ack_tracker,
+            incoming_event_tx,
+            sid,
+            metrics,
+        )
+        .await;
+        assert!(matches!(res, Err(TaskError::Receiver(ReceiverTaskError::TargetRequestedReset))));
     }
 
     #[fuchsia::test]
@@ -2108,5 +2363,28 @@ mod tests {
         let result = tokio::time::timeout(std::time::Duration::from_secs(3), driver_task).await;
         assert!(result.is_ok(), "Driver task did not terminate within timeout!");
         assert!(!client_socket_path.exists(), "Client socket was not cleaned up!");
+    }
+
+    #[fuchsia::test]
+    async fn test_update_status_invalidates_cached_identity() {
+        let temp = tempdir().unwrap();
+        let meta_path = temp.path().join("ffx_uart_test.json");
+
+        let mut meta = make_test_metadata("/dev/ttyUSB0", ConnectionStatus::Connected);
+        meta.nodename = Some("fuchsia-test".to_string());
+        meta.serial = Some("SER12345".to_string());
+        std::fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+        HostDriver::update_status(&Some(meta_path.clone()), ConnectionStatus::Connecting);
+        let content = std::fs::read_to_string(&meta_path).unwrap();
+        let updated: ConnectionMetadata = serde_json::from_str(&content).unwrap();
+        assert_eq!(updated.status, ConnectionStatus::Connecting);
+        assert_eq!((updated.nodename, updated.serial), (None, None));
+
+        HostDriver::update_status(&Some(meta_path.clone()), ConnectionStatus::Connected);
+        let content = std::fs::read_to_string(&meta_path).unwrap();
+        let reconnected: ConnectionMetadata = serde_json::from_str(&content).unwrap();
+        assert_eq!(reconnected.status, ConnectionStatus::Connected);
+        assert_eq!((reconnected.nodename, reconnected.serial), (None, None));
     }
 }
