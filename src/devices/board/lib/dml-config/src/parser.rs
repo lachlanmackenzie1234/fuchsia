@@ -478,7 +478,7 @@ pub async fn publish_dml_devices(
             pid: Some(0),
             did: Some(0),
             instance_id: Some(instance_id),
-            driver_host: dev.url.clone(),
+            driver_host: dev.driver_host.clone(),
             ..Default::default()
         };
         node.interrupt_controller_id = dev.interrupt_controller_id;
