@@ -5,6 +5,7 @@
 use crate::atomic_stack::{AtomicListIterator, AtomicStack};
 use crate::rcu_droppable::RcuDroppable;
 use fuchsia_sync::{Completion, Mutex};
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 use std::thread_local;
 use std::time::Duration;
@@ -88,34 +89,59 @@ struct RcuThreadBlock {
 }
 
 impl RcuThreadBlock {
+    /// Creates a new `RcuThreadBlock`.
+    const fn new() -> Self {
+        Self { nesting_level: AtomicUsize::new(0), counter_index: AtomicU8::new(0) }
+    }
+
     /// Returns true if the thread is holding a read lock.
     fn holding_read_lock(&self) -> bool {
         self.nesting_level.load(Ordering::Relaxed) > 0
     }
 }
-
-impl Default for RcuThreadBlock {
-    fn default() -> Self {
-        #[cfg(feature = "rseq_backend")]
-        fuchsia_rseq::rseq_register_thread_with_cs(crate::read_counters::rcu_critical_section());
-
-        Self { nesting_level: AtomicUsize::new(0), counter_index: AtomicU8::new(0) }
-    }
-}
-
-impl Drop for RcuThreadBlock {
-    fn drop(&mut self) {
-        #[cfg(feature = "rseq_backend")]
-        fuchsia_rseq::rseq_unregister_thread();
-    }
-}
-
 thread_local! {
     /// Thread-specific data for the RCU state machine.
     ///
     /// This data is used to track the nesting level of read locks and the index of the read counter
     /// that the thread incremented when it entered its outermost read lock.
-    static RCU_THREAD_BLOCK: RcuThreadBlock = RcuThreadBlock::default();
+    static RCU_THREAD_BLOCK: RcuThreadBlock = const { RcuThreadBlock::new() };
+}
+
+/// An RAII guard that keeps the current thread registered with RCU and RSEQ.
+///
+/// Unregisters the thread when dropped.
+#[derive(Debug)]
+#[must_use = "the thread is unregistered when the guard is dropped"]
+pub struct RcuThreadRegistration {
+    _marker: PhantomData<*const ()>,
+}
+
+impl RcuThreadRegistration {
+    /// Leaks the registration, keeping the current thread registered indefinitely.
+    #[inline]
+    pub fn leak(self) {
+        std::mem::forget(self);
+    }
+}
+
+impl Drop for RcuThreadRegistration {
+    fn drop(&mut self) {
+        unregister_thread();
+    }
+}
+
+/// Registers the current thread for RCU and RSEQ.
+pub fn register_thread() -> RcuThreadRegistration {
+    #[cfg(feature = "rseq_backend")]
+    fuchsia_rseq::rseq_register_thread_with_cs(crate::read_counters::rcu_critical_section());
+
+    RcuThreadRegistration { _marker: PhantomData }
+}
+
+/// Unregisters the current thread from RCU and RSEQ.
+pub fn unregister_thread() {
+    #[cfg(feature = "rseq_backend")]
+    fuchsia_rseq::rseq_unregister_thread();
 }
 
 /// Exposes the thread-local counters for RCU stall detection.
@@ -134,6 +160,7 @@ where
 /// defers calling callbacks until all currently in-flight read operations have completed.
 ///
 /// Must be balanced by a call to `rcu_read_unlock` on the same thread.
+#[inline]
 pub(crate) fn rcu_read_lock() {
     RCU_THREAD_BLOCK.with(|thread_block| {
         let nesting_level = thread_block.nesting_level.load(Ordering::Relaxed);
@@ -176,6 +203,7 @@ pub(crate) fn rcu_read_lock() {
 ///
 /// This function is used to release a read lock on the RCU state machine. See `rcu_read_lock` for
 /// more details.
+#[inline]
 pub(crate) fn rcu_read_unlock() {
     RCU_THREAD_BLOCK.with(|thread_block| {
         let nesting_level = thread_block.nesting_level.load(Ordering::Relaxed);

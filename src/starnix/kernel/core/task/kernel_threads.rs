@@ -100,6 +100,8 @@ impl KernelThreads {
         let thread = std::thread::Builder::new()
             .name("starnix-rcu".to_string())
             .spawn(move || {
+                let _rcu_registration = fuchsia_rcu::register_thread();
+
                 while !stop_clone.is_signaled() {
                     fuchsia_rcu::rcu_advancer_wait_for_work();
                     while !stop_clone.is_signaled() {

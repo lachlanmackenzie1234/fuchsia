@@ -26,7 +26,8 @@ pub use rcu_ptr::RcuReadGuard;
 pub use rcu_read_scope::RcuReadScope;
 pub use rcu_weak::RcuWeak;
 pub use state_machine::{
-    rcu_advancer_wait_for_work, rcu_advancer_wake, rcu_drop, rcu_run_callbacks, rcu_synchronize,
+    RcuThreadRegistration, rcu_advancer_wait_for_work, rcu_advancer_wake, rcu_drop,
+    rcu_run_callbacks, rcu_synchronize, register_thread, unregister_thread,
     with_thread_block_counters,
 };
 

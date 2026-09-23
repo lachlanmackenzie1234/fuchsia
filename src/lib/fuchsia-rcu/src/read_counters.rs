@@ -81,13 +81,30 @@ impl RcuReadCounters {
         &self.per_cpu_counts[cpu as usize]
     }
 
+    #[inline]
+    unsafe fn get_rseq() -> Rseq {
+        unsafe {
+            match Rseq::try_get() {
+                Some(rseq) => rseq,
+                None => {
+                    // Permanently claim the rseq registration for this thread. There currently
+                    // aren't other uses for rseq and claiming it allows us to avoid registartion
+                    // overhead on future accesses.
+                    crate::state_machine::register_thread().leak();
+                    Rseq::get()
+                }
+            }
+        }
+    }
+
     /// Signals the start of a read-side critical section.
     ///
     /// This increments the `begin` counter for the current CPU. It uses RSEQ to ensure the
     /// increment is atomic with respect to the current CPU.
+    #[inline]
     pub(crate) fn begin(&self, index: usize) {
         unsafe {
-            let rseq = Rseq::get();
+            let rseq = Self::get_rseq();
             loop {
                 let cpu = rseq.current_cpu();
                 let counter = self.get_state(cpu).begin_counter(index);
@@ -102,9 +119,10 @@ impl RcuReadCounters {
     ///
     /// This increments the `end` counter for the current CPU. It uses RSEQ to ensure the increment
     /// is atomic with respect to the current CPU.
+    #[inline]
     pub(crate) fn end(&self, index: usize) {
         unsafe {
-            let rseq = Rseq::get();
+            let rseq = Self::get_rseq();
             loop {
                 let cpu = rseq.current_cpu();
                 let counter = self.get_state(cpu).end_counter(index);
