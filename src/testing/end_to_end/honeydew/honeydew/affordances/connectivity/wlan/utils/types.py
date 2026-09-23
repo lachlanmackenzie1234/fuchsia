@@ -37,11 +37,10 @@ class NetworkConfig:
         """Parse from a fuchsia.wlan.policy/NetworkConfig."""
         assert fidl.id_ is not None, f"{fidl!r} missing id"
         assert fidl.credential is not None, f"{fidl!r} missing credential"
-        identifier = NetworkIdentifier.from_fidl(fidl.id_)
         credential = Credential.from_fidl(fidl.credential)
         return NetworkConfig(
-            ssid=identifier.ssid,
-            security_type=identifier.security_type,
+            ssid=bytes(fidl.id_.ssid).decode("utf-8"),
+            security_type=f_wlan_policy.SecurityType(fidl.id_.type_),
             credential_type=credential.type(),
             credential_value=credential.value(),
         )
@@ -49,44 +48,16 @@ class NetworkConfig:
     def to_fidl(self) -> f_wlan_policy.NetworkConfig:
         """Convert to equivalent FIDL."""
         return f_wlan_policy.NetworkConfig(
-            id_=NetworkIdentifier(self.ssid, self.security_type).to_fidl(),
+            id_=f_wlan_policy.NetworkIdentifier(
+                ssid=list(self.ssid.encode("utf-8")),
+                type_=self.security_type,
+            ),
             credential=Credential.from_password(
                 self.credential_value
             ).to_fidl(),
         )
 
     def __lt__(self, other: NetworkConfig) -> bool:
-        return self.ssid < other.ssid
-
-
-@dataclass(frozen=True)
-class NetworkIdentifier:
-    """Combination of ssid and the security type.
-
-    Primary means of distinguishing between available networks.
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/types.fidl
-    """
-
-    ssid: str
-    security_type: f_wlan_policy.SecurityType
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_policy.NetworkIdentifier) -> NetworkIdentifier:
-        """Parse from a fuchsia.wlan.policy/NetworkIdentifier."""
-
-        return NetworkIdentifier(
-            ssid=bytes(fidl.ssid).decode("utf-8"),
-            security_type=f_wlan_policy.SecurityType(fidl.type_),
-        )
-
-    def to_fidl(self) -> f_wlan_policy.NetworkIdentifier:
-        """Convert to a fuchsia.wlan.policy/NetworkIdentifier."""
-        return f_wlan_policy.NetworkIdentifier(
-            ssid=list(self.ssid.encode("utf-8")),
-            type_=self.security_type,
-        )
-
-    def __lt__(self, other: NetworkIdentifier) -> bool:
         return self.ssid < other.ssid
 
 
@@ -193,7 +164,7 @@ class NetworkState:
     Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/client_provider.fidl
     """
 
-    network_identifier: NetworkIdentifier
+    network_identifier: f_wlan_policy.NetworkIdentifier
     connection_state: f_wlan_policy.ConnectionState
     disconnect_status: f_wlan_policy.DisconnectStatus | None
 
@@ -204,7 +175,7 @@ class NetworkState:
         assert fidl.state is not None, f"{fidl!r} missing state"
 
         return NetworkState(
-            network_identifier=NetworkIdentifier.from_fidl(fidl.id_),
+            network_identifier=fidl.id_,
             connection_state=f_wlan_policy.ConnectionState(fidl.state),
             disconnect_status=(
                 f_wlan_policy.DisconnectStatus(fidl.status)
@@ -214,7 +185,9 @@ class NetworkState:
         )
 
     def __lt__(self, other: NetworkState) -> bool:
-        return self.network_identifier < other.network_identifier
+        return bytes(self.network_identifier.ssid) < bytes(
+            other.network_identifier.ssid
+        )
 
 
 @dataclass(frozen=True)

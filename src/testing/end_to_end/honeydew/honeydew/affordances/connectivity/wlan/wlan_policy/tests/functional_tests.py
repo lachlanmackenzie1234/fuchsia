@@ -17,7 +17,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     NetworkConfig,
-    NetworkIdentifier,
     NetworkState,
 )
 from mobly import asserts, signals, test_runner
@@ -174,8 +173,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
-                        NetworkIdentifier(
-                            test_ssid, f_wlan_policy.SecurityType.NONE
+                        f_wlan_policy.NetworkIdentifier(
+                            ssid=list(test_ssid.encode("utf-8")),
+                            type_=f_wlan_policy.SecurityType.NONE,
                         ),
                         f_wlan_policy.ConnectionState.DISCONNECTED,
                         f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
@@ -362,8 +362,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 state=expected_client_state,
                 networks=[
                     NetworkState(
-                        NetworkIdentifier(
-                            ssid, f_wlan_policy.SecurityType.NONE
+                        f_wlan_policy.NetworkIdentifier(
+                            ssid=list(ssid.encode("utf-8")),
+                            type_=f_wlan_policy.SecurityType.NONE,
                         ),
                         expected_state,
                         expected_status,

@@ -209,6 +209,6 @@ class WlanPolicyController:
             Network state of target ssid or None if not found in networks.
         """
         for network in networks:
-            if network.network_identifier.ssid == ssid:
+            if bytes(network.network_identifier.ssid).decode("utf-8") == ssid:
                 return network
         return None

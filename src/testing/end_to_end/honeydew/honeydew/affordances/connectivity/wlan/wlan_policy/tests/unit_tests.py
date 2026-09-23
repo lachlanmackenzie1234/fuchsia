@@ -22,7 +22,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     NetworkConfig,
-    NetworkIdentifier,
     NetworkState,
 )
 from honeydew.affordances.location import Location
@@ -432,9 +431,9 @@ class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
                     state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                     networks=[
                         NetworkState(
-                            network_identifier=NetworkIdentifier(
-                                ssid="Google Guest",
-                                security_type=f_wlan_policy.SecurityType.WPA2,
+                            network_identifier=f_wlan_policy.NetworkIdentifier(
+                                ssid=list(str.encode("Google Guest")),
+                                type_=f_wlan_policy.SecurityType.WPA2,
                             ),
                             connection_state=f_wlan_policy.ConnectionState.CONNECTING,
                             disconnect_status=None,
@@ -493,7 +492,7 @@ class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
             networks=[
                 f_wlan_policy.NetworkState(
                     id_=f_wlan_policy.NetworkIdentifier(
-                        ssid=b"ssid1",
+                        ssid=list(b"ssid1"),
                         type_=f_wlan_policy.SecurityType.NONE,
                     ),
                     state=f_wlan_policy.ConnectionState.CONNECTED,

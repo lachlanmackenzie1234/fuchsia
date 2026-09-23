@@ -14,7 +14,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    NetworkIdentifier,
     NetworkState,
 )
 from mobly import asserts, signals, test_runner
@@ -167,8 +166,9 @@ class StartStopClientConnectionsTest(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
-                        network_identifier=NetworkIdentifier(
-                            self.ssid, self.security_type
+                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(self.ssid.encode("utf-8")),
+                            type_=self.security_type,
                         ),
                         connection_state=f_wlan_policy.ConnectionState.CONNECTING,
                         disconnect_status=None,
@@ -187,8 +187,9 @@ class StartStopClientConnectionsTest(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[
                     NetworkState(
-                        network_identifier=NetworkIdentifier(
-                            self.ssid, self.security_type
+                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(self.ssid.encode("utf-8")),
+                            type_=self.security_type,
                         ),
                         connection_state=f_wlan_policy.ConnectionState.DISCONNECTED,
                         disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
@@ -238,8 +239,9 @@ class StartStopClientConnectionsTest(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
-                        network_identifier=NetworkIdentifier(
-                            self.ssid, self.security_type
+                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(self.ssid.encode("utf-8")),
+                            type_=self.security_type,
                         ),
                         connection_state=f_wlan_policy.ConnectionState.CONNECTING,
                         disconnect_status=None,
@@ -254,8 +256,9 @@ class StartStopClientConnectionsTest(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
-                        network_identifier=NetworkIdentifier(
-                            self.ssid, self.security_type
+                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(self.ssid.encode("utf-8")),
+                            type_=self.security_type,
                         ),
                         connection_state=f_wlan_policy.ConnectionState.CONNECTED,
                         disconnect_status=None,
@@ -277,8 +280,9 @@ class StartStopClientConnectionsTest(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     NetworkState(
-                        network_identifier=NetworkIdentifier(
-                            self.ssid, self.security_type
+                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(self.ssid.encode("utf-8")),
+                            type_=self.security_type,
                         ),
                         connection_state=f_wlan_policy.ConnectionState.DISCONNECTED,
                         disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,

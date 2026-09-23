@@ -26,7 +26,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
     Credential,
     NetworkConfig,
-    NetworkIdentifier,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
@@ -400,7 +399,10 @@ class WlanPolicy(AsyncLazyReady):
         try:
             resp = await asyncio.wait_for(
                 self._client_controller.proxy.connect(
-                    id_=NetworkIdentifier(target_ssid, security_type).to_fidl(),
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(target_ssid.encode("utf-8")),
+                        type_=security_type,
+                    ),
                 ),
                 None if timeout is None else timeout.total_seconds(),
             )
@@ -610,7 +612,7 @@ class WlanPolicy(AsyncLazyReady):
 
         def check_net(update: ClientStateSummary) -> bool:
             for net in update.networks:
-                if net.network_identifier.ssid == ssid:
+                if bytes(net.network_identifier.ssid).decode("utf-8") == ssid:
                     if net.connection_state == expected_state:
                         return True
                     elif (
@@ -631,7 +633,7 @@ class WlanPolicy(AsyncLazyReady):
         matched_update = await self._wait_on_update(check_net, timeout=timeout)
 
         for net in matched_update.networks:
-            if net.network_identifier.ssid == ssid:
+            if bytes(net.network_identifier.ssid).decode("utf-8") == ssid:
                 return net.connection_state
 
         raise wlan_errors.HoneydewWlanError(
@@ -714,7 +716,10 @@ class WlanPolicy(AsyncLazyReady):
         try:
             res = await asyncio.wait_for(
                 self._client_controller.proxy.forget_network(
-                    id_=NetworkIdentifier(target_ssid, security_type).to_fidl(),
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(target_ssid.encode("utf-8")),
+                        type_=security_type,
+                    ),
                 ),
                 None if timeout is None else timeout.total_seconds(),
             )
@@ -763,9 +768,10 @@ class WlanPolicy(AsyncLazyReady):
             res = await asyncio.wait_for(
                 self._client_controller.proxy.save_network(
                     config=f_wlan_policy.NetworkConfig(
-                        id_=NetworkIdentifier(
-                            target_ssid, security_type
-                        ).to_fidl(),
+                        id_=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(target_ssid.encode("utf-8")),
+                            type_=security_type,
+                        ),
                         credential=Credential.from_password(
                             target_pwd
                         ).to_fidl(),

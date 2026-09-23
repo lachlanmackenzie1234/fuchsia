@@ -18,9 +18,6 @@ from honeydew.affordances.connectivity.wlan import wlan_policy_ap
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    NetworkIdentifier,
-)
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
@@ -35,9 +32,10 @@ _ACCESS_POINT_STATE = f_wlan_policy.AccessPointState(
     band=f_wlan_policy.OperatingBand.ONLY_2_4_GHZ,
     frequency=None,
     clients=None,
-    id_=NetworkIdentifier(
-        ssid=_TEST_SSID, security_type=f_wlan_policy.SecurityType.WPA2
-    ).to_fidl(),
+    id_=f_wlan_policy.NetworkIdentifier(
+        ssid=list(_TEST_SSID.encode("utf-8")),
+        type_=f_wlan_policy.SecurityType.WPA2,
+    ),
 )
 
 
