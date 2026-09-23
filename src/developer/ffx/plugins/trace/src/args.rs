@@ -305,10 +305,6 @@ pub struct Start {
     #[argh(switch)]
     pub retain_raw_fidl: bool,
 
-    /// disable zstd compression during transfer. Defaults to false.
-    #[argh(switch)]
-    pub nocompress: bool,
-
     /// upload the trace file to GCS and display the Perfetto Trace Viewer URL. Defaults to false.
     #[argh(switch)]
     pub upload: bool,
@@ -333,7 +329,6 @@ impl Default for Start {
             no_symbolize: false,
             no_verify_trace: false,
             retain_raw_fidl: false,
-            nocompress: false,
             upload: false,
             bucket: None,
         }

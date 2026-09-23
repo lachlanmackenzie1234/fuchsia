@@ -478,14 +478,11 @@ impl TraceTool {
         };
         let output = canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
 
-        let compression =
-            if opts.nocompress { CompressionType::None } else { CompressionType::Zstd };
-
         let options = TraceOptions {
             duration_ns: opts.duration.map(|d| Duration::from_secs(d.into()).as_nanos() as i64),
             triggers,
             requested_categories: Some(opts.categories.clone()),
-            compression: Some(compression),
+            compression: Some(CompressionType::Zstd),
             ..Default::default()
         };
         writer.line(format!("Tracing categories: [{}]...", expanded_categories.join(","),))?;
@@ -1376,7 +1373,6 @@ mod tests {
             no_verify_trace: false,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             ..Default::default()
         };
 
@@ -1546,7 +1542,6 @@ mod tests {
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             ..Default::default()
         };
 
@@ -2079,7 +2074,6 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             ..Default::default()
         };
         let tool = TraceTool {
@@ -2168,7 +2162,6 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             ..Default::default()
         };
 
@@ -2206,7 +2199,6 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             ..Default::default()
         };
 
@@ -2246,7 +2238,6 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             ..Default::default()
         };
 
@@ -2287,7 +2278,6 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             upload: true,
             bucket: Some("test-upload-bucket".to_string()),
         };
@@ -2587,7 +2577,6 @@ Triggers:
             no_verify_trace: true,
             on_boot: false,
             retain_raw_fidl: false,
-            nocompress: false,
             ..Default::default()
         };
 
