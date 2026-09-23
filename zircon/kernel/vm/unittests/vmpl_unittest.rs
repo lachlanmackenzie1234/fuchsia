@@ -1694,6 +1694,248 @@ mod vmpl_rs {
         list.remove_all_content(|_| {});
     }
 
+    /// Tests clipping an interval at the start.
+    #[test]
+    fn vmpl_interval_clip_start_test() {
+        let mut list = VmPageList::new();
+
+        // Interval spanning across 3 nodes, with the middle one unpopulated.
+        let old_start = 1;
+        let old_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, old_end);
+        expect_ok!(list.add_zero_interval(
+            old_start * PAGE_SIZE,
+            (old_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Clip the start such that the interval still spans multiple pages.
+        let new_start = old_end - 3;
+        expect_ok!(
+            list.clip_interval_start(old_start * PAGE_SIZE, (new_start - old_start) * PAGE_SIZE)
+        );
+
+        let expected_intervals = [new_start, old_end];
+        let mut expected_gaps = [0, new_start, old_end + 1, size];
+        let mut intervals = [0u64; 4];
+        let mut gaps = [0u64; 4];
+        let mut interval_index = 0;
+        let mut gap_index = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() && interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_end() && interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                if interval_index < 4 {
+                    intervals[interval_index] = off;
+                    interval_index += 1;
+                }
+                Status::NEXT
+            },
+            |begin, end| {
+                if gap_index < 4 {
+                    gaps[gap_index] = begin;
+                    gaps[gap_index + 1] = end;
+                    gap_index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+        expect_eq!(2, interval_index);
+        for i in 0..interval_index {
+            expect_eq!(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+        }
+        expect_eq!(4, gap_index);
+        for i in 0..gap_index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        // Clip the start again, leaving behind just a single interval slot.
+        expect_ok!(
+            list.clip_interval_start(new_start * PAGE_SIZE, (old_end - new_start) * PAGE_SIZE)
+        );
+        expected_gaps[1] = old_end;
+        gap_index = 0;
+        // We should see a single interval slot.
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !p.is_interval_slot() {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if off != old_end * PAGE_SIZE {
+                    return Status::BAD_STATE;
+                }
+                Status::NEXT
+            },
+            |begin, end| {
+                if gap_index < 4 {
+                    gaps[gap_index] = begin;
+                    gaps[gap_index + 1] = end;
+                    gap_index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+        expect_eq!(4, gap_index);
+        for i in 0..gap_index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests clipping an interval at the end.
+    #[test]
+    fn vmpl_interval_clip_end_test() {
+        let mut list = VmPageList::new();
+
+        // Interval spanning across 3 nodes, with the middle one unpopulated.
+        let old_start = 1;
+        let old_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, old_end);
+        expect_ok!(list.add_zero_interval(
+            old_start * PAGE_SIZE,
+            (old_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Clip the end such that the interval still spans multiple pages.
+        let new_end = old_start + 3;
+        expect_ok!(list.clip_interval_end(old_end * PAGE_SIZE, (old_end - new_end) * PAGE_SIZE));
+
+        let expected_intervals = [old_start, new_end];
+        let mut expected_gaps = [0, old_start, new_end + 1, size];
+        let mut intervals = [0u64; 4];
+        let mut gaps = [0u64; 4];
+        let mut interval_index = 0;
+        let mut gap_index = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !(p.is_interval_start() || p.is_interval_end()) {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_start() && interval_index % 2 == 1 {
+                    return Status::BAD_STATE;
+                }
+                if p.is_interval_end() && interval_index % 2 == 0 {
+                    return Status::BAD_STATE;
+                }
+                if interval_index < 4 {
+                    intervals[interval_index] = off;
+                    interval_index += 1;
+                }
+                Status::NEXT
+            },
+            |begin, end| {
+                if gap_index < 4 {
+                    gaps[gap_index] = begin;
+                    gaps[gap_index + 1] = end;
+                    gap_index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+        expect_eq!(2, interval_index);
+        for i in 0..interval_index {
+            expect_eq!(expected_intervals[i] * PAGE_SIZE, intervals[i]);
+        }
+        expect_eq!(4, gap_index);
+        for i in 0..gap_index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        // Clip the end again, leaving behind just a single interval slot.
+        expect_ok!(list.clip_interval_end(new_end * PAGE_SIZE, (new_end - old_start) * PAGE_SIZE));
+        expected_gaps[2] = old_start + 1;
+        gap_index = 0;
+        // We should see a single interval slot.
+        let res = list.for_every_page_and_gap_in_range(
+            0,
+            size * PAGE_SIZE,
+            |p, off| {
+                if !p.is_interval_slot() {
+                    return Status::BAD_STATE;
+                }
+                if !p.is_zero_interval_dirty() {
+                    return Status::BAD_STATE;
+                }
+                if off != old_start * PAGE_SIZE {
+                    return Status::BAD_STATE;
+                }
+                Status::NEXT
+            },
+            |begin, end| {
+                if gap_index < 4 {
+                    gaps[gap_index] = begin;
+                    gaps[gap_index + 1] = end;
+                    gap_index += 2;
+                }
+                Status::NEXT
+            },
+        );
+        expect_ok!(res);
+        expect_eq!(4, gap_index);
+        for i in 0..gap_index {
+            expect_eq!(expected_gaps[i] * PAGE_SIZE, gaps[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests replacing an existing page with a zero interval.
+    #[test]
+    fn vmpl_replace_page_with_zero_interval_test() {
+        let mut list = VmPageList::new();
+        let [test_page] = get_pages::<1>();
+        let offset = PAGE_SIZE;
+
+        expect_true!(add_page(&mut list, test_page, offset));
+        expect_true!(list.lookup(offset).is_some_and(|p| p.page() == test_page));
+
+        // The released page is handed back to the caller and the slot becomes a zero interval.
+        let released = list.replace_page_with_zero_interval(offset, ZeroRangeDirtyState::Dirty);
+        expect_true!(released == test_page);
+        expect_true!(list.has_no_page_or_ref());
+
+        let slot = list.lookup(offset).unwrap();
+        expect_true!(slot.is_interval_slot());
+        expect_true!(slot.is_zero_interval_dirty());
+        expect_true!(list.is_offset_in_zero_interval(offset));
+
+        list.remove_all_content(|_| {});
+        free_pages([released]);
+    }
+
     /// Tests awaiting clean length handling when splitting an interval.
     #[test]
     fn vmpl_awaiting_clean_split_test() {
@@ -1741,6 +1983,41 @@ mod vmpl_rs {
         expect_eq!(0, list.lookup(mid).unwrap().zero_interval_awaiting_clean_length());
         expect_eq!(0, list.lookup(mid + PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length());
         expect_eq!(0, list.lookup(end).unwrap().zero_interval_awaiting_clean_length());
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests awaiting clean length handling when clipping an interval.
+    #[test]
+    fn vmpl_awaiting_clean_clip_test() {
+        let mut list = VmPageList::new();
+        let start = PAGE_SIZE;
+        let end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64) * PAGE_SIZE;
+        expect_gt!(size, end);
+        expect_ok!(list.add_zero_interval(start, end + PAGE_SIZE, ZeroRangeDirtyState::Dirty));
+
+        expect_true!(list.any_pages_or_intervals_in_range(0, size));
+
+        // Set awaiting clean length.
+        let expected_len = end - start + PAGE_SIZE;
+        list.lookup_mut(start).unwrap().set_zero_interval_awaiting_clean_length(expected_len);
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Clip the interval at the end.
+        expect_ok!(list.clip_interval_end(end, 2 * PAGE_SIZE));
+
+        // Awaiting clean length is unchanged.
+        expect_eq!(expected_len, list.lookup(start).unwrap().zero_interval_awaiting_clean_length());
+
+        // Clip the interval at the start.
+        expect_ok!(list.clip_interval_start(start, 2 * PAGE_SIZE));
+
+        // Awaiting clean length is clipped too.
+        expect_eq!(
+            expected_len - 2 * PAGE_SIZE,
+            list.lookup(start + 2 * PAGE_SIZE).unwrap().zero_interval_awaiting_clean_length()
+        );
 
         list.remove_all_content(|_| {});
     }

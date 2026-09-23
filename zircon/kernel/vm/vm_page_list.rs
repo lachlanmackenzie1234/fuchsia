@@ -2413,6 +2413,147 @@ impl VmPageList {
         debug_assert!(status.is_ok());
     }
 
+    /// Clips an interval from the start by `len`, i.e. moves the start from `interval_start` to
+    /// `interval_start + len`. The total length of the interval must be larger than `len`.
+    ///
+    /// Any remaining awaiting clean length is carried over to the new start.
+    pub fn clip_interval_start(&mut self, interval_start: u64, len: u64) -> Result<(), Status> {
+        let page_size = page::SIZE as u64;
+        debug_assert!(interval_start.is_multiple_of(page_size));
+        debug_assert!(len.is_multiple_of(page_size));
+        if len == 0 {
+            return Ok(());
+        }
+        let new_interval_start =
+            interval_start.checked_add(len).expect("clipped interval start overflowed");
+
+        // Capture the state of the old start upfront, before we make any changes to the list.
+        let (old_dirty_state, old_awaiting_clean_len) = {
+            let old_start =
+                self.lookup(interval_start).expect("interval start sentinel must be populated");
+            debug_assert!(old_start.is_interval_start());
+            // We only support zero intervals for now.
+            debug_assert!(old_start.is_interval_zero());
+            (old_start.zero_interval_dirty_state(), old_start.zero_interval_awaiting_clean_length())
+        };
+
+        if cfg!(debug_assertions) {
+            // There should only be empty slots between the old and the new start.
+            let status = self.for_every_page_and_gap_in_range(
+                interval_start + page_size,
+                new_interval_start,
+                |_, _| Status::BAD_STATE,
+                |_, _| Status::BAD_STATE,
+            );
+            debug_assert!(status.is_ok());
+        }
+
+        let Some(new_start) = self.lookup_or_allocate_internal(new_interval_start) else {
+            return Err(Status::NO_MEMORY);
+        };
+
+        // It is possible that we are moving the start all the way to the end, leaving behind a
+        // single interval slot.
+        if new_start.is_interval_end() {
+            new_start.change_interval_sentinel(SentinelType::Slot);
+        } else {
+            debug_assert!(new_start.is_empty());
+            // We only support zero intervals for now.
+            *new_start = VmPageOrMarker::zero_interval(SentinelType::Start, old_dirty_state);
+        }
+
+        // Now that the new start has been created, carry over any remaining awaiting clean length
+        // from the old start.
+        if old_awaiting_clean_len > len {
+            new_start.set_zero_interval_awaiting_clean_length(old_awaiting_clean_len - len);
+        }
+
+        // Free up the old start.
+        self.remove_content(interval_start);
+        Ok(())
+    }
+
+    /// Clips an interval from the end by `len`, i.e. moves the end from `interval_end` to
+    /// `interval_end - len`. The total length of the interval must be larger than `len`.
+    pub fn clip_interval_end(&mut self, interval_end: u64, len: u64) -> Result<(), Status> {
+        let page_size = page::SIZE as u64;
+        debug_assert!(interval_end.is_multiple_of(page_size));
+        debug_assert!(len.is_multiple_of(page_size));
+        if len == 0 {
+            return Ok(());
+        }
+        let new_interval_end =
+            interval_end.checked_sub(len).expect("clipped interval end underflowed");
+
+        // Capture the state of the old end upfront, before we make any changes to the list.
+        let old_dirty_state = {
+            let old_end =
+                self.lookup(interval_end).expect("interval end sentinel must be populated");
+            debug_assert!(old_end.is_interval_end());
+            // We only support zero intervals for now.
+            debug_assert!(old_end.is_interval_zero());
+            old_end.zero_interval_dirty_state()
+        };
+
+        if cfg!(debug_assertions) {
+            // There should only be empty slots between the new and the old end.
+            let status = self.for_every_page_and_gap_in_range(
+                new_interval_end + page_size,
+                interval_end,
+                |_, _| Status::BAD_STATE,
+                |_, _| Status::BAD_STATE,
+            );
+            debug_assert!(status.is_ok());
+        }
+
+        let Some(new_end) = self.lookup_or_allocate_internal(new_interval_end) else {
+            return Err(Status::NO_MEMORY);
+        };
+
+        // It is possible that we are moving the end all the way to the start, leaving behind a
+        // single interval slot.
+        if new_end.is_interval_start() {
+            new_end.change_interval_sentinel(SentinelType::Slot);
+        } else {
+            debug_assert!(new_end.is_empty());
+            // We only support zero intervals for now.
+            *new_end = VmPageOrMarker::zero_interval(SentinelType::End, old_dirty_state);
+        }
+
+        // Free up the old end.
+        self.remove_content(interval_end);
+        Ok(())
+    }
+
+    /// Replace an existing page at `offset` with a zero interval, and return the released page.
+    /// The caller takes ownership of the released page and is responsible for freeing it.
+    pub fn replace_page_with_zero_interval(
+        &mut self,
+        offset: u64,
+        dirty_state: ZeroRangeDirtyState,
+    ) -> VmPagePtr {
+        // We are guaranteed to find the slot as we're replacing an existing page.
+        let slot = self.lookup_or_allocate_internal(offset);
+        debug_assert!(slot.is_some());
+        let slot = slot.unwrap();
+        // Release the page at the offset, but hold on to the empty slot so it can be reused by
+        // `add_zero_interval_internal`.
+        let page = slot.release_page();
+        let status = self.add_zero_interval_internal(
+            offset,
+            offset + page::SIZE as u64,
+            dirty_state,
+            0,
+            true,
+        );
+        // The only error `add_zero_interval_internal` can encounter is NO_MEMORY, but we know that
+        // cannot happen because we are reusing an existing slot, so we don't need to allocate a new
+        // node.
+        debug_assert!(status.is_ok());
+        // Return the page we released.
+        page
+    }
+
     /// Walk the page tree, calling the passed in function on every tree node.
     pub fn for_every_page<F>(&self, per_page_func: F) -> Result<(), Status>
     where
