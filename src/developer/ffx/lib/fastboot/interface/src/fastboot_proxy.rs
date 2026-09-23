@@ -254,7 +254,6 @@ async fn upload_data<T: AsyncRead + AsyncWrite + Unpin>(
     interface: &mut T,
     progress_listener: &ProgressListener<'_>,
     timeout: Duration,
-    mut bytes_offset: u64,
 ) -> Result<(), fastboot::FastbootError> {
     let _lock = ctx.lock_transfer().await;
     let expected = data.len().try_into().unwrap();
@@ -275,8 +274,7 @@ async fn upload_data<T: AsyncRead + AsyncWrite + Unpin>(
             return log_err(CouldNotWriteToInterface(e), progress_listener).await;
         }
 
-        bytes_offset += u64::try_from(chunk.len()).unwrap();
-        progress_listener.on_progress(bytes_offset).await?;
+        progress_listener.on_progress(u64::try_from(chunk.len()).unwrap()).await?;
     }
 
     wait_for_ack(interface, progress_listener, timeout).await?;
@@ -649,36 +647,32 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         let ctx = self.ctx.clone();
         let interface = self.interface().await?;
 
-        let (finishing_cmd, length) = match op {
+        let length_bytes = match op {
             StreamOp::Fill { val, length_bytes } => {
                 log::trace!("fastboot: filling {} bytes", length_bytes);
+                let finishing_cmd = Command::StreamFill {
+                    partition: name.to_owned(),
+                    offset_bytes,
+                    length_bytes,
+                    val,
+                };
+                handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
                 progress_listener
-                    .on_progress(offset_bytes + length_bytes)
+                    .on_progress(length_bytes)
                     .await
                     .map_err(|e| fastboot::FastbootError::from(e))?;
-
-                (
-                    Command::StreamFill {
-                        partition: name.to_owned(),
-                        offset_bytes,
-                        length_bytes,
-                        val,
-                    },
-                    length_bytes,
-                )
+                length_bytes
             }
             StreamOp::Flash { data, crc32 } => {
-                upload_data(&ctx, &data, interface, &progress_listener, timeout, offset_bytes)
-                    .await?;
-                (
-                    Command::StreamFlash { partition: name.to_owned(), offset_bytes, crc32 },
-                    u64::try_from(data.len()).unwrap(),
-                )
+                upload_data(&ctx, &data, interface, &progress_listener, timeout).await?;
+                let finishing_cmd =
+                    Command::StreamFlash { partition: name.to_owned(), offset_bytes, crc32 };
+                handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
+                u64::try_from(data.len()).unwrap()
             }
         };
 
-        handle_command(&ctx, &finishing_cmd, interface, timeout).await?;
-        log::trace!("fastboot: streamed {length} bytes to {name}");
+        log::trace!("fastboot: streamed {length_bytes} bytes to {name}");
         Ok(())
     }
 }
@@ -1442,7 +1436,7 @@ mod test {
         assert_eq!(progress_rx.recv().await, Some(UploadProgress::OnProgress { bytes_written: 4 }));
         assert_eq!(
             progress_rx.recv().await,
-            Some(UploadProgress::OnProgress { bytes_written: 4100 })
+            Some(UploadProgress::OnProgress { bytes_written: 4096 })
         );
         Ok(())
     }

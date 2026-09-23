@@ -510,11 +510,9 @@ impl<'a> StreamerTask<'a> {
     }
 
     async fn wait_initialized(&mut self) -> Result<u64> {
-        let init_rx = self
-            .init_rx
+        self.init_rx
             .take()
-            .ok_or_else(|| streaming_err_helper("StreamerTask already initialized".to_string()))?;
-        init_rx
+            .ok_or_else(|| streaming_err_helper("StreamerTask already initialized".to_string()))?
             .await
             .map_err(|e| streaming_err_helper(format!("Streamer init task failed: {e}")))?
     }
@@ -1565,10 +1563,10 @@ mod test {
             Upload(OnReady { partition: "zircon_a".to_owned(), files: 1 }),
             Upload(OnStarted { size: 0xc000 }),
             Upload(OnProgress { bytes_written: 0x2000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
             Upload(OnProgress { bytes_written: 0x4000 }),
-            Upload(OnProgress { bytes_written: 0x8000 }),
-            Upload(OnProgress { bytes_written: 0xA000 }),
-            Upload(OnProgress { bytes_written: 0xC000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
             Upload(OnFinished),
             FlashPartitionFinished {
                 partition_name: "zircon_a".to_owned(),
@@ -1590,6 +1588,7 @@ mod test {
         let (mut sparse_file, tmp_path) = NamedTempFile::new().unwrap().into_parts();
         SparseImageBuilder::new()
             .add_source(DataSource::Buffer(data.clone()))
+            .add_source(DataSource::Skip(4096))
             .add_source(DataSource::Fill(0, 4096))
             .add_source(DataSource::Buffer(data.clone()))
             .build(&mut sparse_file)
@@ -1657,12 +1656,12 @@ mod test {
 
         let server_expected = &[
             Upload(OnReady { partition: "zircon_a".to_owned(), files: 1 }),
-            Upload(OnStarted { size: 0xc000 }),
+            Upload(OnStarted { size: 0xD000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
             Upload(OnProgress { bytes_written: 0x2000 }),
             Upload(OnProgress { bytes_written: 0x4000 }),
-            Upload(OnProgress { bytes_written: 0x8000 }),
-            Upload(OnProgress { bytes_written: 0xA000 }),
-            Upload(OnProgress { bytes_written: 0xC000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
             Upload(OnFinished),
             FlashPartitionFinished {
                 partition_name: "zircon_a".to_owned(),
