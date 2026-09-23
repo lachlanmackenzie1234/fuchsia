@@ -462,7 +462,7 @@
     <project name="scudo"
              path="third_party/scudo/src"
              remote="https://llvm.googlesource.com/scudo"
-             revision="ba6900d35405f5e33dd5487442e7183f5c94e7e9"/>
+             revision="98b58403934c770e773d04336f13cde28be0e74a"/>
     <project name="gwp-asan"
              path="third_party/scudo/gwp_asan"
              remote="https://llvm.googlesource.com/gwp-asan"
