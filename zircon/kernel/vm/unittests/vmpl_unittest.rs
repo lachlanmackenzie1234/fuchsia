@@ -1694,6 +1694,454 @@ mod vmpl_rs {
         list.remove_all_content(|_| {});
     }
 
+    /// Tests fully overwriting an interval with a new dirty state.
+    #[test]
+    fn vmpl_interval_overwrite_full_test() {
+        let mut list = VmPageList::new();
+
+        // Interval spanning across 3 nodes, with the middle one unpopulated.
+        let expected_start = 1;
+        let expected_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, expected_end);
+        expect_ok!(list.add_zero_interval(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Untracked interval overwrites old dirty interval.
+        expect_ok!(list.overwrite_zero_interval(
+            Some(expected_start * PAGE_SIZE),
+            Some(expected_end * PAGE_SIZE),
+            expected_start * PAGE_SIZE,
+            expected_end * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+
+        // Start and end remain the same but the dirty state changes.
+        let res = list.for_every_page_and_gap_in_range(
+            expected_start * PAGE_SIZE,
+            (expected_end + 1) * PAGE_SIZE,
+            |p, off| {
+                if p.is_interval_start() && off == expected_start * PAGE_SIZE {
+                    if !p.is_zero_interval_untracked() {
+                        return Status::BAD_STATE;
+                    }
+                    return Status::NEXT;
+                }
+                if p.is_interval_end() && off == expected_end * PAGE_SIZE {
+                    if !p.is_zero_interval_untracked() {
+                        return Status::BAD_STATE;
+                    }
+                    return Status::NEXT;
+                }
+                Status::BAD_STATE
+            },
+            |_, _| Status::BAD_STATE,
+        );
+        expect_ok!(res);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests breaking off the start of an interval into a new interval.
+    #[test]
+    fn vmpl_interval_overwrite_start_test() {
+        let mut list = VmPageList::new();
+
+        // Interval spanning across 3 nodes, with the middle one unpopulated.
+        let old_start = 1;
+        let old_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, old_end);
+        expect_ok!(list.add_zero_interval(
+            old_start * PAGE_SIZE,
+            (old_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Break off the start of the untracked interval into a new dirty interval.
+        let new_end = old_end - 5;
+        expect_ok!(list.overwrite_zero_interval(
+            Some(old_start * PAGE_SIZE),
+            None,
+            old_start * PAGE_SIZE,
+            new_end * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        let expected_intervals = [old_start, new_end, new_end + 1, old_end];
+        let expected_state = [
+            ZeroRangeDirtyState::Dirty,
+            ZeroRangeDirtyState::Dirty,
+            ZeroRangeDirtyState::Untracked,
+            ZeroRangeDirtyState::Untracked,
+        ];
+        let mut intervals = [0u64; 4];
+        let mut interval_state = [ZeroRangeDirtyState::Untracked; 4];
+        let mut index = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            old_start * PAGE_SIZE,
+            (old_end + 1) * PAGE_SIZE,
+            |p, off| {
+                if p.is_interval()
+                    && index < 4
+                    && ((p.is_interval_start() && index % 2 == 0)
+                        || (p.is_interval_end() && index % 2 == 1))
+                {
+                    intervals[index] = off / PAGE_SIZE;
+                    interval_state[index] = p.zero_interval_dirty_state();
+                    index += 1;
+                    return Status::NEXT;
+                }
+                Status::BAD_STATE
+            },
+            |_, _| Status::BAD_STATE,
+        );
+        expect_ok!(res);
+        expect_eq!(4, index);
+        for i in 0..index {
+            expect_eq!(expected_intervals[i], intervals[i]);
+            expect_eq!(expected_state[i], interval_state[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests breaking off the end of an interval into a new interval.
+    #[test]
+    fn vmpl_interval_overwrite_end_test() {
+        let mut list = VmPageList::new();
+
+        // Interval spanning across 3 nodes, with the middle one unpopulated.
+        let old_start = 1;
+        let old_end = 2 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        let size = 3 * (VmPageListNode::PAGE_FAN_OUT as u64);
+        expect_gt!(size, old_end);
+        expect_ok!(list.add_zero_interval(
+            old_start * PAGE_SIZE,
+            (old_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+        expect_true!(list.any_pages_or_intervals_in_range(0, size * PAGE_SIZE));
+
+        // Break off the end of the untracked interval into a new dirty interval.
+        let new_start = old_start + 5;
+        expect_ok!(list.overwrite_zero_interval(
+            None,
+            Some(old_end * PAGE_SIZE),
+            new_start * PAGE_SIZE,
+            old_end * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        let expected_intervals = [old_start, new_start - 1, new_start, old_end];
+        let expected_state = [
+            ZeroRangeDirtyState::Untracked,
+            ZeroRangeDirtyState::Untracked,
+            ZeroRangeDirtyState::Dirty,
+            ZeroRangeDirtyState::Dirty,
+        ];
+        let mut intervals = [0u64; 4];
+        let mut interval_state = [ZeroRangeDirtyState::Untracked; 4];
+        let mut index = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            old_start * PAGE_SIZE,
+            (old_end + 1) * PAGE_SIZE,
+            |p, off| {
+                if p.is_interval()
+                    && index < 4
+                    && ((p.is_interval_start() && index % 2 == 0)
+                        || (p.is_interval_end() && index % 2 == 1))
+                {
+                    intervals[index] = off / PAGE_SIZE;
+                    interval_state[index] = p.zero_interval_dirty_state();
+                    index += 1;
+                    return Status::NEXT;
+                }
+                Status::BAD_STATE
+            },
+            |_, _| Status::BAD_STATE,
+        );
+        expect_ok!(res);
+        expect_eq!(4, index);
+        for i in 0..index {
+            expect_eq!(expected_intervals[i], intervals[i]);
+            expect_eq!(expected_state[i], interval_state[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests overwriting an interval spanning a single slot.
+    #[test]
+    fn vmpl_interval_overwrite_slot_test() {
+        let mut list = VmPageList::new();
+
+        // Interval spanning a single slot.
+        let expected_slot = 1;
+        expect_ok!(list.add_zero_interval(
+            expected_slot * PAGE_SIZE,
+            (expected_slot + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+        expect_true!(list.any_pages_or_intervals_in_range(
+            expected_slot * PAGE_SIZE,
+            (expected_slot + 1) * PAGE_SIZE
+        ));
+
+        // Untracked interval overwrites old dirty interval.
+        expect_ok!(list.overwrite_zero_interval(
+            Some(expected_slot * PAGE_SIZE),
+            Some(expected_slot * PAGE_SIZE),
+            expected_slot * PAGE_SIZE,
+            expected_slot * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+
+        // Start and end remain the same but the dirty state changes.
+        let res = list.for_every_page_and_gap_in_range(
+            expected_slot * PAGE_SIZE,
+            (expected_slot + 1) * PAGE_SIZE,
+            |p, off| {
+                if p.is_interval_slot() && off == expected_slot * PAGE_SIZE {
+                    if !p.is_zero_interval_untracked() {
+                        return Status::BAD_STATE;
+                    }
+                    return Status::NEXT;
+                }
+                Status::BAD_STATE
+            },
+            |_, _| Status::BAD_STATE,
+        );
+        expect_ok!(res);
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests an overwrite that merges the new interval with the one to the left.
+    #[test]
+    fn vmpl_interval_overwrite_merge_left_test() {
+        let mut list = VmPageList::new();
+
+        // Two intervals next to each other with different dirty states.
+        let left_start = 1;
+        let left_end = 4;
+        let right_start = left_end + 1;
+        let right_end = 10;
+        expect_ok!(list.add_zero_interval(
+            left_start * PAGE_SIZE,
+            (left_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+        expect_ok!(list.add_zero_interval(
+            right_start * PAGE_SIZE,
+            (right_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+        expect_true!(
+            list.any_pages_or_intervals_in_range(
+                left_start * PAGE_SIZE,
+                (right_end + 1) * PAGE_SIZE
+            )
+        );
+
+        // Break off the start of the right interval so that it merges with the left interval.
+        let new_end = right_start + 2;
+        expect_ok!(list.overwrite_zero_interval(
+            Some(right_start * PAGE_SIZE),
+            None,
+            right_start * PAGE_SIZE,
+            new_end * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+
+        let expected_intervals = [left_start, new_end, new_end + 1, right_end];
+        let expected_state = [
+            ZeroRangeDirtyState::Dirty,
+            ZeroRangeDirtyState::Dirty,
+            ZeroRangeDirtyState::Untracked,
+            ZeroRangeDirtyState::Untracked,
+        ];
+        let mut intervals = [0u64; 4];
+        let mut interval_state = [ZeroRangeDirtyState::Untracked; 4];
+        let mut index = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            left_start * PAGE_SIZE,
+            (right_end + 1) * PAGE_SIZE,
+            |p, off| {
+                if p.is_interval()
+                    && index < 4
+                    && ((p.is_interval_start() && index % 2 == 0)
+                        || (p.is_interval_end() && index % 2 == 1))
+                {
+                    intervals[index] = off / PAGE_SIZE;
+                    interval_state[index] = p.zero_interval_dirty_state();
+                    index += 1;
+                    return Status::NEXT;
+                }
+                Status::BAD_STATE
+            },
+            |_, _| Status::BAD_STATE,
+        );
+        expect_ok!(res);
+        expect_eq!(4, index);
+        for i in 0..index {
+            expect_eq!(expected_intervals[i], intervals[i]);
+            expect_eq!(expected_state[i], interval_state[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests an overwrite that merges the new interval with the one to the right.
+    #[test]
+    fn vmpl_interval_overwrite_merge_right_test() {
+        let mut list = VmPageList::new();
+
+        // Two intervals next to each other with different dirty states.
+        let left_start = 1;
+        let left_end = 6;
+        let right_start = left_end + 1;
+        let right_end = 10;
+        expect_ok!(list.add_zero_interval(
+            left_start * PAGE_SIZE,
+            (left_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+        expect_ok!(list.add_zero_interval(
+            right_start * PAGE_SIZE,
+            (right_end + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+        expect_true!(
+            list.any_pages_or_intervals_in_range(
+                left_start * PAGE_SIZE,
+                (right_end + 1) * PAGE_SIZE
+            )
+        );
+
+        // Break off the end of the left interval so that it merges with the right interval.
+        let new_start = left_end - 2;
+        expect_ok!(list.overwrite_zero_interval(
+            None,
+            Some(left_end * PAGE_SIZE),
+            new_start * PAGE_SIZE,
+            left_end * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+
+        let expected_intervals = [left_start, new_start - 1, new_start, right_end];
+        let expected_state = [
+            ZeroRangeDirtyState::Dirty,
+            ZeroRangeDirtyState::Dirty,
+            ZeroRangeDirtyState::Untracked,
+            ZeroRangeDirtyState::Untracked,
+        ];
+        let mut intervals = [0u64; 4];
+        let mut interval_state = [ZeroRangeDirtyState::Untracked; 4];
+        let mut index = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            left_start * PAGE_SIZE,
+            (right_end + 1) * PAGE_SIZE,
+            |p, off| {
+                if p.is_interval()
+                    && index < 4
+                    && ((p.is_interval_start() && index % 2 == 0)
+                        || (p.is_interval_end() && index % 2 == 1))
+                {
+                    intervals[index] = off / PAGE_SIZE;
+                    interval_state[index] = p.zero_interval_dirty_state();
+                    index += 1;
+                    return Status::NEXT;
+                }
+                Status::BAD_STATE
+            },
+            |_, _| Status::BAD_STATE,
+        );
+        expect_ok!(res);
+        expect_eq!(4, index);
+        for i in 0..index {
+            expect_eq!(expected_intervals[i], intervals[i]);
+            expect_eq!(expected_state[i], interval_state[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
+    /// Tests an overwrite of a single slot that merges on both sides.
+    #[test]
+    fn vmpl_interval_overwrite_merge_slots_test() {
+        let mut list = VmPageList::new();
+
+        // Three interval slots with alternating dirty states.
+        let left = 3;
+        let mid = 4;
+        let right = 5;
+        expect_ok!(list.add_zero_interval(
+            left * PAGE_SIZE,
+            (left + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+        expect_ok!(list.add_zero_interval(
+            mid * PAGE_SIZE,
+            (mid + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Dirty
+        ));
+        expect_ok!(list.add_zero_interval(
+            right * PAGE_SIZE,
+            (right + 1) * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+        expect_true!(
+            list.any_pages_or_intervals_in_range(left * PAGE_SIZE, (right + 1) * PAGE_SIZE)
+        );
+
+        // Overwrite the center so that it merges on both sides.
+        expect_ok!(list.overwrite_zero_interval(
+            Some(mid * PAGE_SIZE),
+            Some(mid * PAGE_SIZE),
+            mid * PAGE_SIZE,
+            mid * PAGE_SIZE,
+            ZeroRangeDirtyState::Untracked
+        ));
+
+        let expected_intervals = [left, right];
+        let expected_state = [ZeroRangeDirtyState::Untracked, ZeroRangeDirtyState::Untracked];
+        let mut intervals = [0u64; 2];
+        let mut interval_state = [ZeroRangeDirtyState::Dirty; 2];
+        let mut index = 0;
+        let res = list.for_every_page_and_gap_in_range(
+            left * PAGE_SIZE,
+            (right + 1) * PAGE_SIZE,
+            |p, off| {
+                if p.is_interval()
+                    && index < 2
+                    && ((p.is_interval_start() && index % 2 == 0)
+                        || (p.is_interval_end() && index % 2 == 1))
+                {
+                    intervals[index] = off / PAGE_SIZE;
+                    interval_state[index] = p.zero_interval_dirty_state();
+                    index += 1;
+                    return Status::NEXT;
+                }
+                Status::BAD_STATE
+            },
+            |_, _| Status::BAD_STATE,
+        );
+        expect_ok!(res);
+        expect_eq!(2, index);
+        for i in 0..index {
+            expect_eq!(expected_intervals[i], intervals[i]);
+            expect_eq!(expected_state[i], interval_state[i]);
+        }
+
+        list.remove_all_content(|_| {});
+    }
+
     /// Tests clipping an interval at the start.
     #[test]
     fn vmpl_interval_clip_start_test() {
