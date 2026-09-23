@@ -127,26 +127,87 @@ fn is_discovered_by_watcher(ctx: &EnvironmentContext, instance_name: &str) -> bo
     false
 }
 
-fn is_sso_credential_error(log_content: &str) -> bool {
-    log_content.contains("got stuck at SSO")
+/// Returns advice on how to fix a tunnel failure that retrying cannot resolve, based on what
+/// `ssh` wrote to the tunnel log.
+fn ssh_failure_remediation(log_content: &str) -> Option<&'static str> {
+    if log_content.contains("got stuck at SSO")
         || log_content.contains("login page detected")
         || log_content.contains("try running gcert")
+    {
+        return Some(
+            "The corp SSH relay requires fresh SSO credentials. Run `gcert` and try again.",
+        );
+    }
+    if log_content.contains("Could not resolve hostname")
+        || log_content.contains("Name or service not known")
+    {
+        return Some(
+            "The VM's `*.internal.gcpnode.com` address could not be resolved. Add a \
+             `Host *.internal.gcpnode.com` entry using `corp-ssh-helper` as its `ProxyCommand` to \
+             your `~/.ssh/config`.",
+        );
+    }
+    if log_content.contains("Permission denied (publickey")
+        || log_content.contains("Too many authentication failures")
+    {
+        return Some(
+            "The VM rejected the SSH key. Check the configured keys with \
+             `ffx config check-ssh-keys`; if they changed since the VM was created, recreate it \
+             with `ffx gce stop <name>` followed by `ffx gce start`.",
+        );
+    }
+    None
+}
+
+/// Reads the tunnel log, failing fast with advice if it reports a permanent error.
+fn read_tunnel_log(log_path: &std::path::Path) -> Result<String> {
+    let log_content = std::fs::read_to_string(log_path).unwrap_or_default();
+    if let Some(remediation) = ssh_failure_remediation(&log_content) {
+        bail!("{remediation}");
+    }
+    Ok(log_content)
 }
 
 /// Maximum number of SSH connection attempts before giving up.
-const MAX_TUNNEL_ATTEMPTS: usize = 12;
+const MAX_TUNNEL_ATTEMPTS: usize = 8;
 
 /// Delay between successive SSH connection attempts.
 const RETRY_DELAY: Duration = Duration::from_secs(3);
 
 /// Maximum number of polls checking whether the local tunnel port is accepting connections.
-const MAX_PORT_CHECK_POLLS: usize = 60;
+///
+/// This must outlast the supervisor's own reconnection attempts so that a failing `ssh` can write
+/// its error to the log before the process group is killed.
+const MAX_PORT_CHECK_POLLS: usize = 300;
 
 /// Interval between local port connection checks.
 const PORT_CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Timeout waiting for [`GceWatcher`] to report the newly added instance target handle.
 const WATCHER_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Grace period after discovery before declaring the tunnel healthy.
+///
+/// [`GceWatcher`] reports the target as soon as the state file appears, which can happen before
+/// `ssh` finishes negotiating reverse port forwarding with the VM. Waiting lets an
+/// `ExitOnForwardFailure` teardown be observed instead of reported as success.
+const TUNNEL_SETTLE_DELAY: Duration = Duration::from_millis(500);
+
+/// Default TCP port used by the Fuchsia package repository server (`8083`).
+const DEFAULT_REPO_PORT: u16 = 8083;
+
+/// How long `ssh` waits for the VM to accept a TCP connection before failing an attempt.
+///
+/// A freshly created VM drops connections for tens of seconds while Zircon boots. Without a
+/// bound, `ssh` blocks in `connect()` and is killed before it can report anything.
+const SSH_CONNECT_TIMEOUT_SECS: u32 = 5;
+
+/// Minimum duration of an `ssh` session for the supervisor to treat it as an established tunnel
+/// that ended (for example, because the guest rebooted) rather than as a failed connection.
+const SUPERVISOR_ESTABLISHED_SECS: u32 = 30;
+
+/// Number of consecutive short-lived `ssh` sessions after which the supervisor gives up.
+const SUPERVISOR_MAX_FAILURES: u32 = 3;
 
 /// Configuration options for establishing a local background SSH tunnel to a GCE instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,7 +223,7 @@ pub struct GceTunnelConfig {
 
 impl GceTunnelConfig {
     /// Creates a new tunnel configuration with reverse forwarding for the package repository server
-    /// if configured in `ctx`.
+    /// configured in `ctx` (or defaulting to port `8083`).
     pub fn new(
         ctx: &EnvironmentContext,
         project: impl Into<String>,
@@ -171,7 +232,7 @@ impl GceTunnelConfig {
     ) -> Result<Self> {
         let reverse_ports = pkg::config::repository_listen_addr(ctx)?
             .map(|addr| vec![addr.port()])
-            .unwrap_or_default();
+            .unwrap_or_else(|| vec![DEFAULT_REPO_PORT]);
         Ok(Self {
             project: project.into(),
             zone: zone.into(),
@@ -321,8 +382,29 @@ impl GceTunnel {
                 .try_clone()
                 .map_err(|e| anyhow!("Failed to clone log file handle: {e}"))?;
 
-            let mut cmd = Command::new(&config.ssh_binary);
-            cmd.arg("-N").arg("-L").arg(format!("{port}:localhost:22"));
+            // Wrap `ssh` in a small shell reconnect loop so that the background tunnel survives
+            // guest VM reboots (such as during `fx ota` or `ffx target reboot`). When the Fuchsia
+            // guest reboots, its `sshd` closes the connection and `ssh` exits with code 255.
+            // Without this supervisor loop, `data.pid` would terminate on reboot, causing
+            // `GceWatcher` to drop the target and `127.0.0.1:<port>` to stop listening when the
+            // VM comes back up. Sessions shorter than `SUPERVISOR_ESTABLISHED_SECS` count as
+            // failures rather than reboots, and a burst of them exits with the `ssh` status so
+            // connection and authentication errors reach the caller instead of looping forever.
+            let mut cmd = Command::new("/bin/sh");
+            cmd.arg("-c")
+                .arg(format!(
+                    "trap 'kill 0 2>/dev/null; exit 0' TERM INT; failures=0; while true; do \
+                     start=$(date +%s); \"$@\"; rc=$?; \
+                     if [ $(($(date +%s) - start)) -ge {SUPERVISOR_ESTABLISHED_SECS} ]; then \
+                     failures=0; else failures=$((failures + 1)); \
+                     if [ $failures -ge {SUPERVISOR_MAX_FAILURES} ]; then exit $rc; fi; fi; \
+                     sleep 2; done"
+                ))
+                .arg("gce-tunnel-supervisor")
+                .arg(&config.ssh_binary)
+                .arg("-N")
+                .arg("-L")
+                .arg(format!("{port}:localhost:22"));
 
             for &rport in &config.reverse_ports {
                 cmd.arg("-R").arg(format!("{rport}:localhost:{rport}"));
@@ -336,6 +418,12 @@ impl GceTunnel {
                 .arg("UserKnownHostsFile=/dev/null")
                 .arg("-o")
                 .arg("ExitOnForwardFailure=yes")
+                .arg("-o")
+                .arg(format!("ConnectTimeout={SSH_CONNECT_TIMEOUT_SECS}"))
+                .arg("-o")
+                .arg("ServerAliveInterval=5")
+                .arg("-o")
+                .arg("ServerAliveCountMax=3")
                 .arg(&gcpnode_host)
                 .stdin(Stdio::null())
                 .stdout(Stdio::from(stdout_log))
@@ -372,12 +460,7 @@ impl GceTunnel {
 
             if !port_open {
                 drop(child);
-                last_err = std::fs::read_to_string(&log_file_path).unwrap_or_default();
-                if is_sso_credential_error(&last_err) {
-                    bail!(
-                        "Corp SSH relay requires fresh SSO credentials. Please run `gcert` in your terminal and try again."
-                    );
-                }
+                last_err = read_tunnel_log(&log_file_path)?;
                 log::warn!(
                     "GCE SSH tunnel attempt {}/{} for {} failed to bind port {}: {}",
                     attempt + 1,
@@ -422,17 +505,17 @@ impl GceTunnel {
                 }
             }
 
+            // Reverse port forwarding is negotiated with the VM after the local port is bound and
+            // after the state file that GceWatcher observes is written, so let the tunnel settle
+            // before declaring it healthy.
+            Timer::new(TUNNEL_SETTLE_DELAY).await;
+
             if !confirmed
                 || tunnel_guard.has_exited()
                 || std::net::TcpStream::connect(("127.0.0.1", port)).is_err()
             {
                 drop(tunnel_guard);
-                let log_err = std::fs::read_to_string(&log_file_path).unwrap_or_default();
-                if is_sso_credential_error(&log_err) {
-                    bail!(
-                        "Corp SSH relay requires fresh SSO credentials. Please run `gcert` in your terminal and try again."
-                    );
-                }
+                let log_err = read_tunnel_log(&log_file_path)?;
                 let err_detail = log_err.trim();
                 last_err = if !confirmed {
                     if err_detail.is_empty() {
@@ -754,9 +837,11 @@ if port is not None:
             .expect("start tunnel should succeed on retry");
 
         assert!(started.is_running());
+        // The supervisor and the retry loop both reconnect, so only require that the failed
+        // first session was followed by a successful one.
         let attempts: usize =
             std::fs::read_to_string(&counter_path).unwrap().trim().parse().unwrap();
-        assert_eq!(attempts, 2);
+        assert!(attempts >= 2, "expected a retry after the first session failed, got {attempts}");
 
         GceTunnel::stop_tunnel(&env.context, "my-project", "us-central1-a", "flaky-vm")
             .expect("stop flaky tunnel");
@@ -800,7 +885,26 @@ sys.exit(255)
                 .with_ssh_binary(&mock_ssh_path);
 
         let res = GceTunnel::start_tunnel_with_config(&env.context, config).await;
-        assert!(res.is_err());
+        let err = res.expect_err("tunnel should fail").to_string();
+        assert!(err.contains("gcert"), "{err}");
         assert!(!state_path.exists(), "corrupt pre-existing state file must be cleaned up");
+    }
+
+    #[fuchsia::test]
+    fn test_ssh_failure_remediation() {
+        assert!(ssh_failure_remediation("ERROR: try running gcert\n").unwrap().contains("gcert"),);
+        assert!(
+            ssh_failure_remediation("ssh: Could not resolve hostname nic0.vm.internal.gcpnode.com")
+                .unwrap()
+                .contains("corp-ssh-helper")
+        );
+        assert!(
+            ssh_failure_remediation("fuchsia@host: Permission denied (publickey).")
+                .unwrap()
+                .contains("check-ssh-keys")
+        );
+        // Transient failures stay retryable.
+        assert_eq!(ssh_failure_remediation("ssh: connect to host ...: Connection timed out"), None);
+        assert_eq!(ssh_failure_remediation(""), None);
     }
 }

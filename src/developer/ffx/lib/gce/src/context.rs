@@ -4,7 +4,7 @@
 
 use crate::client::GceClient;
 use crate::{GceInstanceData, GceTunnel};
-use anyhow::{Result, bail};
+use anyhow::{Context as _, Result, bail};
 use credentials::Credentials;
 use discovery::gce_watcher::Instance;
 use ffx_config::EnvironmentContext;
@@ -44,26 +44,19 @@ impl GceContext {
         if creds.oauth2.refresh_token.is_empty() {
             bail!("No Google Cloud credentials found. Run `ffx auth generate`.");
         }
-        let access_token = new_access_token(&creds.gcs_credentials()).await?;
+        let access_token = new_access_token(&creds.gcs_credentials()).await.with_context(|| {
+            "Failed to obtain Google Cloud access token. Your credentials may have expired; run `ffx auth generate`."
+        })?;
         let client = GceClient::new(access_token);
 
         Ok(Self { env_context, project, zone, client })
     }
 
-    /// Resolves the GCS bucket to use for storing custom images.
-    pub fn resolve_bucket(&self, bucket_flag: Option<&str>) -> String {
-        bucket_flag
-            .map(str::trim)
-            .filter(|b| !b.is_empty())
-            .map(str::to_owned)
-            .or_else(|| {
-                self.env_context
-                    .get("gce.bucket")
-                    .ok()
-                    .map(|b: String| b.trim().to_owned())
-                    .filter(|b| !b.is_empty())
-            })
-            .unwrap_or_else(|| format!("{}-fuchsia-images", self.project))
+    /// Resolves the GCS bucket from `--bucket` or `gce.bucket`, falling back to
+    /// `<project>-<default_suffix>`.
+    pub fn resolve_bucket(&self, bucket_flag: Option<&str>, default_suffix: &str) -> String {
+        resolve_config_string(&self.env_context, bucket_flag, "gce.bucket")
+            .unwrap_or_else(|| format!("{}-{default_suffix}", self.project))
     }
 
     /// Derives the GCE SSH serial port gateway endpoint for this context's zone.
@@ -98,6 +91,20 @@ pub fn get_serial_endpoint(zone: &str) -> String {
     format!("{}-ssh-serialport.googleapis.com:9600", region.to_lowercase())
 }
 
+/// Returns the first non-empty value of `flag` or the `key` ffx config setting, trimmed.
+///
+/// Trimming keeps a stray space in a flag or config value from later failing validation of
+/// project, zone, and instance names.
+pub fn resolve_config_string(
+    context: &EnvironmentContext,
+    flag: Option<&str>,
+    key: &str,
+) -> Option<String> {
+    flag.map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).or_else(|| {
+        context.get(key).ok().map(|s: String| s.trim().to_owned()).filter(|s| !s.is_empty())
+    })
+}
+
 fn resolve_setting(
     context: &EnvironmentContext,
     flag: Option<String>,
@@ -105,14 +112,11 @@ fn resolve_setting(
     param: &str,
 ) -> Result<String> {
     let config_key = format!("gce.{param}");
-    let flag_name = format!("--{param}");
-    flag.filter(|s| !s.is_empty())
-        .or_else(|| context.get(&config_key).ok().filter(|s: &String| !s.is_empty()))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No {name} specified. Provide {flag_name} or configure via `ffx config set {config_key} <{param}>`."
-            )
-        })
+    resolve_config_string(context, flag.as_deref(), &config_key).ok_or_else(|| {
+        anyhow::anyhow!(
+            "No {name} specified. Provide --{param} or configure via `ffx config set {config_key} <{param}>`."
+        )
+    })
 }
 
 #[cfg(test)]
@@ -157,6 +161,24 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_resolve_config_string_trims() {
+        let env = ffx_config::test_env()
+            .user_config("gce.project", "  configured-project  ")
+            .build()
+            .expect("test env");
+        assert_eq!(
+            resolve_config_string(&env.context, Some("  flag-project  "), "gce.project").as_deref(),
+            Some("flag-project")
+        );
+        // A whitespace-only flag falls through to the (trimmed) config value.
+        assert_eq!(
+            resolve_config_string(&env.context, Some("   "), "gce.project").as_deref(),
+            Some("configured-project")
+        );
+        assert_eq!(resolve_config_string(&env.context, None, "gce.zone"), None);
+    }
+
+    #[fuchsia::test]
     async fn test_gce_context_struct() {
         let env = ffx_config::test_init().expect("test env");
         let ctx = GceContext {
@@ -193,12 +215,18 @@ mod tests {
         };
 
         // Flag takes precedence
-        assert_eq!(ctx.resolve_bucket(Some("custom-bucket")), "custom-bucket");
-        assert_eq!(ctx.resolve_bucket(Some("  custom-bucket  ")), "custom-bucket");
+        assert_eq!(ctx.resolve_bucket(Some("custom-bucket"), "fuchsia-images"), "custom-bucket");
+        assert_eq!(
+            ctx.resolve_bucket(Some("  custom-bucket  "), "fuchsia-images"),
+            "custom-bucket"
+        );
 
         // Whitespace-only or empty flag falls back to default when config is unset
-        assert_eq!(ctx.resolve_bucket(Some("   ")), "my-gcp-project-fuchsia-images");
-        assert_eq!(ctx.resolve_bucket(None), "my-gcp-project-fuchsia-images");
+        assert_eq!(
+            ctx.resolve_bucket(Some("   "), "fuchsia-images"),
+            "my-gcp-project-fuchsia-images"
+        );
+        assert_eq!(ctx.resolve_bucket(None, "fuchsia-images"), "my-gcp-project-fuchsia-images");
 
         // Config fallback takes precedence over default
         let configured_env = ffx_config::test_env()
@@ -211,9 +239,15 @@ mod tests {
             zone: "us-central1-a".to_string(),
             client: GceClient::new("token".to_string()),
         };
-        assert_eq!(configured_ctx.resolve_bucket(None), "configured-bucket");
-        assert_eq!(configured_ctx.resolve_bucket(Some("   ")), "configured-bucket");
-        assert_eq!(configured_ctx.resolve_bucket(Some("flag-override")), "flag-override");
+        assert_eq!(configured_ctx.resolve_bucket(None, "fuchsia-images"), "configured-bucket");
+        assert_eq!(
+            configured_ctx.resolve_bucket(Some("   "), "fuchsia-images"),
+            "configured-bucket"
+        );
+        assert_eq!(
+            configured_ctx.resolve_bucket(Some("flag-override"), "fuchsia-images"),
+            "flag-override"
+        );
 
         // Whitespace-only config falls back to default
         let whitespace_env = ffx_config::test_env()
@@ -226,6 +260,9 @@ mod tests {
             zone: "us-central1-a".to_string(),
             client: GceClient::new("token".to_string()),
         };
-        assert_eq!(whitespace_ctx.resolve_bucket(None), "my-gcp-project-fuchsia-images");
+        assert_eq!(
+            whitespace_ctx.resolve_bucket(None, "fuchsia-images"),
+            "my-gcp-project-fuchsia-images"
+        );
     }
 }
