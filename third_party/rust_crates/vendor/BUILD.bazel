@@ -1339,14 +1339,14 @@ alias(
 )
 
 alias(
-    name = "hyper-1.11.0",
-    actual = "//third_party/rust_crates/vendor/hyper-1.11.0:hyper",
+    name = "hyper-1.11.1",
+    actual = "//third_party/rust_crates/vendor/hyper-1.11.1:hyper",
     tags = ["manual"],
 )
 
 alias(
     name = "hyper",
-    actual = "//third_party/rust_crates/vendor/hyper-1.11.0:hyper",
+    actual = "//third_party/rust_crates/vendor/hyper-1.11.1:hyper",
     tags = ["manual"],
 )
 
