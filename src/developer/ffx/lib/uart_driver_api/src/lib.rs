@@ -9,9 +9,11 @@
 pub mod errors;
 pub use errors::*;
 
-use anyhow::{Result, anyhow};
+pub type Result<T> = std::result::Result<T, ConnectionError>;
+
 use ffx_config::EnvironmentContext;
 use sha2::{Digest, Sha256};
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
 fn validate_and_resolve_socket_path(path: PathBuf) -> Result<PathBuf> {
@@ -40,11 +42,11 @@ fn validate_and_resolve_socket_path(path: PathBuf) -> Result<PathBuf> {
     let path_len = resolved_path.to_string_lossy().as_bytes().len();
     let max_len = if cfg!(target_os = "macos") { 104 } else { 108 };
     if path_len > max_len {
-        return Err(anyhow!(
-            "UNIX socket path exceeds limit ({} bytes, max {} bytes for OS)",
-            path_len,
-            max_len
-        ));
+        return Err(ConnectionError::SocketPathTooLong {
+            path: resolved_path.display().to_string(),
+            len: path_len,
+            max: max_len,
+        });
     }
     Ok(resolved_path)
 }
@@ -112,7 +114,7 @@ pub fn get_socket_path_from_target_path(
         Ok(p) => p,
         Err(_) => context
             .get_shared_data_path()
-            .map_err(|e| anyhow!("Failed to get shared data path: {}", e))?,
+            .map_err(|e| ConnectionError::SharedDataError { error: e.to_string() })?,
     };
     path.push("ffx_uart");
     let hex_id = get_target_id_from_target_path(target_path);
@@ -161,10 +163,7 @@ pub fn friendly_name_to_target_path(
     }
 
     // Fallback:
-    Err(anyhow!(
-        "Target '{}' is not recognized. It must be an absolute path (starting with '/').",
-        friendly
-    ))
+    Err(ConnectionError::TargetNotRecognized { target: friendly.to_string() })
 }
 
 /// Converts a UNIX domain socket path back into a human-readable friendly device path,
@@ -251,7 +250,7 @@ impl std::fmt::Display for UartProtocol {
 
 impl std::str::FromStr for UartProtocol {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "resend" | "resendsp" => Ok(UartProtocol::ResendSP),
             "testprotocol" => Ok(UartProtocol::TestProtocol),
@@ -273,7 +272,7 @@ pub struct ConnectionMetadata {
     /// 16-character hexadecimal target identifier hash.
     pub id: Option<String>,
     /// Configured baud rate (for TTY serial ports).
-    pub baud: Option<u32>,
+    pub baud: Option<NonZeroU32>,
     /// Active framing protocol.
     pub protocol: UartProtocol,
     /// Configured log level of the driver process.
@@ -312,20 +311,37 @@ pub fn update_metadata_identity(
     serial: Option<String>,
 ) -> Result<()> {
     let json_path = socket_path.with_extension("json");
-    let content = std::fs::read_to_string(&json_path)
-        .map_err(|e| anyhow!("Failed to read metadata at {}: {e}", json_path.display()))?;
-    let mut meta: ConnectionMetadata = serde_json::from_str(&content)
-        .map_err(|e| anyhow!("Failed to parse metadata at {}: {e}", json_path.display()))?;
+    let content =
+        std::fs::read_to_string(&json_path).map_err(|e| ConnectionError::MetadataError {
+            path: json_path.display().to_string(),
+            error: e.to_string(),
+        })?;
+    let mut meta: ConnectionMetadata =
+        serde_json::from_str(&content).map_err(|e| ConnectionError::MetadataError {
+            path: json_path.display().to_string(),
+            error: e.to_string(),
+        })?;
     meta.nodename = nodename;
     meta.serial = serial;
-    let new_content = serde_json::to_string(&meta)?;
+    let new_content = serde_json::to_string(&meta).map_err(|e| ConnectionError::MetadataError {
+        path: json_path.display().to_string(),
+        error: e.to_string(),
+    })?;
     let rand_suffix: u64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
     let temp_path = json_path.with_extension(format!("{}_{}.tmp", std::process::id(), rand_suffix));
-    std::fs::write(&temp_path, new_content.as_bytes())?;
-    std::fs::rename(&temp_path, &json_path)?;
+    std::fs::write(&temp_path, new_content.as_bytes()).map_err(|e| {
+        ConnectionError::MetadataError {
+            path: temp_path.display().to_string(),
+            error: e.to_string(),
+        }
+    })?;
+    std::fs::rename(&temp_path, &json_path).map_err(|e| ConnectionError::MetadataError {
+        path: json_path.display().to_string(),
+        error: e.to_string(),
+    })?;
     Ok(())
 }
 
@@ -428,7 +444,7 @@ mod tests {
             target: "/dev/ttyUSB0".to_string(),
             status: ConnectionStatus::Connected,
             id: Some("testid".to_string()),
-            baud: Some(1000000),
+            baud: NonZeroU32::new(1000000),
             protocol: UartProtocol::ResendSP,
             log_level: None,
             nodename: None,
@@ -465,6 +481,7 @@ mod tests {
         let legacy_meta: ConnectionMetadata = serde_json::from_str(legacy_json).unwrap();
         assert_eq!(legacy_meta.nodename, None);
         assert_eq!(legacy_meta.serial, None);
+        assert_eq!(legacy_meta.baud, NonZeroU32::new(1000000));
     }
 
     #[test]
