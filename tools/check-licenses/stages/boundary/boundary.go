@@ -442,6 +442,18 @@ func (g *Grouper) ResolveProjectRoot(targetPath string) string {
 	}
 	absTarget = filepath.Clean(absTarget)
 
+	slashTarget := filepath.ToSlash(absTarget)
+	if idx := strings.Index(slashTarget, "/tools/check-licenses/assets/readmes/"); idx != -1 {
+		logical := slashTarget[idx+len("/tools/check-licenses/assets/readmes/"):]
+		if filepath.Base(logical) == "README.fuchsia" || filepath.Base(logical) == "NOTICE.fuchsia" {
+			logical = filepath.Dir(logical)
+		}
+		if logical == "." || logical == "" {
+			return g.FuchsiaDir
+		}
+		return filepath.Join(g.FuchsiaDir, filepath.FromSlash(logical))
+	}
+
 	var dir string
 	if stat, err := os.Stat(absTarget); err == nil && stat.IsDir() {
 		dir = absTarget
