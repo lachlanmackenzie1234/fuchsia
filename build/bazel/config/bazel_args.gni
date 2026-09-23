@@ -6,7 +6,6 @@ import("//build/bazel/config/logging.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/config/clang/clang.gni")
 import("//build/config/compiler.gni")
-import("//build/config/fuchsia/zircon_asserts.gni")
 import("//build/config/fuchsia_cxx_version.gni")
 
 # Compute the list of `bazel build` arguments corresponding to the current

@@ -320,20 +320,6 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/rust/config.gni)
-
-  # LINT.IfChange
-  declaration = "//build/config/fuchsia/zircon_asserts.gni"
-  import(declaration)
-  contents += [
-    {
-      name = "zircon_asserts"
-      value = zircon_asserts
-      type = "bool"
-      location = declaration
-    },
-  ]
-
-  # LINT.ThenChange(//build/config/fuchsia/zircon_asserts.gni)
 }
 
 if (current_toolchain == default_toolchain) {

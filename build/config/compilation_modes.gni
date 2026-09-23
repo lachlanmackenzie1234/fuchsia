@@ -70,9 +70,12 @@ assert(
 # Create booleans for each compilation mode, to allow binaries to fine-tune
 # configuration
 
+# LINT.IfChange(compilation_mode_predicates)
 is_debug = compilation_mode == "debug"
 is_balanced = compilation_mode == "balanced"
 is_release = compilation_mode == "release"
+
+# LINT.ThenChange(//build/bazel/config/derived/compilation_modes.bzl:compilation_mode_predicates)
 
 compilation_settings = {
   # Set the compilation settings to use based on the chosen compilation mode

@@ -9,7 +9,6 @@ import("//build/config/clang/clang_target_toolchain_info.gni")
 import("//build/config/compiler_config.gni")
 import("//build/config/current_target_tuple.gni")
 import("//build/config/fuchsia/target_api_level.gni")
-import("//build/config/fuchsia/zircon_asserts.gni")
 import("//build/config/sanitizers/sanitizer_default_options.gni")
 import("//build/config/sysroot.gni")
 import("//build/icu/third_party_icu_headers.gni")
@@ -190,7 +189,7 @@ config("enable_zircon_asserts") {
 }
 
 config("zircon_asserts") {
-  if (zircon_asserts) {
+  if (!is_release) {
     configs = [ ":enable_zircon_asserts" ]
   }
 }
