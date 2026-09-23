@@ -637,7 +637,6 @@ clippy_lints = [
   "clone-on-copy",
   "collapsible-if",
   "crate-in-macro-def",
-  "derivable-impls",
   "doc-lazy-continuation",
   "empty-line-after-doc-comments",
   "if-same-then-else",

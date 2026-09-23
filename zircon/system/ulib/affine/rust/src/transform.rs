@@ -50,7 +50,7 @@ impl Saturate {
 /// disabled, the results of a transformation where over/underflow occurs at any
 /// stage is undefined.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Transform {
     a_offset: i64,
     b_offset: i64,
@@ -61,11 +61,6 @@ static_assert!(core::mem::size_of::<Transform>() == 24);
 static_assert!(core::mem::align_of::<Transform>() == 8);
 
 // Transform::default() produces the identity transform
-impl Default for Transform {
-    fn default() -> Self {
-        Transform { a_offset: 0, b_offset: 0, ratio: Ratio::default() }
-    }
-}
 
 // TODO(https://fxbug.dev/42082948)
 impl Transform {
