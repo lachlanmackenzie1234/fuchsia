@@ -13,6 +13,7 @@
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 
+#include "src/devices/gpio/drivers/aml-gpio/aml_gpio_config.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace {
@@ -63,6 +64,7 @@ class FakePlatformDevice final
 
   void SetExpectedInterruptFlags(uint32_t flags) { expected_interrupt_flags_ = flags; }
   void SetInterruptCount(uint32_t interrupt_count) { interrupt_count_ = interrupt_count; }
+  void SetMetadata(const fuchsia_hardware_pinimpl::Metadata& metadata) { metadata_ = metadata; }
 
   void GetMmioById(GetMmioByIdRequestView request, GetMmioByIdCompleter::Sync& completer) override {
     auto mmio = mmios_.find(request->index);
@@ -103,7 +105,14 @@ class FakePlatformDevice final
 
   void GetMetadata(fuchsia_hardware_platform_device::wire::DeviceGetMetadataRequest* request,
                    GetMetadataCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    if (request->id.get() != fuchsia_hardware_pinimpl::Metadata::kSerializableName) {
+      completer.ReplyError(ZX_ERR_NOT_FOUND);
+      return;
+    }
+
+    fit::result result = fidl::Persist(metadata_);
+    ZX_ASSERT(result.is_ok());
+    completer.ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(result->data(), result->size()));
   }
 
   void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
@@ -115,6 +124,7 @@ class FakePlatformDevice final
   uint32_t expected_interrupt_flags_ = ZX_INTERRUPT_MODE_EDGE_HIGH;
   std::unordered_map<uint32_t, fdf::MmioBuffer> mmios_;
   uint32_t interrupt_count_ = 0;
+  fuchsia_hardware_pinimpl::Metadata metadata_;
 };
 
 class TestAmlGpioDriver : public AmlGpioDriver {
@@ -247,13 +257,30 @@ class AmlGpioTestBase : public testing::Test {
   fdf::WireSyncClient<fuchsia_hardware_pinimpl::PinImpl> client_;
 };
 
-template <uint32_t kPid>
+template <uint32_t kPid, bool kSuspendEnabled = false>
 class AmlGpioTest : public AmlGpioTestBase<kPid> {
  public:
   void SetUp() override {
-    AmlGpioTestBase<kPid>::WithPDev([](auto& pdev) { pdev.SetInterruptCount(8); });
+    fuchsia_hardware_pin::Configuration pin_config{{.wake_vector = std::optional<bool>(true)}};
+    fuchsia_hardware_pinimpl::Metadata metadata{{
+        .init_steps =
+            std::vector<fuchsia_hardware_pinimpl::InitStep>{
+                fuchsia_hardware_pinimpl::InitStep::WithCall({{
+                    .pin = 0x0C,
+                    .call =
+                        fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(pin_config)),
+                }}),
+            },
+    }};
 
-    ASSERT_OK(AmlGpioTestBase<kPid>::driver_test().StartDriver());
+    AmlGpioTestBase<kPid>::WithPDev([&](auto& pdev) {
+      pdev.SetInterruptCount(8);
+      pdev.SetMetadata(metadata);
+    });
+
+    aml_gpio_config::Config fake_config{{.suspend_enabled = kSuspendEnabled}};
+    ASSERT_OK(AmlGpioTestBase<kPid>::driver_test().StartDriverWithCustomStartArgs(
+        [&](fdf::DriverStartArgs& start_args) { start_args.config(fake_config.ToVmo()); }));
 
     // Wait for initialization to complete in background.
     AmlGpioTestBase<kPid>::driver_test().runtime().RunUntil([&]() {
@@ -281,6 +308,7 @@ class AmlGpioTest : public AmlGpioTestBase<kPid> {
 
 using A113AmlGpioTest = AmlGpioTest<PDEV_PID_AMLOGIC_A113>;
 using S905d2AmlGpioTest = AmlGpioTest<PDEV_PID_AMLOGIC_S905D2>;
+using WakeableAmlGpioTest = AmlGpioTest<PDEV_PID_AMLOGIC_S905D2, /*kSuspendEnabled=*/true>;
 
 // PinImplSetAltFunction Tests
 TEST_F(A113AmlGpioTest, A113AltMode1) {
@@ -839,26 +867,26 @@ TEST_F(S905d2AmlGpioTest, TimestampMonoInterruptOption) {
   EXPECT_TRUE(result->is_ok());
 }
 
-TEST_F(S905d2AmlGpioTest, WakeableInterruptOption) {
+TEST_F(WakeableAmlGpioTest, WakeableInterruptOption) {
   WithPDev([](auto& pdev) { pdev.SetExpectedInterruptFlags(0); });
   WithInterruptMmio([](auto& interrupt_mmio) {
     interrupt_mmio[0x3c20 * sizeof(uint32_t)].ExpectRead(0x0001'0001);
 
     // Modify IRQ index for IRQ pin.
-    interrupt_mmio[0x3c21 * sizeof(uint32_t)].ExpectRead(0x00000000).ExpectWrite(0x00000017);
+    interrupt_mmio[0x3c21 * sizeof(uint32_t)].ExpectRead(0x00000000).ExpectWrite(0x00000018);
     // Interrupt select filter.
     interrupt_mmio[0x3c23 * sizeof(uint32_t)].ExpectRead(0x00000000).ExpectWrite(0x00000007);
   });
-  g_options = ZX_INTERRUPT_VIRTUAL & 0x20;
+  g_options = ZX_INTERRUPT_VIRTUAL | 0x20;
 
   fdf::Arena arena('GPIO');
   {
     auto config =
         fuchsia_hardware_pin::wire::Configuration::Builder(arena).wake_vector(true).Build();
-    fdf::WireUnownedResult result = client().buffer(arena)->Configure(0x0B, config);
+    fdf::WireUnownedResult result = client().buffer(arena)->Configure(0x0C, config);
   }
   WithPDev([](auto& pdev) { pdev.SetExpectedInterruptFlags(ZX_INTERRUPT_MODE_EDGE_HIGH); });
-  fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(0x0B, {});
+  fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(0x0C, {});
   ASSERT_TRUE(result.ok());
   EXPECT_TRUE(result->is_ok());
 }
@@ -957,10 +985,52 @@ TEST_F(A113AmlGpioTest, ExceedProvidedInterrupts) {
   }
 }
 
-using TooManyProvidedInterruptsTest = AmlGpioTestBase<PDEV_PID_AMLOGIC_A113>;
-TEST_F(TooManyProvidedInterruptsTest, Test) {
+using A113AmlGpioStartTest = AmlGpioTestBase<PDEV_PID_AMLOGIC_A113>;
+TEST_F(A113AmlGpioStartTest, TooManyProvidedInterrupts) {
   WithPDev([](auto& pdev) { pdev.SetInterruptCount(9); });
-  EXPECT_EQ(driver_test().StartDriver().status_value(), ZX_ERR_INVALID_ARGS);
+
+  aml_gpio_config::Config fake_config{{.suspend_enabled = false}};
+  EXPECT_EQ(driver_test()
+                .StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& start_args) {
+                  start_args.config(fake_config.ToVmo());
+                })
+                .status_value(),
+            ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(A113AmlGpioStartTest, TooManyWakeableInterrupts) {
+  fuchsia_hardware_pin::Configuration pin_1_config{{.wake_vector = std::optional<bool>(true)}};
+  fuchsia_hardware_pin::Configuration pin_2_config{{.wake_vector = std::optional<bool>(true)}};
+
+  fuchsia_hardware_pinimpl::Metadata metadata{{
+      .init_steps =
+          std::vector<fuchsia_hardware_pinimpl::InitStep>{
+              fuchsia_hardware_pinimpl::InitStep::WithCall({{
+                  .pin = 1,
+                  .call =
+                      fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(pin_1_config)),
+              }}),
+              fuchsia_hardware_pinimpl::InitStep::WithCall({{
+                  .pin = 2,
+                  .call =
+                      fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(pin_2_config)),
+              }}),
+          },
+  }};
+
+  WithPDev([&](auto& pdev) {
+    // Only one interrupt is provided, so two wakeable interrupt pins should fail the Start() hook.
+    pdev.SetInterruptCount(1);
+    pdev.SetMetadata(metadata);
+  });
+
+  aml_gpio_config::Config fake_config{{.suspend_enabled = true}};
+  EXPECT_EQ(driver_test()
+                .StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& start_args) {
+                  start_args.config(fake_config.ToVmo());
+                })
+                .status_value(),
+            ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace gpio
