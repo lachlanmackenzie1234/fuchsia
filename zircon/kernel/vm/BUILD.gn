@@ -1169,11 +1169,18 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_can_evict",
     "cpp_vm_cow_pages_is_discardable",
     "cpp_vm_cow_pages_upgrade_from_raw",
+    "cpp_priority_changer_construct",
+    "cpp_priority_changer_destroy",
+    "cpp_priority_changer_prepare_may_not_already_be_high_priority",
+    "cpp_priority_changer_prepare_is_already_high_priority_locked",
+    "cpp_priority_changer_change_high_priority_count_locked",
+    "cpp_priority_changer_lock",
   ]
   type_allowlist = [
     "DirtyState",
     "EvictionAction",
     "PageSourceType",
+    "PriorityChanger",
     "VmCompressor",
     "VmCowPages",
     "VmCowPages_CanOverwriteSlot",
@@ -1209,6 +1216,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   ]
   var_allowlist = [ "VmCowPagesOptions_.*" ]
   opaque_types = [
+    "PriorityChanger",
     "VmCompressor",
     "VmCowPages",
     "VmCowPages_DeferredOps",
@@ -1222,6 +1230,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowReclaimSuccess_Type",
   ]
   function_blocklist = [
+    "PriorityChanger_.*",
     "VmCompressor_.*",
     "VmCowPages_.*",
     "VmCowRange_.*",
