@@ -888,14 +888,6 @@ pub struct VerifiedEbpfProgram {
 }
 
 impl VerifiedEbpfProgram {
-    // Convert the program to raw code. Can be used only when the program doesn't access any
-    // structs and maps.
-    pub fn to_code(self) -> Vec<EbpfInstruction> {
-        debug_assert!(self.struct_access_instructions.is_empty());
-        debug_assert!(self.maps.is_empty());
-        self.code
-    }
-
     pub fn code(&self) -> &[EbpfInstruction] {
         &self.code
     }

@@ -1349,6 +1349,25 @@ TEST_F(BpfTest, SoAttachFilter) {
   SendPacketAndCheckReceived(AF_INET6, kTestDstPortIpv4, false);
 }
 
+TEST_F(BpfTest, SoAttachFilterBpfLen) {
+  static sock_filter filter_code[] = {
+      BPF_STMT(BPF_LDX | BPF_W | BPF_LEN, 0),
+      BPF_STMT(BPF_LD | BPF_W | BPF_LEN, 0),
+      BPF_STMT(BPF_RET | BPF_A, 0),
+  };
+
+  static const sock_fprog filter = {
+      sizeof(filter_code) / sizeof(filter_code[0]),
+      filter_code,
+  };
+
+  ASSERT_EQ(
+      setsockopt(packet_socket_fd_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &filter, sizeof(filter)),
+      0);
+
+  SendPacketAndCheckReceived(AF_INET, 1234, true);
+}
+
 TEST(IpTables, IpTablesAdminCap) {
   if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
     GTEST_SKIP() << "Need CAP_NET_ADMIN to access iptables";
