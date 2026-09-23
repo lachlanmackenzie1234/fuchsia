@@ -31,18 +31,6 @@ if (is_host) {
     deps = [ ":path_normalizer" ]
   }
 
-  python_library("compare_utils") {
-    sources = [ "compare_utils.py" ]
-    library_deps = [
-      ":normalize_clang_args",
-      ":normalize_rustc_args",
-      ":path_normalizer",
-      ":shell_utils",
-      "//build/bazel/scripts:bazel_build_args",
-      "//build/bazel/scripts:build_utils",
-    ]
-  }
-
   python_library("discover_migration_candidates") {
     sources = [ "discover_migration_candidates.py" ]
     deps = [ ":gn_runner" ]
@@ -87,25 +75,19 @@ if (is_host) {
     ]
   }
 
-  python_build_time_tests("compare_utils_test") {
-    tests = [ "compare_utils_test.py" ]
-    deps = [ ":compare_utils" ]
-  }
-
   python_build_time_tests("build_command_query_utils_test") {
     tests = [ "build_command_query_utils_test.py" ]
     deps = [ ":build_command_query_utils" ]
   }
 
-  python_binary("compare_commands") {
+  python_binary("compare_rustc_commands") {
     testonly = true
-    main_source = "compare_commands.py"
+    main_source = "compare_rustc_commands.py"
     sources = [
       "//build/bazel/scripts/bazel_build_args.py",
       "//build/bazel/scripts/build_utils.py",
-      "compare_utils.py",
+      "build_command_query_utils.py",
       "gn_runner.py",
-      "normalize_clang_args.py",
       "normalize_rustc_args.py",
       "path_normalizer.py",
       "shell_utils.py",
@@ -116,7 +98,6 @@ if (is_host) {
     testonly = true
     deps = [
       ":build_command_query_utils_test",
-      ":compare_utils_test",
       ":discover_migration_candidates_test",
       ":normalize_clang_args_test",
       ":normalize_rustc_args_test",

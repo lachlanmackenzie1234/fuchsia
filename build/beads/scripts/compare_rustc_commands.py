@@ -13,9 +13,11 @@ import sys
 import tempfile
 import typing as T
 
+import build_command_query_utils
 import build_utils
-import compare_utils
-from compare_utils import CompareCommandsQuery
+import normalize_rustc_args
+import path_normalizer
+import shell_utils
 
 # Enable debug logging.
 _DEBUG = False
@@ -48,12 +50,6 @@ def main() -> int:
         "--bazel_label", required=True, help="Bazel Rust target label"
     )
     parser.add_argument(
-        "--action_type",
-        default="rustc",
-        help="Action type (defaults to rustc)",
-        choices=compare_utils.VALID_ACTION_TYPES,
-    )
-    parser.add_argument(
         "--read_response_files",
         action="store_true",
         default=False,
@@ -74,6 +70,7 @@ def main() -> int:
 
     global _DEBUG
     _DEBUG = args.verbose
+    build_command_query_utils.set_debug(args.verbose)
 
     try:
         paths = build_utils.BuildPaths.from_parser_args(args)
@@ -84,55 +81,77 @@ def main() -> int:
     debug(f"Build Dir: {paths.build_dir}")
     debug(f"GN Label: {args.gn_label}")
     debug(f"Bazel Label: {args.bazel_label}")
-    debug(f"Action type: {args.action_type}")
+
+    ninja_runner = build_utils.NinjaRunner(paths.ninja_path, paths.build_dir)
 
     bazel_paths = build_utils.BazelPaths(paths.fuchsia_dir, paths.build_dir)
+    bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
 
-    target_queries = [
-        CompareCommandsQuery(
-            gn=args.gn_label,
-            bazel=args.bazel_label,
-            action_type=args.action_type,
-        ),
-    ]
-
-    results = compare_utils.compare_gn_and_bazel_commands_for(
-        target_queries,
-        bazel_paths,
+    (
+        gn_cmds_map,
+        bazel_cmds_map,
+    ) = build_command_query_utils.query_ninja_and_bazel_commands(
+        [args.gn_label],
+        [args.bazel_label],
+        ninja_runner,
+        bazel_launcher,
+        bazel_paths.execroot,
         read_response_files=args.read_response_files,
-        debug=debug,
     )
 
-    assert (
-        len(results) == 1
-    ), f"Unexpected results length (expected 1): {len(results)}"
+    gn_cmd = shell_utils.ShellCommand(gn_cmds_map.get(args.gn_label, ""))
+    bazel_cmd = shell_utils.ShellCommand(
+        bazel_cmds_map.get(args.bazel_label, "")
+    )
 
-    result = results[0]
-    if result.error:
-        print(f"ERROR: {result.error}", file=sys.stderr)
+    gn_rustc_cmd = shell_utils.find_command_with_tool(gn_cmd.split(), "rustc")
+    bazel_rustc_cmd = shell_utils.find_command_with_tool(
+        bazel_cmd.split(), "rustc"
+    )
+
+    debug("====== GN Command ======")
+    debug(gn_rustc_cmd)
+    debug("====== Bazel Command ======")
+    debug(bazel_rustc_cmd)
+
+    if not gn_rustc_cmd or not bazel_rustc_cmd:
+        print("Failed to get GN or Bazel rustc command.")
         return 1
 
+    gn_path_normalizer = path_normalizer.GnPathNormalizer(
+        paths.fuchsia_dir, paths.build_dir
+    )
+    bazel_path_normalizer = path_normalizer.BazelPathNormalizer(bazel_paths)
+
+    normalized_gn_args = normalize_rustc_args.normalize_rustc_cmd(
+        str(gn_rustc_cmd), gn_path_normalizer
+    )
+    normalized_bazel_args = normalize_rustc_args.normalize_rustc_cmd(
+        str(bazel_rustc_cmd),
+        bazel_path_normalizer,
+    )
+
     temp_dir = tempfile.mkdtemp(
-        prefix="compare_commands_",
+        prefix="compare_rustc_commands_",
         dir=args.temp_dir,
     )
     gn_file = os.path.join(temp_dir, "normalized_gn_args.txt")
     bazel_file = os.path.join(temp_dir, "normalized_bazel_args.txt")
     with open(gn_file, "w") as f:
-        f.write("\n".join(result.normalized_gn_args) + "\n")
+        f.write("\n".join(normalized_gn_args) + "\n")
     with open(bazel_file, "w") as f:
-        f.write("\n".join(result.normalized_bazel_args) + "\n")
+        f.write("\n".join(normalized_bazel_args) + "\n")
 
     debug(f"Comparing normalized args with command:")
     debug(f"diff -u {gn_file} {bazel_file}")
-    ret = subprocess.run(["diff", "-u", gn_file, bazel_file])
+    result = subprocess.run(["diff", "-u", gn_file, bazel_file])
 
     # Preserve temporary results if verbose mode or a temp dir is specified.
     # In these modes, the user may want to inspect the temporary files.
     if not (_DEBUG or args.temp_dir):
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    return ret.returncode
+    return result.returncode
 
 
 if __name__ == "__main__":
