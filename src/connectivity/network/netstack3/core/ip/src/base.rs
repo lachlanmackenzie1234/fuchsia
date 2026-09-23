@@ -3686,6 +3686,7 @@ pub fn receive_ipv4_packet<
             let Some(addr) = SpecifiedAddr::new(addr) else {
                 core_ctx.increment_both(device, |c| &c.unspecified_destination);
                 debug!("cannot perform transparent delivery to unspecified destination; dropping");
+                packet_metadata.acknowledge_drop();
                 return;
             };
 
@@ -3724,6 +3725,7 @@ pub fn receive_ipv4_packet<
             "receive_ipv4_packet: received packet from invalid source {}; dropping",
             packet.src_ip()
         );
+        packet_metadata.acknowledge_drop();
         return;
     };
 
@@ -4165,6 +4167,7 @@ pub fn receive_ipv6_packet<
             let Some(addr) = SpecifiedAddr::new(addr) else {
                 core_ctx.increment_both(device, |c| &c.unspecified_destination);
                 debug!("cannot perform transparent delivery to unspecified destination; dropping");
+                packet_metadata.acknowledge_drop();
                 return;
             };
 
@@ -4200,6 +4203,7 @@ pub fn receive_ipv6_packet<
             packet.src_ip()
         );
         core_ctx.increment_both(device, |c| &c.invalid_source);
+        packet_metadata.acknowledge_drop();
         return;
     };
 
