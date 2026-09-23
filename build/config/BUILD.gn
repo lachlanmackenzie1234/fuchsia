@@ -1071,7 +1071,6 @@ config("Wno-conversion") {
     "//src/lib/fsl/vmo:*",
     "//src/lib/icu/tools/extractor:*",
     "//src/lib/listnode:*",
-    "//src/media/audio/drivers/aml-g12-tdm/test:*",
     "//src/media/audio/drivers/codecs/tas27xx:*",
     "//src/media/audio/drivers/codecs/tas5720:*",
     "//src/media/audio/drivers/intel-hda/controller:*",
