@@ -1516,6 +1516,7 @@ mod tests {
     use test_case::test_case;
     use wlan_common::RadioConfig;
     use wlan_common::channel::Bandwidth;
+    use wlan_power_manager_testing::TestPowerManager;
 
     // Responses that FakePhyManager will provide
     pub const TEST_CLIENT_IFACE_ID: u16 = 0;
@@ -1622,6 +1623,7 @@ mod tests {
             node,
             telemetry_sender,
             recovery_sender,
+            Arc::new(TestPowerManager::new()),
         )))
     }
 
@@ -1730,6 +1732,9 @@ mod tests {
                 receiver.await.expect("Failed waiting for recovery response");
             }
         }
+
+        async fn on_before_suspend(&mut self) {}
+        async fn on_after_resume(&mut self) {}
     }
 
     struct FakeClient {
@@ -2566,6 +2571,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -2708,6 +2714,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -2827,6 +2834,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -2977,6 +2985,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -3164,6 +3173,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -3303,6 +3313,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -3465,6 +3476,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -3801,6 +3813,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -3891,6 +3904,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -3967,6 +3981,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let mut iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),
@@ -4550,6 +4565,7 @@ mod tests {
             test_values.node.clone_weak(),
             test_values.telemetry_sender.clone(),
             test_values.recovery_sender,
+            Arc::new(TestPowerManager::new()),
         );
         let iface_manager = IfaceManagerService::new(
             Arc::new(Mutex::new(phy_manager)),

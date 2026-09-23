@@ -58,6 +58,7 @@ fidl("fuchsia.power.broker") {
     "//src/connectivity/network/netstack3:*",
     "//src/connectivity/network/tests/integration/power/*",
     "//src/connectivity/wlan/lib/power_manager/*",
+    "//src/connectivity/wlan/wlancfg/*",
     "//src/connectivity/wlan/wlandevicemonitor/*",
     "//src/connectivity/wlan/wlanix/*",
     "//src/developer/forensics/*",
