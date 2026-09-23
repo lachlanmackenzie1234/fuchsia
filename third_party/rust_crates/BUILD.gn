@@ -592,11 +592,11 @@ group("ecb-0.2.0") {
 }
 
 group("either") {
-  public_deps = [ ":either-v1_15_0" ]
+  public_deps = [ ":either-v1_18_0" ]
 }
 
-group("either-1.15.0") {
-  public_deps = [ ":either-v1_15_0" ]
+group("either-1.18.0") {
+  public_deps = [ ":either-v1_18_0" ]
 }
 
 group("enumn") {
@@ -8537,18 +8537,18 @@ rustc_library("ecdsa-v0_17_0") {
   applicable_licenses = [ ":ecdsa-v0_17_0.license" ]
 }
 
-license("either-v1_15_0.license") {
+license("either-v1_18_0.license") {
   public_package_name = "either"
   license_files = [
-    "//third_party/rust_crates/vendor/either-1.15.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/either-1.15.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/either-1.18.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/either-1.18.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("either-v1_15_0") {
+rustc_library("either-v1_18_0") {
   crate_name = "either"
-  source_root = "//third_party/rust_crates/vendor/either-1.15.0/src/lib.rs"
-  output_name = "either-52cc69b1f99498b6"
+  source_root = "//third_party/rust_crates/vendor/either-1.18.0/src/lib.rs"
+  output_name = "either-75a1d6593e14d0d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -8560,8 +8560,8 @@ rustc_library("either-v1_15_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=52cc69b1f99498b6",
-    "-Cextra-filename=-52cc69b1f99498b6",
+    "-Cmetadata=75a1d6593e14d0d",
+    "-Cextra-filename=-75a1d6593e14d0d",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"use_std\"",
@@ -8569,7 +8569,7 @@ rustc_library("either-v1_15_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":either-v1_15_0.license" ]
+  applicable_licenses = [ ":either-v1_18_0.license" ]
 }
 
 license("elliptic-curve-v0_12_3.license") {
@@ -12549,7 +12549,7 @@ rustc_library("itertools-v0_13_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":either-v1_15_0" ]
+  deps += [ ":either-v1_18_0" ]
 
   rustenv = []
 
@@ -12585,7 +12585,7 @@ rustc_library("itertools-v0_14_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":either-v1_15_0" ]
+  deps += [ ":either-v1_18_0" ]
 
   rustenv = []
 
@@ -18291,7 +18291,7 @@ rustc_library("rayon-v1_10_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":either-v1_15_0" ]
+  deps += [ ":either-v1_18_0" ]
   deps += [ ":rayon-core-v1_12_1" ]
 
   rustenv = []
