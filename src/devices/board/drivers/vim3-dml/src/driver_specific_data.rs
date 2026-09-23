@@ -13,9 +13,6 @@ pub static VIM3_DRIVER_METADATA: dml_config::parser::DriverSpecificMetadata = ph
     "adc-buttons" => &[
         ("fuchsia.buttons.AdcButtonsMetadata", get_adc_buttons_metadata),
     ],
-    "power-controller" => &[
-        ("fuchsia.hardware.power.DomainMetadata", get_power_domain_metadata),
-    ],
     "usb-phy-ffe09000" => &[
         ("fuchsia.hardware.usb.phy.Metadata", get_aml_usb_phy_metadata),
     ],
@@ -182,19 +179,6 @@ fn get_adc_buttons_metadata() -> anyhow::Result<Vec<u8>> {
 
     fidl::persist(&metadata).context("Failed to serialize adc buttons metadata")
 }
-
-fn get_power_domain_metadata() -> anyhow::Result<Vec<u8>> {
-    use fidl_fuchsia_hardware_power::{Domain, DomainMetadata};
-    let metadata = DomainMetadata {
-        domains: Some(vec![
-            Domain { id: Some(0), ..Default::default() },
-            Domain { id: Some(1), ..Default::default() },
-        ]),
-        ..Default::default()
-    };
-    fidl::persist(&metadata).context("Failed to serialize power domain metadata")
-}
-
 fn get_wifi_metadata() -> anyhow::Result<Vec<u8>> {
     use fidl_fuchsia_wlan_broadcom::{CcEntry, IovarCommand, IovarEntry, WifiConfig};
 

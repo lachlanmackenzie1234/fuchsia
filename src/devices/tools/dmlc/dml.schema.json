@@ -435,6 +435,11 @@
                 "driver_name": {
                     "type": "string",
                     "description": "Driver name override, typically used in board manifests."
+                },
+                "service_connect_validation": {
+                    "type": "boolean",
+                    "description": "Whether to enable service connect validation (default: false).",
+                    "default": false
                 }
             }
         },

@@ -201,6 +201,14 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                         if b.match_name == Some(true) && b.node_name.is_none() {
                             b.node_name = Some(serde_json::Value::String(parent_name.to_string()));
                         }
+                        if let Some(alts) = &mut b.one_of {
+                            for alt in alts {
+                                if alt.match_name == Some(true) && alt.node_name.is_none() {
+                                    alt.node_name =
+                                        Some(serde_json::Value::String(parent_name.to_string()));
+                                }
+                            }
+                        }
                     }
 
                     if primary {
@@ -1015,6 +1023,55 @@ mod tests {
 
         let bind_content = std::fs::read_to_string(&bind_path).unwrap();
         assert!(bind_content.contains("parent \"mic-mute\" {\n  fuchsia.Service == \"fuchsia.hardware.gpio.Service\";\n  fuchsia.NAME == \"mic-mute\";\n}"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_compile_driver_match_name_one_of() {
+        let temp_dir = std::env::temp_dir().join("test_temp_compile_driver_match_name_one_of");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "sample_match_name_one_of",
+            use: [
+                {
+                    service: "fuchsia.hardware.pwm.Service",
+                    name: "pwm-big-cluster",
+                    bind: {
+                        one_of: [
+                            { match_name: true },
+                            {
+                                rules: {
+                                    "fuchsia.amlogic.platform.PWM_ID": "fuchsia.amlogic.platform.PWM_ID.AO_D",
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let bind_path = temp_dir.join("sample.bind");
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            rs_output: None,
+            cml_output: None,
+            bind_output: Some(bind_path.to_str().unwrap().to_string()),
+            namespace: None,
+        };
+
+        compile_driver(&args, "2026").unwrap();
+
+        let bind_content = std::fs::read_to_string(&bind_path).unwrap();
+        assert!(bind_content.contains("if fuchsia.NAME == \"pwm-big-cluster\" {\n      true;\n  } else {\n      fuchsia.amlogic.platform.PWM_ID == fuchsia.amlogic.platform.PWM_ID.AO_D;\n  }"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
