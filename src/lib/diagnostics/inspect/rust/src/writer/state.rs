@@ -331,6 +331,9 @@ pub struct Stats {
 
     /// Total number of failed allocations.
     pub failed_allocations: usize,
+
+    /// Peak number of bytes requested to be allocated.
+    pub peak_bytes_requested: usize,
 }
 
 pub struct LockedStateGuard<'a> {
@@ -368,6 +371,7 @@ impl<'a> LockedStateGuard<'a> {
             allocated_blocks: self.inner_lock.heap.total_allocated_blocks(),
             deallocated_blocks: self.inner_lock.heap.total_deallocated_blocks(),
             failed_allocations: self.inner_lock.heap.failed_allocations(),
+            peak_bytes_requested: self.inner_lock.heap.peak_bytes_requested(),
         }
     }
 
@@ -2871,6 +2875,7 @@ mod tests {
                                      // "link-name", _block2, "test" */
                 deallocated_blocks: 0,
                 failed_allocations: 0,
+                peak_bytes_requested: 144,
             }
         )
     }
