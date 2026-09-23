@@ -43,6 +43,9 @@ const TERMINATE_POLL_RETRIES: usize = 5;
 const TERMINATE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const CLIENT_WRITER_CHANNEL_CAPACITY: usize = 256;
 const MAX_UART_WRITE_BATCH_BYTES: usize = 4096;
+const IDENTITY_QUERY_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_IDENTITY_ATTEMPTS: usize = 5;
+const IDENTITY_RETRY_INTERVAL: Duration = Duration::from_secs(2);
 const METADATA_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 const RECONNECT_BACKOFF_INTERVAL: Duration = Duration::from_secs(1);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -53,6 +56,11 @@ pub fn is_char_device(path: &str) -> bool {
     std::fs::metadata(path).map(|m| m.file_type().is_char_device()).unwrap_or(false)
 }
 
+mod adapters;
+use adapters::FDomainTransport;
+use fdomain_client::fidl::DiscoverableProtocolMarker as _;
+use fdomain_fuchsia_developer_remotecontrol as rcs_fdomain;
+use fdomain_fuchsia_io as fio_fdomain;
 pub use ffx_tool_uart::stream::{AsyncUart, UartStream, connect_uart_stream};
 
 /// Errors that can occur when managing Unix domain socket lifecycle and stale socket cleanup.
@@ -146,6 +154,32 @@ pub enum TaskError {
     /// An error occurred in the sender task.
     #[error(transparent)]
     Sender(#[from] SenderTaskError),
+}
+
+/// Errors that can occur when querying target identity over FDomain.
+#[derive(thiserror::Error, Debug)]
+pub enum IdentityError {
+    /// Failed to connect to the Unix domain socket.
+    #[error("Failed to connect to socket {0}: {1}")]
+    Connect(PathBuf, #[source] std::io::Error),
+    /// Failed to retrieve the FDomain namespace.
+    #[error("Failed to get FDomain namespace: {0}")]
+    Namespace(#[source] fdomain_client::Error),
+    /// Failed to open the RemoteControlService protocol within the FDomain namespace.
+    #[error("Failed to open RCS protocol: {0}")]
+    OpenRcs(#[source] fidl::Error),
+    /// The FIDL transport call to IdentifyHost failed.
+    #[error("IdentifyHost FIDL call failed: {0}")]
+    Fidl(#[source] fidl::Error),
+    /// The IdentifyHost service returned an error status.
+    #[error("IdentifyHost returned error: {0:?}")]
+    Identify(rcs_fdomain::IdentifyHostError),
+    /// The FDomain transport closed prematurely during negotiation.
+    #[error("FDomain transport closed prematurely")]
+    TransportClosed,
+    /// Timed out waiting for the target to respond with host identity.
+    #[error("Timed out waiting for IdentifyHost response")]
+    Timeout,
 }
 
 async fn terminate_process(pid: u32) {
@@ -1106,6 +1140,75 @@ impl HostDriver {
         }
     }
 
+    async fn identify_host_over_client(
+        client: &Arc<fdomain_client::Client>,
+    ) -> Result<(Option<String>, Option<String>), IdentityError> {
+        let (proxy, server_end) = client.create_proxy::<rcs_fdomain::RemoteControlMarker>();
+        let ns = client.namespace().await.map_err(IdentityError::Namespace)?;
+        let ns = fio_fdomain::DirectoryProxy::new(ns);
+        ns.open(
+            rcs_fdomain::RemoteControlMarker::PROTOCOL_NAME,
+            fio_fdomain::Flags::PROTOCOL_SERVICE,
+            &fio_fdomain::Options::default(),
+            server_end.into_channel(),
+        )
+        .map_err(IdentityError::OpenRcs)?;
+
+        let identify_res = proxy
+            .identify_host()
+            .await
+            .map_err(IdentityError::Fidl)?
+            .map_err(IdentityError::Identify)?;
+
+        Ok((identify_res.nodename, identify_res.serial_number))
+    }
+
+    async fn query_identity_once(
+        sock_path: &std::path::Path,
+    ) -> Result<(Option<String>, Option<String>), IdentityError> {
+        let stream = UnixStream::connect(sock_path)
+            .await
+            .map_err(|e| IdentityError::Connect(sock_path.to_path_buf(), e))?;
+        let (read_half, write_half) = tokio::io::split(stream);
+        let transport = FDomainTransport::new(
+            Box::new(tokio::io::BufReader::new(read_half)),
+            Box::new(write_half),
+        );
+        let (client, transport_fut) = fdomain_client::Client::new(transport);
+
+        futures::select! {
+            res = Self::identify_host_over_client(&client).fuse() => res,
+            _ = transport_fut.fuse() => Err(IdentityError::TransportClosed),
+            _ = fuchsia_async::Timer::new(IDENTITY_QUERY_TIMEOUT).fuse() => {
+                Err(IdentityError::Timeout)
+            }
+        }
+    }
+
+    async fn query_and_update_identity(sock_path: &std::path::Path) {
+        for attempt in 1..=MAX_IDENTITY_ATTEMPTS {
+            log::info!(
+                "Attempting to query target identity over FDomain (attempt {attempt}/{MAX_IDENTITY_ATTEMPTS})..."
+            );
+            match Self::query_identity_once(sock_path).await {
+                Ok((nodename, serial)) => {
+                    log::info!(
+                        "Discovered target identity: nodename={nodename:?}, serial={serial:?}"
+                    );
+                    let _ = uart_driver_api::update_metadata_identity(sock_path, nodename, serial);
+                    return;
+                }
+                Err(e) => {
+                    log::debug!("Query identity attempt {attempt} failed: {:?}", e);
+                    if attempt < MAX_IDENTITY_ATTEMPTS {
+                        fuchsia_async::Timer::new(IDENTITY_RETRY_INTERVAL).await;
+                    }
+                }
+            }
+        }
+        log::warn!("Could not determine target identity after {MAX_IDENTITY_ATTEMPTS} attempts");
+    }
+
     fn watch_metadata_deletion(
         meta_path: &Option<PathBuf>,
         shutdown_tx: futures::channel::oneshot::Sender<()>,
@@ -1302,6 +1405,15 @@ impl HostDriver {
         Ok(s)
     }
 
+    fn resolve_client_socket_path(
+        local_addr: Option<&tokio::net::unix::SocketAddr>,
+        meta_path: Option<&PathBuf>,
+    ) -> Option<PathBuf> {
+        local_addr
+            .and_then(|a| a.as_pathname().map(|p| p.to_path_buf()))
+            .or_else(|| meta_path.map(|p| uart_driver_api::get_client_socket_path(p)))
+    }
+
     fn determine_target_properties(target_path: &str, baud: NonZeroU32) -> (bool, Option<NonZeroU32>) {
         let is_socket =
             std::fs::metadata(target_path).map(|m| m.file_type().is_socket()).unwrap_or(false);
@@ -1324,6 +1436,8 @@ impl HostDriver {
         no_retry: bool,
     ) {
         let local_addr = listener.local_addr().ok();
+        let client_sock_path =
+            Self::resolve_client_socket_path(local_addr.as_ref(), meta_path.as_ref());
         let (is_socket, rate_limit) = Self::determine_target_properties(&target_path, baud);
         let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
         let (shutdown_tx, shutdown_rx) = futures::channel::oneshot::channel::<()>();
@@ -1337,6 +1451,7 @@ impl HostDriver {
             meta_path: meta_path.clone(),
             no_retry,
             is_socket,
+            client_sock_path,
             metrics,
         };
         let main_loop_fut = ctx.run_reconnection_loop(listener).fuse();
@@ -1358,6 +1473,7 @@ struct DriverContext {
     meta_path: Option<PathBuf>,
     no_retry: bool,
     is_socket: bool,
+    client_sock_path: Option<PathBuf>,
     metrics: Arc<Mutex<DaemonMetrics>>,
 }
 
@@ -1495,7 +1611,15 @@ impl DriverContext {
             Err(fatal) => return fatal,
         };
         if let Some((_, sid, unconsumed)) = self.perform_handshake(&mut stream, serial_tx).await {
-            self.run_session_tasks(stream, unconsumed, sid, serial_tx).await;
+            {
+                let _identify = self.client_sock_path.as_deref().map(|s| {
+                    let sock = s.to_path_buf();
+                    fuchsia_async::Task::local(async move {
+                        HostDriver::query_and_update_identity(&sock).await;
+                    })
+                });
+                self.run_session_tasks(stream, unconsumed, sid, serial_tx).await;
+            }
             log::info!("Re-initializing UART connection in {:?}...", RECONNECT_BACKOFF_INTERVAL);
             let err = ConnectionError::raw("UART connection lost");
             self.record_failure_and_backoff(err, serial_tx, false, true).await;
@@ -1970,9 +2094,6 @@ mod tests {
         assert_eq!(loaded.nodename.as_deref(), Some("fuchsia-1234-test"));
         assert_eq!(loaded.serial.as_deref(), Some("SERIAL001"));
 
-        let cached = uart_driver_api::load_cached_identity(&sock_path);
-        assert_eq!(cached, Some(("fuchsia-1234-test".to_string(), Some("SERIAL001".to_string()))));
-
         HostDriver::update_status(
             &Some(meta_path.clone()),
             ConnectionStatus::Error(ConnectionError::raw("UART connection lost")),
@@ -1980,7 +2101,6 @@ mod tests {
         let content = std::fs::read_to_string(&meta_path).unwrap();
         let loaded: ConnectionMetadata = serde_json::from_str(&content).unwrap();
         assert_eq!((loaded.nodename, loaded.serial), (None, None));
-        assert!(uart_driver_api::load_cached_identity(&sock_path).is_none());
     }
 
     struct MockReader {
@@ -2363,6 +2483,14 @@ mod tests {
         let result = tokio::time::timeout(std::time::Duration::from_secs(3), driver_task).await;
         assert!(result.is_ok(), "Driver task did not terminate within timeout!");
         assert!(!client_socket_path.exists(), "Client socket was not cleaned up!");
+    }
+
+    #[fuchsia::test]
+    async fn test_query_identity_once_nonexistent_socket() {
+        let temp = tempdir().unwrap();
+        let sock_path = temp.path().join("nonexistent.sock");
+        let res = HostDriver::query_identity_once(&sock_path).await;
+        assert!(matches!(res, Err(IdentityError::Connect(path, _)) if path == sock_path));
     }
 
     #[fuchsia::test]
