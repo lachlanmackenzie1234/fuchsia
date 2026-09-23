@@ -391,8 +391,8 @@
     },
     {
         "package": "fuchsia/third_party/aosp_gki/virt",
-        "version": "bid:13906628",
-        "instance_id": "kTGf9yslZgbbciD1PqQ9cRSLOx9hdpuWtcqam7Wx13QC"
+        "version": "bid:16411494",
+        "instance_id": "lpqtGDKRFsii7ldD-8DEX-LrxJwwMYBHNujTNACei6AC"
     },
     {
         "package": "fuchsia/third_party/bazel_workspacelogparser",
