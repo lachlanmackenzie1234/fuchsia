@@ -490,6 +490,10 @@
                 "MountTest.MountWithStrictAtime",
                 "MountTest.OverlayfsDirectoryRenameInUserNamespace",
 
+                // TODO(https://fxbug.dev/565372315): Starnix tmpfs rejects mode=1777 and overlayfs lacks stacking limits.
+                "MountTest.OverlayfsRejectedAsUpperdir",
+                "MountTest.OverlayfsStackingDepthLimit",
+
                 // TODO(https://fxbug.dev/564605982)
                 "MountTest.OverlayfsSecurityCapabilityTranslatesRootID",
                 "MountTest.PropagateChildUmountEvent",
