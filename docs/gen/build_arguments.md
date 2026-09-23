@@ -640,11 +640,10 @@ From //build/tracer/tracer.gni:12
 
 Whether to emit a call graph section in the output file
 https://clang.llvm.org/docs/ClangCommandLineReference.html#cmdoption-clang-fexperimental-call-graph-section
-TODO(https://issues.fuchsia.dev/497876388): Enable call graph section by default after the next toolchain roll.
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
-From //build/config/clang/call_graph_section.gni:9
+From //build/config/clang/call_graph_section.gni:8
 
 ### camera_debug
 
@@ -3880,14 +3879,6 @@ From //third_party/perfetto/gn/perfetto.gni:404
 
 From //src/power/power-manager/BUILD.gn:130
 
-### enable_rseq_backend_for_rcu
-
-The RSEQ backend is not yet implemented.
-
-**Current value (from the default):** `false`
-
-From //src/lib/fuchsia-rcu/BUILD.gn:11
-
 ### enable_sestarnix_userspace_tests_on_linux
 
 Enable SEStarnix userspace tests on Linux. On CI/CQ this requires internal
@@ -3992,6 +3983,16 @@ when unblocking once we solve races higher in the stack.
 **Current value (from the default):** `false`
 
 From //zircon/kernel/params.gni:120
+
+### experimental_kernel_abi
+
+**NOTE: _For experimental use only._** This gives a list of
+compiler_config() labels to include first in the kernel's compilation
+configuration / Rust custom target definition.
+
+**Current value (from the default):** `["//build/config:cpu_baseline"]`
+
+From //zircon/kernel/switch/BUILD.gn:34
 
 ### experimental_mem_enabled
 
@@ -4480,6 +4481,12 @@ Fully hermetic tests (both by packaging and at runtime)
 **Current value (from the default):** `[]`
 
 From //BUILD.gn:68
+
+### honeydew_adb_keys_dir
+
+**Current value (from the default):** `"//third_party/android/platform/vendor/google/security/adb"`
+
+From //src/testing/end_to_end/honeydew/BUILD.gn:20
 
 ### host_byteorder
 
@@ -9775,7 +9782,7 @@ the feature name "enable_zircon_asserts".
 
 **Current value (from the default):** `false`
 
-From //build/config/fuchsia/zircon_asserts.gni:13
+From //build/config/fuchsia/zircon_asserts.gni:14
 
 ### zircon_b_partition
 
