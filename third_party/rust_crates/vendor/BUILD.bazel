@@ -1291,14 +1291,14 @@ alias(
 )
 
 alias(
-    name = "http-1.4.2",
-    actual = "//third_party/rust_crates/vendor/http-1.4.2:http",
+    name = "http-1.5.0",
+    actual = "//third_party/rust_crates/vendor/http-1.5.0:http",
     tags = ["manual"],
 )
 
 alias(
     name = "http",
-    actual = "//third_party/rust_crates/vendor/http-1.4.2:http",
+    actual = "//third_party/rust_crates/vendor/http-1.5.0:http",
     tags = ["manual"],
 )
 

@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "http",
     package_url = "https://github.com/hyperium/http",
-    package_version = "1.4.2",
+    package_version = "1.5.0",
 )
 
 license(
@@ -75,7 +75,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.4.2",
+    version = "1.5.0",
     deps = [
         "//third_party/rust_crates/vendor/bytes-1.12.1:bytes",
         "//third_party/rust_crates/vendor/itoa-1.0.18:itoa",

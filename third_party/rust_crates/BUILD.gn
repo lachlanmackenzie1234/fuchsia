@@ -914,11 +914,11 @@ group("hound-3.5.1") {
 }
 
 group("http") {
-  public_deps = [ ":http-v1_4_2" ]
+  public_deps = [ ":http-v1_5_0" ]
 }
 
-group("http-1.4.2") {
-  public_deps = [ ":http-v1_4_2" ]
+group("http-1.5.0") {
+  public_deps = [ ":http-v1_5_0" ]
 }
 
 group("http-body") {
@@ -11377,18 +11377,18 @@ rustc_library("hound-v3_5_1") {
   applicable_licenses = [ ":hound-v3_5_1.license" ]
 }
 
-license("http-v1_4_2.license") {
+license("http-v1_5_0.license") {
   public_package_name = "http"
   license_files = [
-    "//third_party/rust_crates/vendor/http-1.4.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/http-1.4.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/http-1.5.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/http-1.5.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("http-v1_4_2") {
+rustc_library("http-v1_5_0") {
   crate_name = "http"
-  source_root = "//third_party/rust_crates/vendor/http-1.4.2/src/lib.rs"
-  output_name = "http-c56ab4733c579d5a"
+  source_root = "//third_party/rust_crates/vendor/http-1.5.0/src/lib.rs"
+  output_name = "http-959301f4d0a0a32a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -11402,15 +11402,15 @@ rustc_library("http-v1_4_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c56ab4733c579d5a",
-    "-Cextra-filename=-c56ab4733c579d5a",
+    "-Cmetadata=959301f4d0a0a32a",
+    "-Cextra-filename=-959301f4d0a0a32a",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":http-v1_4_2.license" ]
+  applicable_licenses = [ ":http-v1_5_0.license" ]
 }
 
 license("http-body-v1_1_0.license") {
@@ -11429,7 +11429,7 @@ rustc_library("http-body-v1_1_0") {
 
   deps = []
   deps += [ ":bytes-v1_12_1" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
 
   rustenv = []
 
@@ -11464,7 +11464,7 @@ rustc_library("http-body-util-v0_1_4") {
   deps += [ ":bytes-v1_12_1" ]
   deps += [ ":futures-core-v0_3_34" ]
   deps += [ ":http-body-v1_1_0" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []
@@ -11642,7 +11642,7 @@ rustc_library("hyper-v1_11_0") {
   deps += [ ":futures-channel-v0_3_34" ]
   deps += [ ":futures-core-v0_3_34" ]
   deps += [ ":http-body-v1_1_0" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
   deps += [ ":httparse-v1_10_1" ]
   deps += [ ":httpdate-v1_0_3" ]
   deps += [ ":itoa-v1_0_18" ]
@@ -11689,7 +11689,7 @@ rustc_library("hyper-rustls-v0_27_9") {
 
   deps = []
   deps += [ ":tokio-v1_53_1" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_0" ]
   deps += [ ":rustls-native-certs-v0_8_4" ]
@@ -11736,7 +11736,7 @@ rustc_library("hyper-util-v0_1_20") {
   deps += [ ":futures-channel-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":http-body-v1_1_0" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-v1_11_0" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":socket2-v0_6_4" ]
@@ -14971,7 +14971,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":http-body-util-v0_1_4" ]
   deps += [ ":http-body-v1_1_0" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_0" ]
   deps += [ ":itertools-v0_14_0" ]
@@ -24463,7 +24463,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":futures-io-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":http-body-util-v0_1_4" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_0" ]
   deps += [ ":itoa-v1_0_18" ]
@@ -24517,7 +24517,7 @@ rustc_test("tuf-v0_3_0-beta14.test") {
   deps += [ ":futures-io-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":http-body-util-v0_1_4" ]
-  deps += [ ":http-v1_4_2" ]
+  deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
   deps += [ ":hyper-v1_11_0" ]
   deps += [ ":itoa-v1_0_18" ]
