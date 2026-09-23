@@ -591,7 +591,7 @@ impl VmPagePtr {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `ptr` is a valid pointer to a kernel page.
+    /// `ptr` must be either null or a valid pointer to a kernel page.
     pub const unsafe fn from_raw(ptr: *mut VmPage) -> Option<Self> {
         match NonNull::new(ptr) {
             Some(nn) => Some(Self(nn)),
@@ -614,9 +614,9 @@ impl VmPagePtr {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `ptr` is a valid pointer to a kernel page.
+    /// `ptr` must be either null or a valid pointer to a kernel page.
     pub unsafe fn from_ffi(ptr: *mut bindings::vm_page_t) -> Option<Self> {
-        // SAFETY: Method preconditions match from_raw requirements.
+        // SAFETY: ptr is either null or a valid pointer to a kernel page.
         unsafe { Self::from_raw(ptr.cast()) }
     }
 
