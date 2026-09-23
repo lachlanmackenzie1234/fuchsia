@@ -9,7 +9,7 @@ use chrono::Duration;
 use command::Command;
 use fuchsia_async::TimeoutExt;
 use futures::io::{AsyncRead, AsyncWrite};
-use futures::lock::Mutex;
+use futures::lock::{Mutex, MutexLockFuture};
 use futures::{AsyncReadExt, AsyncWriteExt};
 use std::io::Read;
 use std::sync::Arc;
@@ -35,6 +35,10 @@ pub struct FastbootContext {
 impl FastbootContext {
     pub fn new() -> Self {
         Self { send_lock: Arc::new(Mutex::new(())), transfer_lock: Arc::new(Mutex::new(())) }
+    }
+
+    pub fn lock_transfer(&self) -> MutexLockFuture<'_, ()> {
+        self.transfer_lock.lock()
     }
 }
 
@@ -266,7 +270,7 @@ pub async fn upload_with_read_timeout<
     listener: &impl UploadProgressListener,
     timeout: Duration,
 ) -> Result<Reply, FastbootError> {
-    let _lock = ctx.transfer_lock.lock().await;
+    let _lock = ctx.lock_transfer().await;
     // We are sending "Download" in our "upload" function because we are the
     // host -- from the device's point of view, it is a download
     let reply = send(ctx.clone(), Command::Download(size), interface).await?;
@@ -369,7 +373,7 @@ pub async fn upload_from_reader<T: AsyncRead + AsyncWrite + Unpin, R: Read + ?Si
     listener: &impl UploadProgressListener,
     timeout: Duration,
 ) -> Result<Reply, FastbootError> {
-    let _lock = ctx.transfer_lock.lock().await;
+    let _lock = ctx.lock_transfer().await;
     let reply = send(ctx.clone(), Command::Download(size), interface).await?;
     let Reply::Data(s) = reply else {
         return Err(FastbootError::Upload(UploadError::UnexpectedReply { reply }));
@@ -439,7 +443,7 @@ pub async fn download<T: AsyncRead + AsyncWrite + Unpin>(
     path: &String,
     interface: &mut T,
 ) -> Result<Reply, FastbootError> {
-    let _lock = ctx.transfer_lock.lock().await;
+    let _lock = ctx.lock_transfer().await;
     // We are sending "Upload" in our "download" function because we are the
     // host -- from the device's point of view, it is an upload
     let reply = send(ctx.clone(), Command::Upload, interface).await?;

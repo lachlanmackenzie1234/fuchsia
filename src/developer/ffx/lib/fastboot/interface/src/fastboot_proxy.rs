@@ -256,6 +256,7 @@ async fn upload_data<T: AsyncRead + AsyncWrite + Unpin>(
     timeout: Duration,
     mut bytes_offset: u64,
 ) -> Result<(), fastboot::FastbootError> {
+    let _lock = ctx.lock_transfer().await;
     let expected = data.len().try_into().unwrap();
     let reply =
         send_with_timeout(ctx.clone(), Command::Download(expected), interface, timeout).await?;
@@ -1443,6 +1444,43 @@ mod test {
             progress_rx.recv().await,
             Some(UploadProgress::OnProgress { bytes_written: 4100 })
         );
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_stream_upload_acquires_transfer_lock() -> Result<()> {
+        let mut test_transport = TestTransport::new();
+        test_transport.extend([
+            Reply::Data(4),
+            Reply::Okay("".to_string()),
+            Reply::Okay("".to_string()),
+        ]);
+
+        let ctx = FastbootContext::new();
+        let mut fastboot_client = FastbootProxy::<TestTransport> {
+            target_id: "foo".to_string(),
+            interface: Some(test_transport),
+            interface_factory: Box::new(TestTransportFactory {}),
+            ctx: ctx.clone(),
+        };
+
+        let guard = ctx.lock_transfer().await;
+        let (progress_tx, _progress_rx) = mpsc::channel(2);
+        let flash_cmd = StreamCommand {
+            offset_bytes: 0,
+            op: StreamOp::Flash { data: bytes::Bytes::from_static(&[1, 2, 3, 4]), crc32: 0x1234 },
+        };
+
+        let mut stream_fut = Box::pin(fastboot_client.stream(
+            "zircon_a",
+            flash_cmd,
+            &progress_tx,
+            Duration::seconds(1),
+        ));
+        assert!(futures::poll!(&mut stream_fut).is_pending());
+
+        drop(guard);
+        stream_fut.await?;
         Ok(())
     }
 }
