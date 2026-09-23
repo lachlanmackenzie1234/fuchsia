@@ -598,7 +598,7 @@ void CodecAdapterVp9::CoreCodecQueueInputFormatDetails(
   QueueInputItem(CodecInputItem::FormatDetails(per_stream_override_format_details));
 }
 
-void CodecAdapterVp9::CoreCodecQueueInputPacket(CodecPacket* packet) {
+void CodecAdapterVp9::CoreCodecQueueInputPacket(const CodecPacket* packet) {
   DLOG("packet ts: %" PRId64, packet->has_timestamp_ish() ? packet->timestamp_ish() : -1);
   QueueInputItem(CodecInputItem::Packet(packet));
 }

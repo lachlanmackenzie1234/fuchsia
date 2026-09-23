@@ -83,7 +83,7 @@ class CodecAdapterEvents {
   // and doesn't have to be handled by clients).
   virtual void onCoreCodecOutputFormatChange() = 0;
 
-  virtual void onCoreCodecInputPacketDone(CodecPacket* packet) = 0;
+  virtual void onCoreCodecInputPacketDone(const CodecPacket* packet) = 0;
 
   // CodecAdapter(s) should take care to call onCoreCodecOutputPacket
   // referencing a buffer before any dropping of any CodecAdapter(s) handle(s)

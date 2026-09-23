@@ -119,7 +119,7 @@ void CodecAdapterAacEncoder::CoreCodecQueueInputFormatDetails(
            });
 }
 
-void CodecAdapterAacEncoder::CoreCodecQueueInputPacket(CodecPacket* packet) {
+void CodecAdapterAacEncoder::CoreCodecQueueInputPacket(const CodecPacket* packet) {
   TRACE_INSTANT("codec_runner", "Media:PacketReceived", TRACE_SCOPE_THREAD);
   PostTask(input_processing_loop_.dispatcher(),
            [this, packet]() { ProcessInput(CodecInputItem::Packet(packet)); });

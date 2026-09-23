@@ -237,7 +237,7 @@ CodecAdapterSbcDecoder::InputLoopStatus CodecAdapterSbcDecoder::CreateContext(
 }
 
 CodecAdapterSbcDecoder::InputLoopStatus CodecAdapterSbcDecoder::DecodeInput(
-    CodecPacket* input_packet) {
+    const CodecPacket* input_packet) {
   FX_DCHECK(context_);
 
   if (!input_packet) {

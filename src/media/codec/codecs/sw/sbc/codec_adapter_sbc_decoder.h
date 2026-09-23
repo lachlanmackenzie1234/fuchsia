@@ -91,7 +91,7 @@ class CodecAdapterSbcDecoder : public CodecAdapterSW<fit::deferred_action<fit::c
   InputLoopStatus CreateContext(const fuchsia::media::FormatDetails& format_details);
 
   // Attempts to decode input packet. Reports failures through `events_`.
-  InputLoopStatus DecodeInput(CodecPacket* input_packet);
+  InputLoopStatus DecodeInput(const CodecPacket* input_packet);
 
   // Extract PCM format from SBC codec info bytes
   static fuchsia::media::PcmFormat DecodeCodecInfo(const std::vector<uint8_t>& oob_bytes);

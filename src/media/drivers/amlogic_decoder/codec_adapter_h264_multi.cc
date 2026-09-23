@@ -332,7 +332,7 @@ void CodecAdapterH264Multi::CoreCodecQueueInputFormatDetails(
   QueueInputItem(CodecInputItem::FormatDetails(per_stream_override_format_details));
 }
 
-void CodecAdapterH264Multi::CoreCodecQueueInputPacket(CodecPacket* packet) {
+void CodecAdapterH264Multi::CoreCodecQueueInputPacket(const CodecPacket* packet) {
   QueueInputItem(CodecInputItem::Packet(packet));
 }
 

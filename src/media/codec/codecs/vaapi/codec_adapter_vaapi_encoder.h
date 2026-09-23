@@ -119,7 +119,7 @@ class CodecAdapterVaApiEncoder : public CodecAdapter {
     input_queue_.Push(CodecInputItem::FormatDetails(per_stream_override_format_details));
   }
 
-  void CoreCodecQueueInputPacket(CodecPacket* packet) override {
+  void CoreCodecQueueInputPacket(const CodecPacket* packet) override {
     TRACE_INSTANT("codec_runner", "Media:PacketReceived", TRACE_SCOPE_THREAD);
     input_queue_.Push(CodecInputItem::Packet(packet));
   }
@@ -365,7 +365,7 @@ class CodecAdapterVaApiEncoder : public CodecAdapter {
   // Loops for the lifetime of a stream.
   void ProcessInputLoop();
 
-  bool ProcessPacket(CodecPacket* packet);
+  bool ProcessPacket(const CodecPacket* packet);
   // Releases any resources from the just-ended stream.
   void CleanUpAfterStream();
 

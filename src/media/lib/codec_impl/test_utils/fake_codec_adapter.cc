@@ -108,7 +108,7 @@ void FakeCodecAdapter::CoreCodecQueueInputFormatDetails(
   // nothing to do here
 }
 
-void FakeCodecAdapter::CoreCodecQueueInputPacket(CodecPacket* packet) {
+void FakeCodecAdapter::CoreCodecQueueInputPacket(const CodecPacket* packet) {
   // nothing to do here
 }
 

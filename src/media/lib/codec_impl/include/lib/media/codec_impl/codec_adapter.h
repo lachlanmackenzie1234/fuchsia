@@ -436,7 +436,7 @@ class CodecAdapter {
       const fuchsia::media::FormatDetails& per_stream_override_format_details) = 0;
 
   // Only permitted between CoreCodecStartStream() and CoreCodecStopStream().
-  virtual void CoreCodecQueueInputPacket(CodecPacket* packet) = 0;
+  virtual void CoreCodecQueueInputPacket(const CodecPacket* packet) = 0;
 
   // Only permitted between CoreCodecStartStream() and CoreCodecStopStream().
   virtual void CoreCodecQueueInputEndOfStream() = 0;

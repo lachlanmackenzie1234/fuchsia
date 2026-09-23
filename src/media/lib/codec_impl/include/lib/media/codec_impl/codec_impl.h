@@ -1858,7 +1858,7 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
 
   void onCoreCodecOutputFormatChange() override;
 
-  void onCoreCodecInputPacketDone(CodecPacket* packet) override;
+  void onCoreCodecInputPacketDone(const CodecPacket* packet) override;
 
   void onCoreCodecOutputPacket(CodecPacket* packet, bool error_detected_before,
                                bool error_detected_during) override;
@@ -1925,7 +1925,7 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
       const fuchsia::media::FormatDetails& per_stream_override_format_details)
       __TA_EXCLUDES(lock_) override;
 
-  void CoreCodecQueueInputPacket(CodecPacket* packet) __TA_EXCLUDES(lock_) override;
+  void CoreCodecQueueInputPacket(const CodecPacket* packet) __TA_EXCLUDES(lock_) override;
 
   void CoreCodecQueueInputEndOfStream() __TA_EXCLUDES(lock_) override;
 

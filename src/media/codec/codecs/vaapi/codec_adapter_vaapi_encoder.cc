@@ -300,7 +300,7 @@ void CodecAdapterVaApiEncoder::ProcessInputLoop() {
   }
 }
 
-bool CodecAdapterVaApiEncoder::ProcessPacket(CodecPacket* packet) {
+bool CodecAdapterVaApiEncoder::ProcessPacket(const CodecPacket* packet) {
   if (coded_size_.IsEmpty() || display_size_.IsEmpty()) {
     events_->onCoreCodecFailCodec("ProcessPacket(): Frame dimensions not initialized");
     return false;

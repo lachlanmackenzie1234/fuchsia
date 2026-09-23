@@ -110,7 +110,7 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
   InputLoopStatus CreateContext(const fuchsia::media::FormatDetails& format_details);
 
   // Attempts to encode input packet. Reports failures through `events_`.
-  InputLoopStatus EncodeInput(CodecPacket* input_packet);
+  InputLoopStatus EncodeInput(const CodecPacket* input_packet);
 
   // Sends the output packet if it has any data in it.
   void SendPendingOutputPacket();

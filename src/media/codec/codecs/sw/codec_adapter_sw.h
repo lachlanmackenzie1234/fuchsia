@@ -133,7 +133,7 @@ class CodecAdapterSW : public CodecAdapter {
     input_queue_.Push(CodecInputItem::FormatDetails(per_stream_override_format_details));
   }
 
-  void CoreCodecQueueInputPacket(CodecPacket* packet) override {
+  void CoreCodecQueueInputPacket(const CodecPacket* packet) override {
     TRACE_INSTANT("codec_runner", "Media:PacketReceived", TRACE_SCOPE_THREAD);
     input_queue_.Push(CodecInputItem::Packet(packet));
   }
@@ -155,7 +155,6 @@ class CodecAdapterSW : public CodecAdapter {
       CodecInputItem input_item = std::move(queued_input_items.front());
       queued_input_items.pop();
       if (input_item.is_packet()) {
-        input_item.packet()->SetBuffer(nullptr);
         events_->onCoreCodecInputPacketDone(input_item.packet());
       }
     }

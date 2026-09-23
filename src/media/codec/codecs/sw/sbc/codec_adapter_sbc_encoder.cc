@@ -356,7 +356,7 @@ CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::CreateContext(
 // TODO(turnage): Store progress on an output buffer so it can be used across
 //                multiple input packets if we're behind.
 CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::EncodeInput(
-    CodecPacket* input_packet) {
+    const CodecPacket* input_packet) {
   FX_DCHECK(context_);
   FX_DCHECK(chunk_input_stream_);
 

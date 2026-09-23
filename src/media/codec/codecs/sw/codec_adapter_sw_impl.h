@@ -257,9 +257,11 @@ class CodecAdapterSWImpl : public CodecAdapterSW<fit::deferred_action<fit::closu
     return ProcessCodecPacket(nullptr);
   }
 
-  InputLoopStatus ProcessInputPacket(CodecPacket* packet) { return ProcessCodecPacket(packet); }
+  InputLoopStatus ProcessInputPacket(const CodecPacket* packet) {
+    return ProcessCodecPacket(packet);
+  }
 
-  InputLoopStatus ProcessCodecPacket(CodecPacket* packet) {
+  InputLoopStatus ProcessCodecPacket(const CodecPacket* packet) {
     ZX_DEBUG_ASSERT(codec_params_);
     ZX_DEBUG_ASSERT(chunk_input_stream_);
     ChunkInputStream::Status status;

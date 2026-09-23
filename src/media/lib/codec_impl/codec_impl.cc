@@ -6840,7 +6840,7 @@ void CodecImpl::onCoreCodecOutputFormatChange() {
   stream_->SetOutputFormatPending();
 }
 
-void CodecImpl::onCoreCodecInputPacketDone(CodecPacket* packet_param) {
+void CodecImpl::onCoreCodecInputPacketDone(const CodecPacket* packet_param) {
   CodecPacket* packet = const_cast<CodecPacket*>(packet_param);
   uint64_t buffer_lifetime_ordinal = packet->buffer_lifetime_ordinal();
   uint32_t allocated_packet_index = packet->allocated_packet_index();
@@ -6850,11 +6850,6 @@ void CodecImpl::onCoreCodecInputPacketDone(CodecPacket* packet_param) {
     // The CodecAdapter says the buffer-referencing in-flight lifetime of this
     // packet is over. We'll set the buffer again when this packet gets used by
     // the client again to deliver more input data.
-    //
-    // This SetBuffer(nullptr) is permitted to be redundant with a
-    // SetBuffer(nullptr) already performed by the calling CodecAdapter. This
-    // onCoreCodecInputPacketDone isn't allowed to assume that the buffer is still
-    // set on the packet at this point.
     packet->SetBuffer(nullptr);
     // We have to insist that the CodecAdapter not call
     // onCoreCodecInputPacketDone() arbitrarily late because we need to know
@@ -7657,7 +7652,7 @@ void CodecImpl::CoreCodecQueueInputFormatDetails(
   codec_adapter_->CoreCodecQueueInputFormatDetails(per_stream_override_format_details);
 }
 
-void CodecImpl::CoreCodecQueueInputPacket(CodecPacket* packet) {
+void CodecImpl::CoreCodecQueueInputPacket(const CodecPacket* packet) {
   ZX_DEBUG_ASSERT(IsStreamControl());
   codec_adapter_->CoreCodecQueueInputPacket(packet);
 }
