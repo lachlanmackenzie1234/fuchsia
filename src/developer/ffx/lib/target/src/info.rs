@@ -6,7 +6,6 @@ use std::fmt;
 
 use addr::TargetAddr;
 use discovery::query::TargetInfoQuery;
-use fidl_fuchsia_developer_ffx as ffx;
 use serde::{Deserialize, Serialize};
 
 #[derive(Hash, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -32,38 +31,6 @@ impl fmt::Display for TargetState {
             TargetState::Fastboot => write!(f, "fastboot"),
             TargetState::Zedboot => write!(f, "zedboot"),
         }
-    }
-}
-
-#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub enum VSockNamespace {
-    Vsock,
-    Usb,
-}
-
-#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct VSockCtx {
-    pub cid: u32,
-    pub namespace: VSockNamespace,
-}
-
-impl From<VSockCtx> for ffx::TargetVSockCtx {
-    fn from(value: VSockCtx) -> Self {
-        let namespace = match value.namespace {
-            VSockNamespace::Vsock => ffx::TargetVSockNamespace::Vsock,
-            VSockNamespace::Usb => ffx::TargetVSockNamespace::Usb,
-        };
-        ffx::TargetVSockCtx { cid: value.cid, namespace }
-    }
-}
-
-impl From<ffx::TargetVSockCtx> for VSockCtx {
-    fn from(value: ffx::TargetVSockCtx) -> Self {
-        let namespace = match value.namespace {
-            ffx::TargetVSockNamespace::Vsock => VSockNamespace::Vsock,
-            ffx::TargetVSockNamespace::Usb => VSockNamespace::Usb,
-        };
-        VSockCtx { cid: value.cid, namespace }
     }
 }
 
@@ -110,65 +77,6 @@ impl Default for TargetInfo {
             is_manual: false,
             boot_id: None,
             is_default: None,
-        }
-    }
-}
-
-impl From<TargetInfo> for ffx::TargetInfo {
-    fn from(info: TargetInfo) -> Self {
-        let nodename = info.nodename;
-        let rcs_state = match info.rcs_state {
-            RemoteControlState::Up => ffx::RemoteControlState::Up,
-            RemoteControlState::Down => ffx::RemoteControlState::Down,
-            RemoteControlState::Unknown => ffx::RemoteControlState::Unknown,
-        };
-        let target_state = match info.target_state {
-            TargetState::Unknown => ffx::TargetState::Unknown,
-            TargetState::Product => ffx::TargetState::Product,
-            TargetState::Fastboot => ffx::TargetState::Fastboot,
-            TargetState::Zedboot => ffx::TargetState::Zedboot,
-        };
-        Self {
-            nodename,
-            addresses: Some(info.addresses.into_iter().map(|a| a.into()).collect()),
-            rcs_state: Some(rcs_state),
-            target_state: Some(target_state),
-            product_config: info.product_config,
-            board_config: info.board_config,
-            serial_number: info.serial_number,
-            is_manual: Some(info.is_manual),
-            ..Default::default()
-        }
-    }
-}
-
-impl From<ffx::TargetInfo> for TargetInfo {
-    fn from(info: ffx::TargetInfo) -> Self {
-        let addresses = match info.addresses {
-            None => vec![],
-            Some(addrs) => addrs.into_iter().map(|a| a.into()).collect(),
-        };
-        let rcs_state = info.rcs_state.map_or(RemoteControlState::Unknown, |s| match s {
-            ffx::RemoteControlState::Up => RemoteControlState::Up,
-            ffx::RemoteControlState::Down => RemoteControlState::Down,
-            ffx::RemoteControlState::Unknown => RemoteControlState::Unknown,
-        });
-        let target_state = info.target_state.map_or(TargetState::Unknown, |s| match s {
-            ffx::TargetState::Unknown | ffx::TargetState::Disconnected => TargetState::Unknown,
-            ffx::TargetState::Product => TargetState::Product,
-            ffx::TargetState::Fastboot => TargetState::Fastboot,
-            ffx::TargetState::Zedboot => TargetState::Zedboot,
-        });
-        Self {
-            nodename: info.nodename,
-            addresses,
-            rcs_state,
-            target_state,
-            product_config: info.product_config,
-            board_config: info.board_config,
-            serial_number: info.serial_number,
-            is_manual: info.is_manual.unwrap_or(false),
-            ..Default::default()
         }
     }
 }
@@ -223,43 +131,6 @@ impl From<discovery::TargetHandle> for TargetInfo {
     }
 }
 
-impl From<TargetInfo> for discovery::TargetHandle {
-    fn from(info: TargetInfo) -> Self {
-        let state = match info.target_state {
-            TargetState::Unknown => discovery::TargetState::Unknown,
-            TargetState::Product => discovery::TargetState::Product {
-                addrs: info.addresses,
-                serial: info.serial_number,
-            },
-            TargetState::Fastboot => {
-                let has_usb =
-                    info.addresses.iter().any(|a| matches!(a, addr::TargetAddr::UsbCtx(_)));
-                let ip_addrs: Vec<addr::TargetIpAddr> = info
-                    .addresses
-                    .into_iter()
-                    .filter_map(|a| match a {
-                        addr::TargetAddr::Net(s) => Some(addr::TargetIpAddr::from(s)),
-                        _ => None,
-                    })
-                    .collect();
-                let connection_state = if has_usb || ip_addrs.is_empty() {
-                    discovery::FastbootConnectionState::Usb
-                } else {
-                    // Note: TargetInfo only stores network addresses without a protocol tag (TCP vs UDP),
-                    // so network fastboot addresses default to TCP.
-                    discovery::FastbootConnectionState::Tcp(ip_addrs)
-                };
-                discovery::TargetState::Fastboot(discovery::FastbootTargetState {
-                    serial_number: info.serial_number.unwrap_or_default(),
-                    connection_state,
-                })
-            }
-            TargetState::Zedboot => discovery::TargetState::Zedboot,
-        };
-        discovery::TargetHandle { node_name: info.nodename, state, manual: info.is_manual }
-    }
-}
-
 impl From<TargetInfo> for discovery::Description {
     fn from(info: TargetInfo) -> Self {
         discovery::Description {
@@ -278,86 +149,22 @@ mod tests {
     use std::net::SocketAddr;
 
     #[test]
-    fn test_target_info_to_and_from_target_handle() {
+    fn test_target_info_from_target_handle() {
         let socket: SocketAddr = "192.168.1.10:22".parse().unwrap();
         let addr = TargetAddr::from(socket);
-        let original_info = TargetInfo {
-            nodename: Some("test-device".to_string()),
-            addresses: vec![addr],
-            rcs_state: RemoteControlState::Up,
-            target_state: TargetState::Product,
-            product_config: None,
-            board_config: None,
-            serial_number: Some("sn12345".to_string()),
-            is_manual: false,
-            boot_id: None,
-            is_default: None,
+        let handle = discovery::TargetHandle {
+            node_name: Some("test-device".to_string()),
+            state: discovery::TargetState::Product {
+                addrs: vec![addr],
+                serial: Some("sn12345".to_string()),
+            },
+            manual: false,
         };
 
-        let handle = discovery::TargetHandle::from(original_info.clone());
-        assert_eq!(handle.node_name.as_deref(), Some("test-device"));
-        match &handle.state {
-            discovery::TargetState::Product { addrs, serial } => {
-                assert_eq!(addrs, &vec![addr]);
-                assert_eq!(serial.as_deref(), Some("sn12345"));
-            }
-            _ => panic!("Expected Product target state"),
-        }
-
-        let roundtrip_info = TargetInfo::from(handle);
-        assert_eq!(roundtrip_info.nodename.as_deref(), Some("test-device"));
-        assert_eq!(roundtrip_info.target_state, TargetState::Product);
-        assert_eq!(roundtrip_info.addresses, vec![addr]);
-        assert_eq!(roundtrip_info.serial_number.as_deref(), Some("sn12345"));
-    }
-
-    #[test]
-    fn test_fastboot_target_info_to_target_handle() {
-        let original_info = TargetInfo {
-            nodename: Some("fastboot-device".to_string()),
-            addresses: vec![],
-            rcs_state: RemoteControlState::Unknown,
-            target_state: TargetState::Fastboot,
-            product_config: None,
-            board_config: None,
-            serial_number: Some("fb-serial-99".to_string()),
-            is_manual: false,
-            boot_id: None,
-            is_default: None,
-        };
-
-        let handle = discovery::TargetHandle::from(original_info);
-        match handle.state {
-            discovery::TargetState::Fastboot(fts) => {
-                assert_eq!(fts.serial_number, "fb-serial-99");
-                assert_eq!(fts.connection_state, discovery::FastbootConnectionState::Usb);
-            }
-            _ => panic!("Expected Fastboot state"),
-        }
-    }
-
-    #[test]
-    fn test_fastboot_target_info_with_usb_addr_to_target_handle() {
-        let original_info = TargetInfo {
-            nodename: Some("fastboot-usb-device".to_string()),
-            addresses: vec![TargetAddr::UsbCtx(42)],
-            rcs_state: RemoteControlState::Unknown,
-            target_state: TargetState::Fastboot,
-            product_config: None,
-            board_config: None,
-            serial_number: Some("fb-serial-usb-42".to_string()),
-            is_manual: false,
-            boot_id: None,
-            is_default: None,
-        };
-
-        let handle = discovery::TargetHandle::from(original_info);
-        match handle.state {
-            discovery::TargetState::Fastboot(fts) => {
-                assert_eq!(fts.serial_number, "fb-serial-usb-42");
-                assert_eq!(fts.connection_state, discovery::FastbootConnectionState::Usb);
-            }
-            _ => panic!("Expected Fastboot state"),
-        }
+        let info = TargetInfo::from(handle);
+        assert_eq!(info.nodename.as_deref(), Some("test-device"));
+        assert_eq!(info.target_state, TargetState::Product);
+        assert_eq!(info.addresses, vec![addr]);
+        assert_eq!(info.serial_number.as_deref(), Some("sn12345"));
     }
 }

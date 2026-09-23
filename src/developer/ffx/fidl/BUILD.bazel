@@ -11,12 +11,8 @@ fidl_library(
     srcs = [
         "daemon.fidl",
         "echo.fidl",
-        "fastboot.fidl",
-        "mdns.fidl",
         "overview.fidl",
         "target.fidl",
-        "testing.fidl",
-        "tracing.fidl",
         "tunnel.fidl",
     ],
     visibility = [
@@ -33,8 +29,6 @@ fidl_library(
         "//sdk/fidl/fuchsia.developer.remotecontrol",
         "//sdk/fidl/fuchsia.io",
         "//sdk/fidl/fuchsia.net",
-        "//sdk/fidl/fuchsia.tracing.controller",
-        "//sdk/fidl/fuchsia.version",
         "//zircon/vdso/zx",
     ],
 )

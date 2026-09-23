@@ -4,8 +4,6 @@
 
 use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, TargetState};
-use fidl_fuchsia_developer_ffx as ffx;
-use fidl_fuchsia_net as fnet;
 use safe_string::TermSafe;
 
 pub trait AsDiagnosticMessage {
@@ -23,7 +21,6 @@ impl AsDiagnosticMessage for u8 {
                 "For mDNS debugging, see: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution"
             }
             v if v == DiscoverySources::MANUAL.bits() => "",
-            v if v == DiscoverySources::EMULATOR.bits() => "",
             v if v == DiscoverySources::FASTBOOT_FILE.bits() => "",
             v if v == DiscoverySources::USB_VSOCK.bits() => "",
             v if v == DiscoverySources::USB_FASTBOOT.bits() => "",
@@ -43,101 +40,6 @@ pub struct ReadableQuery {
     pub kind: &'static str,
     /// The actual value behind the query.
     pub value: String,
-}
-
-fn format_ip_addr(ip: &fnet::IpAddress) -> String {
-    match ip {
-        fnet::IpAddress::Ipv4(ipv4) => std::net::Ipv4Addr::from(ipv4.addr).to_string(),
-        fnet::IpAddress::Ipv6(ipv6) => std::net::Ipv6Addr::from(ipv6.addr).to_string(),
-    }
-}
-
-fn format_target_ip(ip: &ffx::TargetIp) -> String {
-    let ip_str = format_ip_addr(&ip.ip);
-    if ip.scope_id > 0 { format!("{ip_str}%{}", ip.scope_id) } else { ip_str }
-}
-
-fn format_target_ip_port(ip_port: &ffx::TargetIpPort) -> String {
-    let ip_str = format_ip_addr(&ip_port.ip);
-    let s = if ip_port.scope_id > 0 { format!("{ip_str}%{}", ip_port.scope_id) } else { ip_str };
-
-    if matches!(&ip_port.ip, fnet::IpAddress::Ipv6(_)) {
-        format!("[{}]:{}", s, ip_port.port)
-    } else {
-        format!("{}:{}", s, ip_port.port)
-    }
-}
-
-fn format_target_addr_info(addr: &ffx::TargetAddrInfo) -> String {
-    match addr {
-        ffx::TargetAddrInfo::Ip(ip) => format_target_ip(ip),
-        ffx::TargetAddrInfo::IpPort(ip_port) => format_target_ip_port(ip_port),
-        ffx::TargetAddrInfo::Vsock(vsock) => {
-            format!("vsock(cid={}, namespace={:?})", vsock.cid, vsock.namespace)
-        }
-    }
-}
-
-fn format_target_ip_addr_info(addr: &ffx::TargetIpAddrInfo) -> String {
-    match addr {
-        ffx::TargetIpAddrInfo::Ip(ip) => format_target_ip(ip),
-        ffx::TargetIpAddrInfo::IpPort(ip_port) => format_target_ip_port(ip_port),
-    }
-}
-
-fn format_rcs_state(state: &ffx::RemoteControlState) -> &'static str {
-    match state {
-        ffx::RemoteControlState::Up => "Up",
-        ffx::RemoteControlState::Down => "Down",
-        ffx::RemoteControlState::Unknown => "Unknown",
-    }
-}
-
-fn format_fidl_target_state(state: &ffx::TargetState) -> &'static str {
-    match state {
-        ffx::TargetState::Unknown => "Unknown",
-        ffx::TargetState::Disconnected => "Disconnected",
-        ffx::TargetState::Product => "Product",
-        ffx::TargetState::Fastboot => "Fastboot",
-        ffx::TargetState::Zedboot => "Zedboot",
-    }
-}
-
-/// Formats a `TargetInfo` struct into a human-readable string.
-pub fn format_target_info(info: &ffx::TargetInfo) -> String {
-    let mut parts = Vec::new();
-    if let Some(nodename) = &info.nodename {
-        parts.push(format!("nodename: \"{}\"", TermSafe::from_str_escaped(nodename)));
-    }
-    if let Some(serial) = &info.serial_number {
-        parts.push(format!("serial: \"{}\"", TermSafe::from_str_escaped(serial)));
-    }
-    if let Some(addresses) = &info.addresses {
-        if !addresses.is_empty() {
-            let addrs_str =
-                addresses.iter().map(format_target_addr_info).collect::<Vec<_>>().join(", ");
-            parts.push(format!("addresses: [{addrs_str}]"));
-        }
-    }
-    if let Some(ssh_address) = &info.ssh_address {
-        parts.push(format!("ssh_address: {}", format_target_ip_addr_info(ssh_address)));
-    }
-    if let Some(state) = &info.target_state {
-        parts.push(format!("state: {}", format_fidl_target_state(state)));
-    }
-    if let Some(rcs_state) = &info.rcs_state {
-        parts.push(format!("rcs: {}", format_rcs_state(rcs_state)));
-    }
-    if let Some(product) = &info.product_config {
-        parts.push(format!("product: \"{}\"", TermSafe::from_str_escaped(product)));
-    }
-    if let Some(board) = &info.board_config {
-        parts.push(format!("board: \"{}\"", TermSafe::from_str_escaped(board)));
-    }
-    if info.is_manual.unwrap_or(false) {
-        parts.push("manual".to_string());
-    }
-    parts.join(", ")
 }
 
 /// Formats the target state into a human-readable string.
@@ -329,21 +231,6 @@ mod tests {
     }
 
     #[test]
-    fn test_format_target_info() {
-        let info = ffx::TargetInfo {
-            addresses: Some(vec![ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-                ip: fnet::IpAddress::Ipv6(fnet::Ipv6Address {
-                    addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                }),
-                scope_id: 2,
-                port: 22,
-            })]),
-            ..Default::default()
-        };
-        assert_eq!(format_target_info(&info), "addresses: [[fe80::1%2]:22]");
-    }
-
-    #[test]
     fn test_format_mdns_event() {
         let info = discovery::MdnsTargetInfo {
             nodename: Some("test-nodename".to_string()),
@@ -429,22 +316,18 @@ mod tests {
     }
     #[test]
     fn test_formatting_escapes_control_characters() {
-        let info = ffx::TargetInfo {
+        let info = discovery::MdnsTargetInfo {
             nodename: Some("node\x1b[31m_evil\n".to_string()),
             serial_number: Some("serial\x1b]0;hack\x07".to_string()),
-            product_config: Some("prod\x1b[2J_clear".to_string()),
-            board_config: Some("board\r\0".to_string()),
             ..Default::default()
         };
-        let formatted_info = format_target_info(&info);
+        let formatted_info = format_mdns_target_info(&info);
         assert!(!formatted_info.contains('\x1b'));
         assert!(!formatted_info.contains('\n'));
         assert!(!formatted_info.contains('\x07'));
-        assert!(!formatted_info.contains('\r'));
-        assert!(!formatted_info.contains('\0'));
         assert_eq!(
             formatted_info,
-            "nodename: \"node\\u{1b}[31m_evil\\n\", serial: \"serial\\u{1b}]0;hack\\u{7}\", product: \"prod\\u{1b}[2J_clear\", board: \"board\\r\\u{0}\""
+            "nodename: \"node\\u{1b}[31m_evil\\n\", serial: \"serial\\u{1b}]0;hack\\u{7}\""
         );
 
         let state_product =
