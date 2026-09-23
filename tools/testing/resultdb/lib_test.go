@@ -1587,3 +1587,304 @@ func TestTestCaseToResultSink_Location(t *testing.T) {
 		t.Errorf("Location diff: got %+v, want %+v", res.TestMetadata.Location, want)
 	}
 }
+
+func TestTestCaseToResultSink_StructuredTestID_TargetTest(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "fuchsia-pkg://fuchsia.com/my-package#meta/my-test.cm",
+		Status:    runtests.TestSuccess,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "FrobnicatedSuite.VerifyOutput",
+					SuiteName:   "FrobnicatedSuite",
+					CaseName:    "VerifyOutput",
+					Status:      runtests.TestSuccess,
+				},
+			},
+		},
+	}
+	results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	res := results[0]
+	if res.TestIdStructured == nil {
+		t.Fatalf("expected TestIdStructured to be set")
+	}
+	want := &sinkpb.TestIdentifier{
+		FineName:           "FrobnicatedSuite",
+		CaseNameComponents: []string{"VerifyOutput"},
+	}
+	if !proto.Equal(res.TestIdStructured, want) {
+		t.Errorf("TestIdStructured diff: got %+v, want %+v", res.TestIdStructured, want)
+	}
+	if wantID := "fuchsia-pkg://fuchsia.com/my-package#meta/my-test.cm/FrobnicatedSuite:VerifyOutput"; res.TestId != wantID {
+		t.Errorf("TestId diff: got %q, want %q", res.TestId, wantID)
+	}
+}
+
+func TestTestCaseToResultSink_StructuredTestID_HostTest(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "host_x64/absl_hardening_tests",
+		Status:    runtests.TestSuccess,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "AbseilHardeningTest.TestFeatureA",
+					SuiteName:   "AbseilHardeningTest",
+					CaseName:    "TestFeatureA",
+					Status:      runtests.TestSuccess,
+				},
+			},
+		},
+	}
+	results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	res := results[0]
+	if res.TestIdStructured == nil {
+		t.Fatalf("expected TestIdStructured to be set")
+	}
+	want := &sinkpb.TestIdentifier{
+		FineName:           "AbseilHardeningTest",
+		CaseNameComponents: []string{"TestFeatureA"},
+	}
+	if !proto.Equal(res.TestIdStructured, want) {
+		t.Errorf("TestIdStructured diff: got %+v, want %+v", res.TestIdStructured, want)
+	}
+	if wantID := "host_x64/absl_hardening_tests/AbseilHardeningTest:TestFeatureA"; res.TestId != wantID {
+		t.Errorf("TestId diff: got %q, want %q", res.TestId, wantID)
+	}
+}
+
+func TestTestCaseToResultSink_StructuredTestID_Exoneration(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "fuchsia-pkg://fuchsia.com/my-package#meta/my-test.cm",
+		Status:    runtests.TestFailure,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "Suite.ExoneratedCase",
+					SuiteName:   "Suite",
+					CaseName:    "ExoneratedCase",
+					Status:      runtests.TestExonerated,
+				},
+			},
+		},
+	}
+	_, exonerations, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	if len(exonerations) != 1 {
+		t.Fatalf("expected 1 exoneration, got %d", len(exonerations))
+	}
+	exon := exonerations[0]
+	if exon.TestIdStructured == nil {
+		t.Fatalf("expected TestIdStructured to be set on exoneration")
+	}
+	want := &sinkpb.TestIdentifier{
+		FineName:           "Suite",
+		CaseNameComponents: []string{"ExoneratedCase"},
+	}
+	if !proto.Equal(exon.TestIdStructured, want) {
+		t.Errorf("Exoneration TestIdStructured diff: got %+v, want %+v", exon.TestIdStructured, want)
+	}
+	if wantID := "fuchsia-pkg://fuchsia.com/my-package#meta/my-test.cm/Suite:ExoneratedCase"; exon.TestId != wantID {
+		t.Errorf("Exoneration TestId diff: got %q, want %q", exon.TestId, wantID)
+	}
+}
+
+func TestTestDetailsToResultSink_StructuredTestID(t *testing.T) {
+	outputRoot := t.TempDir()
+
+	t.Run("target test", func(t *testing.T) {
+		detail := &runtests.TestDetails{
+			Name:      "fuchsia-pkg://fuchsia.com/my-package#meta/my-test.cm",
+			Status:    runtests.TestExonerated,
+			StartTime: time.Now(),
+		}
+		res, exon, _, err := testDetailsToResultSink([]*resultpb.StringPair{}, detail, outputRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := &sinkpb.TestIdentifier{
+			FineName:           "test",
+			CaseNameComponents: []string{"case"},
+		}
+		if !proto.Equal(res.TestIdStructured, want) {
+			t.Errorf("TestIdStructured diff: got %+v, want %+v", res.TestIdStructured, want)
+		}
+		if exon == nil || exon.TestIdStructured == nil {
+			t.Fatalf("expected exoneration with TestIdStructured")
+		}
+		if !proto.Equal(exon.TestIdStructured, want) {
+			t.Errorf("Exoneration TestIdStructured diff: got %+v, want %+v", exon.TestIdStructured, want)
+		}
+	})
+
+	t.Run("host test", func(t *testing.T) {
+		detail := &runtests.TestDetails{
+			Name:      "host_x64/standalone_tool_test",
+			Status:    runtests.TestSuccess,
+			StartTime: time.Now(),
+		}
+		res, _, _, err := testDetailsToResultSink([]*resultpb.StringPair{}, detail, outputRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := &sinkpb.TestIdentifier{
+			FineName:           "test",
+			CaseNameComponents: []string{"case"},
+		}
+		if !proto.Equal(res.TestIdStructured, want) {
+			t.Errorf("TestIdStructured diff: got %+v, want %+v", res.TestIdStructured, want)
+		}
+	})
+
+	t.Run("test with cases has nil TestIdStructured", func(t *testing.T) {
+		detail := &runtests.TestDetails{
+			Name:      "fuchsia-pkg://fuchsia.com/my-package#meta/my-test.cm",
+			Status:    runtests.TestSuccess,
+			StartTime: time.Now(),
+			TestResult: runtests.TestResult{
+				Cases: []runtests.TestCaseResult{
+					{
+						SuiteName: "Suite",
+						CaseName:  "Case",
+						Status:    runtests.TestSuccess,
+					},
+				},
+			},
+		}
+		res, _, _, err := testDetailsToResultSink([]*resultpb.StringPair{}, detail, outputRoot)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.TestId != detail.Name {
+			t.Errorf("TestId diff: got %q, want %q", res.TestId, detail.Name)
+		}
+		if res.TestIdStructured != nil {
+			t.Errorf("expected TestIdStructured to be nil when cases exist, got: %+v", res.TestIdStructured)
+		}
+	})
+}
+
+func TestTestCaseToResultSink_StructuredTestID_LeadingDisallowedChars(t *testing.T) {
+	outputRoot := t.TempDir()
+
+	testCases := []struct {
+		name         string
+		suiteName    string
+		caseName     string
+		wantFine     string
+		wantCase     string
+		wantLegacyID string
+	}{
+		{
+			name:         "component URL fragment case name starting with hash",
+			suiteName:    "",
+			caseName:     "#meta/test.cm",
+			wantFine:     "",
+			wantCase:     "[#meta/test.cm]",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/:#meta/test.cm",
+		},
+		{
+			name:         "quoted case name starting with double quote",
+			suiteName:    "TestParseValues",
+			caseName:     "\"hello\"",
+			wantFine:     "TestParseValues",
+			wantCase:     "[\"hello\"]",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/TestParseValues:\"hello\"",
+		},
+		{
+			name:         "case name with multiple leading disallowed characters and spaces",
+			suiteName:    "my-suite",
+			caseName:     "   #!test_case",
+			wantFine:     "my-suite",
+			wantCase:     "[   #!test_case]",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/my-suite:   #!test_case",
+		},
+		{
+			name:         "leading asterisk is wrapped in brackets",
+			suiteName:    "MySuite",
+			caseName:     "*fixture",
+			wantFine:     "MySuite",
+			wantCase:     "[*fixture]",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/MySuite:*fixture",
+		},
+		{
+			name:         "regular case name without disallowed prefix is unchanged",
+			suiteName:    "MySuite",
+			caseName:     "MyCase",
+			wantFine:     "MySuite",
+			wantCase:     "MyCase",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/MySuite:MyCase",
+		},
+		{
+			name:         "empty case name produces empty case component",
+			suiteName:    "MySuite",
+			caseName:     "",
+			wantFine:     "MySuite",
+			wantCase:     "",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/MySuite:",
+		},
+		{
+			name:         "case name starting with hash is wrapped in brackets",
+			suiteName:    "MySuite",
+			caseName:     "###",
+			wantFine:     "MySuite",
+			wantCase:     "[###]",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/MySuite:###",
+		},
+		{
+			name:         "case name with single double quote is wrapped in brackets",
+			suiteName:    "TestFailsParseValues",
+			caseName:     "\"",
+			wantFine:     "TestFailsParseValues",
+			wantCase:     "[\"]",
+			wantLegacyID: "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm/TestFailsParseValues:\"",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			detail := &runtests.TestDetails{
+				Name:      "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-test.cm",
+				Status:    runtests.TestSuccess,
+				StartTime: time.Now(),
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{
+						{
+							SuiteName: tc.suiteName,
+							CaseName:  tc.caseName,
+							Status:    runtests.TestSuccess,
+						},
+					},
+				},
+			}
+			results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			res := results[0]
+			if res.TestIdStructured == nil {
+				t.Fatalf("expected TestIdStructured to be set")
+			}
+			want := &sinkpb.TestIdentifier{
+				FineName:           tc.wantFine,
+				CaseNameComponents: []string{tc.wantCase},
+			}
+			if !proto.Equal(res.TestIdStructured, want) {
+				t.Errorf("TestIdStructured diff: got %+v, want %+v", res.TestIdStructured, want)
+			}
+			if res.TestId != tc.wantLegacyID {
+				t.Errorf("legacy TestId diff: got %q, want %q", res.TestId, tc.wantLegacyID)
+			}
+		})
+	}
+}

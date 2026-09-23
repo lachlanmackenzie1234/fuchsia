@@ -337,10 +337,12 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 		}
 
 		properties, testCaseTags := testCaseProperties(testCase, testDetail, tags)
+		testIDStructured := testIdentifierFromCase(&testCase)
 		r := sinkpb.TestResult{
-			TestId:     testID,
-			Tags:       testCaseTags,
-			Properties: properties,
+			TestId:           testID,
+			TestIdStructured: testIDStructured,
+			Tags:             testCaseTags,
+			Properties:       properties,
 		}
 		testCaseStatus, testCaseFailureReasonKind, err := resultDBStatus(testCase.Status)
 		if err != nil {
@@ -375,13 +377,32 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 
 		if testCase.Status == runtests.TestExonerated {
 			testExonerations = append(testExonerations, &sinkpb.TestExoneration{
-				TestId:          testID,
-				ExplanationHtml: fmt.Sprintf("Test case %s was exonerated in the test summary.", testCase.CaseName),
-				Reason:          resultpb.ExonerationReason_NOT_CRITICAL,
+				TestId:           testID,
+				TestIdStructured: testIDStructured,
+				ExplanationHtml:  fmt.Sprintf("Test case %s was exonerated in the test summary.", testCase.CaseName),
+				Reason:           resultpb.ExonerationReason_NOT_CRITICAL,
 			})
 		}
 	}
 	return testResults, testExonerations, testsSkipped
+}
+
+// testIdentifierFromCase constructs a sinkpb.TestIdentifier for an individual test case.
+func testIdentifierFromCase(testCase *runtests.TestCaseResult) *sinkpb.TestIdentifier {
+	caseName := testCase.CaseName
+	// ResultDB reserves characters <= ',' (ASCII U+0020 to U+002C, such as ' ',
+	// '!', '"', '#', etc.) as leading characters for case names and rejects
+	// results starting with them. Wrap any case name starting with a reserved
+	// character in brackets to preserve the original name while satisfying
+	// ResultDB constraints.
+	if len(caseName) > 0 && caseName[0] <= ',' {
+		caseName = fmt.Sprintf("[%s]", caseName)
+	}
+
+	return &sinkpb.TestIdentifier{
+		FineName:           testCase.SuiteName,
+		CaseNameComponents: []string{caseName},
+	}
 }
 
 // testDetailsToResultSink converts TestDetail defined in /tools/testing/runtests/runtests.go
@@ -394,10 +415,22 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	}
 
 	properties, testTags := testDetailProperties(testDetail, tags)
+	var testIDStructured *sinkpb.TestIdentifier
+	if len(testDetail.Cases) == 0 {
+		// If a test has no individual test cases, the top-level test itself is the
+		// test case. Populate FineName and CaseNameComponents with default values
+		// so that ResultSink validation succeeds. When test cases exist,
+		// test_id_structured is reported only on those cases and left nil here.
+		testIDStructured = &sinkpb.TestIdentifier{
+			FineName:           "test",
+			CaseNameComponents: []string{"case"},
+		}
+	}
 	r := sinkpb.TestResult{
-		TestId:     testDetail.Name,
-		Tags:       testTags,
-		Properties: properties,
+		TestId:           testDetail.Name,
+		TestIdStructured: testIDStructured,
+		Tags:             testTags,
+		Properties:       properties,
 	}
 	testStatus, failureReasonKind, err := resultDBStatus(testDetail.Status)
 	if err != nil {
@@ -431,9 +464,10 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 
 	if testDetail.Status == runtests.TestExonerated {
 		return &r, &sinkpb.TestExoneration{
-			TestId:          testDetail.Name,
-			ExplanationHtml: fmt.Sprintf("Test target %s was exonerated in the test summary.", testDetail.Name),
-			Reason:          resultpb.ExonerationReason_NOT_CRITICAL,
+			TestId:           testDetail.Name,
+			TestIdStructured: testIDStructured,
+			ExplanationHtml:  fmt.Sprintf("Test target %s was exonerated in the test summary.", testDetail.Name),
+			Reason:           resultpb.ExonerationReason_NOT_CRITICAL,
 		}, "", nil
 	}
 
