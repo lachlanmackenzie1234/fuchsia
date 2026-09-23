@@ -178,6 +178,18 @@ impl RcuReadCounters {
     }
 }
 
+pub(crate) fn rcu_critical_section() -> RseqCriticalSection {
+    // SAFETY: `rcu_rseq_add_start`, `rcu_rseq_add_post`, and `rcu_rseq_add_abort` are valid
+    // labels defined in the `rcu_rseq_add` assembly block below that bound the restartable
+    // sequence and its abort target.
+    unsafe {
+        let start = &raw const rcu_rseq_add_start as u64;
+        let post = &raw const rcu_rseq_add_post as u64;
+        let abort = &raw const rcu_rseq_add_abort as u64;
+        RseqCriticalSection::new(start, post - start, abort)
+    }
+}
+
 /// Adds a value to a counter using Restartable Sequences (RSEQ).
 ///
 /// This function attempts to atomically add `value` to the memory location pointed to by `counter`.
@@ -185,17 +197,13 @@ impl RcuReadCounters {
 ///
 /// # Safety
 ///
-/// The caller must ensure that `counter` points to a per-CPU counter for the given CPU.
+/// The caller must ensure that `counter` points to a per-CPU counter for the given CPU and that
+/// `rcu_critical_section()` is currently active in `rseq` for the calling thread.
 unsafe fn rseq_add(rseq: &Rseq, counter: *mut usize, value: usize, cpu: u32) -> bool {
-    unsafe {
-        let start = &rcu_rseq_add_start as *const u8 as u64;
-        let post = &rcu_rseq_add_post as *const u8 as u64;
-        let abort = &rcu_rseq_add_abort as *const u8 as u64;
-
-        let cs = RseqCriticalSection::new(start, post - start, abort);
-        let _scope = rseq.activate(cs);
-        rcu_rseq_add(counter, value, rseq.as_ptr(), cpu)
-    }
+    // SAFETY: The caller guarantees `counter` is valid for `cpu` and `rseq` has
+    // `rcu_critical_section()` registered to abort if preempted or migrated before
+    // `rcu_rseq_add_post`.
+    unsafe { rcu_rseq_add(counter, value, rseq.as_ptr(), cpu) }
 }
 
 // These symbols are defined in assembly below.

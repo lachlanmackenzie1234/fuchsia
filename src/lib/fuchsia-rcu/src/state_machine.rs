@@ -97,7 +97,7 @@ impl RcuThreadBlock {
 impl Default for RcuThreadBlock {
     fn default() -> Self {
         #[cfg(feature = "rseq_backend")]
-        fuchsia_rseq::rseq_register_thread();
+        fuchsia_rseq::rseq_register_thread_with_cs(crate::read_counters::rcu_critical_section());
 
         Self { nesting_level: AtomicUsize::new(0), counter_index: AtomicU8::new(0) }
     }
