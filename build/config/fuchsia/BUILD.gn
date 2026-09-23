@@ -184,14 +184,9 @@ config("fdio_config") {
 config("executable_config") {
 }
 
+# LINT.IfChange(zircon_asserts)
 config("enable_zircon_asserts") {
-  # BAZEL_MIGRATION_NOTE: A Bazel C++ target that wants to force this feature
-  # should use `features = ["enable_zircon_asserts"]` in its definition.
-  # To disable the feature, use `features = ["-enable_zircon_asserts"]
-  #
-  # LINT.IfChange(enable_zircon_asserts_flags)
   defines = [ "ZX_ASSERT_LEVEL=2" ]
-  # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:enable_zircon_asserts_flags)
 }
 
 config("zircon_asserts") {
@@ -199,6 +194,8 @@ config("zircon_asserts") {
     configs = [ ":enable_zircon_asserts" ]
   }
 }
+
+# LINT.ThenChange(//build/config/fuchsia/BUILD.bazel:zircon_asserts)
 
 config("no_cpp_standard_library") {
   ldflags = [ "-nostdlib++" ]

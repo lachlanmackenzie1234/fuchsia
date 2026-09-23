@@ -4,14 +4,14 @@
 
 # LINT.IfChange
 
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
 package(
     default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:public"],
 )
 
-cc_library(
+fx_cc_library(
     name = "common",
     srcs = [
         "channel.cc",
@@ -32,7 +32,7 @@ cc_library(
         "include/wlan/common/mac_frame.h",
         "include/wlan/common/mcs_rate_lookup.h",
     ],
-    features = ["enable_zircon_asserts"],
+    build_flags = ["//build/config/fuchsia:enable_zircon_asserts"],
     includes = ["include"],
     deps = [
         "//src/connectivity/wlan/drivers/lib/macaddr",

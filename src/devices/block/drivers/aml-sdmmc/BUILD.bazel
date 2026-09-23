@@ -13,6 +13,7 @@ load(
     "fuchsia_structured_config_cpp_elf_lib",
     "fuchsia_structured_config_values",
 )
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -30,20 +31,19 @@ fuchsia_driver_bind_bytecode(
     ],
 )
 
-fuchsia_cc_driver(
-    name = "aml-sdmmc-driver",
+fx_cc_library(
+    name = "common",
     srcs = [
         "aml-sdmmc.cc",
         "aml-sdmmc.h",
         "aml-sdmmc-export.cc",
         "aml-sdmmc-regs.h",
     ],
+    build_flags = ["//build/config/fuchsia:enable_zircon_asserts"],
     defines = [
         "_ALL_SOURCE",
         "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS=1",
     ],
-    features = ["enable_zircon_asserts"],
-    output_name = "aml-sdmmc",
     deps = [
         ":aml-sdmmc-config",
         "//sdk/lib/driver/compat/cpp",
@@ -75,6 +75,12 @@ fuchsia_cc_driver(
         "@fuchsia_sdk//pkg/trace",
         "@fuchsia_sdk//pkg/zx",
     ],
+)
+
+fuchsia_cc_driver(
+    name = "aml-sdmmc-driver",
+    output_name = "aml-sdmmc",
+    deps = [":common"],
 )
 
 fuchsia_component_manifest(
