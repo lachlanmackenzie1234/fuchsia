@@ -12,6 +12,7 @@ use super::vm_object_paged::VmObjectPaged;
 use super::vm_page_list::VmPageSpliceList;
 use crate::kernel::types::PAddr;
 use crate::user_copy::{UserInPtr, UserOutPtr};
+use core::convert::Infallible;
 use core::ffi::c_void;
 use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{ManuallyDrop, MaybeUninit};
@@ -19,7 +20,9 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use kalloc::AllocError;
+use ksync::{KMutex, KMutexGuard, LockToken, RawCriticalMutex};
 use page;
+use pin_init::PinInit;
 use vm_object_bindings as bindings;
 use zr::Opaque;
 use zx_status::Status;
@@ -34,6 +37,10 @@ pub use zx_types::zx_vmo_lock_state_t;
 pub type SupplyOptions = bindings::SupplyOptions;
 
 pub type VmObjectReadWriteOptions = bindings::VmObjectReadWriteOptions;
+
+pub use crate::vm::vm_cow_pages::VmCowPagesLockClass as VmObjectLockClass;
+
+pub type VmObjectMutex = KMutex<VmObjectLockClass, RawCriticalMutex>;
 
 /// The base vm object that holds a range of bytes of data
 ///
@@ -86,8 +93,13 @@ impl VmObject {
 
     /// Returns the size of the VMO in bytes.
     pub fn size(&self) -> u64 {
-        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
-        unsafe { bindings::cpp_vm_object_size(self.as_raw()) }
+        ksync::lock!(let guard = self.lock());
+        self.size_locked(guard.token())
+    }
+
+    pub fn size_locked(&self, _token: &LockToken<'_, VmObjectLockClass>) -> u64 {
+        // SAFETY: self.as_raw() is a valid VmObject pointer and the VMO lock is held.
+        unsafe { bindings::cpp_vm_object_size_locked(self.as_raw()) }
     }
 
     /// Returns whether the VMO is resizable.
@@ -111,6 +123,19 @@ impl VmObject {
     pub fn is_stream_compatible(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
         unsafe { bindings::cpp_vm_object_is_stream_compatible(self.as_raw()) }
+    }
+
+    #[inline]
+    pub fn lock(
+        &self,
+    ) -> impl PinInit<KMutexGuard<'_, VmObjectLockClass, RawCriticalMutex>, Infallible> {
+        self.lock_ref().lock()
+    }
+
+    #[inline]
+    pub fn lock_ref(&self) -> &VmObjectMutex {
+        // SAFETY: The pointer returned by cpp_vm_object_lock is valid for reads for the lifetime of self.
+        unsafe { &*bindings::cpp_vm_object_lock(self.as_raw()).cast::<VmObjectMutex>() }
     }
 
     /// Resizes the VMO to the given size.
@@ -788,6 +813,11 @@ unsafe impl Recyclable for VmObject {
 #[unittest::suite(name = "vm_object_tests")]
 mod tests {
     use super::VmObject;
+    use crate::vm::pmm::ALLOC_FLAG_ANY;
+    use crate::vm::scanner::AutoVmScannerDisable;
+    use page::SIZE as PAGE_SIZE_USIZE;
+    use unittest::{expect_eq, unwrap_ok};
+    const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
 
     /// Tests rounding sizes to page boundaries without overflowing.
     #[test]
@@ -800,5 +830,15 @@ mod tests {
             2 * page::SIZE as u64
         );
         unittest::expect_true!(VmObject::round_size(u64::MAX).is_err());
+    }
+
+    /// Tests querying size under the VMO object lock.
+    #[test]
+    fn vmo_object_lock_size_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        ksync::lock!(let guard = vmo.lock());
+        expect_eq!(vmo.size_locked(guard.token()), PAGE_SIZE);
+        let _ = vmo.lock_ref();
     }
 }

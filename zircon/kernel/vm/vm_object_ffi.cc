@@ -25,7 +25,10 @@ FFI_ALWAYS_INLINE void* cpp_vm_object_get_ref_counted(const VmObject* vmo) {
 
 FFI_ALWAYS_INLINE void cpp_vm_object_free(VmObject* vmo) { delete vmo; }
 
-FFI_ALWAYS_INLINE uint64_t cpp_vm_object_size(const VmObject* vmo) { return vmo->size(); }
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_size_locked(const VmObject* vmo)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->size_locked();
+}
 
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_resizable(const VmObject* vmo) {
   return vmo->is_resizable();
@@ -38,6 +41,8 @@ FFI_ALWAYS_INLINE bool cpp_vm_object_is_contiguous(const VmObject* vmo) {
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_stream_compatible(const VmObject* vmo) {
   return vmo->is_stream_compatible();
 }
+
+FFI_ALWAYS_INLINE void* cpp_vm_object_lock(const VmObject* vmo) { return vmo->lock(); }
 
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_resize(VmObject* vmo, uint64_t size) {
   return vmo->Resize(size);
