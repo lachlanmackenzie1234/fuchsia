@@ -136,7 +136,7 @@ pub struct DmlStaticMetadata {
     pub data: Option<Vec<u8>>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct DmlChild {
     pub name: String,
     pub id: Option<u32>,
@@ -144,6 +144,7 @@ pub struct DmlChild {
     pub compatible: Option<String>,
     #[serde(default)]
     pub metadata: Vec<DmlStaticMetadata>,
+    pub disabled: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
@@ -830,7 +831,6 @@ mod tests {
             assert!(defs.contains_key(key), "Missing key definition '{}' in dml.schema.json", key);
         }
     }
-
     #[test]
     fn test_board_dml_offer_and_offers_alias() {
         let json_offer = r##"{
@@ -1400,5 +1400,43 @@ mod tests {
 
         let _ = fs::remove_file(&file_path);
         let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn test_dml_child_disabled() {
+        let child_none = DmlChild {
+            name: "test".to_string(),
+            id: None,
+            url: None,
+            compatible: None,
+            metadata: vec![],
+            disabled: None,
+        };
+        assert_eq!(child_none.disabled, None);
+
+        let child_disabled = DmlChild { disabled: Some(true), ..child_none.clone() };
+        assert_eq!(child_disabled.disabled, Some(true));
+
+        let child_enabled = DmlChild { disabled: Some(false), ..child_none.clone() };
+        assert_eq!(child_enabled.disabled, Some(false));
+
+        // Test serde deserialization with JSON5 / JSON
+        let parsed_disabled: DmlChild = serde_json5::from_str(
+            r#"{
+                name: "parsed_child",
+                disabled: true
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(parsed_disabled.disabled, Some(true));
+
+        let parsed_enabled: DmlChild = serde_json5::from_str(
+            r#"{
+                name: "parsed_enabled",
+                disabled: false
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(parsed_enabled.disabled, Some(false));
     }
 }

@@ -424,13 +424,28 @@ pub async fn publish_dml_devices(
     parser_config: &DmlParserConfig,
     driver_metadata: Option<&DriverSpecificMetadata>,
     driver_power_configs: Option<&DriverSpecificPowerConfigs>,
+    enabled_nodes: &[String],
 ) -> anyhow::Result<()> {
     let mut provider_metadata = HashMap::<String, Vec<fpbus::Metadata>>::new();
 
+    let devices = config
+        .devices
+        .as_ref()
+        .ok_or_else(|| anyhow!("devices field is missing in BoardConfig"))?;
+
+    let disabled_devices: HashSet<&str> = devices
+        .iter()
+        .filter(|d| crate::is_device_disabled(d, enabled_nodes))
+        .filter_map(|d| d.name.as_deref())
+        .collect();
+
     // 1. Generate driver specific metadata for devices in config
-    if let (Some(drv_meta), Some(devices)) = (driver_metadata, &config.devices) {
+    if let Some(drv_meta) = driver_metadata {
         for dev in devices {
             let name = dev.name.as_deref().unwrap_or("");
+            if disabled_devices.contains(name) {
+                continue;
+            }
             if let Some(generators) = drv_meta.get(name) {
                 for (metadata_id, gen_fn) in *generators {
                     let data = gen_fn()
@@ -445,11 +460,14 @@ pub async fn publish_dml_devices(
         }
     }
 
-    let devices = config
-        .devices
-        .as_ref()
-        .ok_or_else(|| anyhow!("devices field is missing in BoardConfig"))?;
     for (idx, dev) in devices.iter().enumerate() {
+        let dev_name = dev.name.as_deref().unwrap_or("");
+        if disabled_devices.contains(dev_name) {
+            continue;
+        }
+        if dev.disabled.unwrap_or(false) {
+            log::info!("Publishing disabled DML device '{}' due to runtime override", dev_name);
+        }
         let instance_id = idx as u32 + 1;
         let mut node = fpbus::Node {
             name: dev.name.clone(),
@@ -559,7 +577,6 @@ pub async fn publish_dml_devices(
             }
         }
 
-        let dev_name = dev.name.as_deref().unwrap_or("");
         if let Some(meta) = provider_metadata.get(dev_name) {
             metadata_list.extend(meta.clone());
         }
@@ -580,6 +597,9 @@ pub async fn publish_dml_devices(
         let mut generated_keys = HashSet::new();
         if let Some(aggregates) = &config.aggregates {
             for (agg_idx, agg) in aggregates.iter().enumerate() {
+                if agg.provider.as_deref().is_some_and(|p| disabled_devices.contains(p)) {
+                    continue;
+                }
                 if let Some(resources) = &agg.resources {
                     for res in resources {
                         if res.node.as_deref() == dev.name.as_deref() {

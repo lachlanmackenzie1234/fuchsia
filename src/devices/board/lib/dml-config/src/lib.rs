@@ -180,5 +180,54 @@ pub fn pdev_constraints<'a>(
         })
 }
 
+pub fn is_node_force_enabled(dev_name: &str, enabled_nodes: &[String]) -> bool {
+    enabled_nodes.iter().any(|n| {
+        n == dev_name
+            || n.trim_start_matches('/').replace('@', "-") == dev_name
+            || n.rsplit('/').next().unwrap_or(n).replace('@', "-") == dev_name
+    })
+}
+
+pub fn is_device_disabled(dev: &Device, enabled_nodes: &[String]) -> bool {
+    if !dev.disabled.unwrap_or(false) {
+        return false;
+    }
+    let name = dev.name.as_deref().unwrap_or("");
+    !is_node_force_enabled(name, enabled_nodes)
+}
+
+#[cfg(target_os = "fuchsia")]
+pub use board_structured_config::Config as StructuredConfig;
+
 #[cfg(target_os = "fuchsia")]
 pub mod parser;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_device_disabled_and_runtime_override() {
+        let dev_enabled = Device { name: Some("dev_a".to_string()), ..Default::default() };
+        let dev_explicit_enabled =
+            Device { name: Some("dev_b".to_string()), disabled: Some(false), ..Default::default() };
+        let dev_disabled = Device {
+            name: Some("pcie-c500000".to_string()),
+            disabled: Some(true),
+            ..Default::default()
+        };
+
+        assert!(!is_device_disabled(&dev_enabled, &[]));
+        assert!(!is_device_disabled(&dev_explicit_enabled, &[]));
+        assert!(is_device_disabled(&dev_disabled, &[]));
+
+        // Runtime override by exact DML node name
+        assert!(!is_device_disabled(&dev_disabled, &["pcie-c500000".to_string()]));
+
+        // Runtime override by devicetree path format (e.g. "/pcie@c500000")
+        assert!(!is_device_disabled(&dev_disabled, &["/pcie@c500000".to_string()]));
+
+        // Unrelated enabled_nodes entry leaves it disabled
+        assert!(is_device_disabled(&dev_disabled, &["other-node".to_string()]));
+    }
+}

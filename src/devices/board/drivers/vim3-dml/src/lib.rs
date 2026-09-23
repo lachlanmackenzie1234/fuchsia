@@ -70,7 +70,10 @@ impl Driver for Vim3DmlDriver {
             .context("GetBoardInfo returned error")?;
         info!("Board info: {board_info:?}");
 
-        // Verify board name if needed, but VIM3 should be fine.
+        let enabled_nodes = context
+            .take_config::<dml_config::StructuredConfig>()
+            .map(|c| c.enabled_nodes)
+            .unwrap_or_default();
 
         publish_dml_devices(
             &pbus,
@@ -79,6 +82,7 @@ impl Driver for Vim3DmlDriver {
             &DEFAULT_DML_PARSER_CONFIG,
             Some(&driver_specific_data::VIM3_DRIVER_METADATA),
             None,
+            &enabled_nodes,
         )
         .await
         .context("Failed to publish DML devices")?;

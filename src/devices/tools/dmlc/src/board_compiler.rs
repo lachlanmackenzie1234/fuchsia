@@ -491,6 +491,7 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
         let idx = get_or_create_device_idx(&mut devices, &child.name, child.url.clone());
         devices[idx].compatible = child.compatible.clone();
         devices[idx].id = child.id;
+        devices[idx].disabled = child.disabled;
         // Map the child device name to its driver's config ID in `driver_config_map`.
         if let Some(url) = &child.url {
             // Extract driver name from component URL (e.g. "fuchsia-pkg://.../buttons#meta/buttons.cm" -> "buttons").
@@ -2000,7 +2001,6 @@ mod tests {
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
-
     #[test]
     fn test_compile_board_offer_metadata() {
         use std::collections::HashMap;
@@ -2127,5 +2127,105 @@ mod tests {
         let _ = fs::remove_file(&bind_out);
         let _ = fs::remove_file(&cml_out);
         let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn test_disabled_device_configuration() {
+        let temp_dir = std::env::temp_dir().join("test_temp_disabled_device");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "node_disabled",
+                        "compatible": "fuchsia,disabled",
+                        "disabled": true
+                    },
+                    {
+                        "name": "node_explicit_false",
+                        "compatible": "fuchsia,explicit-false",
+                        "disabled": false
+                    },
+                    {
+                        "name": "node_enabled",
+                        "compatible": "fuchsia,enabled"
+                    }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "name": "pdev",
+                        "to": "#node_disabled"
+                    },
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "name": "pdev",
+                        "to": "#node_offer_only"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+        let devices = board_config.devices.as_ref().unwrap();
+
+        let disabled = devices.iter().find(|d| d.name.as_deref() == Some("node_disabled")).unwrap();
+        assert_eq!(disabled.disabled, Some(true));
+
+        let explicit_false =
+            devices.iter().find(|d| d.name.as_deref() == Some("node_explicit_false")).unwrap();
+        assert_eq!(explicit_false.disabled, Some(false));
+
+        let normal = devices.iter().find(|d| d.name.as_deref() == Some("node_enabled")).unwrap();
+        assert_eq!(normal.disabled, None);
+
+        let offer_only =
+            devices.iter().find(|d| d.name.as_deref() == Some("node_offer_only")).unwrap();
+        assert_eq!(offer_only.disabled, None);
+
+        // Verify that offers to disabled devices are preserved in aggregates so they can be
+        // enabled at runtime via `fuchsia.driver.devicetree.EnabledNodes`.
+        let aggregates = board_config.aggregates.as_ref().unwrap();
+        let has_disabled_resource = aggregates.iter().any(|agg| {
+            agg.resources
+                .as_ref()
+                .is_some_and(|res| res.iter().any(|r| r.node.as_deref() == Some("node_disabled")))
+        });
+        assert!(has_disabled_resource);
+
+        // Verify runtime override helper behavior with `enabled_nodes`.
+        assert!(fbdc::is_device_disabled(disabled, &[]));
+        assert!(!fbdc::is_device_disabled(disabled, &["node_disabled".to_string()]));
+        assert!(!fbdc::is_device_disabled(disabled, &["/node_disabled".to_string()]));
+        assert!(fbdc::is_node_force_enabled("pcie-c500000", &["/pcie@c500000".to_string()]));
+        assert!(!fbdc::is_device_disabled(explicit_false, &[]));
+        assert!(!fbdc::is_device_disabled(normal, &[]));
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
