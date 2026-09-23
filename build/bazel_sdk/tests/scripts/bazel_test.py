@@ -236,7 +236,7 @@ def _relative_path(path: Path) -> Path:
 
 
 def _depfile_quote(path: str) -> str:
-    """Quote a path properly for depfiles, if necessary.
+    r"""Quote a path properly for depfiles, if necessary.
 
     shlex.quote() does not work because paths with spaces
     are simply encased in single-quotes, while the Ninja
