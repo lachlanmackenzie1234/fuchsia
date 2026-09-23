@@ -8,6 +8,8 @@
 
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use futures::TryStreamExt;
+use refaults_vmo::{AtomicBitVec, Growable, PageRefaultCounter};
+use starnix_core::mm::PAGE_SIZE;
 use starnix_logging::{log_debug, log_error, log_warn, with_zx_name};
 use starnix_sync::{LockDepMutex, PagerFilesByInodeLock, PagerFilesystemsLock};
 use starnix_uapi::errors::Errno;
@@ -123,6 +125,7 @@ pub struct Pager {
     zero_vmo: zx::Vmo,
     next_filesystem_id: AtomicU32,
     filesystems: LockDepMutex<HashMap<u32, Arc<Filesystem>>, PagerFilesystemsLock>,
+    page_refault_counter: PageRefaultCounter,
 }
 
 impl Pager {
@@ -139,7 +142,15 @@ impl Pager {
             ),
             next_filesystem_id: AtomicU32::new(1),
             filesystems: Default::default(),
+            page_refault_counter: PageRefaultCounter::new().map_err(|error| {
+                log_error!(error:?; "PageRefaultCounter::new failed");
+                errno!(EINVAL)
+            })?,
         })
+    }
+
+    pub fn page_refault_counter(&self) -> &PageRefaultCounter {
+        &self.page_refault_counter
     }
 
     /// Starts the pager threads.
@@ -288,16 +299,21 @@ impl Filesystem {
         let (file, did_create) = {
             match self.files_by_inode.lock().entry(inode_num) {
                 Entry::Occupied(o) => (o.get().clone(), false),
-                Entry::Vacant(v) => (
-                    v.insert(Arc::new(PagedFile {
-                        vmo: self
-                            .pager
-                            .create_pager_vmo(self.port_key_for_inode(inode_num), size)?,
-                        extents,
-                    }))
-                    .clone(),
-                    true,
-                ),
+                Entry::Vacant(v) => {
+                    let num_pages = size.div_ceil(*PAGE_SIZE);
+                    let chunks_supplied = AtomicBitVec::new(num_pages);
+                    (
+                        v.insert(Arc::new(PagedFile {
+                            vmo: self
+                                .pager
+                                .create_pager_vmo(self.port_key_for_inode(inode_num), size)?,
+                            extents,
+                            chunks_supplied,
+                        }))
+                        .clone(),
+                        true,
+                    )
+                }
             }
         };
         let child_vmo = file.vmo.create_child(zx::VmoChildOptions::REFERENCE, 0, 0);
@@ -353,7 +369,27 @@ impl Filesystem {
             return;
         }
 
-        let start_block = (readahead_start / self.block_size) as u32;
+        let supplied_end = self.supply_range(
+            &file,
+            readahead_start..readahead_end,
+            transfer_vmo,
+            transfer_vmo_addr,
+        );
+
+        self.record_refaults(&file, readahead_start..supplied_end);
+    }
+
+    /// Supplies the pages in `range`, reading the data from the backing VMO.  Returns the offset
+    /// up to which pages were successfully supplied; if an error occurs, the remainder of `range`
+    /// is failed and the returned offset is where supplying stopped.
+    fn supply_range(
+        &self,
+        file: &PagedFile,
+        range: Range<u64>,
+        transfer_vmo: &zx::Vmo,
+        transfer_vmo_addr: usize,
+    ) -> u64 {
+        let start_block = (range.start / self.block_size) as u32;
         let mut ix = file.extents.partition_point(|e| e.logical.end <= start_block);
 
         // SAFETY: We know that `transfer_vmo` is mapped (and initialized) for `TRANSFER_VMO_SIZE`
@@ -362,11 +398,11 @@ impl Filesystem {
             std::slice::from_raw_parts_mut(transfer_vmo_addr as *mut u8, TRANSFER_VMO_SIZE as usize)
         };
 
-        let mut current_offset = readahead_start;
+        let mut current_offset = range.start;
         let mut supply_helper =
             SupplyHelper::new(transfer_vmo, buf, &file.vmo, current_offset, &*self.pager);
 
-        while ix < file.extents.len() && current_offset < readahead_end {
+        while ix < file.extents.len() && current_offset < range.end {
             let extent = &file.extents[ix];
 
             let logical_start = extent.logical.start as u64 * self.block_size;
@@ -374,13 +410,14 @@ impl Filesystem {
             // Deal with holes.
             if current_offset < logical_start {
                 if let Err(e) = supply_helper.zero(logical_start - current_offset) {
-                    supply_helper.fail_to(readahead_end, e);
-                    return;
+                    let supplied_end = supply_helper.supplied_end();
+                    supply_helper.fail_to(range.end, e);
+                    return supplied_end;
                 }
                 current_offset = logical_start;
             }
 
-            let end = std::cmp::min(extent.logical.end as u64 * self.block_size, readahead_end);
+            let end = std::cmp::min(extent.logical.end as u64 * self.block_size, range.end);
 
             while current_offset < end {
                 let phys_offset =
@@ -402,8 +439,9 @@ impl Filesystem {
                         current_offset += amount as u64;
                     }
                     Err(e) => {
-                        supply_helper.fail_to(readahead_end, e);
-                        return;
+                        let supplied_end = supply_helper.supplied_end();
+                        supply_helper.fail_to(range.end, e);
+                        return supplied_end;
                     }
                 }
             }
@@ -411,8 +449,30 @@ impl Filesystem {
             ix += 1;
         }
 
-        if let Err(e) = supply_helper.finish(readahead_end) {
-            supply_helper.fail_to(readahead_end, e);
+        if let Err(e) = supply_helper.finish(range.end) {
+            let supplied_end = supply_helper.supplied_end();
+            supply_helper.fail_to(range.end, e);
+            return supplied_end;
+        }
+
+        supply_helper.supplied_end()
+    }
+
+    /// Count the pages in `supplied` that have already been supplied before as refaults, and mark
+    /// all of them for future refaults.
+    fn record_refaults(&self, file: &PagedFile, supplied: Range<u64>) {
+        let page_size = *PAGE_SIZE;
+        // Take the byte-range and convert it into a page-range.
+        let supplied_pages = supplied.start / page_size..supplied.end / page_size;
+
+        // The VMO can be resized after the file was registered, in which case we might supply
+        // pages past the end of the bit vector, which grows to hold them.  This is expected to be
+        // rare.
+        let refault_count =
+            file.chunks_supplied.test_and_set_range(supplied_pages.start, supplied_pages.end);
+
+        if refault_count > 0 {
+            self.pager.page_refault_counter.increment(refault_count, Ordering::Relaxed);
         }
     }
 
@@ -469,6 +529,10 @@ struct PagedFile {
     /// The extents for the file, which will be sorted and not overlapping.  There can be holes i.e.
     /// zeroed ranges within the file.
     extents: Box<[PagerExtent]>,
+
+    /// Tracks pages that have already been supplied to the kernel for this file.  Grown if the
+    /// VMO is resized.
+    chunks_supplied: AtomicBitVec<Growable>,
 }
 
 /// A single extent.
@@ -496,15 +560,12 @@ impl<'a> SupplyHelper<'a> {
         offset: u64,
         pager: &'a Pager,
     ) -> Self {
-        Self {
-            transfer_vmo,
-            buffer,
-            target_vmo,
-            offset,
-            pager,
-            page_size: *starnix_core::mm::PAGE_SIZE,
-            buf_len: 0,
-        }
+        Self { transfer_vmo, buffer, target_vmo, offset, pager, page_size: *PAGE_SIZE, buf_len: 0 }
+    }
+
+    /// Returns the offset up to which pages have been successfully supplied.
+    fn supplied_end(&self) -> u64 {
+        self.offset
     }
 
     /// Zeroes `len` bytes.
@@ -597,7 +658,9 @@ impl<'a> SupplyHelper<'a> {
 mod tests {
     use super::{Filesystem, Pager, PagerExtent};
 
+    use starnix_core::mm::PAGE_SIZE;
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     #[::fuchsia::test]
@@ -680,6 +743,35 @@ mod tests {
             vmo.read(&mut buf, offset).expect("read failed");
 
             assert_eq!(&buf, &expected[offset as usize..]);
+
+            // Initial reads should not register any refaults.
+            assert_eq!(pager.page_refault_counter().read(Ordering::Relaxed), 0);
+
+            // Verify that chunks_supplied has tracked the supplied pages.
+            let file = filesystem.files_by_inode.lock().get(&4).unwrap().clone();
+            let num_pages = file_size.div_ceil(*PAGE_SIZE);
+            let supplied = file.chunks_supplied.to_vec(num_pages);
+            assert!(supplied.iter().all(|supplied| *supplied));
+
+            // The kernel asks for pages it has already been given: every page supplied again
+            // counts as a refault.
+            filesystem.record_refaults(&file, 0..num_pages * *PAGE_SIZE);
+            assert_eq!(pager.page_refault_counter().read(Ordering::Relaxed), num_pages);
+
+            // If nothing could be supplied, nothing is counted.
+            filesystem.record_refaults(&file, 0..0);
+            assert_eq!(pager.page_refault_counter().read(Ordering::Relaxed), num_pages);
+
+            // If supplying stops early, only the pages that were supplied are counted.
+            filesystem.record_refaults(&file, 0..*PAGE_SIZE);
+            assert_eq!(pager.page_refault_counter().read(Ordering::Relaxed), num_pages + 1);
+
+            // If the VMO grew, the bit vector grows with it, and the new pages are not refaults.
+            filesystem.record_refaults(&file, num_pages * *PAGE_SIZE..(num_pages + 2) * *PAGE_SIZE);
+            // The two pages past the end of the original vector are now tracked as supplied.
+            let supplied = file.chunks_supplied.to_vec(num_pages + 2);
+            assert!(supplied[num_pages as usize..].iter().all(|supplied| *supplied));
+            assert_eq!(pager.page_refault_counter().read(Ordering::Relaxed), num_pages + 1);
         }
 
         // After dropping all VMOs, we expect the pager to clean up.
@@ -690,5 +782,24 @@ mod tests {
             // The pager is running on different threads, hence:
             std::thread::sleep(Duration::from_millis(10));
         }
+
+        // When a file is unloaded entirely and re-registered, its refault data is discarded.
+        // The first read of the newly registered file must not count as a refault.
+        let file_size = (6 + 1 + 5 + 4) * 1024 + 100;
+        let vmo = filesystem
+            .register(
+                "d".into(),
+                4,
+                file_size,
+                Box::new([
+                    PagerExtent { logical: 6..7, physical_block: 0 },
+                    PagerExtent { logical: 12..13, physical_block: 1 },
+                ]),
+            )
+            .expect("register failed");
+        let refaults_before = pager.page_refault_counter().read(Ordering::Relaxed);
+        let mut buf = vec![1; 100];
+        vmo.read(&mut buf, 0).expect("read failed");
+        assert_eq!(pager.page_refault_counter().read(Ordering::Relaxed), refaults_before);
     }
 }
