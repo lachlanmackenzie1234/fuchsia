@@ -234,6 +234,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
 
   bool bulk_in_cancelled_ = false;
   bool bulk_out_cancelled_ = false;
+  bool pending_reconfigure_ = false;
 
   bool CancelAllCompleted() const { return bulk_in_cancelled_ && bulk_out_cancelled_; }
   bool AllRequestsReturned() {

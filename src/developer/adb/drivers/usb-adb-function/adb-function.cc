@@ -187,16 +187,22 @@ void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
     bulk_out_cancelled_ = true;
   }
 
-  // Disconnect USB.
+  // Disconnect USB by disabling endpoints.
   // TODO(b/417808660): Replace logs with Inspect once the bug is fixed.
-  zxlogf(INFO, "Disconnecting from USB by deconfiguring");
-  fidl::Result deconfigure = function_->Deconfigure();
-  if (deconfigure.is_error()) {
-    zxlogf(ERROR, "Failed to deconfigure: %s",
-           deconfigure.error_value().FormatDescription().c_str());
-  }
-  if (usb_function_binding_.has_value()) {
-    usb_function_binding_.reset();
+  zxlogf(INFO, "Disconnecting from USB by disabling endpoints");
+  for (const uint8_t ep_addr : {bulk_out_addr(), bulk_in_addr()}) {
+    fidl::Result result = function_->DisableEndpoint({ep_addr});
+    if (result.is_error()) {
+      if (result.error_value().is_domain_error() &&
+          (result.error_value().domain_error() == ZX_ERR_IO_NOT_PRESENT ||
+           result.error_value().domain_error() == ZX_ERR_BAD_STATE)) {
+        zxlogf(INFO, "DisableEndpoint on 0x%x: hardware endpoint is inactive during teardown",
+               ep_addr);
+      } else {
+        zxlogf(WARNING, "Failed to disable endpoint 0x%x: %s", ep_addr,
+               result.error_value().FormatDescription().c_str());
+      }
+    }
   }
 
   CheckUsbStopComplete();
@@ -443,9 +449,13 @@ zx::result<> UsbAdbDevice::EnableEndpoints() {
       zxlogf(INFO, "USB endpoints already enabled");
       return zx::ok();
     case State::kStoppingForUnbind:
-    case State::kStoppingForReconnect:
-      zxlogf(ERROR, "This is unexpected: UsbFunctionInterface is disconnected while stopping");
+      zxlogf(WARNING, "Received request to enable endpoints while unbinding driver");
       return zx::error(ZX_ERR_BAD_STATE);
+    case State::kStoppingForReconnect:
+      zxlogf(INFO,
+             "Enabling endpoints requested while stopping for reconnect; queuing reconfiguration");
+      pending_reconfigure_ = true;
+      return zx::ok();
     case State::kAwaitingUsbConnection:
       zxlogf(INFO, "Enabling USB endpoints");
       break;
@@ -533,6 +543,7 @@ void UsbAdbDevice::SetConfigured(SetConfiguredRequest& request,
       return;
     }
   } else {
+    pending_reconfigure_ = false;
     switch (state_) {
       case State::kAwaitingUsbConnection:
         // It's normal to receive SetConfigured(false) while the connection is
@@ -590,6 +601,15 @@ void UsbAdbDevice::CheckUsbStopComplete() {
 
   zxlogf(INFO, "Completing USB stop.");
 
+  if (usb_function_binding_.has_value()) {
+    fidl::Result deconfigure = function_->Deconfigure();
+    if (deconfigure.is_error()) {
+      zxlogf(ERROR, "Failed to deconfigure: %s",
+             deconfigure.error_value().FormatDescription().c_str());
+    }
+    usb_function_binding_.reset();
+  }
+
   if (adb_binding_.has_value()) {
     auto result = fidl::WireSendEvent(*adb_binding_)->OnStatusChanged(fadb::StatusFlags(0));
     if (!result.ok()) {
@@ -620,6 +640,10 @@ void UsbAdbDevice::CheckUsbStopComplete() {
     if (zx::result<> result = StartUsb(); result.is_error()) {
       zxlogf(WARNING, "Restarting USB connection failed: %s", result.status_string());
       SetState(State::kAwaitingUsbConnection);
+    } else if (pending_reconfigure_) {
+      pending_reconfigure_ = false;
+      zxlogf(INFO, "Applying pending reconfiguration after stop complete");
+      (void)EnableEndpoints();
     }
   }
 }
