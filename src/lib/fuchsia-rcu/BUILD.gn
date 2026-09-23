@@ -11,6 +11,11 @@ group("tests") {
   deps = [ ":fuchsia-rcu-tests" ]
 }
 
+group("benchmarks") {
+  testonly = true
+  deps = [ "benchmarks" ]
+}
+
 fuchsia_unittest_package("fuchsia-rcu-tests") {
   deps = [ ":fuchsia-rcu_test" ]
 
@@ -52,6 +57,40 @@ if (is_host) {
   }
 }
 
+_COMMON_SRCS = [
+  "src/atomic_stack.rs",
+  "src/lib.rs",
+  "src/rcu_arc.rs",
+  "src/rcu_box.rs",
+  "src/rcu_droppable.rs",
+  "src/rcu_droppable_arc.rs",
+  "src/rcu_option_arc.rs",
+  "src/rcu_option_box.rs",
+  "src/rcu_ptr.rs",
+  "src/rcu_read_scope.rs",
+  "src/rcu_weak.rs",
+  "src/read_counters.rs",
+  "src/state_machine.rs",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_COMMON_SRCS" ])
+
+_COMMON_DEPS = [
+  "//sdk/rust/zx",
+  "//src/lib/fuchsia-runtime",
+  "//src/lib/fuchsia-sync",
+  "//src/lib/shared-buffer",
+  "//src/lib/trace/rust:trace",
+  "//third_party/rust_crates:bstr",
+  "//third_party/rust_crates:futures",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_COMMON_DEPS" ])
+
 rustc_macro("fuchsia-rcu-derive") {
   sources = [ "macro/src/lib.rs" ]
   source_root = "macro/src/lib.rs"
@@ -63,32 +102,20 @@ rustc_macro("fuchsia-rcu-derive") {
   ]
 }
 rustc_library("fuchsia-rcu") {
-  sources = [
-    "src/atomic_stack.rs",
-    "src/lib.rs",
-    "src/rcu_arc.rs",
-    "src/rcu_box.rs",
-    "src/rcu_droppable.rs",
-    "src/rcu_droppable_arc.rs",
-    "src/rcu_option_arc.rs",
-    "src/rcu_option_box.rs",
-    "src/rcu_ptr.rs",
-    "src/rcu_read_scope.rs",
-    "src/rcu_weak.rs",
-    "src/read_counters.rs",
-    "src/state_machine.rs",
-  ]
+  sources = _COMMON_SRCS
   edition = "2024"
   proc_macro_deps = [ ":fuchsia-rcu-derive" ]
   version = "0.1.0"
   with_unit_tests = true
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/fuchsia-runtime",
-    "//src/lib/fuchsia-sync",
-    "//src/lib/shared-buffer",
-    "//src/lib/trace/rust:trace",
-    "//third_party/rust_crates:bstr",
-    "//third_party/rust_crates:futures",
-  ]
+  deps = _COMMON_DEPS
+}
+rustc_library("fuchsia-rcu-rseq") {
+  testonly = true
+  sources = _COMMON_SRCS
+  features = [ "rseq_backend" ]
+  crate_name = "fuchsia_rcu"
+  edition = "2024"
+  proc_macro_deps = [ ":fuchsia-rcu-derive" ]
+  version = "0.1.0"
+  deps = _COMMON_DEPS + [ "//src/lib/fuchsia-rseq" ]
 }
