@@ -42,6 +42,7 @@ zx_status_t zx_object_get_info(zx_handle_t handle, uint32_t topic, void* buffer,
 
 namespace gpio {
 
+// TODO(531774305): Switch to fake-platform-device and remove this.
 template <uint32_t kPid>
 class FakePlatformDevice final
     : public fidl::testing::WireTestBase<fuchsia_hardware_platform_device::Device> {
@@ -61,6 +62,7 @@ class FakePlatformDevice final
   }
 
   void SetExpectedInterruptFlags(uint32_t flags) { expected_interrupt_flags_ = flags; }
+  void SetInterruptCount(uint32_t interrupt_count) { interrupt_count_ = interrupt_count; }
 
   void GetMmioById(GetMmioByIdRequestView request, GetMmioByIdCompleter::Sync& completer) override {
     auto mmio = mmios_.find(request->index);
@@ -75,6 +77,11 @@ class FakePlatformDevice final
 
   void GetInterruptById(GetInterruptByIdRequestView request,
                         GetInterruptByIdCompleter::Sync& completer) override {
+    if (request->index >= interrupt_count_) {
+      completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+      return;
+    }
+
     EXPECT_EQ(request->flags, expected_interrupt_flags_);
     zx::interrupt irq;
     if (zx_status_t status = zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &irq);
@@ -90,9 +97,8 @@ class FakePlatformDevice final
   void GetNodeDeviceInfo(GetNodeDeviceInfoCompleter::Sync& completer) override {
     fidl::Arena arena;
     auto info = fuchsia_hardware_platform_device::wire::NodeDeviceInfo::Builder(arena);
-    // Report kIrqCount IRQs even though we don't check on GetInterruptX calls.
-    static constexpr size_t kIrqCount = 3;
-    completer.ReplySuccess(info.vid(PDEV_VID_AMLOGIC).pid(kPid).irq_count(kIrqCount).Build());
+    completer.ReplySuccess(
+        info.vid(PDEV_VID_AMLOGIC).pid(kPid).irq_count(interrupt_count_).Build());
   }
 
   void GetMetadata(fuchsia_hardware_platform_device::wire::DeviceGetMetadataRequest* request,
@@ -108,6 +114,7 @@ class FakePlatformDevice final
   fidl::ServerBindingGroup<fuchsia_hardware_platform_device::Device> bindings_;
   uint32_t expected_interrupt_flags_ = ZX_INTERRUPT_MODE_EDGE_HIGH;
   std::unordered_map<uint32_t, fdf::MmioBuffer> mmios_;
+  uint32_t interrupt_count_ = 0;
 };
 
 class TestAmlGpioDriver : public AmlGpioDriver {
@@ -181,31 +188,10 @@ class FixtureConfig final {
 };
 
 template <uint32_t kPid>
-class AmlGpioTest : public testing::Test {
+class AmlGpioTestBase : public testing::Test {
  public:
-  void SetUp() override {
-    ASSERT_OK(driver_test_.StartDriver());
-
-    // Wait for initialization to complete in background.
-    driver_test_.runtime().RunUntil([&]() {
-      return driver_test_.RunInNodeContext(fit::callback<bool(fdf_testing::TestNode&)>(
-          [&](fdf_testing::TestNode& node) { return node.children().contains("aml-gpio"); }));
-    });
-
-    zx::result client = driver_test_.template Connect<fuchsia_hardware_pinimpl::Service::Device>();
-    ASSERT_OK(client);
-    client_.Bind(std::move(client.value()));
-  }
-
-  void TearDown() override {
-    ASSERT_OK(driver_test_.StopDriver());
-
-    driver_test_.RunInEnvironmentTypeContext([](auto& env) {
-      env.mmio().VerifyAll();
-      env.ao_mmio().VerifyAll();
-      env.interrupt_mmio().VerifyAll();
-    });
-  }
+  void SetUp() override {}
+  void TearDown() override {}
 
  protected:
   void CheckA113GetInterrupt(uint32_t expected_kernel_interrupt_flags,
@@ -248,6 +234,7 @@ class AmlGpioTest : public testing::Test {
         [callback = std::move(callback)](auto& env) mutable { callback(env.pdev()); });
   }
 
+  fdf_testing::BackgroundDriverTest<FixtureConfig<kPid>>& driver_test() { return driver_test_; }
   fdf::WireSyncClient<fuchsia_hardware_pinimpl::PinImpl>& client() { return client_; }
 
  private:
@@ -258,6 +245,38 @@ class AmlGpioTest : public testing::Test {
 
   fdf_testing::BackgroundDriverTest<FixtureConfig<kPid>> driver_test_;
   fdf::WireSyncClient<fuchsia_hardware_pinimpl::PinImpl> client_;
+};
+
+template <uint32_t kPid>
+class AmlGpioTest : public AmlGpioTestBase<kPid> {
+ public:
+  void SetUp() override {
+    AmlGpioTestBase<kPid>::WithPDev([](auto& pdev) { pdev.SetInterruptCount(8); });
+
+    ASSERT_OK(AmlGpioTestBase<kPid>::driver_test().StartDriver());
+
+    // Wait for initialization to complete in background.
+    AmlGpioTestBase<kPid>::driver_test().runtime().RunUntil([&]() {
+      return AmlGpioTestBase<kPid>::driver_test().RunInNodeContext(
+          fit::callback<bool(fdf_testing::TestNode&)>(
+              [&](fdf_testing::TestNode& node) { return node.children().contains("aml-gpio"); }));
+    });
+
+    zx::result client = AmlGpioTestBase<kPid>::driver_test()
+                            .template Connect<fuchsia_hardware_pinimpl::Service::Device>();
+    ASSERT_OK(client);
+    AmlGpioTestBase<kPid>::client().Bind(std::move(client.value()));
+  }
+
+  void TearDown() override {
+    ASSERT_OK(AmlGpioTestBase<kPid>::driver_test().StopDriver());
+
+    AmlGpioTestBase<kPid>::driver_test().RunInEnvironmentTypeContext([](auto& env) {
+      env.mmio().VerifyAll();
+      env.ao_mmio().VerifyAll();
+      env.interrupt_mmio().VerifyAll();
+    });
+  }
 };
 
 using A113AmlGpioTest = AmlGpioTest<PDEV_PID_AMLOGIC_A113>;
@@ -874,6 +893,74 @@ TEST_F(A113AmlGpioTest, DestroyInterruptOnRelease) {
 
   // AmlGpio should have called zx_interrupt_destroy in the interrupt for this pin.
   EXPECT_EQ(interrupt.wait(nullptr), ZX_ERR_CANCELED);
+}
+
+TEST_F(A113AmlGpioTest, ExceedProvidedInterrupts) {
+  fdf::Arena arena('GPIO');
+
+  WithPDev([](auto& pdev) { pdev.SetExpectedInterruptFlags(ZX_INTERRUPT_MODE_LEVEL_HIGH); });
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(1, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(2, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(3, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(4, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(5, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(6, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(7, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(8, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_OK(result.value());
+  }
+
+  {
+    // Eight interrupts were provided, so this should fail.
+    fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(9, {});
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_error());
+    EXPECT_EQ(result->error_value(), ZX_ERR_NO_RESOURCES);
+  }
+}
+
+using TooManyProvidedInterruptsTest = AmlGpioTestBase<PDEV_PID_AMLOGIC_A113>;
+TEST_F(TooManyProvidedInterruptsTest, Test) {
+  WithPDev([](auto& pdev) { pdev.SetInterruptCount(9); });
+  EXPECT_EQ(driver_test().StartDriver().status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace gpio

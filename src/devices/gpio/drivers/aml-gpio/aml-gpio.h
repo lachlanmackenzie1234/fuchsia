@@ -70,6 +70,7 @@ class AmlGpio : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
   friend class AmlGpioDriver;
 
   static constexpr int kMaxGpioIndex = 255;
+  static constexpr size_t kMaxInterruptCount = 8;
 
   fidl::ProtocolHandler<fuchsia_hardware_pinimpl::PinImpl> CreateHandler() {
     return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),

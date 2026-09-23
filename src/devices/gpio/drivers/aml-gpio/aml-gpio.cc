@@ -13,6 +13,7 @@
 #include <lib/trace/event.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -221,6 +222,13 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
                                fpromise::completer<void, zx_status_t> completer) {
   ZX_DEBUG_ASSERT(mmios.size() == MMIO_COUNT);
 
+  if (irq_count > AmlGpio::kMaxInterruptCount) {
+    fdf::error("{} provided interrupts exceeds the hardware maximum of {}", irq_count,
+               AmlGpio::kMaxInterruptCount);
+    completer.complete_error(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
   cpp20::span<const AmlGpioBlock> gpio_blocks;
   const AmlGpioInterrupt* gpio_interrupt;
 
@@ -319,16 +327,24 @@ zx::result<> AmlGpioDriver::AddNode() {
 }
 
 uint32_t AmlGpio::GetUnusedIrqIndex(uint32_t pin) const {
+  // wake_irq_status_ and irq_status_ are bitmasks representing which wakeable and non-wakeable
+  // interrupts are in use. Bits [0, wake_vector_pins_.size()) in wake_irq_status_ are valid, and
+  // bits [wake_vector_pins_.size(), irq_info_.size()) in irq_status_ are valid. In other words,
+  // the first wake_vector_pins_.size() interrupt IDs correspond to wakeable interrupts, and the
+  // rest are non-wakeable.
+
+  uint8_t irq_status = irq_status_;
+  uint32_t index_offset = wake_vector_pins_.size();
   if (wake_vector_pins_.contains(pin)) {
-    // First isolate the rightmost 0-bit
-    auto zero_bit_set = static_cast<uint8_t>(~wake_irq_status_ & (wake_irq_status_ + 1));
-    // Count no. of leading zeros
-    return __builtin_ctz(zero_bit_set);
+    // This pin's interrupt is wakeable, so use the appropriate status and offset values.
+    irq_status = wake_irq_status_;
+    index_offset = 0;
   }
+
   // First isolate the rightmost 0-bit
-  auto zero_bit_set = static_cast<uint8_t>(~irq_status_ & (irq_status_ + 1));
-  // Count no. of leading zeros
-  return __builtin_ctz(zero_bit_set) + wake_vector_pins_.size();
+  auto zero_bit_set = static_cast<uint8_t>(~irq_status & (irq_status + 1));
+  // Count no. of trailing zeros
+  return std::countr_zero(zero_bit_set) + index_offset;
 }
 
 void AmlGpio::SetIrqIndex(uint32_t pin, uint8_t index) {
@@ -436,7 +452,7 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
   }
 
   uint32_t index = GetUnusedIrqIndex(request->pin);
-  if (index > irq_info_.size()) {
+  if (index >= irq_info_.size()) {
     fdf::error("No free IRQ indicies {}, irq_count = {}", (int)index, irq_info_.size());
     return completer.buffer(arena).ReplyError(ZX_ERR_NO_RESOURCES);
   }
@@ -619,6 +635,11 @@ void AmlGpio::Configure(fuchsia_hardware_pinimpl::wire::PinImplConfigureRequest*
     SetDriveStrength(request->pin, block, request->config.drive_strength_ua());
   }
   if (request->config.has_wake_vector() && request->config.wake_vector()) {
+    if (wake_vector_pins_.size() >= irq_info_.size()) {
+      completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
+      return;
+    }
+
     // Validate there are enough wake vector interrupts.
     auto result = pdev_.sync()->GetInterruptById(wake_vector_pins_.size(), 0);
     if (!result.ok() || result->is_error()) {
