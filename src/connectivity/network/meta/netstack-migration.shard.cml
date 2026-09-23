@@ -50,14 +50,6 @@
             to: [ "#netstack-migration" ],
             dependency: "weak",
         },
-        {
-            protocol: "fuchsia.net.filter.deprecated.Filter",
-
-            // NS3 will not implement fuchsia.net.filter.deprecated, mark as optional.
-            from: "#netstack",
-            to: "#netcfg",
-            availability: "optional",
-        },
     ],
     expose: [
         {

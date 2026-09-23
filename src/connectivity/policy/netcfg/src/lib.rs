@@ -37,7 +37,6 @@ use fidl_fuchsia_net_dhcp as fnet_dhcp;
 use fidl_fuchsia_net_dhcp_ext as fnet_dhcp_ext;
 use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
 use fidl_fuchsia_net_filter as fnet_filter;
-use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_masquerade as fnet_masquerade;
@@ -1004,14 +1003,10 @@ impl<'a> NetCfg<'a> {
             .context("could not connect to lookup admin")?;
 
         let filter_control = {
-            let filter_deprecated =
-                optional_svc_connect::<fnet_filter_deprecated::FilterMarker>(&svc_dir)
-                    .await
-                    .context("could not connect to filter deprecated")?;
-            let filter_current = optional_svc_connect::<fnet_filter::ControlMarker>(&svc_dir)
+            let filter_current = svc_connect::<fnet_filter::ControlMarker>(&svc_dir)
                 .await
                 .context("could not connect to filter")?;
-            filter::FilterControl::new(filter_deprecated, filter_current).await?
+            filter::FilterControl::new(filter_current).await?
         };
 
         let interface_state = svc_connect::<fnet_interfaces::StateMarker>(&svc_dir)
@@ -4191,9 +4186,10 @@ mod tests {
         let (stack, _stack_server) = fidl::endpoints::create_proxy::<fnet_stack::StackMarker>();
         let (lookup_admin, lookup_admin_server) =
             fidl::endpoints::create_proxy::<fnet_name::LookupAdminMarker>();
-        let (filter, _filter_server) =
-            fidl::endpoints::create_proxy::<fnet_filter_deprecated::FilterMarker>();
-        let filter_control = FilterControl::Deprecated(filter);
+        let (filter_control, _filter_server) = crate::masquerade::test::MockFilter::default()
+            .into_client_and_server()
+            .now_or_never()
+            .expect("create filter control");
         let (interface_state, _interface_state_server) =
             fidl::endpoints::create_proxy::<fnet_interfaces::StateMarker>();
         let (dhcp_server, dhcp_server_server_end) =
