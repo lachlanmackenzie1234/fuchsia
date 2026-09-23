@@ -16,6 +16,22 @@ use sha2::{Digest, Sha256};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
+/// Standard file extension for the driver's UNIX domain data socket.
+pub const UNIX_SOCKET_EXTENSION: &str = "sock";
+
+/// Standard file extension for companion connection metadata JSON files.
+pub const METADATA_FILE_EXTENSION: &str = "json";
+
+/// Resolves the companion metadata file path corresponding to a driver's client socket path.
+pub fn get_metadata_path(socket_path: &Path) -> PathBuf {
+    socket_path.with_extension(METADATA_FILE_EXTENSION)
+}
+
+/// Resolves the client UNIX domain socket path corresponding to a companion metadata file path.
+pub fn get_client_socket_path(meta_path: &Path) -> PathBuf {
+    meta_path.with_extension(UNIX_SOCKET_EXTENSION)
+}
+
 fn validate_and_resolve_socket_path(path: PathBuf) -> Result<PathBuf> {
     let absolute_path = if path.is_relative() {
         std::env::current_dir().map(|cwd| cwd.join(&path)).unwrap_or_else(|_| path.clone())
@@ -118,7 +134,7 @@ pub fn get_socket_path_from_target_path(
     };
     path.push("ffx_uart");
     let hex_id = get_target_id_from_target_path(target_path);
-    path.push(format!("ffx_uart_{}.sock", hex_id));
+    path.push(format!("ffx_uart_{hex_id}.{UNIX_SOCKET_EXTENSION}"));
 
     validate_and_resolve_socket_path(path)
 }
@@ -133,7 +149,7 @@ pub fn friendly_name_to_socket_path(
     friendly: &str,
     context: &EnvironmentContext,
 ) -> Result<PathBuf> {
-    let target_path = friendly_name_to_target_path(friendly, context)?;
+    let target_path = parse_target_endpoint(friendly, context)?;
     if target_path.exists() {
         if let Ok(metadata) = std::fs::metadata(&target_path) {
             use std::os::unix::fs::FileTypeExt as _;
@@ -143,27 +159,30 @@ pub fn friendly_name_to_socket_path(
         }
     }
     // Heuristic fallback: if path ends with .sock, treat as socket even if it doesn't exist yet
-    if target_path.extension().and_then(|ext| ext.to_str()) == Some("sock") {
+    if target_path.extension().and_then(|ext| ext.to_str()) == Some(UNIX_SOCKET_EXTENSION) {
         return validate_and_resolve_socket_path(target_path);
     }
     get_socket_path_from_target_path(&target_path, context)
 }
 
-/// Parses a user-supplied target string into an absolute target filesystem path.
+/// Parses a user-supplied target endpoint string into an absolute target filesystem path.
+///
+/// Accepts:
+/// - Absolute device path starting with `/` (e.g. `/dev/ttyUSB0`)
 ///
 /// # Errors
-/// Returns an error if the string is not an absolute path starting with `/`.
-pub fn friendly_name_to_target_path(
-    friendly: &str,
+/// Returns an error if the target string is not an absolute path starting with `/`.
+pub fn parse_target_endpoint(
+    target: &str,
     _context: &EnvironmentContext,
 ) -> Result<PathBuf> {
     // 1. Absolute Path
-    if friendly.starts_with('/') {
-        return Ok(PathBuf::from(friendly));
+    if target.starts_with('/') {
+        return Ok(PathBuf::from(target));
     }
 
     // Fallback:
-    Err(ConnectionError::TargetNotRecognized { target: friendly.to_string() })
+    Err(ConnectionError::TargetNotRecognized { target: target.to_string() })
 }
 
 /// Converts a UNIX domain socket path back into a human-readable friendly device path,
@@ -171,7 +190,7 @@ pub fn friendly_name_to_target_path(
 /// finally falling back to the raw socket path string.
 pub fn socket_path_to_friendly_name(socket_path: &Path, context: &EnvironmentContext) -> String {
     // Try to read metadata JSON to get the real target path and use it to build a friendly name.
-    let json_path = socket_path.with_extension("json");
+    let json_path = get_metadata_path(socket_path);
     if let Ok(content) = std::fs::read_to_string(&json_path) {
         if let Ok(metadata) = serde_json::from_str::<ConnectionMetadata>(&content) {
             return metadata.target;
@@ -278,26 +297,9 @@ pub struct ConnectionMetadata {
     /// Configured log level of the driver process.
     pub log_level: Option<String>,
     /// Discovered target nodename, if available and connected.
-    #[serde(default)]
     pub nodename: Option<String>,
     /// Discovered target serial number, if available and connected.
-    #[serde(default)]
     pub serial: Option<String>,
-}
-
-/// Reads cached target identity (`(nodename, serial)`) from the driver metadata JSON file.
-/// Returns `Some((nodename, serial))` only if the driver is currently in `Connected` status
-/// and a cached `nodename` is present.
-pub fn load_cached_identity(socket_path: &Path) -> Option<(String, Option<String>)> {
-    let json_path = socket_path.with_extension("json");
-    if let Ok(content) = std::fs::read_to_string(&json_path) {
-        if let Ok(meta) = serde_json::from_str::<ConnectionMetadata>(&content) {
-            if meta.status == ConnectionStatus::Connected {
-                return meta.nodename.map(|n| (n, meta.serial));
-            }
-        }
-    }
-    None
 }
 
 /// Updates the metadata JSON file with discovered target identity (`nodename` and `serial`),
@@ -310,7 +312,7 @@ pub fn update_metadata_identity(
     nodename: Option<String>,
     serial: Option<String>,
 ) -> Result<()> {
-    let json_path = socket_path.with_extension("json");
+    let json_path = get_metadata_path(socket_path);
     let content =
         std::fs::read_to_string(&json_path).map_err(|e| ConnectionError::MetadataError {
             path: json_path.display().to_string(),
@@ -430,16 +432,12 @@ mod tests {
     }
 
     #[test]
-    fn test_metadata_identity_caching() {
+    fn test_update_metadata_identity() {
         let temp = tempdir().unwrap();
         let socket_path = temp.path().join("ffx_uart_test.sock");
         let json_path = temp.path().join("ffx_uart_test.json");
 
-        // Initially, no metadata file exists.
-        assert_eq!(load_cached_identity(&socket_path), None);
-
-        // Write metadata with status = Connected, but without cached identity.
-        let mut meta = ConnectionMetadata {
+        let meta = ConnectionMetadata {
             pid: 1234,
             target: "/dev/ttyUSB0".to_string(),
             status: ConnectionStatus::Connected,
@@ -452,10 +450,6 @@ mod tests {
         };
         std::fs::write(&json_path, serde_json::to_string(&meta).unwrap()).unwrap();
 
-        // Nodename is None, so load_cached_identity returns None.
-        assert_eq!(load_cached_identity(&socket_path), None);
-
-        // Update identity in metadata file.
         update_metadata_identity(
             &socket_path,
             Some("iris-target".to_string()),
@@ -463,25 +457,11 @@ mod tests {
         )
         .unwrap();
 
-        // Now load_cached_identity returns the cached nodename and serial.
-        assert_eq!(
-            load_cached_identity(&socket_path),
-            Some(("iris-target".to_string(), Some("SER12345".to_string())))
-        );
-
-        // When connection status is not Connected, cached identity should not be used.
-        meta.status = ConnectionStatus::Connecting;
-        meta.nodename = Some("iris-target".to_string());
-        meta.serial = Some("SER12345".to_string());
-        std::fs::write(&json_path, serde_json::to_string(&meta).unwrap()).unwrap();
-        assert_eq!(load_cached_identity(&socket_path), None);
-
-        // Test backward-compatibility deserialization of legacy JSON missing nodename/serial fields.
-        let legacy_json = r#"{"pid":1234,"target":"/dev/ttyUSB0","status":"Connected","id":"testid","baud":1000000,"protocol":"ResendSP","log_level":null}"#;
-        let legacy_meta: ConnectionMetadata = serde_json::from_str(legacy_json).unwrap();
-        assert_eq!(legacy_meta.nodename, None);
-        assert_eq!(legacy_meta.serial, None);
-        assert_eq!(legacy_meta.baud, NonZeroU32::new(1000000));
+        let updated_content = std::fs::read_to_string(&json_path).unwrap();
+        let updated_meta: ConnectionMetadata = serde_json::from_str(&updated_content).unwrap();
+        assert_eq!(updated_meta.nodename.as_deref(), Some("iris-target"));
+        assert_eq!(updated_meta.serial.as_deref(), Some("SER12345"));
+        assert_eq!(updated_meta.baud, NonZeroU32::new(1000000));
     }
 
     #[test]

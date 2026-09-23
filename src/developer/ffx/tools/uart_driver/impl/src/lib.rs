@@ -16,6 +16,7 @@ use futures::channel::mpsc;
 use futures::future::{FutureExt, poll_fn};
 use futures::{SinkExt, StreamExt};
 use std::collections::{HashMap, VecDeque};
+use std::num::NonZeroU32;
 use std::os::unix::fs::FileTypeExt as _;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -25,7 +26,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{UnixListener, UnixStream};
-use uart_driver_api::ConnectionMetadata;
+use uart_driver_api::{ConnectionError, ConnectionMetadata, ConnectionStatus, UartProtocol};
 use uart_fpl::{
     AckOutcome, AckTracker, CONTROL_CHANNEL_ID, DEFAULT_RETRANSMISSION_TIMEOUT, Frame, FrameParser,
     FrameStatus, FrameType, ResendReceiver, ResendSender, encode_frame,
@@ -37,6 +38,7 @@ const TERMINATE_POLL_RETRIES: usize = 5;
 const TERMINATE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const CLIENT_WRITER_CHANNEL_CAPACITY: usize = 256;
 const MAX_UART_WRITE_BATCH_BYTES: usize = 4096;
+const METADATA_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 pub fn is_char_device(path: &str) -> bool {
     std::fs::metadata(path).map(|m| m.file_type().is_char_device()).unwrap_or(false)
@@ -251,6 +253,7 @@ pub enum ClientEvent {
 }
 
 /// Events emitted by the UART session reader or supervisor loop.
+#[derive(Debug)]
 pub enum UartEvent {
     /// Decoded data payload received from the UART link for `channel_id`.
     UartData { channel_id: u16, data: Vec<u8> },
@@ -260,6 +263,20 @@ pub enum UartEvent {
     UpdateSender { sender_tx: mpsc::Sender<SenderMessage> },
     /// The active UART session disconnected or failed.
     UartDown,
+}
+
+impl PartialEq for UartEvent {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::UartData { channel_id: c1, data: d1 },
+                Self::UartData { channel_id: c2, data: d2 },
+            ) => c1 == c2 && d1 == d2,
+            (Self::UartClose { channel_id: c1 }, Self::UartClose { channel_id: c2 }) => c1 == c2,
+            (Self::UartDown, Self::UartDown) => true,
+            _ => false,
+        }
+    }
 }
 
 /// Outgoing messages queued for transmission by [`sender_task`].
@@ -1039,9 +1056,147 @@ pub async fn sender_task(
         .map_err(TaskError::Sender)
 }
 
+/// Host-side driver coordinator managing daemon background execution and hardware state.
+///
+/// Supervises client connections, monitors metadata file deletion and peer exit
+/// for graceful termination, and updates connection metadata states.
+pub struct HostDriver;
+
+impl HostDriver {
+    /// Updates connection metadata status and clears nodename/serial when disconnecting.
+    pub fn update_status(meta_path: &Option<PathBuf>, status: ConnectionStatus) {
+        let Some(path) = meta_path else { return };
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("Failed to read metadata at {}: {:?}", path.display(), e);
+                return;
+            }
+        };
+        let mut meta = match serde_json::from_str::<ConnectionMetadata>(&content) {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!("Failed to parse metadata at {}: {:?}", path.display(), e);
+                return;
+            }
+        };
+        meta.status = status;
+        if meta.status != ConnectionStatus::Connected {
+            meta.nodename = None;
+            meta.serial = None;
+        }
+        if let Ok(new_content) = serde_json::to_string(&meta) {
+            let temp_path = path.with_extension(format!("{}.tmp", meta.pid));
+            if std::fs::write(&temp_path, new_content.as_bytes()).is_ok() {
+                let _ = std::fs::rename(&temp_path, path);
+            }
+        }
+    }
+
+    /// Spawns a background task to watch for deletion of the connection metadata file,
+    /// signaling `shutdown_tx` to initiate graceful termination when deleted.
+    pub fn watch_metadata_deletion(
+        meta_path: &Option<PathBuf>,
+        shutdown_tx: futures::channel::oneshot::Sender<()>,
+    ) -> Option<fuchsia_async::Task<()>> {
+        let path = meta_path.as_ref()?.clone();
+        Some(fuchsia_async::Task::local(async move {
+            loop {
+                fuchsia_async::Timer::new(METADATA_CHECK_INTERVAL).await;
+                if !path.exists() {
+                    log::info!(
+                        "Metadata file {} was deleted. Triggering shutdown.",
+                        path.display()
+                    );
+                    let _ = shutdown_tx.send(());
+                    break;
+                }
+            }
+        }))
+    }
+
+    /// Deletes local Unix domain socket and metadata files upon daemon termination.
+    pub fn cleanup_driver_files(
+        local_addr: Option<tokio::net::unix::SocketAddr>,
+        meta_path: Option<&PathBuf>,
+    ) {
+        if let Some(path) = local_addr.as_ref().and_then(|a| a.as_pathname()) {
+            if let Err(e) = std::fs::remove_file(path) {
+                log::warn!("Failed to remove socket file at {}: {:?}", path.display(), e);
+            }
+        }
+        if let Some(path) = meta_path {
+            if let Err(e) = std::fs::remove_file(path) {
+                log::warn!("Failed to remove metadata file at {}: {:?}", path.display(), e);
+            }
+        }
+    }
+
+    /// Inspects connection errors to determine if reconnection should be aborted.
+    pub fn check_fatal_connect_error(
+        e: &ConnectionError,
+        target_path: &str,
+        no_retry: bool,
+        is_socket: bool,
+        associated_peer_pid: Option<u32>,
+    ) -> bool {
+        if no_retry {
+            log::error!("Connection failed and no-retry is set. Exiting driver: {e}");
+            return true;
+        }
+        if let Some(pid) = associated_peer_pid {
+            if !ffx_tool_uart::is_running(pid) {
+                log::info!("Associated peer (PID {pid}) has exited. Exiting driver.");
+                return true;
+            }
+        }
+        if matches!(e, ConnectionError::PathNotFound { .. }) {
+            if is_socket {
+                log::info!(
+                    "Virtual socket target path {target_path} does not exist. Exiting driver."
+                );
+                return true;
+            }
+            log::warn!("Target UART port {target_path} not found. Waiting for device...");
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+fn make_test_metadata(target: &str, status: ConnectionStatus) -> ConnectionMetadata {
+    ConnectionMetadata {
+        pid: std::process::id(),
+        target: target.to_string(),
+        status,
+        id: Some("testid".to_string()),
+        baud: NonZeroU32::new(115200),
+        protocol: UartProtocol::ResendSP,
+        log_level: None,
+        nodename: None,
+        serial: None,
+    }
+}
+
+#[cfg(test)]
+fn write_test_metadata(
+    path: &std::path::Path,
+    target: &str,
+    pid: u32,
+    status: ConnectionStatus,
+) -> ConnectionMetadata {
+    let mut meta = make_test_metadata(target, status);
+    meta.pid = pid;
+    std::fs::write(path, serde_json::to_string(&meta).unwrap()).unwrap();
+    meta
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::ReadBuf;
 
     #[fuchsia::test]
     async fn test_uart_reader_drain_and_frame() {
@@ -1411,5 +1566,117 @@ mod tests {
 
         let res = reader.next_frame(&metrics).await;
         assert!(matches!(res, Err(ReaderError::Eof)));
+    }
+
+    struct MockReader {
+        data: Vec<u8>,
+        read_ptr: usize,
+    }
+
+    impl MockReader {
+        fn new(data: Vec<u8>) -> Self {
+            Self { data, read_ptr: 0 }
+        }
+    }
+
+    impl tokio::io::AsyncRead for MockReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if self.read_ptr >= self.data.len() {
+                return Poll::Ready(Ok(()));
+            }
+            let amt = std::cmp::min(buf.remaining(), self.data.len() - self.read_ptr);
+            buf.put_slice(&self.data[self.read_ptr..self.read_ptr + amt]);
+            self.read_ptr += amt;
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_watch_metadata_deletion_unit() {
+        let temp = tempfile::tempdir().unwrap();
+        let meta_path = temp.path().join("meta.json");
+        write_test_metadata(
+            &meta_path,
+            "test_target",
+            std::process::id(),
+            ConnectionStatus::Connected,
+        );
+
+        let (shutdown_tx, shutdown_rx) = futures::channel::oneshot::channel();
+        let _watcher = HostDriver::watch_metadata_deletion(&Some(meta_path.clone()), shutdown_tx);
+
+        std::fs::remove_file(&meta_path).unwrap();
+        let timeout_res = tokio::time::timeout(Duration::from_secs(3), shutdown_rx).await;
+        assert!(timeout_res.is_ok(), "Shutdown signal not received within timeout");
+    }
+
+    #[fuchsia::test]
+    async fn test_host_receiver_task_session_change_discard() {
+        let (s1, s2, cid) = (12345u32, 67890u32, 42u16);
+        let mut data = encode_frame(s2, cid, 0, FrameType::Data, b"discard").unwrap();
+        data.extend_from_slice(&encode_frame(s1, cid, 0, FrameType::Data, b"accept").unwrap());
+
+        let (serial_tx, mut serial_rx) = mpsc::channel(10);
+        let ack_tracker = AckTracker::new();
+        let (incoming_event_tx, _incoming_event_rx) = mpsc::channel(10);
+        let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
+
+        let rx_handle = fuchsia_async::Task::local(receiver_task(
+            UartReader::new(MockReader::new(data)),
+            serial_tx,
+            ack_tracker.clone(),
+            incoming_event_tx,
+            s1,
+            metrics,
+        ));
+
+        let event = serial_rx.next().await.unwrap();
+        assert_eq!(event, UartEvent::UartData { channel_id: cid, data: b"accept".to_vec() });
+        assert_eq!(ack_tracker.take_ack(), Some((s1, 0)));
+        drop(rx_handle);
+    }
+
+    #[fuchsia::test]
+    async fn test_host_receiver_task_fletcher_collision_noise() {
+        let (s_cur, s_noise) = (0xABCDEFu32, 0x99999999u32);
+        let mut data = encode_frame(s_noise, 1, 0, FrameType::Data, b"noisebytes").unwrap();
+        data.extend_from_slice(&encode_frame(s_cur, 1, 0, FrameType::Data, b"validbytes").unwrap());
+
+        let (serial_tx, mut serial_rx) = mpsc::channel(10);
+        let ack_tracker = AckTracker::new();
+        let (incoming_event_tx, _incoming_event_rx) = mpsc::channel(10);
+        let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
+
+        let rx_handle = fuchsia_async::Task::local(receiver_task(
+            UartReader::new(MockReader::new(data)),
+            serial_tx,
+            ack_tracker,
+            incoming_event_tx,
+            s_cur,
+            metrics,
+        ));
+
+        let event = serial_rx.next().await.unwrap();
+        assert_eq!(event, UartEvent::UartData { channel_id: 1, data: b"validbytes".to_vec() });
+        drop(rx_handle);
+    }
+
+    #[fuchsia::test]
+    async fn test_uart_reader_with_initial_data() {
+        let session_id = 12345u32;
+        let payload = b"unconsumed_hello";
+        let frame = encode_frame(session_id, 1, 0, FrameType::Data, payload).unwrap();
+
+        let mut reader = UartReader::with_initial_data(MockReader::new(Vec::new()), frame);
+        let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
+
+        let parsed = reader.next_frame(&metrics).await.unwrap();
+        assert_eq!(parsed.session_id, session_id);
+        assert_eq!(parsed.channel_id, 1);
+        assert_eq!(parsed.payload, payload);
     }
 }

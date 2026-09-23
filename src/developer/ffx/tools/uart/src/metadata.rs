@@ -9,9 +9,13 @@
 
 use ffx_config::EnvironmentContext;
 use std::fs::{self, File};
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
-pub use uart_driver_api::{ConnectionError, ConnectionMetadata, ConnectionStatus, UartProtocol};
+pub use uart_driver_api::{
+    ConnectionError, ConnectionMetadata, ConnectionStatus, METADATA_FILE_EXTENSION,
+    UNIX_SOCKET_EXTENSION, UartProtocol, get_client_socket_path,
+};
 use uart_fpl::ProtocolId;
 
 /// Diagnostic and operational metrics exported by an active UART driver daemon.
@@ -94,7 +98,7 @@ pub fn get_socket_path(
     context: &EnvironmentContext,
     target: &str,
 ) -> std::result::Result<PathBuf, fho::Error> {
-    let target_path = uart_driver_api::friendly_name_to_target_path(target, context)
+    let target_path = uart_driver_api::parse_target_endpoint(target, context)
         .map_err(|e| fho::user_error!("{e}"))?;
     uart_driver_api::get_socket_path_from_target_path(&target_path, context)
         .map_err(|e| fho::user_error!("{e}"))
@@ -111,7 +115,7 @@ pub fn get_metadata_path(
     context: &EnvironmentContext,
     target: &str,
 ) -> std::result::Result<PathBuf, fho::Error> {
-    Ok(get_socket_path(context, target)?.with_extension("json"))
+    Ok(uart_driver_api::get_metadata_path(&get_socket_path(context, target)?))
 }
 
 /// Atomically writes serializable metadata to `path` using a temporary file in the same parent directory.
@@ -142,10 +146,10 @@ pub fn write_metadata_with_target_name(
     target: &str,
     store_target: &str,
     pid: u32,
-    baud: Option<u32>,
+    baud: Option<NonZeroU32>,
     protocol: ProtocolId,
 ) -> std::result::Result<(), fho::Error> {
-    let path = socket_path.with_extension("json");
+    let path = uart_driver_api::get_metadata_path(socket_path);
     let id = get_target_id(target);
     let query =
         context.build().name(Some("log.level")).level(Some(ffx_config::ConfigLevel::Runtime));
@@ -176,7 +180,7 @@ pub fn write_metadata(
     socket_path: &std::path::Path,
     target: &str,
     pid: u32,
-    baud: Option<u32>,
+    baud: Option<NonZeroU32>,
 ) -> std::result::Result<(), fho::Error> {
     write_metadata_with_target_name(
         context,
@@ -204,7 +208,7 @@ pub fn load_metadata_from_path(
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         Err(e) => {
-            tracing::warn!("Failed to read metadata file at {}: {e}", path.display());
+            log::warn!("Failed to read metadata file at {}: {e}", path.display());
             return Some(ConnectionMetadata {
                 pid: 0,
                 target: fallback_target.to_string(),
@@ -219,7 +223,7 @@ pub fn load_metadata_from_path(
         }
     };
     Some(serde_json::from_str(&content).unwrap_or_else(|e| {
-        tracing::warn!("Failed to parse metadata JSON at {}: {e}", path.display());
+        log::warn!("Failed to parse metadata JSON at {}: {e}", path.display());
         ConnectionMetadata {
             pid: 0,
             target: fallback_target.to_string(),
@@ -380,13 +384,13 @@ mod tests {
         let socket_path = get_socket_path(&env.context, target).unwrap();
 
         // Write metadata (pass trailing slashes to verify stored target is canonicalized)
-        write_metadata(&env.context, &socket_path, "/dev/ttyUSB0///", 12345, Some(115200)).unwrap();
+        write_metadata(&env.context, &socket_path, "/dev/ttyUSB0///", 12345, NonZeroU32::new(115200)).unwrap();
 
         // Read metadata
         let meta = read_metadata(&env.context, target).unwrap().expect("metadata exists");
         assert_eq!(meta.pid, 12345);
         assert_eq!(meta.target, target);
-        assert_eq!(meta.baud, Some(115200));
+        assert_eq!(meta.baud, NonZeroU32::new(115200));
         assert_eq!(meta.status, ConnectionStatus::Connecting);
 
         // Update status
