@@ -1674,6 +1674,110 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
   close(sfd);
 }
 
+// Verifies single-stepping a tracee using PTRACE_SINGLESTEP.
+class SingleStepTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    child_pid_ = helper_.RunInForkedProcess([] {
+      SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
+      raise(SIGSTOP);
+      volatile int counter = 0;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      counter += 1;
+      _exit(0);
+    });
+    ASSERT_NE(child_pid_, 0);
+  }
+  void TearDown() override {
+    if (child_pid_ > 0) {
+      // Detach to let the child finish executing and terminate cleanly if it was stopped.
+      // Do not use SAFE_SYSCALL in case the child has already exited.
+      ptrace(PTRACE_DETACH, child_pid_, 0, 0);
+      EXPECT_TRUE(helper_.WaitForChildren());
+    }
+  }
+
+  void WaitForChildStop(int expected_status) const {
+    int status;
+    ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid_, &status, 0)), child_pid_);
+    ASSERT_TRUE(WIFSTOPPED(status));
+    ASSERT_EQ(WSTOPSIG(status), expected_status);
+  }
+
+  void CheckSignalInfo(int signal, int code) const {
+    siginfo_t info;
+    SAFE_SYSCALL(ptrace(PTRACE_GETSIGINFO, child_pid_, nullptr, &info));
+    EXPECT_EQ(info.si_signo, signal);
+    EXPECT_EQ(info.si_code, code);
+  }
+
+  uintptr_t GetInstructionPointer() const {
+    struct user_regs_struct regs;
+    struct iovec iov = {
+        .iov_base = &regs,
+        .iov_len = sizeof(regs),
+    };
+    SAFE_SYSCALL(ptrace(PTRACE_GETREGSET, child_pid_, NT_PRSTATUS, &iov));
+#if defined(__x86_64__)
+    return regs.rip;
+#elif defined(__aarch64__) || defined(__riscv)
+    return regs.pc;
+#elif defined(__arm__)
+    return regs.regs[15];
+#else
+#error "Unsupported architecture"
+#endif
+  }
+
+  pid_t ChildPid() const { return child_pid_; }
+
+ private:
+  test_helper::ForkHelper helper_;
+  pid_t child_pid_ = -1;
+};
+
+TEST_F(SingleStepTest, InstructionPointerAdvances) {
+  // Wait for initial SIGSTOP.
+  ASSERT_NO_FATAL_FAILURE(WaitForChildStop(SIGSTOP));
+  CheckSignalInfo(SIGSTOP, SI_TKILL);
+
+  uintptr_t pc_before = GetInstructionPointer();
+  ASSERT_THAT(ptrace(PTRACE_SINGLESTEP, ChildPid(), 0, 0), SyscallSucceeds());
+
+  // Wait for single-step trap.
+  ASSERT_NO_FATAL_FAILURE(WaitForChildStop(SIGTRAP));
+  CheckSignalInfo(SIGTRAP, TRAP_TRACE);
+
+  uintptr_t pc_after = GetInstructionPointer();
+  EXPECT_NE(pc_before, pc_after);
+}
+
+TEST_F(SingleStepTest, ConsecutiveSteps) {
+  // Wait for initial SIGSTOP.
+  ASSERT_NO_FATAL_FAILURE(WaitForChildStop(SIGSTOP));
+  CheckSignalInfo(SIGSTOP, SI_TKILL);
+
+  uintptr_t last_pc = GetInstructionPointer();
+  constexpr int kNumSteps = 5;
+  for (int i = 0; i < kNumSteps; ++i) {
+    ASSERT_THAT(ptrace(PTRACE_SINGLESTEP, ChildPid(), 0, 0), SyscallSucceeds());
+    ASSERT_NO_FATAL_FAILURE(WaitForChildStop(SIGTRAP));
+    CheckSignalInfo(SIGTRAP, TRAP_TRACE);
+
+    uintptr_t current_pc = GetInstructionPointer();
+    EXPECT_NE(current_pc, last_pc);
+    last_pc = current_pc;
+  }
+}
+
 // On ARM32 Linux, the specific instruction `0xe7f001f0` is used as a breakpoint, and should report
 // SIGTRAP, instead of SIGILL. On other architectures, their architecture-specific breakpoint
 // instruction is used instead (e.g. `0xcc` on x86_64, and `brk` on AArch64).
