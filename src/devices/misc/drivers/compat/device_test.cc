@@ -715,3 +715,48 @@ TEST_F(DeviceTest, CreateNodeProperties) {
   EXPECT_EQ(bind_fuchsia::PROTOCOL, properties[1].key.get());
   EXPECT_EQ(10u, properties[1].value.int_value());
 }
+
+// Verify that the device does not call its release hook if the device failed to be added to its
+// parents list of children.
+TEST_F(DeviceTest, AddDeviceFailureDoesNotRelease) {
+  fdf_testing::TestNode node("root", dispatcher());
+  zx::result node_client = node.CreateNodeChannel();
+  ASSERT_EQ(ZX_OK, node_client.status_value());
+
+  // Create a parent device.
+  zx_protocol_device_t parent_ops{};
+  compat::Device parent(compat::kDefaultDevice, &parent_ops, nullptr, std::nullopt, logger(),
+                        dispatcher());
+  parent.Bind({std::move(node_client.value()), dispatcher()});
+
+  // Track if release was called on the child.
+  struct Context {
+    bool release_called = false;
+  } context;
+
+  zx_protocol_device_t child_ops{
+      .release =
+          [](void* ctx) {
+            auto c = static_cast<Context*>(ctx);
+            c->release_called = true;
+          },
+  };
+
+  // Add a child device but make it fail by passing an invalid inspect VMO.
+  // We use a non-zero invalid handle to trigger `duplicate()` failure.
+  device_add_args_t args{
+      .name = "child",
+      .ctx = &context,
+      .ops = &child_ops,
+      .inspect_vmo = 0xDEADBEEF, // Invalid handle, but not ZX_HANDLE_INVALID
+  };
+  zx_device_t* child = nullptr;
+  ASSERT_NE(ZX_OK, parent.Add(&args, &child));
+  EXPECT_EQ(nullptr, child);
+
+  // Run loop to ensure any pending tasks are run.
+  ASSERT_TRUE(RunLoopUntilIdle());
+
+  // Release should NOT have been called because `Device::Add()` failed.
+  EXPECT_FALSE(context.release_called);
+}
