@@ -98,6 +98,7 @@ async fn create_client_state_machine(
     telemetry_sender: TelemetrySender,
     defect_sender: mpsc::Sender<Defect>,
     roam_manager: RoamManager,
+    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
 ) -> Result<
     (
         Box<dyn client_fsm::ClientApi>,
@@ -139,6 +140,7 @@ async fn create_client_state_machine(
         defect_sender,
         roam_manager,
         publisher,
+        power_manager,
     )
     .then(|()| async move {
         if !termination_notifier.signal() {
@@ -183,6 +185,7 @@ pub(crate) struct IfaceManagerService {
     defect_sender: mpsc::Sender<Defect>,
     _node: fuchsia_inspect::Node,
     recovery_node: BoundedListNode,
+    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
 }
 
 impl IfaceManagerService {
@@ -197,6 +200,7 @@ impl IfaceManagerService {
         telemetry_sender: TelemetrySender,
         defect_sender: mpsc::Sender<Defect>,
         _node: fuchsia_inspect::Node,
+        power_manager: Arc<dyn wlan_power_manager::PowerManager>,
     ) -> Self {
         let recovery_node = _node.create_child("recovery_record");
         let recovery_node = BoundedListNode::new(recovery_node, INSPECT_RECOVERY_INTERFACE_RECORDS);
@@ -217,6 +221,7 @@ impl IfaceManagerService {
             defect_sender,
             _node,
             recovery_node,
+            power_manager,
         }
     }
 
@@ -618,6 +623,7 @@ impl IfaceManagerService {
                     self.telemetry_sender.clone(),
                     self.defect_sender.clone(),
                     self.roam_manager.clone(),
+                    self.power_manager.clone(),
                 )
                 .await?;
                 client_iface.status = status;
@@ -704,6 +710,7 @@ impl IfaceManagerService {
                         self.telemetry_sender.clone(),
                         self.defect_sender.clone(),
                         self.roam_manager.clone(),
+                        self.power_manager.clone(),
                     )
                     .await?;
 
@@ -762,6 +769,7 @@ impl IfaceManagerService {
                         self.telemetry_sender.clone(),
                         self.defect_sender.clone(),
                         self.roam_manager.clone(),
+                        self.power_manager.clone(),
                     )
                     .await?;
 
@@ -1432,6 +1440,7 @@ async fn serve_iface_functionality(
             initiate_record_defect(iface_manager.phy_manager.clone(), defect).await;
         },
         action = recovery_action_receiver.select_next_some() => {
+            let _wake_lease = iface_manager.power_manager.take_wake_lease("wlancfg-recovery").await;
             let client_statuses = InspectListClosure(&iface_manager.clients, |node_writer, key, client| {
                 if let Ok(status) = client.status.read_status() {
                     inspect_insert!(node_writer, var key: {
@@ -1558,6 +1567,7 @@ mod tests {
         pub connection_selection_requester: ConnectionSelectionRequester,
         pub connection_selection_request_receiver: mpsc::Receiver<ConnectionSelectionRequest>,
         pub roam_manager: RoamManager,
+        pub power_manager: Arc<TestPowerManager>,
     }
 
     /// Create a TestValues for a unit test.
@@ -1586,6 +1596,7 @@ mod tests {
 
         let (roam_service_request_sender, _roam_service_request_receiver) = mpsc::channel(100);
         let roam_manager = RoamManager::new(roam_service_request_sender);
+        let power_manager = Arc::new(TestPowerManager::new());
 
         TestValues {
             monitor_service_proxy,
@@ -1606,6 +1617,7 @@ mod tests {
             connection_selection_requester,
             connection_selection_request_receiver,
             roam_manager,
+            power_manager,
         }
     }
 
@@ -1853,6 +1865,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender.clone(),
             test_values.node.clone_weak(),
+            test_values.power_manager.clone(),
         );
 
         if configured {
@@ -1921,6 +1934,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender.clone(),
             test_values.node.clone_weak(),
+            test_values.power_manager.clone(),
         );
 
         iface_manager.aps.push(ap_container);
@@ -2389,6 +2403,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Call connect on the IfaceManager
@@ -2429,6 +2444,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Construct the connect request.
@@ -2584,6 +2600,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Call disconnect on the IfaceManager
@@ -2727,6 +2744,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Call stop_client_connections.
@@ -2847,6 +2865,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Call stop_client_connections.
@@ -2998,6 +3017,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         {
@@ -3186,6 +3206,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Call start_ap.
@@ -3326,6 +3347,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
         let fut = iface_manager.stop_ap(TEST_SSID.clone(), TEST_PASSWORD.as_bytes().to_vec());
         let mut fut = pin!(fut);
@@ -3489,6 +3511,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         let fut = iface_manager.stop_all_aps();
@@ -3826,6 +3849,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         {
@@ -3917,6 +3941,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         {
@@ -3994,6 +4019,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         {
@@ -4465,6 +4491,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Create mpsc channel to handle requests.
@@ -4578,6 +4605,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Report a new interface.
@@ -4682,6 +4710,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Make start client connections request
@@ -4760,6 +4789,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Make stop client connections request
@@ -4982,6 +5012,7 @@ mod tests {
             test_values.telemetry_sender,
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Update the saved networks with knowledge of the test SSID and credentials.
@@ -5507,6 +5538,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender,
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // If the test calls for it, create an AP interface to test that the IfaceManager preserves
@@ -5624,6 +5656,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender.clone(),
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Send a defect to the IfaceManager service loop.
@@ -5681,6 +5714,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender.clone(),
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Send a recovery summary to the IfaceManager service loop.
@@ -5743,6 +5777,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender.clone(),
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Send an AP start failure + reset PHY recovery summary to the IfaceManager service loop.
@@ -5825,6 +5860,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender.clone(),
             test_values.node,
+            test_values.power_manager.clone(),
         );
 
         // Send an AP start failure + reset PHY recovery summary to the IfaceManager service loop.
@@ -5916,6 +5952,7 @@ mod tests {
             test_values.telemetry_sender.clone(),
             test_values.defect_sender.clone(),
             test_values.node.clone_weak(),
+            test_values.power_manager.clone(),
         );
 
         // Set up a fake client and fake AP and write some fake statuses for them.
@@ -6074,5 +6111,35 @@ mod tests {
             Ok(listener::Message::NotifyListeners(updates)) => {
             assert_eq!(updates, disconnected_state_update);
         });
+    }
+
+    #[fuchsia::test]
+    fn test_iface_manager_wake_leases() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let mut test_values = test_setup(&mut exec);
+        let (iface_manager, _) = create_iface_manager_with_client(&test_values, false);
+
+        let defect = Defect::Iface(IfaceFailure::ApStartFailure { iface_id: 0 });
+        let action =
+            recovery::RecoveryAction::PhyRecovery(recovery::PhyRecoveryOperation::ResetPhy {
+                phy_id: 0,
+            });
+        test_values
+            .recovery_sender
+            .try_send(recovery::RecoverySummary { defect, action })
+            .expect("failed to send recovery summary");
+
+        let (_, receiver) = mpsc::channel(0);
+        let serve_fut = serve_iface_manager_requests(
+            iface_manager,
+            receiver,
+            test_values.defect_receiver,
+            test_values.recovery_receiver,
+        );
+        let mut serve_fut = pin!(serve_fut);
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+
+        let calls = test_values.power_manager.calls.lock();
+        assert!(calls.contains(&"wlancfg-recovery".to_string()));
     }
 }
