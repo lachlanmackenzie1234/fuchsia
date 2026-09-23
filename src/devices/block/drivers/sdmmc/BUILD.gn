@@ -67,6 +67,7 @@ source_set("sdmmc-driver-source") {
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/block/lib/common",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/lib/backoff",
     "//tools/power_config/lib/cpp",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/pretty",
