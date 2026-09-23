@@ -31,8 +31,6 @@ _ARGS_TO_IGNORE = (
     "-o=",
     # Bazel sets sysroot to the Rust toolchain in bazel-out, while GN omits this.
     "--sysroot=",
-    # Bazel sets this for determinism purposes, and GN omits it.
-    "--remap-path-prefix=",
     # Ignore remote-only flags, which are used in GN to maximize RBE cache hits
     # by utilizing wrapper scripts.
     "--remote-only",
@@ -146,6 +144,25 @@ def normalize_rustc_arg(
     if arg.startswith(_ARGS_TO_IGNORE):
         return ""
 
+    def _normalize_path(path: str) -> str:
+        try:
+            return normalizer.normalize_path(path)
+        except ValueError:
+            return path
+
+    if arg.startswith("--remap-path-prefix="):
+        val = arg[len("--remap-path-prefix=") :]
+        # Bazel rules_rust sets --remap-path-prefix=${pwd}=. for determinism,
+        # which GN omits.
+        if val in ("${pwd}=.", ".=."):
+            return ""
+        from_path, equal, to_path = val.partition("=")
+        if equal:
+            norm_from = _normalize_path(from_path)
+            norm_to = _normalize_path(to_path)
+            return f"--remap-path-prefix={norm_from}={norm_to}"
+        return f"--remap-path-prefix={_normalize_path(val)}"
+
     if arg.startswith("-Clinker="):
         parts = arg.split("=", maxsplit=1)
         base_linker_name = os.path.basename(parts[1])
@@ -164,9 +181,6 @@ def normalize_rustc_arg(
             return ""
 
         # Try to normalize relative/absolute source path
-        try:
-            return normalizer.normalize_path(arg)
-        except ValueError:
-            pass
+        arg = _normalize_path(arg)
 
     return arg

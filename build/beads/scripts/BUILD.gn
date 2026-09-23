@@ -21,6 +21,11 @@ if (is_host) {
     deps = [ ":path_normalizer" ]
   }
 
+  python_library("normalize_clang_args") {
+    sources = [ "normalize_clang_args.py" ]
+    deps = [ ":path_normalizer" ]
+  }
+
   python_library("normalize_rustc_args") {
     sources = [ "normalize_rustc_args.py" ]
     deps = [ ":path_normalizer" ]
@@ -44,6 +49,11 @@ if (is_host) {
   python_build_time_tests("shell_utils_test") {
     tests = [ "shell_utils_test.py" ]
     inputs = [ "shell_utils.py" ]
+  }
+
+  python_build_time_tests("normalize_clang_args_test") {
+    tests = [ "normalize_clang_args_test.py" ]
+    deps = [ ":normalize_clang_args" ]
   }
 
   python_build_time_tests("normalize_rustc_args_test") {
@@ -89,6 +99,7 @@ if (is_host) {
     deps = [
       ":build_command_query_utils_test",
       ":discover_migration_candidates_test",
+      ":normalize_clang_args_test",
       ":normalize_rustc_args_test",
       ":path_normalizer_test",
       ":shell_utils_test",
