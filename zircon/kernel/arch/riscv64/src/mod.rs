@@ -20,10 +20,46 @@ pub mod timer;
 pub mod user_copy;
 pub mod vector;
 
-/// Base address of the kernel address space.
-pub const KERNEL_ASPACE_BASE: usize = 0xffff_ffc0_0000_0000;
-/// Size of the kernel address space.
+use riscv64_aspace_bindings as aspace_bindings;
+
+/// Virtual address where the kernel address space begins.
+/// Below this is the user address space.
+/// riscv64 with sv39 means a page-based 39-bit virtual memory space.  The
+/// base kernel address is chosen so that kernel addresses have a 1 in the
+/// most significant bit whereas user addresses have a 0.
+pub const KERNEL_ASPACE_BASE: usize = 0xffffffc000000000;
+zr::static_assert!(KERNEL_ASPACE_BASE == aspace_bindings::KERNEL_ASPACE_BASE as usize);
+
+/// Virtual address where the kernel address space begins.
+/// Below this is the user address space.
+/// riscv64 with sv39 means a page-based 39-bit virtual memory space.  The
+/// base kernel address is chosen so that kernel addresses have a 1 in the
+/// most significant bit whereas user addresses have a 0.
 pub const KERNEL_ASPACE_SIZE: usize = 1usize << 38;
+zr::static_assert!(KERNEL_ASPACE_SIZE == aspace_bindings::KERNEL_ASPACE_SIZE as usize);
+
+/// Virtual address where the user-accessible address space begins.
+/// Below this is wholly inaccessible.
+pub const USER_ASPACE_BASE: usize = 0x0000000000200000;
+zr::static_assert!(USER_ASPACE_BASE == aspace_bindings::USER_ASPACE_BASE as usize);
+
+/// Virtual address where the user-accessible address space begins.
+/// Below this is wholly inaccessible.
+pub const USER_ASPACE_SIZE: usize = (1usize << 38) - USER_ASPACE_BASE;
+zr::static_assert!(USER_ASPACE_SIZE == aspace_bindings::USER_ASPACE_SIZE as usize);
+
+/// Size of the restricted mode address space in unified address spaces.
+/// We set the top of the restricted aspace to exactly halfway through the top
+/// level page table.
+pub const USER_RESTRICTED_ASPACE_SIZE: usize = (1usize << 37) - USER_ASPACE_BASE;
+zr::static_assert!(
+    USER_RESTRICTED_ASPACE_SIZE == aspace_bindings::USER_RESTRICTED_ASPACE_SIZE as usize
+);
+
+/// The dimensions of the paging are determined by libpage.
+///
+/// SvXXx4 for hypervisor guest translation
+pub const MMU_GUEST_SIZE_SHIFT: usize = aspace_bindings::MMU_GUEST_SIZE_SHIFT;
 
 /// Zic64b guarantees.
 pub const MAX_CACHE_LINE: usize = 64;

@@ -34,6 +34,8 @@ use debug::ltracef;
 use zx_status::Status;
 use zx_types::{zx_restricted_state_t, zx_status_t, zx_thread_state_general_regs_t};
 
+use arch_x86_aspace_bindings as aspace_bindings;
+
 const LOCAL_TRACE: u32 = 0;
 
 unsafe extern "C" {
@@ -215,10 +217,34 @@ pub fn is_vaddr_canonical(va: u64) -> bool {
         || ((va & X86_CANONICAL_ADDRESS_MASK) == X86_CANONICAL_ADDRESS_MASK)
 }
 
-/// Base address of the kernel address space.
-pub const KERNEL_ASPACE_BASE: usize = 0xffff_ff80_0000_0000;
-/// Size of the kernel address space.
-pub const KERNEL_ASPACE_SIZE: usize = 0x0000_0080_0000_0000;
+/// Virtual address where the kernel address space begins.
+/// Below this is the user address space.
+pub const KERNEL_ASPACE_BASE: usize = 0xffffff8000000000; // -512GB
+zr::static_assert!(KERNEL_ASPACE_BASE == aspace_bindings::KERNEL_ASPACE_BASE as usize);
+
+/// Virtual address where the kernel address space begins.
+/// Below this is the user address space.
+pub const KERNEL_ASPACE_SIZE: usize = 0x0000008000000000;
+zr::static_assert!(KERNEL_ASPACE_SIZE == aspace_bindings::KERNEL_ASPACE_SIZE as usize);
+
+/// Virtual address where the user-accessible address space begins.
+/// Below this is wholly inaccessible.
+pub const USER_ASPACE_BASE: usize = 0x0000000000200000; // 2MB
+zr::static_assert!(USER_ASPACE_BASE == aspace_bindings::USER_ASPACE_BASE as usize);
+
+/// We set the top of user address space to be (1 << 47) - 4k.
+/// See //docs/concepts/kernel/sysret_problem.md for why we subtract 4k here.
+pub const USER_ASPACE_SIZE: usize = (1usize << 47) - 4096 - USER_ASPACE_BASE;
+zr::static_assert!(USER_ASPACE_SIZE == aspace_bindings::USER_ASPACE_SIZE as usize);
+
+/// Size of the restricted mode address space in unified address spaces.
+/// We set the top of the restricted aspace to exactly halfway through the PML4.
+pub const USER_RESTRICTED_ASPACE_SIZE: usize = (1usize << 46) - USER_ASPACE_BASE;
+zr::static_assert!(
+    USER_RESTRICTED_ASPACE_SIZE == aspace_bindings::USER_RESTRICTED_ASPACE_SIZE as usize
+);
+
+pub const MMU_GUEST_SIZE_SHIFT: usize = aspace_bindings::MMU_GUEST_SIZE_SHIFT as usize;
 
 /// Returns whether `va` is within the kernel address space.
 #[inline]

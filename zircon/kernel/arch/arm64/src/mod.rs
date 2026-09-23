@@ -18,6 +18,7 @@ zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
 zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
 
 use crate::kernel::types::cpu_num_t;
+use arch_arm64_aspace_bindings as aspace_bindings;
 use core::fmt::Write;
 use debug::ltrace::KernelConsoleWriter;
 use debug::ltracef;
@@ -168,10 +169,38 @@ pub fn is_user_accessible(va: usize) -> bool {
     (va & USER_BIT_MASK) == 0
 }
 
-/// Base address of the kernel address space.
-pub const KERNEL_ASPACE_BASE: usize = 0xffff_0000_0000_0000;
-/// Size of the kernel address space.
-pub const KERNEL_ASPACE_SIZE: usize = 0x0001_0000_0000_0000;
+/// Virtual address where the kernel address space begins.
+/// Below this is the user address space.
+pub const KERNEL_ASPACE_BASE: usize = 0xffff000000000000;
+zr::static_assert!(KERNEL_ASPACE_BASE == aspace_bindings::KERNEL_ASPACE_BASE as usize);
+
+/// Virtual address where the kernel address space begins.
+/// Below this is the user address space.
+pub const KERNEL_ASPACE_SIZE: usize = 0x0001000000000000;
+zr::static_assert!(KERNEL_ASPACE_SIZE == aspace_bindings::KERNEL_ASPACE_SIZE as usize);
+
+/// Virtual address where the user-accessible address space begins.
+/// Below this is wholly inaccessible.
+pub const USER_ASPACE_BASE: usize = 0x0000000000200000;
+zr::static_assert!(USER_ASPACE_BASE == aspace_bindings::USER_ASPACE_BASE as usize);
+
+/// Virtual address where the user-accessible address space begins.
+/// Below this is wholly inaccessible.
+pub const USER_ASPACE_SIZE: usize = 0xffffff000000 - USER_ASPACE_BASE;
+zr::static_assert!(USER_ASPACE_SIZE == aspace_bindings::USER_ASPACE_SIZE as usize);
+
+/// Size of the restricted mode address space in unified address spaces.
+/// We set the top of the restricted aspace to exactly halfway through the top
+/// level page table.
+pub const USER_RESTRICTED_ASPACE_SIZE: usize = (1usize << 47) - USER_ASPACE_BASE;
+zr::static_assert!(
+    USER_RESTRICTED_ASPACE_SIZE == aspace_bindings::USER_RESTRICTED_ASPACE_SIZE as usize
+);
+
+/// See ARM DDI 0487B.b, Table D4-25 for the maximum IPA range that can be used.
+/// This size is based on a 4KB granule and a starting level of 1. We chose this
+/// size due to the 40-bit physical address range on Cortex-A53.
+pub const MMU_GUEST_SIZE_SHIFT: usize = aspace_bindings::MMU_GUEST_SIZE_SHIFT as usize;
 
 /// Returns whether `va` is within the kernel address space.
 #[inline]
