@@ -8,9 +8,11 @@ import logging
 
 import usb_lib
 from honeydew import errors
-from mobly import test_runner
+from mobly import signals, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+_DEFAULT_RECONNECT_TIMEOUT_SEC: int = 60
 
 
 class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
@@ -25,9 +27,12 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
         num_usb_disconnects (int, optional): Alias for num_iterations.
         disconnect_duration_sec (int, optional): How long to stay disconnected.
             Defaults to 10.
+        reconnect_timeout_sec (int, optional): How long to wait for the device
+            to come back online after USB power is restored. Defaults to 60.
     """
 
     USB_POWER_HUB_REQUIRED: bool = True
+    _reconnect_failed: bool = False
 
     async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
@@ -48,6 +53,20 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             arg_sets=test_arg_tuple_list,
         )
 
+    async def setup_test(self) -> None:
+        """setup_test is called once before running each test."""
+        self._reconnect_failed = False
+        await super().setup_test()
+
+    async def teardown_test(self) -> None:
+        """teardown_test is called once after running each test."""
+        if self._reconnect_failed:
+            _LOGGER.warning(
+                "Skipping teardown health check because device failed to reconnect over USB."
+            )
+            return
+        await super().teardown_test()
+
     async def _test_logic(self, iteration: int) -> None:
         """Test case logic that disconnects the USB from a fuchsia device."""
         _LOGGER.info(
@@ -57,10 +76,26 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
         disconnect_duration = int(
             self.user_params.get("disconnect_duration_sec", 10)
         )
+        reconnect_timeout = int(
+            self.user_params.get(
+                "reconnect_timeout_sec", _DEFAULT_RECONNECT_TIMEOUT_SEC
+            )
+        )
 
         power_hub = self.require_usb_power_hub()
 
-        await self.dut.wait_for_online()
+        try:
+            await asyncio.wait_for(
+                self.dut.wait_for_online(),
+                timeout=reconnect_timeout,
+            )
+        except asyncio.TimeoutError as e:
+            self._reconnect_failed = True
+            raise signals.TestAbortAll(
+                f"Device {self.dut.device_name} failed to come online before "
+                f"starting iteration {iteration} within {reconnect_timeout}s."
+            ) from e
+
         pre_disconnect_boot_id = await self.dut.boot_id()
         _LOGGER.info("Pre-disconnect Boot ID: %s", pre_disconnect_boot_id)
         self.dut.fuchsia_controller.before_usb_disconnect()
@@ -77,7 +112,17 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
         finally:
             power_hub.power_on(port=self._usb_port)
             _LOGGER.info("Waiting for the device to go online...")
-            await self.dut.wait_for_online()
+            try:
+                await asyncio.wait_for(
+                    self.dut.wait_for_online(),
+                    timeout=reconnect_timeout,
+                )
+            except asyncio.TimeoutError as e:
+                self._reconnect_failed = True
+                raise signals.TestAbortAll(
+                    f"Device {self.dut.device_name} failed to reconnect over USB "
+                    f"network within {reconnect_timeout}s after USB power-on."
+                ) from e
             self.dut.fuchsia_controller.after_usb_reconnect()
             post_reconnect_boot_id = await self.dut.boot_id()
             _LOGGER.info("Post-reconnect Boot ID: %s", post_reconnect_boot_id)
