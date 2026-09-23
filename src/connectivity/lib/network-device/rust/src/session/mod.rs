@@ -205,7 +205,7 @@ impl Session {
                 }
             };
             let hold_until_frame = hold_until_frame.ok_or(Error::InvalidLease)?;
-            let handle = RxLease { handle: handle.ok_or(Error::InvalidLease)? };
+            let handle = RxLease::new(handle.ok_or(Error::InvalidLease)?);
 
             watcher.wait_until(hold_until_frame).await;
             Ok(Some((handle, (inner, watcher))))
@@ -1060,9 +1060,20 @@ impl Drop for RxLease {
 }
 
 impl RxLease {
+    /// Creates a lease from a delegated lease handle.
+    pub fn new(handle: netdev::DelegatedRxLeaseHandle) -> Self {
+        Self { handle }
+    }
+
     /// Peeks the internal lease.
     pub fn inner(&self) -> &netdev::DelegatedRxLeaseHandle {
         &self.handle
+    }
+}
+
+impl From<netdev::DelegatedRxLeaseHandle> for RxLease {
+    fn from(handle: netdev::DelegatedRxLeaseHandle) -> Self {
+        Self::new(handle)
     }
 }
 
