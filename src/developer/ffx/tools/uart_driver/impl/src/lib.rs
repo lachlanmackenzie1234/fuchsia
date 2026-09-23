@@ -4,8 +4,12 @@
 
 //! Core daemon implementation for the Fuchsia UART host driver.
 //!
-//! Coordinates bidirectional multiplexing and reliable transport over a single UART link
-//! using four dedicated asynchronous tasks:
+//! Provides [`HostDriver`], the daemon execution run loop that supervises client
+//! connections, manages background UART link lifecycle and reconnection, and resolves
+//! target identity over FDomain Remote Control Service (RCS).
+//!
+//! Coordinates bidirectional multiplexing and reliable transport over the UART link
+//! using four dedicated asynchronous session tasks:
 //! * `coordinator_task`: Manages client connection lifecycle, channel allocations, and event routing.
 //! * `sender_task`: Implements sliding-window Go-Back-N retransmission using [`uart_fpl::ResendSender`].
 //! * `writer_task`: Transmits outgoing frames and cumulative ACKs to the UART device with batching and rate limiting.
@@ -33,12 +37,17 @@ use uart_fpl::{
 };
 
 pub const DEFAULT_CLIENT_DATA_CAPACITY: usize = 64;
+pub const DEFAULT_SERIAL_DATA_CAPACITY: usize = 64;
 const UART_READ_BUFFER_SIZE: usize = 16 * 1024;
 const TERMINATE_POLL_RETRIES: usize = 5;
 const TERMINATE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const CLIENT_WRITER_CHANNEL_CAPACITY: usize = 256;
 const MAX_UART_WRITE_BATCH_BYTES: usize = 4096;
 const METADATA_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+const RECONNECT_BACKOFF_INTERVAL: Duration = Duration::from_secs(1);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
+const HANDSHAKE_RETRIES: usize = 3;
+const SERIAL_8N1_BITS_PER_BYTE: u32 = 10;
 
 pub fn is_char_device(path: &str) -> bool {
     std::fs::metadata(path).map(|m| m.file_type().is_char_device()).unwrap_or(false)
@@ -162,7 +171,7 @@ async fn terminate_process(pid: u32) {
 }
 
 async fn check_and_kill_orphaned_daemon(socket_path: &std::path::Path, verify_daemon: bool) {
-    let json_path = socket_path.with_extension("json");
+    let json_path = uart_driver_api::get_metadata_path(socket_path);
     if !json_path.exists() {
         return;
     }
@@ -554,20 +563,20 @@ fn current_epoch_ms() -> u64 {
 
 struct DeviceWriter<W> {
     device: W,
-    rate_limit: Option<u32>,
+    rate_limit: Option<NonZeroU32>,
     next_allowed_time: std::time::Instant,
     metrics: Arc<Mutex<DaemonMetrics>>,
 }
 
 impl<W: AsyncWrite + Unpin> DeviceWriter<W> {
     async fn write_frame(&mut self, frame: &[u8]) -> Result<(), WriterTaskError> {
-        if let Some(limit) = self.rate_limit.filter(|&l| l > 0) {
+        if let Some(limit) = self.rate_limit {
             let now = std::time::Instant::now();
             if self.next_allowed_time > now {
                 fuchsia_async::Timer::new(self.next_allowed_time - now).await;
             }
             let frame_duration =
-                std::time::Duration::from_secs_f64(frame.len() as f64 / limit as f64);
+                std::time::Duration::from_secs_f64(frame.len() as f64 / limit.get() as f64);
             self.next_allowed_time = std::cmp::max(now, self.next_allowed_time) + frame_duration;
         }
         log::trace!("WRITER: writing frame len={}", frame.len());
@@ -605,7 +614,7 @@ pub async fn writer_task<W: AsyncWrite + Unpin>(
     ack_tracker: AckTracker,
     mut data_rx: mpsc::Receiver<Vec<u8>>,
     metrics: Arc<Mutex<DaemonMetrics>>,
-    rate_limit: Option<u32>,
+    rate_limit: Option<NonZeroU32>,
 ) -> Result<(), TaskError> {
     let mut writer =
         DeviceWriter { device, rate_limit, next_allowed_time: std::time::Instant::now(), metrics };
@@ -1058,13 +1067,13 @@ pub async fn sender_task(
 
 /// Host-side driver coordinator managing daemon background execution and hardware state.
 ///
-/// Supervises client connections, monitors metadata file deletion and peer exit
-/// for graceful termination, and updates connection metadata states.
+/// Supervises client connections, performs handshake negotiation, queries target identity
+/// over FDomain Remote Control Service (RCS), and synchronizes connection metadata for
+/// tool discovery.
 pub struct HostDriver;
 
 impl HostDriver {
-    /// Updates connection metadata status and clears nodename/serial when disconnecting.
-    pub fn update_status(meta_path: &Option<PathBuf>, status: ConnectionStatus) {
+    fn update_status(meta_path: &Option<PathBuf>, status: ConnectionStatus) {
         let Some(path) = meta_path else { return };
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
@@ -1093,9 +1102,7 @@ impl HostDriver {
         }
     }
 
-    /// Spawns a background task to watch for deletion of the connection metadata file,
-    /// signaling `shutdown_tx` to initiate graceful termination when deleted.
-    pub fn watch_metadata_deletion(
+    fn watch_metadata_deletion(
         meta_path: &Option<PathBuf>,
         shutdown_tx: futures::channel::oneshot::Sender<()>,
     ) -> Option<fuchsia_async::Task<()>> {
@@ -1115,7 +1122,6 @@ impl HostDriver {
         }))
     }
 
-    /// Deletes local Unix domain socket and metadata files upon daemon termination.
     pub fn cleanup_driver_files(
         local_addr: Option<tokio::net::unix::SocketAddr>,
         meta_path: Option<&PathBuf>,
@@ -1132,8 +1138,27 @@ impl HostDriver {
         }
     }
 
-    /// Inspects connection errors to determine if reconnection should be aborted.
-    pub fn check_fatal_connect_error(
+    fn spawn_listener_task(
+        listener: UnixListener,
+        listener_tx: mpsc::Sender<ClientEvent>,
+    ) -> fuchsia_async::Task<()> {
+        fuchsia_async::Task::local(async move {
+            let mut channel_counter = 1u16;
+            while let Ok((stream, _addr)) = listener.accept().await {
+                let channel_id = channel_counter;
+                channel_counter = channel_counter.wrapping_add(1).max(1);
+                log::debug!("New client connection, assigning channel_id={}", channel_id);
+                if let Err(e) =
+                    listener_tx.clone().send(ClientEvent::NewChannel { channel_id, stream }).await
+                {
+                    log::error!("Failed to send NewChannel to coordinator: {:?}", e);
+                    break;
+                }
+            }
+        })
+    }
+
+    fn check_fatal_connect_error(
         e: &ConnectionError,
         target_path: &str,
         no_retry: bool,
@@ -1161,6 +1186,264 @@ impl HostDriver {
         }
         false
     }
+
+    fn handle_handshake_success(
+        proto: uart_fpl::ProtocolId,
+        meta_path: &Option<PathBuf>,
+        metrics: &Arc<Mutex<DaemonMetrics>>,
+    ) {
+        let now = current_epoch_ms();
+        {
+            let mut m = metrics.lock().unwrap();
+            m.last_read_timestamp_ms = now;
+            m.last_write_timestamp_ms = now;
+            m.active_protocol = match proto {
+                uart_fpl::ProtocolId::ResendSP => UartProtocol::ResendSP,
+                uart_fpl::ProtocolId::Unknown(_) => UartProtocol::Unknown,
+            };
+        }
+        log::info!("Handshake succeeded. Negotiated protocol: {proto:?}");
+        Self::update_status(meta_path, ConnectionStatus::Connected);
+    }
+
+    fn spawn_coordinator_and_listener(
+        listener: UnixListener,
+        metrics: Arc<Mutex<DaemonMetrics>>,
+    ) -> (mpsc::Sender<UartEvent>, fuchsia_async::Task<()>, fuchsia_async::Task<()>) {
+        let (client_tx, client_rx) = mpsc::channel(DEFAULT_CLIENT_DATA_CAPACITY);
+        let (serial_tx, serial_rx) = mpsc::channel(DEFAULT_SERIAL_DATA_CAPACITY);
+
+        let coordinator_client_tx = client_tx.clone();
+        let coordinator_task = fuchsia_async::Task::local(async move {
+            if let Err(e) =
+                coordinator_task(client_rx, serial_rx, coordinator_client_tx, None, metrics).await
+            {
+                log::error!("Coordinator failed: {:?}", e);
+            }
+        });
+        let listener_task = Self::spawn_listener_task(listener, client_tx);
+        (serial_tx, coordinator_task, listener_task)
+    }
+
+    async fn try_connect_uart(
+        target_path: &str,
+        baud: NonZeroU32,
+        associated_peer_pid: &mut Option<u32>,
+    ) -> Result<UartStream, ConnectionError> {
+        let s = connect_uart_stream(target_path, baud).await?;
+        if let UartStream::Socket(ref unix_stream) = s {
+            if let Ok(pid) = ffx_tool_uart::get_peer_pid(unix_stream) {
+                log::info!("Detected peer PID: {}", pid);
+                *associated_peer_pid = Some(pid);
+            }
+        }
+        Ok(s)
+    }
+
+    fn determine_target_properties(target_path: &str, baud: NonZeroU32) -> (bool, Option<NonZeroU32>) {
+        let is_socket =
+            std::fs::metadata(target_path).map(|m| m.file_type().is_socket()).unwrap_or(false);
+        let is_pty = ffx_tool_uart::is_pty_target(target_path);
+        let rate_limit = if !is_char_device(target_path) || is_pty {
+            NonZeroU32::new(baud.get() / SERIAL_8N1_BITS_PER_BYTE)
+        } else {
+            None
+        };
+        log::info!("UART rate limit: {:?}", rate_limit);
+        (is_socket, rate_limit)
+    }
+
+    /// Runs the main host driver supervision loop until cancelled or terminated.
+    pub async fn run(
+        listener: UnixListener,
+        target_path: String,
+        baud: NonZeroU32,
+        meta_path: Option<PathBuf>,
+        no_retry: bool,
+    ) {
+        let local_addr = listener.local_addr().ok();
+        let (is_socket, rate_limit) = Self::determine_target_properties(&target_path, baud);
+        let metrics = Arc::new(Mutex::new(DaemonMetrics::default()));
+        let (shutdown_tx, shutdown_rx) = futures::channel::oneshot::channel::<()>();
+        let _meta_watcher = Self::watch_metadata_deletion(&meta_path, shutdown_tx);
+        let ctx = DriverContext {
+            target_path,
+            baud,
+            rate_limit,
+            meta_path: meta_path.clone(),
+            no_retry,
+            is_socket,
+            metrics,
+        };
+        let main_loop_fut = ctx.run_reconnection_loop(listener).fuse();
+        let shutdown_rx = shutdown_rx.fuse();
+        futures::pin_mut!(main_loop_fut, shutdown_rx);
+        futures::select! {
+            _ = main_loop_fut => {},
+            _ = shutdown_rx => log::info!("Driver shutdown triggered by metadata deletion."),
+        }
+        Self::cleanup_driver_files(local_addr, meta_path.as_ref());
+    }
+}
+
+struct DriverContext {
+    target_path: String,
+    baud: NonZeroU32,
+    rate_limit: Option<NonZeroU32>,
+    meta_path: Option<PathBuf>,
+    no_retry: bool,
+    is_socket: bool,
+    metrics: Arc<Mutex<DaemonMetrics>>,
+}
+
+impl DriverContext {
+    async fn record_failure_and_backoff(
+        &self,
+        err: ConnectionError,
+        serial_tx: &mpsc::Sender<UartEvent>,
+        is_handshake_fail: bool,
+        is_drop: bool,
+    ) {
+        HostDriver::update_status(&self.meta_path, ConnectionStatus::Error(err));
+        let _ = serial_tx.clone().send(UartEvent::UartDown).await;
+        {
+            let mut m = self.metrics.lock().unwrap();
+            m.active_protocol = UartProtocol::Unknown;
+            m.estimated_rtt_ms = 0;
+            if is_handshake_fail {
+                m.handshake_failures += 1;
+            }
+            if is_drop {
+                m.connection_drops += 1;
+            }
+        }
+        fuchsia_async::Timer::new(RECONNECT_BACKOFF_INTERVAL).await;
+    }
+
+    async fn perform_handshake(
+        &self,
+        stream: &mut UartStream,
+        serial_tx: &mpsc::Sender<UartEvent>,
+    ) -> Option<(uart_fpl::ProtocolId, u32, Vec<u8>)> {
+        let proposed = vec![uart_fpl::ProtocolId::ResendSP];
+        match ffx_tool_uart::stream::run_host_handshake(
+            stream,
+            proposed,
+            HANDSHAKE_TIMEOUT,
+            HANDSHAKE_RETRIES,
+        )
+        .await
+        {
+            Ok((proto, sid, unconsumed)) => {
+                HostDriver::handle_handshake_success(proto, &self.meta_path, &self.metrics);
+                Some((proto, sid, unconsumed))
+            }
+            Err(e) => {
+                log::error!(
+                    "Handshake failed: {e:?}. Retrying in {:?}...",
+                    RECONNECT_BACKOFF_INTERVAL
+                );
+                let err = ConnectionError::raw(format!("Handshake failed: {e:?}"));
+                self.record_failure_and_backoff(err, serial_tx, true, false).await;
+                None
+            }
+        }
+    }
+
+    async fn run_session_tasks(
+        &self,
+        stream: UartStream,
+        unconsumed: Vec<u8>,
+        session_id: u32,
+        serial_tx: &mpsc::Sender<UartEvent>,
+    ) {
+        let ack_tracker = AckTracker::new();
+        let (data_tx, data_rx) = mpsc::channel(DEFAULT_SERIAL_DATA_CAPACITY);
+        let (incoming_event_tx, incoming_event_rx) = mpsc::channel(DEFAULT_SERIAL_DATA_CAPACITY);
+        let (sender_tx, sender_rx) = mpsc::channel(DEFAULT_SERIAL_DATA_CAPACITY);
+        if let Err(e) = serial_tx.clone().send(UartEvent::UpdateSender { sender_tx }).await {
+            return log::error!("Failed to send UpdateSender to coordinator: {:?}", e);
+        }
+        let (serial_read, serial_write) = tokio::io::split(stream);
+        let writer = writer_task(
+            serial_write,
+            ack_tracker.clone(),
+            data_rx,
+            self.metrics.clone(),
+            self.rate_limit,
+        );
+        let reader = UartReader::with_initial_data(serial_read, unconsumed);
+        let receiver = receiver_task(
+            reader,
+            serial_tx.clone(),
+            ack_tracker,
+            incoming_event_tx,
+            session_id,
+            self.metrics.clone(),
+        );
+        let sender =
+            sender_task(sender_rx, data_tx, incoming_event_rx, session_id, self.metrics.clone());
+        log::info!("Starting UART tasks for session_id={session_id}");
+        if let Err(e) = futures::try_join!(writer, receiver, sender) {
+            log::error!("UART tasks failed: {:?}", e);
+        }
+    }
+
+    async fn connect_uart(
+        &self,
+        serial_tx: &mpsc::Sender<UartEvent>,
+        associated_peer_pid: &mut Option<u32>,
+    ) -> Result<UartStream, bool> {
+        log::info!("Connecting to target UART port at {}...", self.target_path);
+        HostDriver::update_status(&self.meta_path, ConnectionStatus::Connecting);
+        match HostDriver::try_connect_uart(&self.target_path, self.baud, associated_peer_pid).await
+        {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                if HostDriver::check_fatal_connect_error(
+                    &e,
+                    &self.target_path,
+                    self.no_retry,
+                    self.is_socket,
+                    *associated_peer_pid,
+                ) {
+                    HostDriver::update_status(&self.meta_path, ConnectionStatus::Error(e));
+                    return Err(true);
+                }
+                log::error!(
+                    "Failed to connect to UART port: {e}. Retrying in {:?}...",
+                    RECONNECT_BACKOFF_INTERVAL
+                );
+                self.record_failure_and_backoff(e, serial_tx, false, false).await;
+                Err(false)
+            }
+        }
+    }
+
+    async fn run_single_session(
+        &self,
+        serial_tx: &mpsc::Sender<UartEvent>,
+        associated_peer_pid: &mut Option<u32>,
+    ) -> bool {
+        let mut stream = match self.connect_uart(serial_tx, associated_peer_pid).await {
+            Ok(s) => s,
+            Err(fatal) => return fatal,
+        };
+        if let Some((_, sid, unconsumed)) = self.perform_handshake(&mut stream, serial_tx).await {
+            self.run_session_tasks(stream, unconsumed, sid, serial_tx).await;
+            log::info!("Re-initializing UART connection in {:?}...", RECONNECT_BACKOFF_INTERVAL);
+            let err = ConnectionError::raw("UART connection lost");
+            self.record_failure_and_backoff(err, serial_tx, false, true).await;
+        }
+        false
+    }
+
+    async fn run_reconnection_loop(self, listener: UnixListener) {
+        let (serial_tx, _coord_task, _listener_task) =
+            HostDriver::spawn_coordinator_and_listener(listener, self.metrics.clone());
+        let mut associated_peer_pid = None;
+        while !self.run_single_session(&serial_tx, &mut associated_peer_pid).await {}
+    }
 }
 
 #[cfg(test)]
@@ -1171,7 +1454,7 @@ fn make_test_metadata(target: &str, status: ConnectionStatus) -> ConnectionMetad
         status,
         id: Some("testid".to_string()),
         baud: NonZeroU32::new(115200),
-        protocol: UartProtocol::ResendSP,
+        protocol: uart_driver_api::UartProtocol::ResendSP,
         log_level: None,
         nodename: None,
         serial: None,
@@ -1196,6 +1479,7 @@ mod tests {
     use super::*;
     use std::pin::Pin;
     use std::task::{Context, Poll};
+    use tempfile::tempdir;
     use tokio::io::ReadBuf;
 
     #[fuchsia::test]
@@ -1221,6 +1505,8 @@ mod tests {
 
         let listener = remove_and_bind_socket(sock_path.clone(), false).await.unwrap();
         drop(listener);
+        // Yield to allow kernel socket teardown to complete and transition to ECONNREFUSED.
+        fuchsia_async::Timer::new(Duration::from_millis(50)).await;
 
         // Bind again to verify stale socket removal
         let listener2 = remove_and_bind_socket(sock_path, false).await.unwrap();
@@ -1458,7 +1744,7 @@ mod tests {
             ack_tracker,
             data_rx,
             metrics,
-            Some(100_000),
+            NonZeroU32::new(100_000),
         ));
 
         let data_frame = encode_frame(42, 1, 0, FrameType::Data, b"rate-limited").unwrap();
@@ -1508,7 +1794,6 @@ mod tests {
         drop(client);
         let _ = task.await;
     }
-
     #[fuchsia::test]
     async fn test_receiver_task_reset_frame_error() {
         let (mut client, server) = tokio::io::duplex(1024);
@@ -1568,6 +1853,36 @@ mod tests {
         assert!(matches!(res, Err(ReaderError::Eof)));
     }
 
+    #[fuchsia::test]
+    async fn test_host_driver_metadata_deletion_shutdown() {
+        let temp = tempfile::tempdir().unwrap();
+        let sock_path = temp.path().join("client.sock");
+        let meta_path = temp.path().join("meta.json");
+        let listener = UnixListener::bind(&sock_path).unwrap();
+
+        let meta = make_test_metadata("/dev/nonexistent_uart_test", ConnectionStatus::Connecting);
+        std::fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+        HostDriver::update_status(&Some(meta_path.clone()), ConnectionStatus::Connected);
+        let content = std::fs::read_to_string(&meta_path).unwrap();
+        let loaded: ConnectionMetadata = serde_json::from_str(&content).unwrap();
+        assert_eq!(loaded.status, ConnectionStatus::Connected);
+
+        let meta_path_clone = meta_path.clone();
+        let _cleaner = fuchsia_async::Task::local(async move {
+            fuchsia_async::Timer::new(Duration::from_millis(50)).await;
+            let _ = std::fs::remove_file(&meta_path_clone);
+        });
+
+        HostDriver::run(
+            listener,
+            "/dev/nonexistent_uart_test".to_string(),
+            NonZeroU32::new(115200).unwrap(),
+            Some(meta_path),
+            true,
+        )
+        .await;
+    }
     struct MockReader {
         data: Vec<u8>,
         read_ptr: usize,
@@ -1678,5 +1993,120 @@ mod tests {
         assert_eq!(parsed.session_id, session_id);
         assert_eq!(parsed.channel_id, 1);
         assert_eq!(parsed.payload, payload);
+    }
+
+    #[fuchsia::test]
+    async fn test_driver_terminates_on_metadata_deletion() {
+        let temp = tempdir().unwrap();
+        let client_socket_path = temp.path().join("client.sock");
+        let uart_socket_path = temp.path().join("uart.sock");
+        let meta_path = temp.path().join("meta.json");
+
+        write_test_metadata(
+            &meta_path,
+            "test-target",
+            std::process::id(),
+            ConnectionStatus::Connecting,
+        );
+        let client_listener = UnixListener::bind(&client_socket_path).unwrap();
+        let uart_target_str = uart_socket_path.to_string_lossy().to_string();
+
+        let driver_task = fuchsia_async::Task::local(async move {
+            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), Some(meta_path), false).await;
+        });
+
+        std::fs::remove_file(temp.path().join("meta.json")).unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(3), driver_task).await;
+        assert!(result.is_ok(), "Driver task did not terminate within timeout!");
+        assert!(!client_socket_path.exists(), "Client socket was not cleaned up!");
+    }
+
+    #[fuchsia::test]
+    async fn test_driver_terminates_on_target_path_deletion() {
+        let temp = tempdir().unwrap();
+        let client_socket_path = temp.path().join("client.sock");
+        let uart_socket_path = temp.path().join("uart.sock");
+
+        let uart_listener = UnixListener::bind(&uart_socket_path).unwrap();
+        let client_listener = UnixListener::bind(&client_socket_path).unwrap();
+        let uart_target_str = uart_socket_path.to_string_lossy().to_string();
+
+        let driver_task = fuchsia_async::Task::local(async move {
+            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), None, false).await;
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        drop(uart_listener);
+        std::fs::remove_file(&uart_socket_path).unwrap();
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), driver_task).await;
+        assert!(result.is_ok(), "Driver task did not terminate within timeout!");
+        assert!(!client_socket_path.exists(), "Client socket was not cleaned up!");
+    }
+
+    #[fuchsia::test]
+    async fn test_driver_retries_on_physical_tty_path_deletion() {
+        let temp = tempdir().unwrap();
+        let client_socket_path = temp.path().join("client.sock");
+        let uart_file_path = temp.path().join("uart.bin");
+        let meta_path = temp.path().join("meta.json");
+
+        write_test_metadata(
+            &meta_path,
+            "test-target",
+            std::process::id(),
+            ConnectionStatus::Connecting,
+        );
+        std::fs::write(&uart_file_path, b"").unwrap();
+
+        let client_listener = UnixListener::bind(&client_socket_path).unwrap();
+        let uart_target_str = uart_file_path.to_string_lossy().to_string();
+
+        let driver_task = fuchsia_async::Task::local(async move {
+            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), Some(meta_path), false).await;
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        std::fs::remove_file(&uart_file_path).unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        assert!(client_socket_path.exists(), "Driver exited prematurely!");
+
+        std::fs::write(&uart_file_path, b"").unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert!(client_socket_path.exists(), "Driver exited after path restoration!");
+
+        std::fs::remove_file(temp.path().join("meta.json")).unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(3), driver_task).await;
+        assert!(result.is_ok(), "Driver task did not terminate within timeout!");
+    }
+
+    #[fuchsia::test]
+    async fn test_driver_terminates_on_physical_tty_path_deletion_when_no_retry() {
+        let temp = tempdir().unwrap();
+        let client_socket_path = temp.path().join("client.sock");
+        let uart_file_path = temp.path().join("uart.bin");
+        let meta_path = temp.path().join("meta.json");
+
+        write_test_metadata(
+            &meta_path,
+            "test-target",
+            std::process::id(),
+            ConnectionStatus::Connecting,
+        );
+        std::fs::write(&uart_file_path, b"").unwrap();
+
+        let client_listener = UnixListener::bind(&client_socket_path).unwrap();
+        let uart_target_str = uart_file_path.to_string_lossy().to_string();
+
+        let driver_task = fuchsia_async::Task::local(async move {
+            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), Some(meta_path), true).await;
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        std::fs::remove_file(&uart_file_path).unwrap();
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(3), driver_task).await;
+        assert!(result.is_ok(), "Driver task did not terminate within timeout!");
+        assert!(!client_socket_path.exists(), "Client socket was not cleaned up!");
     }
 }
