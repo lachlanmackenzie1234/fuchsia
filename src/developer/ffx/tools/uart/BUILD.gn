@@ -19,6 +19,7 @@ if (is_host) {
       "//src/developer/ffx/lib/uart_driver_api:lib",
       "//src/developer/ffx/lib/writer:lib",
       "//src/developer/lib/uart_fpl",
+      "//src/lib/fuchsia-async",
       "//third_party/rust_crates:argh",
       "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:log",
@@ -26,6 +27,7 @@ if (is_host) {
       "//third_party/rust_crates:rand",
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
+      "//third_party/rust_crates:sha2",
       "//third_party/rust_crates:tempfile",
       "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:tokio",
@@ -39,6 +41,7 @@ if (is_host) {
 
     sources = [
       "src/args.rs",
+      "src/driver.rs",
       "src/lib.rs",
       "src/metadata.rs",
       "src/stream.rs",

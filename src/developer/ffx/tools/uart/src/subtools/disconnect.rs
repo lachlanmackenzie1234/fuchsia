@@ -21,9 +21,9 @@ impl FfxMain for DisconnectTool {
     type Writer = SimpleWriter;
     type Error = fho::Error;
 
-    async fn main(self, _writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let _ = self.cmd;
-        let spec = crate::get_spec(&self.context, false).await?;
+        let spec = crate::get_spec(&self.context, false, &mut writer).await?;
         let _target = crate::resolve_target(&self.context, &spec).await?;
         Err(user_error!("Disconnect subcommand implementation will be introduced in follow-up CL."))
     }

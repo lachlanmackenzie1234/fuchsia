@@ -174,32 +174,6 @@ pub fn get_socket_path_from_target_path(
     validate_and_resolve_socket_path(path)
 }
 
-/// Resolves a user-provided friendly target name (e.g. `/dev/ttyUSB0` or direct socket path)
-/// into an active or expected UNIX domain socket path.
-///
-/// # Errors
-/// Returns an error if the friendly name cannot be resolved to a valid target path
-/// or if the derived socket path exceeds OS length limitations.
-pub fn friendly_name_to_socket_path(
-    friendly: &str,
-    context: &EnvironmentContext,
-) -> Result<PathBuf> {
-    let target_path = parse_target_endpoint(friendly, context)?;
-    if target_path.exists() {
-        if let Ok(metadata) = std::fs::metadata(&target_path) {
-            use std::os::unix::fs::FileTypeExt as _;
-            if metadata.file_type().is_socket() {
-                return validate_and_resolve_socket_path(target_path);
-            }
-        }
-    }
-    // Heuristic fallback: if path ends with .sock, treat as socket even if it doesn't exist yet
-    if target_path.extension().and_then(|ext| ext.to_str()) == Some(UNIX_SOCKET_EXTENSION) {
-        return validate_and_resolve_socket_path(target_path);
-    }
-    get_socket_path_from_target_path(&target_path, context)
-}
-
 /// Parses a user-supplied target endpoint string into an absolute target filesystem path.
 ///
 /// Accepts:
@@ -217,11 +191,11 @@ pub fn parse_target_endpoint(target: &str, _context: &EnvironmentContext) -> Res
     Err(ConnectionError::TargetNotRecognized { target: target.to_string() })
 }
 
-/// Converts a UNIX domain socket path back into a human-readable friendly device path,
+/// Converts a UNIX domain socket path back into a human-readable target device path,
 /// first inspecting companion JSON metadata, then querying `/dev` serial ports, and
 /// finally falling back to the raw socket path string.
-pub fn socket_path_to_friendly_name(socket_path: &Path, context: &EnvironmentContext) -> String {
-    // Try to read metadata JSON to get the real target path and use it to build a friendly name.
+pub fn socket_path_to_target_path(socket_path: &Path, context: &EnvironmentContext) -> String {
+    // Try to read metadata JSON to get the real target path.
     let json_path = get_metadata_path(socket_path);
     if let Ok(content) = std::fs::read_to_string(&json_path) {
         if let Ok(metadata) = serde_json::from_str::<ConnectionMetadata>(&content) {
@@ -385,21 +359,14 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn test_friendly_name_mapping() {
+    fn test_target_path_mapping() {
         let env = ffx_config::test_env().build().expect("test env");
         let context = &env.context;
 
         // Fallback for random socket path (returns absolute path as-is)
         let random_socket = PathBuf::from("/tmp/ffx_uart_random.sock");
-        let friendly = socket_path_to_friendly_name(&random_socket, context);
-        assert_eq!(friendly, "/tmp/ffx_uart_random.sock");
-
-        let resolved = friendly_name_to_socket_path(&friendly, context).unwrap();
-        assert_eq!(resolved, random_socket);
-
-        // Fallback for direct path
-        let resolved_direct = friendly_name_to_socket_path("/tmp/direct.sock", context).unwrap();
-        assert_eq!(resolved_direct, PathBuf::from("/tmp/direct.sock"));
+        let target_str = socket_path_to_target_path(&random_socket, context);
+        assert_eq!(target_str, "/tmp/ffx_uart_random.sock");
     }
 
     #[test]

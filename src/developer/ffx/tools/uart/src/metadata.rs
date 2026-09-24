@@ -17,7 +17,6 @@ pub use uart_driver_api::{
     METADATA_FILE_EXTENSION, UNIX_SOCKET_EXTENSION, UartProtocol, get_client_socket_path,
     get_control_socket_path,
 };
-use uart_fpl::ProtocolId;
 
 /// Diagnostic and operational metrics exported by an active UART driver daemon.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -146,44 +145,9 @@ fn atomic_write_json<T: serde::Serialize>(
     Ok(())
 }
 
-/// Writes connection metadata to the metadata path, using a specified target name inside the metadata file.
+/// Writes connection metadata (PID and target name) to the metadata file for the given target.
 ///
 /// Creates parent directories as needed if they do not exist.
-///
-/// # Errors
-/// Returns an error if the directories cannot be created or writing to the file fails.
-pub fn write_metadata_with_target_name(
-    context: &EnvironmentContext,
-    socket_path: &std::path::Path,
-    target: &str,
-    store_target: &str,
-    pid: u32,
-    baud: Option<NonZeroU32>,
-    protocol: ProtocolId,
-) -> std::result::Result<(), fho::Error> {
-    let path = uart_driver_api::get_metadata_path(socket_path);
-    let id = get_target_id(target);
-    let query =
-        context.build().name(Some("log.level")).level(Some(ffx_config::ConfigLevel::Runtime));
-    let log_level = context.get::<String, _>(query).ok();
-    let metadata = ConnectionMetadata {
-        pid,
-        target: canonicalize_target(store_target),
-        status: ConnectionStatus::Connecting,
-        id: Some(id),
-        baud,
-        protocol: match protocol {
-            ProtocolId::ResendSP => UartProtocol::ResendSP,
-            ProtocolId::Unknown(_) => UartProtocol::Unknown,
-        },
-        log_level,
-        nodename: None,
-        serial: None,
-    };
-    atomic_write_json(&path, &metadata)
-}
-
-/// Writes connection metadata (PID and target name) to the metadata file for the given target.
 ///
 /// # Errors
 /// Returns an error if the directories cannot be created or writing to the file fails.
@@ -194,17 +158,24 @@ pub fn write_metadata(
     pid: u32,
     baud: Option<NonZeroU32>,
 ) -> std::result::Result<(), fho::Error> {
-    write_metadata_with_target_name(
-        context,
-        socket_path,
-        target,
-        target,
+    let path = uart_driver_api::get_metadata_path(socket_path);
+    let id = get_target_id(target);
+    let query =
+        context.build().name(Some("log.level")).level(Some(ffx_config::ConfigLevel::Runtime));
+    let log_level = context.get::<String, _>(query).ok();
+    let metadata = ConnectionMetadata {
         pid,
+        target: canonicalize_target(target),
+        status: ConnectionStatus::Connecting,
+        id: Some(id),
         baud,
-        ProtocolId::ResendSP,
-    )
+        protocol: UartProtocol::ResendSP,
+        log_level,
+        nodename: None,
+        serial: None,
+    };
+    atomic_write_json(&path, &metadata)
 }
-
 /// Reads connection metadata from a file path.
 ///
 /// Returns `None` if the file does not exist (`ErrorKind::NotFound`).
@@ -444,7 +415,7 @@ pub fn update_metadata_status(
     atomic_write_json(&path, &metadata)
 }
 
-/// Returns true if the target string looks like a UART target (filesystem path or friendly name).
+/// Returns true if the target string looks like a UART target (filesystem path or device node).
 pub fn is_uart_target(target: &str) -> bool {
     target.starts_with("uart:") || target.starts_with('/') || target.starts_with('.')
 }

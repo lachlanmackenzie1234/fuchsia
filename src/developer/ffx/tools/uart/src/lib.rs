@@ -9,6 +9,8 @@
 
 /// Command-line argument definitions for the `ffx uart` subcommands.
 pub mod args;
+/// Process supervision and execution helpers for the `ffx-uart-driver` daemon binary.
+pub mod driver;
 /// Connection metadata resolution and persistence for active UART targets.
 pub mod metadata;
 /// Asynchronous stream abstractions and connection helpers for UART devices.
@@ -19,10 +21,13 @@ pub mod subtools;
 pub mod sys;
 
 use ffx_config::EnvironmentContext;
+use ffx_writer::ToolIO;
 use fho::subtool_suite::{FfxSubtoolSuite, Subtool, SubtoolBox, SubtoolSuite, ToolSuiteCommand};
 use fho::{FfxTool, FhoEnvironment, Result, user_error};
+use sha2 as _;
 
 pub use args::*;
+pub use driver::*;
 pub use metadata::*;
 pub use stream::*;
 pub use subtools::*;
@@ -114,7 +119,11 @@ pub(crate) async fn resolve_target(
     ))
 }
 
-pub(crate) async fn get_spec(context: &EnvironmentContext, is_connect: bool) -> Result<String> {
+pub(crate) async fn get_spec(
+    context: &EnvironmentContext,
+    is_connect: bool,
+    writer: &mut (impl ToolIO + ?Sized),
+) -> Result<String> {
     let spec_opt = ffx_target::get_target_specifier(context)?;
     if let Some(spec) = spec_opt {
         return Ok(spec);
@@ -124,9 +133,31 @@ pub(crate) async fn get_spec(context: &EnvironmentContext, is_connect: bool) -> 
             "No target specified. Please specify a target using 'ffx -t uart:<target> uart connect' or configure a default target."
         ));
     }
-    Err(user_error!(
-        "No target specified and no active UART connections found. Please specify a target."
-    ))
+    let active = driver::get_active_connections(context).await?;
+    match active.len() {
+        0 => Err(user_error!(
+            "No target specified and no active UART connections found. Please specify a target."
+        )),
+        1 => {
+            let target = active[0].target.clone();
+            if !writer.is_machine() {
+                writer.print(format!(
+                    "No target specified. Using active connection '{}'.\n",
+                    target
+                ))?;
+            }
+            Ok(target)
+        }
+        _ => {
+            let mut err_msg =
+                "No target specified and multiple active UART connections found:\n".to_string();
+            for entry in active {
+                err_msg.push_str(&format!("  - {}\n", entry.target));
+            }
+            err_msg.push_str("Please specify a target using '-t'.");
+            Err(user_error!("{err_msg}"))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -135,14 +166,20 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_spec_no_target() {
-        let env = ffx_config::test_init().unwrap();
-        let res_connect = get_spec(&env.context, true).await;
+        let temp = tempfile::tempdir().unwrap();
+        let env = ffx_config::test_env()
+            .runtime_config("shared_data", temp.path().to_str().unwrap())
+            .build()
+            .unwrap();
+        let buffers = ffx_writer::TestBuffers::default();
+        let mut writer = ffx_writer::SimpleWriter::new_test(&buffers);
+        let res_connect = get_spec(&env.context, true, &mut writer).await;
         assert!(res_connect.is_err());
         assert!(res_connect.unwrap_err().to_string().contains(
             "No target specified. Please specify a target using 'ffx -t uart:<target> uart connect'"
         ));
 
-        let res_disconnect = get_spec(&env.context, false).await;
+        let res_disconnect = get_spec(&env.context, false, &mut writer).await;
         assert!(res_disconnect.is_err());
         assert!(
             res_disconnect
@@ -155,8 +192,10 @@ mod tests {
     #[fuchsia::test]
     async fn test_get_spec_with_target() {
         let mut env = ffx_config::test_init().unwrap();
+        let buffers = ffx_writer::TestBuffers::default();
+        let mut writer = ffx_writer::SimpleWriter::new_test(&buffers);
         env.context.override_target_specifier(&Some("uart:/dev/ttyUSB0".to_string()));
-        let spec = get_spec(&env.context, true).await.unwrap();
+        let spec = get_spec(&env.context, true, &mut writer).await.unwrap();
         assert_eq!(spec, "uart:/dev/ttyUSB0");
     }
 
@@ -167,7 +206,6 @@ mod tests {
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Empty target specifier."));
     }
-
     #[fuchsia::test]
     async fn test_resolve_target_inactive() {
         let env = ffx_config::test_init().unwrap();
@@ -225,5 +263,91 @@ mod tests {
         assert!(
             res.unwrap_err().to_string().contains("not found or has no active UART connection")
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_get_spec_single_active_connection() {
+        let temp = tempfile::tempdir().unwrap();
+        let env = ffx_config::test_env()
+            .runtime_config("shared_data", temp.path().to_str().unwrap())
+            .build()
+            .unwrap();
+        let buffers = ffx_writer::TestBuffers::default();
+        let mut writer = ffx_writer::SimpleWriter::new_test(&buffers);
+
+        let target = "/dev/ttyUSB0";
+        let sock_path = get_socket_path(&env.context, target).unwrap();
+        if let Some(parent) = sock_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let _listener = tokio::net::UnixListener::bind(&sock_path).unwrap();
+        let control_path = sock_path.with_extension(uart_driver_api::CONTROL_SOCKET_EXTENSION);
+        let _control_listener = tokio::net::UnixListener::bind(&control_path).unwrap();
+
+        write_metadata(
+            &env.context,
+            &sock_path,
+            target,
+            std::process::id(),
+            std::num::NonZeroU32::new(115200),
+        )
+        .unwrap();
+        update_metadata_status(&env.context, target, ConnectionStatus::Connected).unwrap();
+
+        let spec = get_spec(&env.context, false, &mut writer).await.unwrap();
+        assert_eq!(spec, target);
+        let stdout = buffers.into_stdout_str();
+        assert!(stdout.contains(&format!("Using active connection '{target}'")));
+    }
+
+    #[fuchsia::test]
+    async fn test_get_spec_multiple_active_connections() {
+        let temp = tempfile::tempdir().unwrap();
+        let env = ffx_config::test_env()
+            .runtime_config("shared_data", temp.path().to_str().unwrap())
+            .build()
+            .unwrap();
+        let buffers = ffx_writer::TestBuffers::default();
+        let mut writer = ffx_writer::SimpleWriter::new_test(&buffers);
+
+        let target1 = "/dev/ttyUSB0";
+        let sock1 = get_socket_path(&env.context, target1).unwrap();
+        if let Some(parent) = sock1.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let _l1 = tokio::net::UnixListener::bind(&sock1).unwrap();
+        let c1 = sock1.with_extension(uart_driver_api::CONTROL_SOCKET_EXTENSION);
+        let _cl1 = tokio::net::UnixListener::bind(&c1).unwrap();
+        write_metadata(
+            &env.context,
+            &sock1,
+            target1,
+            std::process::id(),
+            std::num::NonZeroU32::new(115200),
+        )
+        .unwrap();
+        update_metadata_status(&env.context, target1, ConnectionStatus::Connected).unwrap();
+
+        let target2 = "/dev/ttyUSB1";
+        let sock2 = get_socket_path(&env.context, target2).unwrap();
+        let _l2 = tokio::net::UnixListener::bind(&sock2).unwrap();
+        let c2 = sock2.with_extension(uart_driver_api::CONTROL_SOCKET_EXTENSION);
+        let _cl2 = tokio::net::UnixListener::bind(&c2).unwrap();
+        write_metadata(
+            &env.context,
+            &sock2,
+            target2,
+            std::process::id(),
+            std::num::NonZeroU32::new(115200),
+        )
+        .unwrap();
+        update_metadata_status(&env.context, target2, ConnectionStatus::Connected).unwrap();
+
+        let res = get_spec(&env.context, false, &mut writer).await;
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("multiple active UART connections found"));
+        assert!(err.contains(target1));
+        assert!(err.contains(target2));
     }
 }
