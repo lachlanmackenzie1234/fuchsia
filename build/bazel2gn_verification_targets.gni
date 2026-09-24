@@ -62,7 +62,6 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/lib/buildid/cpp:verify_bazel2gn",
   "//src/developer/ffx/lib/buildid:verify_bazel2gn",
   "//src/developer/ffx/lib/compat_info:verify_bazel2gn",
-  "//src/developer/ffx/lib/daemonize:verify_bazel2gn",
   "//src/developer/ffx/lib/diagnostics/analytics/state:verify_bazel2gn",
   "//src/developer/ffx/lib/diagnostics:verify_bazel2gn",
   "//src/developer/ffx/lib/emulator_instance:verify_bazel2gn",
