@@ -903,20 +903,19 @@ impl PagedObjectHandle {
 
             let size = if batch.end() > content_size {
                 // Now that we've called writeback_begin, get the stream size again.  If the
-                // stream size has increased (it can't decrease because we hold a lock on
-                // truncation), it's possible that it grew before we called writeback_begin in
-                // which case, the kernel won't mark the tail page dirty again so we must
-                // increase the stream size, but no further than the end of the tail page.
-                let new_content_size =
-                    self.vmo().get_stream_size().context("get_stream_size failed")?;
-
-                // TODO(https://fxbug.dev/522042546): This might be too strong.  Whilst we do not
-                // need to support the case for the file shrinking, it might be possible for a user
-                // to make this happen.
-                assert!(new_content_size >= content_size);
-
-                content_size = new_content_size;
-                Some(std::cmp::min(new_content_size, batch.end()))
+                // stream size has increased (it can't decrease via supported APIs because we hold
+                // a lock on truncation), it's possible that it grew before we called
+                // writeback_begin in which case, the kernel won't mark the tail page dirty again
+                // so we must increase the stream size, but no further than the end of the tail
+                // page.  Calling `zx_vmo_set_stream_size` on a VMO returned by
+                // `get_backing_memory` is unsupported (see https://fxbug.dev/366099051), but it is
+                // possible for a user to shrink the stream size via that syscall.  Ignore any
+                // reduction in stream size.
+                content_size = std::cmp::max(
+                    self.vmo().get_stream_size().context("get_stream_size failed")?,
+                    content_size,
+                );
+                Some(std::cmp::min(content_size, batch.end()))
             } else if batch.end() > previous_content_size {
                 Some(batch.end())
             } else {
@@ -1022,8 +1021,15 @@ impl PagedObjectHandle {
         #[cfg(test)]
         CALLBACK_BEFORE_RANGE_COLLECTION.call();
 
-        let content_size = self.vmo().get_stream_size().context("get_stream_size failed")?;
         let previous_content_size = self.handle.get_size();
+        // Calling `zx_vmo_set_stream_size` on a VMO returned by `get_backing_memory` is
+        // unsupported (see https://fxbug.dev/366099051). Clamp `content_size` to at least
+        // `previous_content_size` so we never shrink the on-disk size without properly
+        // shrinking/trimming extents via `truncate`.
+        let content_size = std::cmp::max(
+            self.vmo().get_stream_size().context("get_stream_size failed")?,
+            previous_content_size,
+        );
 
         #[cfg(test)]
         CALLBACK_AFTER_SIZE_CAPTURE.call();
@@ -5180,5 +5186,42 @@ mod tests {
         close_dir_checked(root).await;
         volume.volume().terminate().await;
         fs.close().await.expect("close filesystem failed");
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_set_stream_size_shrink_during_flush() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let (proxy, _object, stream) = open_file_proxy_object_and_stream(&fixture).await;
+
+            stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8; 100]).unwrap();
+
+            let vmo = proxy
+                .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
+                .await
+                .unwrap()
+                .expect("Get backing memory");
+
+            {
+                let vmo_clone =
+                    vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicating VMO");
+                let _guard = CALLBACK_AFTER_SIZE_CAPTURE.set(move || {
+                    vmo_clone.set_stream_size(50).expect("set_stream_size failed");
+                });
+
+                proxy.sync().await.unwrap().expect("Syncing");
+            }
+
+            // Extend to 2 pages and flush to disk so `previous_content_size` spans 2 pages.
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), page_size().get(), &[2u8; 100])
+                .unwrap();
+            proxy.sync().await.unwrap().expect("Syncing");
+
+            // Shrink via `set_stream_size` below `previous_content_size` before flushing.
+            vmo.set_stream_size(25).expect("set_stream_size failed");
+            proxy.sync().await.unwrap().expect("Syncing");
+        }
+        fixture.close().await;
     }
 }
