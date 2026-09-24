@@ -24,6 +24,15 @@ pub const METADATA_FILE_EXTENSION: &str = "json";
 /// Standard file extension for the driver's companion UNIX control socket.
 pub const CONTROL_SOCKET_EXTENSION: &str = "control";
 
+/// Standard shared data subdirectory for ffx UART driver sockets, metadata, and logs.
+pub const UART_SHARED_SUBDIR: &str = "ffx_uart";
+
+/// Standard log file prefix for driver daemon logs.
+pub const LOG_FILE_PREFIX: &str = "ffx_uart";
+
+/// Standard log file extension.
+pub const LOG_FILE_EXTENSION: &str = "log";
+
 /// Resolves the UNIX control socket path corresponding to a driver's client socket path.
 pub fn get_control_socket_path(socket_path: &Path) -> PathBuf {
     socket_path.with_extension(CONTROL_SOCKET_EXTENSION)
@@ -37,6 +46,25 @@ pub fn get_metadata_path(socket_path: &Path) -> PathBuf {
 /// Resolves the client UNIX domain socket path corresponding to a companion metadata file path.
 pub fn get_client_socket_path(meta_path: &Path) -> PathBuf {
     meta_path.with_extension(UNIX_SOCKET_EXTENSION)
+}
+
+/// Computes a unique 64-bit log ID from a driver's socket path.
+pub fn get_log_id_from_socket_path(socket_path: &Path) -> u64 {
+    let absolute = if socket_path.is_relative() {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(socket_path))
+            .unwrap_or_else(|_| socket_path.to_path_buf())
+    } else {
+        socket_path.to_path_buf()
+    };
+    let cleaned = clean_path(&absolute);
+    let path_sha2 = Sha256::digest(cleaned.as_os_str().as_encoded_bytes());
+    u64::from_be_bytes(path_sha2[..8].try_into().expect("sha256 digest is at least 32 bytes"))
+}
+
+/// Formats a driver log file path for the given rotation index.
+pub fn get_driver_log_file_path(log_dir: &Path, log_id: u64, rotation: usize) -> PathBuf {
+    log_dir.join(format!("{LOG_FILE_PREFIX}.{log_id:016x}.{rotation}.{LOG_FILE_EXTENSION}"))
 }
 
 fn validate_and_resolve_socket_path(path: PathBuf) -> Result<PathBuf> {
@@ -139,7 +167,7 @@ pub fn get_socket_path_from_target_path(
             .get_shared_data_path()
             .map_err(|e| ConnectionError::SharedDataError { error: e.to_string() })?,
     };
-    path.push("ffx_uart");
+    path.push(UART_SHARED_SUBDIR);
     let hex_id = get_target_id_from_target_path(target_path);
     path.push(format!("ffx_uart_{hex_id}.{UNIX_SOCKET_EXTENSION}"));
 
@@ -179,10 +207,7 @@ pub fn friendly_name_to_socket_path(
 ///
 /// # Errors
 /// Returns an error if the target string is not an absolute path starting with `/`.
-pub fn parse_target_endpoint(
-    target: &str,
-    _context: &EnvironmentContext,
-) -> Result<PathBuf> {
+pub fn parse_target_endpoint(target: &str, _context: &EnvironmentContext) -> Result<PathBuf> {
     // 1. Absolute Path
     if target.starts_with('/') {
         return Ok(PathBuf::from(target));
@@ -494,5 +519,23 @@ mod tests {
         assert_eq!(json2, r#"{"type":"Raw","message":"Connection lost"}"#);
         let roundtrip2: ConnectionError = serde_json::from_str(&json2).unwrap();
         assert_eq!(err2, roundtrip2);
+    }
+
+    #[fuchsia::test]
+    fn test_driver_log_path_helpers() {
+        let sock = Path::new("/tmp/test_socket.sock");
+        let log_id = get_log_id_from_socket_path(sock);
+        assert_ne!(log_id, 0);
+
+        let log_dir = Path::new("/var/log/uart");
+        let log_file = get_driver_log_file_path(log_dir, log_id, 0);
+        let expected =
+            format!("/var/log/uart/{LOG_FILE_PREFIX}.{log_id:016x}.0.{LOG_FILE_EXTENSION}");
+        assert_eq!(log_file.to_string_lossy(), expected);
+
+        let log_rot = get_driver_log_file_path(log_dir, log_id, 2);
+        let expected_rot =
+            format!("/var/log/uart/{LOG_FILE_PREFIX}.{log_id:016x}.2.{LOG_FILE_EXTENSION}");
+        assert_eq!(log_rot.to_string_lossy(), expected_rot);
     }
 }

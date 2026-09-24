@@ -168,7 +168,10 @@ impl AsyncWrite for AsyncUart {
 /// If `path` refers to a character device, acquires an exclusive advisory file lock (`flock`),
 /// configures the serial terminal for raw mode at the specified `baud` rate, and wraps the
 /// descriptor in a non-blocking [`AsyncUart`].
-pub async fn connect_uart_stream(path: &str, baud: NonZeroU32) -> Result<UartStream, ConnectionError> {
+pub async fn connect_uart_stream(
+    path: &str,
+    baud: NonZeroU32,
+) -> Result<UartStream, ConnectionError> {
     // Acts as the entrypoint for target streams; this will be expanded in
     // downstream changes to dispatch across additional stream types (such as TCP).
     connect_uart_stream_file(path, baud).await
@@ -345,7 +348,10 @@ mod non_linux {
     }
 }
 
-async fn connect_uart_stream_file(path: &str, baud: NonZeroU32) -> Result<UartStream, ConnectionError> {
+async fn connect_uart_stream_file(
+    path: &str,
+    baud: NonZeroU32,
+) -> Result<UartStream, ConnectionError> {
     let p = std::path::Path::new(path);
     let metadata = tokio::fs::metadata(p).await.map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => ConnectionError::PathNotFound { path: path.to_string() },

@@ -396,7 +396,14 @@ mod tests {
         let socket_path = get_socket_path(&env.context, target).unwrap();
 
         // Write metadata (pass trailing slashes to verify stored target is canonicalized)
-        write_metadata(&env.context, &socket_path, "/dev/ttyUSB0///", 12345, NonZeroU32::new(115200)).unwrap();
+        write_metadata(
+            &env.context,
+            &socket_path,
+            "/dev/ttyUSB0///",
+            12345,
+            NonZeroU32::new(115200),
+        )
+        .unwrap();
 
         // Read metadata
         let meta = read_metadata(&env.context, target).unwrap().expect("metadata exists");

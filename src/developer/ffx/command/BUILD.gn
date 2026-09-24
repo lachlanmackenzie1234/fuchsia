@@ -75,6 +75,7 @@ if (is_host) {
       "//src/developer/ffx/plugins/target/ssh:*",
       "//src/developer/ffx/tests/cli-goldens:*",
       "//src/developer/ffx/tests/help-json:*",
+      "//src/developer/ffx/tools/uart_driver:*",
       "//src/developer/ffx/tools/usb_driver:*",
       "//tools/clidoc:*",
     ]

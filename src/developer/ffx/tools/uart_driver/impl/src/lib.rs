@@ -1414,7 +1414,10 @@ impl HostDriver {
             .or_else(|| meta_path.map(|p| uart_driver_api::get_client_socket_path(p)))
     }
 
-    fn determine_target_properties(target_path: &str, baud: NonZeroU32) -> (bool, Option<NonZeroU32>) {
+    fn determine_target_properties(
+        target_path: &str,
+        baud: NonZeroU32,
+    ) -> (bool, Option<NonZeroU32>) {
         let is_socket =
             std::fs::metadata(target_path).map(|m| m.file_type().is_socket()).unwrap_or(false);
         let is_pty = ffx_tool_uart::is_pty_target(target_path);
@@ -2387,7 +2390,14 @@ mod tests {
         let uart_target_str = uart_socket_path.to_string_lossy().to_string();
 
         let driver_task = fuchsia_async::Task::local(async move {
-            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), Some(meta_path), false).await;
+            HostDriver::run(
+                client_listener,
+                uart_target_str,
+                NonZeroU32::new(115200).unwrap(),
+                Some(meta_path),
+                false,
+            )
+            .await;
         });
 
         std::fs::remove_file(temp.path().join("meta.json")).unwrap();
@@ -2407,7 +2417,14 @@ mod tests {
         let uart_target_str = uart_socket_path.to_string_lossy().to_string();
 
         let driver_task = fuchsia_async::Task::local(async move {
-            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), None, false).await;
+            HostDriver::run(
+                client_listener,
+                uart_target_str,
+                NonZeroU32::new(115200).unwrap(),
+                None,
+                false,
+            )
+            .await;
         });
 
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -2438,7 +2455,14 @@ mod tests {
         let uart_target_str = uart_file_path.to_string_lossy().to_string();
 
         let driver_task = fuchsia_async::Task::local(async move {
-            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), Some(meta_path), false).await;
+            HostDriver::run(
+                client_listener,
+                uart_target_str,
+                NonZeroU32::new(115200).unwrap(),
+                Some(meta_path),
+                false,
+            )
+            .await;
         });
 
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -2474,7 +2498,14 @@ mod tests {
         let uart_target_str = uart_file_path.to_string_lossy().to_string();
 
         let driver_task = fuchsia_async::Task::local(async move {
-            HostDriver::run(client_listener, uart_target_str, NonZeroU32::new(115200).unwrap(), Some(meta_path), true).await;
+            HostDriver::run(
+                client_listener,
+                uart_target_str,
+                NonZeroU32::new(115200).unwrap(),
+                Some(meta_path),
+                true,
+            )
+            .await;
         });
 
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
