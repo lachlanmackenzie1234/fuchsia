@@ -15,7 +15,10 @@ rustc_library("affine") {
     "src/transform.rs",
     "src/utils.rs",
   ]
-  deps = [ "//src/lib/zr" ]
+  deps = [
+    "//src/lib/zr",
+    "//third_party/rust_crates:zerocopy",
+  ]
   with_unit_tests = true
 
   # TODO(https://fxbug.dev/548748442): remove when all fixed in the code

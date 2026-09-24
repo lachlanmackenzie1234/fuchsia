@@ -264,6 +264,7 @@ kernel_bindgen_crate("physmap-bindings") {
 
   notice_year = 2026
   function_allowlist = [
+    "cpp_is_physmap_phys_addr",
     "cpp_paddr_to_physmap",
     "cpp_physmap_to_paddr",
   ]

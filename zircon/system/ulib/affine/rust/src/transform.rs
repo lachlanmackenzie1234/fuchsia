@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::ratio::{Exact, Ratio, Round};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zr::static_assert;
 
 pub struct Saturate;
@@ -50,7 +51,7 @@ impl Saturate {
 /// disabled, the results of a transformation where over/underflow occurs at any
 /// stage is undefined.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromBytes, IntoBytes, Immutable)]
 pub struct Transform {
     a_offset: i64,
     b_offset: i64,

@@ -19,6 +19,15 @@ constexpr size_t kBusTransactionInitiatorDispatcherStateSize = 56;
 constexpr size_t kBusTransactionInitiatorDispatcherStateAlign = 8;
 constexpr size_t kBusTransactionInitiatorDispatcherStateOffset = 48;
 
+// Size, alignment, and offset for ClockDispatcherState.
+constexpr size_t kClockDispatcherStateSize = 232;
+constexpr size_t kClockDispatcherStateAlign = 8;
+constexpr size_t kClockDispatcherStateOffset = 48;
+
+// Size and alignment for ClockDispatcher.
+constexpr size_t kClockTransformationStorageSize = 112;
+constexpr size_t kClockTransformationStorageAlign = 8;
+
 // Size, alignment, and offset for CounterDispatcherState.
 constexpr size_t kCounterDispatcherStateSize = 64;
 constexpr size_t kCounterDispatcherStateAlign = 8;
