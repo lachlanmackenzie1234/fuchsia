@@ -950,10 +950,10 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1768,6 +1768,7 @@ The overall compilation mode to use.  The valid values are:
  * `balanced`: some optimizations, but prioritizing compilation speed over
                 runtime performance.
  * `release`: all the optimizations, used for product releases.
+ * `sanitizer`: for sanitizer-instrumented builds.
 LINT.IfChange
 
 **Current value for `target_cpu = "arm64"`:** `"release"`
@@ -1776,7 +1777,7 @@ From //out/not-default/args.gn:5
 
 **Overridden from the default:** `"balanced"`
 
-From //build/config/compilation_modes.gni:19
+From //build/config/compilation_modes.gni:20
 
 **Current value for `target_cpu = "riscv64"`:** `"release"`
 
@@ -1784,7 +1785,7 @@ From //out/not-default/args.gn:5
 
 **Overridden from the default:** `"balanced"`
 
-From //build/config/compilation_modes.gni:19
+From //build/config/compilation_modes.gni:20
 
 **Current value for `target_cpu = "x64"`:** `"release"`
 
@@ -1792,7 +1793,7 @@ From //out/not-default/args.gn:5
 
 **Overridden from the default:** `"balanced"`
 
-From //build/config/compilation_modes.gni:19
+From //build/config/compilation_modes.gni:20
 
 ### compilation_settings_overrides
 
@@ -1814,7 +1815,7 @@ mode (above).
 
 **Current value (from the default):** `{ }`
 
-From //build/config/compilation_modes.gni:38
+From //build/config/compilation_modes.gni:39
 
 ### compress_debuginfo
 
@@ -3969,7 +3970,7 @@ will be able to load any ELF binaries produced by this build.
 
 **Current value (from the default):** `4096`
 
-From //build/config/fuchsia/BUILD.gn:35
+From //build/config/fuchsia/BUILD.gn:34
 
 ### experimental_force_enable_new_wakeup_accounting
 
@@ -9620,7 +9621,7 @@ Toggles between the C++ and Rust driver implementations.
 TODO(https://fxbug.dev/504722357): Remove the toggle after the Rust port is completed.
 Valid values: "cpp", "rust"
 
-**Current value (from the default):** `"cpp"`
+**Current value (from the default):** `"rust"`
 
 From //src/graphics/display/drivers/virtio-gpu-display/BUILD.gn:14
 
@@ -9769,20 +9770,6 @@ doesn't require the FVM or SSH keys.
 **Current value (from the default):** `""`
 
 From //build/images/args.gni:24
-
-### zircon_asserts
-
-Used internally to enable ZX_ASSERT_XXX macros provided by
-<zircon/assert.h>. This should not be set in args.gn.
-
-To override the default value, GN targets should use the config label
-//build/config/fuchsia:enable_zircon_asserts, while Bazel target should use
-the feature name "enable_zircon_asserts".
-
-
-**Current value (from the default):** `false`
-
-From //build/config/fuchsia/zircon_asserts.gni:14
 
 ### zircon_b_partition
 
