@@ -199,11 +199,16 @@ impl HyperConnector {
 const HAPPY_EYEBALLS_DELAY: Duration = Duration::from_millis(250);
 /// Individual connection attempt timeout.
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(2000);
+/// DNS resolution timeout. Kept relatively short (2s) as host-side tools primarily perform
+/// local network lookups (e.g. connecting to development devices).
+const DNS_TIMEOUT: Duration = Duration::from_millis(2000);
 
 /// Sorts/interleaves addresses to alternate between address families (IPv6, IPv4) per RFC 8305 §4.
+/// Duplicate addresses are filtered out to avoid redundant connection attempts.
 fn interleave_addrs(addrs: impl IntoIterator<Item = SocketAddr>) -> Vec<SocketAddr> {
+    let mut seen = std::collections::HashSet::new();
     let (v6, v4): (Vec<SocketAddr>, Vec<SocketAddr>) =
-        addrs.into_iter().partition(|addr| addr.is_ipv6());
+        addrs.into_iter().filter(|addr| seen.insert(*addr)).partition(|addr| addr.is_ipv6());
     let mut result = Vec::with_capacity(v6.len() + v4.len());
     let mut v6_iter = v6.into_iter();
     let mut v4_iter = v4.into_iter();
@@ -309,7 +314,10 @@ where
 
 /// Resolve a hostname into an address using Happy Eyeballs v2 (RFC 8305).
 async fn resolve_host_port(host: &str, port: u16) -> Result<net::TcpStream, io::Error> {
-    let addrs = net::lookup_host((host, port)).await?;
+    let addrs = match tokio::time::timeout(DNS_TIMEOUT, net::lookup_host((host, port))).await {
+        Ok(res) => res?,
+        Err(_) => return Err(io::Error::new(io::ErrorKind::TimedOut, "DNS resolution timed out")),
+    };
     let interleaved = interleave_addrs(addrs);
     happy_eyeballs_connect(interleaved).await
 }
@@ -658,5 +666,8 @@ YyRIHN8wfdVoOw==\n\
 
         let interleaved_v6_only = interleave_addrs(vec![v6_1, v6_2]);
         assert_eq!(interleaved_v6_only, vec![v6_1, v6_2]);
+
+        let interleaved_dedup = interleave_addrs(vec![v6_1, v6_1, v4_1, v4_1]);
+        assert_eq!(interleaved_dedup, vec![v6_1, v4_1]);
     }
 }
