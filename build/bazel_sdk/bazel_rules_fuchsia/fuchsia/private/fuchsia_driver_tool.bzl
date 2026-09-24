@@ -37,6 +37,7 @@ fuchsia_driver_tool = rule(
     )
 
     $ bazel run //pkg.my_tool -- --arg1 foo --arg2 bar
+    ```
     """,
     implementation = _fuchsia_driver_tool_impl,
     attrs = {
