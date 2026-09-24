@@ -65,8 +65,10 @@ from tools.integration.fint.proto import (
     static_pb2,
 )
 
-JSONObject = dict[str, Any]
-JSONArray = list[Any]
+_JSONPrimitive = str | int | float | bool | None
+JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
+JSONObject = dict[str, JSONValue]
+JSONArray = list[JSONValue]
 
 # Module-scope constants for file names
 BUILD_ARTIFACTS_JSON = "build_artifacts.json"
@@ -74,7 +76,7 @@ NINJA_ERRORS_JSON = "ninja_errors.json"
 TOOL_PATHS_JSON = "tool_paths.json"
 TESTS_JSON = "tests.json"
 GENERATED_SOURCES_JSON = "generated_sources.json"
-PREBUILT_BINARY_SETS_JSON = "prebuilt_binary_sets.json"
+PREBUILT_BINARY_SETS_JSON = "prebuilt_binaries.json"
 FORCE_NONHERMETIC_REBUILD_SENTINEL = "force_nonhermetic_rebuild"
 LAST_NINJA_BUILD_SUCCESS_STAMP = "last_ninja_build_success.stamp"
 
@@ -178,9 +180,9 @@ class HostProperties:
             / "ninja"
         )
 
-    def matches_tool(self, tool: JSONObject) -> bool:
+    def matches_tool(self, tool: "ToolPathSpec") -> bool:
         """Returns True if the tool's OS and CPU match this host."""
-        return tool.get("os") == self.os and tool.get("cpu") == self.cpu
+        return tool.os == self.os and tool.cpu == self.cpu
 
 
 def load_static_spec(path: pathlib.Path) -> static_pb2.Static:
@@ -230,8 +232,15 @@ class NinjaFailure:
         if not isinstance(artifacts, list):
             artifacts = [str(artifacts)] if artifacts is not None else []
         try:
-            exit_code_int = int(exit_code) if exit_code is not None else -1
+            # Ensure we only pass numeric/string types to int() to keep Mypy completely happy.
+            exit_code_int = (
+                int(exit_code)
+                if isinstance(exit_code, (int, float, str))
+                else -1
+            )
         except (ValueError, TypeError):
+            # If the exit code cannot be cast to an integer (e.g. if it is malformed,
+            # non-numeric, or absent), gracefully fallback to a sentinel value of -1.
             exit_code_int = -1
 
         return cls(
@@ -252,6 +261,72 @@ class NinjaFailure:
         if include_output and self.output:
             return f"{header}\n\n{self.output}"
         return header
+
+
+@dataclass(frozen=True)
+class TestSpec:
+    """Represents a parsed and statically typed test specification from tests.json."""
+
+    label: str
+    os: str
+    cpu: str
+    path: str
+
+    @classmethod
+    def from_dict(cls, data: JSONObject) -> "TestSpec":
+        """Constructs a TestSpec safely from a JSONObject."""
+        test_dict = data.get("test")
+        if not isinstance(test_dict, dict):
+            raise ValueError(
+                f"Expected 'test' object inside test spec, but got: {test_dict}"
+            )
+
+        label = test_dict.get("label", "")
+        os_val = test_dict.get("os", "")
+        cpu_val = test_dict.get("cpu", "")
+        path_val = test_dict.get("path", "")
+
+        if not (
+            isinstance(label, str)
+            and isinstance(os_val, str)
+            and isinstance(cpu_val, str)
+            and isinstance(path_val, str)
+        ):
+            raise ValueError(
+                f"TestSpec has invalid field types: label={type(label).__name__}, "
+                f"os={type(os_val).__name__}, cpu={type(cpu_val).__name__}, path={type(path_val).__name__}"
+            )
+        return cls(label=label, os=os_val, cpu=cpu_val, path=path_val)
+
+
+@dataclass(frozen=True)
+class ToolPathSpec:
+    """Represents a parsed and statically typed host tool path from tool_paths.json."""
+
+    name: str
+    path: str
+    os: str
+    cpu: str
+
+    @classmethod
+    def from_dict(cls, data: JSONObject) -> "ToolPathSpec":
+        """Constructs a ToolPathSpec safely from a JSONObject."""
+        name = data.get("name")
+        path_val = data.get("path")
+        os_val = data.get("os")
+        cpu_val = data.get("cpu")
+
+        if not (
+            isinstance(name, str)
+            and isinstance(path_val, str)
+            and isinstance(os_val, str)
+            and isinstance(cpu_val, str)
+        ):
+            raise ValueError(
+                f"ToolPathSpec has invalid field types: name={type(name).__name__}, "
+                f"path={type(path_val).__name__}, os={type(os_val).__name__}, cpu={type(cpu_val).__name__}"
+            )
+        return cls(name=name, path=path_val, os=os_val, cpu=cpu_val)
 
 
 def parse_ninja_failures(errors_json_path: pathlib.Path) -> str | None:
@@ -500,17 +575,48 @@ class BuildContext:
         return False
 
     @functools.cached_property
-    def tool_paths(self) -> JSONArray:
+    def tool_paths(self) -> list[ToolPathSpec]:
         """Loads and returns the tool paths config list."""
-        return load_json_list(self.build_dir / TOOL_PATHS_JSON)
+        path = self.build_dir / TOOL_PATHS_JSON
+        if not path.exists():
+            return []
+        try:
+            # Narrow the try clause strictly to loading/decoding the JSON file.
+            paths_data = load_json_list(path)
+        except ValueError as e:
+            raise ValueError(f"Failed to decode {TOOL_PATHS_JSON}: {e}")
+
+        # Process the decoded data list with strict validation.
+        paths = []
+        for item in paths_data:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Expected dict entry inside {TOOL_PATHS_JSON}, but got: {type(item).__name__}"
+                )
+            paths.append(ToolPathSpec.from_dict(item))
+        return paths
 
     @functools.cached_property
-    def test_specs(self) -> JSONArray:
+    def test_specs(self) -> list[TestSpec]:
         """Loads and returns the test specs list."""
         path = self.build_dir / TESTS_JSON
         if not path.exists():
             return []
-        return load_json_list(path)
+        try:
+            # Narrow the try clause strictly to loading/decoding the JSON file.
+            specs_data = load_json_list(path)
+        except ValueError as e:
+            raise ValueError(f"Failed to decode {TESTS_JSON}: {e}")
+
+        # Process the decoded data list with strict validation.
+        specs = []
+        for item in specs_data:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Expected dict entry inside {TESTS_JSON}, but got: {type(item).__name__}"
+                )
+            specs.append(TestSpec.from_dict(item))
+        return specs
 
     @functools.cached_property
     def generated_sources(self) -> JSONArray:
@@ -537,16 +643,25 @@ class BuildContext:
         """Yields generated C++ source targets if configured."""
         if self.static_spec.include_generated_sources:
             for f in self.generated_sources:
-                if f.endswith(".cc") or f.endswith(".h"):
+                if isinstance(f, str) and (
+                    f.endswith(".cc") or f.endswith(".h")
+                ):
                     yield f
 
     def _prebuilt_binary_manifests(self) -> Iterable[str]:
         """Yields prebuilt binary manifest targets if configured."""
         if self.static_spec.include_prebuilt_binary_manifests:
             for item in self.prebuilt_binary_sets:
+                if not isinstance(item, dict):
+                    raise ValueError(
+                        f"Expected dict entry inside {PREBUILT_BINARY_SETS_JSON}, but got: {type(item).__name__}"
+                    )
                 manifest = item.get("manifest")
-                if manifest:
-                    yield manifest
+                if not isinstance(manifest, str):
+                    raise ValueError(
+                        f"Prebuilt binary set entry has invalid 'manifest' field type: {type(manifest).__name__}"
+                    )
+                yield manifest
 
     def _tool_targets(self) -> Iterable[str]:
         """Yields prebuilt host tool targets if configured."""
@@ -575,12 +690,9 @@ class BuildContext:
 
     def _build_bazel_host_tests(self) -> None:
         """Builds Bazel host tests if any are present in tests.json."""
-        bazel_labels = []
-        for spec in self.test_specs:
-            test_spec = spec.get("test", {})
-            label = test_spec.get("label", "")
-            if label.startswith("@"):
-                bazel_labels.append(label)
+        bazel_labels = [
+            spec.label for spec in self.test_specs if spec.label.startswith("@")
+        ]
 
         if not bazel_labels:
             return
@@ -791,12 +903,12 @@ class BuildContext:
 
 
 def lookup_tool_path(
-    tool_paths: list[JSONObject], tool_name: str, host: HostProperties
+    tool_paths: list[ToolPathSpec], tool_name: str, host: HostProperties
 ) -> str | None:
     """Looks up the relative path of a host tool in tool_paths."""
     for tool in tool_paths:
-        if tool.get("name") == tool_name and host.matches_tool(tool):
-            return tool.get("path")
+        if tool.name == tool_name and host.matches_tool(tool):
+            return tool.path
     return None
 
 

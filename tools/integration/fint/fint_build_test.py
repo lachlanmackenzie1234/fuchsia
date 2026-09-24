@@ -278,7 +278,7 @@ class ParseNinjaFailuresTest(unittest.TestCase):
 
     def test_format_valid_failures(self) -> None:
         """Verifies format_ninja_failures correctly formats valid failures."""
-        mock_data = {
+        mock_data: fint_build.JSONObject = {
             "version": 1,
             "failures": [
                 {
@@ -293,7 +293,7 @@ class ParseNinjaFailuresTest(unittest.TestCase):
 
     def test_format_deduplication(self) -> None:
         """Verifies format_ninja_failures deduplicates long compiler errors, but preserves headers."""
-        mock_data = {
+        mock_data: fint_build.JSONObject = {
             "version": 1,
             "failures": [
                 {
@@ -468,13 +468,15 @@ class HostPropertiesTest(unittest.TestCase):
         )
 
         # Test matches_tool
-        tool_matching = {"os": "linux", "cpu": "x64", "path": "path/to/tool"}
-        tool_mismatch_os = {"os": "mac", "cpu": "x64", "path": "path/to/tool"}
-        tool_mismatch_cpu = {
-            "os": "linux",
-            "cpu": "arm64",
-            "path": "path/to/tool",
-        }
+        tool_matching = fint_build.ToolPathSpec(
+            name="tool", os="linux", cpu="x64", path="path/to/tool"
+        )
+        tool_mismatch_os = fint_build.ToolPathSpec(
+            name="tool", os="mac", cpu="x64", path="path/to/tool"
+        )
+        tool_mismatch_cpu = fint_build.ToolPathSpec(
+            name="tool", os="linux", cpu="arm64", path="path/to/tool"
+        )
 
         self.assertTrue(host.matches_tool(tool_matching))
         self.assertFalse(host.matches_tool(tool_mismatch_os))
@@ -529,6 +531,76 @@ class NinjaBuildWrapTest(unittest.TestCase):
         ctx = fint_build.BuildContext(static_spec, context_spec, host)
         targets = ctx._get_targets()
         self.assertEqual(targets, ["bar", "foo"])
+
+    def test_resolve_targets_prebuilt_binaries(self) -> None:
+        """Verifies prebuilt_binaries.json targets are loaded and resolved cleanly."""
+        static_spec = static_pb2.Static(include_prebuilt_binary_manifests=True)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (pathlib.Path(tmp_dir) / "prebuilt_binaries.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "packages",
+                            "manifest": "prebuilt_binaries.manifest",
+                        }
+                    ]
+                )
+            )
+            context_spec = context_pb2.Context(
+                checkout_dir="fake_checkout", build_dir=tmp_dir
+            )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(static_spec, context_spec, host)
+            self.assertEqual(ctx._get_targets(), ["prebuilt_binaries.manifest"])
+
+    def test_test_spec_from_dict_pure(self) -> None:
+        """Verifies TestSpec.from_dict safely parses dictionaries."""
+        valid_dict: fint_build.JSONObject = {
+            "test": {
+                "label": "@//src/foo:foo_test",
+                "os": "linux",
+                "cpu": "x64",
+                "path": "host_test_1",
+            }
+        }
+        spec = fint_build.TestSpec.from_dict(valid_dict)
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec.label, "@//src/foo:foo_test")
+        self.assertEqual(spec.os, "linux")
+        self.assertEqual(spec.cpu, "x64")
+        self.assertEqual(spec.path, "host_test_1")
+
+        # Non-dict and missing key structures raise ValueError strictly
+        with self.assertRaises(ValueError):
+            fint_build.TestSpec.from_dict({})
+        # Create invalid dict with typed values to keep Mypy happy
+        invalid_dict: fint_build.JSONObject = {"test": "not-a-dict"}
+        with self.assertRaises(ValueError):
+            fint_build.TestSpec.from_dict(invalid_dict)
+
+    def test_tool_path_spec_from_dict_pure(self) -> None:
+        """Verifies ToolPathSpec.from_dict safely parses dictionaries."""
+        valid_dict: fint_build.JSONObject = {
+            "name": "gn",
+            "path": "prebuilt/third_party/gn/linux-x64/gn",
+            "os": "linux",
+            "cpu": "x64",
+        }
+        tool = fint_build.ToolPathSpec.from_dict(valid_dict)
+        self.assertIsNotNone(tool)
+        assert tool is not None
+        self.assertEqual(tool.name, "gn")
+        self.assertEqual(tool.path, "prebuilt/third_party/gn/linux-x64/gn")
+        self.assertEqual(tool.os, "linux")
+        self.assertEqual(tool.cpu, "x64")
+
+        # Missing and incorrect type structures raise ValueError strictly
+        with self.assertRaises(ValueError):
+            fint_build.ToolPathSpec.from_dict({})
+        invalid_dict: fint_build.JSONObject = {"name": 123}
+        with self.assertRaises(ValueError):
+            fint_build.ToolPathSpec.from_dict(invalid_dict)
 
     @mock.patch.object(subprocess, "run")
     def test_lifecycle_context_manager(self, mock_run: MagicMock) -> None:
