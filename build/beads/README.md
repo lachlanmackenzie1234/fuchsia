@@ -31,3 +31,9 @@ in your `~/.gemini/config/skills.json`:
 
 where `<FUCHSIA>` is the root of your Fuchsia checkout directory. Note
 that this path should be an absolute path.
+
+## Planter machinery
+
+[planter](planter) holds the shared rules and lessons for planter, an agent
+harness that runs GN-to-Bazel migrations and learns from code review. See
+[planter/README.md](planter/README.md).

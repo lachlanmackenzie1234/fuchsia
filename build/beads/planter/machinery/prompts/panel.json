@@ -1,0 +1,25 @@
+{
+    "version": 4,
+    "seats": [
+        {
+            "seat_id": "target_parity",
+            "name": "Target & Attribute Parity Reviewer",
+            "responsibility": "Verifies 1:1 semantic alignment of targets, deps, sources, flags, idiomatic Bazel visibility scoping (true rdeps only, no :__pkg__ or //:__subpackages__), and that the change modifies only build-definition files (no source edits).",
+            "prompt_file": "target_parity.md",
+            "allowed_tools": [
+                "inspect_target",
+                "find_rdeps"
+            ]
+        },
+        {
+            "seat_id": "dual_build_sentinel",
+            "name": "Dual-Build & Sentinel Reviewer",
+            "responsibility": "Verifies #LOCAL_BAZEL_BUILD_SENTINEL, bazel2gn synchronization, Bazel-first visibility parity, and build-only change scope in dual-build packages.",
+            "prompt_file": "dual_build_sentinel.md",
+            "allowed_tools": [
+                "inspect_target",
+                "find_rdeps"
+            ]
+        }
+    ]
+}

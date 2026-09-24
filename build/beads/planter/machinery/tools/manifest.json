@@ -1,0 +1,27 @@
+{
+    "version": 1,
+    "tools": [
+        {
+            "name": "inspect_target",
+            "description": "Inspects BUILD.gn and BUILD.bazel in the target directory",
+            "script_file": "inspect_target.sh",
+            "allowed_roles": [
+                "coder",
+                "reviewer",
+                "evolver"
+            ],
+            "enabled": true
+        },
+        {
+            "name": "find_rdeps",
+            "description": "Finds true reverse-dependency packages for a target package while excluding false-positive mentions in visibility allowlists",
+            "script_file": "find_rdeps.sh",
+            "allowed_roles": [
+                "coder",
+                "reviewer",
+                "evolver"
+            ],
+            "enabled": true
+        }
+    ]
+}
