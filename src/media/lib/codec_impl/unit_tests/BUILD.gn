@@ -77,9 +77,6 @@ cc_test_executable("decryptor_adapter_tests_bin") {
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
   ]
-
-  # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
 }
 
 fuchsia_unittest_package("decryptor_adapter_tests") {
