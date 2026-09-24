@@ -465,6 +465,24 @@ func TestToResultDBFailureReason_PanicsOnNilError(t *testing.T) {
 	_ = toResultDBFailureReason(fr, resultpb.FailureReason_ORDINARY)
 }
 
+func TestToResultDBFailureReason_SkipsEmptyMessage(t *testing.T) {
+	fr := &runtests.FailureReason{
+		Errors: []*runtests.FailureReasonError{
+			{Message: "valid error 1"},
+			{Message: ""},
+			{Message: "valid error 2"},
+		},
+	}
+
+	res := toResultDBFailureReason(fr, resultpb.FailureReason_ORDINARY)
+	if len(res.Errors) != 2 {
+		t.Fatalf("got %d errors, want 2", len(res.Errors))
+	}
+	if res.Errors[0].Message != "valid error 1" || res.Errors[1].Message != "valid error 2" {
+		t.Errorf("got errors %+v, want ['valid error 1', 'valid error 2']", res.Errors)
+	}
+}
+
 func TestToResultDBFailureReason_Truncation(t *testing.T) {
 	// 1. Test message (>1024B) truncation
 	fr := &runtests.FailureReason{

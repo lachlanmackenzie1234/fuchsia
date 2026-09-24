@@ -632,8 +632,12 @@ func toResultDBFailureReason(fr *runtests.FailureReason, defaultKind resultpb.Fa
 	// Copy over errors to the resultpb.FailureReason.
 	res.Errors = make([]*resultpb.FailureReason_Error, 0, len(fr.Errors))
 	for i, e := range fr.Errors {
+		msg := truncateString(e.Message, MaxFailureReasonLength)
+		if msg == "" {
+			continue
+		}
 		pbErr := &resultpb.FailureReason_Error{
-			Message: truncateString(e.Message, MaxFailureReasonLength),
+			Message: msg,
 		}
 		res.Errors = append(res.Errors, pbErr)
 		if proto.Size(res) > MaxFailureReasonTotalSize {
