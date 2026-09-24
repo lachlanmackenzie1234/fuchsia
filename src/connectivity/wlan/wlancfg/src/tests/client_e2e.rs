@@ -202,12 +202,10 @@ fn test_setup(
     ));
     let (connection_selection_request_sender, connection_selection_request_receiver) =
         mpsc::channel(5);
-    let power_manager = Arc::new(wlan_power_manager_testing::TestPowerManager::new());
     let connection_selection_fut = Box::pin(
         connection_selection::serve_connection_selection_request_loop(
             connection_selector,
             connection_selection_request_receiver,
-            power_manager.clone(),
         ) // Map the output type of this future to match the other ones we want to combine with it
         .map(|_| {
             let result: Result<Infallible, Error> =
@@ -267,7 +265,6 @@ fn test_setup(
         defect_receiver,
         recovery_receiver,
         inspect::Inspector::default().root().create_child("iface_manager"),
-        power_manager.clone(),
     );
     let iface_manager_service = Box::pin(iface_manager_service);
     let scan_manager_service = Box::pin(
@@ -297,7 +294,6 @@ fn test_setup(
             client_provider_lock,
             client_provider_requests,
             telemetry_sender,
-            power_manager.clone(),
         )
         // Map the output type of this future to match the other ones we want to combine with it
         .map(|_| {
@@ -363,7 +359,6 @@ fn add_phy(exec: &mut TestExecutor, test_values: &mut TestValues) {
         legacy_client.clone(),
         test_values.internal_objects.phy_manager.clone(),
         test_values.internal_objects.iface_manager.clone(),
-        test_values.internal_objects.power_manager.clone(),
     );
     let add_phy_event = DeviceWatcherEvent::OnPhyAdded { phy_id: TEST_PHY_ID };
     let add_phy_fut = device_monitor::handle_event(&listener, add_phy_event);
@@ -1993,7 +1988,6 @@ fn inform_watcher_of_client_iface_removal_and_expect_iface_recovery(
         legacy_client.clone(),
         test_values.internal_objects.phy_manager.clone(),
         test_values.internal_objects.iface_manager.clone(),
-        test_values.internal_objects.power_manager.clone(),
     );
     let remove_iface_event = DeviceWatcherEvent::OnIfaceRemoved { iface_id: expected_iface_id };
     let remove_iface_fut = device_monitor::handle_event(&listener, remove_iface_event);
@@ -3555,7 +3549,6 @@ fn test_power_element_lease_and_suspend_resume_lifecycle() {
         legacy_client.clone(),
         test_values.internal_objects.phy_manager.clone(),
         test_values.internal_objects.iface_manager.clone(),
-        test_values.internal_objects.power_manager.clone(),
     );
     let remove_phy_event = DeviceWatcherEvent::OnPhyRemoved { phy_id: TEST_PHY_ID };
     let remove_phy_fut = device_monitor::handle_event(&listener, remove_phy_event);

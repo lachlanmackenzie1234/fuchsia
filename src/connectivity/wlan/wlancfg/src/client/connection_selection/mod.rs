@@ -130,21 +130,18 @@ pub trait ConnectionSelectorApi {
 pub async fn serve_connection_selection_request_loop(
     connection_selector: Rc<dyn ConnectionSelectorApi>,
     mut request_channel: mpsc::Receiver<ConnectionSelectionRequest>,
-    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
 ) {
     loop {
         select! {
             request = request_channel.select_next_some() => {
                 match request {
                     ConnectionSelectionRequest::NewConnectionSelection { network_id, reason, responder} => {
-                        let _wake_lease = power_manager.take_wake_lease("wlancfg-connection-selection").await;
                         let selected = connection_selector.find_and_select_connection_candidate(network_id, reason).await;
                         // It's acceptable for the receiver to close the channel, preventing this
                         // sender from responding.
                         let _ = responder.send(selected);
                     }
                     ConnectionSelectionRequest::RoamSelection { scan_type, network_id, credential, current_security, responder } => {
-                        let _wake_lease = power_manager.take_wake_lease("wlancfg-roam-selection").await;
                         let selected = connection_selector.find_and_select_roam_candidate(scan_type, network_id, &credential, current_security).await;
                         // It's acceptable for the receiver to close the channel, preventing this
                         // sender from responding.
@@ -1932,12 +1929,8 @@ mod tests {
 
         // Start the service loop
         let (request_sender, request_receiver) = mpsc::channel(5);
-        let power_manager = Arc::new(wlan_power_manager_testing::TestPowerManager::new());
-        let mut serve_fut = pin!(serve_connection_selection_request_loop(
-            connection_selector,
-            request_receiver,
-            power_manager.clone(),
-        ));
+        let mut serve_fut =
+            pin!(serve_connection_selection_request_loop(connection_selector, request_receiver));
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
 
         // Create a requester struct
@@ -1956,9 +1949,6 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut connection_selection_fut), Poll::Ready(Ok(Some(selected_candidate))) => {
             assert_eq!(selected_candidate, candidate);
         });
-
-        let calls = power_manager.calls.lock();
-        assert!(calls.contains(&"wlancfg-connection-selection".to_string()));
     }
 
     #[fuchsia::test]
@@ -1974,12 +1964,8 @@ mod tests {
 
         // Start the service loop
         let (request_sender, request_receiver) = mpsc::channel(5);
-        let power_manager = Arc::new(wlan_power_manager_testing::TestPowerManager::new());
-        let mut serve_fut = pin!(serve_connection_selection_request_loop(
-            connection_selector,
-            request_receiver,
-            power_manager.clone(),
-        ));
+        let mut serve_fut =
+            pin!(serve_connection_selection_request_loop(connection_selector, request_receiver));
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
 
         // Create a requester struct
@@ -2004,8 +1990,5 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut roam_selection_fut), Poll::Ready(Ok(Some(selected_candidate))) => {
             assert_eq!(selected_candidate, candidate);
         });
-
-        let calls = power_manager.calls.lock();
-        assert!(calls.contains(&"wlancfg-roam-selection".to_string()));
     }
 }

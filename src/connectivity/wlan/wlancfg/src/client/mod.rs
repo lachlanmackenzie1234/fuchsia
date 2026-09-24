@@ -47,7 +47,6 @@ pub async fn serve_provider_requests(
     client_provider_lock: Arc<Mutex<()>>,
     mut requests: fidl_policy::ClientProviderRequestStream,
     telemetry_sender: TelemetrySender,
-    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
 ) {
     let mut controller_reqs = FuturesUnordered::new();
 
@@ -67,7 +66,6 @@ pub async fn serve_provider_requests(
                         client_provider_guard,
                         req,
                         telemetry_sender.clone(),
-                        power_manager.clone(),
                     );
                     controller_reqs.push(fut);
                 } else if let Err(e) = reject_provider_request(req) {
@@ -101,7 +99,6 @@ async fn handle_provider_request(
     client_provider_guard: MutexGuard<'_, ()>,
     req: fidl_policy::ClientProviderRequest,
     telemetry_sender: TelemetrySender,
-    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
 ) -> Result<(), fidl::Error> {
     match req {
         fidl_policy::ClientProviderRequest::GetController { requests, updates, .. } => {
@@ -113,7 +110,6 @@ async fn handle_provider_request(
                 client_provider_guard,
                 requests,
                 telemetry_sender,
-                power_manager,
             )
             .await?;
             Ok(())
@@ -148,14 +144,12 @@ async fn handle_client_requests(
     client_provider_guard: MutexGuard<'_, ()>,
     requests: ClientRequests,
     telemetry_sender: TelemetrySender,
-    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
 ) -> Result<(), fidl::Error> {
     let mut request_stream = requests.into_stream();
     while let Some(request) = request_stream.try_next().await? {
         log_client_request(&request);
         match request {
             fidl_policy::ClientControllerRequest::Connect { id, responder, .. } => {
-                let _wake_lease = power_manager.take_wake_lease("wlancfg-client-connect").await;
                 let response = handle_client_request_connect(
                     Arc::clone(&iface_manager),
                     saved_networks.clone(),
@@ -165,16 +159,12 @@ async fn handle_client_requests(
                 responder.send(response)?
             }
             fidl_policy::ClientControllerRequest::StartClientConnections { responder } => {
-                let _wake_lease =
-                    power_manager.take_wake_lease("wlancfg-client-start-connections").await;
                 telemetry_sender.send(TelemetryEvent::StartClientConnectionsRequest);
                 let response =
                     handle_client_request_start_client_connections(iface_manager.clone()).await;
                 responder.send(response)?
             }
             fidl_policy::ClientControllerRequest::StopClientConnections { responder } => {
-                let _wake_lease =
-                    power_manager.take_wake_lease("wlancfg-client-stop-connections").await;
                 telemetry_sender.send(TelemetryEvent::StopClientConnectionsRequest);
                 let response =
                     handle_client_request_stop_client_connections(iface_manager.clone()).await;
@@ -185,7 +175,6 @@ async fn handle_client_requests(
                     scan_requester.clone(),
                     saved_networks.clone(),
                     telemetry_sender.clone(),
-                    power_manager.clone(),
                     iterator,
                 );
                 // The scan handler is infallible and should not block handling of further request.
@@ -193,8 +182,6 @@ async fn handle_client_requests(
                 fuchsia_async::Task::local(fut).detach();
             }
             fidl_policy::ClientControllerRequest::SaveNetwork { config, responder } => {
-                let _wake_lease =
-                    power_manager.take_wake_lease("wlancfg-client-save-network").await;
                 // If there is an error saving the network, log it and convert to a FIDL value.
                 let response = handle_client_request_save_network(
                     saved_networks.clone(),
@@ -209,8 +196,6 @@ async fn handle_client_requests(
                 responder.send(response)?;
             }
             fidl_policy::ClientControllerRequest::RemoveNetwork { config, responder } => {
-                let _wake_lease =
-                    power_manager.take_wake_lease("wlancfg-client-remove-network").await;
                 let id_opt = config.id;
                 let err = async {
                     let id = id_opt.ok_or(NetworkConfigError::ConfigMissingId)?;
@@ -227,8 +212,6 @@ async fn handle_client_requests(
                 responder.send(err)?;
             }
             fidl_policy::ClientControllerRequest::ForgetNetwork { id, responder } => {
-                let _wake_lease =
-                    power_manager.take_wake_lease("wlancfg-client-remove-network").await;
                 let err = handle_client_request_remove_network(
                     saved_networks.clone(),
                     id,
@@ -239,8 +222,6 @@ async fn handle_client_requests(
                 responder.send(err)?;
             }
             fidl_policy::ClientControllerRequest::GetSavedNetworks { iterator, .. } => {
-                let _wake_lease =
-                    power_manager.take_wake_lease("wlancfg-client-get-saved-networks").await;
                 handle_client_request_get_networks(saved_networks.clone(), iterator).await?;
             }
         }
@@ -294,10 +275,8 @@ async fn handle_client_request_scan(
     scan_requester: Arc<dyn scan::ScanRequestApi>,
     saved_networks: SavedNetworksPtr,
     telemetry_sender: TelemetrySender,
-    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
     output_iterator: fidl::endpoints::ServerEnd<fidl_fuchsia_wlan_policy::ScanResultIteratorMarker>,
 ) {
-    let _wake_lease = power_manager.take_wake_lease("wlancfg-client-scan").await;
     let get_scan_results = async {
         let passive_scan_results =
             scan_requester.perform_scan(scan::ScanReason::ClientRequest, vec![], vec![]).await?;
@@ -687,7 +666,6 @@ mod tests {
         client_provider_lock: Arc<Mutex<()>>,
         telemetry_sender: TelemetrySender,
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
-        power_manager: Arc<wlan_power_manager_testing::TestPowerManager>,
     }
 
     // setup channels and proxies needed for the tests to use use the Client Provider and
@@ -737,7 +715,6 @@ mod tests {
         let scan_requester = Arc::new(FakeScanRequester::new());
 
         let (update_sender, listener_updates) = mpsc::unbounded();
-        let power_manager = Arc::new(wlan_power_manager_testing::TestPowerManager::new());
 
         TestValues {
             saved_networks,
@@ -754,7 +731,6 @@ mod tests {
             client_provider_lock: Arc::new(Mutex::new(())),
             telemetry_sender: TelemetrySender::new(telemetry_sender),
             telemetry_receiver,
-            power_manager,
         }
     }
 
@@ -771,7 +747,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -817,7 +792,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -855,7 +829,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -893,7 +866,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -930,7 +902,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1008,7 +979,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1068,7 +1038,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1123,7 +1092,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1194,7 +1162,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1253,7 +1220,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1310,7 +1276,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1405,7 +1370,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1465,7 +1429,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1518,7 +1481,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1590,7 +1552,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1703,7 +1664,6 @@ mod tests {
             test_values.client_provider_lock,
             test_values.requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1789,7 +1749,6 @@ mod tests {
             test_values.client_provider_lock.clone(),
             test_values.requests,
             test_values.telemetry_sender.clone(),
-            test_values.power_manager.clone(),
         );
         let mut serve_fut = pin!(serve_fut);
 
@@ -1813,7 +1772,6 @@ mod tests {
             test_values.client_provider_lock.clone(),
             requests,
             test_values.telemetry_sender,
-            test_values.power_manager.clone(),
         );
         let mut second_serve_fut = pin!(second_serve_fut);
 
@@ -1900,79 +1858,5 @@ mod tests {
             exec.run_until_stalled(&mut fut),
             Poll::Ready(fidl_policy::RequestStatus::Acknowledged)
         );
-    }
-
-    #[fuchsia::test]
-    fn test_client_wake_leases() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let serve_fut = serve_provider_requests(
-            test_values.iface_manager,
-            test_values.update_sender,
-            Arc::clone(&test_values.saved_networks),
-            test_values.scan_requester,
-            test_values.client_provider_lock,
-            test_values.requests,
-            test_values.telemetry_sender,
-            test_values.power_manager.clone(),
-        );
-        let mut serve_fut = pin!(serve_fut);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        let (controller, _) = request_controller(&test_values.provider);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        // 1. Connect
-        let connect_fut = controller.connect(&test_values.net_id_open);
-        let mut connect_fut = pin!(connect_fut);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(_)));
-
-        // 2. StartClientConnections
-        let start_fut = controller.start_client_connections();
-        let mut start_fut = pin!(start_fut);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut start_fut), Poll::Ready(Ok(_)));
-
-        // 3. StopClientConnections
-        let stop_fut = controller.stop_client_connections();
-        let mut stop_fut = pin!(stop_fut);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut stop_fut), Poll::Ready(Ok(_)));
-
-        // 4. SaveNetwork
-        let save_fut = controller.save_network(&fidl_policy::NetworkConfig {
-            id: Some(test_values.net_id_open.clone()),
-            credential: Some(fidl_policy::Credential::None(fidl_policy::Empty)),
-            ..Default::default()
-        });
-        let mut save_fut = pin!(save_fut);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut save_fut), Poll::Ready(Ok(_)));
-
-        // 5. RemoveNetwork
-        let remove_fut = controller.remove_network(&fidl_policy::NetworkConfig {
-            id: Some(test_values.net_id_open.clone()),
-            credential: Some(fidl_policy::Credential::None(fidl_policy::Empty)),
-            ..Default::default()
-        });
-        let mut remove_fut = pin!(remove_fut);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut remove_fut), Poll::Ready(Ok(_)));
-
-        // 6. GetSavedNetworks
-        let (_iterator, server_end) =
-            fidl::endpoints::create_endpoints::<fidl_policy::NetworkConfigIteratorMarker>();
-        let _ = controller.get_saved_networks(server_end);
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        // Verify that all wake leases were taken.
-        let calls = test_values.power_manager.calls.lock();
-        assert!(calls.contains(&"wlancfg-client-connect".to_string()));
-        assert!(calls.contains(&"wlancfg-client-start-connections".to_string()));
-        assert!(calls.contains(&"wlancfg-client-stop-connections".to_string()));
-        assert!(calls.contains(&"wlancfg-client-save-network".to_string()));
-        assert!(calls.contains(&"wlancfg-client-remove-network".to_string()));
-        assert!(calls.contains(&"wlancfg-client-get-saved-networks".to_string()));
     }
 }

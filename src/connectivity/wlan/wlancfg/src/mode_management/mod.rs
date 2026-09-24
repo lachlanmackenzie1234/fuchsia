@@ -42,7 +42,6 @@ pub fn create_iface_manager(
     defect_receiver: mpsc::Receiver<Defect>,
     recovery_receiver: recovery::RecoveryActionReceiver,
     node: fuchsia_inspect::Node,
-    power_manager: Arc<dyn wlan_power_manager::PowerManager>,
 ) -> (Arc<Mutex<iface_manager_api::IfaceManager>>, impl Future<Output = Result<Infallible, Error>>)
 {
     let (sender, receiver) = mpsc::channel(0);
@@ -58,7 +57,6 @@ pub fn create_iface_manager(
         telemetry_sender,
         defect_sender,
         node,
-        power_manager,
     );
     let iface_manager_service = iface_manager::serve_iface_manager_requests(
         iface_manager,
