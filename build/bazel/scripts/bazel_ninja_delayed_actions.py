@@ -187,6 +187,10 @@ def main() -> int:
         for platform_label, platform_targets in targets_by_platform.items():
             time_profile.start("merging_bazel_target_infos")
 
+            print(
+                f"Building {len(platform_targets)} targets using {platform_label}"
+            )
+
             bazel_target_infos = list(platform_targets.values())
             platform_config = bazel_target_infos[0].bazel_platform_config
 
@@ -323,6 +327,7 @@ def main() -> int:
 
             # Update the depfiles data and the stamp file
             time_profile.start("update_depfile_and_stampfiles")
+            updated_outputs = set(action_result.output_files)
             for target, sources in action_result.source_files.items():
                 # Locate the action request and stamp path for this target.
                 target_with_platform = TargetWithPlatform(
@@ -353,13 +358,19 @@ def main() -> int:
                 with open(action.ninja_depfile, "w") as f:
                     depfile.write_to(f)
 
-                # Update the stamp file.
-                timestamp = datetime.datetime.now().timestamp()
-                stamp_path.parent.mkdir(parents=True, exist_ok=True)
-                if stamp_path.exists():
-                    stamp_path.unlink()
-                with open(stamp_path, "w") as f:
-                    f.write(f"{timestamp}\n")
+                # Only update the stamp file if it does not exist yet or if at
+                # least one of the action's outputs was updated, so that Ninja's
+                # restat can prune downstream dependents when outputs are unchanged.
+                if not stamp_path.exists() or any(
+                    Path(output) in updated_outputs
+                    for output in action.ninja_outputs[1:]
+                ):
+                    timestamp = datetime.datetime.now().timestamp()
+                    stamp_path.parent.mkdir(parents=True, exist_ok=True)
+                    if stamp_path.exists():
+                        stamp_path.unlink()
+                    with open(stamp_path, "w") as f:
+                        f.write(f"{timestamp}\n")
 
         rc = 0
 
