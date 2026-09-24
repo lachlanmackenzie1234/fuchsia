@@ -43,7 +43,7 @@ import("//build/compiled_action.gni")
 #     Optional: Paths to regular sampler configuration files.
 #     Type: list(path)
 #
-template("merged_sampler_config") {
+template("generate_sampler_config") {
   assert(defined(invoker.output), "must pass the output file path")
 
   fire_project_templates = []
@@ -71,7 +71,7 @@ template("merged_sampler_config") {
                              "project_configs",
                              "output",
                            ])
-    tool = "//src/diagnostics/tools/merge_sampler_configs"
+    tool = "//src/diagnostics/tools/generate_sampler_configs"
 
     inputs = []
     args = [

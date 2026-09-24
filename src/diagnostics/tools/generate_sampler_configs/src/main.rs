@@ -23,7 +23,7 @@ const FUCHSIA_CUSTOMER_ID: u32 = 1;
 
 /// Diagnostics config command
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
-pub struct MergeConfigsCommand {
+pub struct GenerateConfigsCommand {
     /// paths to sampler project configs.
     #[argh(option)]
     pub project_config: Vec<PathBuf>,
@@ -46,7 +46,7 @@ pub struct MergeConfigsCommand {
 }
 
 pub fn main() -> Result<(), Error> {
-    let args: MergeConfigsCommand = argh::from_env();
+    let args: GenerateConfigsCommand = argh::from_env();
 
     let mut project_configs = Vec::new();
     for project_config_path in args.project_config {
