@@ -14,7 +14,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    NetworkState,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -165,13 +164,13 @@ class StartStopClientConnectionsTest(
             ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
-                    NetworkState(
-                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                    f_wlan_policy.NetworkState(
+                        id_=f_wlan_policy.NetworkIdentifier(
                             ssid=list(self.ssid.encode("utf-8")),
                             type_=self.security_type,
                         ),
-                        connection_state=f_wlan_policy.ConnectionState.CONNECTING,
-                        disconnect_status=None,
+                        state=f_wlan_policy.ConnectionState.CONNECTING,
+                        status=None,
                     )
                 ],
             ),
@@ -186,13 +185,13 @@ class StartStopClientConnectionsTest(
             ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[
-                    NetworkState(
-                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                    f_wlan_policy.NetworkState(
+                        id_=f_wlan_policy.NetworkIdentifier(
                             ssid=list(self.ssid.encode("utf-8")),
                             type_=self.security_type,
                         ),
-                        connection_state=f_wlan_policy.ConnectionState.DISCONNECTED,
-                        disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
+                        state=f_wlan_policy.ConnectionState.DISCONNECTED,
+                        status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
             ),
@@ -238,13 +237,13 @@ class StartStopClientConnectionsTest(
             ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
-                    NetworkState(
-                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                    f_wlan_policy.NetworkState(
+                        id_=f_wlan_policy.NetworkIdentifier(
                             ssid=list(self.ssid.encode("utf-8")),
                             type_=self.security_type,
                         ),
-                        connection_state=f_wlan_policy.ConnectionState.CONNECTING,
-                        disconnect_status=None,
+                        state=f_wlan_policy.ConnectionState.CONNECTING,
+                        status=None,
                     )
                 ],
             ),
@@ -255,13 +254,13 @@ class StartStopClientConnectionsTest(
             ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
-                    NetworkState(
-                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                    f_wlan_policy.NetworkState(
+                        id_=f_wlan_policy.NetworkIdentifier(
                             ssid=list(self.ssid.encode("utf-8")),
                             type_=self.security_type,
                         ),
-                        connection_state=f_wlan_policy.ConnectionState.CONNECTED,
-                        disconnect_status=None,
+                        state=f_wlan_policy.ConnectionState.CONNECTED,
+                        status=None,
                     )
                 ],
             ),
@@ -279,13 +278,13 @@ class StartStopClientConnectionsTest(
             ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
-                    NetworkState(
-                        network_identifier=f_wlan_policy.NetworkIdentifier(
+                    f_wlan_policy.NetworkState(
+                        id_=f_wlan_policy.NetworkIdentifier(
                             ssid=list(self.ssid.encode("utf-8")),
                             type_=self.security_type,
                         ),
-                        connection_state=f_wlan_policy.ConnectionState.DISCONNECTED,
-                        disconnect_status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
+                        state=f_wlan_policy.ConnectionState.DISCONNECTED,
+                        status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
             ),

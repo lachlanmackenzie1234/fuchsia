@@ -22,7 +22,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     NetworkConfig,
-    NetworkState,
 )
 from honeydew.affordances.location import Location
 from honeydew.errors import NotSupportedError
@@ -430,13 +429,13 @@ class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
                 ClientStateSummary(
                     state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                     networks=[
-                        NetworkState(
-                            network_identifier=f_wlan_policy.NetworkIdentifier(
+                        f_wlan_policy.NetworkState(
+                            id_=f_wlan_policy.NetworkIdentifier(
                                 ssid=list(str.encode("Google Guest")),
                                 type_=f_wlan_policy.SecurityType.WPA2,
                             ),
-                            connection_state=f_wlan_policy.ConnectionState.CONNECTING,
-                            disconnect_status=None,
+                            state=f_wlan_policy.ConnectionState.CONNECTING,
+                            status=None,
                         )
                     ],
                 ),

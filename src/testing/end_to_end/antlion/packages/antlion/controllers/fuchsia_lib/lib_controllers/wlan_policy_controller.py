@@ -15,7 +15,6 @@ from antlion.controllers.fuchsia_lib.ssh import FuchsiaSSHProvider
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import NetworkState
 from honeydew.fuchsia_device.fuchsia_device import (
     FuchsiaDevice as HdFuchsiaDevice,
 )
@@ -197,8 +196,8 @@ class WlanPolicyController:
     def _find_network(
         self,
         ssid: str,
-        networks: list[NetworkState],
-    ) -> NetworkState | None:
+        networks: list[f_wlan_policy.NetworkState],
+    ) -> f_wlan_policy.NetworkState | None:
         """Helper method to find network in list of network states.
 
         Args:
@@ -209,6 +208,6 @@ class WlanPolicyController:
             Network state of target ssid or None if not found in networks.
         """
         for network in networks:
-            if bytes(network.network_identifier.ssid).decode("utf-8") == ssid:
+            if network.id_ and bytes(network.id_.ssid).decode("utf-8") == ssid:
                 return network
         return None

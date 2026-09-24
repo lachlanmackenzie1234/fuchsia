@@ -158,39 +158,6 @@ class CredentialPsk(Credential):
 
 
 @dataclass(frozen=True)
-class NetworkState:
-    """Information about a network's current connections and attempts.
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/client_provider.fidl
-    """
-
-    network_identifier: f_wlan_policy.NetworkIdentifier
-    connection_state: f_wlan_policy.ConnectionState
-    disconnect_status: f_wlan_policy.DisconnectStatus | None
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_policy.NetworkState) -> NetworkState:
-        """Parse from a fuchsia.wlan.policy/NetworkState."""
-        assert fidl.id_ is not None, f"{fidl!r} missing id"
-        assert fidl.state is not None, f"{fidl!r} missing state"
-
-        return NetworkState(
-            network_identifier=fidl.id_,
-            connection_state=f_wlan_policy.ConnectionState(fidl.state),
-            disconnect_status=(
-                f_wlan_policy.DisconnectStatus(fidl.status)
-                if fidl.status
-                else None
-            ),
-        )
-
-    def __lt__(self, other: NetworkState) -> bool:
-        return bytes(self.network_identifier.ssid) < bytes(
-            other.network_identifier.ssid
-        )
-
-
-@dataclass(frozen=True)
 class ClientStateSummary:
     """Information about the current client state for the device.
 
@@ -201,7 +168,7 @@ class ClientStateSummary:
     """
 
     state: f_wlan_policy.WlanClientState
-    networks: list[NetworkState]
+    networks: list[f_wlan_policy.NetworkState]
 
     @staticmethod
     def from_fidl(
@@ -212,14 +179,18 @@ class ClientStateSummary:
         assert fidl.state is not None, f"{fidl!r} missing state"
         return ClientStateSummary(
             state=f_wlan_policy.WlanClientState(fidl.state),
-            networks=[NetworkState.from_fidl(n) for n in fidl.networks],
+            networks=list(fidl.networks),
         )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ClientStateSummary):
             return NotImplemented
-        return self.state == other.state and sorted(self.networks) == sorted(
-            other.networks
+        return self.state == other.state and sorted(
+            self.networks,
+            key=lambda n: bytes(n.id_.ssid) if n.id_ else b"",
+        ) == sorted(
+            other.networks,
+            key=lambda n: bytes(n.id_.ssid) if n.id_ else b"",
         )
 
 

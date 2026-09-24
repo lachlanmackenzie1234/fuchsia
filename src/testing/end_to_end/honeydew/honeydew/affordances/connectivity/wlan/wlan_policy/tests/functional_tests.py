@@ -17,7 +17,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     NetworkConfig,
-    NetworkState,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -172,13 +171,13 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
-                    NetworkState(
-                        f_wlan_policy.NetworkIdentifier(
+                    f_wlan_policy.NetworkState(
+                        id_=f_wlan_policy.NetworkIdentifier(
                             ssid=list(test_ssid.encode("utf-8")),
                             type_=f_wlan_policy.SecurityType.NONE,
                         ),
-                        f_wlan_policy.ConnectionState.DISCONNECTED,
-                        f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
+                        state=f_wlan_policy.ConnectionState.DISCONNECTED,
+                        status=f_wlan_policy.DisconnectStatus.CONNECTION_STOPPED,
                     )
                 ],
             ),
@@ -361,13 +360,13 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ClientStateSummary(
                 state=expected_client_state,
                 networks=[
-                    NetworkState(
-                        f_wlan_policy.NetworkIdentifier(
+                    f_wlan_policy.NetworkState(
+                        id_=f_wlan_policy.NetworkIdentifier(
                             ssid=list(ssid.encode("utf-8")),
                             type_=f_wlan_policy.SecurityType.NONE,
                         ),
-                        expected_state,
-                        expected_status,
+                        state=expected_state,
+                        status=expected_status,
                     )
                 ],
             )

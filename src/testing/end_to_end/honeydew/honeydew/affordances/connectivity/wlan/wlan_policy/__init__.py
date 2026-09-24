@@ -612,13 +612,13 @@ class WlanPolicy(AsyncLazyReady):
 
         def check_net(update: ClientStateSummary) -> bool:
             for net in update.networks:
-                if bytes(net.network_identifier.ssid).decode("utf-8") == ssid:
-                    if net.connection_state == expected_state:
+                assert net.id_, f"{net!r} missing id"
+                assert net.state, f"{net!r} missing state"
+                if bytes(net.id_.ssid).decode("utf-8") == ssid:
+                    state = f_wlan_policy.ConnectionState(net.state)
+                    if state == expected_state:
                         return True
-                    elif (
-                        net.connection_state
-                        is f_wlan_policy.ConnectionState.CONNECTING
-                    ):
+                    elif state is f_wlan_policy.ConnectionState.CONNECTING:
                         _LOGGER.debug(
                             "Network %s still attempting to connect.", ssid
                         )
@@ -626,15 +626,17 @@ class WlanPolicy(AsyncLazyReady):
                     else:
                         raise wlan_errors.HoneydewWlanError(
                             f'Expected network "{ssid}" to be in state {expected_state.name}, '
-                            f"got {net.connection_state.name}"
+                            f"got {state.name}"
                         )
             return False
 
         matched_update = await self._wait_on_update(check_net, timeout=timeout)
 
         for net in matched_update.networks:
-            if bytes(net.network_identifier.ssid).decode("utf-8") == ssid:
-                return net.connection_state
+            assert net.id_, f"{net!r} missing id"
+            assert net.state, f"{net!r} missing state"
+            if bytes(net.id_.ssid).decode("utf-8") == ssid:
+                return f_wlan_policy.ConnectionState(net.state)
 
         raise wlan_errors.HoneydewWlanError(
             f"Timed out trying to find ssid: {ssid}"
@@ -1022,8 +1024,7 @@ class WlanPolicy(AsyncLazyReady):
         try:
             await self._wait_on_update(
                 lambda update: not any(
-                    n.connection_state in connection_states
-                    for n in update.networks
+                    n.state in connection_states for n in update.networks
                 ),
                 timeout=timeout,
             )
