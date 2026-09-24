@@ -27,6 +27,16 @@ size_t CalculateRxHeaderLength(size_t data_size) {
   // bytes of data, the following will give 512 exactly.
   return std::min(kBulkRequestSize, ZX_ROUNDUP(data_size, kPacketSize));
 }
+
+// Returns true if the given FIDL error represents an expected transport teardown or
+// disconnection status (such as peer closure, cancellation, or device unplug) during
+// driver shutdown.
+bool IsExpectedFidlDisconnect(const auto& error) {
+  const zx_status_t status =
+      error.is_framework_error() ? error.framework_error().status() : error.domain_error();
+  return status == ZX_ERR_PEER_CLOSED || status == ZX_ERR_CANCELED ||
+         status == ZX_ERR_IO_NOT_PRESENT;
+}
 }  // namespace
 
 void UsbFastbootFunction::CleanUpTx(zx_status_t status, usb::FidlRequest req) {
@@ -332,7 +342,12 @@ zx_status_t UsbFastbootFunction::DisableEndpoints() {
   zx_status_t status = ZX_OK;
   for (const uint8_t ep_addr : {bulk_out_addr(), bulk_in_addr()}) {
     fidl::Result result = function_->DisableEndpoint({ep_addr});
-    if (!result.is_ok()) {
+    if (result.is_error()) {
+      if (IsExpectedFidlDisconnect(result.error_value())) {
+        fdf::debug("DisableEndpoint {} disconnected (expected during teardown): {}",
+                   static_cast<uint32_t>(ep_addr), result.error_value().FormatDescription());
+        continue;
+      }
       fdf::error("Failed to disable endpoint {}: {}", static_cast<uint32_t>(ep_addr),
                  result.error_value().FormatDescription());
       if (status == ZX_OK) {
@@ -363,7 +378,7 @@ zx_status_t UsbFastbootFunction::ConfigureEndpoints() {
       fdf::error("ConfigureEndpoint failed: {}", result.error_value().FormatDescription());
       for (uint8_t ep_addr : configured_eps) {
         fidl::Result disable_res = function_->DisableEndpoint({ep_addr});
-        if (!disable_res.is_ok()) {
+        if (disable_res.is_error() && !IsExpectedFidlDisconnect(disable_res.error_value())) {
           fdf::warn("Rollback DisableEndpoint {} failed: {}", static_cast<uint32_t>(ep_addr),
                     disable_res.error_value().FormatDescription());
         }
@@ -470,7 +485,7 @@ zx::result<> UsbFastbootFunction::Start(fdf::DriverContext context) {
 
   auto& response = alloc_result.value();
   descriptors_.fastboot_intf.b_interface_number = response.interface_nums()[0];
-  descriptors_.placehodler_intf.b_interface_number = response.interface_nums()[1];
+  descriptors_.placeholder_intf.b_interface_number = response.interface_nums()[1];
 
   descriptors_.bulk_out_ep.b_endpoint_address = response.endpoint_addrs()[0];
   descriptors_.bulk_in_ep.b_endpoint_address = response.endpoint_addrs()[1];
@@ -594,7 +609,7 @@ void UsbFastbootFunction::CancelEndpointRequests() {
   } else {
     bulk_in_ep_->CancelAll().Then(
         [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll>& result) {
-          if (result.is_error()) {
+          if (result.is_error() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk in ep CancelAll failed: {}", result.error_value().FormatDescription());
           }
           bulk_in_cancelled_ = true;
@@ -607,7 +622,7 @@ void UsbFastbootFunction::CancelEndpointRequests() {
   } else {
     bulk_out_ep_->CancelAll().Then(
         [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll>& result) {
-          if (result.is_error()) {
+          if (result.is_error() && !IsExpectedFidlDisconnect(result.error_value())) {
             fdf::warn("bulk out ep CancelAll failed: {}", result.error_value().FormatDescription());
           }
           bulk_out_cancelled_ = true;
