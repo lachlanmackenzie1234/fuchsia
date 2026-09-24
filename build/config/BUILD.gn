@@ -1050,7 +1050,6 @@ config("Wno-conversion") {
     "//src/devices/power/drivers/fusb302:*",
     "//src/devices/rtc/drivers/intel-rtc:*",
     "//src/devices/tee/drivers/optee:*",
-    "//src/devices/tpm/drivers/cr50-spi:*",
     "//src/devices/tpm/drivers/tpm:*",
     "//src/graphics/display/drivers/goldfish-display:*",
     "//src/graphics/drivers/misc/goldfish:*",
