@@ -12,8 +12,8 @@ use crate::object_handle::ObjectHandle;
 use crate::object_store::extent_record::{ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
-    AttributeKey, ExtendedAttributeValue, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectValue,
-    Timestamp,
+    AttributeKey, BytesAndNodes, ExtendedAttributeValue, ObjectAttributes, ObjectKey,
+    ObjectKeyData, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options, ReadGuard,
@@ -575,15 +575,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 // The allocated and deallocated shouldn't exceed the max size of the file which is
                 // bound within i64.
                 let diff = i64::try_from(allocated).unwrap() - i64::try_from(deallocated).unwrap();
-                transaction.add(
+                transaction.merge_bytes_and_nodes(
                     self.store().store_object_id(),
-                    Mutation::merge_object(
-                        ObjectKey::project_usage(
-                            self.store().root_directory_object_id(),
-                            *project_id,
-                        ),
-                        ObjectValue::BytesAndNodes { bytes: diff, nodes: 0 },
-                    ),
+                    ObjectKey::project_usage(self.store().root_directory_object_id(), *project_id),
+                    BytesAndNodes { bytes: diff, nodes: 0 },
                 );
             }
         } else {

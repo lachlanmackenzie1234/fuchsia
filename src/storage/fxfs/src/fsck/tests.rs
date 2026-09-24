@@ -18,8 +18,8 @@ use crate::object_store::extent::MIN_BLOCK_SIZE;
 use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
-    AttributeId, AttributeKey, ChildValue, DirType, EncryptionKeys, ExtentMode, ExtentValue,
-    FsverityMetadata, HandleOptions, Mutation, NewChildStoreOptions, ObjectAttributes,
+    AttributeId, AttributeKey, BytesAndNodes, ChildValue, DirType, EncryptionKeys, ExtentMode,
+    ExtentValue, FsverityMetadata, HandleOptions, Mutation, NewChildStoreOptions, ObjectAttributes,
     ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
     RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
@@ -3604,12 +3604,10 @@ async fn test_project_accounting() {
             )
             .await
             .expect("new_transaction failed");
-        transaction.add(
+        transaction.merge_bytes_and_nodes(
             store_id,
-            Mutation::merge_object(
-                ObjectKey::project_usage(root_directory.object_id(), ProjectId::new(4).unwrap()),
-                ObjectValue::BytesAndNodes { bytes: 0, nodes: 2 },
-            ),
+            ObjectKey::project_usage(root_directory.object_id(), ProjectId::new(4).unwrap()),
+            BytesAndNodes { bytes: 0, nodes: 2 },
         );
         transaction.add(
             store_id,
@@ -3652,12 +3650,10 @@ async fn test_project_accounting() {
             )
             .await
             .expect("new_transaction failed");
-        transaction.add(
+        transaction.merge_bytes_and_nodes(
             store_id,
-            Mutation::merge_object(
-                ObjectKey::project_usage(root_directory.object_id(), ProjectId::new(5).unwrap()),
-                ObjectValue::BytesAndNodes { bytes: 0, nodes: 1 },
-            ),
+            ObjectKey::project_usage(root_directory.object_id(), ProjectId::new(5).unwrap()),
+            BytesAndNodes { bytes: 0, nodes: 1 },
         );
         transaction.add(
             store_id,

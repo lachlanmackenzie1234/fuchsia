@@ -79,9 +79,9 @@ use uuid::Uuid;
 pub use extent::Extent;
 pub use extent_record::{ExtentMode, ExtentValue};
 pub use object_record::{
-    AttributeId, AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue,
-    FsverityMetadata, FxfsKey, FxfsKeyV49, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind,
-    ObjectValue, ProjectProperty, RootDigest,
+    AttributeId, AttributeKey, BytesAndNodes, EncryptionKey, EncryptionKeys,
+    ExtendedAttributeValue, FsverityMetadata, FxfsKey, FxfsKeyV49, ObjectAttributes, ObjectKey,
+    ObjectKeyData, ObjectKind, ObjectValue, ProjectProperty, RootDigest,
 };
 pub use project_id::{ProjectId, ProjectIdExt};
 pub use transaction::Mutation;
@@ -1760,15 +1760,10 @@ impl ObjectStore {
                 mutation.item.value
             {
                 if let Some(project_id) = project_id {
-                    transaction.add(
+                    transaction.merge_bytes_and_nodes(
                         self.store_object_id,
-                        Mutation::merge_object(
-                            ObjectKey::project_usage(self.root_directory_object_id(), project_id),
-                            ObjectValue::BytesAndNodes {
-                                bytes: -i64::try_from(deallocated).unwrap(),
-                                nodes,
-                            },
-                        ),
+                        ObjectKey::project_usage(self.root_directory_object_id(), project_id),
+                        BytesAndNodes { bytes: -i64::try_from(deallocated).unwrap(), nodes },
                     );
                 }
                 object_mutation = Some(mutation);
