@@ -79,23 +79,9 @@ if (is_host) {
     deps = [ ":gn_runner" ]
   }
 
-  python_library("build_command_query_utils") {
-    sources = [ "build_command_query_utils.py" ]
-    library_deps = [
-      "//build/api:gn_ninja_outputs",
-      "//build/bazel/scripts:bazel_build_args",
-      "//build/bazel/scripts:build_utils",
-    ]
-  }
-
   python_build_time_tests("compare_utils_test") {
     tests = [ "compare_utils_test.py" ]
     deps = [ ":compare_utils" ]
-  }
-
-  python_build_time_tests("build_command_query_utils_test") {
-    tests = [ "build_command_query_utils_test.py" ]
-    deps = [ ":build_command_query_utils" ]
   }
 
   python_binary("compare_commands") {
@@ -117,7 +103,6 @@ if (is_host) {
   group("tests") {
     testonly = true
     deps = [
-      ":build_command_query_utils_test",
       ":compare_utils_test",
       ":discover_migration_candidates_test",
       ":normalize_clang_args_test",

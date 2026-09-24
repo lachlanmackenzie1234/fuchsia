@@ -137,12 +137,14 @@ class CompareCommandsQuery:
         bazel: Optional Bazel label (e.g. "//src/foo:bar"). Required for Bazel queries.
         action_type: Action type to query (one of VALID_ACTION_TYPES). Defaults to ACTION_RUSTC.
         source: Optional source file path to match for compilation actions.
+        allow_differences: Optional bool, set to True to ignore differences in final report.
     """
 
     gn: str = ""
     bazel: str = ""
     action_type: str = ACTION_RUSTC
     source: T.Optional[str] = None
+    allow_differences: bool = False
 
     def __post_init__(self) -> None:
         if not self.gn and not self.bazel:
@@ -164,11 +166,16 @@ class CompareCommandsQuery:
         if source is not None:
             _validate_value(source, str, "source")
 
+        allow_differences = _validate_value(
+            data.get("allow_differences", False), bool, "allow_differences"
+        )
+
         return cls(
             gn=gn,
             bazel=bazel,
             action_type=action_type,
             source=source,
+            allow_differences=allow_differences,
         )
 
 
