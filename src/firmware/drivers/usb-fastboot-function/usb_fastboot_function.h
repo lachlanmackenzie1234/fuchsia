@@ -70,8 +70,10 @@ class UsbFastbootFunction
   uint8_t bulk_in_addr() const { return descriptors_.bulk_in_ep.b_endpoint_address; }
 
  private:
-  zx_status_t ConfigureEndpoints(bool enable);
+  zx_status_t ConfigureEndpoints();
+  zx_status_t DisableEndpoints();
 
+  bool endpoints_enabled_ = false;
   std::atomic<bool> configured_ = false;
 
   std::optional<inspect::ComponentInspector> inspector_;
@@ -112,10 +114,12 @@ class UsbFastbootFunction
   void QueueTx();
   void QueueRx();
 
-  void CheckStopComplete();
+  void CheckTeardownComplete();
   void CancelActiveTransfers();
+  void CancelEndpointRequests();
 
   std::optional<fdf::StopCompleter> stop_completer_;
+  std::optional<SetConfiguredCompleter::Async> set_configured_completer_;
   bool stopping_ = false;
   bool bulk_in_cancelled_ = false;
   bool bulk_out_cancelled_ = false;

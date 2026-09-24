@@ -94,9 +94,7 @@ void UsbFastbootFunction::TxBatchComplete(
   if (send_completer_.has_value() && queued_tx_size_ < total_to_send_) {
     QueueTx();
   }
-  if (stopping_) {
-    CheckStopComplete();
-  }
+  CheckTeardownComplete();
 }
 
 void UsbFastbootFunction::TxComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
@@ -233,9 +231,7 @@ void UsbFastbootFunction::RxBatchComplete(
   if (receive_completer_.has_value() && queued_rx_size_ < requested_size_) {
     QueueRx();
   }
-  if (stopping_) {
-    CheckStopComplete();
-  }
+  CheckTeardownComplete();
 }
 
 void UsbFastbootFunction::RxComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
@@ -329,45 +325,59 @@ void UsbFastbootFunction::Control(ControlRequest& request, ControlCompleter::Syn
   completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-zx_status_t UsbFastbootFunction::ConfigureEndpoints(bool enable) {
-  if (enable) {
-    for (const auto* ep_desc : {&descriptors_.bulk_out_ep, &descriptors_.bulk_in_ep}) {
-      fuchsia_hardware_usb_function::EndpointConfiguration ep_config;
-      fuchsia_hardware_usb_function::EndpointDescriptor desc;
-      desc.bm_attributes(ep_desc->bm_attributes);
-      desc.w_max_packet_size(le16toh(ep_desc->w_max_packet_size));
-      desc.b_interval(ep_desc->b_interval);
-      ep_config.descriptor(std::move(desc));
-
-      fidl::Result result =
-          function_->ConfigureEndpoint({ep_desc->b_endpoint_address, std::move(ep_config)});
-      if (result.is_error()) {
-        fdf::error("ConfigureEndpoint failed: {}", result.error_value().FormatDescription());
-        return result.error_value().is_framework_error()
-                   ? result.error_value().framework_error().status()
-                   : result.error_value().domain_error();
+zx_status_t UsbFastbootFunction::DisableEndpoints() {
+  if (!endpoints_enabled_) {
+    return ZX_OK;
+  }
+  zx_status_t status = ZX_OK;
+  for (const uint8_t ep_addr : {bulk_out_addr(), bulk_in_addr()}) {
+    fidl::Result result = function_->DisableEndpoint({ep_addr});
+    if (!result.is_ok()) {
+      fdf::error("Failed to disable endpoint {}: {}", static_cast<uint32_t>(ep_addr),
+                 result.error_value().FormatDescription());
+      if (status == ZX_OK) {
+        status = result.error_value().is_framework_error()
+                     ? result.error_value().framework_error().status()
+                     : result.error_value().domain_error();
       }
-    }
-    configured_ = true;
-  } else {
-    zx_status_t status = ZX_OK;
-    for (const uint8_t ep_addr : {bulk_out_addr(), bulk_in_addr()}) {
-      fidl::Result result = function_->DisableEndpoint({ep_addr});
-      if (!result.is_ok()) {
-        fdf::error("Failed to disable endpoint {}: {}", ep_addr,
-                   result.error_value().FormatDescription());
-        if (status == ZX_OK) {
-          status = result.error_value().is_framework_error()
-                       ? result.error_value().framework_error().status()
-                       : result.error_value().domain_error();
-        }
-      }
-    }
-    configured_ = false;
-    if (status != ZX_OK) {
-      return status;
     }
   }
+  endpoints_enabled_ = false;
+  configured_ = false;
+  return status;
+}
+
+zx_status_t UsbFastbootFunction::ConfigureEndpoints() {
+  std::vector<uint8_t> configured_eps;
+  for (const auto* ep_desc : {&descriptors_.bulk_out_ep, &descriptors_.bulk_in_ep}) {
+    fuchsia_hardware_usb_function::EndpointConfiguration ep_config;
+    fuchsia_hardware_usb_function::EndpointDescriptor desc;
+    desc.bm_attributes(ep_desc->bm_attributes);
+    desc.w_max_packet_size(le16toh(ep_desc->w_max_packet_size));
+    desc.b_interval(ep_desc->b_interval);
+    ep_config.descriptor(std::move(desc));
+
+    fidl::Result result =
+        function_->ConfigureEndpoint({ep_desc->b_endpoint_address, std::move(ep_config)});
+    if (result.is_error()) {
+      fdf::error("ConfigureEndpoint failed: {}", result.error_value().FormatDescription());
+      for (uint8_t ep_addr : configured_eps) {
+        fidl::Result disable_res = function_->DisableEndpoint({ep_addr});
+        if (!disable_res.is_ok()) {
+          fdf::warn("Rollback DisableEndpoint {} failed: {}", static_cast<uint32_t>(ep_addr),
+                    disable_res.error_value().FormatDescription());
+        }
+      }
+      endpoints_enabled_ = false;
+      configured_ = false;
+      return result.error_value().is_framework_error()
+                 ? result.error_value().framework_error().status()
+                 : result.error_value().domain_error();
+    }
+    configured_eps.push_back(ep_desc->b_endpoint_address);
+  }
+  endpoints_enabled_ = true;
+  configured_ = true;
 
   return ZX_OK;
 }
@@ -378,7 +388,27 @@ void UsbFastbootFunction::SetConfigured(SetConfiguredRequest& request,
   fuchsia_hardware_usb_descriptor::UsbSpeed speed = request.speed();
   fdf::info("configured? - {}  speed - {}.", configured, static_cast<uint32_t>(speed));
 
-  completer.Reply(zx::make_result(ConfigureEndpoints(configured)));
+  if (stopping_ || set_configured_completer_.has_value()) {
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
+    return;
+  }
+
+  if (!configured) {
+    if (!configured_ && !endpoints_enabled_) {
+      completer.Reply(zx::ok());
+      return;
+    }
+
+    configured_ = false;
+    CancelActiveTransfers();
+
+    set_configured_completer_ = completer.ToAsync();
+    CancelEndpointRequests();
+    return;
+  }
+
+  zx_status_t status = ConfigureEndpoints();
+  completer.Reply(zx::make_result(status));
 }
 
 void UsbFastbootFunction::SetInterface(SetInterfaceRequest& request,
@@ -526,8 +556,8 @@ void UsbFastbootFunction::CancelActiveTransfers() {
   }
 }
 
-void UsbFastbootFunction::CheckStopComplete() {
-  if (!stop_completer_.has_value()) {
+void UsbFastbootFunction::CheckTeardownComplete() {
+  if (!stop_completer_.has_value() && !set_configured_completer_.has_value()) {
     return;
   }
 
@@ -538,13 +568,54 @@ void UsbFastbootFunction::CheckStopComplete() {
     return;
   }
 
-  if (configured_) {
-    ConfigureEndpoints(false);
+  if (endpoints_enabled_) {
+    DisableEndpoints();
   }
 
-  auto completer = std::move(*stop_completer_);
-  stop_completer_.reset();
-  completer(zx::ok());
+  if (set_configured_completer_.has_value()) {
+    auto completer = std::move(*set_configured_completer_);
+    set_configured_completer_.reset();
+    completer.Reply(zx::ok());
+  }
+
+  if (stop_completer_.has_value()) {
+    auto completer = std::move(*stop_completer_);
+    stop_completer_.reset();
+    completer(zx::ok());
+  }
+}
+
+void UsbFastbootFunction::CancelEndpointRequests() {
+  bulk_in_cancelled_ = false;
+  bulk_out_cancelled_ = false;
+
+  if (!bulk_in_ep_.client().is_valid()) {
+    bulk_in_cancelled_ = true;
+  } else {
+    bulk_in_ep_->CancelAll().Then(
+        [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll>& result) {
+          if (result.is_error()) {
+            fdf::warn("bulk in ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          bulk_in_cancelled_ = true;
+          CheckTeardownComplete();
+        });
+  }
+
+  if (!bulk_out_ep_.client().is_valid()) {
+    bulk_out_cancelled_ = true;
+  } else {
+    bulk_out_ep_->CancelAll().Then(
+        [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll>& result) {
+          if (result.is_error()) {
+            fdf::warn("bulk out ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          bulk_out_cancelled_ = true;
+          CheckTeardownComplete();
+        });
+  }
+
+  CheckTeardownComplete();
 }
 
 void UsbFastbootFunction::Stop(fdf::StopCompleter completer) {
@@ -560,39 +631,21 @@ void UsbFastbootFunction::Stop(fdf::StopCompleter completer) {
   stopping_ = true;
   stop_completer_.emplace(std::move(completer));
 
-  bulk_in_cancelled_ = false;
-  bulk_out_cancelled_ = false;
+  const bool was_draining = set_configured_completer_.has_value();
+  if (was_draining) {
+    auto c = std::move(*set_configured_completer_);
+    set_configured_completer_.reset();
+    c.Reply(zx::error(ZX_ERR_CANCELED));
+  }
 
-  // Cancel any active client transfers.
+  configured_ = false;
   CancelActiveTransfers();
 
-  if (!bulk_in_ep_.client().is_valid()) {
-    bulk_in_cancelled_ = true;
+  if (!was_draining) {
+    CancelEndpointRequests();
   } else {
-    bulk_in_ep_->CancelAll().Then(
-        [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll>& result) {
-          if (result.is_error()) {
-            fdf::warn("bulk in ep CancelAll failed: {}", result.error_value().FormatDescription());
-          }
-          bulk_in_cancelled_ = true;
-          CheckStopComplete();
-        });
+    CheckTeardownComplete();
   }
-
-  if (!bulk_out_ep_.client().is_valid()) {
-    bulk_out_cancelled_ = true;
-  } else {
-    bulk_out_ep_->CancelAll().Then(
-        [this](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll>& result) {
-          if (result.is_error()) {
-            fdf::warn("bulk out ep CancelAll failed: {}", result.error_value().FormatDescription());
-          }
-          bulk_out_cancelled_ = true;
-          CheckStopComplete();
-        });
-  }
-
-  CheckStopComplete();
 }
 
 }  // namespace usb_fastboot_function
