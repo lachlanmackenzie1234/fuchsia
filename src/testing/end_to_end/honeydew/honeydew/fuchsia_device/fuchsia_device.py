@@ -352,7 +352,6 @@ class FuchsiaDevice(
             FfxCommandError: Failed to instantiate.
         """
         use_monitor_state = False
-        shared_data = None
         if self._config is not None:
             # Read monitor state
             config_use_monitor_state = common.read_from_dict(
@@ -362,14 +361,6 @@ class FuchsiaDevice(
             )
             if config_use_monitor_state is not None:
                 use_monitor_state = config_use_monitor_state
-            # Read shared_data path
-            config_shared_data = common.read_from_dict(
-                self._config,
-                key_path=("transports", "ffx", "shared_data"),
-                should_exist=False,
-            )
-            if config_shared_data is not None:
-                shared_data = config_shared_data
         query: str = (
             str(self._device_info.ip_port)
             if self._device_info.ip_port
@@ -381,7 +372,6 @@ class FuchsiaDevice(
                 name=self.device_name,
                 config_data=self._ffx_config_data,
                 use_monitor_state=use_monitor_state,
-                shared_data=shared_data,
                 device_ip_change=self,
             )
         )

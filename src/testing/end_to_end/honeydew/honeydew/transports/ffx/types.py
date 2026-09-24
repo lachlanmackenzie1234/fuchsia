@@ -25,7 +25,6 @@ class FfxArgs:
         name: Optional human-readable name of the target for logging purposes.
         use_monitor_state: True to use ffx monitor for target status, False
             otherwise. When True, the "name" arg is mandatory.
-        shared_data: Shared data (if any) needed while running FFX commands.
         device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
             IP changes.
     """
@@ -34,7 +33,6 @@ class FfxArgs:
     config_data: ffx_config.FfxConfigData
     name: str | None = None
     use_monitor_state: bool = False
-    shared_data: str | None = None
     device_ip_change: FuchsiaDeviceIpChange | None = None
 
 

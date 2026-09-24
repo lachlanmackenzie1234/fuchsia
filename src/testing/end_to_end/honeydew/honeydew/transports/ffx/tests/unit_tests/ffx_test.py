@@ -42,6 +42,7 @@ _TARGET_SSH_ADDRESS = custom_types.TargetSshAddress(
 
 _ISOLATE_DIR: str = "/tmp/isolate"
 _LOGS_DIR: str = "/tmp/logs"
+_SHARED_DATA: str = "/tmp/shared_data"
 _BINARY_PATH: str = "ffx"
 _LOGS_LEVEL: str = "debug"
 _MDNS_ENABLED: bool = False
@@ -154,6 +155,7 @@ _INPUT_ARGS: dict[str, Any] = {
         emu_instance_dir=None,
         ssh_private_keys=None,
         ssh_public_keys=None,
+        shared_data=_SHARED_DATA,
     ),
     "run_cmd": ffx._FFX_CMDS["TARGET_SHOW"],
     "run_machine_cmd": ffx._FFX_CMDS["TARGET_WAIT"],
@@ -289,7 +291,6 @@ class FfxTests(unittest.TestCase):
         self.assertEqual(args.config_data, _INPUT_ARGS["ffx_config_data"])
         self.assertIsNone(args.name)
         self.assertFalse(args.use_monitor_state)
-        self.assertIsNone(args.shared_data)
         self.assertIsNone(args.device_ip_change)
 
     def test_ffx_init_with_ip_as_target_query(self) -> None:
@@ -362,27 +363,6 @@ class FfxTests(unittest.TestCase):
                     use_monitor_state=True,
                 )
             )
-
-    def test_ffx_init_shared_data_default(self) -> None:
-        """Verify shared_data defaults to logs_dir in __init__."""
-        self.assertEqual(self.ffx_obj_wo_ip.shared_data, _LOGS_DIR)
-
-    def test_ffx_init_shared_data_custom(self) -> None:
-        """Verify shared_data is set to custom value in __init__."""
-        shared_data = "/tmp/custom_shared_data"
-        with mock.patch.object(
-            ffx.FFX,
-            "check_connection",
-            autospec=True,
-        ):
-            ffx_obj = ffx.FFX(
-                ffx_types.FfxArgs(
-                    query=_INPUT_ARGS["target_query"],
-                    config_data=_INPUT_ARGS["ffx_config_data"],
-                    shared_data=shared_data,
-                )
-            )
-        self.assertEqual(ffx_obj.shared_data, shared_data)
 
     @mock.patch.object(
         ffx.FFX,
@@ -673,6 +653,7 @@ class FfxTests(unittest.TestCase):
         """Test case for ffx.run()"""
         expected_config = {
             "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "shared_data": _SHARED_DATA,
             "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
             "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
             "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
@@ -700,8 +681,6 @@ class FfxTests(unittest.TestCase):
                 "--direct",
                 "-c",
                 json.dumps(expected_config),
-                "-c",
-                json.dumps({"shared_data": _LOGS_DIR}),
             ]
             + ffx._FFX_CMDS["TARGET_SHOW"],
             capture_output=True,
@@ -719,6 +698,7 @@ class FfxTests(unittest.TestCase):
         """Test case for ffx.run()"""
         expected_config = {
             "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "shared_data": _SHARED_DATA,
             "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
             "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
             "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
@@ -748,8 +728,6 @@ class FfxTests(unittest.TestCase):
                 "--direct",
                 "-c",
                 json.dumps(expected_config),
-                "-c",
-                json.dumps({"shared_data": _LOGS_DIR}),
             ]
             + ffx._FFX_CMDS["TARGET_WAIT"],
             capture_output=True,
@@ -783,6 +761,7 @@ class FfxTests(unittest.TestCase):
             ssh_public_keys=None,
             ssh_auth_sock="/tmp/custom_sock",
             identities_only=True,
+            shared_data=_SHARED_DATA,
         )
         with mock.patch.object(
             ffx.FFX,
@@ -800,6 +779,7 @@ class FfxTests(unittest.TestCase):
 
         expected_config = {
             "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "shared_data": _SHARED_DATA,
             "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
             "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
             "ssh": {
@@ -831,8 +811,6 @@ class FfxTests(unittest.TestCase):
                 "--direct",
                 "-c",
                 json.dumps(expected_config),
-                "-c",
-                json.dumps({"shared_data": _LOGS_DIR}),
             ]
             + ffx._FFX_CMDS["TARGET_SHOW"],
             capture_output=True,
@@ -960,6 +938,7 @@ class FfxTests(unittest.TestCase):
 
         expected_config = {
             "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "shared_data": _SHARED_DATA,
             "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
             "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
             "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
@@ -982,8 +961,6 @@ class FfxTests(unittest.TestCase):
                 "--direct",
                 "-c",
                 json.dumps(expected_config),
-                "-c",
-                json.dumps({"shared_data": _LOGS_DIR}),
             ]
             + ["a", "b", "c"],
             stdout="abc",
@@ -1033,7 +1010,8 @@ class FfxTests(unittest.TestCase):
         mock_host_run.assert_called()
         cmd = mock_host_run.call_args[1]["cmd"]
         self.assertIn("-c", cmd)
-        self.assertIn(json.dumps({"shared_data": _LOGS_DIR}), cmd)
+        config_dict = json.loads(cmd[cmd.index("-c") + 1])
+        self.assertEqual(config_dict.get("shared_data"), _SHARED_DATA)
 
     @mock.patch.object(
         host_shell, "run", return_value='{"targets": []}', autospec=True
@@ -1046,7 +1024,8 @@ class FfxTests(unittest.TestCase):
         mock_host_run.assert_called()
         cmd = mock_host_run.call_args[1]["cmd"]
         self.assertIn("-c", cmd)
-        self.assertIn(json.dumps({"shared_data": _LOGS_DIR}), cmd)
+        config_dict = json.loads(cmd[cmd.index("-c") + 1])
+        self.assertEqual(config_dict.get("shared_data"), _SHARED_DATA)
 
     @mock.patch.object(ffx.FFX, "popen", autospec=True)
     def test_wait_for_rcs_disconnection(
@@ -1082,6 +1061,7 @@ class FfxTests(unittest.TestCase):
 
         expected_config = {
             "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "shared_data": _SHARED_DATA,
             "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
             "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
             "ssh": {"keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT},
@@ -1104,8 +1084,6 @@ class FfxTests(unittest.TestCase):
                 "--direct",
                 "-c",
                 json.dumps(expected_config),
-                "-c",
-                json.dumps({"shared_data": "/tmp/logs"}),
                 "target",
                 "status",
             ],

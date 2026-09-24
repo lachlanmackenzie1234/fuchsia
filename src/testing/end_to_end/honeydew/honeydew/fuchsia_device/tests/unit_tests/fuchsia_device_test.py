@@ -155,6 +155,7 @@ _INPUT_ARGS: dict[str, Any] = {
         emu_instance_dir=None,
         ssh_private_keys=None,
         ssh_public_keys=None,
+        shared_data="/tmp/shared_data",
     ),
 }
 
@@ -473,48 +474,9 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             self.fd_fc_obj.ffx,
             ffx.FFX,
         )
-
-    def test_ffx_transport_with_shared_data(self) -> None:
-        """Test case to make sure fuchsia_device supports ffx transport with shared_data."""
-        shared_data = "/tmp/shared_data"
-        config = {
-            "transports": {
-                "ffx": {
-                    "shared_data": shared_data,
-                }
-            }
-        }
-        with (
-            mock.patch.object(
-                ffx.FFX,
-                "check_connection",
-                autospec=True,
-            ) as mock_ffx_check_connection,
-            mock.patch.object(
-                fc_transport.FuchsiaController,
-                "check_connection",
-                autospec=True,
-            ),
-            mock.patch.object(
-                fc_transport.FuchsiaController,
-                "create_context",
-                autospec=True,
-            ),
-        ):
-            fd_obj = fuchsia_device.FuchsiaDevice(
-                device_info=custom_types.DeviceInfo(
-                    name=_INPUT_ARGS["device_name"],
-                    serial_number=None,
-                    ip_port=_INPUT_ARGS["device_ip"],
-                    serial_socket=_INPUT_ARGS["device_serial_socket"],
-                ),
-                ffx_config_data=_INPUT_ARGS["ffx_config_data"],
-                config=config,
-            )
-            ffx_obj = fd_obj.ffx
-            self.assertIsInstance(ffx_obj, ffx.FFX)
-            self.assertEqual(ffx_obj.shared_data, shared_data)
-            mock_ffx_check_connection.assert_called()
+        self.assertEqual(
+            self.fd_fc_obj.ffx.config.shared_data, "/tmp/shared_data"
+        )
 
     def test_sl4f_impl(self) -> None:
         """Test case to make sure fuchsia_device does not support sl4f

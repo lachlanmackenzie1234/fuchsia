@@ -107,24 +107,6 @@ class FFX:
                 fn=self._on_device_ip_change
             )
 
-        shared_data = args.shared_data
-        if shared_data is None:
-            # Use the logs_dir, which is guaranteed to exist. It is okay
-            # for shared_data to be unpopulated, so this is a reasonable
-            # default.
-            shared_data = self.config.logs_dir
-        self._shared_data = shared_data
-
-        # Ensure shared_data directory exists
-        try:
-            Path(self._shared_data).mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            _LOGGER.error(
-                "Failed to create shared_data directory %s: %s",
-                self._shared_data,
-                e,
-            )
-            raise
         self._use_monitor = args.use_monitor_state
         if args.use_monitor_state:
             if not self._check_running_monitor():
@@ -143,11 +125,6 @@ class FFX:
     def _log_name(self) -> str:
         """Returns the target string to use in log messages."""
         return self._name if self._name else self._query
-
-    @properties.PersistentProperty
-    def shared_data(self) -> str:
-        """Returns the shared_data used when running FFX commands."""
-        return self._shared_data
 
     @properties.PersistentProperty
     def config(self) -> ffx_config.FfxConfigData:
@@ -808,9 +785,6 @@ class FFX:
 
         # Inject configuration via command line arguments
         ffx_args.extend(self.config.get_config_args())
-
-        # "-c shared_data=<dir>" will be required, once ffx-strict is being used.
-        ffx_args.extend(["-c", json.dumps({"shared_data": self._shared_data})])
 
         return [self.config.binary_path] + ffx_args + cmd
 
