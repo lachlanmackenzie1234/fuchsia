@@ -1275,11 +1275,6 @@ group("vsock_service_bootstrap") {
   deps = [ "//bundles/assembly/bazel_inputs/src/paravirtualization/vsock:vsock_service" ]
 }
 
-group("netstack2") {
-  deps =
-      [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack2" ]
-}
-
 group("netstack3") {
   deps = []
 }
@@ -1305,18 +1300,6 @@ group("socket-proxy-disabled") {
 
 group("socket_proxy_packages") {
   deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/policy/socket-proxy:package" ]
-}
-
-group("netstack_migration") {
-  deps = []
-}
-
-group("netstack_migration_packages") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration" ]
-}
-
-group("netstack_migration_packages_gub") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration_gub" ]
 }
 
 group("network_tun") {

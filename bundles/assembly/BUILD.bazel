@@ -3750,30 +3750,6 @@ assembly_input_bundle(
     ],
 )
 
-# AIB to include Netstack2 as the netstack for use by base networking.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "netstack2",
-    # The Go toolchain used for netstack2 does not support RISC-V.
-    base_packages = select({
-        "//build/bazel/platforms:is_fuchsia_riscv64": [],
-        "//conditions:default": [
-            "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack2",
-        ],
-    }),
-    compiled_packages = [
-        {
-            "name": "network",
-            "components": [
-                {
-                    "component_name": "network",
-                    "shards": ["//src/connectivity/network:meta/netstack2.shard.cml"],
-                },
-            ],
-        },
-    ],
-)
-
 # Netstack3 as the netstack for use by base networking.
 #
 # To be used in conjunction with netstack3_packages or netstack3_packages_gub.
@@ -3805,7 +3781,7 @@ assembly_input_bundle(
     ],
 )
 
-# Netstack3 packages without unified binary.
+# Netstack3 packages with unified binary.
 #
 # This AIB provides space-saving equivalent packages for the netstack3
 # configuration as found in netstack3_packages. It is mutually exclusive with
@@ -3865,62 +3841,6 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/socket-proxy:package",
     ],
-)
-
-# Netstack-migration as the netstack for use by base networking.
-#
-# Must be used in conjunction with netstack_migration_packages or
-# netstack_migration_packages_gub.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "netstack_migration",
-    core_shards = select({
-        "//build/bazel/platforms:is_fuchsia_riscv64": [],
-        "//conditions:default": [
-            "//src/connectivity/network:meta/netstack-migration.core.shard.cml",
-        ],
-    }),
-    compiled_packages = [
-        {
-            "name": "network",
-            "components": [
-                {
-                    "component_name": "network",
-                    "shards": ["//src/connectivity/network:meta/netstack-migration.shard.cml"],
-                },
-            ],
-        },
-    ],
-)
-
-# Netstack migration packages without unified binary.
-#
-# This AIB provides packages for the netstack_migration configuration. It is
-# mutually exclusive with netstack_migration_packages_gub.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "netstack_migration_packages",
-    base_packages = select({
-        "//build/bazel/platforms:is_fuchsia_riscv64": [],
-        "//conditions:default": [
-            "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration",
-        ],
-    }),
-)
-
-# Netstack migration packages with unified binary.
-#
-# This AIB provides packages for the netstack_migration configuration. It is
-# mutually exclusive with netstack_migration_packages.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "netstack_migration_packages_gub",
-    base_packages = select({
-        "//build/bazel/platforms:is_fuchsia_riscv64": [],
-        "//conditions:default": [
-            "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration_gub",
-        ],
-    }),
 )
 
 # Includes network-tun functionality.
