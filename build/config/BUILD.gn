@@ -1056,7 +1056,6 @@ config("Wno-conversion") {
     "//src/graphics/drivers/misc/goldfish_address_space:*",
     "//src/graphics/drivers/misc/goldfish_sync:*",
     "//src/graphics/lib/compute/svg:*",
-    "//src/lib/backoff:*",
     "//src/lib/chunked-compression:*",
     "//src/lib/cobalt/cpp:*",
     "//src/lib/containers/cpp:*",
