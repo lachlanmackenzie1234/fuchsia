@@ -319,6 +319,17 @@ class AffectedTestTarget:
     os_name: str
 
 
+@dataclasses.dataclass(frozen=True)
+class AffectedTestsResult:
+    """Represents the result of find_tests_affected_by_changed_files."""
+
+    # Set of affected test targets.
+    affected_tests: set[AffectedTestTarget]
+
+    # True if no targets in the build graph were affected by the changed files.
+    build_not_affected: bool
+
+
 def _quote_bazel_query_word(word: str) -> str:
     """Quote a target label or path for safe inclusion in a Bazel query expression."""
     escaped = word.replace("\\", "\\\\").replace('"', '\\"')
@@ -571,13 +582,14 @@ def find_tests_affected_by_changed_files(
     fuchsia_dir: Path,
     ninja_runner: NinjaRunner,
     bazel_launcher: BazelLauncher,
-) -> set[AffectedTestTarget]:
-    """Return the set of test labels that are affected by a set of changed files.
+) -> AffectedTestsResult:
+    """Return the set of test labels and build affected status for changed files.
 
     Given a set of paths to changed files (for example after applying a
     git commit just after the last build), determine which targets need to
     be rebuilt (and for tests re-run), return the set of tests labels that
-    would need to be rebuilt and then re-run after the build.
+    would need to be rebuilt and then re-run after the build, as well as whether
+    any build graph targets were affected.
 
     Args:
         changed_files: List of file path strings, relative to Fuchsia source directory,
@@ -586,7 +598,8 @@ def find_tests_affected_by_changed_files(
         ninja_runner: A NinjaRunner instance.
         bazel_launcher: A BazelLauncher instance.
     Returns:
-        A set of tuples, each containing a test target label and its OS name.
+        An AffectedTestsResult containing the set of affected tests and whether
+        the build was unaffected.
     """
 
     if _DEBUG:
@@ -617,19 +630,8 @@ def find_tests_affected_by_changed_files(
             ),
         )
 
-    ninja_results: set[AffectedTestTarget] = set()
-
-    if gn_tests:
-        ninja_results.update(
-            _find_gn_tests_affected_by_build_gn_files(gn_tests, changed_sources)
-        )
-
-        # Read the content of tests.json to determine which important artifacts
-        # each test requires at runtime.
-        gn_test_artifacts = _create_gn_test_artifacts_mapping(
-            gn_tests, build_dir
-        )
-
+    affected_ninja_artifacts: set[str] = set()
+    if changed_sources:
         # The list of source files as they must appear in the Ninja build plan.
         # All source inputs appear with a prefix like ../../ that corresponds
         # to the relative path from the build directory to the Fuchsia source one.
@@ -648,7 +650,6 @@ def find_tests_affected_by_changed_files(
         #
         # Note that for now, all Bazel targets, tests or not, must be wrapped through
         # GN bazel_action() targets.
-        affected_ninja_artifacts: set[str] = set()
         for source_chunk in _chunk_by_char_limit(
             ninja_sources,
             separator=" ",
@@ -664,6 +665,19 @@ def find_tests_affected_by_changed_files(
                 + source_chunk
             )
             affected_ninja_artifacts.update(tool_output.splitlines())
+
+    ninja_results: set[AffectedTestTarget] = set()
+
+    if gn_tests:
+        ninja_results.update(
+            _find_gn_tests_affected_by_build_gn_files(gn_tests, changed_sources)
+        )
+
+        # Read the content of tests.json to determine which important artifacts
+        # each test requires at runtime.
+        gn_test_artifacts = _create_gn_test_artifacts_mapping(
+            gn_tests, build_dir
+        )
 
         ninja_results.update(
             {
@@ -686,4 +700,13 @@ def find_tests_affected_by_changed_files(
             )
         )
 
-    return ninja_results | bazel_results
+    build_not_affected = not changed_sources or (
+        len(affected_ninja_artifacts) == 0
+        and len(ninja_results) == 0
+        and len(bazel_results) == 0
+    )
+
+    return AffectedTestsResult(
+        affected_tests=ninja_results | bazel_results,
+        build_not_affected=build_not_affected,
+    )

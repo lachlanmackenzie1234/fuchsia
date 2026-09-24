@@ -411,13 +411,24 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         self._td.cleanup()
 
     def test_no_change(self) -> None:
-        targets = affected_tests.find_tests_affected_by_changed_files(
+        result = affected_tests.find_tests_affected_by_changed_files(
             ["some/file.txt"],
             self.root,
             MockNinjaRunner(self.build_dir, "obj/some/target2.out\n"),
             MockBazelLauncher.new_with_empty_outputs(),
         )
-        self.assertSetEqual(targets, set())
+        self.assertSetEqual(result.affected_tests, set())
+        self.assertFalse(result.build_not_affected)
+
+    def test_build_not_affected(self) -> None:
+        result = affected_tests.find_tests_affected_by_changed_files(
+            ["docs/README.md"],
+            self.root,
+            MockNinjaRunner(self.build_dir, ""),
+            MockBazelLauncher.new_with_empty_outputs(),
+        )
+        self.assertSetEqual(result.affected_tests, set())
+        self.assertTrue(result.build_not_affected)
 
     def test_one_target_affected(self) -> None:
         targets = affected_tests.find_tests_affected_by_changed_files(
@@ -428,7 +439,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 "\n".join(["obj/gn/target1", "obj/gn/target1.o"]),
             ),
             MockBazelLauncher.new_with_empty_outputs(),
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {affected_tests.AffectedTestTarget("//gn:target1", "fuchsia")},
@@ -447,7 +458,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 ),
             ),
             MockBazelLauncher.new_with_empty_outputs(),
-        )
+        ).affected_tests
         self.maxDiff = None
         self.assertSetEqual(
             targets,
@@ -466,7 +477,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             MockNinjaRunner(self.build_dir, ""),
             bazel_launcher,
-        )
+        ).affected_tests
         self.maxDiff = None
         self.assertSetEqual(
             targets,
@@ -501,7 +512,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 ),
             ),
             MockBazelLauncher.new_with_empty_outputs(),
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {
@@ -528,7 +539,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         with self.tests_json_path.open("wt") as f:
             json.dump(tests_json, f)
 
-        mock_ninja_runner = MockNinjaRunner(self.build_dir, "")
+        MockNinjaRunner(self.build_dir, "")
 
         mock_bazel_launcher = MockBazelLauncher()
         mock_bazel_launcher.push_expected_outputs(
@@ -543,9 +554,9 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         targets = affected_tests.find_tests_affected_by_changed_files(
             ["src/bazel/test1.cc"],
             self.root,
-            mock_ninja_runner,
+            MockNinjaRunner(self.build_dir, ""),
             mock_bazel_launcher,
-        )
+        ).affected_tests
 
         self.assertSetEqual(
             targets,
@@ -563,9 +574,9 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         targets = affected_tests.find_tests_affected_by_changed_files(
             ["src/bazel/test2.cc"],
             self.root,
-            mock_ninja_runner,
+            MockNinjaRunner(self.build_dir, ""),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {affected_tests.AffectedTestTarget("@@//src/bazel:test2", "linux")},
@@ -582,9 +593,9 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         targets = affected_tests.find_tests_affected_by_changed_files(
             ["src/bazel/BUILD.bazel"],
             self.root,
-            mock_ninja_runner,
+            MockNinjaRunner(self.build_dir, ""),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {
@@ -648,7 +659,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             mock_ninja_runner,
             mock_bazel_launcher,
-        )
+        ).affected_tests
 
         self.assertSetEqual(
             targets,
@@ -677,7 +688,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             MockNinjaRunner(self.build_dir, ""),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {
@@ -748,7 +759,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 self.root,
                 MockNinjaRunner(self.build_dir, ""),
                 mock_bazel_launcher,
-            )
+            ).affected_tests
         finally:
             affected_tests._MAX_SINGLE_ARG_CHARS = orig_limit
 
@@ -830,7 +841,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             new_mock_ninja_runner(),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {
@@ -846,7 +857,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             new_mock_ninja_runner(),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {
@@ -873,7 +884,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             new_mock_ninja_runner(),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(
             targets,
             {
@@ -890,7 +901,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             new_mock_ninja_runner(),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(targets, set())
 
         # 5. Modifying only non-BUILD.gn files does not match BUILD.gn logic
@@ -899,7 +910,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             self.root,
             new_mock_ninja_runner(),
             mock_bazel_launcher,
-        )
+        ).affected_tests
         self.assertSetEqual(targets, set())
 
 
