@@ -105,16 +105,14 @@ impl Namespace {
         let mountpoints = mounts_guard.defer_drop(mountpoints);
 
         // Follow the same path in the new namespace
+        let scope = RcuReadScope::new();
         let mut mount = Arc::clone(&new_ns.root_mount);
         for mountpoint in mountpoints.iter().rev() {
-            let next_mount = {
-                let scope = RcuReadScope::new();
-                match mount.relations.get_submount(&scope, &PtrKey::from(mountpoint)) {
-                    Some(m) => m,
-                    None => {
-                        mounts_guard.defer_drop(mount);
-                        return None;
-                    }
+            let next_mount = match mount.relations.get_submount(&scope, &PtrKey::from(mountpoint)) {
+                Some(m) => m,
+                None => {
+                    mounts_guard.defer_drop(mount);
+                    return None;
                 }
             };
             mounts_guard.defer_drop(std::mem::replace(&mut mount, next_mount));
