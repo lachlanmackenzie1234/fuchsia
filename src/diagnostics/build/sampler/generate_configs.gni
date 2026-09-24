@@ -5,11 +5,10 @@
 import("//build/compiled_action.gni")
 
 # Generates a single file containing all possible sampler configurations for
-# usage in assembly. If `cobalt_registry` is specified, validates the
-# sampler configurations against the Cobalt metrics registry to ensure project
-# IDs, metric IDs, and metric types match, and that dimension counts in Sampler
-# do not exceed Cobalt's dimension counts. It'll generate a
-# JSON file containing the contents of the input files as:
+# usage in assembly. Validates the sampler configurations against the Cobalt
+# metrics registry to ensure project IDs, metric IDs, and metric types match,
+# and that dimension counts in Sampler do not exceed Cobalt's dimension counts.
+# It'll generate a JSON file containing the contents of the input files as:
 #
 # {
 #    project_configs: [ project configs objects ],
@@ -27,7 +26,7 @@ import("//build/compiled_action.gni")
 #     Type: file
 #
 #   cobalt_registry:
-#     Optional: Path to the binary proto (.pb) file representing the Cobalt
+#     Required: Path to the binary proto (.pb) file representing the Cobalt
 #     registry to validate the configs against.
 #     Type: file
 #
@@ -45,6 +44,8 @@ import("//build/compiled_action.gni")
 #
 template("generate_sampler_config") {
   assert(defined(invoker.output), "must pass the output file path")
+  assert(defined(invoker.cobalt_registry),
+         "must pass the cobalt_registry file path")
 
   fire_project_templates = []
   if (defined(invoker.fire_project_templates)) {
@@ -73,18 +74,13 @@ template("generate_sampler_config") {
                            ])
     tool = "//src/diagnostics/tools/generate_sampler_configs"
 
-    inputs = []
+    inputs = [ invoker.cobalt_registry ]
     args = [
       "--output",
       rebase_path(invoker.output, root_build_dir),
+      "--cobalt-registry",
+      rebase_path(invoker.cobalt_registry, root_build_dir),
     ]
-    if (defined(invoker.cobalt_registry)) {
-      inputs += [ invoker.cobalt_registry ]
-      args += [
-        "--cobalt-registry",
-        rebase_path(invoker.cobalt_registry, root_build_dir),
-      ]
-    }
     foreach(project_path, fire_project_templates) {
       args += [
         "--fire-project-template",

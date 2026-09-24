@@ -38,7 +38,7 @@ pub struct GenerateConfigsCommand {
 
     /// path to cobalt registry binary proto to validate against.
     #[argh(option)]
-    pub cobalt_registry: Option<PathBuf>,
+    pub cobalt_registry: PathBuf,
 
     /// path to which the result will be written.
     #[argh(option)]
@@ -64,12 +64,10 @@ pub fn main() -> Result<(), Error> {
         fire_component_configs.push(parsed);
     }
 
-    if let Some(cobalt_registry_path) = args.cobalt_registry {
-        let registry_bytes = std::fs::read(&cobalt_registry_path).with_context(|| {
-            format!("Failed to read cobalt registry from {:?}", cobalt_registry_path)
-        })?;
-        validate(&registry_bytes, &project_configs, &fire_project_templates)?;
-    }
+    let registry_bytes = std::fs::read(&args.cobalt_registry).with_context(|| {
+        format!("Failed to read cobalt registry from {:?}", args.cobalt_registry)
+    })?;
+    validate(&registry_bytes, &project_configs, &fire_project_templates)?;
 
     let config = MergedSamplerConfig {
         project_configs: project_configs.into_iter().map(|(_, c)| c).collect(),
