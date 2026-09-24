@@ -81,8 +81,12 @@ pub struct ExampleTool {
 
 Never use `println!` or `eprintln!` for tool output. Always write through the `Writer` passed to `FfxMain::main`.
 
-### Use `VerifiedMachineWriter<T>` by Default
-New subtools should support `ffx --machine json` with a compile-time JSON schema via `schemars::JsonSchema`:
+### Prefer Supporting Both Machine and Human-Readable Output in New Subtools
+When creating a new subtool, always prefer supporting **both** structured machine output (`ffx --machine json` / `ffx --machine json-pretty`) and human-readable terminal output:
+* **Machine output** (`VerifiedMachineWriter<T>` with `schemars::JsonSchema`) lets scripts, test harnesses, IDE integrations, and AI agents consume results reliably with a compile-time schema contract.
+* **Human-readable output** ensures developers running `ffx <subtool>` interactively get clear, readable text rather than empty output or raw JSON dumps.
+
+Use `VerifiedMachineWriter<T>` by default and emit both formats from your `FfxMain::main` implementation:
 
 ```rust
 use schemars::JsonSchema;
@@ -95,20 +99,46 @@ pub enum ExampleOutput {
     Error { message: String },
 }
 
+impl std::fmt::Display for ExampleOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Success { device_name } => write!(f, "Device: {device_name}"),
+            Self::Error { message } => write!(f, "Error: {message}"),
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl FfxMain for ExampleTool {
     type Writer = VerifiedMachineWriter<ExampleOutput>;
 
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let name = self.proxy.get_device_name().await.user_message("Failed to query device")?;
-        writer.machine_or(&ExampleOutput::Success { device_name: name.clone() }, format!("Device: {name}"))?;
+        let output = ExampleOutput::Success { device_name: name };
+        // Emits JSON when `--machine` is passed, or `Display` text in human mode:
+        writer.item(&output)?;
         Ok(())
     }
 }
 ```
 
-* **`writer.machine_or(&item, human_text)` / `writer.item(&item)`**: Emits structured JSON in `--machine` mode and human-readable text otherwise.
-* **`writer.line(...)` / `writeln!(writer, ...)`**: Emits text only in human mode (no-op in `--machine` mode).
+#### Choosing the Right `VerifiedMachineWriter` Method
+* **`writer.item(&output)`**: Best when your output type implements `std::fmt::Display`. Automatically emits structured JSON in `--machine` mode and the `Display` representation in human mode.
+* **`writer.machine_or(&output, human_text)` / `writer.machine_or_else(&output, || ...)`**: Emits structured JSON in `--machine` mode and the provided string/closure output in human mode without requiring `Display` on `T`.
+* **Branching on `writer.is_machine()`**: When human output requires multi-line formatting, tables, or streaming progress, handle both branches explicitly:
+  * Call `writer.machine(&output)?` when `writer.is_machine()` is `true`.
+  * Call `writer.line(...)` or `writeln!(writer, ...)` when `writer.is_machine()` is `false`.
+
+#### Exceptions to Dual-Output
+While supporting both machine and human-readable output is the default expectation for new subtools, the following categories are valid exceptions:
+* **Interactive-Only / Human-Only Tools**: Subtools that launch interactive shells, TUIs, or debuggers (e.g., `ffx component explore`, `ffx debug connect`) should use `SimpleWriter` (`SimpleWriter` automatically rejects `--machine json`).
+* **Stream / Filter Tools**: Subtools that continuously filter or transform byte/text streams over stdio (e.g., `ffx debug symbolize`) should use `SimpleWriter` unless each streamed record has a well-defined JSON schema.
+* **Commands with No Required Human Output**: Action-only commands that succeed silently in human mode (e.g., `ffx target reboot`) should still support `--machine` for automation by calling `writer.machine(&output)?` (such as `MachineWriter<()>` or a status enum with `VerifiedMachineWriter`) without emitting human stdout on success.
+* **Artifact / Extraction Tools**: Subtools whose primary responsibility is writing extracted files to disk rather than reporting state to stdout (e.g., `ffx scrutiny extract blobfs`) may use `SimpleWriter` or emit a minimal status summary.
+
+#### Output Pitfalls to Avoid
+* **Never call *only* `writer.machine(&output)` for data-reporting tools**: `writer.machine()` is a no-op when `--machine` is not set. Unless the command is intentionally silent on success (like `ffx target reboot`), calling only `writer.machine()` leaves interactive CLI users with unexpected blank output.
+* **Never call *only* `writer.line(...)` or `writeln!(writer, ...)` on `VerifiedMachineWriter`**: Standard `Write` and `line()` calls on `VerifiedMachineWriter` are ignored in `--machine` mode, producing empty stdout for machine consumers.
 * **Do not abuse `MachineWriter<String>` or `MachineWriter<serde_json::Value>`**: If a command genuinely has no structured output use case, use `SimpleWriter`. Using `MachineWriter<String>` creates an untyped contract.
 * **Golden Checks (`cli-goldens` & `mw-goldens`)**:
   * CLI flags (`ArgsInfo`) are verified against `//src/developer/ffx/tests/cli-goldens`.
@@ -177,13 +207,13 @@ impl FfxMain for ExampleTool {
 ## 7. Testing Guidelines
 
 ### Unit Testing Subtools
-* **Mock Target Services with Local FDomain Proxies**:
-  Use `fdomain_local::local_client_empty()` and `target_holders::fake_proxy` (or `fake_async_proxy`) to test `FfxMain::main` without an emulator or network connection:
+* **Test Both Machine and Human-Readable Output with Local FDomain Proxies**:
+  Use `fdomain_local::local_client_empty()`, `target_holders::fake_proxy` (or `fake_async_proxy`), and `TestBuffers` to verify both `Some(Format::Json)` (including schema validation) and `None` (human-readable output) without an emulator or network connection:
   ```rust
   #[cfg(test)]
   mod tests {
       use super::*;
-      use ffx_writer::{Format, TestBuffer};
+      use ffx_writer::{Format, TestBuffers};
 
       fn setup_fake_proxy() -> NameProviderProxy {
           let client = fdomain_local::local_client_empty();
@@ -197,16 +227,21 @@ impl FfxMain for ExampleTool {
       #[fuchsia::test]
       async fn test_example_json_output() {
           let tool = ExampleTool { cmd: ExampleCommand {}, proxy: setup_fake_proxy() };
-          let buffers = TestBuffer::default();
-          let writer = VerifiedMachineWriter::<ExampleOutput>::new_buffers(
-              Some(Format::Json),
-              buffers.clone(),
-              Vec::new(),
-          );
+          let buffers = TestBuffers::default();
+          let writer = VerifiedMachineWriter::<ExampleOutput>::new_test(Some(Format::Json), &buffers);
           tool.main(writer).await.expect("tool should succeed");
-          let output = buffers.into_string();
+          let output = buffers.into_stdout_str();
           VerifiedMachineWriter::<ExampleOutput>::verify_schema(&serde_json::from_str(&output).unwrap())
               .expect("output must match schema");
+      }
+
+      #[fuchsia::test]
+      async fn test_example_human_output() {
+          let tool = ExampleTool { cmd: ExampleCommand {}, proxy: setup_fake_proxy() };
+          let buffers = TestBuffers::default();
+          let writer = VerifiedMachineWriter::<ExampleOutput>::new_test(None, &buffers);
+          tool.main(writer).await.expect("tool should succeed");
+          assert_eq!(buffers.into_stdout_str(), "Device: fuchsia-test-node\n");
       }
   }
   ```
