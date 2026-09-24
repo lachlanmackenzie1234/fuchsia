@@ -3,16 +3,19 @@
 // found in the LICENSE file.
 
 use crate::{HyperConnectorFuture, SocketOptions, TcpOptions, TcpStream, parse_ip_addr};
-use futures::io;
+use futures::{StreamExt, io};
 use http::uri::{Scheme, Uri};
 use hyper_util::rt::TokioIo;
 use log::{debug, warn};
 use netext::TokioAsyncReadExt;
 use rustls::RootCertStore;
+use std::future::Future;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll};
 use tokio::net;
+use tokio::time::Duration;
 use tower_service::Service;
 
 fn load_certs_from_env(
@@ -171,48 +174,144 @@ impl HyperConnector {
         }
 
         let stream = if let Some(addr) = addr {
-            net::TcpStream::connect(addr).await?
+            match tokio::time::timeout(CONNECT_TIMEOUT, net::TcpStream::connect(addr)).await {
+                Ok(res) => res?,
+                Err(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "connection attempt timed out",
+                    ));
+                }
+            }
         } else {
             resolve_host_port(host, port).await?
         };
+        // `TcpOptions::apply` only configures keepalive and receive buffer size options,
+        // so setting `TCP_NODELAY` here is not overwritten below.
+        let _ = stream.set_nodelay(true);
         let () = self.tcp_options.apply(&stream)?;
 
         Ok(TokioIo::new(TcpStream { stream: stream.into_multithreaded_futures_stream() }))
     }
 }
 
-const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Connection attempt delay according to RFC 8305 §5.
+const HAPPY_EYEBALLS_DELAY: Duration = Duration::from_millis(250);
+/// Individual connection attempt timeout.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(2000);
 
-/// Resolve a hostname into an address.
-async fn resolve_host_port(host: &str, port: u16) -> Result<net::TcpStream, io::Error> {
-    // TODO(https://fxbug.dev/42075095): Implement happy eyeballs algorithm to make this
-    // more efficient.
+/// Sorts/interleaves addresses to alternate between address families (IPv6, IPv4) per RFC 8305 §4.
+fn interleave_addrs(addrs: impl IntoIterator<Item = SocketAddr>) -> Vec<SocketAddr> {
+    let (v6, v4): (Vec<SocketAddr>, Vec<SocketAddr>) =
+        addrs.into_iter().partition(|addr| addr.is_ipv6());
+    let mut result = Vec::with_capacity(v6.len() + v4.len());
+    let mut v6_iter = v6.into_iter();
+    let mut v4_iter = v4.into_iter();
+    loop {
+        match (v6_iter.next(), v4_iter.next()) {
+            (Some(a6), Some(a4)) => {
+                result.push(a6);
+                result.push(a4);
+            }
+            (Some(a6), None) => {
+                result.push(a6);
+                result.extend(v6_iter);
+                break;
+            }
+            (None, Some(a4)) => {
+                result.push(a4);
+                result.extend(v4_iter);
+                break;
+            }
+            (None, None) => break,
+        }
+    }
+    result
+}
+
+/// Connects to one of candidate addresses using Happy Eyeballs v2 (RFC 8305).
+async fn happy_eyeballs_connect(addrs: Vec<SocketAddr>) -> Result<net::TcpStream, io::Error> {
+    happy_eyeballs_connect_inner(
+        addrs,
+        HAPPY_EYEBALLS_DELAY,
+        CONNECT_TIMEOUT,
+        net::TcpStream::connect,
+    )
+    .await
+}
+
+async fn happy_eyeballs_connect_inner<C, Fut>(
+    addrs: Vec<SocketAddr>,
+    delay: Duration,
+    connect_timeout: Duration,
+    connect_fn: C,
+) -> Result<net::TcpStream, io::Error>
+where
+    C: Fn(SocketAddr) -> Fut,
+    Fut: Future<Output = Result<net::TcpStream, io::Error>>,
+{
+    let mut addr_iter = addrs.into_iter();
+    let Some(first_addr) = addr_iter.next() else {
+        return Err(io::Error::other("destination resolved to no address"));
+    };
+
+    let mut in_flight = futures::stream::FuturesUnordered::new();
     let mut last_err = None;
-    let addrs = net::lookup_host((host, port)).await?;
-    for addr in addrs {
-        match tokio::time::timeout(CONNECT_TIMEOUT, net::TcpStream::connect(addr)).await {
-            Ok(Ok(stream)) => {
-                return Ok(stream);
+
+    // Start first connection attempt.
+    in_flight.push(tokio::time::timeout(connect_timeout, connect_fn(first_addr)));
+    let mut next_attempt_timer =
+        (!addr_iter.as_slice().is_empty()).then(|| Box::pin(tokio::time::sleep(delay)));
+
+    while !in_flight.is_empty() {
+        tokio::select! {
+            res = in_flight.next() => {
+                if let Some(res) = res {
+                    match res {
+                        Ok(Ok(stream)) => return Ok(stream),
+                        Ok(Err(err)) => {
+                            debug!("Connection attempt failed: {err}");
+                            last_err = Some(err);
+                        }
+                        Err(_) => {
+                            debug!("Connection attempt timed out after {connect_timeout:?}");
+                            last_err = Some(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "connection attempt timed out",
+                            ));
+                        }
+                    }
+                }
+                // Per RFC 8305 §5, if a connection attempt fails, immediately initiate
+                // the next connection attempt without waiting for the delay timer.
+                if let Some(next_addr) = addr_iter.next() {
+                    in_flight.push(tokio::time::timeout(connect_timeout, connect_fn(next_addr)));
+                    next_attempt_timer = (!addr_iter.as_slice().is_empty())
+                        .then(|| Box::pin(tokio::time::sleep(delay)));
+                } else {
+                    next_attempt_timer = None;
+                }
             }
-            Ok(Err(err)) => {
-                debug!("Connection attempt to {addr} for {host}:{port} failed: {err}");
-                last_err = Some(err);
-            }
-            Err(_) => {
-                debug!(
-                    "Connection attempt to {addr} for {host}:{port} timed out after {CONNECT_TIMEOUT:?}"
-                );
-                last_err =
-                    Some(io::Error::new(io::ErrorKind::TimedOut, "connection attempt timed out"));
+            () = async { next_attempt_timer.as_mut().unwrap().await }, if next_attempt_timer.is_some() => {
+                if let Some(next_addr) = addr_iter.next() {
+                    in_flight.push(tokio::time::timeout(connect_timeout, connect_fn(next_addr)));
+                    next_attempt_timer = (!addr_iter.as_slice().is_empty())
+                        .then(|| Box::pin(tokio::time::sleep(delay)));
+                } else {
+                    next_attempt_timer = None;
+                }
             }
         }
     }
 
-    if let Some(err) = last_err {
-        Err(err)
-    } else {
-        Err(io::Error::other("destination resolved to no address"))
-    }
+    Err(last_err.unwrap_or_else(|| io::Error::other("all connection attempts failed")))
+}
+
+/// Resolve a hostname into an address using Happy Eyeballs v2 (RFC 8305).
+async fn resolve_host_port(host: &str, port: u16) -> Result<net::TcpStream, io::Error> {
+    let addrs = net::lookup_host((host, port)).await?;
+    let interleaved = interleave_addrs(addrs);
+    happy_eyeballs_connect(interleaved).await
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -220,7 +319,7 @@ async fn resolve_host_port(host: &str, port: u16) -> Result<net::TcpStream, io::
 
 #[cfg(test)]
 mod test {
-    use super::{load_certs_from_env, resolve_host_port};
+    use super::*;
     use crate::*;
     use anyhow::{Error, Result};
     use futures::future::BoxFuture;
@@ -381,7 +480,6 @@ YyRIHN8wfdVoOw==\n\
         assert!(res.is_err());
         Ok(())
     }
-
     #[test]
     fn test_load_certs_from_env() {
         let temp_dir = TestTempDir::new();
@@ -440,5 +538,125 @@ YyRIHN8wfdVoOw==\n\
         accept_res?;
         let _stream = connect_res?;
         Ok(())
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_happy_eyeballs_empty_and_all_fail() -> Result<()> {
+        // Empty candidate list returns destination resolved to no address error.
+        let err = happy_eyeballs_connect(vec![]).await.unwrap_err();
+        assert_eq!(err.to_string(), "destination resolved to no address");
+
+        // All connection attempts fail with ConnectionRefused -> returns last error.
+        let addr1: SocketAddr = "[::1]:1".parse().unwrap();
+        let addr2: SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let err = happy_eyeballs_connect_inner(
+            vec![addr1, addr2],
+            Duration::from_millis(10),
+            Duration::from_millis(50),
+            |_addr| async {
+                Err(io::Error::new(io::ErrorKind::ConnectionRefused, "connection refused"))
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused);
+        Ok(())
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_happy_eyeballs_immediate_retry_on_failure() -> Result<()> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let good_addr = listener.local_addr()?;
+        let bad_addr: SocketAddr = "[::1]:1".parse().unwrap();
+
+        let accept_fut = async move {
+            let (_stream, _peer) = listener.accept().await?;
+            Ok::<(), io::Error>(())
+        };
+
+        // Use a very long delay (60s) to verify that when the first attempt fails immediately,
+        // the second attempt is initiated immediately per RFC 8305 §5 without waiting for the
+        // delay timer.
+        let connect_fut = tokio::time::timeout(
+            Duration::from_secs(2),
+            happy_eyeballs_connect_inner(
+                vec![bad_addr, good_addr],
+                Duration::from_secs(60),
+                Duration::from_secs(2),
+                move |addr| async move {
+                    if addr == bad_addr {
+                        Err(io::Error::new(io::ErrorKind::ConnectionRefused, "refused"))
+                    } else {
+                        net::TcpStream::connect(addr).await
+                    }
+                },
+            ),
+        );
+
+        let (accept_res, connect_res) = futures::future::join(accept_fut, connect_fut).await;
+        accept_res?;
+        let _stream = connect_res.expect("should not wait for 60s delay timer")?;
+        Ok(())
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_happy_eyeballs_staggered_fallback_and_timeout() -> Result<()> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let good_addr = listener.local_addr()?;
+        let hanging_addr1: SocketAddr = "[::1]:1".parse().unwrap();
+        let hanging_addr2: SocketAddr = "127.0.0.1:2".parse().unwrap();
+
+        let accept_fut = async move {
+            let (_stream, _peer) = listener.accept().await?;
+            Ok::<(), io::Error>(())
+        };
+
+        // First attempt hangs; after the 20ms delay timer expires, the second attempt connects
+        // and succeeds while the first is still pending.
+        let connect_fut = happy_eyeballs_connect_inner(
+            vec![hanging_addr1, good_addr],
+            Duration::from_millis(20),
+            Duration::from_secs(2),
+            move |addr| async move {
+                if addr == hanging_addr1 {
+                    futures::future::pending().await
+                } else {
+                    net::TcpStream::connect(addr).await
+                }
+            },
+        );
+
+        let (accept_res, connect_res) = futures::future::join(accept_fut, connect_fut).await;
+        accept_res?;
+        let _stream = connect_res?;
+
+        // All attempts hang past connect_timeout -> fails with TimedOut.
+        let timeout_err = happy_eyeballs_connect_inner(
+            vec![hanging_addr1, hanging_addr2],
+            Duration::from_millis(10),
+            Duration::from_millis(30),
+            |_addr| futures::future::pending(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(timeout_err.kind(), io::ErrorKind::TimedOut);
+        Ok(())
+    }
+
+    #[test]
+    fn test_interleave_addrs() {
+        let v6_1: SocketAddr = "[::1]:80".parse().unwrap();
+        let v6_2: SocketAddr = "[::2]:80".parse().unwrap();
+        let v4_1: SocketAddr = "127.0.0.1:80".parse().unwrap();
+        let v4_2: SocketAddr = "127.0.0.2:80".parse().unwrap();
+
+        let interleaved = interleave_addrs(vec![v6_1, v6_2, v4_1, v4_2]);
+        assert_eq!(interleaved, vec![v6_1, v4_1, v6_2, v4_2]);
+
+        let interleaved_v4_only = interleave_addrs(vec![v4_1, v4_2]);
+        assert_eq!(interleaved_v4_only, vec![v4_1, v4_2]);
+
+        let interleaved_v6_only = interleave_addrs(vec![v6_1, v6_2]);
+        assert_eq!(interleaved_v6_only, vec![v6_1, v6_2]);
     }
 }
