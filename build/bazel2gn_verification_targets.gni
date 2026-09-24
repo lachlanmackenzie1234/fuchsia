@@ -59,6 +59,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/core/macro:verify_bazel2gn",
   "//src/developer/ffx/fidl/usb:verify_bazel2gn",
   "//src/developer/ffx/fidl:verify_bazel2gn",
+  "//src/developer/ffx/lib/addr:verify_bazel2gn",
   "//src/developer/ffx/lib/arg_parsing:verify_bazel2gn",
   "//src/developer/ffx/lib/buildid/cpp:verify_bazel2gn",
   "//src/developer/ffx/lib/buildid:verify_bazel2gn",
