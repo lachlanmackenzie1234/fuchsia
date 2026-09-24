@@ -86,7 +86,7 @@ pub unsafe fn hexdump_very_ex_raw<W: Write>(
                 core::write!(writer, ".")?;
             }
         }
-        core::write!(writer, "|\n")?;
+        core::writeln!(writer, "|")?;
     }
     Ok(())
 }
@@ -146,7 +146,7 @@ pub unsafe fn hexdump8_very_ex_raw<W: Write>(
                 core::write!(writer, ".")?;
             }
         }
-        core::write!(writer, "\n")?;
+        core::writeln!(writer)?;
     }
     Ok(())
 }

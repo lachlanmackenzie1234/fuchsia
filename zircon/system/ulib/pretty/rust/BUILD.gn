@@ -19,7 +19,6 @@ rustc_library("pretty") {
   # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
   if (is_kernel) {
     configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
-    configs += [ "//zircon/kernel/switch:allow-write-with-newline" ]
   }
 }
 

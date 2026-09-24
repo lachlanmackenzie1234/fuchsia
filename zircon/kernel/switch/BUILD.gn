@@ -654,7 +654,6 @@ clippy_lints = [
   "type-complexity",
   "unnecessary-cast",
   "unnecessary-unwrap",
-  "write-with-newline",
 ]
 foreach(lint, clippy_lints) {
   config("allow-$lint") {
