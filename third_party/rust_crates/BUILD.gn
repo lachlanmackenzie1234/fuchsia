@@ -12337,15 +12337,15 @@ rustc_macro("indoc-v2_0_7") {
   applicable_licenses = [ ":indoc-v2_0_7.license" ]
 }
 
-license("inotify-v0_11_4.license") {
+license("inotify-v0_11_5.license") {
   public_package_name = "inotify"
-  license_files = [ "//third_party/rust_crates/vendor/inotify-0.11.4/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/inotify-0.11.5/LICENSE" ]
 }
 
-rustc_library("inotify-v0_11_4") {
+rustc_library("inotify-v0_11_5") {
   crate_name = "inotify"
-  source_root = "//third_party/rust_crates/vendor/inotify-0.11.4/src/lib.rs"
-  output_name = "inotify-e539c2cbf7364fbc"
+  source_root = "//third_party/rust_crates/vendor/inotify-0.11.5/src/lib.rs"
+  output_name = "inotify-2688788087c448e4"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -12360,13 +12360,13 @@ rustc_library("inotify-v0_11_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e539c2cbf7364fbc",
-    "-Cextra-filename=-e539c2cbf7364fbc",
+    "-Cmetadata=2688788087c448e4",
+    "-Cextra-filename=-2688788087c448e4",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":inotify-v0_11_4.license" ]
+  applicable_licenses = [ ":inotify-v0_11_5.license" ]
 }
 
 license("inotify-sys-v0_1_8.license") {
@@ -14317,7 +14317,7 @@ rustc_library("notify-v8_2_0") {
     deps += [ ":mio-v1_2_1" ]
   }
   if (current_os == "linux" || false) {
-    deps += [ ":inotify-v0_11_4" ]
+    deps += [ ":inotify-v0_11_5" ]
     deps += [ ":mio-v1_2_1" ]
   }
   if (current_os == "mac") {

@@ -13,7 +13,7 @@
 edition = "2018"
 rust-version = "1.70"
 name = "inotify"
-version = "0.11.4"
+version = "0.11.5"
 build = false
 exclude = ["/inotify-rs.sublime-project"]
 autolib = false
@@ -34,6 +34,13 @@ categories = [
 ]
 license = "ISC"
 repository = "https://github.com/hannobraun/inotify-rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
 
 [features]
 default = ["stream"]

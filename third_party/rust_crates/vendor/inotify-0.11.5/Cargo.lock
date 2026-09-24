@@ -97,7 +97,7 @@ checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 
 [[package]]
 name = "inotify"
-version = "0.11.4"
+version = "0.11.5"
 dependencies = [
  "bitflags",
  "futures-util",
