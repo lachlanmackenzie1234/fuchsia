@@ -114,13 +114,6 @@ pub(crate) async fn resolve_target(
     ))
 }
 
-pub(crate) async fn resolve_target_to_uart_path(
-    context: &EnvironmentContext,
-    spec: &str,
-) -> Result<String> {
-    Ok(resolve_target(context, spec).await?.target_str().to_string())
-}
-
 pub(crate) async fn get_spec(context: &EnvironmentContext, is_connect: bool) -> Result<String> {
     let spec_opt = ffx_target::get_target_specifier(context)?;
     if let Some(spec) = spec_opt {
@@ -170,7 +163,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_resolve_empty_target() {
         let env = ffx_config::test_init().unwrap();
-        let res = resolve_target_to_uart_path(&env.context, "uart:").await;
+        let res = resolve_target(&env.context, "uart:").await;
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Empty target specifier."));
     }

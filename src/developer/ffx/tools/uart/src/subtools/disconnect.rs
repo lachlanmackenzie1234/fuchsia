@@ -24,7 +24,7 @@ impl FfxMain for DisconnectTool {
     async fn main(self, _writer: Self::Writer) -> Result<()> {
         let _ = self.cmd;
         let spec = crate::get_spec(&self.context, false).await?;
-        let _target = crate::resolve_target_to_uart_path(&self.context, &spec).await?;
+        let _target = crate::resolve_target(&self.context, &spec).await?;
         Err(user_error!("Disconnect subcommand implementation will be introduced in follow-up CL."))
     }
 }

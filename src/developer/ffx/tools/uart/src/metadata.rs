@@ -315,41 +315,41 @@ pub fn find_metadata_by_target(
     Ok(None)
 }
 
-/// Searches the connection metadata directory for any metadata matching an identifier.
-///
-/// Iterates over all `.json` metadata files in `shared_path` and checks whether the provided
-/// `identifier` matches the target's nodename, serial number, or 16-character hexadecimal ID.
-///
-/// # Arguments
-///
-/// * `shared_path` - Path to the directory containing UART connection metadata files.
-/// * `identifier` - Target identifier to search for (nodename, serial, or connection ID).
-///
-/// # Returns
-///
-/// An `Option` containing a tuple `(PathBuf, ConnectionMetadata)` with the path to the matching
-/// JSON metadata file and its deserialized contents, or `None` if no match was found.
-pub fn find_metadata_by_identifier(
+/// Searches the connection metadata directory for any metadata matching an identifier
+/// (canonical path, device filename, nodename, or serial number), preferring actively
+/// running daemons.
+fn scan_for_metadata_by_identifier(
     shared_path: &Path,
     identifier: &str,
 ) -> Option<(PathBuf, ConnectionMetadata)> {
+    let canonical_raw = canonicalize_target(identifier);
     let entries = fs::read_dir(shared_path).ok()?;
+    let mut fallback_dead = None;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("json") {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(meta) = serde_json::from_str::<ConnectionMetadata>(&content) {
-                    if meta.nodename.as_deref() == Some(identifier)
+                    let canonical_meta = canonicalize_target(&meta.target);
+                    if canonical_meta == canonical_raw
+                        || Path::new(&meta.target).file_name().and_then(|n| n.to_str())
+                            == Some(identifier)
+                        || meta.nodename.as_deref() == Some(identifier)
                         || meta.serial.as_deref() == Some(identifier)
                         || meta.id.as_deref() == Some(identifier)
                     {
-                        return Some((path, meta));
+                        if crate::sys::is_driver_running(meta.pid) {
+                            return Some((path, meta));
+                        }
+                        if fallback_dead.is_none() {
+                            fallback_dead = Some((path, meta));
+                        }
                     }
                 }
             }
         }
     }
-    None
+    fallback_dead
 }
 
 /// Length of a hexadecimal target/connection ID string.
@@ -360,9 +360,9 @@ pub const TARGET_ID_HEX_LEN: usize = 16;
 /// Because users and automation can refer to UART connections in different ways,
 /// this function attempts resolution in order of precedence:
 /// 1. 16-character hexadecimal connection ID (direct O(1) lookup; handles corrupt metadata).
-/// 2. Direct device path starting with '/' (computes deterministic target ID from path, e.g. "/dev/ttyUSB0").
-/// 3. Canonical target device path (resolving symlinks and searching active metadata records).
-/// 4. Discovered nodename, hardware serial, or other metadata identifier.
+/// 2. Direct device path containing a slash (computes deterministic target ID from path, e.g. "/dev/ttyUSB0").
+/// 3. Single-pass linear scan of active metadata records (resolving symlinks, device filenames,
+///    nodenames, or serial numbers).
 ///
 /// # Arguments
 ///
@@ -387,11 +387,12 @@ pub fn find_active_connection(
         target.len() == TARGET_ID_HEX_LEN && target.chars().all(|c| c.is_ascii_hexdigit());
     if is_target_id {
         let meta_path = shared_path.join(format!("ffx_uart_{target}.json"));
-        return Ok(load_metadata_from_path(&meta_path, target, Some(target.to_string()))
-            .map(|meta| (meta_path, meta)));
+        if let Some(meta) = load_metadata_from_path(&meta_path, target, Some(target.to_string())) {
+            return Ok(Some((meta_path, meta)));
+        }
     }
 
-    if target.starts_with('/') {
+    if target.contains('/') {
         let target_id = get_target_id(target);
         let meta_path = shared_path.join(format!("ffx_uart_{target_id}.json"));
         if let Some(meta) = load_metadata_from_path(&meta_path, target, Some(target_id)) {
@@ -399,11 +400,7 @@ pub fn find_active_connection(
         }
     }
 
-    if let Ok(Some((path, meta))) = find_metadata_by_target(context, target) {
-        return Ok(Some((path, meta)));
-    }
-
-    Ok(find_metadata_by_identifier(&shared_path, target))
+    Ok(scan_for_metadata_by_identifier(&shared_path, target))
 }
 
 /// Deletes the metadata file associated with the given target if it exists.
@@ -530,7 +527,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_find_metadata_by_identifier() {
+    fn test_scan_for_metadata_by_identifier() {
         let temp = tempdir().unwrap();
         let shared_path = temp.path().join("ffx_uart");
         fs::create_dir_all(&shared_path).unwrap();
@@ -550,22 +547,78 @@ mod tests {
         fs::write(&file_path, serde_json::to_string(&meta).unwrap()).unwrap();
 
         // Search by nodename
-        let by_nodename = find_metadata_by_identifier(&shared_path, "fuchsia-node-1");
+        let by_nodename = scan_for_metadata_by_identifier(&shared_path, "fuchsia-node-1");
         assert!(by_nodename.is_some());
         assert_eq!(by_nodename.unwrap().1.pid, 4321);
 
         // Search by serial
-        let by_serial = find_metadata_by_identifier(&shared_path, "SN-123456");
+        let by_serial = scan_for_metadata_by_identifier(&shared_path, "SN-123456");
         assert!(by_serial.is_some());
         assert_eq!(by_serial.unwrap().1.pid, 4321);
 
-        // Search by id
-        let by_id = find_metadata_by_identifier(&shared_path, "0123456789abcdef");
+        // Search by device base filename
+        let by_dev = scan_for_metadata_by_identifier(&shared_path, "ttyUSB1");
+        assert!(by_dev.is_some());
+        assert_eq!(by_dev.unwrap().1.pid, 4321);
+
+        // Search by target path
+        let by_path = scan_for_metadata_by_identifier(&shared_path, "/dev/ttyUSB1");
+        assert!(by_path.is_some());
+        assert_eq!(by_path.unwrap().1.pid, 4321);
+
+        // Search by connection ID
+        let by_id = scan_for_metadata_by_identifier(&shared_path, "0123456789abcdef");
         assert!(by_id.is_some());
         assert_eq!(by_id.unwrap().1.pid, 4321);
 
         // Not found
-        assert!(find_metadata_by_identifier(&shared_path, "unknown").is_none());
+        assert!(scan_for_metadata_by_identifier(&shared_path, "unknown").is_none());
+
+        // Prioritize active running daemon over dead metadata file with shared identifier
+        let mut live_child = std::process::Command::new("python3")
+            .args(["-c", "import time; time.sleep(10)"])
+            .spawn()
+            .expect("spawn live mock process");
+        let live_pid = live_child.id();
+
+        let dead_meta = ConnectionMetadata {
+            pid: 0,
+            target: "/dev/ttyUSB2".to_string(),
+            status: ConnectionStatus::Connected,
+            id: Some("1111222233334444".to_string()),
+            baud: NonZeroU32::new(115200),
+            protocol: UartProtocol::ResendSP,
+            log_level: None,
+            nodename: Some("fuchsia-duplicate".to_string()),
+            serial: Some("SN-duplicate".to_string()),
+        };
+        let dead_path = shared_path.join("ffx_uart_1111222233334444.json");
+        fs::write(&dead_path, serde_json::to_string(&dead_meta).unwrap()).unwrap();
+
+        let live_meta = ConnectionMetadata {
+            pid: live_pid,
+            target: "/dev/ttyUSB2".to_string(),
+            status: ConnectionStatus::Connected,
+            id: Some("5555666677778888".to_string()),
+            baud: NonZeroU32::new(115200),
+            protocol: UartProtocol::ResendSP,
+            log_level: None,
+            nodename: Some("fuchsia-duplicate".to_string()),
+            serial: Some("SN-duplicate".to_string()),
+        };
+        let live_path = shared_path.join("ffx_uart_5555666677778888.json");
+        fs::write(&live_path, serde_json::to_string(&live_meta).unwrap()).unwrap();
+
+        let by_dup_node = scan_for_metadata_by_identifier(&shared_path, "fuchsia-duplicate");
+        assert!(by_dup_node.is_some());
+        assert_eq!(by_dup_node.unwrap().1.pid, live_pid);
+
+        let by_dup_serial = scan_for_metadata_by_identifier(&shared_path, "SN-duplicate");
+        assert!(by_dup_serial.is_some());
+        assert_eq!(by_dup_serial.unwrap().1.pid, live_pid);
+
+        let _ = live_child.kill();
+        let _ = live_child.wait();
     }
 
     #[fuchsia::test]
@@ -626,7 +679,26 @@ mod tests {
         assert_eq!(c_path, corrupt_path);
         assert_eq!(c_meta.pid, 0);
 
-        // 6. Unknown target
+        // 6. Resolve by 16-hex serial number falling through to scan
+        let hex_serial = "abcdef0123456789";
+        let serial_meta = ConnectionMetadata {
+            pid: 4321,
+            target: "/dev/ttyUSB2".to_string(),
+            status: ConnectionStatus::Connected,
+            id: Some("1111222233334444".to_string()),
+            baud: NonZeroU32::new(115200),
+            protocol: UartProtocol::ResendSP,
+            log_level: None,
+            nodename: None,
+            serial: Some(hex_serial.to_string()),
+        };
+        let serial_file_path = shared_path.join("ffx_uart_1111222233334444.json");
+        fs::write(&serial_file_path, serde_json::to_string(&serial_meta).unwrap()).unwrap();
+        let found_by_hex_serial = find_active_connection(&env.context, hex_serial).unwrap();
+        assert!(found_by_hex_serial.is_some());
+        assert_eq!(found_by_hex_serial.unwrap().0, serial_file_path);
+
+        // 7. Unknown target
         assert!(find_active_connection(&env.context, "non-existent-device").unwrap().is_none());
     }
 }
