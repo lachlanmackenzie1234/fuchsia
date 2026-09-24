@@ -16,7 +16,7 @@ use futures::stream::StreamExt as _;
 use libc::{STDERR_FILENO, STDOUT_FILENO};
 use net_declare::std_socket_addr;
 use netemul::RealmUdpSocket as _;
-use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
+use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use regex::Regex;
 use std::convert::TryInto as _;
@@ -230,14 +230,13 @@ async fn version_test() {
 }
 
 #[netstack_test]
-#[variant(N, Netstack)]
 // TODO(https://fxbug.dev/42169332): Fix memory leak and run this with Lsan.
 #[cfg_attr(feature = "variant_asan", ignore)]
 // TODO(https://fxbug.dev/436867782): Fix memory leak and run this with HWASan.
 #[cfg_attr(feature = "variant_hwasan", ignore)]
-async fn packet_test<N: Netstack>(name: &str) {
+async fn packet_test(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox.create_netstack_realm::<N, _>(name).expect("create realm");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     start_tcpdump_and_wait_for_patterns(
         &realm,

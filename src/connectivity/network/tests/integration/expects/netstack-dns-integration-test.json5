@@ -9,17 +9,5 @@
                 "*",
             ],
         },
-        {
-            type: "expect_pass_with_err_logs",
-            matchers: [],
-        },
-        {
-            type: "expect_failure_with_err_logs",
-            matchers: [],
-        },
-        {
-            type: "skip",
-            matchers: [],
-        },
     ],
 }
