@@ -880,6 +880,10 @@ fn split_connection_item<Id, T>(item: StreamItem<(Id, T), Id>) -> (Id, Option<T>
     }
 }
 
+/// The single-client `NetworkRegistry` request stream, ending in an epitaph so the
+/// event loop observes when the client disconnects.
+type DelegatedNetworksStream = StreamWithEpitaph<fnp_socketproxy::NetworkRegistryRequestStream, ()>;
+
 /// An internal wrapper enum for active FIDL request streams stored in
 /// [`NetpolNetworksService::streams`].
 enum NetworkRequestStreamInner {
@@ -888,7 +892,7 @@ enum NetworkRequestStreamInner {
     PropertyWatcher(
         ConnectionStream<PropertyWatcherConnectionId, fnp_properties::PropertyWatcherRequestStream>,
     ),
-    DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+    DelegatedNetworks(DelegatedNetworksStream),
     Reachability(ReachabilityStream),
 }
 
@@ -922,8 +926,13 @@ impl futures::Stream for NetworkRequestStreamInner {
             }
             NetworkRequestStreamInner::DelegatedNetworks(ref mut stream) => {
                 stream.poll_next_unpin(cx).map(|o| {
-                    o.map(|request| DelegatedNetworksRequest { request })
-                        .map(NetworkRequest::DelegatedNetworks)
+                    o.map(|item| match item {
+                        StreamItem::Item(request) => {
+                            DelegatedNetworksRequest { request: Some(request) }
+                        }
+                        StreamItem::Epitaph(()) => DelegatedNetworksRequest { request: None },
+                    })
+                    .map(NetworkRequest::DelegatedNetworks)
                 })
             }
             NetworkRequestStreamInner::Reachability(ref mut stream) => {
@@ -958,9 +967,10 @@ pub struct PropertyWatcherRequest {
     pub request: Option<Result<fnp_properties::PropertyWatcherRequest, fidl::Error>>,
 }
 
-/// A wrapper for [`fnp_socketproxy::NetworkRegistryRequest`].
+/// A wrapper for [`fnp_socketproxy::NetworkRegistryRequest`], or `None` if the client
+/// connection closed.
 pub struct DelegatedNetworksRequest {
-    pub request: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
+    pub request: Option<Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>>,
 }
 
 /// A wrapper for [`freachability::MonitorRequest`] that includes the
@@ -1068,6 +1078,8 @@ pub struct NetpolNetworksService {
     generations_by_connection: UpdateGenerations,
     // Networks connections
     networks_clients: HashMap<NetworksConnectionId, NetworksClient>,
+    // The active `fuchsia.net.policy.socketproxy.NetworkRegistry` client connection, if any.
+    delegated_networks_client: Option<fnp_socketproxy::NetworkRegistryControlHandle>,
     tokens: token_registry::TokenRegistry<NetworkTokenContents>,
     // NetworkProperty Watchers
     property_watchers: HashMap<PropertyWatcherConnectionId, Registration>,
@@ -1168,7 +1180,18 @@ impl NetpolNetworksService {
                 self.streams.push(NetworkRequestStreamInner::NetworkTokenResolver(stream));
             }
             NetworkRequestStream::DelegatedNetworks(stream) => {
-                self.streams.push(NetworkRequestStreamInner::DelegatedNetworks(stream));
+                if self.delegated_networks_client.is_some() {
+                    warn!(
+                        "Only one connection to \
+                        fuchsia.net.policy.socketproxy/NetworkRegistry is allowed at a time"
+                    );
+                    stream.control_handle().shutdown_with_epitaph(zx::Status::ALREADY_EXISTS);
+                } else {
+                    self.delegated_networks_client = Some(stream.control_handle());
+                    self.streams.push(NetworkRequestStreamInner::DelegatedNetworks(
+                        stream.with_epitaph(()),
+                    ));
+                }
             }
             NetworkRequestStream::PropertyWatcher { connection_id, stream } => {
                 self.streams.push(NetworkRequestStreamInner::PropertyWatcher(
@@ -1197,7 +1220,7 @@ impl NetpolNetworksService {
                 Ok(DelegatedNetworkUpdateResult { dns_servers: None })
             }
             NetworkRequest::DelegatedNetworks(DelegatedNetworksRequest { request }) => {
-                self.handle_delegated_networks_update(request).await
+                Ok(self.handle_delegated_networks_update(request).await)
             }
             NetworkRequest::PropertyWatcher(PropertyWatcherRequest { id, request }) => {
                 self.handle_property_watcher_request(id, request).await?;
@@ -1460,24 +1483,47 @@ impl NetpolNetworksService {
     ///
     /// TODO(https://fxbug.dev/428712735): Stop returning DnsServer list once
     /// dns-resolver learns about DNS via NetworkProperties.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no currently active delegated networks client. A client is removed
+    /// only when its stream yields the terminal `None` item, and the stream is fused, so every
+    /// item from the stream belongs to a live client.
     pub async fn handle_delegated_networks_update(
         &mut self,
-        update: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
-    ) -> Result<DelegatedNetworkUpdateResult, anyhow::Error> {
+        update: Option<Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>>,
+    ) -> DelegatedNetworkUpdateResult {
         use fnp_socketproxy::{
             NetworkRegistryAddError, NetworkRegistryRemoveError, NetworkRegistryRequest,
             NetworkRegistrySetDefaultError, NetworkRegistryUpdateError,
         };
 
-        let action_result = match update {
-            Err(e) => {
-                error!(
-                    "Encountered error watching for delegated network \
-                     updates: {e:?}"
-                );
-                return Err(anyhow::anyhow!(e));
+        let control_handle = assert_matches!(
+            self.delegated_networks_client.as_ref(),
+            Some(control_handle) => control_handle,
+            "request with no active delegated networks client"
+        );
+
+        let req = match update {
+            Some(Ok(req)) => req,
+            Some(Err(e)) => {
+                // A clean disconnect yields the terminal item below rather than an error, so
+                // this is always abnormal: a malformed request or a channel-level read failure.
+                // No epitaph is sent because the channel may no longer be writable.
+                error!("Delegated networks client stream error: {e}");
+                control_handle.shutdown();
+                return DelegatedNetworkUpdateResult { dns_servers: None };
             }
-            Ok(NetworkRegistryRequest::SetDefault { network_id, responder }) => {
+            // The client's stream has terminated, either because the client went away or
+            // because of a `shutdown` above. This is the only place the client is removed.
+            None => {
+                let _: Option<_> = self.delegated_networks_client.take();
+                return self.clear_delegated_networks().await;
+            }
+        };
+
+        let action_result = match req {
+            NetworkRegistryRequest::SetDefault { network_id, responder } => {
                 let set_default_result = match network_id {
                     fposix_socket::OptionalUint32::Value(interface_id) => {
                         match InterfaceId::try_from(interface_id) {
@@ -1511,7 +1557,7 @@ impl NetpolNetworksService {
                     "failed to send SetDefault result",
                 )
             }
-            Ok(NetworkRegistryRequest::Add { network, responder }) => {
+            NetworkRegistryRequest::Add { network, responder } => {
                 let add_result = match ValidatedNetwork::try_from(network).map_err(Into::into) {
                     Ok(valid) => {
                         if self.network_registry.networks.contains_key(&valid.network_id) {
@@ -1543,7 +1589,7 @@ impl NetpolNetworksService {
                     "failed to send Add result",
                 )
             }
-            Ok(NetworkRegistryRequest::Update { network, responder }) => {
+            NetworkRegistryRequest::Update { network, responder } => {
                 let update_result = match ValidatedNetwork::try_from(network).map_err(Into::into) {
                     Ok(valid) => {
                         if !self.network_registry.networks.contains_key(&valid.network_id) {
@@ -1575,7 +1621,7 @@ impl NetpolNetworksService {
                     "failed to send Update result",
                 )
             }
-            Ok(NetworkRegistryRequest::Remove { network_id, responder }) => {
+            NetworkRegistryRequest::Remove { network_id, responder } => {
                 let remove_result = match InterfaceId::try_from(network_id) {
                     Ok(id) => {
                         let delegated_id = NetworkId::delegated(id);
@@ -1605,7 +1651,38 @@ impl NetpolNetworksService {
             }
         };
 
-        Ok(action_result)
+        action_result
+    }
+
+    /// Unsets `starnix_default` and removes all `NetworkId::Delegated` networks when the
+    /// `NetworkRegistry` client disconnects, returning the updated DNS server list if any
+    /// delegated networks were removed.
+    async fn clear_delegated_networks(&mut self) -> DelegatedNetworkUpdateResult {
+        // Unset `starnix_default` first because `RegisteredNetworks::apply` refuses to remove a
+        // network while it is still marked as `starnix_default`.
+        if self.network_registry.starnix_default.is_some() {
+            self.update(NetworkRegistryUpdate::unset_default()).await;
+        }
+
+        let delegated_ids = self
+            .network_registry
+            .networks
+            .keys()
+            .filter(|id| match id {
+                NetworkId::Delegated(_) => true,
+                NetworkId::Fuchsia(_) => false,
+            })
+            .copied()
+            .collect::<Vec<_>>();
+
+        for id in &delegated_ids {
+            self.update(NetworkRegistryUpdate::ChangeNetwork(*id, NetworkUpdate::Remove)).await;
+        }
+
+        DelegatedNetworkUpdateResult {
+            dns_servers: (!delegated_ids.is_empty())
+                .then(|| self.network_registry.consolidated_dns_servers()),
+        }
     }
 
     // Resolves the operation result, sends the success or failure status to
@@ -3630,5 +3707,128 @@ mod tests {
         // Watcher registration and connection generation must be cleanly purged.
         assert!(service.property_watchers.is_empty());
         assert!(service.generations_by_connection.properties.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_delegated_networks_single_connection() {
+        let mut service = NetpolNetworksService::default();
+        let (proxy1, stream1) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
+        service.add_stream(stream1);
+        assert!(service.delegated_networks_client.is_some());
+
+        // First connection succeeds.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy1.remove(1)).await,
+            Err(NetworkRegistryRemoveError::NotFound)
+        );
+
+        // Concurrent second connection is rejected with ALREADY_EXISTS.
+        let (proxy2, stream2) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
+        service.add_stream(stream2);
+        assert_matches!(
+            proxy2.remove(1).await,
+            Err(fidl::Error::ClientChannelClosed { epitaph, .. })
+                if epitaph == zx::Status::ALREADY_EXISTS
+        );
+
+        // First connection continues to work after the second connection is rejected.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy1.remove(1)).await,
+            Err(NetworkRegistryRemoveError::NotFound)
+        );
+
+        // Once the first connection closes and its terminal item is processed,
+        // a new connection is allowed.
+        drop(proxy1);
+        let disconnect_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(disconnect_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert!(service.delegated_networks_client.is_none());
+
+        let (proxy3, stream3) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
+        service.add_stream(stream3);
+        assert_eq!(
+            process_fidl_request(&mut service, proxy3.remove(1)).await,
+            Err(NetworkRegistryRemoveError::NotFound)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_delegated_networks_client_disconnect_cleans_up_state() {
+        let mut service = NetpolNetworksService::default();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
+        service.add_stream(stream);
+
+        // The raw id used by the `fnp_socketproxy::Network` as a `network_id`.
+        const STARNIX_ID_1: u32 = 1;
+        const STARNIX_ID_2: u32 = 2;
+        const SOCKET_MARK_1: u32 = 100;
+        const SOCKET_MARK_2: u32 = 200;
+
+        // Register a native Fuchsia network alongside two delegated networks.
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                FUCHSIA_ID_1,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added: true,
+                    ..Default::default()
+                }),
+            ))
+            .await;
+
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.add(&starnix_network_payload(STARNIX_ID_1, SOCKET_MARK_1))
+            )
+            .await,
+            Ok(())
+        );
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.add(&starnix_network_payload(STARNIX_ID_2, SOCKET_MARK_2))
+            )
+            .await,
+            Ok(())
+        );
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.set_default(&fposix_socket::OptionalUint32::Value(STARNIX_ID_1)),
+            )
+            .await,
+            Ok(())
+        );
+        assert_eq!(service.network_registry.starnix_default, Some(DELEGATED_ID_1));
+        assert_eq!(service.network_registry.networks.len(), 3);
+
+        // Disconnect the client and verify all delegated state is cleared while Fuchsia state
+        // remains intact.
+        drop(proxy);
+        let disconnect_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(disconnect_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult { dns_servers: Some(vec![]) }
+        );
+        assert_eq!(service.network_registry.starnix_default, None);
+        assert_eq!(
+            service.network_registry.networks.keys().copied().collect::<Vec<_>>(),
+            vec![FUCHSIA_ID_1]
+        );
+
+        // A reconnecting client can re-add NETWORK_ID_1 without hitting DuplicateNetworkId.
+        let (proxy2, stream2) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
+        service.add_stream(stream2);
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy2.add(&starnix_network_payload(STARNIX_ID_1, SOCKET_MARK_2)),
+            )
+            .await,
+            Ok(())
+        );
     }
 }
