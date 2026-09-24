@@ -442,7 +442,10 @@
             source_availability: "unknown",
         },
         {
-            config: [ "fuchsia.power.WaitForSuspendingToken" ],
+            config: [
+                "fuchsia.power.StoragePowerManagementEnabled",
+                "fuchsia.power.WaitForSuspendingToken",
+            ],
             from: "parent",
             to: "#driver_manager",
         },

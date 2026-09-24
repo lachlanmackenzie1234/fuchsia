@@ -1416,7 +1416,7 @@ zx::result<> Ufs::Start(fdf::DriverContext context) {
     return zx::error(status);
   }
 
-  if (config().enable_suspend()) {
+  if (config().enable_suspend() && config().storage_power_management_enabled()) {
     if (zx::result<> status = ConfigurePowerManagement(); status.is_error()) {
       return status.take_error();
     }
