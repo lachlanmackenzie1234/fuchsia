@@ -206,6 +206,13 @@ While supporting both machine and human-readable output is the default expectati
 
 ## 7. Testing Guidelines
 
+### Keep `#[cfg(test)]` Confined to the `test` / `tests` Module
+* **Avoid scattering `#[cfg(test)]` in production code**: Do not place `#[cfg(test)]` attributes on individual functions, methods, struct fields, imports, or `impl` blocks inside non-test modules.
+* **Place all test helpers, utilities, and test-only methods inside the `test` module**:
+  * In Rust, a child `#[cfg(test)] mod test` (or `mod tests`) module has full visibility into the private fields and items of its parent module. Define test-only constructors, mock setup helpers, and `impl` blocks for parent types directly inside the `test` module rather than annotating items in the main module.
+  * When test utilities are shared across multiple modules within a crate, consolidate them into a single `#[cfg(test)] mod test_utils` (or a dedicated `testonly = true` crate if shared across crates) instead of sprinkling `#[cfg(test)]` throughout production code.
+  * Keeping non-test modules free of `#[cfg(test)]` prevents struct layouts or control flow from diverging between test and production builds and avoids conditional unused-import or dead-code warnings.
+
 ### Unit Testing Subtools
 * **Test Both Machine and Human-Readable Output with Local FDomain Proxies**:
   Use `fdomain_local::local_client_empty()`, `target_holders::fake_proxy` (or `fake_async_proxy`), and `TestBuffers` to verify both `Some(Format::Json)` (including schema validation) and `None` (human-readable output) without an emulator or network connection:
