@@ -16,7 +16,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    NetworkConfig,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
@@ -143,8 +142,14 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
             [
-                NetworkConfig(
-                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                f_wlan_policy.NetworkConfig(
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(test_ssid.encode("utf-8")),
+                        type_=f_wlan_policy.SecurityType.NONE,
+                    ),
+                    credential=f_wlan_policy.Credential(
+                        none=f_wlan_policy.Empty()
+                    ),
                 )
             ],
         )
@@ -223,8 +228,14 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
             [
-                NetworkConfig(
-                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                f_wlan_policy.NetworkConfig(
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(test_ssid.encode("utf-8")),
+                        type_=f_wlan_policy.SecurityType.NONE,
+                    ),
+                    credential=f_wlan_policy.Credential(
+                        none=f_wlan_policy.Empty()
+                    ),
                 )
             ],
         )
@@ -271,8 +282,14 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
             [
-                NetworkConfig(
-                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                f_wlan_policy.NetworkConfig(
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(test_ssid.encode("utf-8")),
+                        type_=f_wlan_policy.SecurityType.NONE,
+                    ),
+                    credential=f_wlan_policy.Credential(
+                        none=f_wlan_policy.Empty()
+                    ),
                 )
             ],
         )
@@ -304,8 +321,14 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
             [
-                NetworkConfig(
-                    test_ssid, f_wlan_policy.SecurityType.NONE, "None", ""
+                f_wlan_policy.NetworkConfig(
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(test_ssid.encode("utf-8")),
+                        type_=f_wlan_policy.SecurityType.NONE,
+                    ),
+                    credential=f_wlan_policy.Credential(
+                        none=f_wlan_policy.Empty()
+                    ),
                 )
             ],
         )

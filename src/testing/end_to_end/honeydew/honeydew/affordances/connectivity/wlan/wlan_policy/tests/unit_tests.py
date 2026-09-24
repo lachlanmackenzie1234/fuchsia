@@ -21,7 +21,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
-    NetworkConfig,
 )
 from honeydew.affordances.location import Location
 from honeydew.errors import NotSupportedError
@@ -47,12 +46,6 @@ _TEST_CREDENTIAL_PSK = f_wlan_policy.Credential(
     psk=list(bytes.fromhex(_TEST_PSK))
 )
 
-_TEST_NETWORK_CONFIG_NONE = NetworkConfig(
-    ssid=_TEST_SSID,
-    security_type=f_wlan_policy.SecurityType.NONE,
-    credential_type="None",
-    credential_value="",
-)
 _TEST_NETWORK_CONFIG_NONE_FIDL = f_wlan_policy.NetworkConfig(
     id_=f_wlan_policy.NetworkIdentifier(
         ssid=_TEST_SSID_BYTES,
@@ -61,12 +54,6 @@ _TEST_NETWORK_CONFIG_NONE_FIDL = f_wlan_policy.NetworkConfig(
     credential=_TEST_CREDENTIAL_NONE,
 )
 
-_TEST_NETWORK_CONFIG_PASSWORD = NetworkConfig(
-    ssid=_TEST_SSID,
-    security_type=f_wlan_policy.SecurityType.WPA2,
-    credential_type="Password",
-    credential_value=_TEST_PASSWORD,
-)
 _TEST_NETWORK_CONFIG_PASSWORD_FIDL = f_wlan_policy.NetworkConfig(
     id_=f_wlan_policy.NetworkIdentifier(
         ssid=_TEST_SSID_BYTES,
@@ -75,12 +62,6 @@ _TEST_NETWORK_CONFIG_PASSWORD_FIDL = f_wlan_policy.NetworkConfig(
     credential=_TEST_CREDENTIAL_PASSWORD,
 )
 
-_TEST_NETWORK_CONFIG_PSK = NetworkConfig(
-    ssid=_TEST_SSID,
-    security_type=f_wlan_policy.SecurityType.WPA2,
-    credential_type="Psk",
-    credential_value=_TEST_PSK,
-)
 _TEST_NETWORK_CONFIG_PSK_FIDL = f_wlan_policy.NetworkConfig(
     id_=f_wlan_policy.NetworkIdentifier(
         ssid=_TEST_SSID_BYTES,
@@ -388,9 +369,9 @@ class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             networks,
             [
-                _TEST_NETWORK_CONFIG_NONE,
-                _TEST_NETWORK_CONFIG_PASSWORD,
-                _TEST_NETWORK_CONFIG_PSK,
+                _TEST_NETWORK_CONFIG_NONE_FIDL,
+                _TEST_NETWORK_CONFIG_PASSWORD_FIDL,
+                _TEST_NETWORK_CONFIG_PSK_FIDL,
             ],
         )
 

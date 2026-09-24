@@ -17,7 +17,6 @@ from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     Credential,
-    NetworkConfig,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
@@ -229,13 +228,16 @@ class WlanPolicyAp(AsyncLazyReady):
             HoneydewWlanRequestRejectedError: WLAN rejected the request
         """
         assert self._access_point_controller is not None
-        cred = Credential.from_password(password)
 
         try:
             resp = await self._access_point_controller.proxy.start_access_point(
-                config=NetworkConfig(
-                    ssid, security, cred.type(), cred.value()
-                ).to_fidl(),
+                config=f_wlan_policy.NetworkConfig(
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(ssid.encode("utf-8")),
+                        type_=security,
+                    ),
+                    credential=Credential.from_password(password).to_fidl(),
+                ),
                 mode=mode,
                 band=band,
             )
@@ -271,13 +273,16 @@ class WlanPolicyAp(AsyncLazyReady):
             HoneydewWlanRequestRejectedError: WLAN rejected the request
         """
         assert self._access_point_controller is not None
-        cred = Credential.from_password(password)
 
         try:
             resp = await self._access_point_controller.proxy.stop_access_point(
-                config=NetworkConfig(
-                    ssid, security, cred.type(), cred.value()
-                ).to_fidl(),
+                config=f_wlan_policy.NetworkConfig(
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=list(ssid.encode("utf-8")),
+                        type_=security,
+                    ),
+                    credential=Credential.from_password(password).to_fidl(),
+                ),
             )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(

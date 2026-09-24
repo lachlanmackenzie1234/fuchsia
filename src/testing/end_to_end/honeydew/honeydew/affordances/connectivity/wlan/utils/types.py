@@ -20,47 +20,6 @@ MacAddress = _MacAddress
 _PSK_LENGTH = 64
 
 
-@dataclass(frozen=True)
-class NetworkConfig:
-    """Network information used to establish a connection.
-
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/types.fidl
-    """
-
-    ssid: str
-    security_type: f_wlan_policy.SecurityType
-    credential_type: str
-    credential_value: str
-
-    @staticmethod
-    def from_fidl(fidl: f_wlan_policy.NetworkConfig) -> NetworkConfig:
-        """Parse from a fuchsia.wlan.policy/NetworkConfig."""
-        assert fidl.id_ is not None, f"{fidl!r} missing id"
-        assert fidl.credential is not None, f"{fidl!r} missing credential"
-        credential = Credential.from_fidl(fidl.credential)
-        return NetworkConfig(
-            ssid=bytes(fidl.id_.ssid).decode("utf-8"),
-            security_type=f_wlan_policy.SecurityType(fidl.id_.type_),
-            credential_type=credential.type(),
-            credential_value=credential.value(),
-        )
-
-    def to_fidl(self) -> f_wlan_policy.NetworkConfig:
-        """Convert to equivalent FIDL."""
-        return f_wlan_policy.NetworkConfig(
-            id_=f_wlan_policy.NetworkIdentifier(
-                ssid=list(self.ssid.encode("utf-8")),
-                type_=self.security_type,
-            ),
-            credential=Credential.from_password(
-                self.credential_value
-            ).to_fidl(),
-        )
-
-    def __lt__(self, other: NetworkConfig) -> bool:
-        return self.ssid < other.ssid
-
-
 class Credential(Protocol):
     """Information used to verify access to a target network."""
 

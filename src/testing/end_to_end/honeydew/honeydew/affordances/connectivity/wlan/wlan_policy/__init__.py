@@ -25,7 +25,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     CountryCode,
     Credential,
-    NetworkConfig,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
@@ -427,7 +426,7 @@ class WlanPolicy(AsyncLazyReady):
         self,
         *,
         timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> list[NetworkConfig]:
+    ) -> list[f_wlan_policy.NetworkConfig]:
         """Gets networks saved on device.
 
         Returns:
@@ -456,12 +455,11 @@ class WlanPolicy(AsyncLazyReady):
                 f"ClientController.GetSavedNetworks() error {status}"
             ) from status
 
-        configs = []
+        configs: list[f_wlan_policy.NetworkConfig] = []
         for resp in await collect_network_config_iterator(
             iterator, timeout=timeout
         ):
-            for config in resp.configs:
-                configs.append(NetworkConfig.from_fidl(config))
+            configs += resp.configs
         return configs
 
     async def get_status(
@@ -676,10 +674,12 @@ class WlanPolicy(AsyncLazyReady):
         assert self._client_controller is not None
 
         for network in await self.get_saved_networks(timeout=timeout):
+            assert network.id_, f"{network!r} missing id"
+            assert network.credential, f"{network!r} missing credential"
             await self.forget_network(
-                target_ssid=network.ssid,
-                security_type=network.security_type,
-                target_pwd=network.credential_value,
+                target_ssid=bytes(network.id_.ssid).decode("utf-8"),
+                security_type=f_wlan_policy.SecurityType(network.id_.type_),
+                target_pwd=Credential.from_fidl(network.credential).value(),
                 timeout=timeout,
             )
 

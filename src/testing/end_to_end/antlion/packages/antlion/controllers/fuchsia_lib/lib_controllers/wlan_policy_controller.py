@@ -192,22 +192,3 @@ class WlanPolicyController:
             self.configure_wlan(
                 clear_networks=True, restart_client_connections=False
             )
-
-    def _find_network(
-        self,
-        ssid: str,
-        networks: list[f_wlan_policy.NetworkState],
-    ) -> f_wlan_policy.NetworkState | None:
-        """Helper method to find network in list of network states.
-
-        Args:
-            ssid: The network name to look for.
-            networks: The list of network states to look in.
-
-        Returns:
-            Network state of target ssid or None if not found in networks.
-        """
-        for network in networks:
-            if network.id_ and bytes(network.id_.ssid).decode("utf-8") == ssid:
-                return network
-        return None
