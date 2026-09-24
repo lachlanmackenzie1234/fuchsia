@@ -969,12 +969,14 @@ kernel_bindgen_crate("vm-object-bindings") {
     "Resizability",
     "SnapshotType",
     "SupplyOptions",
-    "VmObjectReadWriteOptions",
     "VmObject_EvictionHint",
   ]
   function_blocklist = [ "VmObject_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  var_allowlist = [ "VmObject_MAX_SIZE" ]
+  var_allowlist = [
+    "VmObjectReadWriteOptions_.*",
+    "VmObject_MAX_SIZE",
+  ]
   deps = [
     ":attribution-bindings",
     ":page-bindings",

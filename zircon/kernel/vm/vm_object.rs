@@ -12,6 +12,7 @@ use super::vm_object_paged::VmObjectPaged;
 use super::vm_page_list::VmPageSpliceList;
 use crate::kernel::types::PAddr;
 use crate::user_copy::{UserInPtr, UserOutPtr};
+use bitflags::bitflags;
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::marker::{PhantomData, PhantomPinned};
@@ -36,7 +37,25 @@ pub use zx_types::zx_vmo_lock_state_t;
 /// Argument that specifies the context in which we are supplying pages.
 pub type SupplyOptions = bindings::SupplyOptions;
 
-pub type VmObjectReadWriteOptions = bindings::VmObjectReadWriteOptions;
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+    pub struct VmObjectReadWriteOptions: u8 {
+        const NONE = 0;
+
+        /// If set, attempts to read past the end of a VMO will not cause a failure and only copy
+        /// the existing bytes instead (i.e. the requested length will be trimmed to the actual VMO
+        /// size).
+        const TRIM_LENGTH = (1 << 0);
+    }
+}
+
+zr::static_assert!(
+    VmObjectReadWriteOptions::NONE.bits() == bindings::VmObjectReadWriteOptions_None
+);
+zr::static_assert!(
+    VmObjectReadWriteOptions::TRIM_LENGTH.bits() == bindings::VmObjectReadWriteOptions_TrimLength
+);
 
 pub use crate::vm::vm_cow_pages::VmCowPagesLockClass as VmObjectLockClass;
 
@@ -730,8 +749,8 @@ impl VmObject {
 
     /// Read/write operators against user space pointers only.
     ///
-    /// The number of bytes successfully processed is always returned, even upon error. This allows for
-    /// callers to still pass on this bytes transferred if a particular error was expected.
+    /// The number of bytes successfully processed is always returned, even upon error. This allows
+    /// for callers to still pass on this bytes transferred if a particular error was expected.
     ///
     /// May block on user pager requests and must be called without locks held.
     ///
@@ -741,7 +760,8 @@ impl VmObject {
         buffer: UserOutPtr<T>,
         offset: u64,
         size: usize,
-    ) -> Result<usize, Status> {
+        options: VmObjectReadWriteOptions,
+    ) -> (Result<(), Status>, usize) {
         let mut out_actual = 0usize;
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer. `out_actual` points to
         // stack-allocated memory.
@@ -751,17 +771,17 @@ impl VmObject {
                 buffer.as_ptr().cast(),
                 offset,
                 size,
+                options.bits(),
                 &mut out_actual,
             )
         };
-        Status::ok(status)?;
-        Ok(out_actual)
+        (Status::ok(status), out_actual)
     }
 
     /// Read/write operators against user space pointers only.
     ///
-    /// The number of bytes successfully processed is always returned, even upon error. This allows for
-    /// callers to still pass on this bytes transferred if a particular error was expected.
+    /// The number of bytes successfully processed is always returned, even upon error. This allows
+    /// for callers to still pass on this bytes transferred if a particular error was expected.
     ///
     /// May block on user pager requests and must be called without locks held.
     ///
@@ -771,21 +791,81 @@ impl VmObject {
         buffer: UserInPtr<T>,
         offset: u64,
         size: usize,
-    ) -> Result<usize, Status> {
+        options: VmObjectReadWriteOptions,
+    ) -> (Result<(), Status>, usize) {
+        self.write_user_impl(buffer, offset, size, options, None, core::ptr::null_mut())
+    }
+
+    /// Read/write operators against user space pointers only.
+    ///
+    /// The number of bytes successfully processed is always returned, even upon error. This allows
+    /// for callers to still pass on this bytes transferred if a particular error was expected.
+    ///
+    /// May block on user pager requests and must be called without locks held.
+    ///
+    /// Bytes are guaranteed to be transferred in order from low to high offset.
+    ///
+    /// `on_bytes_transferred` is guaranteed to be called after bytes have been successfully
+    /// transferred from the user source to the VMO and will be called before the VMO lock is
+    /// dropped. As a result, operations performed within the callback should not take any other
+    /// locks or be long-running.
+    pub fn write_user_with_progress<T, F>(
+        &self,
+        buffer: UserInPtr<T>,
+        offset: u64,
+        size: usize,
+        options: VmObjectReadWriteOptions,
+        mut on_bytes_transferred: F,
+    ) -> (Result<(), Status>, usize)
+    where
+        F: FnMut(u64, usize),
+    {
+        unsafe extern "C" fn write_user_progress_trampoline<F: FnMut(u64, usize)>(
+            ctx: *mut core::ffi::c_void,
+            offset: u64,
+            len: usize,
+        ) {
+            // SAFETY: `ctx` is a valid non-null pointer to `F` passed to `cpp_vm_object_write_user`
+            // for the duration of the synchronous FFI call.
+            let cb = unsafe { &mut *ctx.cast::<F>() };
+            cb(offset, len);
+        }
+
+        self.write_user_impl(
+            buffer,
+            offset,
+            size,
+            options,
+            Some(write_user_progress_trampoline::<F>),
+            (&raw mut on_bytes_transferred).cast::<core::ffi::c_void>(),
+        )
+    }
+
+    fn write_user_impl<T>(
+        &self,
+        buffer: UserInPtr<T>,
+        offset: u64,
+        size: usize,
+        options: VmObjectReadWriteOptions,
+        progress_cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void, u64, usize)>,
+        ctx: *mut core::ffi::c_void,
+    ) -> (Result<(), Status>, usize) {
         let mut out_actual = 0usize;
-        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer. `out_actual` points to
-        // stack-allocated memory.
+        // SAFETY: self.as_raw() is a valid VmObject pointer. out_actual points to stack-allocated
+        // memory. ctx is null or points to a valid progress callback context.
         let status = unsafe {
             bindings::cpp_vm_object_write_user(
                 self.as_raw(),
                 buffer.as_ptr().cast(),
                 offset,
                 size,
+                options.bits(),
+                progress_cb,
+                ctx,
                 &mut out_actual,
             )
         };
-        Status::ok(status)?;
-        Ok(out_actual)
+        (Status::ok(status), out_actual)
     }
 }
 
@@ -812,11 +892,12 @@ unsafe impl Recyclable for VmObject {
 #[cfg(ktest)]
 #[unittest::suite(name = "vm_object_tests")]
 mod tests {
-    use super::VmObject;
+    use super::{VmObject, VmObjectReadWriteOptions};
+    use crate::user_memory::UserMemory;
     use crate::vm::pmm::ALLOC_FLAG_ANY;
     use crate::vm::scanner::AutoVmScannerDisable;
     use page::SIZE as PAGE_SIZE_USIZE;
-    use unittest::{expect_eq, unwrap_ok};
+    use unittest::{expect_eq, expect_ok, unwrap_ok, unwrap_some};
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
 
     /// Tests rounding sizes to page boundaries without overflowing.
@@ -840,5 +921,57 @@ mod tests {
         ksync::lock!(let guard = vmo.lock());
         expect_eq!(vmo.size_locked(guard.token()), PAGE_SIZE);
         let _ = vmo.lock_ref();
+    }
+
+    /// Tests that `read_user` respects `TRIM_LENGTH` when straddling the end of a VMO.
+    #[test]
+    fn vmo_read_user_trim_length_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+        unwrap_ok!(vmo.commit_range(0, PAGE_SIZE));
+
+        let user_memory = unwrap_some!(UserMemory::create(PAGE_SIZE_USIZE));
+        unwrap_ok!(user_memory.commit_and_map(0..PAGE_SIZE_USIZE));
+
+        let offset = PAGE_SIZE / 2;
+        let size = PAGE_SIZE_USIZE;
+        let expected_trimmed = (PAGE_SIZE - offset) as usize;
+
+        let (res, actual) = vmo.read_user(
+            user_memory.user_out::<u8>(),
+            offset,
+            size,
+            VmObjectReadWriteOptions::TRIM_LENGTH,
+        );
+        expect_ok!(res);
+        expect_eq!(actual, expected_trimmed);
+
+        let (res, actual) = vmo.read_user(
+            user_memory.user_out::<u8>(),
+            offset,
+            size,
+            VmObjectReadWriteOptions::NONE,
+        );
+        expect_eq!(Status::result_into_raw(res), Status::OUT_OF_RANGE.into_raw());
+        expect_eq!(actual, 0);
+
+        let (res, actual) = vmo.write_user(
+            user_memory.user_in::<u8>(),
+            offset,
+            size,
+            VmObjectReadWriteOptions::TRIM_LENGTH,
+        );
+        expect_ok!(res);
+        expect_eq!(actual, expected_trimmed);
+
+        let (res, actual) = vmo.write_user(
+            user_memory.user_in::<u8>(),
+            offset,
+            size,
+            VmObjectReadWriteOptions::NONE,
+        );
+        expect_eq!(Status::result_into_raw(res), Status::OUT_OF_RANGE.into_raw());
+        expect_eq!(actual, 0);
     }
 }
