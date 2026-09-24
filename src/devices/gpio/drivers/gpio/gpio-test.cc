@@ -1424,6 +1424,7 @@ TEST_F(GpioTest, DoubleGetInterruptAndRelease) {
 TEST_F(GpioTest, TestPinStates) {
   fuchsia_hardware_pinimpl::DevicePinStates dev_states;
   dev_states.name() = "my-device";
+  dev_states.id() = 100;
 
   // default state: Configure Pin 1 to Pull Up
   fuchsia_hardware_pinimpl::PinState default_state;
@@ -1494,6 +1495,44 @@ TEST_F(GpioTest, TestPinStates) {
       });
   driver_test().runtime().Run();
   driver_test().runtime().ResetQuit();
+
+  EXPECT_TRUE(driver_test().StopDriver().is_ok());
+}
+
+TEST_F(GpioTest, TestPinStatesCustomId) {
+  fuchsia_hardware_pinimpl::DevicePinStates dev_states_1;
+  dev_states_1.name() = "dev-1";
+  dev_states_1.id() = 1234;
+
+  fuchsia_hardware_pinimpl::DevicePinStates dev_states_2;
+  dev_states_2.name() = "dev-2";
+  dev_states_2.id() = 5678;
+
+  SetPinMetadata({{.controller_id = 99,
+                   .device_pin_states = {{std::move(dev_states_1), std::move(dev_states_2)}}}});
+
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = false}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
+
+  driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
+    std::vector<fuchsia_driver_framework::NodeProperty2> props_1 =
+        node.children().at("gpio").children().at("dev-1").GetProperties();
+    ASSERT_EQ(props_1.size(), 3ul);
+    EXPECT_EQ(props_1[0].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(props_1[0].value().int_value().has_value());
+    EXPECT_EQ(props_1[0].value().int_value().value(), 1234ul);
+
+    std::vector<fuchsia_driver_framework::NodeProperty2> props_2 =
+        node.children().at("gpio").children().at("dev-2").GetProperties();
+    ASSERT_EQ(props_2.size(), 3ul);
+    EXPECT_EQ(props_2[0].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(props_2[0].value().int_value().has_value());
+    EXPECT_EQ(props_2[0].value().int_value().value(), 5678ul);
+  });
 
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
 }

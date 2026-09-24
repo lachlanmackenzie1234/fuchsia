@@ -82,6 +82,11 @@
                                     fuchsia_type: "uint32",
                                 },
                                 drive_type: { $ref: "#/definitions/DriveType" },
+                                drive_strength: {
+                                    type: "integer",
+                                    fuchsia_type: "uint64",
+                                },
+                                wake_vector: { type: "boolean" },
                                 pull: { $ref: "#/definitions/Pull" },
                                 buffer_mode: { $ref: "#/definitions/BufferMode" },
                                 power_source: {
@@ -109,6 +114,11 @@
                                     type: "integer",
                                     fuchsia_type: "uint64",
                                 },
+                                drive_strength: {
+                                    type: "integer",
+                                    fuchsia_type: "uint64",
+                                },
+                                wake_vector: { type: "boolean" },
                             },
                         },
                         InitCall: {
@@ -153,6 +163,10 @@
                                 states: {
                                     type: "array",
                                     items: { $ref: "#/definitions/PinState" },
+                                },
+                                id: {
+                                    type: "integer",
+                                    fuchsia_type: "uint32",
                                 },
                             },
                             required: [

@@ -415,7 +415,7 @@ zx::result<> PinStatesDevice::AddDevice(
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> props{
-      fdf::MakeProperty2(bind_fuchsia::ID, controller_id_),
+      fdf::MakeProperty2(bind_fuchsia::ID, pin_states_.id()),
       fdf::MakeProperty2(bind_fuchsia::NAME, pin_states_.name()),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
   };
@@ -557,7 +557,8 @@ std::optional<fuchsia_hardware_pinimpl::InitCall> ConvertInitCall(
     const gpio_metadata::InitCall& gc) {
   if (gc.pin_config && (gc.pin_config->pull || gc.pin_config->function ||
                         gc.pin_config->function_name || gc.pin_config->drive_strength_ua ||
-                        gc.pin_config->drive_type || gc.pin_config->power_source)) {
+                        gc.pin_config->drive_type || gc.pin_config->power_source ||
+                        gc.pin_config->drive_strength || gc.pin_config->wake_vector)) {
     fuchsia_hardware_pin::Configuration config;
     if (auto pull = ConvertPull(gc.pin_config->pull)) {
       config.pull(*pull);
@@ -576,6 +577,12 @@ std::optional<fuchsia_hardware_pinimpl::InitCall> ConvertInitCall(
     }
     if (gc.pin_config->power_source) {
       config.power_source(*gc.pin_config->power_source);
+    }
+    if (gc.pin_config->drive_strength) {
+      config.drive_strength(*gc.pin_config->drive_strength);
+    }
+    if (gc.pin_config->wake_vector) {
+      config.wake_vector(*gc.pin_config->wake_vector);
     }
     return fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(config));
   } else if (auto mode = ConvertBufferMode(gc.buffer_mode)) {
@@ -614,6 +621,9 @@ std::vector<fuchsia_hardware_pinimpl::DevicePinStates> ConvertDevicePinStates(
     fuchsia_hardware_pinimpl::DevicePinStates d;
     d.name(std::move(gd.name));
     d.states(ConvertPinStates(std::move(gd.states)));
+    if (gd.id) {
+      d.id(*gd.id);
+    }
     dps.push_back(std::move(d));
   }
   return dps;
@@ -664,6 +674,14 @@ std::optional<fuchsia_hardware_pinimpl::Metadata> ConvertMetadata(
     }
     if (p.power_source) {
       config.power_source(*p.power_source);
+      has_config = true;
+    }
+    if (p.drive_strength) {
+      config.drive_strength(*p.drive_strength);
+      has_config = true;
+    }
+    if (p.wake_vector) {
+      config.wake_vector(*p.wake_vector);
       has_config = true;
     }
 
@@ -927,8 +945,8 @@ void GpioRootDevice::CreatePinDevices(
 
   for (auto& device_states : device_pin_states) {
     fbl::AllocChecker ac;
-    pin_states_children_.emplace_back(new (&ac) PinStatesDevice(
-        pinimpl_.Clone(), std::move(device_states), controller_id, logger()));
+    pin_states_children_.emplace_back(
+        new (&ac) PinStatesDevice(pinimpl_.Clone(), std::move(device_states), logger()));
     if (!ac.check()) {
       logger().log(fdf::ERROR, "Failed to allocate memory for pin-states");
       completer(zx::error(ZX_ERR_NO_MEMORY));
