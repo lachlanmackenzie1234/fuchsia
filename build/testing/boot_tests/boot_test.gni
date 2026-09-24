@@ -476,16 +476,22 @@ template("boot_test") {
       deps = [ ":$product_bundle_target" ]
     }
 
-    _boot_test("$main_target.host-$target_cpu") {
-      cpu_for_host = target_cpu
-      environments = target_cpu_envs
-      forward_variables_from(common_params, "*")
+    _test_labels = []
+    if (target_cpu_envs != []) {
+      _boot_test("$main_target.host-$target_cpu") {
+        cpu_for_host = target_cpu
+        environments = target_cpu_envs
+        forward_variables_from(common_params, "*")
+      }
+      _test_labels += [ ":${main_target}.host-${target_cpu}" ]
     }
-
-    _boot_test("$main_target.host-$host_cpu") {
-      cpu_for_host = host_cpu
-      environments = host_cpu_envs
-      forward_variables_from(common_params, "*")
+    if (host_cpu_envs != []) {
+      _test_labels += [ ":${main_target}.host-${host_cpu}" ]
+      _boot_test("$main_target.host-$host_cpu") {
+        cpu_for_host = host_cpu
+        environments = host_cpu_envs
+        forward_variables_from(common_params, "*")
+      }
     }
 
     group(main_target) {
@@ -495,10 +501,7 @@ template("boot_test") {
                                "visibility",
                              ])
       testonly = true
-      deps = [
-        ":$main_target.host-$host_cpu",
-        ":$main_target.host-$target_cpu",
-      ]
+      deps = _test_labels
     }
   } else {
     _boot_test(main_target) {

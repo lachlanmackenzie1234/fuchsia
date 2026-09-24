@@ -312,20 +312,17 @@ template("test_spec") {
   # The test is to be built, but not run.
   build_only = defined(invoker.build_only) && invoker.build_only
   if (build_only) {
-    assert(!defined(environments),
+    assert(!defined(invoker.environments),
            "build_only tests should not specify environments")
+
     _test_environments = []
   } else {
     if (defined(invoker.environments)) {
+      assert(
+          invoker.environments != [],
+          "Test 'environments' must not be empty.  Build-only tests should use 'build_only = true' instead of specifying an empty set of environments.")
+
       _test_environments = invoker.environments
-      if (invoker.environments == []) {
-        _test_label_with_toolchain =
-            get_label_info(":${target_name}", "label_with_toolchain")
-        print()
-        print(
-            "WARNING: ${_test_label_with_toolchain} has an empty 'environments' list.  Build-only tests must use 'build_only = true' instead of specifying an empty set of environments.")
-        print()
-      }
     } else {
       # Set default environments: Emu for a fuchsia test, and VMs for linux and
       # mac tests.
