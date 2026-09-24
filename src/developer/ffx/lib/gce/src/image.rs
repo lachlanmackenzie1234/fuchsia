@@ -4,7 +4,7 @@
 
 //! Utilities for GCE disk image packaging, serial number generation, and product bundle hashing.
 
-use anyhow::{Context, Result, bail};
+use crate::error::{GceError, IoContext as _, Result};
 use camino::Utf8Path;
 use discovery::gce_watcher::write_file_atomically;
 use flate2::Compression;
@@ -42,18 +42,30 @@ pub struct VbmetaKeys {
 }
 
 fn hash_file(path: &Path, hasher: &mut Sha256) -> Result<()> {
-    let mut file =
-        File::open(path).with_context(|| format!("Failed to open {}", path.display()))?;
+    let mut file = File::open(path).io_context(|| format!("Failed to open {}", path.display()))?;
     let mut buffer = [0u8; HASH_BUFFER_SIZE];
     loop {
         let bytes_read =
-            file.read(&mut buffer).with_context(|| format!("Failed to read {}", path.display()))?;
+            file.read(&mut buffer).io_context(|| format!("Failed to read {}", path.display()))?;
         if bytes_read == 0 {
             break;
         }
         hasher.update(&buffer[..bytes_read]);
     }
     Ok(())
+}
+
+/// Reinterprets `path` as a UTF-8 path, which the product bundle APIs require.
+fn utf8_path(path: &Path) -> Result<&Utf8Path> {
+    Utf8Path::from_path(path)
+        .ok_or_else(|| GceError::NonUtf8Path { path: path.to_string_lossy().into_owned() })
+}
+
+/// Loads the v2 product bundle rooted at `path`.
+fn load_product_bundle(path: &Utf8Path) -> Result<product_bundle::ProductBundleV2> {
+    let ProductBundle::V2(pb) = ProductBundle::try_load_from(path)
+        .map_err(|source| GceError::ProductBundle { path: path.to_string(), source })?;
+    Ok(pb)
 }
 
 /// Generates a random GCE instance name (`fuchsia-gce-<8 hex chars>`).
@@ -95,10 +107,7 @@ pub fn compute_bundle_hash(
     let manifest_path = product_bundle_path.join("product_bundle.json");
     if manifest_path.exists() {
         hash_file(&manifest_path, &mut hasher)?;
-        let utf8_path = Utf8Path::from_path(product_bundle_path)
-            .ok_or_else(|| anyhow::anyhow!("Product bundle path is not valid UTF-8"))?;
-        let ProductBundle::V2(pb) = ProductBundle::try_load_from(utf8_path)
-            .with_context(|| format!("Failed to load product bundle at {utf8_path}"))?;
+        let pb = load_product_bundle(utf8_path(product_bundle_path)?)?;
         if let Some(system_a) = &pb.system_a {
             for image in system_a {
                 let path = image.source().as_std_path();
@@ -127,18 +136,19 @@ pub fn compute_bundle_hash(
 /// Packages a raw disk file into a GCE-compatible `.tar.gz` archive containing `disk.raw`.
 pub fn package_gce_tar_gz(raw_disk_path: &Path, output_tar_gz: &Path) -> Result<()> {
     let mut disk_file = File::open(raw_disk_path)
-        .with_context(|| format!("Failed to open raw disk file at {}", raw_disk_path.display()))?;
+        .io_context(|| format!("Failed to open raw disk file at {}", raw_disk_path.display()))?;
 
     write_file_atomically(output_tar_gz, |writer| -> Result<()> {
         let enc = GzEncoder::new(writer, Compression::fast());
         let mut tar = tar::Builder::new(enc);
         tar.append_file("disk.raw", &mut disk_file)
-            .context("Failed to append disk.raw to tar archive")?;
-        let enc = tar.into_inner().context("Failed to finalize tar archive")?;
-        enc.finish().context("Failed to finish gzip encoding")?;
+            .io_context(|| format!("Failed to append disk.raw to {}", output_tar_gz.display()))?;
+        let enc = tar
+            .into_inner()
+            .io_context(|| format!("Failed to finalize {}", output_tar_gz.display()))?;
+        enc.finish().io_context(|| format!("Failed to compress {}", output_tar_gz.display()))?;
         Ok(())
     })
-    .with_context(|| format!("Failed to write output archive at {}", output_tar_gz.display()))
 }
 
 /// Returns the path of the system image in `pb` whose file name ends in `extension`.
@@ -154,10 +164,9 @@ fn find_system_image<'a>(
                 .map(|img| img.source().as_std_path())
                 .find(|path| path.extension() == Some(std::ffi::OsStr::new(extension)))
         })
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "No .{extension} image found in system_a of product bundle at {pb_path}"
-            )
+        .ok_or_else(|| GceError::MissingSystemImage {
+            extension: extension.to_string(),
+            path: pb_path.to_string(),
         })
 }
 
@@ -166,13 +175,16 @@ fn find_system_image<'a>(
 /// The disk image, the GCE image registration, and the VM's machine type all have to agree on
 /// the architecture, so callers resolve it once from the bundle's ZBI.
 pub fn product_bundle_architecture(product_bundle_path: &Path) -> Result<CpuArchitecture> {
-    let utf8_pb = Utf8Path::from_path(product_bundle_path)
-        .ok_or_else(|| anyhow::anyhow!("Product bundle path is not valid UTF-8"))?;
-    let ProductBundle::V2(pb) = ProductBundle::try_load_from(utf8_pb)
-        .with_context(|| format!("Failed to load product bundle at {utf8_pb}"))?;
+    let utf8_pb = utf8_path(product_bundle_path)?;
+    let pb = load_product_bundle(utf8_pb)?;
     let zbi = find_system_image(&pb, utf8_pb, "zbi")?;
+    zbi_architecture(zbi)
+}
+
+/// Returns the CPU architecture encoded in the ZBI at `zbi`.
+fn zbi_architecture(zbi: &Path) -> Result<CpuArchitecture> {
     ffx_uefi_disk::zbi_architecture(zbi)
-        .map_err(|e| anyhow::anyhow!("Failed to determine product bundle architecture: {e}"))
+        .map_err(|e| GceError::dependency("Failed to determine product bundle architecture", e))
 }
 
 /// The GCE VM settings implied by a guest architecture.
@@ -205,9 +217,9 @@ pub fn gce_vm_shape(arch: CpuArchitecture) -> Result<GceVmShape> {
             default_machine_type: "t2a-standard-4",
             nic_type: "GVNIC",
         }),
-        CpuArchitecture::Riscv64 | CpuArchitecture::Unsupported => bail!(
-            "`ffx gce start` supports x64 and arm64 product bundles, but this one targets {arch}."
-        ),
+        CpuArchitecture::Riscv64 | CpuArchitecture::Unsupported => {
+            Err(GceError::UnsupportedArchitecture { arch })
+        }
     }
 }
 
@@ -224,43 +236,41 @@ pub fn prepare_gce_disk_archive(
     vbmeta_keys: Option<&VbmetaKeys>,
     output_tar_gz: &Path,
 ) -> Result<String> {
-    let utf8_pb = Utf8Path::from_path(product_bundle_path)
-        .ok_or_else(|| anyhow::anyhow!("Product bundle path is not valid UTF-8"))?;
-    let ProductBundle::V2(pb) = ProductBundle::try_load_from(utf8_pb)
-        .with_context(|| format!("Failed to load product bundle at {utf8_pb}"))?;
+    let utf8_pb = utf8_path(product_bundle_path)?;
+    let pb = load_product_bundle(utf8_pb)?;
 
     let src_zbi = find_system_image(&pb, utf8_pb, "zbi")?;
     let src_vbmeta = find_system_image(&pb, utf8_pb, "vbmeta")?;
 
     // The EFI bootloader staged in the ESP is architecture specific.
-    let arch = ffx_uefi_disk::zbi_architecture(src_zbi)
-        .map_err(|e| anyhow::anyhow!("Failed to determine product bundle architecture: {e}"))?;
+    let arch = zbi_architecture(src_zbi)?;
     gce_vm_shape(arch)?;
 
     let serial = generate_serial_number();
-    let work_dir = tempfile::tempdir().context("Failed to create temporary disk workspace")?;
+    let work_dir = tempfile::tempdir()
+        .io_context(|| "Failed to create temporary disk workspace".to_string())?;
     ensure_scratch_space(work_dir.path())?;
 
     let modified_zbi = work_dir.path().join("fuchsia.zbi");
     ffx_uefi_disk::embed_boot_data(ctx, src_zbi, &modified_zbi, None, Some(&serial))
-        .map_err(|e| anyhow::anyhow!("Failed to embed boot data into ZBI: {e}"))?;
+        .map_err(|e| GceError::dependency("Failed to embed boot data into ZBI", e))?;
 
     let modified_vbmeta = work_dir.path().join("fuchsia.vbmeta");
     if let Some(keys) = vbmeta_keys {
         ffx_uefi_disk::generate_vbmeta(&keys.key, &keys.metadata, &modified_zbi, &modified_vbmeta)
-            .map_err(|e| anyhow::anyhow!("Failed to generate VBMeta with custom keys: {e}"))?;
+            .map_err(|e| GceError::dependency("Failed to generate VBMeta with custom keys", e))?;
     } else {
         ffx_uefi_disk::generate_vbmeta_from_product_bundle(
             src_vbmeta,
             &modified_zbi,
             &modified_vbmeta,
         )
-        .map_err(|e| anyhow::anyhow!("Failed to generate VBMeta from product bundle: {e}"))?;
+        .map_err(|e| GceError::dependency("Failed to generate VBMeta from product bundle", e))?;
     }
 
     let cmdline_path = work_dir.path().join("zedboot_cmdline");
     ffx_uefi_disk::write_zedboot_cmdline(&cmdline_path, None)
-        .map_err(|e| anyhow::anyhow!("Failed to write zedboot cmdline: {e}"))?;
+        .map_err(|e| GceError::dependency("Failed to write zedboot cmdline", e))?;
 
     let raw_disk_path = work_dir.path().join("disk.raw");
     ffx_uefi_disk::FuchsiaFullDiskImageBuilder::new()
@@ -272,7 +282,7 @@ pub fn prepare_gce_disk_archive(
         .vbmeta(Some(modified_vbmeta))
         .resize(DEFAULT_GCE_DISK_SIZE)
         .build(ctx)
-        .map_err(|e| anyhow::anyhow!("Failed to assemble GCE UEFI GPT disk image: {e}"))
+        .map_err(|e| GceError::dependency("Failed to assemble GCE UEFI GPT disk image", e))
         .map_err(add_scratch_space_hint)?;
 
     package_gce_tar_gz(&raw_disk_path, output_tar_gz).map_err(add_scratch_space_hint)?;
@@ -285,36 +295,30 @@ pub fn prepare_gce_disk_archive(
 /// a small `tmpfs`, so checking up front turns a confusing mid-build failure into an actionable
 /// one before tens of GiB of work are done.
 fn ensure_scratch_space(dir: &Path) -> Result<()> {
-    let stat =
-        statvfs(dir).with_context(|| format!("Failed to query free space in {}", dir.display()))?;
+    let stat = statvfs(dir).map_err(|e| {
+        GceError::dependency(format!("Failed to query free space in {}", dir.display()), e)
+    })?;
     let available = stat.blocks_available() as u64 * stat.fragment_size() as u64;
     if available < SCRATCH_SPACE_BYTES {
-        bail!(
-            "Synthesizing a GCE disk image needs about {} GiB of free space in {}, which has \
-             {} GiB. Set TMPDIR to a directory with more space and try again.",
-            SCRATCH_SPACE_BYTES >> 30,
-            dir.display(),
-            available >> 30
-        );
+        return Err(GceError::InsufficientScratchSpace {
+            dir: dir.display().to_string(),
+            needed_gib: SCRATCH_SPACE_BYTES >> 30,
+            available_gib: available >> 30,
+        });
     }
     Ok(())
 }
 
 /// Explains how to recover if the scratch filesystem filled up after [`ensure_scratch_space`] ran.
-fn add_scratch_space_hint(err: anyhow::Error) -> anyhow::Error {
-    let out_of_space = err
-        .chain()
-        .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
-        .any(|io| io.kind() == std::io::ErrorKind::StorageFull);
-    if !out_of_space {
+fn add_scratch_space_hint(err: GceError) -> GceError {
+    if err.io_cause().map(|io| io.kind()) != Some(std::io::ErrorKind::StorageFull) {
         return err;
     }
-    err.context(format!(
-        "{} ran out of space while building the GCE disk image. Set TMPDIR to a directory with \
-         at least {} GiB free and try again.",
-        std::env::temp_dir().display(),
-        SCRATCH_SPACE_BYTES >> 30
-    ))
+    GceError::OutOfScratchSpace {
+        tmpdir: std::env::temp_dir().display().to_string(),
+        needed_gib: SCRATCH_SPACE_BYTES >> 30,
+        source: Box::new(err),
+    }
 }
 
 #[cfg(test)]
@@ -339,13 +343,18 @@ mod tests {
 
     #[fuchsia::test]
     fn test_add_scratch_space_hint() {
-        let full = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::StorageFull))
-            .context("Failed to write disk.raw");
-        assert!(format!("{:#}", add_scratch_space_hint(full)).contains("TMPDIR"));
+        let full = GceError::Io {
+            context: "Failed to write disk.raw".to_string(),
+            source: std::io::Error::from(std::io::ErrorKind::StorageFull),
+        };
+        assert!(add_scratch_space_hint(full).to_string().contains("TMPDIR"));
 
         // Unrelated IO failures must not be mislabeled as an out-of-space condition.
-        let other = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
-        assert!(!format!("{:#}", add_scratch_space_hint(other)).contains("TMPDIR"));
+        let other = GceError::Io {
+            context: "Failed to write disk.raw".to_string(),
+            source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        };
+        assert!(!add_scratch_space_hint(other).to_string().contains("TMPDIR"));
     }
 
     #[fuchsia::test]

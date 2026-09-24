@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::error::{GceError, IoContext as _, Result};
 use crate::models::{
     FirewallAllowed, FirewallRule, Image, Instance, InstanceList, Operation, SerialPortOutput,
 };
-use anyhow::{Context, Result, bail};
 use fuchsia_hyper::{HttpsClient, new_https_client};
 use http_body_util::BodyExt;
 use hyper::{Method, Request, StatusCode};
@@ -50,7 +50,7 @@ const DEFAULT_FIREWALL_PRIORITY: u32 = 1000;
 
 /// The Google Cloud API that serves an endpoint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Api {
+pub enum Api {
     Compute,
     Storage,
 }
@@ -217,12 +217,11 @@ impl GceClient {
             }
 
             if std::time::Instant::now() >= deadline {
-                bail!(
-                    "Timed out after {} minutes waiting for GCE operation '{op_name}' to finish. \
-                     Check its state with `{}`.",
-                    OPERATION_TIMEOUT.as_secs() / 60,
-                    scope.list_command(project, op)
-                );
+                return Err(GceError::OperationTimeout {
+                    op_name: op_name.to_string(),
+                    minutes: OPERATION_TIMEOUT.as_secs() / 60,
+                    list_command: scope.list_command(project, op),
+                });
             }
 
             fuchsia_async::Timer::new(OPERATION_POLL_INTERVAL).await;
@@ -275,12 +274,8 @@ impl GceClient {
     ) -> Result<()> {
         let rule_name = ssh_firewall_rule_name(network);
 
-        if self
-            .get_firewall_rule(project, &rule_name)
-            .await
-            .with_context(|| format!("Failed to query firewall rule '{rule_name}'"))?
-            .is_some()
-        {
+        // A failure here already names the firewall rule URL that was queried.
+        if self.get_firewall_rule(project, &rule_name).await?.is_some() {
             return Ok(());
         }
 
@@ -314,7 +309,8 @@ impl GceClient {
                  created: {e}\nSSH to the VM will time out unless an equivalent rule already \
                  exists. Ask someone with `compute.firewalls.create` to run:\n  {}",
                 create_firewall_rule_command(project, &rule)
-            )?;
+            )
+            .io_context(|| "Failed to write firewall rule warning".to_string())?;
         }
         Ok(())
     }
@@ -327,7 +323,8 @@ impl GceClient {
     /// upload, which [`remediation_hint`] annotates with advice to pick a different bucket.
     pub async fn ensure_bucket(&self, project: &str, bucket: &str) -> Result<()> {
         let url = endpoints::create_bucket(project)?;
-        let body = serde_json::to_vec(&serde_json::json!({ "name": bucket }))?;
+        let body = serde_json::to_vec(&serde_json::json!({ "name": bucket }))
+            .map_err(GceError::JsonSerialize)?;
         self.http.post_raw(url, "application/json", body, &[StatusCode::CONFLICT]).await
     }
 
@@ -340,16 +337,17 @@ impl GceClient {
         file_path: &Path,
     ) -> Result<()> {
         let mut file = File::open(file_path)
-            .with_context(|| format!("Failed to open file at {:?}", file_path))?;
+            .io_context(|| format!("Failed to open {}", file_path.display()))?;
         let total_size = file
             .metadata()
-            .with_context(|| format!("Failed to read metadata for {:?}", file_path))?
+            .io_context(|| format!("Failed to read metadata for {}", file_path.display()))?
             .len();
 
         let init_url = endpoints::upload_gcs_object(bucket, object_name)?;
         let session_url =
             self.http.start_resumable_upload(init_url, "application/gzip", total_size).await?;
 
+        // Upload failures already name the session URL, which identifies the destination object.
         upload_reader_resumable(
             &mut file,
             total_size,
@@ -366,9 +364,6 @@ impl GceClient {
             },
         )
         .await
-        .with_context(|| {
-            format!("Failed to upload {:?} to gs://{}/{}", file_path, bucket, object_name)
-        })
     }
 
     pub async fn delete_gcs_file(&self, bucket: &str, object_name: &str) -> Result<()> {
@@ -394,7 +389,7 @@ fn check_operation_error(op: &Operation) -> Result<()> {
         })
         .collect::<Vec<_>>()
         .join(", ");
-    bail!("Operation failed: {err_msg}");
+    Err(GceError::OperationFailed { message: err_msg })
 }
 
 /// Returns the name of `op` if it must still be awaited, or `None` if it has already completed.
@@ -407,13 +402,9 @@ fn pending_operation_name<'a>(
     if op.status.as_deref() == Some("DONE") {
         return Ok(None);
     }
-    op.name.as_deref().map(Some).ok_or_else(|| {
-        anyhow::anyhow!(
-            "GCE returned an operation with status '{}' but no name, so its completion cannot be \
-             awaited. Retry, or inspect it with `{}`.",
-            op.status.as_deref().unwrap_or("unknown"),
-            scope.list_command(project, op)
-        )
+    op.name.as_deref().map(Some).ok_or_else(|| GceError::OperationMissingName {
+        status: op.status.as_deref().unwrap_or("unknown").to_string(),
+        list_command: scope.list_command(project, op),
     })
 }
 
@@ -435,7 +426,7 @@ fn create_firewall_rule_command(project: &str, rule: &FirewallRule) -> String {
 }
 
 /// Returns advice on how to recover from an HTTP error status returned by `api`.
-fn remediation_hint(api: Api, status: StatusCode) -> Option<&'static str> {
+pub(crate) fn remediation_hint(api: Api, status: StatusCode) -> Option<&'static str> {
     match (api, status) {
         (_, StatusCode::UNAUTHORIZED) => {
             Some("Your Google Cloud credentials are missing or expired. Run `ffx auth generate`.")
@@ -521,12 +512,14 @@ where
     let mut offset: u64 = 0;
 
     while offset < total_size {
-        reader.seek(SeekFrom::Start(offset)).context("Failed to seek upload file")?;
+        reader
+            .seek(SeekFrom::Start(offset))
+            .io_context(|| "Failed to seek upload file".to_string())?;
         let to_read = std::cmp::min(total_size - offset, buf_size as u64) as usize;
         let bytes_read = read_full_chunk(reader, &mut buffer[..to_read])
-            .context("Failed to read chunk from upload file")?;
+            .io_context(|| "Failed to read chunk from upload file".to_string())?;
         if bytes_read == 0 {
-            bail!("Unexpected EOF while reading upload file at offset {offset}/{total_size}");
+            return Err(GceError::UnexpectedEof { offset, total_size });
         }
 
         let end = offset + (bytes_read as u64) - 1;
@@ -552,9 +545,11 @@ where
             let max_expected = offset + bytes_read as u64;
             let committed = next_offset.unwrap_or(max_expected);
             if committed <= offset || committed > max_expected {
-                bail!(
-                    "GCS resumable upload reported invalid next offset {committed} after uploading {offset}..{max_expected}"
-                );
+                return Err(GceError::InvalidUploadOffset {
+                    reported: committed,
+                    start: offset,
+                    end: max_expected,
+                });
             }
             offset = committed;
         }
@@ -594,18 +589,29 @@ impl HttpClient {
             builder = builder.header(k, v);
         }
 
-        let req = builder.body(Body::from(body)).context("Failed to build HTTP request")?;
-        let res = self.https_client.request(req).await.context("HTTP request failed")?;
+        let req = builder.body(Body::from(body))?;
+        let res = self
+            .https_client
+            .request(req)
+            .await
+            .map_err(|e| GceError::Transport { url: url.clone(), source: Box::new(e) })?;
         let status = res.status();
         let res_headers = res.headers().clone();
 
-        let collected = res.into_body().collect().await.context("Failed to read response body")?;
+        let collected = res
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| GceError::Transport { url: url.clone(), source: Box::new(e) })?;
         let bytes = collected.to_bytes();
 
         if !status.is_success() && !allowed_statuses.contains(&status) {
-            let error_text = String::from_utf8_lossy(&bytes);
-            let hint = remediation_hint(api, status).map(|h| format!("\n{h}")).unwrap_or_default();
-            bail!("API request to {url} failed with status {status}: {error_text}{hint}");
+            return Err(GceError::Api {
+                api,
+                status,
+                url,
+                body: String::from_utf8_lossy(&bytes).into_owned(),
+            });
         }
 
         Ok((status, res_headers, bytes))
@@ -665,13 +671,11 @@ impl HttpClient {
             self.send_request(Method::POST, endpoint, &headers, Vec::new(), &[]).await?;
         let location = res_headers
             .get(hyper::header::LOCATION)
-            .ok_or_else(|| {
-                anyhow::anyhow!("GCS resumable upload response missing Location header")
-            })?
+            .ok_or(GceError::MissingUploadSession)?
             .to_str()
-            .context("GCS Location header is not valid UTF-8")?;
-        let url =
-            Url::parse(location).context("Failed to parse GCS resumable upload session URL")?;
+            .map_err(|e| GceError::InvalidUploadSession { reason: e.to_string() })?;
+        let url = Url::parse(location)
+            .map_err(|e| GceError::InvalidUploadSession { reason: e.to_string() })?;
         Ok(Endpoint { api, url })
     }
 
@@ -713,7 +717,7 @@ impl HttpClient {
     ) -> Result<T> {
         let payload = body.map(|b| ("application/json", b));
         let bytes = self.send_raw(method, endpoint, payload, &[]).await?;
-        serde_json::from_slice(&bytes).context("Failed to parse JSON response")
+        serde_json::from_slice(&bytes).map_err(GceError::JsonParse)
     }
 
     async fn get_json<T: DeserializeOwned>(&self, endpoint: Endpoint) -> Result<T> {
@@ -730,7 +734,7 @@ impl HttpClient {
         if status == StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        serde_json::from_slice(&bytes).map(Some).context("Failed to parse JSON response")
+        serde_json::from_slice(&bytes).map(Some).map_err(GceError::JsonParse)
     }
 
     async fn post_json<B: Serialize, T: DeserializeOwned>(
@@ -738,7 +742,7 @@ impl HttpClient {
         endpoint: Endpoint,
         body: &B,
     ) -> Result<T> {
-        let bytes = serde_json::to_vec(body)?;
+        let bytes = serde_json::to_vec(body).map_err(GceError::JsonSerialize)?;
         self.send_json(Method::POST, endpoint, Some(bytes)).await
     }
 
@@ -769,15 +773,16 @@ impl HttpClient {
 
 /// Stateless endpoint construction for GCE and GCS REST APIs.
 mod endpoints {
-    use super::{Api, Context, Endpoint, Result, Url};
+    use super::{Api, Endpoint, GceError, Result, Url};
 
     const COMPUTE_BASE: &str = "https://compute.googleapis.com/compute/v1";
     const STORAGE_BASE: &str = "https://storage.googleapis.com/storage/v1";
     const STORAGE_UPLOAD_BASE: &str = "https://storage.googleapis.com/upload/storage/v1";
 
     fn build(api: Api, base: &str, segments: &[&str], query: &[(&str, &str)]) -> Result<Endpoint> {
-        let mut url = Url::parse(base).context("Invalid base URL")?;
-        url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(segments);
+        let invalid = || GceError::InvalidEndpointUrl { base: base.to_string() };
+        let mut url = Url::parse(base).map_err(|_| invalid())?;
+        url.path_segments_mut().map_err(|_| invalid())?.extend(segments);
         if !query.is_empty() {
             let mut pairs = url.query_pairs_mut();
             for (k, v) in query {
@@ -879,8 +884,8 @@ mod endpoints {
 #[cfg(test)]
 mod tests {
     use super::{
-        Api, Duration, FirewallAllowed, FirewallRule, Operation, OperationScope, StatusCode,
-        endpoints, parse_range_header, upload_reader_resumable,
+        Api, Duration, FirewallAllowed, FirewallRule, GceError, Operation, OperationScope,
+        StatusCode, Url, endpoints, parse_range_header, upload_reader_resumable,
     };
     use std::cell::RefCell;
     use std::io::Cursor;
@@ -1104,7 +1109,10 @@ mod tests {
                         // First chunk (0..50): server commits only 0..29 (next offset = 30)
                         1 => Ok(Some(30)),
                         // Second chunk (30..80): simulate transient network failure
-                        2 => Err(anyhow::anyhow!("transient network failure")),
+                        2 => Err(GceError::Transport {
+                            url: Url::parse("https://storage.googleapis.com/upload").unwrap(),
+                            source: Box::new(std::io::Error::other("transient network failure")),
+                        }),
                         // Retry of second chunk (30..80): succeeds completely
                         3 => Ok(Some(80)),
                         // Final chunk (80..100): succeeds

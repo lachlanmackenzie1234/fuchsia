@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, anyhow, bail};
+use crate::error::{GceError, IoContext as _, Result};
 use discovery::TargetEvent;
 use discovery::gce_watcher::{self, GceInstanceData, GceWatcher};
 use ffx_config::EnvironmentContext;
@@ -90,7 +90,7 @@ impl<'a> ActiveTunnelGuard<'a> {
     ) -> Result<Self> {
         instance
             .write(ctx, data)
-            .with_context(|| format!("Failed to write GCE instance state for {}", instance.name))?;
+            .io_context(|| format!("Failed to write GCE instance state for {}", instance.name))?;
         Ok(Self { ctx, instance, child: Some(child) })
     }
 
@@ -163,7 +163,7 @@ fn ssh_failure_remediation(log_content: &str) -> Option<&'static str> {
 fn read_tunnel_log(log_path: &std::path::Path) -> Result<String> {
     let log_content = std::fs::read_to_string(log_path).unwrap_or_default();
     if let Some(remediation) = ssh_failure_remediation(&log_content) {
-        bail!("{remediation}");
+        return Err(GceError::SshUnrecoverable { remediation });
     }
     Ok(log_content)
 }
@@ -230,7 +230,10 @@ impl GceTunnelConfig {
         zone: impl Into<String>,
         instance_name: impl Into<String>,
     ) -> Result<Self> {
-        let reverse_ports = pkg::config::repository_listen_addr(ctx)?
+        let reverse_ports = pkg::config::repository_listen_addr(ctx)
+            .map_err(|e| {
+                GceError::dependency("Failed to read the package repository listen address", e)
+            })?
             .map(|addr| vec![addr.port()])
             .unwrap_or_else(|| vec![DEFAULT_REPO_PORT]);
         Ok(Self {
@@ -338,14 +341,7 @@ impl GceTunnel {
 
         let private_key = match &config.private_key {
             Some(key) => key.clone(),
-            None => {
-                let ssh_keys = SshKeyFiles::load(ctx)
-                    .map_err(|e| anyhow!("Failed to load SSH key configuration: {e}"))?;
-                ssh_keys
-                    .create_keys_if_needed(false)
-                    .map_err(|e| anyhow!("Failed to create SSH keys if needed: {e}"))?;
-                ssh_keys.private_key
-            }
+            None => load_ssh_keys(ctx)?.private_key,
         };
 
         let log_filename = PathBuf::from(format!("gce_{}.log", instance.to_file_stem()));
@@ -353,7 +349,8 @@ impl GceTunnel {
             ctx,
             &log_filename,
             LogDirHandling::WithDirWithRotate,
-        )?;
+        )
+        .map_err(|e| GceError::dependency("Failed to open the GCE tunnel log", e))?;
 
         let gcpnode_host = format!(
             "nic0.{}.{}.c.{}.internal.gcpnode.com",
@@ -370,17 +367,16 @@ impl GceTunnel {
 
             let (tx, mut rx) = mpsc::unbounded();
             let _watcher = GceWatcher::from_context(ctx, tx)
-                .map_err(|e| anyhow!("Failed to initialize GceWatcher: {e}"))?;
+                .map_err(|e| GceError::dependency("Failed to initialize GceWatcher", e))?;
 
-            let port = port_picker::pick_unused_port()
-                .ok_or_else(|| anyhow!("Failed to pick an unused local TCP port"))?;
+            let port = port_picker::pick_unused_port().ok_or(GceError::NoAvailablePort)?;
 
             let stdout_log = log_file
                 .try_clone()
-                .map_err(|e| anyhow!("Failed to clone log file handle: {e}"))?;
+                .io_context(|| "Failed to clone log file handle".to_string())?;
             let stderr_log = log_file
                 .try_clone()
-                .map_err(|e| anyhow!("Failed to clone log file handle: {e}"))?;
+                .io_context(|| "Failed to clone log file handle".to_string())?;
 
             // Wrap `ssh` in a small shell reconnect loop so that the background tunnel survives
             // guest VM reboots (such as during `fx ota` or `ffx target reboot`). When the Fuchsia
@@ -549,16 +545,12 @@ impl GceTunnel {
         }
 
         let err_detail = last_err.trim();
-        if err_detail.is_empty() {
-            bail!(
-                "Failed to establish SSH tunnel after {MAX_TUNNEL_ATTEMPTS} attempts (see log at {})",
-                log_file_path.display()
-            );
+        let detail = if err_detail.is_empty() {
+            format!("see log at {}", log_file_path.display())
         } else {
-            bail!(
-                "Failed to establish SSH tunnel after {MAX_TUNNEL_ATTEMPTS} attempts: {err_detail}"
-            );
-        }
+            err_detail.to_string()
+        };
+        Err(GceError::TunnelFailed { attempts: MAX_TUNNEL_ATTEMPTS, detail })
     }
 
     /// Stops the tunnel process associated with an instance if running and removes its state file.
@@ -569,21 +561,26 @@ impl GceTunnel {
         instance_name: &str,
     ) -> Result<()> {
         let instance = gce_watcher::Instance::new(project, zone, instance_name)?;
-        instance.stop(ctx)?;
-        Ok(())
+        instance.stop(ctx).io_context(|| format!("Failed to stop GCE tunnel for {}", instance.name))
     }
+}
+
+/// Loads the configured FFX SSH key files, creating them if they do not exist yet.
+fn load_ssh_keys(ctx: &EnvironmentContext) -> Result<SshKeyFiles> {
+    let ssh_keys = SshKeyFiles::load(ctx)
+        .map_err(|e| GceError::dependency("Failed to load SSH key configuration", e))?;
+    ssh_keys
+        .create_keys_if_needed(false)
+        .map_err(|e| GceError::dependency("Failed to create SSH keys if needed", e))?;
+    Ok(ssh_keys)
 }
 
 /// Reads public key content from FFX SSH key configuration (`SshKeyFiles`).
 /// Returns a list of public keys from the configured `authorized_keys` file.
 pub fn read_gce_ssh_pubkeys(ctx: &EnvironmentContext) -> Result<Vec<String>> {
-    let ssh_keys =
-        SshKeyFiles::load(ctx).map_err(|e| anyhow!("Failed to load SSH key configuration: {e}"))?;
-    ssh_keys
-        .create_keys_if_needed(false)
-        .map_err(|e| anyhow!("Failed to create SSH keys if needed: {e}"))?;
+    let ssh_keys = load_ssh_keys(ctx)?;
     let content = std::fs::read_to_string(&ssh_keys.authorized_keys)
-        .with_context(|| format!("Failed to read {}", ssh_keys.authorized_keys.display()))?;
+        .io_context(|| format!("Failed to read {}", ssh_keys.authorized_keys.display()))?;
     Ok(content
         .lines()
         .map(str::trim)

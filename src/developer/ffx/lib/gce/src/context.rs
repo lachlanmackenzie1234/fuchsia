@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::client::GceClient;
+use crate::error::{GceError, IoContext as _, Result};
 use crate::{GceInstanceData, GceTunnel};
-use anyhow::{Context as _, Result, bail};
 use credentials::Credentials;
 use discovery::gce_watcher::Instance;
 use ffx_config::EnvironmentContext;
@@ -42,11 +42,10 @@ impl GceContext {
         creds: Credentials,
     ) -> Result<Self> {
         if creds.oauth2.refresh_token.is_empty() {
-            bail!("No Google Cloud credentials found. Run `ffx auth generate`.");
+            return Err(GceError::MissingCredentials);
         }
-        let access_token = new_access_token(&creds.gcs_credentials()).await.with_context(|| {
-            "Failed to obtain Google Cloud access token. Your credentials may have expired; run `ffx auth generate`."
-        })?;
+        let access_token =
+            new_access_token(&creds.gcs_credentials()).await.map_err(GceError::AccessToken)?;
         let client = GceClient::new(access_token);
 
         Ok(Self { env_context, project, zone, client })
@@ -68,7 +67,9 @@ impl GceContext {
     /// Reads instance state data for an instance in this context's project and zone.
     pub fn read_instance_data(&self, instance_name: &str) -> Result<Option<GceInstanceData>> {
         let instance = Instance::new(&self.project, &self.zone, instance_name)?;
-        Ok(instance.read(&self.env_context)?)
+        instance
+            .read(&self.env_context)
+            .io_context(|| format!("Failed to read GCE instance state for {}", instance.name))
     }
 
     /// Starts a background SSH tunnel to an instance in this context's project and zone.
@@ -108,15 +109,12 @@ pub fn resolve_config_string(
 fn resolve_setting(
     context: &EnvironmentContext,
     flag: Option<String>,
-    name: &str,
-    param: &str,
+    name: &'static str,
+    param: &'static str,
 ) -> Result<String> {
     let config_key = format!("gce.{param}");
-    resolve_config_string(context, flag.as_deref(), &config_key).ok_or_else(|| {
-        anyhow::anyhow!(
-            "No {name} specified. Provide --{param} or configure via `ffx config set {config_key} <{param}>`."
-        )
-    })
+    resolve_config_string(context, flag.as_deref(), &config_key)
+        .ok_or(GceError::MissingSetting { name, param })
 }
 
 #[cfg(test)]
