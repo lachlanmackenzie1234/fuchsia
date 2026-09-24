@@ -163,8 +163,9 @@ pub enum DeliveryAction {
 impl DeliveryAction {
     /// Returns whether the target task must be interrupted to execute the action.
     ///
-    /// The task will not be interrupted if the signal is the action is the Continue action, or if
-    /// the action is Ignore and the user specifically requested to ignore the signal.
+    /// The task is not interrupted for the Continue action, nor for a signal that is ignored by
+    /// default. A signal explicitly ignored with `SIG_IGN` does interrupt: it is only queued when a
+    /// task blocks it or is ptraced, and both of those cases need the task to wake up.
     pub fn must_interrupt(&self, sigaction: Option<sigaction_t>) -> bool {
         match *self {
             Self::Continue => false,

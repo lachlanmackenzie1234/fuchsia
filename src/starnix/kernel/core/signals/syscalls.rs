@@ -1122,7 +1122,7 @@ mod tests {
     use starnix_uapi::errors::ERESTARTSYS;
     use starnix_uapi::signals::{
         SIGCHLD, SIGHUP, SIGINT, SIGIO, SIGKILL, SIGRTMIN, SIGSEGV, SIGSTOP, SIGTERM, SIGTRAP,
-        SIGUSR1,
+        SIGUSR1, SIGWINCH,
     };
     use starnix_uapi::vfs::FdEvents;
     use starnix_uapi::{SI_QUEUE, sigaction_t, uaddr, uid_t};
@@ -1712,6 +1712,25 @@ mod tests {
             assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
             assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
             assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
+        })
+        .await;
+    }
+
+    /// A signal whose action is to ignore it is dropped rather than queued on the thread group,
+    /// unless a task blocks it.
+    #[::fuchsia::test]
+    async fn test_kill_thread_group_ignored_signal() {
+        spawn_kernel_and_run(async |init_task| {
+            let task = init_task.clone_task_for_test(0, Some(SIGCHLD));
+            task.thread_group().setsid().expect("setsid");
+
+            // SIGWINCH is ignored by default.
+            assert_eq!(sys_kill(&task, 0, SIGWINCH.into()), Ok(()));
+            assert_eq!(task.read().queued_signal_count(SIGWINCH), 0);
+
+            task.write().set_signal_mask(SIGWINCH.into());
+            assert_eq!(sys_kill(&task, 0, SIGWINCH.into()), Ok(()));
+            assert_eq!(task.read().queued_signal_count(SIGWINCH), 1);
         })
         .await;
     }
@@ -2360,6 +2379,16 @@ mod tests {
                 0,
             )
             .expect("failed to create SIGCHLD signalfd");
+
+            // Block SIGCHLD so it can be received by the signalfd.
+            sys_rt_sigprocmask(
+                &current_task,
+                SIG_BLOCK,
+                sigchld_mask_addr,
+                UserRef::default(),
+                std::mem::size_of::<SigSet>(),
+            )
+            .expect("failed to block SIGCHLD");
 
             // Create and exit a child process, which should generate a SIGCHLD.
             let child = current_task.clone_task_for_test(0, Some(SIGCHLD));

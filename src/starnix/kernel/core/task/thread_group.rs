@@ -2172,12 +2172,30 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         let sigaction = self.base.signal_actions.get(signal_info.signal);
         let action = action_for_signal(&signal_info, sigaction);
 
-        {
+        let tasks: Vec<Pid> = self.tasks.iter().map(|info| info.tid.clone()).collect();
+
+        // Like `send_signal_prio` does for a single task, discard an ignored signal instead of
+        // queueing it: no task would ever act on it, but it would still make interruptible syscalls
+        // fail with EINTR. It must still be queued when a task blocks it with its current or its
+        // saved mask, as it can be accepted later (see the `SigtimedwaitTest.IgnoredUnmaskedSignal`
+        // gvisor test), or when a task is ptraced, for the signal-delivery-stop.
+        let queue_on_group = action != DeliveryAction::Ignore
+            || tasks
+                .iter()
+                .filter_map(|pid| pid.get_task().ok())
+                .filter(|task| task.is_running())
+                .any(|task| {
+                    let task_state = task.read();
+                    task_state.is_signal_masked(signal_info.signal)
+                        || task_state.is_signal_masked_by_saved_mask(signal_info.signal)
+                        || task_state.is_ptraced()
+                });
+
+        if queue_on_group {
             let mut pending_signals = self.base.pending_signals.lock();
             pending_signals.enqueue(signal_info.clone());
             self.base.has_pending_signals.store(true, Ordering::Relaxed);
         }
-        let tasks: Vec<Pid> = self.tasks.iter().map(|info| info.tid.clone()).collect();
 
         // Set state to waking before interrupting any tasks.
         if signal_info.signal == SIGKILL {

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <errno.h>
 #include <fcntl.h> /* Definition of O_* constants */
 #include <poll.h>
 #include <sched.h>
@@ -9,16 +10,19 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <ucontext.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <climits>
 #include <csignal>
 #include <cstdint>
 #include <functional>
 #include <latch>
+#include <new>
 #include <optional>
 #include <thread>
 
@@ -1664,6 +1668,124 @@ TEST(SignalHandling, SigillAddress) {
 #else
 #error "unsupported arch"
 #endif
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// A signal whose action is to ignore it must be discarded when it is generated. Leaving it pending
+// on the thread group makes the next interruptible syscall fail with EINTR, which userspace cannot
+// tell apart from a real interruption since no handler ever runs. The exit of a child with the
+// default SIGCHLD disposition is the usual way to generate such a signal.
+TEST(SignalHandling, IgnoredChildExitDoesNotInterruptSyscall) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&helper] {
+    // Nothing is ever written to this pipe, so `epoll_wait` always waits for its full timeout.
+    // `epoll_wait` is used rather than `poll` because it reports an interruption instead of being
+    // restarted.
+    test_helper::ScopedPipe idle_pipe;
+    fbl::unique_fd epfd(SAFE_SYSCALL(epoll_create1(0)));
+    struct epoll_event watch = {.events = EPOLLIN, .data = {.fd = idle_pipe.ReadSide().get()}};
+    SAFE_SYSCALL(epoll_ctl(epfd.get(), EPOLL_CTL_ADD, idle_pipe.ReadSide().get(), &watch));
+
+    // A separate watcher process observes the child exit through a pidfd and reports it through
+    // shared memory, so the parent can wait until SIGCHLD has been generated without making any
+    // syscall that would drain a wrongly queued signal before `epoll_wait`.
+    struct Shared {
+      std::atomic<pid_t> child_pid;
+      std::atomic<bool> child_exited;
+    };
+    auto mapping = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+        nullptr, sizeof(Shared), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+    Shared *shared = new (mapping.mapping()) Shared{{0}, {false}};
+
+    helper.RunInForkedProcess([&] {
+      idle_pipe.WriteSide().reset();
+      while (shared->child_pid.load() == 0) {
+        usleep(1000);
+      }
+      fbl::unique_fd pidfd(test_helper::PidFdOpen(shared->child_pid.load(), 0u));
+      ASSERT_TRUE(pidfd.is_valid());
+      struct pollfd pfd = {.fd = pidfd.get(), .events = POLLIN};
+      EXPECT_EQ(poll(&pfd, 1, -1), 1);
+      shared->child_exited.store(true);
+      char done;
+      read(idle_pipe.ReadSide().get(), &done, 1);
+    });
+
+    pid_t child = helper.RunInForkedProcess([&] {
+      while (shared->child_pid.load() == 0) {
+      }
+    });
+
+    shared->child_pid.store(child);
+    while (!shared->child_exited.load()) {
+    }
+
+    struct epoll_event event;
+    EXPECT_EQ(epoll_wait(epfd.get(), &event, 1, 10), 0)
+        << "the exit of a child interrupted epoll_wait, errno " << errno;
+
+    idle_pipe.WriteSide().reset();
+    ASSERT_TRUE(helper.WaitForChildren());
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// A blocked signal stays pending whatever its action would be, so that it can be accepted once it
+// is unblocked.
+TEST(SignalHandling, BlockedIgnoredSignalStaysPending) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([] {
+    // SIGWINCH is ignored by default and is not otherwise used by this test.
+    sigset_t blocked;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGWINCH);
+    ASSERT_EQ(sigprocmask(SIG_BLOCK, &blocked, nullptr), 0);
+
+    // Target the process rather than a specific thread, to exercise the thread group path.
+    ASSERT_EQ(kill(getpid(), SIGWINCH), 0);
+
+    sigset_t pending;
+    sigemptyset(&pending);
+    ASSERT_EQ(sigpending(&pending), 0);
+    EXPECT_EQ(sigismember(&pending, SIGWINCH), 1);
+
+    siginfo_t info;
+    struct timespec timeout = {.tv_sec = 0, .tv_nsec = 0};
+    EXPECT_EQ(sigtimedwait(&blocked, &info, &timeout), SIGWINCH);
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// `sigtimedwait` unblocks the signals it waits for, but a signal blocked before the call must still
+// be queued while the call is running, otherwise the wait would never observe it.
+TEST(SignalHandling, SigtimedwaitReceivesBlockedIgnoredSignal) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&helper] {
+    sigset_t waited;
+    sigemptyset(&waited);
+    sigaddset(&waited, SIGWINCH);
+    ASSERT_EQ(sigprocmask(SIG_BLOCK, &waited, nullptr), 0);
+
+    pid_t parent = getpid();
+    helper.RunInForkedProcess([parent] {
+      // Aim for the signal to be sent while the parent waits. Sending it too early is harmless,
+      // the signal is then already pending when the wait starts.
+      usleep(100000);
+      kill(parent, SIGWINCH);
+    });
+
+    siginfo_t info;
+    struct timespec timeout = {.tv_sec = 30, .tv_nsec = 0};
+    EXPECT_EQ(sigtimedwait(&waited, &info, &timeout), SIGWINCH);
+
+    ASSERT_TRUE(helper.WaitForChildren());
   });
 
   ASSERT_TRUE(helper.WaitForChildren());
