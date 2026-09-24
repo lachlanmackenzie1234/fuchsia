@@ -64,6 +64,7 @@ if (is_host) {
     ]
     version = "0.1.0"
     visibility = [
+      ":*",
       "//src/developer/ffx/*",
       "//tools/funnel/*",
     ]

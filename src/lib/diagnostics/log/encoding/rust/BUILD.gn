@@ -89,6 +89,7 @@ rustc_library("rust") {
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   test_deps = [ "//src/lib/fuchsia" ]
   visibility = [
+    ":*",
     "//src/diagnostics/archivist/*",
     "//src/diagnostics/archivist/tests/integration/realm_factory/puppet:*",
     "//src/diagnostics/lib/log-command/*",
