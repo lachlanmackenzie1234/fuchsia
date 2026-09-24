@@ -345,7 +345,7 @@ _NORMAL_DEPENDENCIES = {
             "crossbeam-utils": Label("//third_party/rust_crates/vendor/crossbeam-utils-0.8.23:crossbeam_utils"),
             "csv": Label("//third_party/rust_crates/vendor/csv-1.4.0:csv"),
             "darling": Label("//third_party/rust_crates/vendor/darling-0.23.0:darling"),
-            "data-encoding": Label("//third_party/rust_crates/vendor/data-encoding-2.11.0:data_encoding"),
+            "data-encoding": Label("//third_party/rust_crates/vendor/data-encoding-2.11.1:data_encoding"),
             "derive_builder": Label("//third_party/rust_crates/vendor/derive_builder-0.20.2:derive_builder"),
             "difference": Label("//third_party/rust_crates/vendor/difference-2.0.0:difference"),
             "digest": Label("//third_party/rust_crates/vendor/digest-0.11.3:digest"),
@@ -588,7 +588,7 @@ _NORMAL_DEPENDENCIES = {
     "third_party/rust_crates/forks/tuf-0.3.0-beta14": {
         _COMMON_CONDITION: {
             "chrono": Label("//third_party/rust_crates/vendor/chrono-0.4.45:chrono"),
-            "data-encoding": Label("//third_party/rust_crates/vendor/data-encoding-2.11.0:data_encoding"),
+            "data-encoding": Label("//third_party/rust_crates/vendor/data-encoding-2.11.1:data_encoding"),
             "futures-io": Label("//third_party/rust_crates/vendor/futures-io-0.3.34:futures_io"),
             "futures-util": Label("//third_party/rust_crates/vendor/futures-util-0.3.34:futures_util"),
             "http": Label("//third_party/rust_crates/vendor/http-1.5.0:http"),
