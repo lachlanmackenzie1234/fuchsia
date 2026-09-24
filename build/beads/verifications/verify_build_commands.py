@@ -10,12 +10,8 @@ Verifies build commands for a list of GN and Bazel target pairs defined in a man
 
 import argparse
 import json
-import os
 import pathlib
-import shutil
-import subprocess
 import sys
-import tempfile
 import typing as T
 
 _DEBUG = False
@@ -27,6 +23,7 @@ import build_utils
 
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/beads/scripts"))
 import compare_utils
+import flags_differences
 from compare_utils import CompareCommandsResult
 
 
@@ -41,8 +38,6 @@ def main() -> int:
     )
 
     build_utils.BuildPaths.add_parser_arguments(parser)
-
-    parser.add_mutually_exclusive_group()
 
     parser.add_argument(
         "--manifest",
@@ -64,7 +59,9 @@ def main() -> int:
         help="Print verbose output",
     )
     parser.add_argument(
-        "--temp_dir", type=pathlib.Path, help="Temporary directory path"
+        "--report",
+        type=pathlib.Path,
+        help="Write detailed differences to report file",
     )
     parser.add_argument("--stamp", type=pathlib.Path, help="Stamp file path")
 
@@ -108,11 +105,10 @@ def main() -> int:
         debug=debug,
     )
 
-    temp_dir = tempfile.mkdtemp(
-        prefix="verify_build_commands_", dir=args.temp_dir
-    )
     all_success = True
     differences_count = 0
+
+    report_text = ""
 
     for idx, result in enumerate(results):
         if result.error:
@@ -132,31 +128,33 @@ def main() -> int:
         action_type = result.query.action_type
         description = f"{gn_label} vs {bazel_label}, action type {action_type}"
 
-        if normalized_gn_args != normalized_bazel_args:
+        differences = flags_differences.FlagsDifferences.new_from_lists(
+            normalized_gn_args, normalized_bazel_args
+        )
+
+        if differences.has_differences:
             debug(f"Mismatch for {description}")
             differences_count += 1
 
-            gn_file = os.path.join(temp_dir, f"normalized_gn_args_{idx}.txt")
-            bazel_file = os.path.join(
-                temp_dir, f"normalized_bazel_args_{idx}.txt"
+            flag_categorizer = (
+                flags_differences.categorize_rust_flag
+                if action_type == compare_utils.ACTION_RUSTC
+                else flags_differences.categorize_clang_flag
             )
-            with open(gn_file, "w") as f:
-                f.write("\n".join(normalized_gn_args) + "\n")
-            with open(bazel_file, "w") as f:
-                f.write("\n".join(normalized_bazel_args) + "\n")
 
+            report_text += "\n\n" + differences.generate_summary(
+                title=description, flag_categorizer=flag_categorizer
+            )
             if not result.query.allow_differences:
-                print(f"Mismatch for {description}")
-                print(f"diff -u {gn_file} {bazel_file}")
-                subprocess.run(["diff", "-u", gn_file, bazel_file])
                 all_success = False
         else:
             debug(f"Match for {description}")
 
-    if not (_DEBUG or args.temp_dir):
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
     debug(f"Found {differences_count} targets with differences.")
+
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(report_text)
 
     if all_success and args.stamp:
         with open(args.stamp, "w") as f:

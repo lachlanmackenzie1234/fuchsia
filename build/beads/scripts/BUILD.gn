@@ -26,22 +26,18 @@ if (is_host) {
     deps = [ ":path_normalizer" ]
   }
 
+  python_library("flags_differences") {
+    sources = [ "flags_differences.py" ]
+  }
+
+  python_build_time_tests("flags_differences_test") {
+    tests = [ "flags_differences_test.py" ]
+    deps = [ ":flags_differences" ]
+  }
+
   python_library("normalize_rustc_args") {
     sources = [ "normalize_rustc_args.py" ]
     deps = [ ":path_normalizer" ]
-  }
-
-  python_library("compare_utils") {
-    sources = [ "compare_utils.py" ]
-    library_deps = [
-      ":normalize_clang_args",
-      ":normalize_rustc_args",
-      ":path_normalizer",
-      ":shell_utils",
-      "//build/api:gn_ninja_outputs",
-      "//build/bazel/scripts:bazel_build_args",
-      "//build/bazel/scripts:build_utils",
-    ]
   }
 
   python_library("discover_migration_candidates") {
@@ -51,6 +47,23 @@ if (is_host) {
 
   python_library("shell_utils") {
     sources = [ "shell_utils.py" ]
+  }
+
+  python_library("compare_utils") {
+    sources = [ "compare_utils.py" ]
+    library_deps = [
+      ":normalize_clang_args",
+      ":normalize_rustc_args",
+      ":shell_utils",
+      "//build/api:gn_ninja_outputs",
+      "//build/bazel/scripts:bazel_build_args",
+      "//build/bazel/scripts:build_utils",
+    ]
+  }
+
+  python_build_time_tests("compare_utils_test") {
+    tests = [ "compare_utils_test.py" ]
+    deps = [ ":compare_utils" ]
   }
 
   python_build_time_tests("discover_migration_candidates_test") {
@@ -79,16 +92,11 @@ if (is_host) {
     deps = [ ":gn_runner" ]
   }
 
-  python_build_time_tests("compare_utils_test") {
-    tests = [ "compare_utils_test.py" ]
-    deps = [ ":compare_utils" ]
-  }
-
   python_binary("compare_commands") {
     testonly = true
     main_source = "compare_commands.py"
     sources = [
-      "//build/api:gn_ninja_outputs",
+      "//build/api/gn_ninja_outputs.py",
       "//build/bazel/scripts/bazel_build_args.py",
       "//build/bazel/scripts/build_utils.py",
       "compare_utils.py",
@@ -105,6 +113,7 @@ if (is_host) {
     deps = [
       ":compare_utils_test",
       ":discover_migration_candidates_test",
+      ":flags_differences_test",
       ":normalize_clang_args_test",
       ":normalize_rustc_args_test",
       ":path_normalizer_test",
