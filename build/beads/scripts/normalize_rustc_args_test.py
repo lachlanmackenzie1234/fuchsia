@@ -16,6 +16,29 @@ class MockPathNormalizer(path_normalizer.PathNormalizer):
 
 
 class TestNormalizeRustcArgs(unittest.TestCase):
+    def test_normalize_rustc_cmd(self) -> None:
+        mock_normalizer = MockPathNormalizer()
+
+        BASIC_TEST_CASES = [
+            # Basic args
+            ("params.rs", ["params.rs"]),
+            # Flag conversions
+            ("--codegen=foo=bar", ["-Cfoo=bar"]),
+            ("-Cfoo=bar=baz", ["-Cfoo=bar=baz"]),
+            ("-C foo=bar=baz", ["-Cfoo=bar=baz"]),
+            ("-Cfoo-bar -C foo=zoo", ["-Cfoo-bar", "-Cfoo=zoo"]),
+            (
+                "rustc -obinary --target fuchsia-x64 -C foo=bar",
+                ["--target=fuchsia-x64", "-Cfoo=bar", "rustc"],
+            ),
+        ]
+        for arg, expected in BASIC_TEST_CASES:
+            self.assertListEqual(
+                normalize_rustc_args.normalize_rustc_cmd(arg, mock_normalizer),
+                expected,
+                msg=f"For input '{arg}'",
+            )
+
     def test_normalize_rustc_arg(self) -> None:
         mock_normalizer = MockPathNormalizer()
 

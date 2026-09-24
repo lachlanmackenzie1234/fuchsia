@@ -103,18 +103,41 @@ def normalize_rustc_cmd(
         The normalized command.
     """
 
-    # Fixups to the GN rustc command where it uses `--arg val` instead of
-    # `--arg=val`, which differ from Bazel. These need to be done before
-    # tokenizing the command line.
-    rustc_cmd_replaced = cmd.replace("--target ", "--target=").replace(
-        "-o ", "-o="
-    )
-    return sorted(
-        set(
-            normalize_rustc_arg(a, normalizer=normalizer)
-            for a in shlex.split(rustc_cmd_replaced)
-        )
-    )
+    # Pre-split fixups for flags where value may follow space (e.g. `-o foo`, `-C bar`)
+    tokens = shlex.split(cmd)
+    merged_tokens: list[str] = []
+    skip_next = False
+
+    flags_with_values = {
+        "-C": "-C",
+        "-o": "-o=",
+        "--target": "--target=",
+    }
+
+    for i, token in enumerate(tokens):
+        if skip_next:
+            skip_next = False
+            continue
+
+        if token in flags_with_values and i + 1 < len(tokens):
+            merged_tokens.append(f"{flags_with_values[token]}{tokens[i + 1]}")
+            skip_next = True
+        elif (
+            token.startswith("-o")
+            and len(token) > 2
+            and not token.startswith("-o=")
+        ):
+            merged_tokens.append(f"-o={token[2:]}")
+        else:
+            merged_tokens.append(token)
+
+    normalized_args = []
+    for t in merged_tokens:
+        norm = normalize_rustc_arg(t, normalizer=normalizer)
+        if norm:
+            normalized_args.append(norm)
+
+    return sorted(set(normalized_args))
 
 
 def normalize_rustc_arg(
