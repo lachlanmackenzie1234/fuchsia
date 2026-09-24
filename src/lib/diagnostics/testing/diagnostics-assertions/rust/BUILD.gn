@@ -68,6 +68,7 @@ rustc_library("diagnostics-assertions") {
     "//third_party/rust_crates:serde_json",
   ]
 }
+
 group("rust") {
   testonly = true
   public_deps = [ ":diagnostics-assertions" ]

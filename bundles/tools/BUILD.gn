@@ -54,6 +54,7 @@ _host_tools = [
   "//tools/check-licenses",
   "//tools/whereiscl",
 ]
+
 group("host_tools") {
   testonly = true
   public_deps = []

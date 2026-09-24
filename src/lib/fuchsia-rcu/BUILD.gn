@@ -101,6 +101,7 @@ rustc_macro("fuchsia-rcu-derive") {
     "//third_party/rust_crates:syn",
   ]
 }
+
 rustc_library("fuchsia-rcu") {
   sources = _COMMON_SRCS
   edition = "2024"
@@ -109,6 +110,7 @@ rustc_library("fuchsia-rcu") {
   with_unit_tests = true
   deps = _COMMON_DEPS
 }
+
 rustc_library("fuchsia-rcu-rseq") {
   testonly = true
   sources = _COMMON_SRCS

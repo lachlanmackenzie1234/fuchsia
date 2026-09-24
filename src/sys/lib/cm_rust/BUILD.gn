@@ -109,6 +109,7 @@ rustc_library("cm_rust") {
     ]
   }
 }
+
 rustc_macro("cm_rust_derive") {
   sources = [ "src/macro.rs" ]
   source_root = "src/macro.rs"

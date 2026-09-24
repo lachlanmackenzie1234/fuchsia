@@ -182,6 +182,7 @@ _fx_config_lines = [
   "MAX_BUILD_CONCURRENCY=${max_build_concurrency}",
 ]
 write_file("$root_build_dir/fx.config", _fx_config_lines)
+
 generated_file("default_toolchain_name.txt") {
   outputs = [ "$root_build_dir/default_toolchain_name.txt" ]
   contents = default_toolchain

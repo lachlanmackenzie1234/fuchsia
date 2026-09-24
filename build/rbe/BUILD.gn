@@ -42,6 +42,7 @@ if (is_host) {
   python_library("fuchsia") {
     sources = [ "fuchsia.py" ]
   }
+
   python_build_time_tests("fuchsia_test") {
     tests = [ "fuchsia_test.py" ]
     deps = [ ":fuchsia" ]
@@ -50,6 +51,7 @@ if (is_host) {
   python_library("cl_utils") {
     sources = [ "cl_utils.py" ]
   }
+
   python_build_time_tests("cl_utils_test") {
     tests = [ "cl_utils_test.py" ]
     deps = [ ":cl_utils" ]
@@ -58,6 +60,7 @@ if (is_host) {
   python_library("depfile") {
     sources = [ "depfile.py" ]
   }
+
   python_build_time_tests("depfile_test") {
     tests = [ "depfile_test.py" ]
     deps = [ ":depfile" ]
@@ -70,6 +73,7 @@ if (is_host) {
       ":fuchsia",
     ]
   }
+
   python_build_time_tests("output_leak_scanner_test") {
     tests = [ "output_leak_scanner_test.py" ]
     deps = [ ":output_leak_scanner" ]
@@ -82,6 +86,7 @@ if (is_host) {
       ":depfile",
     ]
   }
+
   python_build_time_tests("linker_test") {
     tests = [ "linker_test.py" ]
     deps = [ ":linker" ]
@@ -90,6 +95,7 @@ if (is_host) {
   python_library("tablefmt") {
     sources = [ "tablefmt.py" ]
   }
+
   python_build_time_tests("tablefmt_test") {
     tests = [ "tablefmt_test.py" ]
     deps = [ ":tablefmt" ]
@@ -98,6 +104,7 @@ if (is_host) {
   python_library("textpb") {
     sources = [ "textpb.py" ]
   }
+
   python_build_time_tests("textpb_test") {
     tests = [ "textpb_test.py" ]
     deps = [ ":textpb" ]
@@ -106,6 +113,7 @@ if (is_host) {
   python_library("rbe_diagnose") {
     sources = [ "rbe_diagnose.py" ]
   }
+
   python_build_time_tests("rbe_diagnose_test") {
     tests = [ "rbe_diagnose_test.py" ]
     deps = [ ":rbe_diagnose" ]
@@ -118,6 +126,7 @@ if (is_host) {
       ":fuchsia",
     ]
   }
+
   python_build_time_tests("cas_test") {
     tests = [ "cas_test.py" ]
     deps = [ ":cas" ]
@@ -131,6 +140,7 @@ if (is_host) {
       ":fuchsia",
     ]
   }
+
   python_build_time_tests("bbtool_test") {
     tests = [ "bbtool_test.py" ]
     deps = [ ":bbtool" ]
@@ -143,6 +153,7 @@ if (is_host) {
       ":textpb",
     ]
   }
+
   python_build_time_tests("build_summary_test") {
     tests = [ "build_summary_test.py" ]
     deps = [ ":build_summary" ]
@@ -155,6 +166,7 @@ if (is_host) {
       ":fuchsia",
     ]
   }
+
   python_build_time_tests("remotetool_test") {
     tests = [ "remotetool_test.py" ]
     deps = [ ":remotetool" ]
@@ -171,6 +183,7 @@ if (is_host) {
       ":textpb",
     ]
   }
+
   python_build_time_tests("remote_action_test") {
     tests = [ "remote_action_test.py" ]
     deps = [ ":remote_action" ]
@@ -180,6 +193,7 @@ if (is_host) {
     sources = [ "dlwrap.py" ]
     library_deps = [ ":remote_action" ]
   }
+
   python_build_time_tests("dlwrap_test") {
     tests = [ "dlwrap_test.py" ]
     deps = [ ":dlwrap" ]
@@ -189,6 +203,7 @@ if (is_host) {
     sources = [ "cxx.py" ]
     library_deps = [ ":cl_utils" ]
   }
+
   python_build_time_tests("cxx_test") {
     tests = [ "cxx_test.py" ]
     deps = [ ":cxx" ]
@@ -203,6 +218,7 @@ if (is_host) {
       ":remote_action",
     ]
   }
+
   python_build_time_tests("cxx_link_remote_wrapper_test") {
     tests = [ "cxx_link_remote_wrapper_test.py" ]
     deps = [ ":cxx_link_remote_wrapper" ]
@@ -217,6 +233,7 @@ if (is_host) {
       ":remote_action",
     ]
   }
+
   python_build_time_tests("cxx_remote_wrapper_test") {
     tests = [ "cxx_remote_wrapper_test.py" ]
     deps = [ ":cxx_remote_wrapper" ]
@@ -226,6 +243,7 @@ if (is_host) {
     sources = [ "rustc.py" ]
     library_deps = [ ":cl_utils" ]
   }
+
   python_build_time_tests("rustc_test") {
     tests = [ "rustc_test.py" ]
     deps = [ ":rustc" ]
@@ -241,6 +259,7 @@ if (is_host) {
       ":rustc",
     ]
   }
+
   python_build_time_tests("rustc_remote_wrapper_test") {
     tests = [ "rustc_remote_wrapper_test.py" ]
     deps = [ ":rustc_remote_wrapper" ]
@@ -254,6 +273,7 @@ if (is_host) {
       ":remote_action",
     ]
   }
+
   python_build_time_tests("prebuilt_tool_remote_wrapper_test") {
     tests = [ "prebuilt_tool_remote_wrapper_test.py" ]
     deps = [ ":prebuilt_tool_remote_wrapper" ]
@@ -262,6 +282,7 @@ if (is_host) {
   python_library("relativize_args") {
     sources = [ "relativize_args.py" ]
   }
+
   python_build_time_tests("relativize_args_test") {
     tests = [ "relativize_args_test.py" ]
     deps = [ ":relativize_args" ]

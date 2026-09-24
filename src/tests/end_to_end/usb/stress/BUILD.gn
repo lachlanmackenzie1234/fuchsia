@@ -78,6 +78,7 @@ if (is_host) {
     environments = [ sorrel_env ]
     timeout_secs = 900
   }
+
   python_mobly_test("usb_fastboot_loop_test") {
     main_source = "test_fastboot_loop.py"
     libraries = [
@@ -122,6 +123,7 @@ if (is_host) {
     environments = [ sorrel_env ]
     timeout_secs = 1200
   }
+
   python_mobly_test("adb_random_stress_test") {
     main_source = "test_adb_random_stress.py"
     libraries = [
