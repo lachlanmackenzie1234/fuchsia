@@ -953,7 +953,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -8385,7 +8385,7 @@ Supported modes are:
 
 **Current value (from the default):** `"hard-link"`
 
-From //src/sys/pkg/bin/package-tool/package-tool.gni:140
+From //src/sys/pkg/bin/package-tool/package-tool.gni:141
 
 ### restat_cc
 
@@ -9623,7 +9623,7 @@ Valid values: "cpp", "rust"
 
 **Current value (from the default):** `"rust"`
 
-From //src/graphics/display/drivers/virtio-gpu-display/BUILD.gn:14
+From //src/graphics/display/drivers/virtio-gpu-display/BUILD.gn:15
 
 ### virtmagma_debug
 
