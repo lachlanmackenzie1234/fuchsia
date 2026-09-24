@@ -67,7 +67,11 @@ impl WakeGroups {
         Ok(())
     }
 
-    fn create_wake_group(&self, debug_name: String, wake_watcher: zx::EventPair) -> WakeGroupId {
+    fn register_wake_group(
+        &self,
+        debug_name: String,
+        wake_watcher: zx::EventPair,
+    ) -> (WakeGroup, WakeGroupId) {
         let WakeGroups(inner) = self;
 
         let (data_watcher, data_notifier) = DataWatcher::new();
@@ -79,6 +83,12 @@ impl WakeGroups {
             None,
             "koid of new wake group should be unique",
         );
+
+        (wake_group, id)
+    }
+
+    fn create_wake_group(&self, debug_name: String, wake_watcher: zx::EventPair) -> WakeGroupId {
+        let (wake_group, id) = self.register_wake_group(debug_name, wake_watcher);
 
         info!("creating wake group '{}' {id:?}", wake_group.name);
 
@@ -266,8 +276,6 @@ impl WakeGroup {
 mod tests {
     use super::*;
 
-    use std::pin::pin;
-
     use futures::task::Poll;
     use test_case::{test_case, test_matrix};
     use zx::Peered as _;
@@ -285,6 +293,85 @@ mod tests {
         assert!(observed.contains(GROUP_WAKEUP_SIGNAL));
     }
 
+    /// A wake group registered with a [`WakeGroups`], along with everything a
+    /// test needs to drive it.
+    struct TestWakeGroup {
+        /// Stands in for the client, signaling its power state to the group.
+        /// `None` once the client has gone away.
+        signaller: Option<zx::EventPair>,
+        id: WakeGroupId,
+        notifier: DataNotifier,
+        serve_fut: fasync::Task<Result<!, WakeGroupShutdownReason>>,
+    }
+
+    impl TestWakeGroup {
+        fn new(wake_groups: &WakeGroups, name: &str) -> Self {
+            let (wake_watcher_observer, signaller) = zx::EventPair::create();
+            // Clients start out awake.
+            signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
+
+            let (wake_group, id) =
+                wake_groups.register_wake_group(name.to_string(), wake_watcher_observer);
+            let notifier = wake_groups.data_notifier(&id).expect("newly registered wake group");
+
+            Self {
+                signaller: Some(signaller),
+                id,
+                notifier,
+                serve_fut: fasync::Task::local(wake_group.serve(wake_groups.clone())),
+            }
+        }
+
+        fn token(&self) -> &zx::Event {
+            &self.id.token
+        }
+
+        fn signaller(&self) -> &zx::EventPair {
+            self.signaller.as_ref().expect("client has gone away")
+        }
+
+        fn suspend_client(&self) {
+            self.signaller().signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL).unwrap();
+        }
+
+        fn wake_client(&self) {
+            self.signaller().signal_peer(WAITER_ASLEEP_SIGNAL, WAITER_AWAKE_SIGNAL).unwrap();
+        }
+
+        /// Closes the client end of the wake watcher, which the group observes
+        /// as the client going away for good.
+        fn close_client(&mut self) {
+            drop(self.signaller.take().expect("client has already gone away"));
+        }
+
+        /// Violates the protocol by claiming to be awake and asleep at once.
+        fn raise_conflicting_client_states(&self) {
+            self.signaller()
+                .signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL | WAITER_ASLEEP_SIGNAL)
+                .unwrap();
+        }
+
+        fn is_registered(&self, wake_groups: &WakeGroups) -> bool {
+            wake_groups.0.lock().wake_groups.contains_key(&self.id.koid)
+        }
+
+        /// Lets the group's serving task observe everything that has happened
+        /// to it, asserting that it stays alive.
+        fn run_until_stalled(&mut self, exec: &mut fasync::TestExecutor) {
+            assert_eq!(exec.run_until_stalled(&mut self.serve_fut), Poll::Pending);
+        }
+
+        /// Lets the group's serving task observe everything that has happened
+        /// to it, asserting that it shuts down for `reason`.
+        fn run_until_shutdown(
+            &mut self,
+            exec: &mut fasync::TestExecutor,
+            reason: WakeGroupShutdownReason,
+        ) {
+            assert_eq!(exec.run_until_stalled(&mut self.serve_fut), Poll::Ready(Err(reason)));
+        }
+    }
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TriggerShutdownWhen {
         BeforeSuspend,
@@ -294,7 +381,7 @@ mod tests {
 
     enum ShutdownTrigger {
         DropWaker,
-        AssertInvalidSignals,
+        RaiseInvalidSignals,
     }
 
     #[test_matrix(
@@ -305,89 +392,50 @@ mod tests {
         ],
         [
             ShutdownTrigger::DropWaker,
-            ShutdownTrigger::AssertInvalidSignals,
+            ShutdownTrigger::RaiseInvalidSignals,
         ]
     )]
     fn wake_group_shutdown_triggers(
         shutdown_when: TriggerShutdownWhen,
         shutdown_trigger: ShutdownTrigger,
     ) {
+        let mut exec = fasync::TestExecutor::new();
+
+        let wake_groups = WakeGroups::default();
+        let mut group = TestWakeGroup::new(&wake_groups, "test-group");
+
+        // State machine is waiting for the client to signal it's asleep.
+        group.run_until_stalled(&mut exec);
+
+        if shutdown_when != TriggerShutdownWhen::BeforeSuspend {
+            group.suspend_client();
+            // State machine is waiting for data to come in or the client to
+            // wake.
+            group.run_until_stalled(&mut exec);
+
+            if shutdown_when != TriggerShutdownWhen::DuringSuspend {
+                group.notifier.notify();
+                // State machine is waiting for the client to wake up after we
+                // assert the wake signal.
+                group.run_until_stalled(&mut exec);
+                assert_wake_signal_set(group.token());
+            }
+        }
+
         let expected_reason = match shutdown_trigger {
-            ShutdownTrigger::DropWaker => WakeGroupShutdownReason::WakeWatcherClosed,
-            ShutdownTrigger::AssertInvalidSignals => {
+            ShutdownTrigger::DropWaker => {
+                group.close_client();
+                WakeGroupShutdownReason::WakeWatcherClosed
+            }
+            ShutdownTrigger::RaiseInvalidSignals => {
+                group.raise_conflicting_client_states();
                 WakeGroupShutdownReason::AwakeAndAsleepAsserted
             }
         };
 
-        let mut exec = fasync::TestExecutor::new();
-
-        let wake_groups = WakeGroups::default();
-        let (wake_watcher_observer, wake_watcher_signaller) = zx::EventPair::create();
-        wake_watcher_signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
-
-        let (data_watcher, data_notifier) = DataWatcher::new();
-        let wake_group =
-            WakeGroup::new("test-group".to_string(), data_watcher, wake_watcher_observer);
-        let id = wake_group.id.duplicate_for_client();
-
-        assert_matches!(
-            wake_groups.0.lock().wake_groups.insert(id.koid, data_notifier.clone()),
-            None
-        );
-
-        let serve_fut = wake_group.serve(wake_groups.clone());
-        let mut serve_fut = pin!(serve_fut);
-
-        // State machine is waiting for the client to signal it's asleep.
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        if shutdown_when == TriggerShutdownWhen::BeforeSuspend {
-            match shutdown_trigger {
-                ShutdownTrigger::DropWaker => drop(wake_watcher_signaller),
-                ShutdownTrigger::AssertInvalidSignals => wake_watcher_signaller
-                    .signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL | WAITER_ASLEEP_SIGNAL)
-                    .unwrap(),
-            }
-
-            assert_eq!(exec.run_until_stalled(&mut serve_fut), Poll::Ready(Err(expected_reason)));
-            assert_matches!(wake_groups.0.lock().wake_groups.get(&id.koid), None);
-            return;
-        }
-
-        wake_watcher_signaller.signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL).unwrap();
-        // State machine is waiting for data to come in or the client to wake.
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        if shutdown_when == TriggerShutdownWhen::DuringSuspend {
-            match shutdown_trigger {
-                ShutdownTrigger::DropWaker => drop(wake_watcher_signaller),
-                ShutdownTrigger::AssertInvalidSignals => wake_watcher_signaller
-                    .signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL | WAITER_ASLEEP_SIGNAL)
-                    .unwrap(),
-            }
-
-            assert_eq!(exec.run_until_stalled(&mut serve_fut), Poll::Ready(Err(expected_reason)));
-            assert_matches!(wake_groups.0.lock().wake_groups.get(&id.koid), None);
-            return;
-        }
-
-        data_notifier.notify();
-        // State machine is waiting for the client to wake up after we assert the
-        // wake signal.
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-
-        if shutdown_when == TriggerShutdownWhen::AfterData {
-            match shutdown_trigger {
-                ShutdownTrigger::DropWaker => drop(wake_watcher_signaller),
-                ShutdownTrigger::AssertInvalidSignals => wake_watcher_signaller
-                    .signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL | WAITER_ASLEEP_SIGNAL)
-                    .unwrap(),
-            }
-
-            assert_eq!(exec.run_until_stalled(&mut serve_fut), Poll::Ready(Err(expected_reason)));
-            assert_matches!(wake_groups.0.lock().wake_groups.get(&id.koid), None);
-            return;
-        }
+        group.run_until_shutdown(&mut exec, expected_reason);
+        assert!(!group.is_registered(&wake_groups));
+        assert_wake_signal_clear(group.token());
     }
 
     #[test_case(false; "without_pre_suspend_notification")]
@@ -396,102 +444,30 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
 
         let wake_groups = WakeGroups::default();
-        let (wake_watcher_observer, wake_watcher_signaller) = zx::EventPair::create();
-        wake_watcher_signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
+        let mut group = TestWakeGroup::new(&wake_groups, "test-group");
 
-        let (data_watcher, data_notifier) = DataWatcher::new();
-        let wake_group =
-            WakeGroup::new("test-group".to_string(), data_watcher, wake_watcher_observer);
-        let id = wake_group.id.duplicate_for_client();
-        let token = &id.token;
-
-        // Manually insert into wake_groups.
-        assert_matches!(
-            wake_groups.0.lock().wake_groups.insert(id.koid, data_notifier.clone()),
-            None
-        );
-
-        let serve_fut = wake_group.serve(wake_groups);
-        let mut serve_fut = pin!(serve_fut);
-
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_wake_signal_clear(token);
+        group.run_until_stalled(&mut exec);
+        assert_wake_signal_clear(group.token());
 
         // If a notification comes in before the client suspends, the netstack
         // shouldn't assert the wake signal, either immediately or after the
         // client does suspend.
         if notify_before_suspend {
-            data_notifier.notify();
-            assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-            assert_wake_signal_clear(token);
+            group.notifier.notify();
+            group.run_until_stalled(&mut exec);
+            assert_wake_signal_clear(group.token());
         }
 
-        wake_watcher_signaller.signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL).unwrap();
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_wake_signal_clear(token);
+        group.suspend_client();
+        group.run_until_stalled(&mut exec);
+        assert_wake_signal_clear(group.token());
 
-        data_notifier.notify();
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_wake_signal_set(token);
+        group.notifier.notify();
+        group.run_until_stalled(&mut exec);
+        assert_wake_signal_set(group.token());
 
-        wake_watcher_signaller.signal_peer(WAITER_ASLEEP_SIGNAL, WAITER_AWAKE_SIGNAL).unwrap();
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_wake_signal_clear(token);
-    }
-
-    #[test_case(ShutdownTrigger::DropWaker; "drop_waker")]
-    #[test_case(ShutdownTrigger::AssertInvalidSignals; "assert_invalid_signals")]
-    fn wake_group_shutdown_deasserts_wake_signal(shutdown_trigger: ShutdownTrigger) {
-        let expected_reason = match shutdown_trigger {
-            ShutdownTrigger::DropWaker => WakeGroupShutdownReason::WakeWatcherClosed,
-            ShutdownTrigger::AssertInvalidSignals => {
-                WakeGroupShutdownReason::AwakeAndAsleepAsserted
-            }
-        };
-
-        let mut exec = fasync::TestExecutor::new();
-
-        let wake_groups = WakeGroups::default();
-        let (wake_watcher_observer, wake_watcher_signaller) = zx::EventPair::create();
-        wake_watcher_signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
-
-        let (data_watcher, data_notifier) = DataWatcher::new();
-        let wake_group =
-            WakeGroup::new("test-group".to_string(), data_watcher, wake_watcher_observer);
-        let id = wake_group.id.duplicate_for_client();
-        let token = &id.token;
-
-        assert_matches!(
-            wake_groups.0.lock().wake_groups.insert(id.koid, data_notifier.clone()),
-            None
-        );
-
-        let serve_fut = wake_group.serve(wake_groups.clone());
-        let mut serve_fut = pin!(serve_fut);
-
-        // State machine is waiting for the client to signal it's asleep.
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_wake_signal_clear(token);
-
-        // Client signals that it is asleep.
-        wake_watcher_signaller.signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL).unwrap();
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_wake_signal_clear(token);
-
-        // Incoming data triggers the wake signal.
-        data_notifier.notify();
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_wake_signal_set(token);
-
-        match shutdown_trigger {
-            ShutdownTrigger::DropWaker => drop(wake_watcher_signaller),
-            ShutdownTrigger::AssertInvalidSignals => wake_watcher_signaller
-                .signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL | WAITER_ASLEEP_SIGNAL)
-                .unwrap(),
-        }
-
-        assert_eq!(exec.run_until_stalled(&mut serve_fut), Poll::Ready(Err(expected_reason)));
-        assert_matches!(wake_groups.0.lock().wake_groups.get(&id.koid), None);
-        assert_wake_signal_clear(token);
+        group.wake_client();
+        group.run_until_stalled(&mut exec);
+        assert_wake_signal_clear(group.token());
     }
 }
