@@ -23,7 +23,14 @@ pub use crate::command::MAX_COMMAND_LENGTH;
 
 pub const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
-const MAX_PACKET_SIZE: usize = 64;
+/// According to the fastboot specification this packet size should be
+/// negotiated based on the speed of the device
+///
+/// Max packet size must be 64 bytes for full-speed, 512 bytes for high-speed
+/// and 1024 bytes for Super Speed USB.
+///
+/// But we are leaving it at the maximum size to maximize compatibility
+const MAX_PACKET_SIZE: usize = 1024;
 const DEFAULT_READ_TIMEOUT_SECS: i64 = 30;
 
 #[derive(Debug, Clone)]
@@ -120,15 +127,14 @@ pub trait UploadProgressListener {
 }
 
 async fn read_from_interface<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Reply, ReadError> {
-    let mut buf: [u8; MAX_PACKET_SIZE] = [0; MAX_PACKET_SIZE];
+    let mut buf = vec![0u8; MAX_PACKET_SIZE];
     let size = interface.read(&mut buf).await?;
-    let (trimmed, _) = buf.split_at(size);
-    let trimmed = trimmed.to_vec();
-    let reply = Reply::try_from(trimmed.as_slice()).map_err(|e| {
-        log::debug!("fastboot: could not parse reply: {}", String::from_utf8_lossy(&trimmed));
+    let trimmed = &buf[..size];
+    let reply = Reply::try_from(trimmed).map_err(|e| {
+        log::debug!("fastboot: could not parse reply: {}", String::from_utf8_lossy(trimmed));
         ReadError::Parse(e)
     })?;
-    log::debug!("fastboot: received {reply:?}: {}", String::from_utf8_lossy(&trimmed));
+    log::debug!("fastboot: received {reply:?}: {}", String::from_utf8_lossy(trimmed));
     Ok(reply)
 }
 
