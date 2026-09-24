@@ -593,24 +593,18 @@ class FuchsiaBuildContext(object):
         #   //build/resultstore/fuchsia-rsproxy-wrap.sh:rs_service_env_vars
         # )
 
-        # Forward ResultStore/CAS instance names passed from CLI arguments only if they differ from on-disk configured defaults.
+        # Forward ResultStore/CAS instance names passed from CLI arguments unconditionally.
         # These RS_ variables directly drive/influence the rsproxy daemon.
         # LINT.IfChange(rs_instance_env_vars)
         if self.config.resultstore_instance:
-            if (
-                self.config.resultstore_instance
-                != self.resolved_resultstore_instance
-            ):
-                env["RS_rs_instance"] = self.config.resultstore_instance
+            env["RS_rs_instance"] = self.config.resultstore_instance
         if self.config.cas_instance:
-            if self.config.cas_instance != self.resolved_cas_instance:
-                env["RS_cas_instance"] = self.config.cas_instance
+            env["RS_cas_instance"] = self.config.cas_instance
         # LINT.ThenChange(//build/resultstore/fuchsia-rsproxy-wrap.sh:rs_instance_env_vars)
 
-        # Forward RBE instance name passed from CLI arguments only if it differs from the on-disk configured default.
+        # Forward RBE instance name passed from CLI arguments unconditionally.
         if self.config.rbe_instance:
-            if self.config.rbe_instance != self.resolved_rbe_instance:
-                env["RBE_instance"] = self.config.rbe_instance
+            env["RBE_instance"] = self.config.rbe_instance
 
         return env
 
