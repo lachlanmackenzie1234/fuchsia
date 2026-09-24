@@ -667,7 +667,11 @@ mod tests {
         .unwrap();
 
         let verifier = block_server::verifier::Verifier::new(delivery_queue);
-        let files = Arc::new(mapping::Files::new(service, verifier));
+        let files = Arc::new(mapping::Files::new(
+            service,
+            verifier,
+            port.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        ));
 
         let id: [u8; 32] = hash.into();
         let key = 1;
@@ -700,7 +704,7 @@ mod tests {
         vmo_provider
             .register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
 
-        let _pager_thread = mapping::PagerThread::spawn(port, files.clone());
+        let _pager_thread = files.spawn_pager_thread();
 
         let (tx, rx) = oneshot::channel();
         let len = uncompressed_data.len();

@@ -13,7 +13,7 @@ use futures::future::{BoxFuture, FutureExt as _};
 use futures::stream::TryStreamExt as _;
 use mapping::reader::{BlockService, ChildBlockService};
 use mapping::{
-    DeliveryHandler, Files, PENDING_COMMANDS_CAPACITY, PageRequest, PagerThread, RawMappingCommand,
+    DeliveryHandler, Files, PENDING_COMMANDS_CAPACITY, PageRequest, RawMappingCommand,
     process_mapping_command,
 };
 use std::collections::HashMap;
@@ -343,8 +343,8 @@ pub fn serve_mapper_session<M: MapperHandler + ?Sized>(
     match (port, delivery_queue) {
         (Some(port), Some(delivery_queue)) => {
             let verifier = handler.on_open_mapper_session(&mapping_vmo, delivery_queue)?;
-            let files = Arc::new(Files::new(service.clone(), verifier));
-            let pager_thread = PagerThread::spawn(port, files.clone());
+            let files = Arc::new(Files::new(service.clone(), verifier, port));
+            let pager_thread = files.spawn_pager_thread();
             Ok(async move {
                 let _pager_thread = pager_thread;
                 run_mapper_session_loop(handler, service, session, mapping_vmo, files, None).await
@@ -356,8 +356,8 @@ pub fn serve_mapper_session<M: MapperHandler + ?Sized>(
             let port = zx::Port::create();
             let direct_pager =
                 DirectPager::new(pager, port.duplicate_handle(zx::Rights::SAME_RIGHTS)?);
-            let files = Arc::new(Files::new(service.clone(), direct_pager.clone()));
-            let pager_thread = PagerThread::spawn(port, files.clone());
+            let files = Arc::new(Files::new(service.clone(), direct_pager.clone(), port));
+            let pager_thread = files.spawn_pager_thread();
             Ok(async move {
                 let _pager_thread = pager_thread;
                 run_mapper_session_loop(
