@@ -845,17 +845,12 @@ void App::InitializeHeartbeat(display::Display& display) {
       [this](auto frame_number, auto presentation_time, auto frame_presented_callback) {
         TRACE_DURATION("gfx", "App render_scheduled_frame");
         FX_CHECK(flatland_frame_count_ + skipped_frame_count_ == frame_number - 1);
-        auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering();
-        // While the display is dark nothing is rendered or applied; `SkipRender()` signals
-        // the frame's fences and invokes its callback so that nothing waits on a vsync.
-        if (display && !flatland_compositor_->IsDisplayDark(display->display()->display_id())) {
+        if (auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering()) {
           flatland_engine_->RenderScheduledFrame(frame_number, presentation_time, *display,
                                                  std::move(frame_presented_callback));
           ++flatland_frame_count_;
         } else {
-          if (!display) {
-            FX_LOGS(INFO) << "No FlatlandDisplay; skipping render scheduled frame.";
-          }
+          FX_LOGS(INFO) << "No FlatlandDisplay; skipping render scheduled frame.";
           skipped_frame_count_++;
           flatland_engine_->SkipRender(std::move(frame_presented_callback));
         }
