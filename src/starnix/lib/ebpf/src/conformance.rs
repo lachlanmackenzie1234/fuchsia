@@ -1184,6 +1184,8 @@ pub mod test {
     #[test_case(local_test_data!("range_narrowing_with_conditional_jump.data"))]
     #[test_case(local_test_data!("read_only_helper.data"))]
     #[test_case(local_test_data!("releasable_use_after_free_helper.data"))]
+    #[test_case(local_test_data!("releasable_use_after_free_offset.data"))]
+    #[test_case(local_test_data!("releasable_use_after_free_offset_helper.data"))]
     #[test_case(local_test_data!("repro_bpf_mod_mismatch.data"))]
     #[test_case(local_test_data!("shifts.data"))]
     #[test_case(local_test_data!("stack_access.data"))]
