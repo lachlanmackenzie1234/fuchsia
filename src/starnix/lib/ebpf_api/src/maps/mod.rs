@@ -677,6 +677,24 @@ mod test {
             flags: MapFlags::empty(),
         };
         assert_eq!(Map::new(schema, "test").err(), Some(MapError::InvalidParam));
+
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_HASH,
+            key_size: 8,
+            value_size: 0xffff_fff0,
+            max_entries: 0xffff_fff8,
+            flags: MapFlags::empty(),
+        };
+        assert_eq!(Map::new(schema, "test").err(), Some(MapError::InvalidParam));
+
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_HASH,
+            key_size: 8,
+            value_size: 0x1_0000,
+            max_entries: 0x8000_0000,
+            flags: MapFlags::empty(),
+        };
+        assert_eq!(Map::new(schema, "test").err(), Some(MapError::NoMemory));
     }
 
     #[fuchsia::test]
@@ -689,6 +707,24 @@ mod test {
             flags: MapFlags::NoPrealloc,
         };
         assert_eq!(Map::new(schema, "test").err(), Some(MapError::InvalidParam));
+
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+            key_size: 5,
+            value_size: 0xffff_ffd0,
+            max_entries: 0xffff_fff8,
+            flags: MapFlags::NoPrealloc,
+        };
+        assert_eq!(Map::new(schema, "test").err(), Some(MapError::InvalidParam));
+
+        let schema = MapSchema {
+            map_type: bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+            key_size: 8,
+            value_size: 0x1_0000,
+            max_entries: 0x8000_0000,
+            flags: MapFlags::NoPrealloc,
+        };
+        assert_eq!(Map::new(schema, "test").err(), Some(MapError::NoMemory));
     }
 
     #[fuchsia::test]

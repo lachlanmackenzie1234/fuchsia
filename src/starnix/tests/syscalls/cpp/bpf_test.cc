@@ -107,12 +107,13 @@ namespace {
 int bpf(int cmd, union bpf_attr* attr) { return (int)syscall(__NR_bpf, cmd, attr, sizeof(*attr)); }
 
 void TestMapCreationFail(uint32_t type, uint32_t key_size, uint32_t value_size,
-                         uint32_t max_entries, int expected_errno) {
+                         uint32_t max_entries, int expected_errno, uint32_t flags = 0) {
   bpf_attr attr = {
       .map_type = type,
       .key_size = key_size,
       .value_size = value_size,
       .max_entries = max_entries,
+      .map_flags = flags,
   };
   int result = bpf(BPF_MAP_CREATE, &attr);
   EXPECT_EQ(result, -1);
@@ -134,6 +135,11 @@ TEST(BpfTest, ArraySizeZero) {
 TEST(BpfTest, HashMapSizeZero) { TestMapCreationFail(BPF_MAP_TYPE_HASH, 1, 1024, 0, EINVAL); }
 
 TEST(BpfTest, HashMapZeroKeySize) { TestMapCreationFail(BPF_MAP_TYPE_HASH, 0, 1024, 10, EINVAL); }
+
+TEST(BpfTest, LpmTrieSizeOverflow) {
+  TestMapCreationFail(BPF_MAP_TYPE_LPM_TRIE, 8, UINT32_MAX, UINT32_MAX, EINVAL, BPF_F_NO_PREALLOC);
+  TestMapCreationFail(BPF_MAP_TYPE_LPM_TRIE, 5, 0xffffffd0, 0xfffffff8, EINVAL, BPF_F_NO_PREALLOC);
+}
 
 class BpfTestBase : public testing::Test {
  protected:
