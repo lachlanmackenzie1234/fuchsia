@@ -8,4 +8,5 @@ load("@fuchsia_build_info//:args.bzl", "compilation_mode")
 is_debug = compilation_mode == "debug"
 is_balanced = compilation_mode == "balanced"
 is_release = compilation_mode == "release"
+is_sanitizer = compilation_mode == "sanitizer"
 # LINT.ThenChange(//build/config/compilation_modes.gni:compilation_mode_predicates)

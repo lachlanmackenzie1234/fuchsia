@@ -19,6 +19,7 @@ message Static {
     COMPILATION_MODE_DEBUG = 1;
     COMPILATION_MODE_RELEASE = 2;
     COMPILATION_MODE_BALANCED = 3;
+    COMPILATION_MODE_SANITIZER = 4;
   }
 
   // Compilation mode for the build.
