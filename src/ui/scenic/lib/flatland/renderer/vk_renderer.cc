@@ -977,11 +977,13 @@ void VkRenderer::Render(const ImageMetadata& render_target, std::span<const Reso
     const uint64_t frame_number = render_args.display_frame_number.value();
 
     constexpr int32_t kGlyphScale = 4;
+    constexpr int32_t kXOffsetFromCenter = 100;
     const auto frame_number_string = std::to_string(frame_number);
-    const int32_t x_offset = (static_cast<int32_t>(output_image->width()) -
-                              (static_cast<int32_t>(frame_number_string.length()) * kGlyphScale *
-                               static_cast<int32_t>(escher::DebugFont::kGlyphWidth))) /
-                             2;
+    const int32_t x_offset = ((static_cast<int32_t>(output_image->width()) -
+                               (static_cast<int32_t>(frame_number_string.length()) * kGlyphScale *
+                                static_cast<int32_t>(escher::DebugFont::kGlyphWidth))) /
+                              2) +
+                             kXOffsetFromCenter;
 
     // Transition the output image layout so that we can blit into it.
     command_buffer->impl()->TransitionImageLayout(
