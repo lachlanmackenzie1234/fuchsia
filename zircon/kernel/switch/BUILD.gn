@@ -652,7 +652,6 @@ clippy_lints = [
   "ptr-eq",
   "redundant-pattern-matching",
   "suspicious-arithmetic-impl",
-  "test-attr-in-doctest",
   "too-many-arguments",
   "type-complexity",
   "unnecessary-cast",
