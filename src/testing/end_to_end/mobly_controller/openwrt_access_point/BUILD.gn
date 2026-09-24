@@ -5,6 +5,7 @@
 import("//build/python/python_library.gni")
 
 python_library("openwrt_access_point") {
+  testonly = true
   library_name = "openwrt_access_point"
   source_root = "."
   sources = [
