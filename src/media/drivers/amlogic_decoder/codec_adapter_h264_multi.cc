@@ -132,14 +132,14 @@ CodecAdapterH264Multi::CodecAdapterH264Multi(std::mutex& lock,
 }
 
 CodecAdapterH264Multi::~CodecAdapterH264Multi() {
-  // We need to delete the shared_fidl_thread_closure_queue_ on its dispatcher thread, per the
+  // We need to delete the shared_fidl_thread_closure_queue_ on its dispatcher sequence, per the
   // rules of ~ClosureQueue.
   sync_completion_t shared_fidl_finished;
   auto run_on_shared_fidl = [this, &shared_fidl_finished] {
     shared_fidl_thread_closure_queue_.reset();
     sync_completion_signal(&shared_fidl_finished);
   };
-  if (thrd_current() == device_->driver()->shared_fidl_thread()) {
+  if (shared_fidl_thread_closure_queue_->IsSynchronized()) {
     run_on_shared_fidl();
   } else {
     shared_fidl_thread_closure_queue_->Enqueue(run_on_shared_fidl);
