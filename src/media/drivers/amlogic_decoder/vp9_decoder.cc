@@ -1339,6 +1339,13 @@ void Vp9Decoder::PrepareNewFrame(bool params_checked_previously) {
     }
   }
 
+  if (params.bit_depth != 8 || params.profile != 0) {
+    LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_GenericDecodeError);
+    LOG(ERROR, "Unsupported VP9 profile %u or bit depth %u", params.profile, params.bit_depth);
+    CallErrorHandler();
+    return;
+  }
+
   if (!has_keyframe_ && params.frame_type != kVp9FrameTypeKeyFrame) {
     // This path is only used by protected content that has a watchdog fire during decode or that
     // starts with a NAL that isn't a keyframe, and in any case only temporarily.
