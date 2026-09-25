@@ -11,5 +11,5 @@ pub mod status;
 pub use connect::ConnectTool;
 pub use disconnect::DisconnectTool;
 pub use list::ListTool;
-pub use probe::ProbeTool;
+pub use probe::{ProbeMethod, ProbeResult, ProbeTool};
 pub use status::{ConnectionStatusInfo, StatusTool};

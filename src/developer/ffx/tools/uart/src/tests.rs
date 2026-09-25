@@ -11,7 +11,7 @@
 use argh::FromArgs;
 
 use super::*;
-use crate::args::{ConnectCommand, DisconnectCommand, ListCommand, StatusCommand};
+use crate::args::{ConnectCommand, DisconnectCommand, ListCommand, ProbeCommand, StatusCommand};
 use ffx_writer::TestBuffers;
 use fho::FfxMain;
 use fuchsia_async as _;
@@ -22,6 +22,7 @@ use std::fs;
 use std::io::Write as _;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
+use uart_driver_api::ConnectionError;
 
 const MOCK_DRIVER_SCRIPT: &str = include_str!("../test_data/mock_driver.py");
 
@@ -109,7 +110,8 @@ async fn run_tool_with_format(
         }
         UartSubCommand::Probe(cmd) => {
             let tool = ProbeTool { cmd, context: context_tool };
-            tool.main(writer).await?;
+            let machine_writer = ffx_writer::MachineWriter::new_test(format, &buffers);
+            tool.main(machine_writer).await?;
         }
         UartSubCommand::Status(cmd) => {
             let tool = StatusTool { cmd, context: context_tool };
@@ -135,7 +137,7 @@ impl<'a> DaemonCleanupGuard<'a> {
 impl<'a> Drop for DaemonCleanupGuard<'a> {
     fn drop(&mut self) {
         if let Ok(Some(meta)) = read_metadata(&self.env.context, &self.canonical_target) {
-            if is_running(meta.pid) {
+            if is_running(meta.pid) && meta.pid != std::process::id() {
                 let nix_pid = Pid::from_raw(meta.pid as i32);
                 let _ = kill(nix_pid, nix::sys::signal::Signal::SIGKILL);
             }
@@ -588,7 +590,6 @@ fn create_stale_metadata(
     let socket_path = get_socket_path(&env.context, target).unwrap();
     write_metadata(&env.context, &socket_path, target, pid, baud).unwrap();
 }
-
 async fn setup_mixed_state_daemons(
     env: &ffx_config::TestEnv,
     prefix: &str,
@@ -748,7 +749,6 @@ async fn test_status_output() {
 
     let mock_metrics = make_mock_metrics();
     let metrics_json = serde_json::to_string(&mock_metrics).unwrap();
-
     let _mock_server = spawn_mock_control_server(control_listener, metrics_json);
 
     let (output, _) =
@@ -928,4 +928,139 @@ async fn test_concurrency_race_leak() {
     assert!(!list_output.contains(target), "Daemon should not be listed (orphan state!)");
 
     let _ = fs::remove_file(&socket_path);
+}
+
+#[fuchsia::test]
+async fn test_probe_active_connection() {
+    let (env, _temp_dir) = create_test_env("test_probe_active");
+    let target = "/target-probe-active";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    run_tool(&env, Some(target), make_connect_cmd(115200, false)).await.unwrap();
+
+    let (stdout, _) = run_tool(
+        &env,
+        Some(target),
+        UartSubCommand::Probe(ProbeCommand { baud: NonZeroU32::new(115200).unwrap() }),
+    )
+    .await
+    .unwrap();
+    assert!(
+        stdout
+            .contains("Target UART service is ALIVE (active connection via background driver PID"),
+        "Unexpected stdout: {}",
+        stdout
+    );
+
+    // Verify machine JSON output
+    let (json_stdout, _) = run_tool_with_format(
+        &env,
+        Some(target),
+        UartSubCommand::Probe(ProbeCommand { baud: NonZeroU32::new(115200).unwrap() }),
+        Some(ffx_writer::Format::Json),
+    )
+    .await
+    .unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json_stdout).unwrap();
+    assert_eq!(parsed["alive"], true);
+    assert_eq!(parsed["method"], "background_driver");
+    assert_eq!(parsed["protocol"], "ResendSP");
+    assert_eq!(parsed["baud"], 115200);
+    assert!(parsed["driver_pid"].as_u64().is_some());
+}
+
+#[fuchsia::test]
+async fn test_parse_probe_zero_baud() {
+    let args = ["probe", "--baud", "0"];
+    let res = UartCommand::from_args(&["uart"], &args);
+    assert!(res.is_err());
+    let err_msg = res.unwrap_err().output;
+    assert!(err_msg.contains("number would be zero for non-zero type"), "Error: {}", err_msg);
+}
+
+#[fuchsia::test]
+async fn test_probe_connecting_daemon_reports_error() {
+    let (env, _temp_dir) = create_test_env("test_probe_connecting");
+    let target = "/target-probe-connecting";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    run_tool(&env, Some(target), make_connect_cmd(115200, false)).await.unwrap();
+    update_metadata_status(&env.context, target, ConnectionStatus::Connecting).unwrap();
+
+    let res = run_tool(
+        &env,
+        Some(target),
+        UartSubCommand::Probe(ProbeCommand { baud: NonZeroU32::new(115200).unwrap() }),
+    )
+    .await;
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("currently connecting to target"));
+}
+
+#[fuchsia::test]
+async fn test_connect_uart_stream_file_exclusive_lock() {
+    let (_env, temp_dir) = create_test_env("test_lock");
+    let temp_file = temp_dir.path().join("mock_device");
+    std::fs::write(&temp_file, b"").unwrap();
+
+    // Acquire lock on the file
+    let file = std::fs::File::open(&temp_file).unwrap();
+    let _lock = nix::fcntl::Flock::lock(file, nix::fcntl::FlockArg::LockExclusive)
+        .map_err(|(_, err)| err)
+        .unwrap();
+
+    // Attempt to connect via connect_uart_stream. It should fail at flock.
+    let res =
+        stream::connect_uart_stream(temp_file.to_str().unwrap(), NonZeroU32::new(9600).unwrap())
+            .await;
+    assert!(res.is_err());
+    let err = res.err().unwrap();
+    assert!(
+        matches!(err, ConnectionError::TtyConfigureFailed { .. }),
+        "Expected TtyConfigureFailed, got {:?}",
+        err
+    );
+    if let ConnectionError::TtyConfigureFailed { error } = err {
+        assert!(
+            error.contains("Port is already in use"),
+            "Expected port in use error, got: {}",
+            error
+        );
+    }
+}
+
+#[fuchsia::test]
+async fn test_canonicalize_target_does_not_resolve_symlinks() {
+    let (_env, temp_dir) = create_test_env("test_symlink");
+    let target_file = temp_dir.path().join("my_device");
+    std::fs::write(&target_file, b"").unwrap();
+
+    let symlink_file = temp_dir.path().join("my_device_link");
+    #[cfg(target_os = "linux")]
+    std::os::unix::fs::symlink(&target_file, &symlink_file).unwrap();
+
+    // Canonicalize both
+    let path_str = target_file.to_str().unwrap();
+    let link_str = symlink_file.to_str().unwrap();
+
+    let id1 = get_target_id(path_str);
+    let id2 = get_target_id(link_str);
+
+    // They must resolve to different target IDs because we do not resolve symlinks!
+    assert_ne!(id1, id2);
+}
+
+#[fuchsia::test]
+async fn test_is_pty_target_virtual_socket_detection() {
+    let (_env, temp_dir) = create_test_env("test_virtual_socket_detection");
+
+    // 1. Regular file / character device mock (not PTY, not socket) -> false
+    let regular_file = temp_dir.path().join("regular_serial");
+    fs::write(&regular_file, b"").unwrap();
+    assert!(!is_pty_target(&regular_file));
+
+    // 2. Generic UNIX domain socket (e.g. Pontis bridge or test proxy) -> true
+    let generic_socket = temp_dir.path().join("serial-0403-6001.sock");
+    let _listener = std::os::unix::net::UnixListener::bind(&generic_socket).unwrap();
+    assert!(is_pty_target(&generic_socket));
 }
