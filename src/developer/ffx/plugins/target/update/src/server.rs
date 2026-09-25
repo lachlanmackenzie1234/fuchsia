@@ -71,7 +71,7 @@ pub(crate) async fn package_server_task(
 
     let cmd = ffx_repository_server_start_args::StartCommand {
         // Start a server on the given port.
-        address: Some((Ipv6Addr::UNSPECIFIED, repo_port).into()),
+        address: Some((Ipv6Addr::LOCALHOST, repo_port).into()),
         foreground: true,
         // Give it a name. This is actually a prefix of the name when running a product bundle.
         repository: Some(repo_name.clone()),
@@ -433,54 +433,71 @@ async fn try_rcs_proxy_connection(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use ffx_config::TestEnv;
-    use ffx_target::TargetInfoQuery;
-    use fho::{FhoEnvironment, TryFromEnv as _};
-    use fidl::endpoints::DiscoverableProtocolMarker;
-    use fidl_fuchsia_developer_remotecontrol::{ConnectCapabilityError, RemoteControlRequest};
-    use fidl_fuchsia_pkg::{
+    use fdomain_fuchsia_developer_remotecontrol::{
+        ConnectCapabilityError, RemoteControlMarker, RemoteControlRequest,
+    };
+    use fdomain_fuchsia_io as fio;
+    use fdomain_fuchsia_pkg::{
         RepositoryConfig, RepositoryIteratorRequest, RepositoryManagerMarker,
         RepositoryManagerRequest, RepositoryManagerRequestStream,
     };
-    use fidl_fuchsia_pkg_rewrite::{
+    use fdomain_fuchsia_pkg_rewrite::{
         EditTransactionRequest, EngineMarker, EngineRequest, EngineRequestStream,
         RuleIteratorRequest,
     };
+    use fdomain_fuchsia_posix_socket as fsock;
+    use ffx_config::TestEnv;
+    use ffx_target::TargetInfoQuery;
+    use fho::{FhoEnvironment, TryFromEnv as _};
     use futures::channel::mpsc;
     use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
     use std::assert_matches;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, OnceLock};
     use target_behavior::ConnectionBehavior;
     use target_holders::{HostAddrHolder, RemoteControlProxyHolder};
 
-    fn setup_fake_client() -> Arc<fdomain_client::Client> {
-        fdomain_local::local_client(move || {
-            let (client_end, mut stream) =
-                fidl::endpoints::create_request_stream::<fidl_fuchsia_io::DirectoryMarker>();
+    fn setup_fake_client()
+    -> (Arc<fdomain_client::Client>, Arc<ffx_target_net_testutil::FakeNetstack>) {
+        let netstack_holder =
+            Arc::new(OnceLock::<Arc<ffx_target_net_testutil::FakeNetstack>>::new());
+        let netstack_holder_clone = netstack_holder.clone();
+
+        let fdomain_client = fdomain_local::local_client_fdomain(move |channel| {
+            let netstack = netstack_holder_clone.get().unwrap().clone();
             fuchsia_async::Task::local(async move {
-                use futures::StreamExt;
+                let mut stream =
+                    fdomain_client::fidl::ServerEnd::<fio::DirectoryMarker>::new(channel)
+                        .into_stream();
                 while let Some(Ok(req)) = stream.next().await {
                     match req {
-                        fidl_fuchsia_io::DirectoryRequest::Open { path, object, .. } => {
-                            if path == fidl_fuchsia_developer_remotecontrol::RemoteControlMarker::PROTOCOL_NAME {
-                                let mut rcs_stream = fidl::endpoints::ServerEnd::<
-                                    fidl_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                        fio::DirectoryRequest::Open { path, object, .. } => {
+                            let path = path.strip_prefix("./").unwrap_or(&path);
+                            let path = path.strip_prefix("svc/").unwrap_or(path);
+                            if path == RemoteControlMarker::PROTOCOL_NAME {
+                                let mut rcs_stream = fdomain_client::fidl::ServerEnd::<
+                                    RemoteControlMarker,
                                 >::new(object)
                                 .into_stream();
+                                let netstack = netstack.clone();
                                 fuchsia_async::Task::local(async move {
-                                    use futures::TryStreamExt;
                                     while let Ok(Some(req)) = rcs_stream.try_next().await {
-                                        handle_rcs_proxy_request(req);
+                                        handle_rcs_proxy_request(req, &netstack);
                                     }
-                                }).detach();
+                                })
+                                .detach();
                             }
                         }
                         _ => {}
                     }
                 }
-            }).detach();
-            Ok(client_end)
-        })
+            })
+            .detach();
+        });
+
+        let fake_netstack =
+            Arc::new(ffx_target_net_testutil::FakeNetstack::new(fdomain_client.clone()));
+        let _ = netstack_holder.set(fake_netstack.clone());
+        (fdomain_client, fake_netstack)
     }
 
     pub(crate) struct FakeTestEnv {
@@ -489,11 +506,12 @@ pub(crate) mod tests {
         pub host_address: Deferred<HostAddrHolder>,
         pub target_spec: Deferred<TargetInfoQueryHolder>,
         pub _client: Arc<fdomain_client::Client>,
+        pub fake_netstack: Arc<ffx_target_net_testutil::FakeNetstack>,
     }
 
     impl FakeTestEnv {
         pub(crate) async fn new(test_env: &TestEnv) -> Self {
-            let fdomain_client = setup_fake_client();
+            let (fdomain_client, fake_netstack) = setup_fake_client();
             let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
             let target_env = target_behavior::target_interface(&fho_env);
             let behavior =
@@ -513,6 +531,7 @@ pub(crate) mod tests {
                 host_address,
                 target_spec,
                 _client: fdomain_client,
+                fake_netstack,
             }
         }
     }
@@ -540,7 +559,7 @@ pub(crate) mod tests {
 
                             Task::local(async move {
                                 responder.send(Ok(())).unwrap();
-                                let _send = sender.send(()).await.unwrap();
+                                let _ = sender.send(()).await;
                             })
                             .detach();
                         }
@@ -631,7 +650,7 @@ pub(crate) mod tests {
                                         }
                                         EditTransactionRequest::Commit { responder } => {
                                             let res = responder.send(Ok(())).unwrap();
-                                            let _send = sender.send(()).await.unwrap();
+                                            let _ = sender.send(()).await;
                                             res
                                         }
                                     }
@@ -647,7 +666,10 @@ pub(crate) mod tests {
         }
     }
 
-    fn handle_rcs_proxy_request(req: RemoteControlRequest) {
+    fn handle_rcs_proxy_request(
+        req: RemoteControlRequest,
+        netstack: &Arc<ffx_target_net_testutil::FakeNetstack>,
+    ) {
         let (repo_manager, _) = FakeRepositoryManager::new();
         let (engine, _) = FakeEngine::new();
         match req {
@@ -662,7 +684,7 @@ pub(crate) mod tests {
                 match capability_name {
                     RepositoryManagerMarker::PROTOCOL_NAME => {
                         repo_manager.spawn(
-                            fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(
+                            fdomain_client::fidl::ServerEnd::<RepositoryManagerMarker>::new(
                                 server_channel,
                             )
                             .into_stream(),
@@ -671,13 +693,18 @@ pub(crate) mod tests {
                     }
                     EngineMarker::PROTOCOL_NAME => {
                         engine.spawn(
-                            fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
+                            fdomain_client::fidl::ServerEnd::<EngineMarker>::new(server_channel)
                                 .into_stream(),
                         );
                         responder.send(Ok(())).expect("Could not send response")
                     }
-                    "fuchsia.posix.socket.Provider" => {
-                        responder.send(Ok(())).unwrap();
+                    fsock::ProviderMarker::PROTOCOL_NAME => {
+                        netstack.connect_socket_provider(fdomain_client::fidl::ServerEnd::<
+                            fsock::ProviderMarker,
+                        >::new(
+                            server_channel
+                        ));
+                        responder.send(Ok(())).expect("Could not send response")
                     }
                     _ => {
                         responder.send(Err(ConnectCapabilityError::NoMatchingCapabilities)).unwrap()
