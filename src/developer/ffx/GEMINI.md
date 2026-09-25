@@ -262,3 +262,15 @@ While supporting both machine and human-readable output is the default expectati
   }
   ```
 * **End-to-End Tests (`ffx_e2e_emu`)**: When an integration test against a real Fuchsia system is necessary, use `//src/developer/ffx/lib/e2e_emu` (`IsolatedEmulator`) and `//src/developer/ffx/lib/isolate` so the test runs in a sandboxed isolate directory without polluting the developer's host environment.
+* **Python Test Scripts**: When a test requires a helper or mock executable written in Python (e.g., a mock driver or fake `ssh` binary), do **not** construct the Python script as an inline string literal (`r#"..."#` or `format!(...)`) inside the Rust test. Instead:
+  1. Place the standalone script in `test_data/<script>.py` (e.g., `test_data/mock_driver.py`), and start the file with:
+     ```python
+     #!/usr/bin/env python3
+     # allow-non-vendored-python
+     ```
+     In Infra test environments, an in-tree vendored Python interpreter is not necessarily available; using `/usr/bin/env python3` alongside `# allow-non-vendored-python` ensures the script runs reliably both in Infra and on a developer's machine while passing presubmit shebang checks. Pass any dynamic per-test parameters via CLI flags or environment variables rather than interpolating values into Python source code.
+  2. Declare the script in the target's `inputs` list in `BUILD.gn` so GN tracks it for incremental rebuilds:
+     ```gn
+     inputs = [ "test_data/mock_driver.py" ]
+     ```
+  3. Embed the script in the Rust test using `include_str!("../test_data/mock_driver.py")`, write it to the test's `TempDir`, and set its permissions to `0o755` before invoking it.
