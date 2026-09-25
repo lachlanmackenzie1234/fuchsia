@@ -37,10 +37,10 @@ const DEFAULT_DISCONNECT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const DEFAULT_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Discovery polling interval for FastbootUsbWatcher.
-const DEFAULT_DISCOVERY_INTERVAL: Duration = Duration::from_secs(1);
+const DEFAULT_DISCOVERY_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Sleep duration between consecutive getvar liveness checks on the rediscovered target.
-const DEFAULT_LIVE_SLEEP_INTERVAL: Duration = Duration::from_millis(500);
+const DEFAULT_LIVE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RediscoveryConfig {
