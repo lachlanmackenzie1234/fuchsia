@@ -168,6 +168,7 @@ if (target_cpu == "arm64") {
       "//src/media/lib/internal_buffer",
       "//src/media/third_party/chromium_media",
       "//src/security/lib/tee/tee-client-api",
+      "//zircon/system/ulib/closure-queue",
       "//zircon/system/ulib/fbl",
       "//zircon/system/ulib/hwreg",
       "//zircon/system/ulib/inspect",
