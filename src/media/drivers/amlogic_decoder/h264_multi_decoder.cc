@@ -647,17 +647,23 @@ zx_status_t H264MultiDecoder::InitializeBuffers() {
 void H264MultiDecoder::ResetHardware() {
   TRACE_DURATION("media", "H264MultiDecoder::ResetHardware");
 
-  if (!WaitForRegister(std::chrono::milliseconds(100), [this]() {
+  // 100ms is observed to be long enough, but due to ZX_PANIC if this times out, wait longer.
+  if (!WaitForRegister(std::chrono::milliseconds(1000), [this]() {
         return !(DcacDmaCtrl::Get().ReadFrom(owner_->dosbus()).reg_value() & 0x8000);
       })) {
     DECODE_ERROR("Waiting for DCAC DMA timed out");
+    // This will quarantine currently-pinned VMOs.
+    ZX_PANIC("wait failed: %d", __LINE__);
     return;
   }
 
-  if (!WaitForRegister(std::chrono::milliseconds(100), [this]() {
+  // 100ms is observed to be long enough, but due to ZX_PANIC if this times out, wait longer.
+  if (!WaitForRegister(std::chrono::milliseconds(1000), [this]() {
         return !(LmemDmaCtrl::Get().ReadFrom(owner_->dosbus()).reg_value() & 0x8000);
       })) {
     DECODE_ERROR("Waiting for LMEM DMA timed out");
+    // This will quarantine currently-pinned VMOs.
+    ZX_PANIC("wait failed: %d", __LINE__);
     return;
   }
 
@@ -2090,13 +2096,17 @@ void H264MultiDecoder::HandleSliceHeadDone() {
 
   // Wait for the hardware to finish processing its current mbs.  Normally this should be quick, but
   // wait a while to avoid potential spurious timeout (none observed at 100ms).
-  if (!SpinWaitForRegister(std::chrono::milliseconds(400), [&] {
+  //
+  // 100ms is observed to be long enough, but due to ZX_PANIC if this times out, wait longer.
+  if (!SpinWaitForRegister(std::chrono::milliseconds(1000), [&] {
         return !H264CoMbRwCtl::Get().ReadFrom(owner_->dosbus()).busy();
       })) {
     LogEvent(
         media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_TimeoutWaitingForHwError);
     LOG(ERROR, "Failed to wait for rw register nonbusy");
     OnFatalError();
+    // This will quarantine currently-pinned VMOs.
+    ZX_PANIC("wait failed: %d", __LINE__);
     return;
   }
 
