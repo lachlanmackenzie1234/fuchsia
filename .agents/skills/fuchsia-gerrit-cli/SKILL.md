@@ -4,7 +4,8 @@ description: >
   Guide for using the `fx gh` command-line interface to interact with Fuchsia
   Gerrit changes (CLs). Use when reading open changes, posting inline
   comments, replying to reviewer threads, managing draft comments, checking CI
-  status with `pr checks`, or updating CQ labels from the terminal.
+  status with `pr checks`, or updating CQ labels from the terminal. Do NOT use
+  for performing automated code reviews (use /review instead).
 ---
 
 # Fuchsia Gerrit CLI (fx gh)
