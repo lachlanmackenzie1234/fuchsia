@@ -527,9 +527,9 @@ pub async fn publish_dml_devices(
                     ..Default::default()
                 });
             }
-            for bti in crate::bti_list(pdev_dict) {
+            for bti in crate::bti_list(pdev_dict)? {
                 bti_list.push(fpbus::Bti {
-                    iommu_id: Some(0),
+                    iommu_id: Some(bti.iommu_id),
                     bti_id: Some(bti.id),
                     name: bti.name,
                     ..Default::default()

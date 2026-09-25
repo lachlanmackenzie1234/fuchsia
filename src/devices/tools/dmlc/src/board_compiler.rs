@@ -395,6 +395,7 @@ fn process_service_offer(
     offer: &DmlOffer,
     to_name: &str,
     devices: &[fbdc::Device],
+    iommu_map: &IommuMap,
     auto_incrementer: &mut crate::workarounds::AutoIncrementer,
     aggregates_list: &mut Vec<((String, String), Vec<LocalResourceEntry>)>,
 ) -> Result<(), anyhow::Error> {
@@ -414,6 +415,7 @@ fn process_service_offer(
 
     auto_incrementer.apply(service_name, &provider, &mut constraint_val)?;
     resolve_interrupt_controllers(&mut constraint_val, devices)?;
+    resolve_bti_iommus(&mut constraint_val, iommu_map)?;
 
     let global_id = compute_global_id(&provider, to_name, offer.name.as_deref().unwrap_or(""));
     if let Some(obj) = constraint_val.as_object_mut()
@@ -433,6 +435,131 @@ fn process_service_offer(
         existing.1.push(entry);
     } else {
         aggregates_list.push((key, vec![entry]));
+    }
+
+    Ok(())
+}
+
+/// Replaces the IOMMU references in the BTI constraints of `constraint_val`
+/// with IOMMU IDs using `iommu_map`.
+///
+/// If a BTI constraint does not specify an IOMMU then it is assigned the IOMMU
+/// ID 0.
+///
+/// ```json
+/// // Constraints before.
+/// {
+///   "btis": [
+///     {
+///       "id": 0,
+///       "iommu": "#foo"
+///     },
+///     {
+///       "id": 1
+///     }
+///   ],
+///   ...
+/// }
+///
+/// // Constraints after.
+/// {
+///   "btis": [
+///     {
+///       "id": 0,
+///
+///       // Assuming the ID of IOMMU "foo" is 2.
+///       "iommu_id": 2
+///     },
+///     {
+///       "id": 1,
+///       "iommu_id": 0
+///     }
+///   ],
+///   ...
+/// }
+/// ```
+///
+/// Returns an error if:
+/// - A BTI constraint defines `iommu_id`.
+/// - An IOMMU reference does not start with `#`.
+/// - A referenced IOMMU is not found in `iommu_map`.
+fn resolve_bti_iommus(
+    constraint_val: &mut Value,
+    iommu_map: &IommuMap,
+) -> Result<(), anyhow::Error> {
+    let Some(obj) = constraint_val.as_object_mut() else {
+        return Ok(());
+    };
+
+    if let Some(Value::Array(btis)) = obj.get_mut("btis") {
+        for bti_val in btis.iter_mut() {
+            if let Some(bti_obj) = bti_val.as_object_mut() {
+                resolve_single_bti_iommu(bti_obj, iommu_map)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Replaces the IOMMU reference in the BTI constraint `bti_obj` with an IOMMU
+/// ID using `iommu_map`.
+///
+/// If the BTI constraint does not specify an IOMMU then it is assigned the
+/// IOMMU ID 0.
+///
+/// ```json
+/// // BTI constraint before.
+/// {
+///   "id": 0,
+///   "iommu": "#foo"
+/// }
+///
+/// // BTI constraint after.
+/// {
+///   "id": 0,
+///
+///   // Assuming the ID of IOMMU "foo" is 2.
+///   "iommu_id": 2
+/// }
+/// ```
+///
+/// Returns an error if:
+/// - `bti_obj` defines `iommu_id`.
+/// - The IOMMU reference does not start with `#`.
+/// - A referenced IOMMU is not found in `iommu_map`.
+fn resolve_single_bti_iommu(
+    bti_obj: &mut serde_json::Map<String, Value>,
+    iommu_map: &IommuMap,
+) -> Result<(), anyhow::Error> {
+    if bti_obj.contains_key("iommu_id") {
+        anyhow::bail!(
+            "Explicit \"iommu_id\" definition not allowed: Use `iommu: #<iommu-name>` instead"
+        );
+    }
+
+    match bti_obj.remove("iommu") {
+        Some(Value::String(iommu_reference)) => {
+            let iommu_name = iommu_reference.strip_prefix('#').with_context(|| {
+                format!(
+                    "IOMMU reference {iommu_reference:?} in BTI constraint must start with '#' (e.g. \"#{iommu_reference}\")"
+                )
+            })?;
+            let iommu_id = iommu_map.get_id(iommu_name).with_context(|| {
+                format!("Referenced IOMMU {iommu_name:?} not found in declared iommus")
+            })?;
+            bti_obj.insert("iommu_id".to_string(), Value::Number(iommu_id.into()));
+        }
+        Some(other) => {
+            anyhow::bail!(
+                "Invalid iommu value in BTI constraint: expected string reference starting with '#', got {:?}",
+                other
+            );
+        }
+        None => {
+            // Default to platform bus built-in stub IOMMU (ID 0).
+            bti_obj.insert("iommu_id".to_string(), Value::Number(0.into()));
+        }
     }
 
     Ok(())
@@ -572,7 +699,7 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
         }
     }
 
-    let (iommus, _iommu_map) = process_iommus(&board_dml.iommus)?;
+    let (iommus, iommu_map) = process_iommus(&board_dml.iommus)?;
 
     // Process offers
     for offer in &board_dml.offer {
@@ -587,6 +714,7 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
             offer,
             &to_name,
             &devices,
+            &iommu_map,
             &mut auto_incrementer,
             &mut aggregates_list,
         )?;
@@ -838,7 +966,6 @@ impl IommuMap {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn get_id(&self, name: &str) -> Option<u32> {
         self.name_to_id.get(name).copied()
     }
@@ -2627,8 +2754,8 @@ mod tests {
     }
 
     #[test]
-    fn test_iommu_declaration_compiles() {
-        let temp_dir = std::env::temp_dir().join("test_temp_iommu_compiles");
+    fn test_iommu_declaration_and_bti_resolution() {
+        let temp_dir = std::env::temp_dir().join("test_temp_iommu_resolution");
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
@@ -2647,19 +2774,39 @@ mod tests {
                     {
                         "name": "stub-iommu",
                         "stub_iommu": {}
-                    },
-                    {
-                        "name": "custom-smmu",
-                        "id": 10,
-                        "arm_smmu": {
-                            "base_address": 0x0c700000
-                        }
                     }
                 ],
                 "children": [
                     {
                         "name": "child_dev",
                         "compatible": "fuchsia,test"
+                    }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "name": "pdev",
+                        "to": "#child_dev",
+                        "constraints": {
+                            "btis": [
+                                {
+                                    "iommu": "#arm-smmu",
+                                    "id": 1,
+                                    "name": "bti_0"
+                                },
+                                {
+                                    "iommu": "#arm-smmu",
+                                    "id": 2,
+                                    "name": "bti_1"
+                                },
+                                {
+                                    "iommu": "#stub-iommu",
+                                    "id": 3,
+                                    "name": "bti_stub"
+                                }
+                            ]
+                        }
                     }
                 ]
             }"##,
@@ -2685,9 +2832,10 @@ mod tests {
         let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
 
         let iommus = board_config.iommus.as_ref().expect("iommus should be present");
-        assert_eq!(iommus.len(), 3);
+        assert_eq!(iommus.len(), 2);
 
         let arm_smmu = iommus.iter().find(|i| i.name.as_deref() == Some("arm-smmu")).unwrap();
+        // ID 1 was autogenerated since 0 is reserved
         assert_eq!(arm_smmu.id, Some(1));
         match &arm_smmu.iommu_type {
             Some(fbdc::IommuType::ArmSmmu(arm)) => {
@@ -2697,13 +2845,384 @@ mod tests {
         }
 
         let stub = iommus.iter().find(|i| i.name.as_deref() == Some("stub-iommu")).unwrap();
+        // ID 2 was autogenerated sequentially
         assert_eq!(stub.id, Some(2));
         assert!(matches!(stub.iommu_type, Some(fbdc::IommuType::StubIommu(_))));
 
-        let custom = iommus.iter().find(|i| i.name.as_deref() == Some("custom-smmu")).unwrap();
-        assert_eq!(custom.id, Some(10));
+        let aggregates = board_config.aggregates.as_ref().unwrap();
+        let pdev_agg = aggregates.iter().find(|a| a.provider.as_deref() == Some("pdev")).unwrap();
+        let resource = &pdev_agg.resources.as_ref().unwrap()[0];
+        let dict = resource.constraint.as_ref().unwrap();
+
+        let btis = fbdc::bti_list(dict).unwrap();
+        assert_eq!(btis.len(), 3);
+        assert_eq!(btis[0].id, 1);
+        assert_eq!(btis[0].iommu_id, 1);
+        assert_eq!(btis[0].name.as_deref(), Some("bti_0"));
+
+        assert_eq!(btis[1].id, 2);
+        assert_eq!(btis[1].iommu_id, 1);
+        assert_eq!(btis[1].name.as_deref(), Some("bti_1"));
+
+        assert_eq!(btis[2].id, 3);
+        assert_eq!(btis[2].iommu_id, 2);
+        assert_eq!(btis[2].name.as_deref(), Some("bti_stub"));
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_bti_omitted_iommu_defaults_to_zero() {
+        let temp_dir = std::env::temp_dir().join("test_temp_bti_omitted_iommu");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    {
+                        "name": "child_dev",
+                        "compatible": "fuchsia,test"
+                    }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "name": "pdev",
+                        "to": "#child_dev",
+                        "constraints": {
+                            "btis": [
+                                {
+                                    "id": 1,
+                                    "name": "bti_default"
+                                },
+                                {
+                                    "id": 2,
+                                    "name": "bti_second"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+
+        let aggregates = board_config.aggregates.as_ref().unwrap();
+        let pdev_agg = aggregates.iter().find(|a| a.provider.as_deref() == Some("pdev")).unwrap();
+        let resource = &pdev_agg.resources.as_ref().unwrap()[0];
+        let dict = resource.constraint.as_ref().unwrap();
+
+        let btis = fbdc::bti_list(dict).unwrap();
+        assert_eq!(btis.len(), 2);
+        assert_eq!(btis[0].id, 1);
+        assert_eq!(btis[0].iommu_id, 0);
+        assert_eq!(btis[0].name.as_deref(), Some("bti_default"));
+
+        assert_eq!(btis[1].id, 2);
+        assert_eq!(btis[1].iommu_id, 0);
+        assert_eq!(btis[1].name.as_deref(), Some("bti_second"));
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_bti_manual_iommu_id_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_bti_manual_iommu_id");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "child_dev" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "to": "#child_dev",
+                        "constraints": {
+                            "btis": [
+                                {
+                                    "id": 1,
+                                    "iommu_id": 0
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Explicit \"iommu_id\" definition not allowed"),
+            "Expected manual iommu_id error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_bti_reference_missing_hash_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_bti_missing_hash");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "iommus": [
+                    {
+                        "name": "arm-smmu",
+                        "arm_smmu": { "base_address": 0x0c600001 }
+                    }
+                ],
+                "children": [
+                    { "name": "child_dev" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "to": "#child_dev",
+                        "constraints": {
+                            "btis": [
+                                {
+                                    "id": 1,
+                                    "iommu": "arm-smmu"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("must start with '#'"),
+            "Expected missing '#' error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_bti_empty_reference_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_bti_empty_ref");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "child_dev" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "to": "#child_dev",
+                        "constraints": {
+                            "btis": [
+                                {
+                                    "id": 1,
+                                    "iommu": "#"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Referenced IOMMU \"\" not found in declared iommus"),
+            "Expected empty reference error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_bti_numeric_iommu_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_bti_numeric_iommu");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "child_dev" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "to": "#child_dev",
+                        "constraints": {
+                            "btis": [
+                                {
+                                    "id": 1,
+                                    "iommu": 42
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("expected string reference starting with '#'"),
+            "Expected expected string reference error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_bti_undeclared_reference_rejected() {
+        let temp_dir = std::env::temp_dir().join("test_temp_bti_undeclared_ref");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "children": [
+                    { "name": "child_dev" }
+                ],
+                "offers": [
+                    {
+                        "from": "parent",
+                        "service": "fuchsia.hardware.platform.device.Service",
+                        "to": "#child_dev",
+                        "constraints": {
+                            "btis": [
+                                {
+                                    "id": 1,
+                                    "iommu": "#unknown-smmu"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("Referenced IOMMU \"unknown-smmu\" not found in declared iommus"),
+            "Expected undeclared IOMMU error, got: {}",
+            err_msg
+        );
     }
 
     #[test]

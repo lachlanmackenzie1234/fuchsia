@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::Context;
 use fidl_fuchsia_board_dml_config as fbdc;
 use fidl_fuchsia_driver_metadata as fdr;
 
@@ -31,6 +32,7 @@ pub struct Irq {
 pub struct Bti {
     pub id: u32,
     pub name: Option<String>,
+    pub iommu_id: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -118,18 +120,23 @@ pub fn irq_list(dict: &fdr::Dictionary) -> Vec<Irq> {
     list
 }
 
-pub fn bti_list(dict: &fdr::Dictionary) -> Vec<Bti> {
+pub fn bti_list(dict: &fdr::Dictionary) -> anyhow::Result<Vec<Bti>> {
     let mut list = Vec::new();
+    let entries = dict.entries.as_deref().unwrap_or(&[]);
     for i in 0.. {
-        let prefix = format!("btis.{}", i);
-        if let Some(id) = get_uint32(dict, &format!("{}.id", prefix)) {
-            let name = get_string(dict, &format!("{}.name", prefix));
-            list.push(Bti { id, name });
-        } else {
+        let prefix = format!("btis.{i}.");
+        if !entries.iter().any(|e| e.key.starts_with(&prefix)) {
             break;
         }
+
+        let id = get_uint32(dict, &format!("btis.{i}.id"))
+            .with_context(|| format!("BTI at index {i} is missing required \"id\""))?;
+        let iommu_id = get_uint32(dict, &format!("btis.{i}.iommu_id"))
+            .with_context(|| format!("BTI with ID {id} at index {i} is missing \"iommu_id\""))?;
+        let name = get_string(dict, &format!("btis.{i}.name"));
+        list.push(Bti { id, name, iommu_id });
     }
-    list
+    Ok(list)
 }
 
 pub fn smc_list(dict: &fdr::Dictionary) -> Vec<Smc> {
@@ -245,6 +252,10 @@ mod tests {
                     value: fdr::DictionaryValue::Int64(1),
                 },
                 fdr::DictionaryEntry {
+                    key: "btis.0.iommu_id".to_string(),
+                    value: fdr::DictionaryValue::Int64(10),
+                },
+                fdr::DictionaryEntry {
                     key: "btis.0.name".to_string(),
                     value: fdr::DictionaryValue::Str("dma_bti".to_string()),
                 },
@@ -252,15 +263,45 @@ mod tests {
                     key: "btis.1.id".to_string(),
                     value: fdr::DictionaryValue::Int64(2),
                 },
+                fdr::DictionaryEntry {
+                    key: "btis.1.iommu_id".to_string(),
+                    value: fdr::DictionaryValue::Int64(0),
+                },
             ]),
             ..Default::default()
         };
 
-        let btis = bti_list(&dict);
+        let btis = bti_list(&dict).unwrap();
         assert_eq!(btis.len(), 2);
         assert_eq!(btis[0].id, 1);
         assert_eq!(btis[0].name.as_deref(), Some("dma_bti"));
+        assert_eq!(btis[0].iommu_id, 10);
         assert_eq!(btis[1].id, 2);
         assert_eq!(btis[1].name, None);
+        assert_eq!(btis[1].iommu_id, 0);
+
+        let dict_missing_iommu = fdr::Dictionary {
+            entries: Some(vec![fdr::DictionaryEntry {
+                key: "btis.0.id".to_string(),
+                value: fdr::DictionaryValue::Int64(1),
+            }]),
+            ..Default::default()
+        };
+        assert!(bti_list(&dict_missing_iommu).is_err());
+
+        let dict_missing_id = fdr::Dictionary {
+            entries: Some(vec![
+                fdr::DictionaryEntry {
+                    key: "btis.0.name".to_string(),
+                    value: fdr::DictionaryValue::Str("dma_bti".to_string()),
+                },
+                fdr::DictionaryEntry {
+                    key: "btis.0.iommu_id".to_string(),
+                    value: fdr::DictionaryValue::Int64(10),
+                },
+            ]),
+            ..Default::default()
+        };
+        assert!(bti_list(&dict_missing_id).is_err());
     }
 }
