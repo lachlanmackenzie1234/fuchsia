@@ -1047,7 +1047,6 @@ config("Wno-conversion") {
     "//src/devices/pci/drivers/pci:*",
     "//src/devices/pci/drivers/pci/test:*",
     "//src/devices/pci/testing:*",
-    "//src/devices/power/drivers/fusb302:*",
     "//src/devices/rtc/drivers/intel-rtc:*",
     "//src/devices/tee/drivers/optee:*",
     "//src/devices/tpm/drivers/tpm:*",
