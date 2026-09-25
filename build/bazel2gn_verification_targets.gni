@@ -191,6 +191,7 @@ bazel2gn_verification_targets = [
   "//src/starnix/lib/third_party/rust_netlink/netlink_packet_route:verify_bazel2gn",
   "//src/starnix/lib/third_party/rust_netlink/netlink_packet_sock_diag:verify_bazel2gn",
   "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils:verify_bazel2gn",
+  "//src/starnix/lib/usercopy:verify_bazel2gn",
   "//src/starnix/lib/virtgralloc:verify_bazel2gn",
   "//src/storage/fxfs/fidl/fuchsia.fxfs:verify_bazel2gn",
   "//src/storage/lib/vfs/cpp:verify_bazel2gn",
