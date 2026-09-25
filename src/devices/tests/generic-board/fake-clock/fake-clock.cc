@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.clock/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.interrupt/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base2.h>
@@ -142,9 +143,21 @@ class FakeClockDriver : public fdf::DriverBase2,
     }
     fdf::info("fake-clock registered as interrupt controller successfully!");
 
-    // Hardcoded clock config: name="my-clock", id=1
+    // Default clock config: name="my-clock", clock_id=1
     std::string clock_name = "my-clock";
     uint32_t clock_id = 1;
+    uint32_t node_id = clock_id;
+    zx::result metadata = pdev.GetFidlMetadata<fuchsia_driver_metadata::Dictionary>(
+        "fuchsia.hardware.clockimpl.ClockIdsMetadata");
+    if (metadata.is_ok() && metadata->entries().has_value()) {
+      for (const auto& entry : *metadata->entries()) {
+        if (entry.key() == "clock_nodes.0.id" && entry.value().int64().has_value()) {
+          node_id = static_cast<uint32_t>(entry.value().int64().value());
+        } else if (entry.key() == "clock_nodes.0.clock_id" && entry.value().int64().has_value()) {
+          clock_id = static_cast<uint32_t>(entry.value().int64().value());
+        }
+      }
+    }
 
     auto clock_device =
         std::make_unique<FakeClockDevice>(clock_id, clock_name, [this] { TriggerInterrupt(); });
@@ -164,7 +177,7 @@ class FakeClockDriver : public fdf::DriverBase2,
 
     std::vector<fuchsia_driver_framework::NodeProperty2> props{
         fdf::MakeProperty2("fuchsia.NAME", clock_name),
-        fdf::MakeProperty2("fuchsia.ID", clock_id),
+        fdf::MakeProperty2("fuchsia.ID", node_id),
     };
 
     auto offers = std::vector{fdf::MakeOffer2<fuchsia_hardware_clock::Service>(clock_name)};
