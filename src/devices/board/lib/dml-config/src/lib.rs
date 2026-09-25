@@ -6,7 +6,10 @@ use fidl_fuchsia_board_dml_config as fbdc;
 use fidl_fuchsia_driver_metadata as fdr;
 
 // Re-export FIDL types for convenience
-pub use fbdc::{AggregateEntry, BoardConfig, Device, ResourceEntry, StaticMetadata};
+pub use fbdc::{
+    AggregateEntry, ArmSmmu, BoardConfig, Device, Iommu, IommuType, ResourceEntry, StaticMetadata,
+    StubIommu,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct Mmio {

@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{AggregateEntry, BoardConfig, Device, ResourceEntry};
+use crate::{AggregateEntry, BoardConfig, Device, Iommu, IommuType, ResourceEntry};
 use anyhow::{Context, anyhow, bail};
 use fdf_fidl::DriverChannel;
 use fidl_fuchsia_driver_metadata as fdr;
 use fidl_next_fuchsia_driver_framework as fdf_framework;
 use fidl_next_fuchsia_hardware_platform_bus as fpbus;
 use fidl_next_fuchsia_hardware_power as fpower;
+use futures::future::try_join_all;
 use phf;
 use std::collections::{HashMap, HashSet};
 use zx;
@@ -431,6 +432,8 @@ pub async fn publish_dml_devices(
 ) -> anyhow::Result<()> {
     let mut provider_metadata = HashMap::<String, Vec<fpbus::Metadata>>::new();
 
+    register_iommus(pbus, config.iommus.as_deref()).await.context("Failed to register IOMMUs")?;
+
     let devices = config
         .devices
         .as_ref()
@@ -738,5 +741,48 @@ pub async fn publish_dml_devices(
         }
     }
 
+    Ok(())
+}
+
+/// Registers `iommus` with the `pbus`.
+async fn register_iommus(
+    pbus: &fidl_next::Client<fpbus::PlatformBus, DriverChannel>,
+    iommus: Option<&[Iommu]>,
+) -> anyhow::Result<()> {
+    let Some(iommus) = iommus else {
+        return Ok(());
+    };
+
+    let futures = iommus
+        .iter()
+        .map(|iommu| {
+            let iommu_name = iommu.name.as_deref().unwrap_or("unnamed");
+            let iommu_id = iommu.id.with_context(|| format!("IOMMU {iommu_name:?} missing id"))?;
+            let fpbus_iommu = match &iommu.iommu_type {
+                Some(IommuType::ArmSmmu(arm_smmu)) => {
+                    fpbus::Iommu::ArmSmmu(fpbus::ArmSmmu { base_address: arm_smmu.base_address })
+                }
+                Some(IommuType::StubIommu(_)) | None => fpbus::Iommu::StubIommu(()),
+                _ => {
+                    bail!("Unsupported IOMMU type for IOMMU {iommu_name:?}");
+                }
+            };
+            let future = async move {
+                log::info!("Registering IOMMU '{iommu_name}' (id: {iommu_id})");
+                pbus.register_iommu(iommu_id, &fpbus_iommu)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to send RegisterIommu FIDL request for IOMMU {iommu_name:?}"
+                        )
+                    })?
+                    .map_err(|e| e.err().unwrap_or(zx::Status::INTERNAL))
+                    .with_context(|| format!("Failed to register IOMMU {iommu_name:?}"))?;
+                Ok::<(), anyhow::Error>(())
+            };
+            Ok(future)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    try_join_all(futures).await?;
     Ok(())
 }

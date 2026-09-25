@@ -84,6 +84,14 @@
                 "$ref": "#/definitions/MetadataMapping"
             },
             "default": []
+        },
+        "iommus": {
+            "type": "array",
+            "description": "Board manifest: list of IOMMUs registered with the platform bus.",
+            "items": {
+                "$ref": "#/definitions/BoardIommu"
+            },
+            "default": []
         }
     },
     "definitions": {
@@ -733,6 +741,54 @@
             "required": [
                 "metadata_id",
                 "aggregations"
+            ]
+        },
+        "BoardIommu": {
+            "type": "object",
+            "description": "IOMMU declaration registered with the platform bus.",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Unique identifier or name of the IOMMU."
+                },
+                "id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Optional explicit numeric IOMMU ID (IDs starting from 1; 0 is reserved)."
+                },
+                "arm_smmu": {
+                    "type": "object",
+                    "description": "ARM SMMU configuration.",
+                    "properties": {
+                        "base_address": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Base register address for the ARM SMMU."
+                        }
+                    },
+                    "required": [
+                        "base_address"
+                    ]
+                },
+                "stub_iommu": {
+                    "type": "object",
+                    "description": "Stub IOMMU configuration."
+                }
+            },
+            "required": [
+                "name"
+            ],
+            "oneOf": [
+                {
+                    "required": [
+                        "arm_smmu"
+                    ]
+                },
+                {
+                    "required": [
+                        "stub_iommu"
+                    ]
+                }
             ]
         }
     }

@@ -572,6 +572,8 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
         }
     }
 
+    let (iommus, _iommu_map) = process_iommus(&board_dml.iommus)?;
+
     // Process offers
     for offer in &board_dml.offer {
         if offer.service.as_deref() == Some("fuchsia.hardware.interrupt.ControllerRegistryService")
@@ -677,6 +679,7 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
     let board_config = fbdc::BoardConfig {
         devices: Some(devices),
         aggregates: Some(aggregates),
+        iommus: Some(iommus),
         ..Default::default()
     };
     let serialized_board_config =
@@ -732,6 +735,122 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
     std::fs::write(cml_output_path, final_cml_code)
         .context("Failed to write generated cml file")?;
     Ok(())
+}
+
+/// Validates IDs of IOMMUs in `dml_iommus`, ensuring there are no duplicate
+/// names or IDs. Generates unique IDs for IOMMUs in `dml_iommus` that do not
+/// explicitly define an ID.
+///
+/// Returns:
+/// - A `Vec<fbdc::Iommu>` for [`BoardConfig`](fbdc::BoardConfig).
+/// - An [`IommuMap`] providing bidirectional lookup between IOMMU names and IDs.
+fn process_iommus(dml_iommus: &[DmlIommu]) -> Result<(Vec<fbdc::Iommu>, IommuMap), anyhow::Error> {
+    let mut iommu_map = IommuMap::with_capacity(dml_iommus.len());
+
+    // Fill the map with the IOMMU IDs explicitly defined in the DML.
+    for iommu in dml_iommus {
+        if let Some(id) = iommu.id {
+            if id == 0 {
+                anyhow::bail!(
+                    "IOMMU {} has ID 0 which is reserved for the platform bus stub IOMMU",
+                    iommu.name
+                );
+            }
+            iommu_map.insert(iommu.name.clone(), id)?;
+        }
+    }
+
+    let mut next_iommu_id: u32 = 1;
+    let mut iommus = Vec::<fbdc::Iommu>::with_capacity(dml_iommus.len());
+    for iommu in dml_iommus {
+        let iommu_id = if let Some(id) = iommu.id {
+            id
+        } else {
+            // Generate a unique IOMMU ID.
+            while iommu_map.contains_id(next_iommu_id) {
+                next_iommu_id = next_iommu_id.checked_add(1).context("Exhausted IOMMU IDs")?;
+            }
+            let id = next_iommu_id;
+            iommu_map.insert(iommu.name.clone(), id)?;
+            next_iommu_id = next_iommu_id.checked_add(1).context("Exhausted IOMMU IDs")?;
+            id
+        };
+
+        let iommu_type = match (&iommu.arm_smmu, &iommu.stub_iommu) {
+            (Some(arm), None) => {
+                fbdc::IommuType::ArmSmmu(fbdc::ArmSmmu { base_address: arm.base_address })
+            }
+            (None, Some(_)) => fbdc::IommuType::StubIommu(fbdc::StubIommu {}),
+            (Some(_), Some(_)) => {
+                anyhow::bail!(
+                    "IOMMU '{}' cannot specify both 'arm_smmu' and 'stub_iommu'",
+                    iommu.name
+                );
+            }
+            (None, None) => {
+                anyhow::bail!(
+                    "IOMMU '{}' must specify either 'arm_smmu' or 'stub_iommu'",
+                    iommu.name
+                );
+            }
+        };
+
+        iommus.push(fbdc::Iommu {
+            name: Some(iommu.name.clone()),
+            id: Some(iommu_id),
+            iommu_type: Some(iommu_type),
+            ..Default::default()
+        });
+    }
+
+    Ok((iommus, iommu_map))
+}
+
+/// Bidirectional map between IOMMU names and IDs.
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct IommuMap {
+    name_to_id: HashMap<String, u32>,
+    id_to_name: HashMap<u32, String>,
+}
+
+impl IommuMap {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            name_to_id: HashMap::with_capacity(capacity),
+            id_to_name: HashMap::with_capacity(capacity),
+        }
+    }
+
+    /// Inserts a name-to-id mapping, ensuring both name and ID are unique.
+    pub fn insert(&mut self, name: String, id: u32) -> Result<(), anyhow::Error> {
+        if name.starts_with('#') {
+            // '#' is reserved for references. An IOMMU name is not a reference.
+            anyhow::bail!("IOMMU name {:?} cannot start with '#'", name);
+        }
+        if let Some(other) = self.id_to_name.get(&id) {
+            anyhow::bail!("IOMMUs {:?} and {:?} have the same ID {}", name, other, id);
+        }
+        if self.name_to_id.contains_key(&name) {
+            anyhow::bail!("Multiple IOMMUs have the same name {:?}", name);
+        }
+        self.name_to_id.insert(name.clone(), id);
+        self.id_to_name.insert(id, name);
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn get_id(&self, name: &str) -> Option<u32> {
+        self.name_to_id.get(name).copied()
+    }
+
+    #[allow(dead_code)]
+    pub fn get_name(&self, id: u32) -> Option<&str> {
+        self.id_to_name.get(&id).map(String::as_str)
+    }
+
+    pub fn contains_id(&self, id: u32) -> bool {
+        self.id_to_name.contains_key(&id)
+    }
 }
 
 #[cfg(test)]
@@ -2505,5 +2624,220 @@ mod tests {
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_iommu_declaration_compiles() {
+        let temp_dir = std::env::temp_dir().join("test_temp_iommu_compiles");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "iommus": [
+                    {
+                        "name": "arm-smmu",
+                        "arm_smmu": {
+                            "base_address": 0x0c600001
+                        }
+                    },
+                    {
+                        "name": "stub-iommu",
+                        "stub_iommu": {}
+                    },
+                    {
+                        "name": "custom-smmu",
+                        "id": 10,
+                        "arm_smmu": {
+                            "base_address": 0x0c700000
+                        }
+                    }
+                ],
+                "children": [
+                    {
+                        "name": "child_dev",
+                        "compatible": "fuchsia,test"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let fidl_out = temp_dir.join("board-config.fidl");
+        let bind_out = temp_dir.join("board.bind");
+        let cml_out = temp_dir.join("board.cml");
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: None,
+            fidl_output: Some(fidl_out.to_str().unwrap().to_string()),
+            bind_output: Some(bind_out.to_str().unwrap().to_string()),
+            cml_output: Some(cml_out.to_str().unwrap().to_string()),
+            driver_dml: vec![],
+        };
+
+        compile_board(&args, "2026").unwrap();
+
+        let fidl_bytes = fs::read(&fidl_out).unwrap();
+        let board_config: fbdc::BoardConfig = fidl::unpersist(&fidl_bytes).unwrap();
+
+        let iommus = board_config.iommus.as_ref().expect("iommus should be present");
+        assert_eq!(iommus.len(), 3);
+
+        let arm_smmu = iommus.iter().find(|i| i.name.as_deref() == Some("arm-smmu")).unwrap();
+        assert_eq!(arm_smmu.id, Some(1));
+        match &arm_smmu.iommu_type {
+            Some(fbdc::IommuType::ArmSmmu(arm)) => {
+                assert_eq!(arm.base_address, 0x0c600001);
+            }
+            other => panic!("Expected ArmSmmu, got {:?}", other),
+        }
+
+        let stub = iommus.iter().find(|i| i.name.as_deref() == Some("stub-iommu")).unwrap();
+        assert_eq!(stub.id, Some(2));
+        assert!(matches!(stub.iommu_type, Some(fbdc::IommuType::StubIommu(_))));
+
+        let custom = iommus.iter().find(|i| i.name.as_deref() == Some("custom-smmu")).unwrap();
+        assert_eq!(custom.id, Some(10));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_iommu_map_name_starts_with_hash_error() {
+        let mut map = IommuMap::default();
+        let res = map.insert("#arm-smmu".to_string(), 1);
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(err_msg.contains("IOMMU name \"#arm-smmu\" cannot start with '#'"));
+    }
+
+    #[test]
+    fn test_iommu_definition_with_hash_name_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_iommu_hash_name");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "iommus": [
+                    {
+                        "name": "#arm-smmu",
+                        "arm_smmu": { "base_address": 0x0c600001 }
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("cannot start with '#'"),
+            "Expected hash name error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_iommu_missing_type_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_iommu_missing_type");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "iommus": [
+                    {
+                        "name": "arm-smmu"
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("must specify either 'arm_smmu' or 'stub_iommu'"),
+            "Expected missing type error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_iommu_both_types_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_iommu_both_types");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let main_file = temp_dir.join("main.dml");
+        fs::write(
+            &main_file,
+            r##"{
+                "name": "test_board",
+                "iommus": [
+                    {
+                        "name": "arm-smmu",
+                        "arm_smmu": { "base_address": 0x0c600001 },
+                        "stub_iommu": {}
+                    }
+                ]
+            }"##,
+        )
+        .unwrap();
+
+        let args = CompileBoardArgs {
+            input_file: main_file.to_str().unwrap().to_string(),
+            out_dir: Some(temp_dir.to_str().unwrap().to_string()),
+            fidl_output: None,
+            bind_output: None,
+            cml_output: None,
+            driver_dml: vec![],
+        };
+
+        let res = compile_board(&args, "2026");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        assert!(res.is_err());
+        let err_msg = format!("{}", res.err().unwrap());
+        assert!(
+            err_msg.contains("cannot specify both 'arm_smmu' and 'stub_iommu'"),
+            "Expected both types error, got: {}",
+            err_msg
+        );
     }
 }
