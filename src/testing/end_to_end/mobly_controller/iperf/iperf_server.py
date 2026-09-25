@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Copyright 2025 The Fuchsia Authors
+# Copyright 2026 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -20,8 +20,6 @@ import time
 from typing import IO
 
 from antlion import context, utils
-from antlion.types import ControllerConfig, Json
-from antlion.validation import MapValidator
 from libs.commands import nmcli
 from libs.commands.command import (
     LinuxCommand,
@@ -32,6 +30,8 @@ from libs.commands.journalctl import (
 )
 from libs.proc import job
 from libs.ssh import connection, settings
+from libs.types import ControllerConfig, Json
+from libs.validation import MapValidator
 from mobly import logger, signals
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "IPerfServer"
@@ -48,8 +48,8 @@ def create(
 
     The function creates iperf servers based on at least one config.
     If configs only specify a port number, a regular local IPerfServer object
-    will be created. If configs contains ssh settings or and AndroidDevice,
-    remote iperf servers will be started on those devices
+    will be created. If configs contain ssh settings,
+    remote iperf servers will be started on those devices.
 
     Args:
         configs: config parameters for the iperf server

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Copyright 2025 The Fuchsia Authors
+# Copyright 2026 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -20,9 +20,9 @@ from antlion.capabilities.ssh import SSHConfig
 from antlion.controllers.adb_lib.error import AdbCommandError
 from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.fuchsia_lib.ssh import SSHProvider
-from antlion.types import ControllerConfig, Json
-from antlion.validation import MapValidator
 from libs.commands.date import LinuxDateCommand
+from libs.types import ControllerConfig, Json
+from libs.validation import MapValidator
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "IPerfClient"
 
@@ -35,8 +35,8 @@ def create(configs: list[ControllerConfig]) -> list[IPerfClientBase]:
     """Factory method for iperf clients.
 
     The function creates iperf clients based on at least one config.
-    If configs contain ssh settings or and AndroidDevice, remote iperf clients
-    will be started on those devices, otherwise, a the client will run on the
+    If configs contain ssh settings, remote iperf clients
+    will be started on those devices, otherwise, the client will run on the
     local machine.
 
     Args:

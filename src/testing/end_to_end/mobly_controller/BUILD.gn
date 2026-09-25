@@ -10,6 +10,11 @@ group("mobly_controller") {
   deps = [ ":mobly_controller_no_testonly" ]
 }
 
+group("tests") {
+  testonly = true
+  deps = [ "iperf:tests" ]
+}
+
 python_library("mobly_controller_no_testonly") {
   # In-tree-only tests should prefer ":mobly_controller" because that enforces
   # that only testonly code uses regular Mobly controller. This target should be
