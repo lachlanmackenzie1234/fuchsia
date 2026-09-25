@@ -490,8 +490,20 @@ TEST_F(BpfMapTest, Map) {
     keys.push_back(next_key);
     last_key = &next_key;
   }
+  ASSERT_EQ(keys.size(), static_cast<size_t>(NUM_VALUES));
+
+  // Querying a non-existent key in a non-empty hash map returns the first key.
+  int missing_key = -1;
+  next_key = -1;
+  bpf_attr next_attr = {
+      .map_fd = static_cast<unsigned>(map_fd()),
+      .key = reinterpret_cast<uintptr_t>(&missing_key),
+      .next_key = reinterpret_cast<uintptr_t>(&next_key),
+  };
+  ASSERT_THAT(bpf(BPF_MAP_GET_NEXT_KEY, &next_attr), SyscallSucceeds());
+  EXPECT_EQ(next_key, keys[0]);
+
   std::sort(keys.begin(), keys.end());
-  EXPECT_EQ(keys.size(), static_cast<size_t>(NUM_VALUES));
   for (int i = 0; i < NUM_VALUES; ++i) {
     EXPECT_EQ(keys[i], i);
   }
@@ -525,6 +537,12 @@ TEST_F(BpfMapTest, Map) {
     EXPECT_EQ(bpf(BPF_MAP_LOOKUP_ELEM, &attr), -1);
     EXPECT_EQ(errno, ENOENT);
   }
+
+  // Querying an empty hash map returns ENOENT both for nullptr and for a missing key.
+  next_attr.key = reinterpret_cast<uintptr_t>(&missing_key);
+  EXPECT_THAT(bpf(BPF_MAP_GET_NEXT_KEY, &next_attr), SyscallFailsWithErrno(ENOENT));
+  next_attr.key = 0;
+  EXPECT_THAT(bpf(BPF_MAP_GET_NEXT_KEY, &next_attr), SyscallFailsWithErrno(ENOENT));
 
   CheckMapInfo();
 }
