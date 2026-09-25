@@ -15,6 +15,7 @@ use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_contrib::ProtocolConnector;
 use fidl_contrib::protocol_connector::ConnectedProtocol;
 use fidl_fuchsia_component_resolution as fcomponent_resolution;
+use fidl_fuchsia_fxfs as ffxfs;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
@@ -341,6 +342,23 @@ async fn main_inner() -> Result<(), Error> {
                 ),
             )
             .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
+    }
+    // Forward fuchsia.fxfs.BlobReader connections directly to fshost, establishing pkg-cache as the
+    // intermediary for blob reading requests.
+    {
+        let () = svc_dir
+            .add_entry(
+                ffxfs::BlobReaderMarker::PROTOCOL_NAME,
+                vfs::service::endpoint(|_scope, channel| {
+                    if let Err(error) = fuchsia_component::client::connect_channel_to_protocol::<
+                        ffxfs::BlobReaderMarker,
+                    >(channel.into_zx_channel())
+                    {
+                        error!(error:?; "Failed to forward fuchsia.fxfs/BlobReader to fshost");
+                    }
+                }),
+            )
+            .context("adding fuchsia.fxfs/BlobReader proxy to /svc")?;
     }
     let base_package_resolver = base_package_resolver::Resolver::new(
         Arc::clone(&base_index),

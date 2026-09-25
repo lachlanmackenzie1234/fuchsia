@@ -921,6 +921,7 @@ where
                         "{}-full",
                         fcomponent_resolution::ResolverMarker::PROTOCOL_NAME
                     )))
+                    .capability(Capability::protocol::<ffxfs::BlobReaderMarker>())
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedBlobsMarker>())
@@ -941,6 +942,10 @@ where
         let realm_instance = builder.build().await.unwrap();
 
         let proxies = Proxies {
+            blob_reader: realm_instance
+                .root
+                .connect_to_protocol_at_exposed_dir()
+                .expect("connect to blob reader"),
             commit_status_provider: realm_instance
                 .root
                 .connect_to_protocol_at_exposed_dir()
@@ -1009,6 +1014,7 @@ where
 }
 
 struct Proxies {
+    blob_reader: ffxfs::BlobReaderProxy,
     commit_status_provider: fupdate::CommitStatusProviderProxy,
     space_manager: fpkg_gc::ManagerProxy,
     package_cache: fpkg::PackageCacheProxy,
@@ -1354,4 +1360,29 @@ impl MockPkgAuthority {
     fn get_history_clone(&self) -> Vec<String> {
         self.lookup_call_history.lock().clone()
     }
+}
+
+#[fuchsia::test]
+async fn blob_reader_forwarding() {
+    let env = TestEnv::builder().fxblob().build().await;
+    env.block_until_started().await;
+
+    let content = "hello from blob reader forwarding".as_bytes();
+    let blob_hash = fuchsia_merkle::root_from_slice(content);
+    let () = env.blobfs.add_blob_from(blob_hash, content).await.unwrap();
+
+    let reader_vmo = env
+        .proxies
+        .blob_reader
+        .get_vmo(&blob_hash.into())
+        .await
+        .expect("get_vmo fidl failed")
+        .map_err(zx::Status::err_from_raw)
+        .expect("get_vmo failed");
+    assert_eq!(
+        reader_vmo.read_to_vec::<u8>(0, content.len() as u64).expect("read_to_vec failed"),
+        content
+    );
+
+    env.stop().await;
 }

@@ -15,6 +15,7 @@
             protocol: [
                 "fuchsia.component.resolution.Resolver",
                 "fuchsia.component.resolution.Resolver-full",
+                "fuchsia.fxfs.BlobReader",
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageCache",
@@ -179,6 +180,7 @@
             protocol: [
                 "fuchsia.component.resolution.Resolver",
                 "fuchsia.component.resolution.Resolver-full",
+                "fuchsia.fxfs.BlobReader",
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageCache",
