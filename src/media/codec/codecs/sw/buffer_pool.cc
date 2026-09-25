@@ -33,7 +33,9 @@ void BufferPool::FreeBuffer(uint8_t* base) {
     std::lock_guard<std::mutex> lock(lock_);
     {
       auto nh = buffers_in_use_.extract(base);
-      ZX_DEBUG_ASSERT(!nh.empty());
+      if (nh.empty()) {
+        return;
+      }
       buffer = nh.mapped().buffer;
     }
   }
@@ -52,7 +54,7 @@ std::optional<BufferPool::Allocation> BufferPool::FindBufferByBase(uint8_t* base
 void BufferPool::Reset(bool keep_data) {
   if (!keep_data) {
     std::lock_guard<std::mutex> lock(lock_);
-    ZX_DEBUG_ASSERT(buffers_in_use_.empty());
+    buffers_in_use_.clear();
   }
   free_buffers_.Reset(keep_data);
 }

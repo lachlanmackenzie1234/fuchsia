@@ -41,8 +41,6 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
   void CoreCodecSetBufferCollectionInfo(
       CodecPort port, const fuchsia_sysmem2::BufferCollectionInfo& buffer_collection_info) override;
 
-  void CoreCodecStopStream() override;
-
  protected:
   // Processes input in a loop. Should only execute on input_processing_thread_.
   // Loops for the lifetime of a stream.
