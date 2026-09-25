@@ -553,6 +553,97 @@ class NinjaBuildWrapTest(unittest.TestCase):
             ctx = fint_build.BuildContext(static_spec, context_spec, host)
             self.assertEqual(ctx._get_targets(), ["prebuilt_binaries.manifest"])
 
+    def test_clippy_target_spec_from_dict_pure(self) -> None:
+        """Verifies ClippyTargetSpec.from_dict safely parses dictionaries."""
+        valid_dict: fint_build.JSONObject = {
+            "clippy_output": "gen/src/foo.clippy",
+            "src": ["src/foo.rs", "src/bar.rs"],
+            "disable_clippy": False,
+        }
+        spec = fint_build.ClippyTargetSpec.from_dict(valid_dict)
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec.output, pathlib.Path("gen/src/foo.clippy"))
+        self.assertEqual(
+            spec.sources,
+            [pathlib.Path("src/foo.rs"), pathlib.Path("src/bar.rs")],
+        )
+        self.assertFalse(spec.disable_clippy)
+
+        # Non-dict and incorrect type structures raise ValueError strictly
+        with self.assertRaises(ValueError):
+            fint_build.ClippyTargetSpec.from_dict({})
+        invalid_dict: fint_build.JSONObject = {"clippy_output": 123}
+        with self.assertRaises(ValueError):
+            fint_build.ClippyTargetSpec.from_dict(invalid_dict)
+
+    def test_resolve_targets_clippy_all(self) -> None:
+        """Verifies ALL_LINT_TARGETS includes all enabled clippy targets."""
+        static_spec = static_pb2.Static(
+            include_lint_targets=static_pb2.Static.ALL_LINT_TARGETS
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (pathlib.Path(tmp_dir) / "rust_target_mapping.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "clippy_output": "gen/src/foo.clippy",
+                            "src": ["src/foo.rs"],
+                            "disable_clippy": False,
+                        },
+                        {
+                            "clippy_output": "gen/src/bar.clippy",
+                            "src": ["src/bar.rs"],
+                            "disable_clippy": True,
+                        },
+                    ]
+                )
+            )
+            context_spec = context_pb2.Context(
+                checkout_dir="fake_checkout", build_dir=tmp_dir
+            )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(static_spec, context_spec, host)
+            self.assertEqual(ctx._get_targets(), ["gen/src/foo.clippy"])
+
+    def test_resolve_targets_clippy_affected(self) -> None:
+        """Verifies AFFECTED_LINT_TARGETS yields only modified clippy targets."""
+        static_spec = static_pb2.Static(
+            include_lint_targets=static_pb2.Static.AFFECTED_LINT_TARGETS
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            checkout_dir = tmp_path / "checkout"
+            build_dir = checkout_dir / "out" / "default"
+            build_dir.mkdir(parents=True)
+
+            (build_dir / "rust_target_mapping.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "clippy_output": "gen/src/foo.clippy",
+                            "src": ["../../src/foo.rs"],
+                            "disable_clippy": False,
+                        },
+                        {
+                            "clippy_output": "gen/src/bar.clippy",
+                            "src": ["../../src/bar.rs"],
+                            "disable_clippy": False,
+                        },
+                    ]
+                )
+            )
+            context_spec = context_pb2.Context(
+                checkout_dir=str(checkout_dir),
+                build_dir=str(build_dir),
+                changed_files=[
+                    context_pb2.Context.ChangedFile(path="src/foo.rs")
+                ],
+            )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(static_spec, context_spec, host)
+            self.assertEqual(ctx._get_targets(), ["gen/src/foo.clippy"])
+
     def test_test_spec_from_dict_pure(self) -> None:
         """Verifies TestSpec.from_dict safely parses dictionaries."""
         valid_dict: fint_build.JSONObject = {

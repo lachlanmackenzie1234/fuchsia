@@ -48,6 +48,7 @@ except ImportError:
 import argparse
 import functools
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -79,6 +80,7 @@ GENERATED_SOURCES_JSON = "generated_sources.json"
 PREBUILT_BINARY_SETS_JSON = "prebuilt_binaries.json"
 FORCE_NONHERMETIC_REBUILD_SENTINEL = "force_nonhermetic_rebuild"
 LAST_NINJA_BUILD_SUCCESS_STAMP = "last_ninja_build_success.stamp"
+RUST_TARGET_MAPPING_JSON = "rust_target_mapping.json"
 
 
 @dataclass
@@ -329,6 +331,38 @@ class ToolPathSpec:
         return cls(name=name, path=path_val, os=os_val, cpu=cpu_val)
 
 
+@dataclass(frozen=True)
+class ClippyTargetSpec:
+    """Represents a parsed and statically typed clippy target specification."""
+
+    output: pathlib.Path
+    sources: list[pathlib.Path]
+    disable_clippy: bool
+
+    @classmethod
+    def from_dict(cls, data: JSONObject) -> "ClippyTargetSpec":
+        """Constructs a ClippyTargetSpec safely from a JSONObject."""
+        output_val = data.get("clippy_output")
+        sources_val = data.get("src", data.get("sources", []))
+        disable_clippy = data.get("disable_clippy", False)
+
+        if not (
+            isinstance(output_val, str)
+            and isinstance(sources_val, list)
+            and all(isinstance(s, str) for s in sources_val)
+            and isinstance(disable_clippy, bool)
+        ):
+            raise ValueError(
+                f"ClippyTargetSpec has invalid field types: output={type(output_val).__name__}, "
+                f"sources={type(sources_val).__name__}, disable_clippy={type(disable_clippy).__name__}"
+            )
+        return cls(
+            output=pathlib.Path(output_val),
+            sources=[pathlib.Path(s) for s in sources_val],
+            disable_clippy=disable_clippy,
+        )
+
+
 def parse_ninja_failures(errors_json_path: pathlib.Path) -> str | None:
     """Parses ninja_errors.json file to construct a precise, formatted FailureSummary.
 
@@ -544,6 +578,11 @@ class BuildContext:
         return self.build_dir / "last_ninja_build_targets.txt"
 
     @property
+    def rust_target_mapping_json_path(self) -> pathlib.Path:
+        """Returns the absolute path to the Rust target mapping JSON file."""
+        return self.build_dir / RUST_TARGET_MAPPING_JSON
+
+    @property
     def artifact_dir(self) -> pathlib.Path | None:
         """Returns the path to the artifact directory if specified in the context spec."""
         return (
@@ -619,6 +658,29 @@ class BuildContext:
         return specs
 
     @functools.cached_property
+    def clippy_targets(self) -> list[ClippyTargetSpec]:
+        """Loads and returns the clippy/rust target mapping list."""
+        if not self.rust_target_mapping_json_path.exists():
+            return []
+        try:
+            # Narrow the try clause strictly to loading/decoding the JSON file.
+            targets_data = load_json_list(self.rust_target_mapping_json_path)
+        except ValueError as e:
+            raise ValueError(
+                f"Failed to decode {RUST_TARGET_MAPPING_JSON}: {e}"
+            )
+
+        # Process the decoded data list with strict validation.
+        targets = []
+        for item in targets_data:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Expected dict entry inside {RUST_TARGET_MAPPING_JSON}, but got: {type(item).__name__}"
+                )
+            targets.append(ClippyTargetSpec.from_dict(item))
+        return targets
+
+    @functools.cached_property
     def generated_sources(self) -> JSONArray:
         """Loads and returns the generated sources list."""
         path = self.build_dir / GENERATED_SOURCES_JSON
@@ -676,6 +738,45 @@ class BuildContext:
         if self.static_spec.ninja_targets:
             yield from self.static_spec.ninja_targets
 
+    def _clippy_targets(self) -> Iterable[str]:
+        """Yields clippy target output files to build based on static spec configuration."""
+        include_lint_targets = self.static_spec.include_lint_targets
+        if include_lint_targets == static_pb2.Static.NO_LINT_TARGETS:
+            return
+
+        # Build lookup set of changed files paths for O(1) checks
+        changed_files = {f.path for f in self.context_spec.changed_files}
+
+        for clippy in self.clippy_targets:
+            if clippy.disable_clippy:
+                continue
+
+            # Filter clippy targets based on include_lint_targets setting
+            if include_lint_targets == static_pb2.Static.ALL_LINT_TARGETS:
+                yield str(clippy.output)
+            elif (
+                include_lint_targets == static_pb2.Static.AFFECTED_LINT_TARGETS
+            ):
+                # Check if any clippy source file has been modified in the changed_files set
+                for source in clippy.sources:
+                    # Purely lexical path computation avoids expensive filesystem lookups
+                    # and correctly matches Go fint filepath.Rel/Clean behavior.
+                    checkout_path_str = os.path.relpath(
+                        os.path.normpath(self.build_dir / source),
+                        self.checkout_dir,
+                    )
+                    checkout_path_posix = pathlib.Path(
+                        checkout_path_str
+                    ).as_posix()
+
+                    if checkout_path_posix in changed_files:
+                        yield str(clippy.output)
+                        break
+            else:
+                raise ValueError(
+                    f"Unknown include_lint_targets value: {include_lint_targets}"
+                )
+
     def _stream_all_targets(self) -> Iterable[str]:
         """Streams all configured and resolved targets from all sources."""
         yield from self._default_and_host_test_targets()
@@ -683,6 +784,7 @@ class BuildContext:
         yield from self._prebuilt_binary_manifests()
         yield from self._tool_targets()
         yield from self._custom_ninja_targets()
+        yield from self._clippy_targets()
 
     def _get_targets(self) -> list[str]:
         """Resolves Ninja build targets based on specifications and build API JSON files."""
