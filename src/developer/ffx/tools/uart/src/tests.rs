@@ -110,7 +110,7 @@ async fn run_tool_with_format(
         }
         UartSubCommand::Probe(cmd) => {
             let tool = ProbeTool { cmd, context: context_tool };
-            let machine_writer = ffx_writer::MachineWriter::new_test(format, &buffers);
+            let machine_writer = ffx_writer::VerifiedMachineWriter::new_test(format, &buffers);
             tool.main(machine_writer).await?;
         }
         UartSubCommand::Status(cmd) => {
@@ -962,6 +962,7 @@ async fn test_probe_active_connection() {
     .await
     .unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&json_stdout).unwrap();
+    ffx_writer::VerifiedMachineWriter::<ProbeResult>::verify_schema(&parsed).unwrap();
     assert_eq!(parsed["alive"], true);
     assert_eq!(parsed["method"], "background_driver");
     assert_eq!(parsed["protocol"], "ResendSP");
@@ -1036,7 +1037,6 @@ async fn test_canonicalize_target_does_not_resolve_symlinks() {
     std::fs::write(&target_file, b"").unwrap();
 
     let symlink_file = temp_dir.path().join("my_device_link");
-    #[cfg(target_os = "linux")]
     std::os::unix::fs::symlink(&target_file, &symlink_file).unwrap();
 
     // Canonicalize both

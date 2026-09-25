@@ -8,7 +8,7 @@ use crate::stream::{UartStream, connect_uart_stream, run_host_handshake};
 use crate::sys::is_driver_running;
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
-use ffx_writer::{MachineWriter, ToolIO};
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, Result, user_error};
 use fuchsia_async::TimeoutExt;
 use schemars::JsonSchema;
@@ -62,7 +62,7 @@ pub struct ProbeTool {
 
 impl ProbeTool {
     fn report_existing_driver_status(
-        writer: &mut MachineWriter<ProbeResult>,
+        writer: &mut VerifiedMachineWriter<ProbeResult>,
         meta: &ConnectionMetadata,
     ) -> Result<()> {
         match &meta.status {
@@ -119,7 +119,7 @@ impl ProbeTool {
     async fn probe_direct_handshake(
         target_str: &str,
         baud: NonZeroU32,
-        writer: &mut MachineWriter<ProbeResult>,
+        writer: &mut VerifiedMachineWriter<ProbeResult>,
     ) -> Result<()> {
         let mut stream = Self::connect_probe_stream(target_str, baud).await?;
         let start = std::time::Instant::now();
@@ -162,7 +162,7 @@ impl ProbeTool {
     pub(crate) async fn probe(
         &self,
         target: &str,
-        writer: &mut MachineWriter<ProbeResult>,
+        writer: &mut VerifiedMachineWriter<ProbeResult>,
     ) -> Result<()> {
         let resolved = crate::resolve_target(&self.context, target).await?;
         let target_str = match resolved {
@@ -185,7 +185,7 @@ impl ProbeTool {
 
 #[async_trait(?Send)]
 impl FfxMain for ProbeTool {
-    type Writer = MachineWriter<ProbeResult>;
+    type Writer = VerifiedMachineWriter<ProbeResult>;
     type Error = fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
@@ -203,7 +203,7 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use uart_fpl::{FrameParser, FrameType, ProtocolId, TargetHandshake, encode_frame};
 
-    #[test]
+    #[fuchsia::test]
     fn test_report_existing_driver_status_variants() {
         let mut meta = ConnectionMetadata {
             pid: 4321,
@@ -218,16 +218,17 @@ mod tests {
         };
 
         let buffers = TestBuffers::default();
-        let mut writer = MachineWriter::new_test(None, &buffers);
+        let mut writer = VerifiedMachineWriter::new_test(None, &buffers);
         assert!(ProbeTool::report_existing_driver_status(&mut writer, &meta).is_ok());
         assert!(buffers.into_stdout_str().contains("Target UART service is ALIVE"));
 
-        // Verify machine JSON output
+        // Verify machine JSON output and schema
         let buffers = TestBuffers::default();
-        let mut writer = MachineWriter::new_test(Some(ffx_writer::Format::Json), &buffers);
+        let mut writer = VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &buffers);
         assert!(ProbeTool::report_existing_driver_status(&mut writer, &meta).is_ok());
         let json_str = buffers.into_stdout_str();
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        VerifiedMachineWriter::<ProbeResult>::verify_schema(&parsed).unwrap();
         assert_eq!(parsed["alive"], true);
         assert_eq!(parsed["method"], "background_driver");
         assert_eq!(parsed["driver_pid"], 4321);
@@ -236,7 +237,7 @@ mod tests {
 
         meta.status = ConnectionStatus::Connecting;
         let buffers = TestBuffers::default();
-        let mut writer = MachineWriter::new_test(None, &buffers);
+        let mut writer = VerifiedMachineWriter::new_test(None, &buffers);
         let err = ProbeTool::report_existing_driver_status(&mut writer, &meta).unwrap_err();
         assert!(err.to_string().contains("currently connecting to target"));
 
@@ -245,7 +246,7 @@ mod tests {
                 error: "hardware disconnected".to_string(),
             });
         let buffers = TestBuffers::default();
-        let mut writer = MachineWriter::new_test(None, &buffers);
+        let mut writer = VerifiedMachineWriter::new_test(None, &buffers);
         let err = ProbeTool::report_existing_driver_status(&mut writer, &meta).unwrap_err();
         assert!(err.to_string().contains("hardware disconnected"));
     }
@@ -279,7 +280,7 @@ mod tests {
         });
 
         let buffers = TestBuffers::default();
-        let mut writer = MachineWriter::new_test(None, &buffers);
+        let mut writer = VerifiedMachineWriter::new_test(None, &buffers);
         let res = ProbeTool::probe_direct_handshake(
             sock_path.to_str().unwrap(),
             NonZeroU32::new(115200).unwrap(),
@@ -321,7 +322,7 @@ mod tests {
         });
 
         let buffers = TestBuffers::default();
-        let mut writer = MachineWriter::new_test(Some(ffx_writer::Format::Json), &buffers);
+        let mut writer = VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &buffers);
         let res = ProbeTool::probe_direct_handshake(
             sock_path.to_str().unwrap(),
             NonZeroU32::new(115200).unwrap(),
@@ -331,6 +332,7 @@ mod tests {
         assert!(res.is_ok());
         let stdout = buffers.into_stdout_str();
         let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        VerifiedMachineWriter::<ProbeResult>::verify_schema(&parsed).unwrap();
         assert_eq!(parsed["alive"], true);
         assert_eq!(parsed["method"], "direct_handshake");
         assert_eq!(parsed["protocol"], "ResendSP");
@@ -344,7 +346,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let sock_path = temp.path().join("non_existent_probe.sock");
         let buffers = TestBuffers::default();
-        let mut writer = MachineWriter::new_test(None, &buffers);
+        let mut writer = VerifiedMachineWriter::new_test(None, &buffers);
         let res = ProbeTool::probe_direct_handshake(
             sock_path.to_str().unwrap(),
             NonZeroU32::new(115200).unwrap(),
