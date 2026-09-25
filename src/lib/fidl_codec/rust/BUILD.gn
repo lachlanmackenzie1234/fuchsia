@@ -125,7 +125,6 @@ rustc_library("fidl_codec") {
     "//third_party/rust_crates:thiserror",
   ]
 }
-
 rustc_library("fidl_codec_fdomain") {
   sources = [
     "src/decode.rs",
@@ -159,7 +158,6 @@ rustc_library("fidl_codec_fdomain") {
     "//third_party/rust_crates:thiserror",
   ]
 }
-
 rustc_library("fidl_codec_pure") {
   sources = [
     "src/decode.rs",
