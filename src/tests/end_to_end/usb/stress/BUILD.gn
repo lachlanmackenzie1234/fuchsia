@@ -16,8 +16,13 @@ if (is_host) {
     params = {
       num_iterations = 10
       disconnect_duration_sec = 10
+
+      # Toggle the host's USB `authorized` attribute instead of using a
+      # physical power hub at desk
+      # //src/tests/end_to_end/usb/lib/disconnect/udev.sh for host udev
+      use_virtual_usb_hub = true
     }
-    local_config_source = "UsbVirtualDisconnectTestbed.yaml"
+
     environments = [ sorrel_env ]
     timeout_secs = 600
   }
