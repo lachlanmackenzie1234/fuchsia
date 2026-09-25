@@ -16,8 +16,8 @@ use fuchsia_async::{TimeoutExt, Timer};
 use futures::channel::oneshot::{Sender, channel};
 use std::time::Duration;
 use usb_fastboot_discovery::{
-    DefaultSerialFinder, FastbootEvent, FastbootEventHandler, FastbootUsbLiveTester,
-    FastbootUsbTester, FastbootUsbWatcher, Interface as AsyncInterface, SerialNumberFinder,
+    FastbootEvent, FastbootEventHandler, FastbootUsbLiveTester, FastbootUsbTester,
+    FastbootUsbWatcher, Interface as AsyncInterface, SerialNumberFinder, TargetSerialFinder,
     UnversionedFastbootUsbTester, open_interface_with_serial, wait_for_live,
 };
 
@@ -250,7 +250,7 @@ impl InterfaceFactoryBase<AsyncInterface> for UsbFactory {
 
     async fn rediscover(&mut self) -> Result<(), InterfaceFactoryError> {
         self.rediscover_impl(
-            DefaultSerialFinder {},
+            TargetSerialFinder::new(self.serial.clone()),
             // This tester will not attempt to talk to the USB devices to extract version info, it
             // only inspects the USB interface
             UnversionedFastbootUsbTester {},
