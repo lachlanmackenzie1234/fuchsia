@@ -1363,24 +1363,16 @@ mod tests {
             fuchsia_async::Timer::new(std::time::Duration::from_millis(100)).await;
         }
         let url = url_str.expect("StartUpdate should be called");
-        let url_parsed = url.parse::<http::Uri>().unwrap();
-        let target_port = url_parsed.port_u16().unwrap();
-        let target_addr =
-            std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), target_port);
-        let socket_provider = fake_env.fake_netstack.new_socket_provider();
-        let mut stream =
-            socket_provider.connect(target_addr).await.expect("connect to target tunnel");
-        let req = format!(
-            "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-            url_parsed.path_and_query().unwrap(),
-            url_parsed.authority().unwrap(),
-        );
-        use futures::{AsyncReadExt as _, AsyncWriteExt as _};
-        stream.write_all(req.as_bytes()).await.unwrap();
-        let mut resp = Vec::new();
-        stream.read_to_end(&mut resp).await.unwrap();
-        let resp_str = String::from_utf8_lossy(&resp);
-        assert!(resp_str.starts_with("HTTP/1.1 200 OK"), "response was: {resp_str}");
+        let client = fuchsia_hyper::new_client();
+        let res = client
+            .request(
+                hyper::Request::get(&url)
+                    .body(http_body_util::Full::<hyper::body::Bytes>::default())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), hyper::StatusCode::OK);
 
         // Unblock the update process after the URL is verified.
         states_tx.send(installer::State::Prepare).await.unwrap();
