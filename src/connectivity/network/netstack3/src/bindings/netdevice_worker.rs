@@ -29,7 +29,8 @@ use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
 use netstack3_core::{
-    ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, NetworkParsingContext,
+    ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, GsoInfo,
+    NetworkParsingContext,
 };
 use thiserror::Error;
 
@@ -254,6 +255,7 @@ impl NetdeviceWorker {
                 let GroOutputItem {
                     target: GroPortTarget { port, frame_type },
                     checksum_offload,
+                    gso_info,
                     mut buffers,
                 } = item;
                 let slice = buffers.slice_mut();
@@ -280,7 +282,7 @@ impl NetdeviceWorker {
 
                 let parsing_context = NetworkParsingContext::new(checksum_offload);
                 let buf = packet::Buf::new(slice, ..);
-                receive_frame(&mut ctx, id, frame_type, parsing_context, buf)?;
+                receive_frame(&mut ctx, id, frame_type, parsing_context, gso_info, buf)?;
             }
             std::mem::drop(gro);
             rx_buffers.check_error()?;
@@ -371,6 +373,7 @@ fn receive_frame<B: packet::BufferMut + std::fmt::Debug>(
     id: NetdeviceId,
     frame_type: FrameType,
     parsing_context: NetworkParsingContext,
+    gso_info: Option<GsoInfo>,
     buf: B,
 ) -> Result<(), Error> {
     match id {
@@ -388,9 +391,10 @@ fn receive_frame<B: packet::BufferMut + std::fmt::Debug>(
                     });
                 }
             }
-            ctx.api()
-                .device::<EthernetLinkDevice>()
-                .receive_frame(RecvEthernetFrameMeta { device_id: id, parsing_context }, buf);
+            ctx.api().device::<EthernetLinkDevice>().receive_frame(
+                RecvEthernetFrameMeta { device_id: id, parsing_context, gso_info },
+                buf,
+            );
         }
         NetdeviceId::PureIp(id) => {
             let ip_version = match frame_type {
@@ -408,7 +412,12 @@ fn receive_frame<B: packet::BufferMut + std::fmt::Debug>(
                 }
             };
             ctx.api().device::<PureIpDevice>().receive_frame(
-                PureIpDeviceReceiveFrameMetadata { device_id: id, ip_version, parsing_context },
+                PureIpDeviceReceiveFrameMetadata {
+                    device_id: id,
+                    ip_version,
+                    parsing_context,
+                    gso_info,
+                },
                 buf,
             );
         }

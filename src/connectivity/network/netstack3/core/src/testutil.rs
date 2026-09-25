@@ -337,6 +337,7 @@ where
                 frame_dst,
                 DeviceIpLayerMetadata::with_marks(marks),
                 parsing_context,
+                None,
                 buffer,
             ),
             IpVersion::V6 => ip::receive_ipv6_packet(
@@ -346,6 +347,7 @@ where
                 frame_dst,
                 DeviceIpLayerMetadata::with_marks(marks),
                 parsing_context,
+                None,
                 buffer,
             ),
         }
@@ -361,6 +363,7 @@ where
             RecvEthernetFrameMeta {
                 device_id: device.clone(),
                 parsing_context: NetworkParsingContext::default(),
+                gso_info: None,
             },
             buffer,
         );
@@ -1382,7 +1385,11 @@ impl FakeNetworkSpec for FakeCtxNetworkSpec {
     type RecvMeta = EthernetDeviceId<FakeBindingsCtx>;
     fn handle_frame(ctx: &mut FakeCtx, device_id: Self::RecvMeta, data: Buf<Vec<u8>>) {
         ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
-            RecvEthernetFrameMeta { device_id, parsing_context: NetworkParsingContext::default() },
+            RecvEthernetFrameMeta {
+                device_id,
+                parsing_context: NetworkParsingContext::default(),
+                gso_info: None,
+            },
             data,
         )
     }

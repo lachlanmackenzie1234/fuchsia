@@ -932,8 +932,11 @@ where
 
     let previous_dst = remote_ip.addr();
     let mut packet = filter::TxPacket::new(local_ip.addr(), remote_ip.addr(), *proto, &mut body);
+    // TODO(https://fxbug.dev/565891068): Support TCP GSO by populating GSO
+    // metadata when segment offloading is enabled for the socket.
+    let gso_info = None;
     let mut packet_metadata =
-        IpLayerPacketMetadata::from_tx_metadata_and_marks(tx_metadata, *options.marks());
+        IpLayerPacketMetadata::new_local_tx(tx_metadata, *options.marks(), gso_info);
 
     let filter_result = core_ctx.filter_handler().local_egress_hook(
         bindings_ctx,

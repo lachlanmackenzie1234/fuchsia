@@ -19,7 +19,7 @@ use packet_formats::ipv4::{Ipv4Header, Ipv4Packet, Ipv4PacketRaw};
 use packet_formats::ipv6::{IPV6_FIXED_HDR_LEN, Ipv6Header, Ipv6Packet, Ipv6PacketRaw};
 use packet_formats::tcp::{MAX_OPTIONS_LEN, TcpParseArgs, TcpSegment, TcpSegmentRaw};
 
-use netstack3_base::{ChecksumRxOffloading, NetworkParsingContext};
+use netstack3_base::{ChecksumRxOffloading, GsoInfo, Ipv4IdMode, NetworkParsingContext};
 
 /// The maximum length of a coalesced frame.
 ///
@@ -656,7 +656,10 @@ impl TcpFlow {
     /// Finalizes the coalesced TCP segment by updating the header with the
     /// correct checksum and the merged flags (which may only set `FIN` and/or
     /// `PSH`).
-    fn finalize(&self, mut transport_view: &mut [u8]) {
+    ///
+    /// Returns the GSO segment size (the payload length of each coalesced
+    /// segment).
+    fn finalize(&self, mut transport_view: &mut [u8]) -> NonZeroU16 {
         // By the time the flow is finalized, the view holds exactly the
         // coalesced segment: any trailing bytes on the seed frame were trimmed
         // before the first payload was appended.
@@ -678,6 +681,7 @@ impl TcpFlow {
 
         tcp.set_checksum(checksum);
         tcp.set_flags(self.flags);
+        self.gso_size
     }
 }
 
@@ -715,7 +719,7 @@ impl TransportFlow {
         }
     }
 
-    fn finalize(&self, transport_view: &mut [u8]) {
+    fn finalize(&self, transport_view: &mut [u8]) -> NonZeroU16 {
         match self {
             Self::Tcp(tcp) => tcp.finalize(transport_view),
         }
@@ -723,7 +727,7 @@ impl TransportFlow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ipv4IdMode {
+enum Ipv4IdState {
     /// Only one packet seen so far with this ID.
     Initial(u16),
     /// IDs are consistent across packets.
@@ -732,7 +736,7 @@ enum Ipv4IdMode {
     Increasing(u16),
 }
 
-impl Ipv4IdMode {
+impl Ipv4IdState {
     fn can_coalesce(&self, next_id: u16) -> bool {
         match self {
             Self::Initial(id) => next_id == *id || next_id == id.wrapping_add(1),
@@ -767,7 +771,7 @@ struct Ipv4Flow {
     ttl: u8,
     dscp_and_ecn: DscpAndEcn,
     df_flag: bool,
-    id_mode: Ipv4IdMode,
+    id_state: Ipv4IdState,
 }
 
 impl Ipv4Flow {
@@ -776,22 +780,22 @@ impl Ipv4Flow {
             ttl: packet.ttl(),
             dscp_and_ecn: packet.dscp_and_ecn(),
             df_flag: packet.df_flag(),
-            id_mode: Ipv4IdMode::Initial(packet.id()),
+            id_state: Ipv4IdState::Initial(packet.id()),
         }
     }
 
     /// Determines whether an IPv4 packet already matched to this flow is
     /// permitted to coalesce with it.
     fn can_coalesce(&self, packet: &impl Ipv4Header) -> bool {
-        let Self { ttl, dscp_and_ecn, df_flag, id_mode } = self;
+        let Self { ttl, dscp_and_ecn, df_flag, id_state } = self;
         *ttl == packet.ttl()
             && *dscp_and_ecn == packet.dscp_and_ecn()
             && *df_flag == packet.df_flag()
-            && id_mode.can_coalesce(packet.id())
+            && id_state.can_coalesce(packet.id())
     }
 
     fn coalesce(&mut self, packet: &impl Ipv4Header) {
-        self.id_mode.coalesce(packet.id());
+        self.id_state.coalesce(packet.id());
     }
 
     /// Finalizes the coalesced IPv4 packet by updating the header with the new
@@ -801,6 +805,16 @@ impl Ipv4Flow {
         let mut ip = Ipv4PacketRaw::parse_mut(&mut ip_view, ()).expect("valid IPv4 header");
         let new_len_u16 = u16::try_from(total_len).expect("IP total length fits in u16");
         ip.set_total_len_and_update_checksum(new_len_u16);
+    }
+
+    fn ipv4_id_mode(&self) -> Ipv4IdMode {
+        match self.id_state {
+            Ipv4IdState::Consistent(_) => Ipv4IdMode::Fixed,
+            Ipv4IdState::Increasing(_) => Ipv4IdMode::Incrementing,
+            Ipv4IdState::Initial(_) => {
+                unreachable!("coalesced flow with num_coalesced > 1 cannot be Initial")
+            }
+        }
     }
 }
 
@@ -878,6 +892,13 @@ impl IpFlow {
             Self::Ipv6(flow) => flow.finalize(ip_view),
         }
     }
+
+    fn ipv4_id_mode(&self) -> Option<Ipv4IdMode> {
+        match self {
+            Self::Ipv4(flow) => Some(flow.ipv4_id_mode()),
+            Self::Ipv6(_) => None,
+        }
+    }
 }
 
 struct GroFlow<T> {
@@ -926,11 +947,15 @@ impl<T: Eq> GroFlow<T> {
         self.transport.coalesce(&self.flow_id.ip, &parsed.transport, coalesce_into)
     }
 
-    fn finalize(&self, view: &mut [u8]) {
+    fn finalize(&self, view: &mut [u8]) -> Option<GsoInfo> {
         let HeaderOffsets { ip_offset, transport_offset } = self.offsets;
         if self.num_coalesced > 1 {
             self.ip.finalize(&mut view[ip_offset..]);
-            self.transport.finalize(&mut view[transport_offset..]);
+            let gso_size = self.transport.finalize(&mut view[transport_offset..]);
+            let ipv4_id_mode = self.ip.ipv4_id_mode();
+            Some(GsoInfo { gso_size, ipv4_id_mode })
+        } else {
+            None
         }
     }
 }
@@ -984,6 +1009,8 @@ pub struct GroOutputItem<'a, B, T, O> {
     pub target: T,
     /// Checksum offload state for the frame.
     pub checksum_offload: ChecksumRxOffloading,
+    /// GSO metadata if the frame was coalesced from multiple segments.
+    pub gso_info: Option<GsoInfo>,
     /// The buffer(s) associated with this frame.
     pub buffers: GroOutputBuffers<'a, B, O>,
 }
@@ -1038,19 +1065,20 @@ impl<B: MaybeContiguousBuffer> GroBufferStorage<B> {
             ActiveFlowBuffers::Single { buffer, payload_end: _ } => GroOutputItem {
                 target: flow.target,
                 checksum_offload: flow.checksum_offload,
+                gso_info: None,
                 buffers: GroOutputBuffers::Contiguous(buffer),
             },
             ActiveFlowBuffers::Coalesced => {
                 let GroBufferStorage { coalescing_vec, coalesced_buffers, .. } = self;
 
-                flow.finalize(&mut coalescing_vec[..]);
+                let gso_info = flow.finalize(&mut coalescing_vec[..]);
 
                 let GroFlow { target, checksum_offload, num_coalesced, .. } = flow;
                 let buffers = GroOutputBuffers::Coalesced {
                     slice: &mut coalescing_vec[..],
                     buffers: coalesced_buffers.drain(..num_coalesced),
                 };
-                GroOutputItem { target, checksum_offload, buffers }
+                GroOutputItem { target, checksum_offload, gso_info, buffers }
             }
         }
     }
@@ -1285,7 +1313,12 @@ where
                         slice: &mut storage.linearization_vec,
                     },
                 };
-                ProcessingResult::Return(GroOutputItem { target, checksum_offload, buffers })
+                ProcessingResult::Return(GroOutputItem {
+                    target,
+                    checksum_offload,
+                    gso_info: None,
+                    buffers,
+                })
             }
         }
     }
@@ -1324,6 +1357,7 @@ where
                 return ProcessingResult::Return(GroOutputItem {
                     target,
                     checksum_offload: $csum_offload,
+                    gso_info: None,
                     buffers,
                 });
             }};
@@ -1994,6 +2028,73 @@ mod tests {
         let TransportPacket::Tcp(tcp) = parsed.transport;
         assert_eq!(tcp.body(), b"data fin");
         assert!(tcp.fin());
+    }
+
+    #[test]
+    fn gro_gso_info_metadata() {
+        let mut storage = GroBufferStorage::new();
+
+        // Consistent IPv4 IDs across the flow yield a fixed IP ID.
+        let items = vec![
+            input_item(TrackedBuffer::new(
+                FrameSpec { ip: IpSpec::V4 { df: false, id: 1 }, ..v4(100, b"first ") }.build(),
+                true,
+            )),
+            input_item(TrackedBuffer::new(
+                FrameSpec { ip: IpSpec::V4 { df: false, id: 1 }, ..v4(106, b"second") }.build(),
+                true,
+            )),
+        ];
+        let mut gro = storage.coalesce(items.into_iter(), true);
+        let item = gro.next().unwrap();
+        assert_eq!(
+            item.gso_info,
+            Some(GsoInfo {
+                gso_size: NonZeroU16::new(6).unwrap(),
+                ipv4_id_mode: Some(Ipv4IdMode::Fixed),
+            })
+        );
+        drop(item);
+        assert!(gro.next().is_none());
+        drop(gro);
+
+        // Increasing IPv4 IDs yield an incrementing IP ID mode.
+        let items = vec![
+            input_item(TrackedBuffer::new(
+                FrameSpec { ip: IpSpec::V4 { df: false, id: 1 }, ..v4(100, b"first ") }.build(),
+                true,
+            )),
+            input_item(TrackedBuffer::new(
+                FrameSpec { ip: IpSpec::V4 { df: false, id: 2 }, ..v4(106, b"second") }.build(),
+                true,
+            )),
+        ];
+        let mut gro = storage.coalesce(items.into_iter(), true);
+        let item = gro.next().unwrap();
+        assert_eq!(
+            item.gso_info,
+            Some(GsoInfo {
+                gso_size: NonZeroU16::new(6).unwrap(),
+                ipv4_id_mode: Some(Ipv4IdMode::Incrementing),
+            })
+        );
+        drop(item);
+        assert!(gro.next().is_none());
+        drop(gro);
+
+        // IPv6 flows have no IPv4 ID mode.
+        let items = vec![
+            input_item(TrackedBuffer::new(v6(100, b"first ").build(), true)),
+            input_item(TrackedBuffer::new(v6(106, b"second").build(), true)),
+        ];
+        let mut gro = storage.coalesce(items.into_iter(), true);
+        let item = gro.next().unwrap();
+        assert_eq!(
+            item.gso_info,
+            Some(GsoInfo { gso_size: NonZeroU16::new(6).unwrap(), ipv4_id_mode: None })
+        );
+        drop(item);
+        assert!(gro.next().is_none());
     }
 
     #[test]

@@ -11,7 +11,7 @@ use log::debug;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Mtu};
 use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
-    BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device, DeviceIdContext,
+    BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device, DeviceIdContext, GsoInfo,
     NetworkParsingContext, NetworkSerializer, ReceivableFrameMeta, RecvFrameContext,
     RecvIpFrameMeta, ResourceCounterContext, SendFrameError, SendFrameErrorReason,
     SendableFrameMeta, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
@@ -162,6 +162,8 @@ pub struct PureIpDeviceReceiveFrameMetadata<D> {
     pub ip_version: IpVersion,
     /// The parsing context for the received packet.
     pub parsing_context: NetworkParsingContext,
+    /// GSO metadata if the frame was coalesced from multiple segments.
+    pub gso_info: Option<GsoInfo>,
 }
 
 impl DeviceReceiveFrameSpec for PureIpDevice {
@@ -206,7 +208,7 @@ where
         bindings_ctx: &mut BC,
         buffer: B,
     ) {
-        let Self { device_id, ip_version, parsing_context } = self;
+        let Self { device_id, ip_version, parsing_context, gso_info } = self;
 
         core_ctx.add_both_usize(&device_id, buffer.len(), |counters: &DeviceCounters| {
             &counters.recv_bytes
@@ -235,6 +237,7 @@ where
                         None,
                         DeviceIpLayerMetadata::default(),
                         parsing_context,
+                        gso_info,
                     ),
                     buffer,
                 )
@@ -250,6 +253,7 @@ where
                         None,
                         DeviceIpLayerMetadata::default(),
                         parsing_context,
+                        gso_info,
                     ),
                     buffer,
                 )

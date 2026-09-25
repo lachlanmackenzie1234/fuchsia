@@ -1544,6 +1544,7 @@ fn test_joining_leaving_ip_multicast_group<I: TestIpExt + IpExt>() {
         RecvEthernetFrameMeta {
             device_id: eth_device.clone(),
             parsing_context: NetworkParsingContext::default(),
+            gso_info: None,
         },
         buf.clone(),
     );
@@ -1579,6 +1580,7 @@ fn test_joining_leaving_ip_multicast_group<I: TestIpExt + IpExt>() {
         RecvEthernetFrameMeta {
             device_id: eth_device.clone(),
             parsing_context: NetworkParsingContext::default(),
+            gso_info: None,
         },
         buf.clone(),
     );
@@ -1615,6 +1617,7 @@ fn test_joining_leaving_ip_multicast_group<I: TestIpExt + IpExt>() {
         RecvEthernetFrameMeta {
             device_id: eth_device.clone(),
             parsing_context: NetworkParsingContext::default(),
+            gso_info: None,
         },
         buf,
     );

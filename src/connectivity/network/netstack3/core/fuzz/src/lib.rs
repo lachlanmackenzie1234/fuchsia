@@ -372,6 +372,7 @@ fn dispatch(ctx: &mut FakeCtx, device_id: &EthernetDeviceId<FakeBindingsCtx>, ac
                 RecvEthernetFrameMeta {
                     device_id: device_id.clone(),
                     parsing_context: NetworkParsingContext::default(),
+                    gso_info: None,
                 },
                 buf,
             );
