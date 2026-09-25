@@ -26,7 +26,24 @@ const CRASH_SIGNATURE: &str = "fuchsia-memory-profile";
 /// Profiles are `gzip`-compressed protocol buffers; see
 /// `profile_builder::profile_to_vmo`.
 const PROFILE_ATTACHMENT_EXTENSION: &str = ".pb.gz";
-const MAX_CONCURRENT_PROFILES: usize = 10;
+/// The number of profiles held in the queue awaiting filing.
+///
+/// A report can carry at most `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT`
+/// profiles, so holding that many lets a single report be filled
+/// completely; below it, capacity is wasted.
+///
+/// This is deliberately a separate constant from the number of
+/// attachments per report, even though the two are currently equal:
+/// this one bounds memory, whereas the other is a property of the
+/// crash reporting API. It is sound to hold more profiles than a
+/// single report can carry, since the surplus is filed by the
+/// following report; what constrains it is the memory held by the
+/// queued profiles, not the capacity of a report.
+///
+/// Note: `futures::mpsc::channel` grants every sender a slot in
+/// addition to this shared buffer, so the effective bound is this
+/// value plus the number of connected processes.
+const MAX_CONCURRENT_PROFILES: usize = MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize;
 const MIN_DURATION_BETWEEN_SNAPSHOTS_HOURS: zx::MonotonicDuration =
     zx::MonotonicDuration::from_hours(1);
 
@@ -153,6 +170,7 @@ mod test {
     use fidl_fuchsia_feedback::{CrashReporterMarker, CrashReporterRequest};
     use futures::{FutureExt, try_join};
     use itertools::assert_equal;
+    use std::task::Poll;
 
     fn handle_crash_reporter_request(request: CrashReporterRequest) -> CrashReport {
         match request {
@@ -349,7 +367,6 @@ mod test {
 
     #[test]
     fn test_crash_reporter_task_rate_limiting() {
-        use std::task::Poll;
         let mut executor = fuchsia_async::TestExecutor::new_with_fake_time();
         // Setup the crash reporter task.
         let (client, mut request_stream) = create_proxy_and_stream::<CrashReporterMarker>();
@@ -452,5 +469,39 @@ mod test {
             _ => panic!("Expected profile to be processed after another 1 hour elapsed"),
         }
         assert!(executor.run_until_stalled(&mut task).is_pending());
+    }
+
+    #[test]
+    fn test_report_can_be_filled_to_capacity() {
+        let mut executor = fuchsia_async::TestExecutor::new_with_fake_time();
+        let (client, mut request_stream) = create_proxy_and_stream::<CrashReporterMarker>();
+        let (mut sender, mut task) = setup_crash_reporter_task(client);
+
+        // Note: driven by the number of attachments a report can
+        // carry, rather than by the depth of the queue, so that this
+        // still holds if the queue is later sized to hold more
+        // profiles than a single report can take.
+        let attachments_per_report = MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize;
+        let size = 42;
+        for iteration in 0..attachments_per_report {
+            sender
+                .try_send(ProfileReport::Partial {
+                    process_name: "test_process".to_string(),
+                    size,
+                    profile: create_vmo_with_some_data(size as usize),
+                    iteration,
+                })
+                .expect("Queue should hold a full report worth of profiles.");
+        }
+
+        assert!(executor.run_until_stalled(&mut task).is_pending());
+        let report = match executor.run_until_stalled(&mut request_stream.next()) {
+            Poll::Ready(Some(Ok(request))) => handle_crash_reporter_request(request),
+            _ => panic!("Expected the queued profiles to be filed."),
+        };
+
+        // Every queued profile has to be filed by this report:
+        // whatever is left over waits a further hour.
+        assert_eq!(attachments_per_report, report.attachments.unwrap().len());
     }
 }
