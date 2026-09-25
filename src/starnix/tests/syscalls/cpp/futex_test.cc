@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <lib/fit/defer.h>
 #include <signal.h>
 #include <stdint.h>
 #include <sys/mman.h>
@@ -417,6 +418,20 @@ TEST(FutexTest, WaitRestartableOnSignal) {
 }
 
 void NoopSignalHandler(int) {}
+
+std::atomic<int> g_signal_count{0};
+
+void CountingSignalHandler(int) { g_signal_count.fetch_add(1, std::memory_order_relaxed); }
+
+std::atomic<std::atomic<uint32_t> *> g_signal_futex_word{nullptr};
+
+void ValueModifyingSignalHandler(int) {
+  std::atomic<uint32_t> *futex_word = g_signal_futex_word.load(std::memory_order_relaxed);
+  if (futex_word != nullptr) {
+    futex_word->store(1, std::memory_order_relaxed);
+  }
+  g_signal_count.fetch_add(1, std::memory_order_relaxed);
+}
 
 // The flavor of FUTEX_WAIT to exercise. Each of them is backed by a different kind of waiter
 // inside the kernel, so each needs its own coverage.
@@ -880,6 +895,485 @@ TEST(FutexTest, EvictedPageContentionUnderMemoryPressure) {
     t_procfs.join();
     munmap(mapped, kFileSize);
     close(fd);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, UntimedFutexWaitRestartsOnSignalWithSaRestart) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    g_signal_count.store(0);
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT, 0, nullptr, nullptr, 0);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    // Wait until the waiter is sleeping in FUTEX_WAIT.
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    // Send SIGUSR1 to interrupt the futex wait.
+    SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+
+    // Wait until the signal handler has executed.
+    while (g_signal_count.load() == 0) {
+      sched_yield();
+    }
+
+    // Because SA_RESTART is set, the futex wait should restart and remain blocked rather than
+    // returning EINTR to userspace.
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [&](std::string_view state) {
+      if (wait_returned.load()) {
+        return false;
+      }
+      return state.find(" S ") != std::string_view::npos;
+    }));
+    EXPECT_FALSE(wait_returned.load());
+
+    // Wake the futex and confirm the waiter receives it.
+    futex_word.store(1);
+    long woken = SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_WAKE, 1, nullptr, nullptr, 0));
+    EXPECT_EQ(woken, 1);
+
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), 0);
+    EXPECT_EQ(g_signal_count.load(), 1);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, UntimedFutexWaitPrivateRestartsOnSignalWithSaRestart) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    g_signal_count.store(0);
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT_PRIVATE, 0, nullptr, nullptr, 0);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    // Wait until the waiter is sleeping in FUTEX_WAIT_PRIVATE.
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    // Send SIGUSR1 to interrupt the futex wait.
+    SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+
+    // Wait until the signal handler has executed.
+    while (g_signal_count.load() == 0) {
+      sched_yield();
+    }
+
+    // Because SA_RESTART is set, the private futex wait should restart and remain blocked rather
+    // than returning EINTR to userspace.
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [&](std::string_view state) {
+      if (wait_returned.load()) {
+        return false;
+      }
+      return state.find(" S ") != std::string_view::npos;
+    }));
+    EXPECT_FALSE(wait_returned.load());
+
+    // Wake the private futex and confirm the waiter receives it.
+    futex_word.store(1);
+    long woken =
+        SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_WAKE_PRIVATE, 1, nullptr, nullptr, 0));
+    EXPECT_EQ(woken, 1);
+
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), 0);
+    EXPECT_EQ(g_signal_count.load(), 1);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, UntimedFutexWaitFailsWithEintrWithoutSaRestart) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    g_signal_count.store(0);
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = 0;  // Deliberately no SA_RESTART.
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT, 0, nullptr, nullptr, 0);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), -1);
+    EXPECT_EQ(wait_errno.load(), EINTR);
+    EXPECT_EQ(g_signal_count.load(), 1);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, TimedFutexWaitFailsWithEintrEvenWithSaRestart) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    g_signal_count.store(0);
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      struct timespec timeout = {.tv_sec = 60, .tv_nsec = 0};
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT, 0, &timeout, nullptr, 0);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), -1);
+    EXPECT_EQ(wait_errno.load(), EINTR);
+    EXPECT_EQ(g_signal_count.load(), 1);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, TimedFutexWaitBitsetFailsWithEintrEvenWithSaRestart) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    g_signal_count.store(0);
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      struct timespec timeout = {};
+      SAFE_SYSCALL(clock_gettime(CLOCK_MONOTONIC, &timeout));
+      timeout.tv_sec += 60;
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT_BITSET, 0, &timeout, nullptr,
+                         FUTEX_BITSET_MATCH_ANY);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), -1);
+    EXPECT_EQ(wait_errno.load(), EINTR);
+    EXPECT_EQ(g_signal_count.load(), 1);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, UntimedFutexWaitBitsetRestartsOnSignalWithSaRestart) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    g_signal_count.store(0);
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT_BITSET, 0, nullptr, nullptr,
+                         FUTEX_BITSET_MATCH_ANY);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+
+    while (g_signal_count.load() == 0) {
+      sched_yield();
+    }
+
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [&](std::string_view state) {
+      if (wait_returned.load()) {
+        return false;
+      }
+      return state.find(" S ") != std::string_view::npos;
+    }));
+    EXPECT_FALSE(wait_returned.load());
+
+    futex_word.store(1);
+    long woken = SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_WAKE_BITSET, 1, nullptr,
+                                      nullptr, FUTEX_BITSET_MATCH_ANY));
+    EXPECT_EQ(woken, 1);
+
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), 0);
+    EXPECT_EQ(g_signal_count.load(), 1);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, UntimedFutexWaitRestartsAcrossMultipleSignalsWithSaRestart) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    g_signal_count.store(0);
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT, 0, nullptr, nullptr, 0);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    for (int i = 1; i <= 3; ++i) {
+      SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+      while (g_signal_count.load() < i) {
+        sched_yield();
+      }
+      ASSERT_TRUE(
+          test_helper::WaitForTaskState(pid, waiter_tid.load(), [&](std::string_view state) {
+            if (wait_returned.load()) {
+              return false;
+            }
+            return state.find(" S ") != std::string_view::npos;
+          }));
+      EXPECT_FALSE(wait_returned.load());
+    }
+
+    futex_word.store(1);
+    long woken = SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_WAKE, 1, nullptr, nullptr, 0));
+    EXPECT_EQ(woken, 1);
+
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), 0);
+    EXPECT_EQ(g_signal_count.load(), 3);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, UntimedFutexWaitReturnsEagainIfValueChangedDuringSignalHandler) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    std::atomic<uint32_t> futex_word{0};
+    g_signal_count.store(0);
+    g_signal_futex_word.store(&futex_word, std::memory_order_relaxed);
+    auto futex_word_cleanup =
+        fit::defer([] { g_signal_futex_word.store(nullptr, std::memory_order_relaxed); });
+
+    struct sigaction sa = {};
+    sa.sa_handler = ValueModifyingSignalHandler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    std::atomic<pid_t> waiter_tid{0};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<long> wait_result{0};
+    std::atomic<int> wait_errno{0};
+
+    std::thread waiter([&] {
+      waiter_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_WAIT, 0, nullptr, nullptr, 0);
+      wait_errno.store(errno);
+      wait_result.store(ret);
+      wait_returned.store(true);
+    });
+    auto waiter_cleanup = fit::defer([&] {
+      if (waiter.joinable()) {
+        waiter.detach();
+      }
+    });
+
+    while (waiter_tid.load() == 0) {
+      sched_yield();
+    }
+
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, waiter_tid.load(), [](std::string_view state) {
+      return state.find(" S ") != std::string_view::npos;
+    }));
+
+    // Send SIGUSR1. The signal handler will modify futex_word to 1.
+    SAFE_SYSCALL(syscall(SYS_tgkill, pid, waiter_tid.load(), SIGUSR1));
+
+    // Waiter should return with EAGAIN because upon restart the futex word no longer matches 0.
+    waiter.join();
+    EXPECT_TRUE(wait_returned.load());
+    EXPECT_EQ(wait_result.load(), -1);
+    EXPECT_EQ(wait_errno.load(), EAGAIN);
+    EXPECT_EQ(g_signal_count.load(), 1);
   });
   EXPECT_TRUE(helper.WaitForChildren());
 }
