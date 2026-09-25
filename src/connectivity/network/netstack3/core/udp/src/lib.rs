@@ -21,6 +21,7 @@ mod internal {
     pub(super) mod base;
     pub(super) mod counters;
     pub(super) mod diagnostics;
+    pub(super) mod settings;
 }
 
 pub use internal::counters::{
@@ -36,3 +37,5 @@ pub use internal::base::{
 };
 
 pub use internal::diagnostics::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
+
+pub use internal::settings::UdpSettings;

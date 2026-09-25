@@ -752,7 +752,8 @@ impl<I: IpExt> IcmpEchoBindingsContext<I, DeviceId<BindingsCtx>> for BindingsCtx
 
 impl IcmpEchoBindingsTypes for BindingsCtx {
     type ExternalData<I: Ip> = socket::datagram::DatagramSocketExternalData<I>;
-    type SendToken = socket::datagram::SendBufferToken;
+    type SocketWritableListener = socket::event_pair::SocketEventPair;
+    type SendToken = ();
 }
 
 impl<I: IpExt> UdpReceiveBindingsContext<I, DeviceId<BindingsCtx>> for BindingsCtx {
@@ -779,7 +780,8 @@ impl<I: IpExt> UdpReceiveBindingsContext<I, DeviceId<BindingsCtx>> for BindingsC
 
 impl UdpBindingsTypes for BindingsCtx {
     type ExternalData<I: Ip> = socket::datagram::DatagramSocketExternalData<I>;
-    type SendToken = socket::datagram::SendBufferToken;
+    type SocketWritableListener = socket::event_pair::SocketEventPair;
+    type SendToken = ();
 }
 
 impl<I: Ip> EventContext<IpDeviceEvent<DeviceId<BindingsCtx>, I, StackTime>> for BindingsCtx {

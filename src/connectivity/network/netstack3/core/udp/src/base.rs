@@ -24,7 +24,7 @@ use netstack3_base::socket::{
     ListenerAddrInfo, ListenerIpAddr, MaybeDualStack, NotDualStackCapableError, RemoveResult,
     ReusePortOption, SetDualStackEnabledError, SharingDomain, ShutdownType, SocketAddrType,
     SocketCookie, SocketIpAddr, SocketMapAddrSpec, SocketMapAddrStateSpec, SocketMapConflictPolicy,
-    SocketMapStateSpec,
+    SocketMapStateSpec, SocketWritableListener,
 };
 use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged};
 use netstack3_base::sync::{RwLock, StrongRc};
@@ -33,7 +33,8 @@ use netstack3_base::{
     DeviceIdContext, Inspector, InspectorDeviceExt, InstantContext, IpSocketPropertiesMatcher,
     LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext,
     PortAllocImpl, ReferenceNotifiers, RemoveResourceResultWithContext, ResourceCounterContext,
-    RngContext, SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier, ZonedAddressError,
+    RngContext, SettingsContext, SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier,
+    ZonedAddressError,
 };
 use netstack3_datagram::{
     self as datagram, BoundDatagramSocketMap, BoundSocketState as DatagramBoundSocketState,
@@ -73,6 +74,7 @@ use crate::internal::counters::{
     CombinedUdpCounters, UdpCounterContext, UdpCountersWithSocket, UdpCountersWithoutSocket,
 };
 use crate::internal::diagnostics::{UdpSocketDiagnostics, UdpSocketDiagnosticsSeed};
+use crate::internal::settings::UdpSettings;
 
 /// Convenience alias to make names shorter.
 pub(crate) type UdpBoundSocketMap<I, D, BT> = BoundDatagramSocketMap<I, D, Udp<BT>>;
@@ -498,7 +500,9 @@ impl<BT: UdpBindingsTypes> DatagramSocketSpec for Udp<BT> {
     type SerializeError = UdpSerializeError;
 
     type ExternalData<I: Ip> = BT::ExternalData<I>;
+    type Settings = UdpSettings;
     type Counters<I: Ip> = UdpCountersWithSocket<I>;
+    type SocketWritableListener = BT::SocketWritableListener;
     type SendToken = BT::SendToken;
 
     fn ip_proto<I: IpProtoExt>() -> I::Proto {
@@ -510,6 +514,8 @@ impl<BT: UdpBindingsTypes> DatagramSocketSpec for Udp<BT> {
     ) -> I::DualStackBoundSocketId<D, Udp<BT>> {
         I::into_dual_stack_bound_socket_id(s.clone())
     }
+
+    const FIXED_HEADER_SIZE: usize = packet_formats::udp::HEADER_BYTES;
 
     fn make_packet<I: IpExt, B: BufferMut>(
         body: B,
@@ -1199,6 +1205,8 @@ pub trait UdpReceiveBindingsContext<I: IpExt, D: StrongDeviceIdentifier>: UdpBin
 pub trait UdpBindingsTypes: DatagramBindingsTypes + MatcherBindingsTypes + Sized + 'static {
     /// Opaque bindings data held by core for a given IP version.
     type ExternalData<I: Ip>: Debug + Send + Sync + 'static;
+    /// The listener notified when sockets' writable state changes.
+    type SocketWritableListener: SocketWritableListener + Debug + Send + Sync + 'static;
     /// A token representing resources allocated for an in-flight send operation.
     ///
     /// Core holds this token until the packet is either transmitted by the
@@ -1215,6 +1223,7 @@ pub trait UdpBindingsContext<I: IpExt, D: StrongDeviceIdentifier>:
     + ReferenceNotifiers
     + UdpBindingsTypes
     + SocketOpsFilterBindingContext<D>
+    + SettingsContext<UdpSettings>
     + MatcherBindingsTypes
     + MarksBindingsContext
 {
@@ -1227,6 +1236,7 @@ impl<
         + ReferenceNotifiers
         + UdpBindingsTypes
         + SocketOpsFilterBindingContext<D>
+        + SettingsContext<UdpSettings>
         + MarksBindingsContext,
     D: StrongDeviceIdentifier,
 > UdpBindingsContext<I, D> for BC
@@ -2033,6 +2043,12 @@ pub enum SendToError {
     /// but the socket is dual stack enabled and bound to a mapped address.
     #[error("the remote ip was unexpectedly not an ipv4-mapped-ipv6 address")]
     RemoteUnexpectedlyNonMapped,
+    /// The socket's send buffer is full.
+    #[error("send buffer full")]
+    SendBufferFull,
+    /// Invalid message length.
+    #[error("invalid message length")]
+    InvalidLength,
 }
 
 /// The UDP socket API.
@@ -2143,16 +2159,18 @@ where
     pub fn create(&mut self) -> UdpApiSocketId<I, C>
     where
         <C::BindingsContext as UdpBindingsTypes>::ExternalData<I>: Default,
+        <C::BindingsContext as UdpBindingsTypes>::SocketWritableListener: Default,
     {
-        self.create_with(Default::default())
+        self.create_with(Default::default(), Default::default())
     }
 
     /// Creates a new unbound UDP socket with provided external data.
     pub fn create_with(
         &mut self,
         external_data: <C::BindingsContext as UdpBindingsTypes>::ExternalData<I>,
+        writable_listener: <C::BindingsContext as UdpBindingsTypes>::SocketWritableListener,
     ) -> UdpApiSocketId<I, C> {
-        self.datagram().create(external_data)
+        self.datagram().create(external_data, writable_listener)
     }
 
     /// Connect a UDP socket
@@ -2678,6 +2696,22 @@ where
         })
     }
 
+    /// Sets the send buffer maximum size to `size`.
+    pub fn set_send_buffer(&mut self, id: &UdpApiSocketId<I, C>, size: usize) {
+        self.datagram().set_send_buffer(id, size)
+    }
+
+    /// Returns the current maximum send buffer size.
+    pub fn send_buffer(&mut self, id: &UdpApiSocketId<I, C>) -> usize {
+        self.datagram().send_buffer(id)
+    }
+
+    /// Returns the currently available send buffer space on the socket.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn send_buffer_available(&mut self, id: &UdpApiSocketId<I, C>) -> usize {
+        self.datagram().send_buffer_available(id)
+    }
+
     /// Disconnects a connected UDP socket.
     ///
     /// `disconnect` removes an existing connected socket and replaces it with a
@@ -2781,7 +2815,8 @@ where
     /// # Errors
     ///
     /// Returns an error if the socket is not connected or the packet cannot be
-    /// sent.
+    /// sent. On error, the original `body` is returned unmodified so that it
+    /// can be reused by the caller.
     pub fn send<B: BufferMut>(
         &mut self,
         id: &UdpApiSocketId<I, C>,
@@ -2794,6 +2829,8 @@ where
             match err {
                 DatagramSendError::NotConnected => Either::Right(ExpectedConnError),
                 DatagramSendError::NotWriteable => Either::Left(SendError::NotWriteable),
+                DatagramSendError::SendBufferFull => Either::Left(SendError::SendBufferFull),
+                DatagramSendError::InvalidLength => Either::Left(SendError::InvalidLength),
                 DatagramSendError::IpSock(err) => Either::Left(SendError::IpSock(err)),
                 DatagramSendError::SerializeError(err) => match err {
                     UdpSerializeError::RemotePortUnset => Either::Left(SendError::RemotePortUnset),
@@ -2840,6 +2877,8 @@ where
                     UdpSerializeError::RemotePortUnset => SendToError::RemotePortUnset,
                 },
                 datagram::SendToError::NotWriteable => SendToError::NotWriteable,
+                datagram::SendToError::SendBufferFull => SendToError::SendBufferFull,
+                datagram::SendToError::InvalidLength => SendToError::InvalidLength,
                 datagram::SendToError::Zone(e) => SendToError::Zone(e),
                 datagram::SendToError::CreateAndSend(e) => match e {
                     IpSockCreateAndSendError::Send(e) => SendToError::Send(e),
@@ -2897,6 +2936,12 @@ pub enum SendError {
     /// [`UdpRemotePort::Unset`] for the rationale.
     #[error("remote port unset")]
     RemotePortUnset,
+    /// The socket's send buffer is full.
+    #[error("send buffer is full")]
+    SendBufferFull,
+    /// Invalid message length.
+    #[error("invalid message length")]
+    InvalidLength,
 }
 
 impl<I: IpExt, BC: UdpBindingsContext<I, CC::DeviceId>, CC: StateContext<I, BC>>
@@ -3096,8 +3141,8 @@ pub(crate) mod testutils {
 
     use net_types::ip::{IpAddr, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
     use netstack3_base::testutil::{
-        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSendToken, FakeStrongDeviceId,
-        FakeWeakDeviceId,
+        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSendToken, FakeSocketWritableListener,
+        FakeStrongDeviceId, FakeWeakDeviceId,
     };
     use netstack3_base::{CtxPair, ResourceCounterContext, UninstantiableWrapper};
     use netstack3_hashmap::HashMap;
@@ -3328,6 +3373,7 @@ pub(crate) mod testutils {
 
     impl<D: StrongDeviceIdentifier> UdpBindingsTypes for FakeUdpBindingsCtx<D> {
         type ExternalData<I: Ip> = ();
+        type SocketWritableListener = FakeSocketWritableListener;
         type SendToken = FakeSendToken;
     }
 
@@ -7849,7 +7895,8 @@ mod tests {
         let mut primary_ids = Vec::new();
 
         let mut create_socket = || {
-            let primary = datagram::testutil::create_primary_id(());
+            let primary =
+                datagram::testutil::create_primary_id((), Default::default(), &Default::default());
             let id = UdpSocketId(PrimaryRc::clone_strong(&primary));
             primary_ids.push(primary);
             id
@@ -7909,7 +7956,8 @@ mod tests {
         let mut primary_ids = Vec::new();
 
         let mut create_socket = || {
-            let primary = datagram::testutil::create_primary_id(());
+            let primary =
+                datagram::testutil::create_primary_id((), Default::default(), &Default::default());
             let id = UdpSocketId(PrimaryRc::clone_strong(&primary));
             primary_ids.push(primary);
             id
@@ -7982,6 +8030,7 @@ mod tests {
             C::BindingsContext:
                 UdpBindingsContext<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
             <C::BindingsContext as UdpBindingsTypes>::ExternalData<I>: Default,
+            <C::BindingsContext as UdpBindingsTypes>::SocketWritableListener: Default,
             <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId:
                 netstack3_base::InterfaceProperties<
                         <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,

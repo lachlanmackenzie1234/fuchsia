@@ -122,7 +122,8 @@ pub mod inspect {
 /// Methods for dealing with ICMP sockets.
 pub mod icmp {
     pub use netstack3_icmp_echo::{
-        IcmpEchoBindingsContext, IcmpEchoBindingsTypes, IcmpSocketId, ReceiveIcmpEchoError,
+        IcmpEchoBindingsContext, IcmpEchoBindingsTypes, IcmpEchoSettings, IcmpSocketId,
+        ReceiveIcmpEchoError,
     };
 }
 
@@ -208,9 +209,8 @@ pub mod socket {
     };
 
     pub use netstack3_base::socket::{
-        AddrIsMappedError, NotDualStackCapableError, ReusePortOption, SendBufferFullError,
-        SendBufferSpace, SendBufferTracking, SetDualStackEnabledError, SharingDomain, ShutdownType,
-        SocketCookie, SocketWritableListener, StrictlyZonedAddr,
+        AddrIsMappedError, NotDualStackCapableError, ReusePortOption, SetDualStackEnabledError,
+        SharingDomain, ShutdownType, SocketCookie, SocketWritableListener, StrictlyZonedAddr,
     };
 
     pub use netstack3_base::{
@@ -264,8 +264,8 @@ pub mod types {
 pub mod udp {
     pub use netstack3_udp::{
         ReceiveUdpError, SendError, SendToError, UdpBindingsTypes, UdpPacketMeta,
-        UdpReceiveBindingsContext, UdpRemotePort, UdpSocketDiagnosticTuple, UdpSocketDiagnostics,
-        UdpSocketId,
+        UdpReceiveBindingsContext, UdpRemotePort, UdpSettings, UdpSocketDiagnosticTuple,
+        UdpSocketDiagnostics, UdpSocketId,
     };
 }
 

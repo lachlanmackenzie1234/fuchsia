@@ -25,7 +25,7 @@ use netstack3_base::socket::{
     ListenerAddr, ListenerIpAddr, MaybeDualStack, NotDualStackCapableError, Shutdown, ShutdownType,
     SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddr, SocketIpExt,
     SocketMapAddrSpec, SocketMapConflictPolicy, SocketMapStateSpec, SocketStateEntry,
-    SocketZonedAddrExt as _, StrictlyZonedAddr,
+    SocketWritableListener, SocketZonedAddrExt as _, StrictlyZonedAddr,
 };
 use netstack3_base::sync::{self, RwLock};
 use netstack3_base::{
@@ -34,8 +34,8 @@ use netstack3_base::{
     InspectorDeviceExt, InspectorExt as _, IpDeviceAddr, LocalAddressError, Mark, MarkDomain,
     Marks, NotFoundError, OwnedOrRefsBidirectionalConverter, ReferenceNotifiers,
     ReferenceNotifiersExt, RemoteAddressError, RemoveResourceResultWithContext, RngContext,
-    SocketError, StrongDeviceIdentifier, TxMetadataBindingsTypes, WeakDeviceIdentifier,
-    ZonedAddressError,
+    SettingsContext, SocketError, StrongDeviceIdentifier, TxMetadataBindingsTypes,
+    WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_filter::{FilterIpExt, TransportPacketSerializer};
 use netstack3_hashmap::{HashMap, HashSet};
@@ -54,7 +54,8 @@ use packet_formats::ip::{DscpAndEcn, IpProtoExt};
 use ref_cast::RefCast;
 use thiserror::Error;
 
-use crate::internal::tx_metadata::TxMetadata;
+use crate::internal::settings::DatagramSettings;
+use crate::internal::sndbuf::{SendBufferError, SendBufferTracking, TxMetadata};
 
 /// Top-level struct kept in datagram socket references.
 #[derive(Derivative)]
@@ -62,6 +63,7 @@ use crate::internal::tx_metadata::TxMetadata;
 pub struct ReferenceState<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     pub(crate) state: RwLock<SocketState<I, D, S>>,
     pub(crate) external_data: S::ExternalData<I>,
+    pub(crate) send_buffer: SendBufferTracking<S>,
     pub(crate) counters: S::Counters<I>,
 }
 
@@ -1440,8 +1442,14 @@ pub trait DatagramSocketSpec: Sized + 'static {
     /// inside the socket references.
     type ExternalData<I: Ip>: Debug + Send + Sync + 'static;
 
+    /// Settings type offered by bindings for this datagram socket.
+    type Settings: AsRef<DatagramSettings> + Default;
+
     /// Per-socket counters tracked by datagram sockets.
     type Counters<I: Ip>: Debug + Default + Send + Sync + 'static;
+
+    /// The listener type that is notified about the socket writable state.
+    type SocketWritableListener: SocketWritableListener + Debug + Send + Sync + 'static;
 
     /// A token representing resources allocated for an in-flight send operation.
     ///
@@ -1449,6 +1457,15 @@ pub trait DatagramSocketSpec: Sized + 'static {
     /// the device or dropped along the egress path. This allows bindings to
     /// track send buffer capacity or other per-packet resources.
     type SendToken: Debug + Send + Sync + 'static;
+
+    /// The size in bytes of the fixed header for the datagram transport.
+    ///
+    /// This is used to calculate the per-packet send buffer cost of an egress
+    /// datagram.
+    ///
+    /// This value must be the _additional_ bytes wrapped in a body when
+    /// [`DatagramSocketSpec::make_packet`] is called.
+    const FIXED_HEADER_SIZE: usize;
 
     /// Returns the IP protocol of this datagram specification.
     fn ip_proto<I: IpProtoExt>() -> I::Proto;
@@ -1521,6 +1538,8 @@ pub struct InUseError;
 /// Creates a primary ID without inserting it into the all socket map.
 pub fn create_primary_id<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec>(
     external_data: S::ExternalData<I>,
+    writable_listener: S::SocketWritableListener,
+    settings: &DatagramSettings,
 ) -> PrimaryRc<I, D, S> {
     PrimaryRc::new(ReferenceState {
         state: RwLock::new(SocketState {
@@ -1529,6 +1548,7 @@ pub fn create_primary_id<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpe
             sharing: Default::default(),
         }),
         external_data,
+        send_buffer: SendBufferTracking::new(writable_listener, settings),
         counters: Default::default(),
     })
 }
@@ -3286,6 +3306,21 @@ pub enum SendError<SE: Error> {
     /// There was a problem when serializing the packet.
     #[error("error serializing packet: {0:?}")]
     SerializeError(#[source] SE),
+    /// There is no space available on the send buffer.
+    #[error("send buffer full")]
+    SendBufferFull,
+    /// Invalid message length.
+    #[error("invalid message length")]
+    InvalidLength,
+}
+
+impl<SE: Error> From<SendBufferError> for SendError<SE> {
+    fn from(err: SendBufferError) -> Self {
+        match err {
+            SendBufferError::SendBufferFull => Self::SendBufferFull,
+            SendBufferError::InvalidLength => Self::InvalidLength,
+        }
+    }
 }
 
 /// An error encountered while sending a datagram packet to an alternate address.
@@ -3319,6 +3354,21 @@ pub enum SendToError<SE: Error> {
     /// The provided buffer is not valid.
     #[error("serialize buffer invalid")]
     SerializeError(#[source] SE),
+    /// There is no space available on the send buffer.
+    #[error("send buffer full")]
+    SendBufferFull,
+    /// Invalid message length.
+    #[error("invalid message length")]
+    InvalidLength,
+}
+
+impl<SE: Error> From<SendBufferError> for SendToError<SE> {
+    fn from(err: SendBufferError) -> Self {
+        match err {
+            SendBufferError::SendBufferFull => Self::SendBufferFull,
+            SendBufferError::InvalidLength => Self::InvalidLength,
+        }
+    }
 }
 
 struct SendOneshotParameters<
@@ -3374,7 +3424,9 @@ fn send_oneshot<
         Err(e) => return Err(SendToError::Zone(e)),
     };
 
-    let tx_metadata = core_ctx.convert_tx_meta(TxMetadata::new(id, send_token));
+    let tx_metadata =
+        id.borrow().send_buffer.prepare_for_send::<WireI, _, _, _>(id, &body, send_token)?;
+    let tx_metadata = core_ctx.convert_tx_meta(tx_metadata);
 
     core_ctx
         .send_oneshot_ip_packet_with_fallible_serializer(
@@ -3768,13 +3820,18 @@ impl<I, C, S> DatagramApi<I, C, S>
 where
     I: IpExt,
     C: ContextPair,
-    C::BindingsContext: DatagramBindingsContext,
+    C::BindingsContext: DatagramBindingsContext + SettingsContext<S::Settings>,
     C::CoreContext: DatagramStateContext<I, C::BindingsContext, S>,
     S: DatagramSocketSpec,
 {
     fn core_ctx(&mut self) -> &mut C::CoreContext {
         let Self(pair, PhantomData) = self;
         pair.core_ctx()
+    }
+
+    fn bindings_ctx(&mut self) -> &mut C::BindingsContext {
+        let Self(pair, PhantomData) = self;
+        pair.bindings_ctx()
     }
 
     fn contexts(&mut self) -> (&mut C::CoreContext, &mut C::BindingsContext) {
@@ -3790,8 +3847,12 @@ where
     pub fn create(
         &mut self,
         external_data: S::ExternalData<I>,
+        writable_listener: S::SocketWritableListener,
     ) -> S::SocketId<I, DatagramApiWeakDeviceId<C>> {
-        let primary = create_primary_id(external_data);
+        let primary = {
+            let settings = self.bindings_ctx().settings();
+            create_primary_id(external_data, writable_listener, settings.as_ref())
+        };
         let strong = PrimaryRc::clone_strong(&primary);
         self.core_ctx().with_all_sockets_mut(move |socket_set| {
             let strong = PrimaryRc::clone_strong(&primary);
@@ -3805,8 +3866,9 @@ where
     pub fn create_default(&mut self) -> S::SocketId<I, DatagramApiWeakDeviceId<C>>
     where
         S::ExternalData<I>: Default,
+        S::SocketWritableListener: Default,
     {
-        self.create(Default::default())
+        self.create(Default::default(), Default::default())
     }
 
     /// Collects all currently opened sockets.
@@ -4209,9 +4271,12 @@ where
                 return Err(SendError::NotWriteable);
             }
 
-            let tx_metadata = TxMetadata::<I, _, _>::new(id, send_token);
             match operation {
                 Operation::SendToThisStack((SendParams { socket, ip, options }, core_ctx)) => {
+                    let tx_metadata = id
+                        .borrow()
+                        .send_buffer
+                        .prepare_for_send::<I, _, _, _>(id, &body, send_token)?;
                     let packet =
                         S::make_packet::<I, _>(body, &ip).map_err(SendError::SerializeError)?;
                     DatagramBoundStateContext::with_transport_context(core_ctx, |core_ctx| {
@@ -4222,6 +4287,10 @@ where
                     })
                 }
                 Operation::SendToOtherStack((SendParams { socket, ip, options }, dual_stack)) => {
+                    let tx_metadata = id
+                        .borrow()
+                        .send_buffer
+                        .prepare_for_send::<I::OtherVersion, _, _, _>(id, &body, send_token)?;
                     let packet = S::make_packet::<I::OtherVersion, _>(body, &ip)
                         .map_err(SendError::SerializeError)?;
                     DualStackDatagramBoundStateContext::with_transport_context::<_, _>(
@@ -5057,6 +5126,23 @@ where
         self.core_ctx()
             .with_socket_state(id, |_core_ctx, state| state.options().socket_options.dscp_and_ecn)
     }
+
+    /// Sets the send buffer maximum size to `size`.
+    pub fn set_send_buffer(&mut self, id: &DatagramApiSocketId<I, C, S>, size: usize) {
+        let settings = self.bindings_ctx().settings();
+        id.borrow().send_buffer.set_capacity(size, settings.as_ref())
+    }
+
+    /// Returns the current maximum send buffer size.
+    pub fn send_buffer(&mut self, id: &DatagramApiSocketId<I, C, S>) -> usize {
+        id.borrow().send_buffer.capacity()
+    }
+
+    /// Returns the currently available send buffer space on the socket.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn send_buffer_available(&mut self, id: &DatagramApiSocketId<I, C, S>) -> usize {
+        id.borrow().send_buffer.available()
+    }
 }
 
 #[cfg(any(test, feature = "testutils"))]
@@ -5132,8 +5218,8 @@ mod test {
     };
     use netstack3_base::socketmap::SocketMap;
     use netstack3_base::testutil::{
-        FakeDeviceId, FakeReferencyDeviceId, FakeSendToken, FakeStrongDeviceId, FakeWeakDeviceId,
-        MultipleDevicesId, TestIpExt,
+        FakeDeviceId, FakeReferencyDeviceId, FakeSendToken, FakeSocketWritableListener,
+        FakeStrongDeviceId, FakeWeakDeviceId, MultipleDevicesId, TestIpExt,
     };
     use netstack3_base::{ContextProvider, CtxPair, UninstantiableWrapper};
     use netstack3_ip::DEFAULT_HOP_LIMITS;
@@ -5258,7 +5344,9 @@ mod test {
         type ConnState<I: IpExt, D: WeakDeviceIdentifier> = I::DualStackConnState<D, Self>;
         type Counters<I: Ip> = ();
         type ExternalData<I: Ip> = ();
+        type SocketWritableListener = FakeSocketWritableListener;
         type SendToken = FakeSendToken;
+        type Settings = DatagramSettings;
 
         fn ip_proto<I: IpProtoExt>() -> I::Proto {
             I::map_ip((), |()| FAKE_DATAGRAM_IPV4_PROTOCOL, |()| FAKE_DATAGRAM_IPV6_PROTOCOL)
@@ -5273,6 +5361,7 @@ mod test {
 
         type Serializer<I: IpExt, B: BufferMut> = packet::Nested<B, ()>;
         type SerializeError = !;
+        const FIXED_HEADER_SIZE: usize = 0;
         fn make_packet<I: IpExt, B: BufferMut>(
             body: B,
             _addr: &ConnIpAddr<
