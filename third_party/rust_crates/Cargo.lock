@@ -1959,7 +1959,7 @@ dependencies = [
  "lock_api",
  "log",
  "loom",
- "lru-cache",
+ "lru",
  "macro_rules_attribute",
  "maplit",
  "maybe-owned",
@@ -3016,6 +3016,15 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lru"
+version = "0.18.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
+dependencies = [
+ "hashbrown 0.17.1",
 ]
 
 [[package]]

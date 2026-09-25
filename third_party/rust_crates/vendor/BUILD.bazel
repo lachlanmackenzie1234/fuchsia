@@ -1519,14 +1519,14 @@ alias(
 )
 
 alias(
-    name = "lru-cache-0.1.2",
-    actual = "//third_party/rust_crates/vendor/lru-cache-0.1.2:lru_cache",
+    name = "lru-0.18.5",
+    actual = "//third_party/rust_crates/vendor/lru-0.18.5:lru",
     tags = ["manual"],
 )
 
 alias(
-    name = "lru-cache",
-    actual = "//third_party/rust_crates/vendor/lru-cache-0.1.2:lru_cache",
+    name = "lru",
+    actual = "//third_party/rust_crates/vendor/lru-0.18.5:lru",
     tags = ["manual"],
 )
 

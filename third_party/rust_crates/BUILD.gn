@@ -1091,12 +1091,12 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-group("lru-cache") {
-  public_deps = [ ":lru-cache-v0_1_2" ]
+group("lru") {
+  public_deps = [ ":lru-v0_18_5" ]
 }
 
-group("lru-cache-0.1.2") {
-  public_deps = [ ":lru-cache-v0_1_2" ]
+group("lru-0.18.5") {
+  public_deps = [ ":lru-v0_18_5" ]
 }
 
 group("macro_rules_attribute") {
@@ -13117,6 +13117,38 @@ rustc_library("loom-v0_7_2") {
 
   testonly = true
   applicable_licenses = [ ":loom-v0_7_2.license" ]
+}
+
+license("lru-v0_18_5.license") {
+  public_package_name = "lru"
+  license_files = [ "//third_party/rust_crates/vendor/lru-0.18.5/LICENSE" ]
+}
+
+rustc_library("lru-v0_18_5") {
+  crate_name = "lru"
+  source_root = "//third_party/rust_crates/vendor/lru-0.18.5/src/lib.rs"
+  output_name = "lru-7bff57d15920e33"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":hashbrown-v0_17_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=7bff57d15920e33",
+    "-Cextra-filename=-7bff57d15920e33",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"hashbrown\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":lru-v0_18_5.license" ]
 }
 
 license("lru-cache-v0_1_2.license") {
