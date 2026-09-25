@@ -4,7 +4,6 @@
 
 #include "src/storage/blobfs/blob.h"
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <lib/zx/vmo.h>

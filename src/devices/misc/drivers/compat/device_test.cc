@@ -209,7 +209,7 @@ TEST_F(DeviceTest, AddChildWithProtoStrPropAndProtoId) {
       ddk::MakeStrProperty(bind_fuchsia::PROTOCOL, static_cast<uint32_t>(ZX_PROTOCOL_I2C));
 
   device_add_args_t args{
-      .name = "child", .str_props = &prop, .str_prop_count = 1, .proto_id = ZX_PROTOCOL_BLOCK};
+      .name = "child", .str_props = &prop, .str_prop_count = 1, .proto_id = ZX_PROTOCOL_I2C};
   zx_device_t* child = nullptr;
   ASSERT_EQ(ZX_OK, parent.Add(&args, &child));
   ASSERT_EQ(ZX_OK, child->CreateNode());
@@ -253,7 +253,7 @@ TEST_F(DeviceTest, AddChildWithStringProps) {
   device_add_args_t args{.name = "child",
                          .str_props = props,
                          .str_prop_count = sizeof(props) / sizeof(props[0]),
-                         .proto_id = ZX_PROTOCOL_BLOCK};
+                         .proto_id = ZX_PROTOCOL_I2C};
   zx_device_t* child = nullptr;
   ASSERT_EQ(ZX_OK, parent.Add(&args, &child));
   ASSERT_EQ(ZX_OK, child->CreateNode());
@@ -470,15 +470,15 @@ TEST_F(DeviceTest, GetProtocolFromDevice) {
   zx_protocol_device_t ops{};
   compat::Device without(compat::kDefaultDevice, &ops, nullptr, std::nullopt, logger(),
                          dispatcher());
-  ASSERT_EQ(ZX_ERR_BAD_STATE, without.GetProtocol(ZX_PROTOCOL_BLOCK, nullptr));
+  ASSERT_EQ(ZX_ERR_BAD_STATE, without.GetProtocol(ZX_PROTOCOL_I2C, nullptr));
 
   // Create a device with a get_protocol hook.
   ops.get_protocol = [](void* ctx, uint32_t proto_id, void* protocol) {
-    EXPECT_EQ(ZX_PROTOCOL_BLOCK, proto_id);
+    EXPECT_EQ(ZX_PROTOCOL_I2C, proto_id);
     return ZX_OK;
   };
   compat::Device with(compat::kDefaultDevice, &ops, nullptr, std::nullopt, logger(), dispatcher());
-  ASSERT_EQ(ZX_OK, with.GetProtocol(ZX_PROTOCOL_BLOCK, nullptr));
+  ASSERT_EQ(ZX_OK, with.GetProtocol(ZX_PROTOCOL_I2C, nullptr));
 }
 
 TEST_F(DeviceTest, DeviceMetadata) {
@@ -543,7 +543,7 @@ TEST_F(DeviceTest, GetFragmentProtocolFromDeviceNoDriver) {
     void* ctx;
   } proto;
   ASSERT_EQ(ZX_ERR_BAD_STATE, device_get_fragment_protocol(with.ZxDevice(), "fragment-name",
-                                                           ZX_PROTOCOL_BLOCK, &proto));
+                                                           ZX_PROTOCOL_I2C, &proto));
 }
 
 TEST_F(DeviceTest, TestBind) {
