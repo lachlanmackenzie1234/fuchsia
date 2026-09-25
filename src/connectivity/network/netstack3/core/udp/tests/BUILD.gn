@@ -12,7 +12,6 @@ rustc_test("netstack3_udp_integration_test") {
     "src/lib.rs",
     "src/loopback.rs",
     "src/send_token.rs",
-    "src/sndbuf.rs",
   ]
 
   deps = [

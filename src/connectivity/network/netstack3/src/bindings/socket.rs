@@ -662,8 +662,6 @@ impl IntoErrno for udp::SendToError {
             Self::RemotePortUnset => Errno::Einval,
             Self::RemoteUnexpectedlyMapped => Errno::Enetunreach,
             Self::RemoteUnexpectedlyNonMapped => Errno::Eafnosupport,
-            Self::SendBufferFull => Errno::Eagain,
-            Self::InvalidLength => Errno::Emsgsize,
         }
     }
 }
@@ -677,8 +675,6 @@ impl IntoErrno for udp::SendError {
             Self::IpSock(err) => err.to_errno(),
             Self::NotWriteable => Errno::Epipe,
             Self::RemotePortUnset => Errno::Edestaddrreq,
-            Self::SendBufferFull => Errno::Eagain,
-            Self::InvalidLength => Errno::Emsgsize,
         }
     }
 }
