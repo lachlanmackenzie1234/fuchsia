@@ -387,6 +387,9 @@ def build_tests_json(
             sys.exit(1)
 
         raw_group_envs = test_group.get("environments", [])
+        override_test_environments = test_group.get(
+            "override_test_environments", True
+        )
         group_environments: list[Environment] = []
         try:
             for e in raw_group_envs:
@@ -433,7 +436,7 @@ def build_tests_json(
                     target_platforms=target_platforms,
                     other_platforms=other_platforms,
                     restrict_to_default_envs=True,
-                    override_environments=True,
+                    override_environments=override_test_environments,
                 )
             except ValueError as err:
                 validation_errors.append(f"{test_id}: {err}")

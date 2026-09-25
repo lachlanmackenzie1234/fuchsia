@@ -794,6 +794,59 @@ class BuildTestsJsonTest(unittest.TestCase):
         ]
         self.assertEqual(expected_tests, tests)
 
+    def test_product_bundle_test_group_no_environment_override(self) -> None:
+        vim3_env = {"dimensions": {"device_type": "Vim3"}}
+        astro_env = {"dimensions": {"device_type": "Astro"}}
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+
+        pb_tests = [
+            # No environments set: should inherit group's environments.
+            {"test": {"name": "default_pb_test"}},
+            # Overlapping environments: should be intersected with group's environments.
+            {
+                "test": {"name": "subset_pb_test"},
+                "environments": [vim3_env, aemu_env],
+            },
+            # Disjoint environments: becomes build_only = True with empty environments.
+            {
+                "test": {"name": "disjoint_pb_test"},
+                "environments": [aemu_env],
+            },
+        ]
+        tests_json_path = self.build_dir / "pb_tests.json"
+        tests_json_path.write_text(json.dumps(pb_tests))
+
+        test_groups = [
+            {
+                "product_bundle_name": "my_pb",
+                "environments": [vim3_env, astro_env],
+                "override_test_environments": False,
+                "tests_json": str(tests_json_path),
+            }
+        ]
+        product_bundles = [{"name": "my_pb"}]
+        (_, tests) = self._test([], test_groups, product_bundles)
+
+        expected_tests = [
+            {
+                "test": {"name": "default_pb_test-my_pb"},
+                "product_bundle": "my_pb",
+                "environments": [astro_env, vim3_env],
+            },
+            {
+                "test": {"name": "subset_pb_test-my_pb"},
+                "product_bundle": "my_pb",
+                "environments": [vim3_env],
+            },
+            {
+                "test": {"name": "disjoint_pb_test-my_pb"},
+                "product_bundle": "my_pb",
+                "build_only": True,
+                "environments": [],
+            },
+        ]
+        self.assertEqual(expected_tests, tests)
+
     def test_cross_arch_linux_host_test(self) -> None:
         tests_from_metadata = [
             {
