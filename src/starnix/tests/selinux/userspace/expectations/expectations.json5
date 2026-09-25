@@ -42,9 +42,15 @@
                 "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Allowed",
                 "IoUringTest/IoUringOverrideCredsTest.OverrideCreds/Denied",
 
-                // TODO(https://fxbug.dev/532921178): io_uring memory accounting is not implemented in Starnix.
+                // TODO: https://fxbug.dev/532921178 - io_uring memory accounting is not implemented
+                // in Starnix.
                 "IoUringTest.IoUringSetupMemlockLimitCumulative",
                 "IoUringTest.IoUringSetupMemlockLimit",
+
+                // TODO: https://fxbug.dev/505326546 - Implement the uring_sqpoll hook once
+                // the IORING_SETUP_SQPOLL flag is supported by Fuchsia.
+                "IoUringTest.IoUringSqpollAllowed",
+                "IoUringTest.IoUringSqpollDenied",
 
                 // TODO: https://fxbug.dev/334094811 - Reject SELinux mount options before a
                 // policy is loaded.
@@ -81,11 +87,6 @@
 
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
-
-                // TODO: https://fxbug.dev/505326546 - Implement the uring_sqpoll hook once
-                // the IORING_SETUP_SQPOLL flag is supported by Fuchsia.
-                "IoUringTest.IoUringSqpollAllowed",
-                "IoUringTest.IoUringSqpollDenied",
             ],
         },
         {
