@@ -5,21 +5,19 @@
 use crate::signals::syscalls::WaitingOptions;
 use crate::signals::{SignalDetail, SignalInfo};
 use crate::task::{
-    ExitStatus, Pid, PidTableGuard, ProcessSelector, ThreadGroup, ThreadGroupStateRef,
+    ExitStatus, Pid, PidTableGuard, ProcessSelector, Task, ThreadGroup, ThreadGroupStateRef,
 };
 use starnix_logging::log_warn;
 use starnix_types::ownership::{OwnedRef, Releasable};
 use starnix_types::stats::TaskTimeStats;
-use starnix_uapi::auth::Credentials;
 use starnix_uapi::signals::{SIGCHLD, Signal};
 use starnix_uapi::{pid_t, uid_t};
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 #[derive(Debug)]
 pub struct ZombieProcess {
-    pub pid: Pid,
+    pub task: Arc<Task>,
     pub pgid: Pid,
-    pub uid: uid_t,
     pub exit_signal: Option<Signal>,
     pub state: ZombieState,
 
@@ -31,7 +29,7 @@ pub struct ZombieProcess {
 impl PartialEq for ZombieProcess {
     fn eq(&self, other: &Self) -> bool {
         // We assume only one set of ZombieProcess data per process, so this should cover it.
-        self.pid == other.pid && self.is_canonical == other.is_canonical
+        self.task.pid == other.task.pid && self.is_canonical == other.is_canonical
     }
 }
 
@@ -45,30 +43,25 @@ impl PartialOrd for ZombieProcess {
 
 impl Ord for ZombieProcess {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (&self.pid, self.is_canonical).cmp(&(&other.pid, other.is_canonical))
+        (&self.task.pid, self.is_canonical).cmp(&(&other.task.pid, other.is_canonical))
     }
 }
 
 impl ZombieProcess {
     pub fn new(
+        task: Arc<Task>,
         thread_group: ThreadGroupStateRef<'_>,
-        credentials: &Credentials,
         exit_status: ExitStatus,
         exit_signal: Option<Signal>,
     ) -> OwnedRef<Self> {
         let time_stats = thread_group.base.time_stats() + thread_group.children_time_stats;
         OwnedRef::new(ZombieProcess {
-            pid: thread_group.base.leader.clone(),
+            task,
             pgid: thread_group.process_group.leader.clone(),
-            uid: credentials.uid,
             state: ZombieState { exit_status, time_stats },
             exit_signal,
             is_canonical: true,
         })
-    }
-
-    pub fn pid(&self) -> pid_t {
-        self.pid.id
     }
 
     pub fn pgid(&self) -> pid_t {
@@ -77,8 +70,8 @@ impl ZombieProcess {
 
     pub fn to_wait_result(&self) -> WaitResult {
         WaitResult {
-            pid: self.pid.clone(),
-            uid: self.uid,
+            pid: self.task.pid.clone(),
+            uid: self.task.real_creds().uid,
             zombie_state: self.state.clone(),
             exit_signal: self.exit_signal,
         }
@@ -86,9 +79,8 @@ impl ZombieProcess {
 
     pub fn as_artificial(&self) -> Self {
         ZombieProcess {
-            pid: self.pid.clone(),
+            task: self.task.clone(),
             pgid: self.pgid.clone(),
-            uid: self.uid,
             state: self.state.clone(),
             exit_signal: self.exit_signal,
             is_canonical: false,
@@ -98,7 +90,7 @@ impl ZombieProcess {
     pub fn matches_selector(&self, selector: &ProcessSelector) -> bool {
         match selector {
             ProcessSelector::Any => true,
-            ProcessSelector::Pid(pid) => &self.pid == pid,
+            ProcessSelector::Pid(pid) => &self.task.pid == pid,
             ProcessSelector::Pgid(pgid) => &self.pgid == pgid,
         }
     }
@@ -142,7 +134,7 @@ impl Releasable for ZombieProcess {
 
     fn release<'a>(self, pids: &'a mut dyn ZombieReleaser) {
         if self.is_canonical {
-            pids.remove_zombie(&self.pid);
+            pids.remove_zombie(&self.task.pid);
         }
     }
 }
@@ -187,7 +179,7 @@ impl ZombieNotification {
         if let Some(parent) = self.recipient.upgrade() {
             parent.do_zombie_notifications(self.zombie, pids);
         } else {
-            log_warn!("Zombie {} reaped silently", self.zombie.pid());
+            log_warn!("Zombie {} reaped silently", self.zombie.task.get_pid());
             self.zombie.release(pids);
         }
     }

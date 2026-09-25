@@ -999,11 +999,12 @@ impl Task {
                     starnix_logging::log_error!("Exiting without an exit code.");
                     ExitStatus::Exit(u8::MAX)
                 });
-                let uid = self.real_creds().uid;
                 let zombie = ZombieProcess {
-                    pid: self.pid.clone(),
+                    task: self
+                        .weak_self
+                        .upgrade()
+                        .expect("Task strong reference must exist while &self is held"),
                     pgid,
-                    uid,
                     state: ZombieState {
                         exit_status,
                         // ptrace doesn't need this.

@@ -658,8 +658,8 @@ impl ThreadGroup {
 
             // Replace PID table entry with a zombie.
             let zombie = ZombieProcess::new(
+                task.clone(),
                 state.as_ref(),
-                &task.persistent_info.real_creds(),
                 exit_status,
                 state.exit_signal.clone(),
             );
@@ -815,8 +815,8 @@ impl ThreadGroup {
     ) {
         let mut state = self.write();
 
-        state.children.remove(&zombie.pid());
-        state.deferred_zombie_ptracers.retain(|dzp| dzp.tracee_pid != zombie.pid);
+        state.children.remove(&zombie.task.get_pid());
+        state.deferred_zombie_ptracers.retain(|dzp| dzp.tracee_pid != zombie.task.pid);
 
         let exit_signal = zombie.exit_signal;
         let mut signal_info = zombie.to_wait_result().as_signal_info();
@@ -1404,8 +1404,10 @@ impl ThreadGroup {
                     } else {
                         {
                             let mut state = tg.write();
-                            state.children.remove(&z.pid());
-                            state.deferred_zombie_ptracers.retain(|dzp| dzp.tracee_pid != z.pid);
+                            state.children.remove(&z.task.get_pid());
+                            state
+                                .deferred_zombie_ptracers
+                                .retain(|dzp| dzp.tracee_pid != z.task.pid);
                         }
 
                         z.release(pids);
