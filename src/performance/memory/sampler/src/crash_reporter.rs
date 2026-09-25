@@ -21,6 +21,11 @@ use zx::Vmo;
 const CRASH_PRODUCT_NAME: &str = "FuchsiaHeapProfile";
 const CRASH_PROGRAM_NAME: &str = "memory_sampler";
 const CRASH_SIGNATURE: &str = "fuchsia-memory-profile";
+/// The extension given to attached profiles.
+///
+/// Profiles are `gzip`-compressed protocol buffers; see
+/// `profile_builder::profile_to_vmo`.
+const PROFILE_ATTACHMENT_EXTENSION: &str = ".pb.gz";
 const MAX_CONCURRENT_PROFILES: usize = 10;
 const MIN_DURATION_BETWEEN_SNAPSHOTS_HOURS: zx::MonotonicDuration =
     zx::MonotonicDuration::from_hours(1);
@@ -47,9 +52,10 @@ impl ProfileReport {
 /// to never file more than a crash report per hour.
 ///
 /// Note: Attached final profiles, are grouped by process name, then
-/// numbered. E.g. if there are two final profiles for "process 1" and
-/// one profile for "process 2", then they will be named "process
-/// 1_final_0", "process 1_final_1" and "process 2_final_0". Partial
+/// numbered, and carry the `PROFILE_ATTACHMENT_EXTENSION` extension.
+/// E.g. if there are two final profiles for "process 1" and one profile
+/// for "process 2", then they will be named "process 1_final_0.pb.gz",
+/// "process 1_final_1.pb.gz" and "process 2_final_0.pb.gz". Partial
 /// profiles are numbered by their index; currently no further effort
 /// is done to distinguish partial profiles from different processes
 /// that share the same name.
@@ -71,12 +77,19 @@ async fn file_report(
         .flat_map(|(_, profiles)| profiles.enumerate())
         .map(|(i, profile_report)| {
             let (key, profile, size) = match profile_report {
-                ProfileReport::Final { process_name, profile, size } => {
-                    (format!("{}_final_{}", process_name, i), profile, size)
-                }
-                ProfileReport::Partial { process_name, profile, size, iteration } => {
-                    (format!("{}_partial_{}", process_name, iteration), profile, size)
-                }
+                ProfileReport::Final { process_name, profile, size } => (
+                    format!("{}_final_{}{}", process_name, i, PROFILE_ATTACHMENT_EXTENSION),
+                    profile,
+                    size,
+                ),
+                ProfileReport::Partial { process_name, profile, size, iteration } => (
+                    format!(
+                        "{}_partial_{}{}",
+                        process_name, iteration, PROFILE_ATTACHMENT_EXTENSION
+                    ),
+                    profile,
+                    size,
+                ),
             };
             Ok(Attachment { key, value: Buffer { vmo: profile, size } })
         })
@@ -151,14 +164,18 @@ mod test {
     }
 
     /// Converts an `Attachment` back to a `ProfileReport`.
-    /// Note: this function assumes the following format for `Attachment::key`:
-    ///   - `<process_name>_final_<index>` if it is a complete report.
-    ///   - `<process_name>_partial_<iteration>` if it is a partial report.
+    /// Note: this function assumes the following format for `Attachment::key`,
+    /// where `<ext>` is `PROFILE_ATTACHMENT_EXTENSION`:
+    ///   - `<process_name>_final_<index><ext>` if it is a complete report.
+    ///   - `<process_name>_partial_<iteration><ext>` if it is a partial report.
     fn retrieve_profile_from_attachment(attachment: Attachment) -> ProfileReport {
         let Attachment { key, value, .. } = attachment;
         let profile = value.vmo;
         let size = value.size;
-        let (prefix_key, index) = key.rsplit_once('_').unwrap();
+        let stem = key
+            .strip_suffix(PROFILE_ATTACHMENT_EXTENSION)
+            .unwrap_or_else(|| panic!("Attachment name misses the profile extension: {}", key));
+        let (prefix_key, index) = stem.rsplit_once('_').unwrap();
         let (process_name, suffix) = prefix_key.rsplit_once('_').unwrap();
         let is_final = match suffix {
             "final" => true,
@@ -231,6 +248,13 @@ mod test {
 
         assert_eq!(report.program_name, Some(CRASH_PROGRAM_NAME.to_string()));
         assert_eq!(report.crash_signature, Some(CRASH_SIGNATURE.to_string()));
+        // Note: spelled out, rather than derived from
+        // `PROFILE_ATTACHMENT_EXTENSION`, because the point is to pin
+        // the extension that `pprof` tooling expects.
+        assert!(
+            report.attachments.as_ref().unwrap().iter().all(|a| a.key.ends_with(".pb.gz")),
+            "Attachments should be named after the profile format."
+        );
         let attachments: Vec<(String, Vec<u8>, u64)> = report
             .attachments
             .unwrap()
@@ -292,6 +316,10 @@ mod test {
 
         assert_eq!(report.program_name, Some(CRASH_PROGRAM_NAME.to_string()));
         assert_eq!(report.crash_signature, Some(CRASH_SIGNATURE.to_string()));
+        assert!(
+            report.attachments.as_ref().unwrap().iter().all(|a| a.key.ends_with(".pb.gz")),
+            "Attachments should be named after the profile format."
+        );
         let attachments: Vec<(String, Vec<u8>, u64, usize)> = report
             .attachments
             .unwrap()

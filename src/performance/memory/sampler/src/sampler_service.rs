@@ -330,9 +330,11 @@ mod test {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_memory_sampler::{ExecutableSegment, ModuleMap, SamplerMarker, StackTrace};
+    use flate2::read::GzDecoder;
     use futures::{StreamExt, join};
     use itertools::{assert_equal, sorted};
     use prost::Message;
+    use std::io::Read;
     use zx::{Peered, Vmo};
 
     use crate::crash_reporter::ProfileReport;
@@ -344,7 +346,10 @@ mod test {
     };
 
     fn deserialize_profile(profile: Vmo, size: u64) -> Profile {
-        Profile::decode(&profile.read_to_vec(0, size).unwrap()[..]).unwrap()
+        let compressed_profile = profile.read_to_vec(0, size).unwrap();
+        let mut proto_profile = Vec::new();
+        GzDecoder::new(&compressed_profile[..]).read_to_end(&mut proto_profile).unwrap();
+        Profile::decode(&proto_profile[..]).unwrap()
     }
 
     #[fuchsia::test]
