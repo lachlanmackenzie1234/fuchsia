@@ -7,6 +7,36 @@
 use affine::Ratio;
 use zx_types::{ZX_TIME_INFINITE, ZX_TIME_INFINITE_PAST};
 
+#[inline]
+pub const fn zx_nsec(n: i64) -> i64 {
+    n
+}
+
+#[inline]
+pub const fn zx_usec(n: i64) -> i64 {
+    n.saturating_mul(1_000)
+}
+
+#[inline]
+pub const fn zx_msec(n: i64) -> i64 {
+    n.saturating_mul(1_000_000)
+}
+
+#[inline]
+pub const fn zx_sec(n: i64) -> i64 {
+    n.saturating_mul(1_000_000_000)
+}
+
+#[inline]
+pub const fn zx_min(n: i64) -> i64 {
+    n.saturating_mul(60_000_000_000)
+}
+
+#[inline]
+pub const fn zx_hour(n: i64) -> i64 {
+    n.saturating_mul(3_600_000_000_000)
+}
+
 /// Monotonic timeline instant in nanoseconds.
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
