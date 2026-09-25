@@ -111,7 +111,7 @@ event-listener = "5.4.2"
 fatfs = "0.3.6"
 figment = "0.10.19"
 flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
-flyweights = { version = "0.1.5", features = ["json_schema", "serde"] }
+flyweights = { version = "0.1.5", features = ["serde"] }
 foreign-types = "0.3.1"
 fragile = "=2.0.1"
 futures = "=0.3.34"
@@ -224,7 +224,7 @@ sapphire-hci = "0.1.0"
 sapphire-host = "0.1.0"
 sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
-schemars = { version = "0.8.22", features = ["chrono", "preserve_order"] }
+schemars = { version = "1.2.2", features = ["chrono04", "preserve_order"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_derive = "1.0.229"
@@ -1032,7 +1032,7 @@ env_vars = [
 [gn.package.ref-cast-impl."1.0.26"]
 rustflags = []
 env_vars = [
-  "CARGO_PKG_VERSION_PATCH=25",
+  "CARGO_PKG_VERSION_PATCH=26",
 ]
 
 [gn.package.regex."1.13.1"]
@@ -1186,8 +1186,6 @@ rustflags = []
 [gn.package.rutabaga_gfx."0.1.75"]
 # Has build script but no config needed.
 
-[gn.package.schemars."0.8.22"]
-rustflags = ["--cfg=std_atomic64", "--cfg=std_atomic"]
 
 # scoped-tls has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.

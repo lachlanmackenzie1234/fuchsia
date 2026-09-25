@@ -2037,11 +2037,11 @@ group("sapphire-sync-0.1.0") {
 }
 
 group("schemars") {
-  public_deps = [ ":schemars-v0_8_22" ]
+  public_deps = [ ":schemars-v1_2_2" ]
 }
 
-group("schemars-0.8.22") {
-  public_deps = [ ":schemars-v0_8_22" ]
+group("schemars-1.2.2") {
+  public_deps = [ ":schemars-v1_2_2" ]
 }
 
 group("scopeguard") {
@@ -9536,7 +9536,6 @@ rustc_library("flyweights-v0_1_5") {
   deps += [ ":byteorder-v1_5_0" ]
   deps += [ ":ahash-v0_8_12" ]
   deps += [ ":bstr-v1_13_1" ]
-  deps += [ ":schemars-v0_8_22" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":static_assertions-v1_1_0" ]
 
@@ -9547,8 +9546,6 @@ rustc_library("flyweights-v0_1_5") {
     "-Cmetadata=19efedf42b95640e",
     "-Cextra-filename=-19efedf42b95640e",
     "--cfg=feature=\"default\"",
-    "--cfg=feature=\"json_schema\"",
-    "--cfg=feature=\"schemars\"",
     "--cfg=feature=\"serde\"",
   ]
 
@@ -12246,7 +12243,6 @@ rustc_library("indexmap-v1_9_2") {
 
   deps = []
   deps += [ ":hashbrown-v0_12_3" ]
-  deps += [ ":serde-v1_0_229" ]
 
   rustenv = []
 
@@ -12254,8 +12250,6 @@ rustc_library("indexmap-v1_9_2") {
     "--cap-lints=allow",
     "-Cmetadata=48d3353175399349",
     "-Cextra-filename=-48d3353175399349",
-    "--cfg=feature=\"serde\"",
-    "--cfg=feature=\"serde-1\"",
     "--cfg=has_std",
   ]
 
@@ -18432,7 +18426,7 @@ rustc_macro("ref-cast-impl-v1_0_26") {
   deps += [ ":quote-v1_0_47" ]
   deps += [ ":syn-v3_0_3" ]
 
-  rustenv = [ "CARGO_PKG_VERSION_PATCH=25" ]
+  rustenv = [ "CARGO_PKG_VERSION_PATCH=26" ]
 
   rustflags = [
     "--cap-lints=allow",
@@ -20574,15 +20568,15 @@ rustc_library("schannel-v0_1_29") {
   applicable_licenses = [ ":schannel-v0_1_29.license" ]
 }
 
-license("schemars-v0_8_22.license") {
+license("schemars-v1_2_2.license") {
   public_package_name = "schemars"
-  license_files = [ "//third_party/rust_crates/vendor/schemars-0.8.22/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/schemars-1.2.2/LICENSE" ]
 }
 
-rustc_library("schemars-v0_8_22") {
+rustc_library("schemars-v1_2_2") {
   crate_name = "schemars"
-  source_root = "//third_party/rust_crates/vendor/schemars-0.8.22/src/lib.rs"
-  output_name = "schemars-e7ab5fc47f05a053"
+  source_root = "//third_party/rust_crates/vendor/schemars-1.2.2/src/lib.rs"
+  output_name = "schemars-f5cb02840e5408d4"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20591,8 +20585,8 @@ rustc_library("schemars-v0_8_22") {
   deps = []
   deps += [ ":chrono-v0_4_45" ]
   deps += [ ":dyn-clone-v1_0_20" ]
-  deps += [ ":indexmap-v1_9_2" ]
-  deps += [ ":schemars_derive-v0_8_22($host_toolchain)" ]
+  deps += [ ":ref-cast-v1_0_26" ]
+  deps += [ ":schemars_derive-v1_2_2($host_toolchain)" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_151" ]
 
@@ -20600,34 +20594,35 @@ rustc_library("schemars-v0_8_22") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e7ab5fc47f05a053",
-    "-Cextra-filename=-e7ab5fc47f05a053",
-    "--cfg=feature=\"chrono\"",
+    "-Cmetadata=f5cb02840e5408d4",
+    "-Cextra-filename=-f5cb02840e5408d4",
+    "--cfg=feature=\"chrono04\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
-    "--cfg=feature=\"indexmap\"",
     "--cfg=feature=\"preserve_order\"",
     "--cfg=feature=\"schemars_derive\"",
-    "--cfg=std_atomic64",
-    "--cfg=std_atomic",
+    "--cfg=feature=\"std\"",
   ]
 
+  aliased_deps = {
+    chrono04 = ":chrono-v0_4_45.actual"
+  }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":schemars-v0_8_22.license" ]
+  applicable_licenses = [ ":schemars-v1_2_2.license" ]
 }
 
-license("schemars_derive-v0_8_22.license") {
+license("schemars_derive-v1_2_2.license") {
   public_package_name = "schemars_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/schemars_derive-0.8.22/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/schemars_derive-1.2.2/LICENSE" ]
 }
 
-rustc_macro("schemars_derive-v0_8_22") {
+rustc_macro("schemars_derive-v1_2_2") {
   crate_name = "schemars_derive"
   source_root =
-      "//third_party/rust_crates/vendor/schemars_derive-0.8.22/src/lib.rs"
-  output_name = "schemars_derive-24b805c8831d9d31"
+      "//third_party/rust_crates/vendor/schemars_derive-1.2.2/src/lib.rs"
+  output_name = "schemars_derive-d830646030d2416a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20636,20 +20631,20 @@ rustc_macro("schemars_derive-v0_8_22") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":serde_derive_internals-v0_29_1" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":serde_derive_internals-v0_30_0" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=24b805c8831d9d31",
-    "-Cextra-filename=-24b805c8831d9d31",
+    "-Cmetadata=d830646030d2416a",
+    "-Cextra-filename=-d830646030d2416a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":schemars_derive-v0_8_22.license" ]
+  applicable_licenses = [ ":schemars_derive-v1_2_2.license" ]
 }
 
 license("scoped-tls-v1_0_1.license") {
@@ -21066,20 +21061,20 @@ rustc_macro("serde_derive-v1_0_229") {
   applicable_licenses = [ ":serde_derive-v1_0_229.license" ]
 }
 
-license("serde_derive_internals-v0_29_1.license") {
+license("serde_derive_internals-v0_30_0.license") {
   public_package_name = "serde_derive_internals"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_derive_internals-0.29.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_derive_internals-0.29.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_derive_internals-0.30.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_derive_internals-0.30.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("serde_derive_internals-v0_29_1") {
+rustc_library("serde_derive_internals-v0_30_0") {
   crate_name = "serde_derive_internals"
   source_root =
-      "//third_party/rust_crates/vendor/serde_derive_internals-0.29.1/lib.rs"
-  output_name = "serde_derive_internals-17fe011d9debc286"
-  edition = "2015"
+      "//third_party/rust_crates/vendor/serde_derive_internals-0.30.0/lib.rs"
+  output_name = "serde_derive_internals-f276f602b3935f44"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -21087,19 +21082,19 @@ rustc_library("serde_derive_internals-v0_29_1") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=17fe011d9debc286",
-    "-Cextra-filename=-17fe011d9debc286",
+    "-Cmetadata=f276f602b3935f44",
+    "-Cextra-filename=-f276f602b3935f44",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_derive_internals-v0_29_1.license" ]
+  applicable_licenses = [ ":serde_derive_internals-v0_30_0.license" ]
 }
 
 license("serde_json-v1_0_151.license") {

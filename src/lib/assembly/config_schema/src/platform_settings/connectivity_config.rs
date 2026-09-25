@@ -107,6 +107,7 @@ pub struct PlatformNetworkConfig {
 
 #[derive(Debug, Serialize, Copy, Clone, Deserialize, JsonSchema, PartialEq)]
 #[serde(try_from = "u8")]
+#[schemars(!try_from)]
 pub struct NetstackThreadCount(NonZeroU8);
 
 impl TryFrom<u8> for NetstackThreadCount {

@@ -394,7 +394,7 @@ CRATE_ANNOTATIONS = {
         crate.annotation(
             version = "1.0.26",
             rustc_env = {
-                "CARGO_PKG_VERSION_PATCH": "25",
+                "CARGO_PKG_VERSION_PATCH": "26",
             },
         ),
     ],
@@ -414,15 +414,6 @@ CRATE_ANNOTATIONS = {
         crate.annotation(
             version = "*",
             gen_build_script = False,
-        ),
-    ],
-    "schemars": [
-        crate.annotation(
-            version = "0.8.22",
-            rustc_flags = [
-                "--cfg=std_atomic64",
-                "--cfg=std_atomic",
-            ],
         ),
     ],
     "serde": [
