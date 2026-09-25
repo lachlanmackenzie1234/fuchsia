@@ -368,11 +368,35 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         self.bazel_paths = BazelPaths.new(self.root, self.build_dir)
         self.bazel_paths.output_base.mkdir(parents=True)
 
+        (self.root / "BUILD.gn").touch()
         (
             self.build_dir / ninja_artifacts.NINJA_BUILD_PLAN_DEPS_FILE
-        ).write_text(
-            "build.ninja.stamp: ../../BUILD.gn ../../src/foo.gni dep1 dep2 dep3 dep4"
+        ).write_text("build.ninja.stamp: ../../BUILD.gn\n")
+
+        (self.build_dir / ninja_artifacts.LAST_NINJA_TARGETS_FILE).write_text(
+            ":default\n"
         )
+
+        self.ninja_artifacts_path = (
+            self.build_dir / ninja_artifacts.LAST_NINJA_ARTIFACTS_FILE
+        )
+        self.ninja_artifacts_path.write_text(
+            "\n".join(
+                [
+                    "obj/gn/target1",
+                    "obj/gn/target1.o",
+                    "obj/bazel/target2.bazel_outputs/foo",
+                    "obj/bazel/target2.bazel_outputs/package_manifest.json",
+                    "obj/some/target2.out",
+                    "build.ninja.stamp",
+                    "test-list.json",
+                    "test-config.json",
+                ]
+            )
+            + "\n"
+        )
+        st = self.ninja_artifacts_path.stat()
+        os.utime(self.ninja_artifacts_path, (st.st_atime, st.st_mtime + 100))
 
         (self.root / "src/bazel").mkdir(parents=True)
         (self.root / "src/bazel/BUILD.bazel").touch()
@@ -425,6 +449,18 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             ["docs/README.md"],
             self.root,
             MockNinjaRunner(self.build_dir, ""),
+            MockBazelLauncher.new_with_empty_outputs(),
+        )
+        self.assertSetEqual(result.affected_tests, set())
+        self.assertTrue(result.build_not_affected)
+
+    def test_unbuilt_target_does_not_affect_build(self) -> None:
+        # A file change affects obj/some/unbuilt.out in build.ninja, but that
+        # target was not built by this builder (not in last_build_artifacts).
+        result = affected_tests.find_tests_affected_by_changed_files(
+            ["some/unbuilt_file.txt"],
+            self.root,
+            MockNinjaRunner(self.build_dir, "obj/some/unbuilt.out\n"),
             MockBazelLauncher.new_with_empty_outputs(),
         )
         self.assertSetEqual(result.affected_tests, set())

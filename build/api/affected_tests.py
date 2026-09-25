@@ -12,6 +12,8 @@ import tempfile
 import typing as T
 from pathlib import Path
 
+import ninja_artifacts
+
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../../build/bazel/scripts"))
 from build_utils import BazelLauncher, NinjaRunner
@@ -700,8 +702,16 @@ def find_tests_affected_by_changed_files(
             )
         )
 
+    affected_build_artifacts: set[str] = set()
+    if affected_ninja_artifacts:
+        last_build_artifacts = set(
+            ninja_artifacts.get_last_build_artifacts(ninja_runner)
+        )
+        affected_build_artifacts = (
+            affected_ninja_artifacts & last_build_artifacts
+        )
     build_not_affected = not changed_sources or (
-        len(affected_ninja_artifacts) == 0
+        len(affected_build_artifacts) == 0
         and len(ninja_results) == 0
         and len(bazel_results) == 0
     )
