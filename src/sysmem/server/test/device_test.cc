@@ -359,5 +359,93 @@ TEST_F(FakeDdkSysmem, BufferLeak) {
   }
 }
 
+TEST_F(FakeDdkSysmem, BufferCountOverflow_SingleParticipant_Failure) {
+  auto collection_client = AllocateNonSharedCollection();
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  // We pick 0x80000000 (2^31) and 0x80000001 (2^31 + 1) so that when summed together
+  // in uint32_t arithmetic without overflow checking, they wrap around to 1
+  // (0x80000000 + 0x80000001 = 0x100000001 -> 1).
+  constraints.min_buffer_count_for_camping() = 0x80000000;
+  constraints.min_buffer_count_for_dedicated_slack() = 0x80000001;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  bmc.min_size_bytes() = zx_system_get_page_size();
+  bmc.cpu_domain_supported() = true;
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_FALSE(wait_result.is_ok());
+}
+
+TEST_F(FakeDdkSysmem, BufferCountOverflow_MultiParticipant_Failure) {
+  fidl::SyncClient<fuchsia_sysmem2::Allocator> allocator(Connect());
+
+  auto [token_client_1, token_server_1] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  fuchsia_sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
+  allocate_shared_request.token_request() = std::move(token_server_1);
+  EXPECT_TRUE(allocator->AllocateSharedCollection(std::move(allocate_shared_request)).is_ok());
+
+  auto [token_client_2, token_server_2] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  fidl::SyncClient token_1{std::move(token_client_1)};
+  fuchsia_sysmem2::BufferCollectionTokenDuplicateRequest duplicate_request;
+  duplicate_request.rights_attenuation_mask() = ZX_RIGHT_SAME_RIGHTS;
+  duplicate_request.token_request() = std::move(token_server_2);
+  EXPECT_TRUE(token_1->Duplicate(std::move(duplicate_request)).is_ok());
+
+  auto [collection_client_1, collection_server_1] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+  fidl::SyncClient collection_1{std::move(collection_client_1)};
+  fuchsia_sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request_1;
+  bind_shared_request_1.token() = token_1.TakeClientEnd();
+  bind_shared_request_1.buffer_collection_request() = std::move(collection_server_1);
+  EXPECT_TRUE(allocator->BindSharedCollection(std::move(bind_shared_request_1)).is_ok());
+
+  auto [collection_client_2, collection_server_2] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+  fidl::SyncClient collection_2{std::move(collection_client_2)};
+  fuchsia_sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request_2;
+  bind_shared_request_2.token() = std::move(token_client_2);
+  bind_shared_request_2.buffer_collection_request() = std::move(collection_server_2);
+  EXPECT_TRUE(allocator->BindSharedCollection(std::move(bind_shared_request_2)).is_ok());
+
+  // We pick 0x80000000 (2^31) for participant 1 and 0x80000001 (2^31 + 1) for participant 2
+  // for min_buffer_count_for_camping. In uint32_t arithmetic without overflow checking,
+  // accumulating these two camping counts would wrap around to 1 (0x80000000 + 0x80000001 -> 1)
+  // during constraint aggregation, causing sysmem to incorrectly allocate 1 buffer.
+  fuchsia_sysmem2::BufferCollectionConstraints constraints_1;
+  constraints_1.min_buffer_count_for_camping() = 0x80000000;
+  auto& bmc_1 = constraints_1.buffer_memory_constraints().emplace();
+  bmc_1.min_size_bytes() = zx_system_get_page_size();
+  bmc_1.cpu_domain_supported() = true;
+  constraints_1.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request_1;
+  set_constraints_request_1.constraints() = std::move(constraints_1);
+  EXPECT_TRUE(collection_1->SetConstraints(std::move(set_constraints_request_1)).is_ok());
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints_2;
+  constraints_2.min_buffer_count_for_camping() = 0x80000001;
+  auto& bmc_2 = constraints_2.buffer_memory_constraints().emplace();
+  bmc_2.min_size_bytes() = zx_system_get_page_size();
+  bmc_2.cpu_domain_supported() = true;
+  constraints_2.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request_2;
+  set_constraints_request_2.constraints() = std::move(constraints_2);
+  EXPECT_TRUE(collection_2->SetConstraints(std::move(set_constraints_request_2)).is_ok());
+
+  auto wait_result_1 = collection_1->WaitForAllBuffersAllocated();
+  EXPECT_FALSE(wait_result_1.is_ok());
+  auto wait_result_2 = collection_2->WaitForAllBuffersAllocated();
+  EXPECT_FALSE(wait_result_2.is_ok());
+}
+
 }  // namespace
 }  // namespace sysmem_service

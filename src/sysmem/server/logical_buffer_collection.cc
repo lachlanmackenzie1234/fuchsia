@@ -3575,9 +3575,18 @@ bool LogicalBufferCollection::AccumulateConstraintBufferCollection(
     return false;
   }
 
-  acc->min_buffer_count_for_camping().value() += c.min_buffer_count_for_camping().value();
-  acc->min_buffer_count_for_dedicated_slack().value() +=
-      c.min_buffer_count_for_dedicated_slack().value();
+  if (!CheckAdd(acc->min_buffer_count_for_camping().value(),
+                c.min_buffer_count_for_camping().value())
+           .AssignIfValid(&acc->min_buffer_count_for_camping().value())) {
+    LogError(FROM_HERE, "min_buffer_count_for_camping overflowed");
+    return false;
+  }
+  if (!CheckAdd(acc->min_buffer_count_for_dedicated_slack().value(),
+                c.min_buffer_count_for_dedicated_slack().value())
+           .AssignIfValid(&acc->min_buffer_count_for_dedicated_slack().value())) {
+    LogError(FROM_HERE, "min_buffer_count_for_dedicated_slack overflowed");
+    return false;
+  }
   acc->min_buffer_count_for_shared_slack().emplace(
       std::max(acc->min_buffer_count_for_shared_slack().value(),
                c.min_buffer_count_for_shared_slack().value()));
@@ -4136,9 +4145,19 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
 
   result.buffer_collection_id() = buffer_collection_id_;
 
-  uint32_t min_buffer_count = *constraints.min_buffer_count_for_camping() +
-                              *constraints.min_buffer_count_for_dedicated_slack() +
-                              *constraints.min_buffer_count_for_shared_slack();
+  uint32_t min_buffer_count;
+  if (!CheckAdd(*constraints.min_buffer_count_for_camping(),
+                *constraints.min_buffer_count_for_dedicated_slack(),
+                *constraints.min_buffer_count_for_shared_slack())
+           .AssignIfValid(&min_buffer_count)) {
+    LogError(
+        FROM_HERE,
+        "aggregate min_buffer_count overflowed - camping: %u dedicated_slack: %u shared_slack: %u",
+        *constraints.min_buffer_count_for_camping(),
+        *constraints.min_buffer_count_for_dedicated_slack(),
+        *constraints.min_buffer_count_for_shared_slack());
+    return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+  }
   min_buffer_count = std::max(min_buffer_count, *constraints.min_buffer_count());
   uint32_t max_buffer_count = *constraints.max_buffer_count();
   if (min_buffer_count > max_buffer_count) {
