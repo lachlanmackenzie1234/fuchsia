@@ -216,8 +216,8 @@ impl<'a> futures::Future for RecvEtcMsg<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::super::{Channel, Handle, HandleDisposition, HandleOp, ObjectType, Rights};
     use super::{Channel as AsyncChannel, MessageBuf, MessageBufEtc};
+    use crate::{Channel, Handle, HandleDisposition, HandleOp, ObjectType, Rights};
     use futures::executor::block_on;
     use std::future::Future;
     use std::pin::Pin;
@@ -277,7 +277,7 @@ mod test {
             rx.await.unwrap();
             assert_eq!(buf.bytes(), &[1, 2, 3]);
             assert_eq!(buf.n_handle_infos(), 1);
-            let hi = &buf.handle_infos[0];
+            let hi = buf.take_handle_info(0).unwrap();
             assert_ne!(hi.handle, Handle::invalid());
             assert_eq!(hi.object_type, ObjectType::CHANNEL);
             assert_eq!(hi.rights, Rights::TRANSFER | Rights::WRITE);

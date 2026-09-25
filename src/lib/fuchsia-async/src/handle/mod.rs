@@ -9,10 +9,7 @@ mod zircon;
 pub use zircon::*;
 
 #[cfg(not(target_os = "fuchsia"))]
-mod emulated;
-
-#[cfg(not(target_os = "fuchsia"))]
-pub use emulated::*;
+pub use fuchsia_emulated_handle::*;
 
 /// invoke_for_handle_types!{mmm} calls the macro `mmm!` with two arguments: one is the name of a
 /// Zircon handle, the second is one of:

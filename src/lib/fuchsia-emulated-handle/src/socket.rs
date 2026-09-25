@@ -213,8 +213,8 @@ impl AsyncRead for &'_ Socket {
 
 #[cfg(test)]
 mod test {
-    use super::super::Socket;
     use super::Socket as AsyncSocket;
+    use crate::Socket;
     use futures::executor::block_on;
     use futures::prelude::*;
     use std::pin::Pin;

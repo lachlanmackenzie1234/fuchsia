@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_async::emulated_handle::{Channel, MessageBuf, shut_down_handles};
+use fuchsia_emulated_handle::{Channel, MessageBuf, shut_down_handles};
 use futures as _;
 use std::future::Future;
 use std::pin::pin;

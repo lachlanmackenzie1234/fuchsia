@@ -57,17 +57,7 @@ pub use runtime::instrument;
 
 /// An emulation library for Zircon handles on non-Fuchsia platforms.
 #[cfg(not(target_os = "fuchsia"))]
-pub mod emulated_handle {
-    pub use super::handle::{
-        AsHandleRef, Channel, EmulatedHandleRef, Event, EventPair, Handle, HandleDisposition,
-        HandleInfo, HandleOp, HandleRef, Koid, MessageBuf, MessageBufEtc, ObjectType, Peered,
-        Rights, Signals, Socket, SocketOpts, shut_down_handles,
-    };
-
-    /// Type of raw Zircon handles.
-    #[allow(non_camel_case_types)]
-    pub type zx_handle_t = u32;
-}
+pub use fuchsia_emulated_handle as emulated_handle;
 
 pub use fuchsia_async_macro::{run, run_singlethreaded, run_until_stalled};
 
