@@ -1,10 +1,10 @@
 {
-    "version": 4,
+    "version": 6,
     "seats": [
         {
             "seat_id": "target_parity",
             "name": "Target & Attribute Parity Reviewer",
-            "responsibility": "Verifies 1:1 semantic alignment of targets, deps, sources, flags, idiomatic Bazel visibility scoping (true rdeps only, no :__pkg__ or //:__subpackages__), and that the change modifies only build-definition files (no source edits).",
+            "responsibility": "Verifies 1:1 semantic alignment of targets, deps, sources, flags, 3-tier idiomatic Bazel visibility scoping (target-level //visibility:public or 2-3 level rollups for globally-used platform libraries/test utilities across >=6 areas, tight :__pkg__/LCA scoping for subsystem targets, no package-level default_visibility, no :__pkg__, no //src:__subpackages__), and that the change modifies only build-definition files (no source edits).",
             "prompt_file": "target_parity.md",
             "allowed_tools": [
                 "inspect_target",
@@ -14,7 +14,7 @@
         {
             "seat_id": "dual_build_sentinel",
             "name": "Dual-Build & Sentinel Reviewer",
-            "responsibility": "Verifies #LOCAL_BAZEL_BUILD_SENTINEL, bazel2gn synchronization, Bazel-first visibility parity, and build-only change scope in dual-build packages.",
+            "responsibility": "Verifies #LOCAL_BAZEL_BUILD_SENTINEL, bazel2gn synchronization, 3-tier visibility parity (rejecting sprawling >15-entry narrow allowlists on globally-used targets in favor of target-level //visibility:public or 2-3 level rollups), and build-only change scope in dual-build packages.",
             "prompt_file": "dual_build_sentinel.md",
             "allowed_tools": [
                 "inspect_target",

@@ -9,7 +9,7 @@
         },
         {
             "name": "visibility_audit",
-            "description": "Audits BUILD.bazel visibility attributes for redundant :__pkg__, disguised public wildcards (//:__subpackages__ or >=5 top-level subpackages), and false-positive rdeps from visibility allowlists",
+            "description": "Audits BUILD.bazel visibility attributes for package-level default_visibility, missing target visibility, overly narrow sprawling visibility lists (>15 entries across >=6 areas on globally-used platform libraries/test utilities that should use target-level //visibility:public or 2-3 level rollups), unjustified //visibility:public on narrow targets, redundant :__pkg__, disguised public wildcards, multi-domain umbrella wildcards, cross-area depth-2 wildcards, overbroad depth>=3 LCA wildcards, and false-positive rdeps",
             "script_file": "visibility_audit.sh",
             "enabled": true
         },
