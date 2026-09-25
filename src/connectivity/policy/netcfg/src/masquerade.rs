@@ -14,8 +14,8 @@ use futures::stream::LocalBoxStream;
 use futures::{StreamExt as _, TryStreamExt as _, future};
 use log::{debug, error, warn};
 
-use crate::filter::{FilterControl, FilterEnabledState, FilterError};
-use crate::{InterfaceId, InterfaceState};
+use crate::InterfaceId;
+use crate::filter::{FilterControl, FilterError};
 
 // The minimum allowed prefix length for IPv4 masquerading subnets.
 //
@@ -147,28 +147,6 @@ impl From<FilterError> for Error {
     }
 }
 
-/// Updates the interface enabled state to acknowledge the change in masquerade
-/// configuration.
-///
-/// Note: It is incorrect to call this function if no change has occurred.
-async fn update_interface(
-    filter: &mut FilterControl,
-    interface: InterfaceId,
-    enabled: bool,
-    filter_enabled_state: &mut FilterEnabledState,
-    interface_states: &HashMap<InterfaceId, InterfaceState>,
-) -> Result<(), Error> {
-    if enabled {
-        filter_enabled_state.increment_masquerade_count_on_interface(interface);
-    } else {
-        filter_enabled_state.decrement_masquerade_count_on_interface(interface);
-    }
-
-    let interface_type = interface_states.get(&interface).map(|is| is.device_class.into());
-
-    filter_enabled_state.maybe_update(interface_type, interface, filter).await.map_err(Error::from)
-}
-
 /// Adds or removes a masquerade rule.
 ///
 /// If the existing state is inactive, a rule will be added. Otherwise, the
@@ -214,25 +192,14 @@ impl MasqueradeHandler {
         filter: &mut FilterControl,
         config: ValidatedConfig,
         enabled: bool,
-        filter_enabled_state: &mut FilterEnabledState,
-        interface_states: &HashMap<InterfaceId, InterfaceState>,
     ) -> Result<bool, Error> {
         let state = self.active_controllers.get_mut(&config).ok_or(Error::InvalidArguments)?;
 
         let original_state = state.filter_state.is_active();
         if original_state == enabled {
             // The current state is already the desired state; short circuit.
-            // This prevents calling `update_interface` in the no-change case.
             return Ok(original_state);
         }
-        update_interface(
-            filter,
-            config.output_interface,
-            enabled,
-            filter_enabled_state,
-            interface_states,
-        )
-        .await?;
         let new_state = add_or_remove_masquerade_rule(filter, config, &state.filter_state).await?;
 
         state.filter_state = new_state;
@@ -286,8 +253,6 @@ impl MasqueradeHandler {
         event: Event,
         events: &mut futures::stream::SelectAll<EventStream>,
         filter: &mut FilterControl,
-        filter_enabled_state: &mut FilterEnabledState,
-        interface_states: &HashMap<InterfaceId, InterfaceState>,
     ) {
         match event {
             Event::FactoryRequestStream(stream) => events.push(
@@ -339,15 +304,7 @@ impl MasqueradeHandler {
                 config,
                 fnet_masquerade::ControlRequest::SetEnabled { enabled, responder },
             ) => {
-                let response = self
-                    .set_enabled(
-                        filter,
-                        config.clone(),
-                        enabled,
-                        filter_enabled_state,
-                        interface_states,
-                    )
-                    .await;
+                let response = self.set_enabled(filter, config.clone(), enabled).await;
                 if let Some(state) = self.active_controllers.get_mut(&config) {
                     state.respond_and_maybe_shutdown(response, |r| responder.send(r));
                 } else {
@@ -359,10 +316,7 @@ impl MasqueradeHandler {
                 }
             }
             Event::Disconnect(config) => {
-                match self
-                    .set_enabled(filter, config, false, filter_enabled_state, interface_states)
-                    .await
-                {
+                match self.set_enabled(filter, config, false).await {
                     Ok(_prev_enabled) => {
                         // Disable succeeded; remove controller from tracking.
                         if self.active_controllers.remove(&config).is_none() {
@@ -639,9 +593,6 @@ pub mod test {
         let mock = MockFilter::default();
         let (mut filter_control, mut server_fut) = mock.clone().into_client_and_server().await;
 
-        let mut filter_enabled_state = FilterEnabledState::default();
-        let interface_states = HashMap::new();
-
         let mut masq = MasqueradeHandler::default();
         let (_client, server) =
             fidl::endpoints::create_endpoints::<fidl_fuchsia_net_masquerade::ControlMarker>();
@@ -650,15 +601,7 @@ pub mod test {
         assert_matches!(masq.create_control(config, control), Ok(()));
 
         for (enable, expected_configs) in [(true, vec![DEFAULT_CONFIG]), (false, vec![])] {
-            let set_enabled_fut = masq
-                .set_enabled(
-                    &mut filter_control,
-                    config,
-                    enable,
-                    &mut filter_enabled_state,
-                    &interface_states,
-                )
-                .fuse();
+            let set_enabled_fut = masq.set_enabled(&mut filter_control, config, enable).fuse();
             futures::pin_mut!(set_enabled_fut);
             let response = futures::select!(
                 r = set_enabled_fut => r,
@@ -677,9 +620,6 @@ pub mod test {
         let mock = MockFilter::default();
         let (mut filter_control, mut server_fut) = mock.clone().into_client_and_server().await;
 
-        let mut filter_enabled_state = FilterEnabledState::default();
-        let interface_states = HashMap::new();
-
         let mut masq = MasqueradeHandler::default();
         let (client, server) =
             fidl::endpoints::create_endpoints::<fidl_fuchsia_net_masquerade::ControlMarker>();
@@ -689,15 +629,7 @@ pub mod test {
 
         // Enable masquerading for this config first.
         {
-            let set_enabled_fut = masq
-                .set_enabled(
-                    &mut filter_control,
-                    config,
-                    true,
-                    &mut filter_enabled_state,
-                    &interface_states,
-                )
-                .fuse();
+            let set_enabled_fut = masq.set_enabled(&mut filter_control, config, true).fuse();
             futures::pin_mut!(set_enabled_fut);
             let response = futures::select!(
                 r = set_enabled_fut => r,
