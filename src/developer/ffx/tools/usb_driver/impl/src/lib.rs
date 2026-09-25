@@ -14,15 +14,13 @@ use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::io::ErrorKind;
 use std::num::NonZero;
-use std::os::unix::net::{UnixListener as StdUnixListener, UnixStream as StdUnixStream};
 use std::path::PathBuf;
 use std::pin::{Pin, pin};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-pub use tokio::net::UnixListener;
-use tokio::net::UnixStream;
+use tokio::net::{UnixListener, UnixStream};
 use usb_vsock_host::{ActiveDevice, IncomingConnection, UsbVsockHost, UsbVsockHostEvent};
 
 mod adapters;
@@ -223,8 +221,10 @@ pub enum RemoveAndBindError {
 
 /// Bind a socket. If the socket already exits, check if it is in use, and if
 /// not, remove it.
-pub fn remove_and_bind_socket(socket_path: PathBuf) -> Result<UnixListener, RemoveAndBindError> {
-    match StdUnixStream::connect(&socket_path) {
+pub async fn remove_and_bind_socket(
+    socket_path: PathBuf,
+) -> Result<UnixListener, RemoveAndBindError> {
+    match UnixStream::connect(&socket_path).await {
         Err(e) if e.kind() == ErrorKind::NotFound => (),
         Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
             // The socket is stale. Try to remove it.
@@ -240,12 +240,10 @@ pub fn remove_and_bind_socket(socket_path: PathBuf) -> Result<UnixListener, Remo
         }
     }
 
-    let listener = match StdUnixListener::bind(&socket_path) {
-        Ok(s) => s,
-        Err(e) => return Err(RemoveAndBindError::Bind(socket_path, e)),
-    };
-    listener.set_nonblocking(true).map_err(|e| RemoveAndBindError::Bind(socket_path.clone(), e))?;
-    UnixListener::from_std(listener).map_err(|e| RemoveAndBindError::Bind(socket_path, e))
+    match UnixListener::bind(&socket_path) {
+        Ok(s) => Ok(s),
+        Err(e) => Err(RemoveAndBindError::Bind(socket_path, e)),
+    }
 }
 
 /// Hostside driver for the FFX USB interface.
@@ -748,17 +746,17 @@ mod test {
     async fn remove_and_bind_removes() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let sock = remove_and_bind_socket(sock_path.clone()).unwrap();
+        let sock = remove_and_bind_socket(sock_path.clone()).await.unwrap();
         std::mem::drop(sock);
-        let _ = remove_and_bind_socket(sock_path).unwrap();
+        let _ = remove_and_bind_socket(sock_path).await.unwrap();
     }
 
     #[fuchsia::test]
     async fn remove_and_bind_respects_in_use() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let _sock = remove_and_bind_socket(sock_path.clone()).unwrap();
-        let e = remove_and_bind_socket(sock_path).unwrap_err();
+        let _sock = remove_and_bind_socket(sock_path.clone()).await.unwrap();
+        let e = remove_and_bind_socket(sock_path).await.unwrap_err();
         assert!(matches!(e, RemoveAndBindError::InUse(_)));
     }
 
@@ -766,12 +764,12 @@ mod test {
     async fn remove_and_bind_permission_fail() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let sock = remove_and_bind_socket(sock_path.clone()).unwrap();
+        let sock = remove_and_bind_socket(sock_path.clone()).await.unwrap();
         std::mem::drop(sock);
         let mut permissions = dir.path().metadata().unwrap().permissions();
         permissions.set_readonly(true);
         std::fs::set_permissions(dir.path(), permissions).unwrap();
-        let e = remove_and_bind_socket(sock_path).unwrap_err();
+        let e = remove_and_bind_socket(sock_path).await.unwrap_err();
         assert!(matches!(e, RemoveAndBindError::RemoveStale(_, _)), "Unexpected failure: {e:?}");
     }
 }

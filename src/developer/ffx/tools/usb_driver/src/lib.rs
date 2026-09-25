@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use argh::{ArgsInfo, FromArgs, SubCommand};
-use fho::subtool::{MetadataCmd, StandaloneFhoHandler, StandaloneToolCommand};
+use fho::subtool::{StandaloneFhoHandler, StandaloneToolCommand};
 use fho::{FfxContext, Result};
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
@@ -10,7 +10,6 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::{Arc, Mutex};
-use usb_driver_impl::UnixListener;
 
 /// Number of log file rotations to keep.
 const LOG_ROTATIONS: usize = 5;
@@ -35,29 +34,13 @@ pub struct UsbDriverCommand {
 }
 // [END command_struct]
 
-#[derive(Debug)]
-pub enum Action {
-    ExitStatus(ExitStatus),
-    MetadataCommand(MetadataCmd),
-    RunDriver(UnixListener, String, Option<String>),
-}
-
-/// Runs the USB driver tool.
-///
-/// # Safety
-///
-/// This function may daemonize the process, and thus can only be safely called
-/// when it is known to be safe to fork the process without violating Rust's
-/// invariants (e.g. no background threads or async executors are running that
-/// would be invalidated by a fork).
-pub unsafe fn run() {
+pub async fn run() {
     let mut env_context = None;
     let mut logging_enabled = false;
     let result = match ffx_command::init_cmd(ffx_config::environment::ExecutableKind::Subtool) {
         Ok(c) => {
             env_context = Some(c.context.clone());
-            // SAFETY: The caller of `run` guarantees it is safe to fork the process.
-            unsafe { implementation(c, &mut logging_enabled) }
+            implementation(c, &mut logging_enabled).await
         }
         Err(e) => Err(e),
     };
@@ -75,31 +58,13 @@ pub unsafe fn run() {
             }
         }
     };
-
-    // We have to defer launching the Tokio runtime until here otherwise
-    // daemonizing might break its thread pools.
-    fuchsia_async::LocalExecutorBuilder::new().build().run_singlethreaded(async move {
-        let result = match result {
-            Ok(Action::ExitStatus(status)) => Ok(status),
-            Ok(Action::MetadataCommand(cmd)) => cmd.run(UsbDriverCommand::COMMAND).await,
-            Ok(Action::RunDriver(listener, log_path, serial)) => {
-                usb_driver_impl::HostDriver::run(listener, log_path, serial).await;
-                Ok(ExitStatus::from_raw(0))
-            }
-            Err(e) => Err(e),
-        };
-        ffx_command::exit(env_context, result, should_format).await;
-    })
+    ffx_command::exit(env_context, result, should_format).await;
 }
 
-/// # Safety
-///
-/// This function can only be safely called when it is known to be safe to fork
-/// the process without violating Rust's invariants.
-unsafe fn implementation(
+async fn implementation(
     icmd: ffx_command::InitializedCmd,
     logging_enabled: &mut bool,
-) -> Result<Action> {
+) -> Result<ExitStatus> {
     let ffx_command::InitializedCmd { cmd: ffx, context: ctx, help_state } = icmd;
 
     match help_state {
@@ -111,7 +76,7 @@ unsafe fn implementation(
                 ffx_command::MachineFormat::Raw => Ok(format!("{args_info:#?}")),
             };
             println!("{}", output.bug_context("Error serializing args")?);
-            return Ok(Action::ExitStatus(ExitStatus::from_raw(0)));
+            return Ok(ExitStatus::from_raw(0));
         }
         ffx_command::HelpState::ReturnHelp { command, output, code } => {
             return Err(fho::Error::Help { command, output, code });
@@ -128,7 +93,7 @@ unsafe fn implementation(
 
     let command = match command.subcommand {
         StandaloneFhoHandler::Metadata(metadata_cmd) => {
-            return Ok(Action::MetadataCommand(metadata_cmd));
+            return metadata_cmd.run(UsbDriverCommand::COMMAND).await;
         }
         StandaloneFhoHandler::Standalone(cmd) => cmd,
     };
@@ -228,12 +193,12 @@ unsafe fn implementation(
         )));
     }
 
-    let listener = usb_driver_impl::remove_and_bind_socket(socket_path);
+    let listener = usb_driver_impl::remove_and_bind_socket(socket_path.to_path_buf()).await;
 
     if command.background
         && let Err(usb_driver_impl::RemoveAndBindError::InUse(_)) = listener
     {
-        return Ok(Action::ExitStatus(ExitStatus::from_raw(0)));
+        return Ok(ExitStatus::from_raw(0));
     }
 
     let logger = logging::FfxLog::new(
@@ -259,9 +224,7 @@ unsafe fn implementation(
         // SAFETY: This shouldn't do much of anything to memory state. If it
         // succeeds we've effectively just been shuffled around the process
         // table. If it fails then it likely has no side effects at all, but
-        // even if it does we're going to exit as fast as we can anyway. It
-        // will, of course, fork the process, which is why we the caller must be
-        // marked unsafe.
+        // even if it does we're going to exit as fast as we can anyway.
         match unsafe { libc::daemon(0, 0) } {
             0 => (),
             x => return Err(fho::Error::Unexpected(std::io::Error::from_raw_os_error(x).into())),
@@ -273,5 +236,6 @@ unsafe fn implementation(
     if let Some(serial) = &command.serial {
         log::info!("Only interacting with devices with serial {serial}");
     }
-    Ok(Action::RunDriver(listener, log_path, command.serial))
+    usb_driver_impl::HostDriver::run(listener, log_path, command.serial).await;
+    Ok(ExitStatus::from_raw(0))
 }

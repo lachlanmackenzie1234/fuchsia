@@ -4,12 +4,11 @@
 use ffx_build_version::build_info;
 use ffx_usb_host_driver::run;
 
-fn main() {
+#[fuchsia_async::run_singlethreaded]
+async fn main() {
     // There are some symbols that the build system uses to examine FFX plugin
     // binaries and get metadata from them. Calling this here prevents them from
     // being garbage collected by the linker.
     let _build_info = build_info();
-    // SAFETY: Called at process startup before any background threads or async
-    // executors are started, so it is safe to fork the process.
-    unsafe { run() };
+    run().await;
 }
