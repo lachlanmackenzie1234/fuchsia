@@ -412,16 +412,6 @@ absolute_fizz = "/path/to/prebuilt/third_party/fuzz"
             )
         )
 
-        bazel_test_suites_path = self._build_root / "bazel_test_suites.txt"
-        bazel_test_suites_path.write_text(
-            "\n".join(
-                [
-                    "//fake/test_suite:1",
-                    "//fake/test_suite:2",
-                ]
-            )
-        )
-
         default_configs_dir = self._build_root / "bazel_default_configs"
         default_configs_dir.mkdir(parents=True)
         (default_configs_dir / "fuchsia.json").write_text("{}")
