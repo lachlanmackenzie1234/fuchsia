@@ -12,9 +12,6 @@ from antlion.utils import rand_ascii_str
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanRequestRejectedError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStateSummary,
-)
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -128,7 +125,7 @@ class StartStopClientConnectionsTest(
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
@@ -143,7 +140,7 @@ class StartStopClientConnectionsTest(
         await self.dut.wlan_policy.start_client_connections()
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
@@ -161,7 +158,7 @@ class StartStopClientConnectionsTest(
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     f_wlan_policy.NetworkState(
@@ -182,7 +179,7 @@ class StartStopClientConnectionsTest(
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[
                     f_wlan_policy.NetworkState(
@@ -227,14 +224,14 @@ class StartStopClientConnectionsTest(
 
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     f_wlan_policy.NetworkState(
@@ -251,7 +248,7 @@ class StartStopClientConnectionsTest(
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(timeout=60),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     f_wlan_policy.NetworkState(
@@ -275,7 +272,7 @@ class StartStopClientConnectionsTest(
 
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     f_wlan_policy.NetworkState(
@@ -292,7 +289,7 @@ class StartStopClientConnectionsTest(
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),

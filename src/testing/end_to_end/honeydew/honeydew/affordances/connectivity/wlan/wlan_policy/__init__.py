@@ -22,7 +22,6 @@ from honeydew.affordances import location
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStateSummary,
     CountryCode,
     Credential,
 )
@@ -170,7 +169,7 @@ async def collect_scan_result_iterator(
 @dataclass
 class ClientControllerState:
     proxy: f_wlan_policy.ClientControllerClient
-    updates: asyncio.Queue[ClientStateSummary]
+    updates: asyncio.Queue[f_wlan_policy.ClientStateSummary]
     # Keep the async task for fuchsia.wlan.policy/ClientStateUpdates so it
     # doesn't get garbage collected then cancelled.
     client_state_updates_server_task: asyncio.Task[None]
@@ -245,7 +244,9 @@ class WlanPolicy(AsyncLazyReady):
             controller_client.take()
         )
 
-        updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
+        updates: asyncio.Queue[
+            f_wlan_policy.ClientStateSummary
+        ] = asyncio.Queue()
 
         updates_client, updates_server = self._fc_transport.channel_create()
         client_state_updates_server = ClientStateUpdatesImpl(
@@ -466,7 +467,7 @@ class WlanPolicy(AsyncLazyReady):
         self,
         *,
         timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
-    ) -> ClientStateSummary:
+    ) -> f_wlan_policy.ClientStateSummary:
         """Gets the current client listener state immediately.
 
         This call will get a new, temporary update listener which will return
@@ -489,7 +490,9 @@ class WlanPolicy(AsyncLazyReady):
             self._fc_transport.connect_device_proxy(_CLIENT_LISTENER_PROXY)
         )
 
-        updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
+        updates: asyncio.Queue[
+            f_wlan_policy.ClientStateSummary
+        ] = asyncio.Queue()
         updates_client, updates_server = self._fc_transport.channel_create()
         client_state_updates_server = ClientStateUpdatesImpl(
             updates_server, updates
@@ -526,7 +529,7 @@ class WlanPolicy(AsyncLazyReady):
         self,
         *,
         timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
-    ) -> ClientStateSummary:
+    ) -> f_wlan_policy.ClientStateSummary:
         """Gets one client listener update.
 
         This call will return with an update immediately the
@@ -555,10 +558,10 @@ class WlanPolicy(AsyncLazyReady):
 
     async def _wait_on_update(
         self,
-        f: Callable[[ClientStateSummary], bool | Awaitable[bool]],
+        f: Callable[[f_wlan_policy.ClientStateSummary], bool | Awaitable[bool]],
         *,
         timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> ClientStateSummary:
+    ) -> f_wlan_policy.ClientStateSummary:
         """Waits for update.
 
         Args:
@@ -608,8 +611,8 @@ class WlanPolicy(AsyncLazyReady):
     ) -> f_wlan_policy.ConnectionState:
         await self.set_new_update_listener()
 
-        def check_net(update: ClientStateSummary) -> bool:
-            for net in update.networks:
+        def check_net(update: f_wlan_policy.ClientStateSummary) -> bool:
+            for net in update.networks or []:
                 assert net.id_, f"{net!r} missing id"
                 assert net.state, f"{net!r} missing state"
                 if bytes(net.id_.ssid).decode("utf-8") == ssid:
@@ -630,7 +633,7 @@ class WlanPolicy(AsyncLazyReady):
 
         matched_update = await self._wait_on_update(check_net, timeout=timeout)
 
-        for net in matched_update.networks:
+        for net in matched_update.networks or []:
             assert net.id_, f"{net!r} missing id"
             assert net.state, f"{net!r} missing state"
             if bytes(net.id_.ssid).decode("utf-8") == ssid:
@@ -649,7 +652,7 @@ class WlanPolicy(AsyncLazyReady):
         """Waits until the client converges to expected state."""
         await self.set_new_update_listener()
 
-        def check_client(update: ClientStateSummary) -> bool:
+        def check_client(update: f_wlan_policy.ClientStateSummary) -> bool:
             return update.state == expected_state
 
         await self._wait_on_update(check_client, timeout=timeout)
@@ -878,7 +881,9 @@ class WlanPolicy(AsyncLazyReady):
             self._fc_transport.connect_device_proxy(_CLIENT_LISTENER_PROXY)
         )
 
-        updates: asyncio.Queue[ClientStateSummary] = asyncio.Queue()
+        updates: asyncio.Queue[
+            f_wlan_policy.ClientStateSummary
+        ] = asyncio.Queue()
         updates_client, updates_server = self._fc_transport.channel_create()
         client_state_updates_server = ClientStateUpdatesImpl(
             updates_server, updates
@@ -1024,7 +1029,7 @@ class WlanPolicy(AsyncLazyReady):
         try:
             await self._wait_on_update(
                 lambda update: not any(
-                    n.state in connection_states for n in update.networks
+                    n.state in connection_states for n in update.networks or []
                 ),
                 timeout=timeout,
             )
@@ -1082,7 +1087,9 @@ class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):
     """
 
     def __init__(
-        self, server: Channel, updates: asyncio.Queue[ClientStateSummary]
+        self,
+        server: Channel,
+        updates: asyncio.Queue[f_wlan_policy.ClientStateSummary],
     ) -> None:
         super().__init__(server)
         self._updates = updates
@@ -1097,6 +1104,8 @@ class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):
         Args:
             request: Current summary of WLAN client state.
         """
-        summary = ClientStateSummary.from_fidl(request.summary)
+        summary = request.summary
+        assert summary.networks is not None, f"{summary!r} missing networks"
+        assert summary.state, f"{summary!r} missing state"
         _LOGGER.debug("OnClientStateUpdate called with %s", repr(summary))
         await self._updates.put(summary)

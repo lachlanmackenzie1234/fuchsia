@@ -117,43 +117,6 @@ class CredentialPsk(Credential):
 
 
 @dataclass(frozen=True)
-class ClientStateSummary:
-    """Information about the current client state for the device.
-
-    This includes if the device will attempt to connect to access points
-    (when applicable), any existing connections and active connection attempts
-    and their outcomes.
-    Defined by https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.wlan.policy/client_provider.fidl
-    """
-
-    state: f_wlan_policy.WlanClientState
-    networks: list[f_wlan_policy.NetworkState]
-
-    @staticmethod
-    def from_fidl(
-        fidl: f_wlan_policy.ClientStateSummary,
-    ) -> ClientStateSummary:
-        """Parse from a fuchsia.wlan.policy/ClientStateSummary."""
-        assert fidl.networks is not None, f"{fidl!r} missing networks"
-        assert fidl.state is not None, f"{fidl!r} missing state"
-        return ClientStateSummary(
-            state=f_wlan_policy.WlanClientState(fidl.state),
-            networks=list(fidl.networks),
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, ClientStateSummary):
-            return NotImplemented
-        return self.state == other.state and sorted(
-            self.networks,
-            key=lambda n: bytes(n.id_.ssid) if n.id_ else b"",
-        ) == sorted(
-            other.networks,
-            key=lambda n: bytes(n.id_.ssid) if n.id_ else b"",
-        )
-
-
-@dataclass(frozen=True)
 class WlanInterfaces:
     """WLAN interfaces separated by device type and keyed by MAC address."""
 

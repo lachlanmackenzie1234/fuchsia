@@ -14,9 +14,6 @@ from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    ClientStateSummary,
-)
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -60,7 +57,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.set_new_update_listener()
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
@@ -71,7 +68,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
@@ -82,7 +79,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.set_new_update_listener()
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
@@ -122,7 +119,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.dut.wlan_policy.set_new_update_listener()
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[],
             ),
@@ -173,7 +170,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
                 networks=[
                     f_wlan_policy.NetworkState(
@@ -189,7 +186,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
                 networks=[],
             ),
@@ -344,7 +341,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     # TODO(http://b/339069764): Split WLAN utility functions out into a separate file
     async def get_updates_until(
         self, timeout_sec: float = 5
-    ) -> AsyncIterator[ClientStateSummary]:
+    ) -> AsyncIterator[f_wlan_policy.ClientStateSummary]:
         """Iterate client state updates for a set duration."""
         end_time = time.time() + timeout_sec
         while time.time() < end_time:
@@ -355,10 +352,10 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 return
 
     async def wait_for_update(
-        self, expected_update: ClientStateSummary
+        self, expected_update: f_wlan_policy.ClientStateSummary
     ) -> None:
         """Assert an update eventually matches the specified state."""
-        last_updates: list[ClientStateSummary] = []
+        last_updates: list[f_wlan_policy.ClientStateSummary] = []
 
         async for update in self.get_updates_until(DEFAULT_GET_UPDATE_TIMEOUT):
             if update == expected_update:
@@ -380,7 +377,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     ) -> None:
         """Assert the next update matches the specified network state."""
         await self.wait_for_update(
-            ClientStateSummary(
+            f_wlan_policy.ClientStateSummary(
                 state=expected_client_state,
                 networks=[
                     f_wlan_policy.NetworkState(
