@@ -117,7 +117,7 @@ if (_has_coverage_clang) {
   _build_args += [ "--features=coverage" ]
 }
 if (_has_host_coverage_rust) {
-  _build_args += [ "--config=host_rust_coverage" ]
+  _common_args += [ "--config=host_rust_coverage" ]
 }
 
 if (is_profile) {
@@ -155,9 +155,11 @@ if (fuchsia_cxx_version == 20) {
   ]
 }
 
+# LINT.IfChange(bazel_args_json_schema)
 bazel_args = {
   common = _common_args
   build = _build_args
   current_os = current_os
   current_cpu = current_cpu
 }
+# LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:bazel_args_json_schema)

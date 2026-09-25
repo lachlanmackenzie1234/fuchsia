@@ -18,7 +18,11 @@ generated_file("bazel_args_json") {
     # This should not be necessary but just in case.
     _config_name = "${current_os}_${current_cpu}"
   }
+
+  # LINT.IfChange(bazel_args_json_path)
   outputs = [ "$root_build_dir/bazel_args/${_config_name}.json" ]
+
+  # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:bazel_args_json_path)
   contents = bazel_args
   output_conversion = "json"
 }
