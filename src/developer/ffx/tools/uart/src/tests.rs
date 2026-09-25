@@ -11,7 +11,7 @@
 use argh::FromArgs;
 
 use super::*;
-use crate::args::{ConnectCommand, DisconnectCommand};
+use crate::args::{ConnectCommand, DisconnectCommand, ListCommand};
 use ffx_writer::TestBuffers;
 use fho::FfxMain;
 use fuchsia_async as _;
@@ -517,4 +517,143 @@ async fn test_socket_path_length_limit() {
     assert!(res.is_err());
     let err = res.unwrap_err();
     assert!(err.to_string().contains("UNIX socket path exceeds limit"));
+}
+#[fuchsia::test]
+async fn test_list() {
+    let (env, _temp_dir) = create_test_env("test_list");
+    let _guard = DaemonCleanupGuard::new(&env, "/target-list");
+    let tool = ListTool { cmd: ListCommand {}, context: env.context.clone() };
+    let buffers = TestBuffers::default();
+    let writer = ffx_writer::MachineWriter::new_test(None, &buffers);
+    tool.main(writer).await.unwrap();
+    assert_eq!("No active UART connections.\n", buffers.stdout.into_string());
+}
+
+#[fuchsia::test]
+async fn test_list_robustness_missing_metadata() {
+    let (env, _temp_dir) = create_test_env("test_list_missing_meta");
+    let target = "/target-list-missing-meta";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    // First connect to create metadata and socket
+    run_tool(&env, Some(target), make_connect_cmd(115200, false)).await.unwrap();
+
+    // Get expected daemon PID from metadata
+    let metadata = read_metadata(&env.context, target).unwrap().unwrap();
+    let expected_pid = metadata.pid;
+
+    // Delete the metadata JSON file manually to simulate missing metadata
+    let metadata_path = get_metadata_path(&env.context, target).unwrap();
+    fs::remove_file(&metadata_path).unwrap();
+
+    // Run UartTool::list
+    let (list_output, _) =
+        run_tool(&env, None, UartSubCommand::List(ListCommand {})).await.unwrap();
+
+    // Verify list output includes the live PID retrieved via peer credentials
+    assert!(list_output.contains(&expected_pid.to_string()), "Output: {}", list_output);
+
+    // Manually clean up the daemon process since metadata is deleted and guard won't find it
+    let nix_pid = Pid::from_raw(expected_pid as i32);
+    let _ = kill(nix_pid, nix::sys::signal::Signal::SIGKILL);
+}
+
+fn create_dummy_socket_file(env: &ffx_config::TestEnv, target: &str) -> PathBuf {
+    let socket_path = get_socket_path(&env.context, target).unwrap();
+    if let Some(parent) = socket_path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(&socket_path, b"").unwrap();
+    socket_path
+}
+
+fn create_stale_metadata(
+    env: &ffx_config::TestEnv,
+    target: &str,
+    pid: u32,
+    baud: Option<NonZeroU32>,
+) {
+    let socket_path = get_socket_path(&env.context, target).unwrap();
+    write_metadata(&env.context, &socket_path, target, pid, baud).unwrap();
+}
+
+async fn setup_mixed_state_daemons(
+    env: &ffx_config::TestEnv,
+    prefix: &str,
+) -> (ConnectionMetadata, ConnectionMetadata, String, String) {
+    let (t1, t2, t3, t4) = (
+        format!("{prefix}-1"),
+        format!("{prefix}-2"),
+        format!("{prefix}-3"),
+        format!("{prefix}-4"),
+    );
+    run_tool(env, Some(&t1), make_connect_cmd(115200, false)).await.unwrap();
+    let meta1 = read_metadata(&env.context, &t1).unwrap().unwrap();
+
+    run_tool(env, Some(&t2), make_connect_cmd(115200, false)).await.unwrap();
+    let meta2 = read_metadata(&env.context, &t2).unwrap().unwrap();
+    fs::remove_file(&get_metadata_path(&env.context, &t2).unwrap()).unwrap();
+
+    create_dummy_socket_file(env, &t3);
+    create_stale_metadata(env, &t4, 999999, NonZeroU32::new(115200));
+    (meta1, meta2, t3, t4)
+}
+
+#[fuchsia::test]
+async fn test_list_mixed_states() {
+    let (env, _temp_dir) = create_test_env("test_list_mixed");
+    let _main_guard = DaemonCleanupGuard::new(&env, "/target-list-mixed-1");
+    let (meta1, meta2, t3, t4) = setup_mixed_state_daemons(&env, "/target-list-mixed").await;
+
+    let (output, _) = run_tool(&env, None, UartSubCommand::List(ListCommand {})).await.unwrap();
+    assert!(output.contains(&meta1.pid.to_string()), "Daemon 1 missing in list: {}", output);
+    assert!(output.contains(&meta2.pid.to_string()), "Daemon 2 missing in list: {}", output);
+    assert!(!output.contains(&t3), "Stale socket 3 should not be listed: {}", output);
+    assert!(!output.contains(&t4), "Stale metadata 4 should not be listed: {}", output);
+
+    let _ = kill(Pid::from_raw(meta1.pid as i32), nix::sys::signal::Signal::SIGKILL);
+    let _ = kill(Pid::from_raw(meta2.pid as i32), nix::sys::signal::Signal::SIGKILL);
+}
+
+fn setup_mock_active_target(
+    env: &ffx_config::TestEnv,
+    target: &str,
+    pid: u32,
+) -> (PathBuf, PathBuf, std::os::unix::net::UnixListener) {
+    let socket_path = create_dummy_socket_file(env, target);
+    let meta_path = get_metadata_path(&env.context, target).unwrap();
+    let control_socket_path = socket_path.with_extension(uart_driver_api::CONTROL_SOCKET_EXTENSION);
+    let listener = std::os::unix::net::UnixListener::bind(&control_socket_path).unwrap();
+
+    let meta = ConnectionMetadata {
+        pid,
+        target: target.to_string(),
+        status: ConnectionStatus::Connected,
+        id: Some(get_target_id(&canonicalize_target(target))),
+        baud: NonZeroU32::new(115200),
+        protocol: UartProtocol::ResendSP,
+        log_level: None,
+        nodename: None,
+        serial: None,
+    };
+    fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+    (socket_path, meta_path, listener)
+}
+
+#[fuchsia::test]
+async fn test_list_formatting_with_metadata() {
+    let (env, _temp_dir) = create_test_env("test_list_formatting");
+    let target = "/target-list-formatting";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    let mut child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+    let pid = child.id();
+    let (_sock, _meta, _listener) = setup_mock_active_target(&env, target, pid);
+
+    let (output, _) = run_tool(&env, None, UartSubCommand::List(ListCommand {})).await.unwrap();
+    for expected in ["TARGET", "BAUD", "PROTOCOL", &pid.to_string(), "115200", "ResendSP"] {
+        assert!(output.contains(expected), "Output did not contain {expected}: {output}");
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
