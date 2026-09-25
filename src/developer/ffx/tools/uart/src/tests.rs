@@ -9,6 +9,9 @@
 //! persistence within isolated temporary test environments.
 
 use argh::FromArgs;
+
+use super::*;
+use crate::args::{ConnectCommand, DisconnectCommand};
 use ffx_writer::TestBuffers;
 use fho::FfxMain;
 use fuchsia_async as _;
@@ -18,9 +21,6 @@ use sha2::Digest;
 use std::fs;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-
-use super::*;
-use crate::args::{ConnectCommand, DisconnectCommand};
 
 const MOCK_DRIVER_SCRIPT: &str = include_str!("../test_data/mock_driver.py");
 
@@ -63,6 +63,15 @@ fn create_test_env(test_name: &str) -> (ffx_config::TestEnv, tempfile::TempDir) 
     create_test_env_with_log_levels(test_name, None, None)
 }
 
+fn make_connect_cmd(baud: u32, reconnect: bool) -> UartSubCommand {
+    UartSubCommand::Connect(ConnectCommand {
+        no_retry: false,
+        baud: NonZeroU32::new(baud),
+        socket: None,
+        reconnect,
+        protocol: None,
+    })
+}
 async fn run_tool(
     env: &ffx_config::TestEnv,
     target: Option<&str>,
@@ -268,4 +277,244 @@ fn test_target_id_hashing() {
     let result = hasher.finalize();
     let expected_hash = hex::encode(&result[..8]);
     assert_eq!(get_target_id(target), expected_hash);
+}
+
+#[fuchsia::test]
+async fn test_metadata_serialization_deserialization() {
+    let (env, _temp_dir) = create_test_env("test_metadata_serialization_deserialization");
+    let target = "/test-serial-deserial";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+    let pid = 12345;
+    let socket_path = get_socket_path(&env.context, target).unwrap();
+
+    write_metadata(&env.context, &socket_path, target, pid, NonZeroU32::new(115200)).unwrap();
+
+    let meta = read_metadata(&env.context, target).unwrap().unwrap();
+    assert_eq!(meta.pid, pid);
+    assert_eq!(meta.target, target);
+    assert_eq!(meta.baud, NonZeroU32::new(115200));
+
+    delete_metadata(&env.context, target).unwrap();
+    assert!(read_metadata(&env.context, target).unwrap().is_none());
+}
+
+#[fuchsia::test]
+async fn test_liveness_check() {
+    let current_pid = std::process::id();
+    assert!(is_running(current_pid));
+
+    assert!(!is_running(0));
+    assert!(!is_running(u32::MAX));
+}
+
+#[fuchsia::test]
+async fn test_corrupt_metadata_recovery() {
+    let (env, _temp_dir) = create_test_env("test_corrupt_metadata_recovery");
+    let target = "/test-corrupt-target";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+    let path = get_metadata_path(&env.context, target).unwrap();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    // Write corrupt JSON content
+    fs::write(&path, b"invalid json content").unwrap();
+
+    let meta = read_metadata(&env.context, target).unwrap().unwrap();
+    assert_eq!(meta.pid, 0);
+    assert_eq!(meta.target, target);
+    assert!(!is_running(meta.pid));
+}
+
+#[fuchsia::test]
+async fn test_connect_handles_corrupt_metadata() {
+    let (env, _temp_dir) = create_test_env("test_connect_handles_corrupt_metadata");
+    let target = "/test-corrupt-connect-target";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+    let path = get_metadata_path(&env.context, target).unwrap();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    // Write corrupt JSON content
+    fs::write(&path, b"invalid json content").unwrap();
+
+    let sub_cmd = make_connect_cmd(115200, false);
+
+    // This should succeed because the corrupt metadata is treated as not running (pid = 0)
+    let (stdout, _) = run_tool(&env, Some(target), sub_cmd).await.unwrap();
+    assert_eq!(format!("Connect called for {}\n", target), stdout);
+
+    // Verify metadata was successfully written with valid JSON and our process ID
+    let metadata = read_metadata(&env.context, target).unwrap().unwrap();
+    assert_eq!(metadata.target, canonicalize_target(target));
+    assert!(metadata.pid > 0);
+}
+
+#[fuchsia::test]
+async fn test_connect_state_transitions() {
+    let (env, _temp_dir) = create_test_env("test_connect_state_transitions");
+    let target = "/test-transition-target";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    // 1. Initial connect -> success
+    run_tool(&env, Some(target), make_connect_cmd(115200, false)).await.unwrap();
+
+    // 2. Connect again without reconnect flag -> fail (Already connected)
+    let err = run_tool(&env, Some(target), make_connect_cmd(115200, false)).await.unwrap_err();
+    assert!(err.to_string().contains("Already connected to target"));
+
+    // 3. Connect again with reconnect flag -> success
+    run_tool(&env, Some(target), make_connect_cmd(115200, true)).await.unwrap();
+
+    // 4. Disconnect -> success
+    let (stdout, _) =
+        run_tool(&env, Some(target), UartSubCommand::Disconnect(DisconnectCommand {}))
+            .await
+            .unwrap();
+    assert_eq!("Disconnect called for /test-transition-target\n", stdout);
+
+    // 5. Disconnect again -> fail (Not connected)
+    let err_disc2 = run_tool(&env, Some(target), UartSubCommand::Disconnect(DisconnectCommand {}))
+        .await
+        .unwrap_err();
+    assert!(err_disc2.to_string().contains("Not connected to target"));
+
+    // 6. Connect again -> success
+    run_tool(&env, Some(target), make_connect_cmd(115200, false)).await.unwrap();
+}
+
+#[fuchsia::test]
+async fn test_reconnect_argument_merging() {
+    let (env1, _temp_dir) =
+        create_test_env_with_log_levels("reconnect_argument_merging", Some("debug"), Some("info"));
+
+    let target = "/test-reconnect-merge-target";
+    let _guard = DaemonCleanupGuard::new(&env1, target);
+
+    // Initial connect with baud=115200
+    run_tool(&env1, Some(target), make_connect_cmd(115200, false)).await.unwrap();
+
+    let meta = read_metadata(&env1.context, target).unwrap().unwrap();
+    assert_eq!(meta.baud, NonZeroU32::new(115200));
+
+    // Reconnect without specifying baud inherits previous baud (115200)
+    let recon_cmd = UartSubCommand::Connect(ConnectCommand {
+        no_retry: false,
+        baud: None,
+        socket: None,
+        reconnect: true,
+        protocol: None,
+    });
+    run_tool(&env1, Some(target), recon_cmd).await.unwrap();
+
+    let meta2 = read_metadata(&env1.context, target).unwrap().unwrap();
+    assert_eq!(meta2.baud, NonZeroU32::new(115200));
+}
+
+#[fuchsia::test]
+async fn test_disconnect_cleans_up_stale_files() {
+    let (env, _temp_dir) = create_test_env("test_disconnect_stale");
+    let target = "/test-disconnect-stale-target";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    let conn_cmd = make_connect_cmd(115200, false);
+    run_tool(&env, Some(target), conn_cmd).await.unwrap();
+
+    let meta_path = get_metadata_path(&env.context, target).unwrap();
+    let socket_path = get_socket_path(&env.context, target).unwrap();
+    let control_path = uart_driver_api::get_control_socket_path(&socket_path);
+    assert!(meta_path.exists());
+    assert!(socket_path.exists());
+    assert!(control_path.exists());
+
+    run_tool(&env, Some(target), UartSubCommand::Disconnect(DisconnectCommand {})).await.unwrap();
+
+    assert!(!meta_path.exists());
+    assert!(!socket_path.exists());
+    assert!(!control_path.exists());
+}
+
+#[fuchsia::test]
+async fn test_disconnect_by_target_id() {
+    let (env, _temp_dir) = create_test_env("test_disconnect_target_id");
+    let target = "/dev/ttyUSB99";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    let conn_cmd = make_connect_cmd(115200, false);
+    run_tool(&env, Some(target), conn_cmd).await.unwrap();
+
+    let canonical = canonicalize_target(target);
+    let target_id = get_target_id(&canonical);
+
+    // Disconnect using the 16-hex target ID
+    let (stdout, _) =
+        run_tool(&env, Some(&target_id), UartSubCommand::Disconnect(DisconnectCommand {}))
+            .await
+            .unwrap();
+    assert!(stdout.contains(&format!("Disconnect called for {}", target)));
+
+    assert!(read_metadata(&env.context, target).unwrap().is_none());
+}
+
+#[fuchsia::test]
+async fn test_disconnect_pattern_matching_tty_usb0() {
+    // Verify that disconnecting by device filename (e.g. "ttyUSB0") correctly matches "/dev/ttyUSB0".
+    let (env, _temp_dir) = create_test_env("test_disconnect_pattern_matching");
+    let target = "/dev/ttyUSB0";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    let conn_cmd = make_connect_cmd(1_000_000, false);
+    run_tool(&env, Some(target), conn_cmd).await.unwrap();
+
+    // Disconnect using "ttyUSB0" without "/dev/" prefix
+    let (stdout, _) =
+        run_tool(&env, Some("ttyUSB0"), UartSubCommand::Disconnect(DisconnectCommand {}))
+            .await
+            .unwrap();
+    assert_eq!("Disconnect called for /dev/ttyUSB0\n", stdout);
+
+    assert!(read_metadata(&env.context, target).unwrap().is_none());
+}
+
+#[fuchsia::test]
+async fn test_terminate_process_kills_child() {
+    // Verify that terminate_process cleanly sends SIGTERM/SIGKILL to terminate a child process.
+    let mut child = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+    let pid = child.id();
+    let res = crate::driver::terminate_process(pid).await;
+    assert!(res.is_ok());
+
+    let start = std::time::Instant::now();
+    let mut exited = false;
+    while start.elapsed() < std::time::Duration::from_secs(2) {
+        if let Ok(Some(_)) = child.try_wait() {
+            exited = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    if !exited {
+        let _ = child.kill();
+    }
+    assert!(exited, "Child process should have exited after terminate_process");
+}
+
+#[fuchsia::test]
+async fn test_socket_path_length_limit() {
+    let (env, _temp_dir) = create_test_env("test_socket_path_len");
+    let _guard = DaemonCleanupGuard::new(&env, "placeholder");
+
+    // Construct a socket path exceeding the OS limit (> 108 bytes on Linux, > 104 on macOS)
+    let long_socket = format!("/tmp/{}", "a".repeat(120));
+    let conn_cmd = UartSubCommand::Connect(ConnectCommand {
+        no_retry: false,
+        baud: NonZeroU32::new(115200),
+        socket: Some(long_socket),
+        reconnect: false,
+        protocol: None,
+    });
+
+    let res = run_tool(&env, Some("/dev/test_long"), conn_cmd).await;
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert!(err.to_string().contains("UNIX socket path exceeds limit"));
 }
