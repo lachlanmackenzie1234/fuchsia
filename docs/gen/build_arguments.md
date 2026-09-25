@@ -90,7 +90,7 @@ these device types will be used for tests.
 
 **Current value (from the default):** `[]`
 
-From //build/testing/test_spec.gni:14
+From //build/testing/device_types.gni:11
 
 ### allowed_test_host_device_types
 
@@ -99,7 +99,7 @@ only these host device types will be used for tests.
 
 **Current value (from the default):** `[]`
 
-From //build/testing/test_spec.gni:18
+From //build/testing/device_types.gni:15
 
 ### amlogic_decoder_firmware_path
 
@@ -945,7 +945,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
