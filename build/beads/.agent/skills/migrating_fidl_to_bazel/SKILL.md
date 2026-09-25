@@ -16,8 +16,7 @@ GN to Bazel.
 1.  Identify the requested `BUILD.gn` files and their `fidl` GN targets based
     on the user request.
 2.  Create a `BUILD.bazel` file in the same directory as the `BUILD.gn` file.
-    See `assets/copyright_header_template.md` for the copyright header template.
-    Add the copyright header to the top of the file.
+    Refer to [`build_bazel_header_template.md`](../../../../bazel/references/build_bazel_header_template.md) for the copyright header and `package(default_applicable_licenses = ["//:license"])` declaration.
 
 3.  Define the equivalent Bazel target for the FIDL library. Use `fidl_library`
     loaded from `//build/bazel/rules/fidl:fidl_library.bzl`.

@@ -19,6 +19,15 @@ Migration skills are available under [.agent/skills](.agent/skills):
 - [`syncing-bazel-to-gn`](.agent/skills/syncing_bazel_to_gn/SKILL.md): For targets whose GN definitions cannot yet be deleted, syncs migrated Bazel targets to GN with `bazel2gn`.
 - [`determining-bazel-visibility`](.agent/skills/determining_bazel_visibility/SKILL.md): Scopes proper Bazel visibility for migrated targets based on GN reverse dependencies and intelligent grouping.
 
+### Shared Migration References
+
+Common references and templates used across multiple migration skills are maintained under [`references/`](references/):
+
+- [`common_attribute_mappings.md`](references/common_attribute_mappings.md): Universal GN-to-Bazel attribute name mappings and comment preservation standards.
+- [`target_compatible_with.md`](references/target_compatible_with.md): Platform and host constraint guidelines for host tools, host tests, and platform-specific targets.
+
+For repository-wide Bazel file conventions (such as copyright headers, load ordering, and package licensing), see [`//build/bazel/references/build_bazel_header_template.md`](../bazel/references/build_bazel_header_template.md).
+
 To make these skills discoverable by Gemini, follow [Skill discovery and
 configuration](http://go/fuchsia-skills-guide#skill-discovery-and-configuration)
 from Fuchsia skills guide. One common approach is to have the following entry
