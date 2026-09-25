@@ -310,6 +310,19 @@ class Sysmem final : public MemoryAllocator::Owner,
   mutable std::optional<fit::thread_checker> loop_checker_;
   fidl::ServerBindingGroup<fuchsia_hardware_sysmem::Sysmem>& BindingsForTest() { return bindings_; }
 
+  bool is_allocator_present_for_testing(const fuchsia_sysmem2::Heap& heap)
+      __TA_REQUIRES(*loop_checker_) {
+    return allocators_.find(heap) != allocators_.end();
+  }
+  bool is_secure_allocator_present_for_testing(const fuchsia_sysmem2::Heap& heap)
+      __TA_REQUIRES(*loop_checker_) {
+    return secure_allocators_.find(heap) != secure_allocators_.end();
+  }
+  void add_secure_allocator_id_for_testing(const fuchsia_sysmem2::Heap& heap)
+      __TA_REQUIRES(*loop_checker_) {
+    secure_allocators_[heap] = nullptr;
+  }
+
   const UsagePixelFormatCost& usage_pixel_format_cost() {
     ZX_DEBUG_ASSERT(usage_pixel_format_cost_.has_value());
     return *usage_pixel_format_cost_;

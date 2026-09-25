@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <zircon/errors.h>
 
+#include <bind/fuchsia/sysmem/heap/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "src/sysmem/server/allocator.h"
@@ -445,6 +446,60 @@ TEST_F(FakeDdkSysmem, BufferCountOverflow_MultiParticipant_Failure) {
   EXPECT_FALSE(wait_result_1.is_ok());
   auto wait_result_2 = collection_2->WaitForAllBuffersAllocated();
   EXPECT_FALSE(wait_result_2.is_ok());
+}
+
+TEST_F(FakeDdkSysmem, RegisterHeap_SystemRam_Denied) {
+  auto heap = sysmem::MakeHeap(bind_fuchsia_sysmem_heap::HEAP_TYPE_SYSTEM_RAM, 0);
+  auto [client, server] = fidl::Endpoints<fuchsia_hardware_sysmem::Heap>::Create();
+
+  device_->RunSyncOnClientDispatcher([this, heap = heap, client = std::move(client)]() mutable {
+    std::lock_guard lock(device_->client_checker_);
+    zx_status_t status = device_->RegisterHeapInternal(heap, std::move(client));
+    EXPECT_EQ(status, ZX_ERR_ACCESS_DENIED);
+  });
+
+  device_->RunSyncOnLoop([this, heap = std::move(heap)]() {
+    std::lock_guard lock(*device_->loop_checker_);
+    EXPECT_TRUE(device_->is_allocator_present_for_testing(heap));
+    EXPECT_FALSE(device_->is_secure_allocator_present_for_testing(heap));
+  });
+}
+
+TEST_F(FakeDdkSysmem, RegisterHeap_SecureHeap_Denied) {
+  auto heap = sysmem::MakeHeap("amlogic_secure", 0);
+  auto [client, server] = fidl::Endpoints<fuchsia_hardware_sysmem::Heap>::Create();
+
+  device_->RunSyncOnLoop([this, heap = heap]() {
+    std::lock_guard lock(*device_->loop_checker_);
+    device_->add_secure_allocator_id_for_testing(heap);
+  });
+
+  device_->RunSyncOnClientDispatcher([this, heap = heap, client = std::move(client)]() mutable {
+    std::lock_guard lock(device_->client_checker_);
+    zx_status_t status = device_->RegisterHeapInternal(heap, std::move(client));
+    EXPECT_EQ(status, ZX_OK);
+  });
+
+  fidl::Arena arena;
+  auto coherency = fuchsia_hardware_sysmem::wire::CoherencyDomainSupport::Builder(arena)
+                       .cpu_supported(false)
+                       .ram_supported(false)
+                       .inaccessible_supported(true)
+                       .Build();
+
+  auto properties = fuchsia_hardware_sysmem::wire::HeapProperties::Builder(arena)
+                        .coherency_domain_support(coherency)
+                        .need_clear(false)
+                        .Build();
+
+  EXPECT_TRUE(fidl::WireSendEvent(server)->OnRegister(properties).ok());
+
+  // Wait for the OnRegister event to be processed on loop_.
+  device_->RunSyncOnLoop([this, heap = std::move(heap)]() {
+    std::lock_guard lock(*device_->loop_checker_);
+    EXPECT_FALSE(device_->is_allocator_present_for_testing(heap));
+    EXPECT_TRUE(device_->is_secure_allocator_present_for_testing(heap));
+  });
 }
 
 }  // namespace
