@@ -50,6 +50,7 @@ This skill defines the standard 6-phase framework for migrating host tools (Go a
    the BUILD.bazel file.
    - [Go Migration Guide](references/go_migration.md)
    - [Rust](references/rust_migration.md)
+   - [Determining Bazel Visibility](../determining_bazel_visibility/SKILL.md)
 
 ## Phase 3: Add bazel_host_tool() target
 

@@ -30,7 +30,8 @@ GN to Bazel.
     *(Example: If a comment is above `excluded_checks = [`, it should sit directly
     above `excluded_checks = [` in the `BUILD.bazel` file).*
 
-    Map the attributes according to the attributes mapping in `references/gn_to_bazel_attributes_mapping.md`
+    Map the attributes according to the attributes mapping in `references/gn_to_bazel_attributes_mapping.md`.
+    For setting proper target visibility, see the [`determining-bazel-visibility`](../determining_bazel_visibility/SKILL.md) skill.
 
 4.  If dependencies are missing Bazel targets, migrate those dependencies first.
 5.  Verify the Bazel target builds successfully:

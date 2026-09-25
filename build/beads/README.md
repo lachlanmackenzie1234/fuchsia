@@ -12,7 +12,12 @@ Before more information is available, please refer to the following:
 
 ## Bazel migration skills
 
-Migration skills are available under [.agent/skills](.agent/skills).
+Migration skills are available under [.agent/skills](.agent/skills):
+
+- [`migrating-host-tool-to-bazel`](.agent/skills/migrating_host_tool_to_bazel/SKILL.md): Migrates host tools from GN to Bazel.
+- [`migrating-fidl-to-bazel`](.agent/skills/migrating_fidl_to_bazel/SKILL.md): Migrates FIDL libraries under `//sdk/fidl` from GN to Bazel.
+- [`syncing-bazel-to-gn`](.agent/skills/syncing_bazel_to_gn/SKILL.md): For targets whose GN definitions cannot yet be deleted, syncs migrated Bazel targets to GN with `bazel2gn`.
+- [`determining-bazel-visibility`](.agent/skills/determining_bazel_visibility/SKILL.md): Scopes proper Bazel visibility for migrated targets based on GN reverse dependencies and intelligent grouping.
 
 To make these skills discoverable by Gemini, follow [Skill discovery and
 configuration](http://go/fuchsia-skills-guide#skill-discovery-and-configuration)
