@@ -74,6 +74,7 @@ tests_migrated_ffx_libraries = [
   "netext",
   "port_picker",
   "safe_string",
+  "ssh",
   "target_errors",
   "termio",
   "trace",
