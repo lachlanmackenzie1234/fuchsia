@@ -75,6 +75,7 @@ JSONArray = list[JSONValue]
 BUILD_ARTIFACTS_JSON = "build_artifacts.json"
 NINJA_ERRORS_JSON = "ninja_errors.json"
 TOOL_PATHS_JSON = "tool_paths.json"
+TESTS_JSON = "tests.json"
 GENERATED_SOURCES_JSON = "generated_sources.json"
 PREBUILT_BINARY_SETS_JSON = "prebuilt_binaries.json"
 FORCE_NONHERMETIC_REBUILD_SENTINEL = "force_nonhermetic_rebuild"
@@ -635,6 +636,28 @@ class BuildContext:
         return paths
 
     @functools.cached_property
+    def test_specs(self) -> list[TestSpec]:
+        """Loads and returns the test specs list."""
+        path = self.build_dir / TESTS_JSON
+        if not path.exists():
+            return []
+        try:
+            # Narrow the try clause strictly to loading/decoding the JSON file.
+            specs_data = load_json_list(path)
+        except ValueError as e:
+            raise ValueError(f"Failed to decode {TESTS_JSON}: {e}")
+
+        # Process the decoded data list with strict validation.
+        specs = []
+        for item in specs_data:
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"Expected dict entry inside {TESTS_JSON}, but got: {type(item).__name__}"
+                )
+            specs.append(TestSpec.from_dict(item))
+        return specs
+
+    @functools.cached_property
     def clippy_targets(self) -> list[ClippyTargetSpec]:
         """Loads and returns the clippy/rust target mapping list."""
         if not self.rust_target_mapping_json_path.exists():
@@ -767,6 +790,32 @@ class BuildContext:
         """Resolves Ninja build targets based on specifications and build API JSON files."""
         return sorted(list(set(self._stream_all_targets())))
 
+    def _build_bazel_host_tests(self) -> None:
+        """Builds Bazel host tests if any are present in tests.json."""
+        bazel_labels = [
+            spec.label for spec in self.test_specs if spec.label.startswith("@")
+        ]
+
+        if not bazel_labels:
+            return
+
+        top_dir_config_path = (
+            self.checkout_dir / "build" / "bazel" / "config" / "bazel_top_dir"
+        )
+        bazel_top_dir = top_dir_config_path.read_text().strip()
+        bazel_launcher = self.build_dir / bazel_top_dir / "bazel"
+
+        cmd = [
+            str(bazel_launcher),
+            "build",
+            "--config=host",
+            "--build_runfile_links=true",
+            "--enable_runfiles=true",
+        ] + bazel_labels
+
+        msg(f"Building Bazel host tests: {bazel_labels}")
+        subprocess.run(cmd, check=True)
+
     @contextmanager
     def wrap_ninja(
         self,
@@ -822,6 +871,8 @@ class BuildContext:
             or self.last_ninja_build_targets_path.read_text() != targets_str
         ):
             self.last_ninja_build_targets_path.write_text(targets_str)
+
+        self._build_bazel_host_tests()
 
         # Post-build success stamp
         success_stamp_path.write_text("")

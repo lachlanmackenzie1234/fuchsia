@@ -78,7 +78,6 @@ class BazelTargetInfo(object):
     gn_targets_manifest: str
     stamp_path: str
     update_rust_project: bool = False
-    extra_bazel_targets_file: str | None = None
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
         default_factory=list
@@ -111,7 +110,6 @@ class BazelTargetInfosMap(object):
             gn_targets_manifest = entry["gn_targets_manifest"]
             stamp_path = entry["stamp_path"]
             update_rust_project = entry["update_rust_project"]
-            extra_bazel_targets_file = entry.get("extra_bazel_targets_file")
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
                 BazelTargetInfo(
@@ -122,7 +120,6 @@ class BazelTargetInfosMap(object):
                     gn_targets_manifest=gn_targets_manifest,
                     stamp_path=stamp_path,
                     update_rust_project=update_rust_project,
-                    extra_bazel_targets_file=extra_bazel_targets_file,
                 ),
             )
 
@@ -219,10 +216,6 @@ class BazelTargetInfosMap(object):
         with (build_dir / "bazel_target_infos.json").open("rb") as f:
             content = json.load(f)
         return BazelTargetInfosMap(content)
-
-    def all_infos(self) -> T.Iterable[BazelTargetInfo]:
-        """Retrieve the BazelTargetInfo of every declared bazel_action()."""
-        return self._targets.values()
 
     def get_info(
         self, target: str, platform: str | None

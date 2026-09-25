@@ -124,7 +124,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         product_bundles_path.write_text(product_bundles_str)
 
         if with_bazel_tests:
-            (self.build_dir / "bazel_host_test_suites.txt").write_text(
+            (self.build_dir / "bazel_test_suites.txt").write_text(
                 "//fake/test1\n//fake/test2"
             )
         inputs = build_tests_json.build_tests_json(

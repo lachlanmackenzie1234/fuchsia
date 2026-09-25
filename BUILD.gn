@@ -658,7 +658,7 @@ build_api_module("debug_symbols") {
   ]
   deps = [
     ":default",
-    "//:bazel_host_test_suites",
+    "//:bazel_test_suites",
     "//:prebuilt_binaries",
   ]
 }
@@ -1460,15 +1460,14 @@ build_api_module("test_durations") {
   }
 }
 
-# Collect the labels of the Bazel test_suite() and host_xxx_test() targets
-# holding host tests and write them to a text file, one per line. This is
-# __NOT__ a build API module and is only used by //build/bazel/host_tests and by
-# regenerator.py to populate tests.json.
-generated_file("bazel_host_test_suites") {
+# Collect labels of Bazel test_suite() and host_xxx_test() and write them to a
+# text file, one per line. This is __NOT__ a build API module and is only used
+# by //build/regenerator.
+generated_file("bazel_test_suites") {
   testonly = true
-  data_keys = [ "bazel_host_test_suite" ]
-  walk_keys = [ "bazel_host_test_suite_barrier" ]
-  outputs = [ "${root_build_dir}/bazel_host_test_suites.txt" ]
+  data_keys = [ "bazel_test_suite" ]
+  walk_keys = [ "bazel_test_suite_barrier" ]
+  outputs = [ "${root_build_dir}/bazel_test_suites.txt" ]
   output_conversion = "list lines"
   deps = [
     # Pull in tests from host_labels.
@@ -2213,11 +2212,6 @@ build_api_module("nuc11_fastboot_images_location") {
 #     - Optional: Whether this target should trigger updating rust-project.json
 #     - Type: bool
 #
-#   extra_bazel_targets_file:
-#     - Optional: Path to a file listing extra Bazel targets, one label per line, to pass to
-#                 Bazel as top-level command line targets alongside 'bazel_target'.
-#     - Type: string
-#
 #  The other fields depend on the 'type':
 #
 #     "file":
@@ -2351,8 +2345,7 @@ group("host_tests") {
   testonly = true
   visibility = [ ":*" ]
 
-  deps = [ "//build/bazel/host_tests" ]
-
+  deps = []
   foreach(label, host_test_labels) {
     # Strip any toolchain that is provided, and replace with the host toolchain.
     full_label = get_label_info(label, "label_no_toolchain")
@@ -2381,7 +2374,7 @@ group("developer_specified_tests") {
 group("discoverable_packages") {
   testonly = true
   visibility = [
-    "//:bazel_host_test_suites",
+    "//:bazel_test_suites",
     "//:test_components",
     "//:tests_from_metadata",
     "//build/images/updates:*",

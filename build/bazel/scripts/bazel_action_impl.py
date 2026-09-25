@@ -40,7 +40,7 @@ from debug_symbols import (
     DebugSymbolsManifestParser,
 )
 
-# LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_action_impl_imports, //build/bazel/scripts/BUILD.gn:bazel_action_impl_imports)
+# LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_action_impl_imports)
 
 
 # Set this to True to debug operations locally in this script.
@@ -722,11 +722,7 @@ class BazelActionRunner(object):
                 source_path = source_mapper.resolve_path(path)
                 if source_path:
                     sources.append(source_prefix + source_path)
-            # A target named in an extra_bazel_targets_file may be a
-            # test_suite(), which Bazel expands into its member tests. The
-            # aspect then reports sources for those members, which were never
-            # requested by label and so have no entry yet.
-            input_files.setdefault(target, []).extend(sources)
+            input_files[target].extend(sources)
 
         time_profile.stop()
 
