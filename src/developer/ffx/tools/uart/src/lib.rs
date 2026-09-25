@@ -109,7 +109,6 @@ pub(crate) async fn resolve_target(
     if let Ok(path) = uart_driver_api::parse_target_endpoint(raw_target, context) {
         return Ok(ResolvedTarget::Inactive { target_path: path.to_string_lossy().into_owned() });
     }
-
     Err(user_error!(
         "Target '{}' not found or has no active UART connection.\n\
          To connect to a new UART target, please specify the device path directly:\n\
@@ -161,7 +160,10 @@ pub(crate) async fn get_spec(
 }
 
 #[cfg(test)]
-mod tests {
+mod tests;
+
+#[cfg(test)]
+mod spec_tests {
     use super::*;
 
     #[fuchsia::test]

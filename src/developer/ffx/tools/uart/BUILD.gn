@@ -37,6 +37,7 @@ if (is_host) {
       "//src/developer/ffx/config:lib",
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-async",
+      "//third_party/rust_crates:hex",
     ]
 
     sources = [
@@ -52,7 +53,10 @@ if (is_host) {
       "src/subtools/probe.rs",
       "src/subtools/status.rs",
       "src/sys.rs",
+      "src/tests.rs",
     ]
+
+    inputs = [ "test_data/mock_driver.py" ]
   }
 
   ffx_tool("ffx_uart") {
