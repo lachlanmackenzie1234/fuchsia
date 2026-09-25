@@ -18,3 +18,11 @@ config("starnix_clippy_lints") {
     rustflags += [ "-Wclippy::undocumented_unsafe_blocks" ]
   }
 }
+
+# Counterpart of the Bazel starnix_clippy_lints_test, for test targets of
+# Starnix libraries that are declared separately from the library. GN appends
+# lint configs to the defaults (and leaves out production lints for test
+# code), so this is the same as starnix_clippy_lints.
+config("starnix_clippy_lints_test") {
+  configs = [ ":starnix_clippy_lints" ]
+}

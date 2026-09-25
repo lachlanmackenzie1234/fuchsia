@@ -27,11 +27,16 @@ resource(
     dest = "config/profiles/starnix.profiles",
 )
 
-_STARNIX_CLIPPY_COMMON = {
+# Bazel `lint_config` replaces the default lint configs instead of appending to
+# them like GN does, so the defaults from //build/config/rust/lints are spelled
+# out here.
+#
+# Lints applied to all Starnix code, including tests: clippy_warn_default plus
+# the Starnix-specific lints.
+_STARNIX_CLIPPY_TEST = {
     "all": "allow",
     "await_holding_lock": "warn",
     "clear_with_drain": "warn",
-    "collection_is_never_read": "warn",
     "confusing_method_to_numeric_cast": "warn",
     "correctness": "warn",
     "expect_fun_call": "warn",
@@ -40,14 +45,19 @@ _STARNIX_CLIPPY_COMMON = {
     "large_enum_variant": "warn",
     "large_futures": "warn",
     "missing_safety_doc": "warn",
-    "needless_collect": "warn",
     "or_fun_call": "warn",
+    "unnecessary_mut_passed": "warn",
+    "wildcard_imports": "warn",
+}
+
+# Lints applied to non-test Starnix code: additionally clippy_warn_production.
+_STARNIX_CLIPPY_COMMON = _STARNIX_CLIPPY_TEST | {
+    "collection_is_never_read": "warn",
+    "needless_collect": "warn",
     "perf": "warn",
     "redundant_clone": "warn",
     "set_contains_or_insert": "warn",
     "unnecessary_lazy_evaluations": "warn",
-    "unnecessary_mut_passed": "warn",
-    "wildcard_imports": "warn",
 }
 
 _STARNIX_RUSTC_LINTS = {
@@ -69,6 +79,23 @@ rust_lint_config(
     clippy = select({
         "@platforms//cpu:riscv64": _STARNIX_CLIPPY_COMMON,
         "//conditions:default": _STARNIX_CLIPPY_COMMON | {
+            "undocumented_unsafe_blocks": "warn",
+        },
+    }),
+    rustc = _STARNIX_RUSTC_LINTS,
+    visibility = ["//src/starnix:__subpackages__"],
+)
+
+# Lint config for Starnix test targets. Unlike GN, where test code does not get
+# the production lints, Bazel `rustc_library(with_unit_tests = True)` applies
+# the library's `lint_config` to its test target as well. Test targets that
+# trip production-only lints can instead be declared with an explicit
+# `rustc_test` that uses this config.
+rust_lint_config(
+    name = "starnix_clippy_lints_test",
+    clippy = select({
+        "@platforms//cpu:riscv64": _STARNIX_CLIPPY_TEST,
+        "//conditions:default": _STARNIX_CLIPPY_TEST | {
             "undocumented_unsafe_blocks": "warn",
         },
     }),

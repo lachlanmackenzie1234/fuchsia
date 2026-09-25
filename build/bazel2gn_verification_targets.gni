@@ -172,6 +172,7 @@ bazel2gn_verification_targets = [
   "//src/starnix/lib/composite_fd:verify_bazel2gn",
   "//src/starnix/lib/devicetree:verify_bazel2gn",
   "//src/starnix/lib/ebpf:verify_bazel2gn",
+  "//src/starnix/lib/ebpf_api:verify_bazel2gn",
   "//src/starnix/lib/estimate_timeline:verify_bazel2gn",
   "//src/starnix/lib/features:verify_bazel2gn",
   "//src/starnix/lib/filter_methods_macro:verify_bazel2gn",
