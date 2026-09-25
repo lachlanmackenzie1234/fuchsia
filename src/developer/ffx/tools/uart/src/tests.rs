@@ -11,7 +11,7 @@
 use argh::FromArgs;
 
 use super::*;
-use crate::args::{ConnectCommand, DisconnectCommand, ListCommand};
+use crate::args::{ConnectCommand, DisconnectCommand, ListCommand, StatusCommand};
 use ffx_writer::TestBuffers;
 use fho::FfxMain;
 use fuchsia_async as _;
@@ -19,6 +19,7 @@ use nix::sys::signal::kill;
 use nix::unistd::Pid;
 use sha2::Digest;
 use std::fs;
+use std::io::Write as _;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 
@@ -77,6 +78,15 @@ async fn run_tool(
     target: Option<&str>,
     sub_cmd: UartSubCommand,
 ) -> std::result::Result<(String, String), fho::Error> {
+    run_tool_with_format(env, target, sub_cmd, None).await
+}
+
+async fn run_tool_with_format(
+    env: &ffx_config::TestEnv,
+    target: Option<&str>,
+    sub_cmd: UartSubCommand,
+    format: Option<ffx_writer::Format>,
+) -> std::result::Result<(String, String), fho::Error> {
     let mut context_tool = env.context.clone();
     if let Some(target) = target {
         context_tool.override_target_specifier(&Some(format!("uart:{}", target)));
@@ -94,7 +104,7 @@ async fn run_tool(
         }
         UartSubCommand::List(cmd) => {
             let tool = ListTool { cmd, context: context_tool };
-            let machine_writer = ffx_writer::MachineWriter::new_test(None, &buffers);
+            let machine_writer = ffx_writer::MachineWriter::new_test(format, &buffers);
             tool.main(machine_writer).await?;
         }
         UartSubCommand::Probe(cmd) => {
@@ -103,7 +113,8 @@ async fn run_tool(
         }
         UartSubCommand::Status(cmd) => {
             let tool = StatusTool { cmd, context: context_tool };
-            tool.main(writer).await?;
+            let machine_writer = ffx_writer::VerifiedMachineWriter::new_test(format, &buffers);
+            tool.main(machine_writer).await?;
         }
     }
     Ok((buffers.stdout.into_string(), buffers.stderr.into_string()))
@@ -518,6 +529,7 @@ async fn test_socket_path_length_limit() {
     let err = res.unwrap_err();
     assert!(err.to_string().contains("UNIX socket path exceeds limit"));
 }
+
 #[fuchsia::test]
 async fn test_list() {
     let (env, _temp_dir) = create_test_env("test_list");
@@ -656,4 +668,264 @@ async fn test_list_formatting_with_metadata() {
     }
     let _ = child.kill();
     let _ = child.wait();
+}
+
+fn make_mock_metrics() -> DaemonMetrics {
+    DaemonMetrics {
+        checksum_errors: 12,
+        retransmissions: 34,
+        active_protocol: UartProtocol::ResendSP,
+        estimated_rtt_ms: 56,
+        connection_drops: 7,
+        handshake_failures: 8,
+        last_read_timestamp_ms: 0,
+        last_write_timestamp_ms: 0,
+        outgoing_queue_len: 90,
+    }
+}
+
+fn spawn_mock_control_server(
+    listener: std::os::unix::net::UnixListener,
+    metrics_json: String,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = stream.write_all(metrics_json.as_bytes());
+        }
+    })
+}
+
+fn assert_status_output(output: &str, target_id: &str, socket_path: &Path) {
+    assert!(output.contains("Connection Status for target"), "Output: {}", output);
+    assert!(output.contains(&format!("Target ID:           {}", target_id)), "Output: {}", output);
+    assert!(output.contains("Daemon PID:          12345"), "Output: {}", output);
+    assert!(output.contains("Node Name:           fuchsia-test-node"), "Output: {}", output);
+    assert!(output.contains("Serial Number:       SN98765"), "Output: {}", output);
+    assert!(output.contains("Status:              Connected"), "Output: {}", output);
+    assert!(output.contains("Active Protocol:     ResendSP"), "Output: {}", output);
+    assert!(output.contains("Estimated RTT:       56 ms"), "Output: {}", output);
+    assert!(output.contains("Retransmissions:     34"), "Output: {}", output);
+    assert!(output.contains("Checksum Errors:     12"), "Output: {}", output);
+    assert!(output.contains("Log File:"), "Output: {}", output);
+
+    let log_id = uart_driver_api::get_log_id_from_socket_path(socket_path);
+    let expected_log_file = uart_driver_api::get_driver_log_file_path(Path::new(""), log_id, 0);
+    let expected_log_name = expected_log_file.to_string_lossy();
+    assert!(
+        output.contains(expected_log_name.as_ref()),
+        "Expected log name {} in output: {}",
+        expected_log_name,
+        output
+    );
+}
+
+#[fuchsia::test]
+async fn test_status_output() {
+    let (env, _temp_dir) = create_test_env("test_status_output");
+    let target = "/target-status-output";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    let socket_path = create_dummy_socket_file(&env, target);
+    let meta_path = get_metadata_path(&env.context, target).unwrap();
+
+    let target_id = get_target_id(&canonicalize_target(target));
+
+    let meta = ConnectionMetadata {
+        pid: 12345,
+        target: target.to_string(),
+        status: ConnectionStatus::Connected,
+        id: Some(target_id.clone()),
+        baud: NonZeroU32::new(1000000),
+        protocol: UartProtocol::ResendSP,
+        log_level: None,
+        nodename: Some("fuchsia-test-node".to_string()),
+        serial: Some("SN98765".to_string()),
+    };
+    fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+    let control_socket_path = socket_path.with_extension("control");
+    let control_listener = std::os::unix::net::UnixListener::bind(&control_socket_path).unwrap();
+
+    let mock_metrics = make_mock_metrics();
+    let metrics_json = serde_json::to_string(&mock_metrics).unwrap();
+
+    let _mock_server = spawn_mock_control_server(control_listener, metrics_json);
+
+    let (output, _) =
+        run_tool(&env, Some(target), UartSubCommand::Status(StatusCommand {})).await.unwrap();
+
+    assert_status_output(&output, &target_id, &socket_path);
+}
+
+#[fuchsia::test]
+async fn test_status_machine_output() {
+    let (env, _temp_dir) = create_test_env("test_status_machine_output");
+    let target = "/target-status-machine";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    let socket_path = create_dummy_socket_file(&env, target);
+    let meta_path = get_metadata_path(&env.context, target).unwrap();
+
+    let target_id = get_target_id(&canonicalize_target(target));
+
+    let meta = ConnectionMetadata {
+        pid: 12345,
+        target: target.to_string(),
+        status: ConnectionStatus::Connected,
+        id: Some(target_id.clone()),
+        baud: NonZeroU32::new(1000000),
+        protocol: UartProtocol::ResendSP,
+        log_level: None,
+        nodename: Some("fuchsia-test-node".to_string()),
+        serial: Some("SN98765".to_string()),
+    };
+    fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+    let control_socket_path = socket_path.with_extension("control");
+    let control_listener = std::os::unix::net::UnixListener::bind(&control_socket_path).unwrap();
+
+    let mock_metrics = make_mock_metrics();
+    let metrics_json = serde_json::to_string(&mock_metrics).unwrap();
+
+    let _mock_server = spawn_mock_control_server(control_listener, metrics_json);
+
+    let (output, _) = run_tool_with_format(
+        &env,
+        Some(target),
+        UartSubCommand::Status(StatusCommand {}),
+        Some(ffx_writer::Format::Json),
+    )
+    .await
+    .unwrap();
+
+    let status_info: ConnectionStatusInfo =
+        serde_json::from_str(&output).expect("Failed to parse JSON status output");
+    assert_eq!(status_info.target, format!("uart:{}", target));
+    assert_eq!(status_info.target_id, target_id);
+    assert_eq!(status_info.pid, 12345);
+    assert_eq!(status_info.status, "Connected");
+    assert_eq!(status_info.nodename.as_deref(), Some("fuchsia-test-node"));
+    assert_eq!(status_info.serial.as_deref(), Some("SN98765"));
+    assert_eq!(status_info.baud, Some(1000000));
+    assert_eq!(status_info.active_protocol, "ResendSP");
+    assert_eq!(status_info.estimated_rtt_ms, 56);
+    assert_eq!(status_info.retransmissions, 34);
+    assert_eq!(status_info.checksum_errors, 12);
+    assert_eq!(status_info.connection_drops, 7);
+    assert_eq!(status_info.handshake_failures, 8);
+    assert_eq!(status_info.outgoing_queue_len, 90);
+    assert!(!status_info.is_stalled);
+}
+
+#[fuchsia::test]
+async fn test_implicit_resolution_single_active() {
+    let (env, _temp_dir) = create_test_env("test_implicit_single");
+    let target = "/target-implicit-single";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    // Connect to target to make it active
+    let connect_cmd = make_connect_cmd(115200, false);
+    run_tool(&env, Some(target), connect_cmd).await.unwrap();
+
+    // Run disconnect without target. It should implicitly resolve to /target-implicit-single.
+    let (stdout, _stderr) =
+        run_tool(&env, None, UartSubCommand::Disconnect(DisconnectCommand {})).await.unwrap();
+
+    assert!(stdout.contains("No target specified. Using active connection"), "Stdout: {}", stdout);
+    assert!(stdout.contains("Disconnect called for /target-implicit-single"), "Stdout: {}", stdout);
+}
+
+#[fuchsia::test]
+async fn test_implicit_resolution_multiple_active() {
+    let (env, _temp_dir) = create_test_env("test_implicit_multiple");
+    let target1 = "/target-implicit-1";
+    let target2 = "/target-implicit-2";
+    let _guard1 = DaemonCleanupGuard::new(&env, target1);
+    let _guard2 = DaemonCleanupGuard::new(&env, target2);
+
+    // Connect to both targets
+    let connect_cmd1 = make_connect_cmd(115200, false);
+    run_tool(&env, Some(target1), connect_cmd1).await.unwrap();
+
+    let connect_cmd2 = make_connect_cmd(115200, false);
+    run_tool(&env, Some(target2), connect_cmd2).await.unwrap();
+
+    // Run disconnect without target. It should fail because of ambiguity.
+    let err =
+        run_tool(&env, None, UartSubCommand::Disconnect(DisconnectCommand {})).await.unwrap_err();
+    let err_msg = err.to_string();
+    assert!(err_msg.contains("multiple active UART connections found"), "Error: {}", err_msg);
+    assert!(err_msg.contains(target1), "Error: {}", err_msg);
+    assert!(err_msg.contains(target2), "Error: {}", err_msg);
+}
+
+#[fuchsia::test]
+async fn test_implicit_resolution_no_active() {
+    let (env, _temp_dir) = create_test_env("test_implicit_none");
+    let _guard = DaemonCleanupGuard::new(&env, "/placeholder");
+
+    // Run disconnect without target. It should fail because no active.
+    let err =
+        run_tool(&env, None, UartSubCommand::Disconnect(DisconnectCommand {})).await.unwrap_err();
+    assert!(
+        err.to_string().contains("no active UART connections found"),
+        "Error: {}",
+        err.to_string()
+    );
+}
+
+#[fuchsia::test]
+async fn test_implicit_resolution_connect_fails() {
+    let (env, _temp_dir) = create_test_env("test_implicit_connect_fails");
+    let target = "/target-implicit-connect";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    // Connect to target to make it active
+    let connect_cmd = make_connect_cmd(115200, false);
+    run_tool(&env, Some(target), connect_cmd).await.unwrap();
+
+    // Now try to run another connect command WITHOUT target.
+    // It should fail saying "No target specified" even though there is 1 active.
+    let connect_no_target = make_connect_cmd(115200, false);
+    let err = run_tool(&env, None, connect_no_target).await.unwrap_err();
+    assert!(
+        err.to_string().contains(
+            "No target specified. Please specify a target using 'ffx -t uart:<target> uart connect'"
+        ),
+        "Error: {}",
+        err.to_string()
+    );
+}
+
+#[fuchsia::test]
+async fn test_concurrency_race_leak() {
+    let (env, _temp_dir) = create_test_env("test_race");
+    let target = "/target-race";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+
+    // 1. Write metadata for Driver A (PID 12345) to simulate it is running
+    let socket_path = get_socket_path(&env.context, target).unwrap();
+    write_metadata(&env.context, &socket_path, target, 12345, NonZeroU32::new(115200)).unwrap();
+
+    // 2. Simulate Task B calling reconnect, deleting metadata:
+    delete_metadata(&env.context, target).unwrap();
+
+    // Simulate socket path existing/locked
+    let socket_path = get_socket_path(&env.context, target).unwrap();
+    if let Some(parent) = socket_path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(&socket_path, b"").unwrap();
+
+    // 3. User runs ListTool::list
+    let list_tool = ListTool { cmd: ListCommand {}, context: env.context.clone() };
+    let list_buffers = TestBuffers::default();
+    let list_writer = ffx_writer::MachineWriter::new_test(None, &list_buffers);
+    list_tool.main(list_writer).await.unwrap();
+
+    // Since the metadata file was deleted, List should NOT find the daemon!
+    let list_output = list_buffers.stdout.into_string();
+    assert!(!list_output.contains(target), "Daemon should not be listed (orphan state!)");
+
+    let _ = fs::remove_file(&socket_path);
 }

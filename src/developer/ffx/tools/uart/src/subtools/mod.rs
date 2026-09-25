@@ -12,4 +12,4 @@ pub use connect::ConnectTool;
 pub use disconnect::DisconnectTool;
 pub use list::ListTool;
 pub use probe::ProbeTool;
-pub use status::StatusTool;
+pub use status::{ConnectionStatusInfo, StatusTool};
