@@ -12,6 +12,22 @@ description: >
 
 # Implement Driver Suspend and Resume
 
+> [!IMPORTANT]
+> This guide covers two **mutually exclusive** ways to implement driver suspend
+> and resume. **Only implement ONE of them in a driver -- never both:**
+>
+> 1. **Runtime-Managed Dispatchers (Default / Recommended)**: Implement
+>    `system_suspend` / `system_resume` on `fdf_component::Driver` (Rust) or
+>    `SystemSuspend` / `SystemResume` on `fdf::DriverBase2` (C++). Do **not**
+>    use `fdf_power::SuspendableDriver` or `fdf_power::Suspendable`.
+> 2. **Driver-Owned Suspend (`fdf_power`)**: Implement `suspend` / `resume` on
+>    `fdf_power::SuspendableDriver` (Rust) or `Suspend` / `Resume` on
+>    `fdf_power::Suspendable` (C++). Do **not** implement `system_suspend` /
+>    `system_resume` (`SystemSuspend` / `SystemResume`) on the driver itself.
+>
+> Always use **Runtime-Managed Dispatchers** unless the driver must keep its
+> dispatchers running while suspended.
+
 ## Dependencies
 
 ### Runtime-Managed Dispatchers (Recommended)
@@ -21,7 +37,10 @@ description: >
 ```gn
 # Rust drivers
 deps = [
+  "//sdk/lib/async/rust",
+  "//sdk/lib/async/rust/fidl",
   "//sdk/lib/driver/component/rust",
+  "//sdk/lib/driver/runtime/rust",
   "//sdk/rust/zx",
 ]
 
@@ -36,7 +55,10 @@ deps = [
 ```bazel
 # Rust drivers
 deps = [
+    "//sdk/lib/async/rust",
+    "//sdk/lib/async/rust/fidl",
     "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/runtime/rust",
     "//sdk/rust/zx",
 ]
 
@@ -220,12 +242,15 @@ Implement `system_suspend` and `system_resume` directly on the
 [`fdf_component::Driver`](/sdk/lib/driver/component/rust/src/lib.rs) trait:
 
 ```rust
+use fdf::OnDispatcher;
 use fdf_component::{Driver, DriverContext, DriverError, driver_register};
 use fuchsia_sync::Mutex;
+use futures::StreamExt;
+use libasync::{DispatcherInterruptExt, OnInterrupt};
+use std::sync::Arc;
 
 pub struct MyDriver {
-    irq: zx::Interrupt,
-    wake_lease: Mutex<Option<zx::EventPair>>,
+    wake_lease: Arc<Mutex<Option<zx::EventPair>>>,
 }
 
 impl Driver for MyDriver {
@@ -234,10 +259,22 @@ impl Driver for MyDriver {
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         // Initialize hardware, obtain irq, and bind services on power-managed dispatchers.
         # let irq = zx::Interrupt::from(zx::Handle::invalid());
-        Ok(Self {
-            irq,
-            wake_lease: Mutex::new(None),
-        })
+        let wake_lease = Arc::new(Mutex::new(None));
+
+        // Bind the interrupt and spawn its handler on the power-managed root_dispatcher
+        // using libasync::OnInterrupt (NOT fuchsia_async::OnInterrupt / Task).
+        let mut irq_stream = context.root_dispatcher.on_interrupt(irq);
+        let lease_clone = wake_lease.clone();
+        context
+            .root_dispatcher
+            .spawn(async move {
+                while let Some(Ok(_timestamp)) = irq_stream.next().await {
+                    Self::handle_interrupt(&irq_stream, &lease_clone).await;
+                }
+            })
+            .unwrap();
+
+        Ok(Self { wake_lease })
     }
 
     async fn stop(&self) {
@@ -263,23 +300,75 @@ impl Driver for MyDriver {
 
 impl MyDriver {
     // Runs first on the unpaused power-managed dispatcher when woken by a wake vector.
-    async fn handle_interrupt(&self) {
+    async fn handle_interrupt(
+        irq_stream: &OnInterrupt,
+        wake_lease: &Mutex<Option<zx::EventPair>>,
+    ) {
         // 1. Take the wake lease stored during system_resume (if any).
-        let wake_lease = self.wake_lease.lock().take();
+        let lease = wake_lease.lock().take();
 
         // 2. Service hardware while power element and clocks are guaranteed active.
-        // 3. If forwarding an event upstream, MOVE `wake_lease` (power baton) directly
+        // 3. If forwarding an event upstream, MOVE `lease` (power baton) directly
         //    into the outgoing FIDL message BEFORE acknowledging the interrupt.
 
         // 4. Acknowledge the hardware interrupt.
-        let _ = self.irq.ack();
+        let _ = irq_stream.ack();
 
-        // 5. If `wake_lease` was not moved into an outgoing FIDL call, it drops here.
+        // 5. If `lease` was not moved into an outgoing FIDL call, it drops here.
     }
 }
 
 driver_register!(MyDriver);
 ```
+
+**Rust Dispatcher Execution: `libasync` / `fdf` vs. `fuchsia_async`**
+
+> [!WARNING]
+> In Rust drivers, `DriverServer` runs a `fuchsia_async::LocalExecutor` on a
+> dedicated **always-on** dispatcher thread backed by its own private
+> `zx::Port`. Any task, timer, interrupt, signal wait, or FIDL channel
+> scheduled through `fuchsia_async` (or through a library built on
+> `fuchsia_async`) **bypasses** the driver runtime's power-managed dispatcher--it
+> will **not** pause when the driver suspends and will **not** register as a
+> driver runtime wake vector.
+
+To ensure normal driver work pauses during suspend and participates in wake
+vector tracking, schedule all operational work on `context.root_dispatcher` or
+[`fdf::CurrentDispatcher`](/sdk/lib/driver/runtime/rust/core/src/dispatcher.rs)
+using [`libasync`](/sdk/lib/async/rust/src/lib.rs) (partially re-exported by
+[`fdf`](/sdk/lib/driver/runtime/rust/src/lib.rs)) and
+[`libasync_fidl`](/sdk/lib/async/rust/fidl/src/lib.rs):
+
+- **Tasks**: Use `fdf::OnDispatcher::spawn` / `compute` or
+  `fdf::OnDriverDispatcher::spawn_local` / `compute_local` on
+  `context.root_dispatcher` or `fdf::CurrentDispatcher` instead of
+  `fuchsia_async::Task` or `fuchsia_async::Scope`.
+- **Interrupts**: Use `libasync::DispatcherInterruptExt::on_interrupt`
+  (`libasync::OnInterrupt` in [`libasync`](/sdk/lib/async/rust/src/lib.rs))
+  instead of `fuchsia_async::OnInterrupt`. `libasync::OnInterrupt` binds via
+  `async_bind_irq` on the driver dispatcher so the runtime tracks it as a wake
+  vector.
+- **Timers**: Use `fdf::DispatcherTimerExt::after_deadline`
+  ([`libasync::AfterDeadline`](/sdk/lib/async/rust/src/after_deadline.rs))
+  instead of `fuchsia_async::Timer` or `fuchsia_async::OnTimeout`.
+- **Signal waits**: Use `libasync::DispatcherSignalExt::on_signals`
+  ([`libasync::OnSignals`](/sdk/lib/async/rust/src/on_signals.rs)) instead of
+  `fuchsia_async::OnSignals`.
+- **Zircon-transport FIDL (`zx::Channel`)**: Use `fidl_next` with
+  `libasync_fidl::AsyncChannel<fdf::CurrentDispatcher>` and
+  `context.incoming.connect_protocol_libasync_next()` instead of old `fidl`
+  proxies or `connect_protocol_next()` (which bind `zx::Channel` to
+  `fuchsia_async`).
+- **Shared libraries**: Existing Rust libraries that internally use
+  `fuchsia_async` (`Task`, `Timer`, `OnInterrupt`, `OnSignals`, or
+  `fuchsia_async`-bound FIDL proxies) will continue running while the driver is
+  suspended. To use such a library on a power-managed dispatcher, port or
+  abstract it to use [`//sdk/lib/async/rust`](/sdk/lib/async/rust/BUILD.gn) and
+  [`//sdk/lib/async/rust/fidl`](/sdk/lib/async/rust/fidl/BUILD.gn) (see
+  [`/src/ui/lib/input_pipeline/src/dispatcher.rs`](/src/ui/lib/input_pipeline/src/dispatcher.rs)
+  for an in-tree example). Note that `//sdk/lib/async/rust` has a `visibility`
+  allowlist in its `BUILD.gn` that may need updating when adding new library
+  dependents.
 
 **C++ Implementation
 ([`fdf::DriverBase2`](/sdk/lib/driver/component/cpp/driver_base2.h))**
@@ -554,13 +643,18 @@ fuchsia_driver_package("package") {
   because a downstream driver requires it (or during a system-wide resume),
   `lease` is `None` / `std::nullopt`—any required power baton will arrive inside
   the subsequent FIDL request from the downstream caller.
-- **Mixing `fdf_power::Suspendable` with `power_managed_dispatchers_enabled:
-  "true"`**: When `power_managed_dispatchers_enabled: "true"` is set in `.cml`,
-  the driver host takes ownership of the `ElementRunner` channel
+- **Implementing both `Driver` (`system_suspend`/`system_resume` or
+  `SystemSuspend`/`SystemResume`) and `fdf_power` (`SuspendableDriver` or
+  `fdf_power::Suspendable`) hooks, or mixing `fdf_power` with
+  `power_managed_dispatchers_enabled: "true"`**: In Rust,
+  `Suspendable<MyDriver>` does not forward `system_suspend`/`system_resume` to
+  `MyDriver`; meanwhile, when `power_managed_dispatchers_enabled: "true"` is set
+  in `.cml`, the driver host takes ownership of the `ElementRunner` channel
   (`PowerConfiguration::RuntimeControlled`) and does not pass
   `power_element_args.runner` to the driver. Do not combine
   `fdf_power::Suspendable` / `fdf_power::SuspendableDriver` with
-  `power_managed_dispatchers_enabled: "true"`.
+  `system_suspend`/`SystemSuspend` or `power_managed_dispatchers_enabled:
+  "true"`.
 - **Registering `MyDriver` instead of `Suspendable<MyDriver>` in Rust when using
   `SuspendableDriver`**: For the Driver-Owned pattern,
   `driver_register!(MyDriver)` will not wire up the power element runner. Always
@@ -572,6 +666,18 @@ fuchsia_driver_package("package") {
   `fuchsia.power.broker.Topology` capability route provided by the shard, the
   driver host will not invoke `system_suspend` / `SystemSuspend` or acquire wake
   leases.
+- **Using `fuchsia_async` primitives or `fuchsia_async`-based libraries for
+  normal driver work in Rust**: Because `DriverServer` runs
+  `fuchsia_async::LocalExecutor` on an always-on dispatcher with a private
+  `zx::Port`, any tasks (`fuchsia_async::Task` / `Scope`), interrupts
+  (`fuchsia_async::OnInterrupt`), timers (`fuchsia_async::Timer`), signal waits
+  (`fuchsia_async::OnSignals`), or Zircon channels bound to `fuchsia_async`
+  bypass the power-managed driver dispatcher--they keep running while the driver
+  is suspended and do not register as runtime wake vectors. Use `fdf` /
+  `libasync` (`OnDispatcher`, `OnDriverDispatcher`, `libasync::OnInterrupt`,
+  `AfterDeadline`, `libasync::OnSignals`, and `libasync_fidl::AsyncChannel`) on
+  `context.root_dispatcher` / `fdf::CurrentDispatcher`, and port any shared
+  libraries to `libasync` (`//sdk/lib/async/rust`).
 
 ## Further Reading
 
@@ -579,6 +685,9 @@ fuchsia_driver_package("package") {
   Shard](/sdk/lib/driver_component/power_managed_dispatchers.shard.cml)
 - [Rust `fdf_component::Driver`
   Trait](/sdk/lib/driver/component/rust/src/lib.rs)
+- [Rust Driver Runtime (`fdf`) Crate](/sdk/lib/driver/runtime/rust/src/lib.rs)
+- [Rust `libasync` Crate](/sdk/lib/async/rust/src/lib.rs)
+- [Rust `libasync_fidl` Crate](/sdk/lib/async/rust/fidl/src/lib.rs)
 - [C++ `fdf::DriverBase2` Class](/sdk/lib/driver/component/cpp/driver_base2.h)
 - [Rust `fdf_power::SuspendableDriver`
   Trait](/sdk/lib/driver/power/rust/src/lib.rs)
