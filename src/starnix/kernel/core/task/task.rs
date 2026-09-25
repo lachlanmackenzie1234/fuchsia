@@ -437,14 +437,11 @@ impl TaskMutableState<Base = Task> {
         self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
     }
 
-    /// Enqueues the signal, allowing the signal to skip straight to the front of the task's queue.
+    /// Enqueues `signal` at the front of the task's signal queue.
     ///
-    /// `enqueue_signal` is the more common API to use.
-    ///
-    /// Note that this will not guarantee that the signal is dequeued before any process-directed
-    /// signals.
+    /// [`Self::enqueue_signal`] is the more common API to use.
     pub fn enqueue_signal_front(&mut self, signal: SignalInfo) {
-        self.signals.enqueue(signal);
+        self.signals.jump_queue(signal);
         self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
     }
 
@@ -591,12 +588,11 @@ impl TaskMutableState<Base = Task> {
     where
         F: Fn(&SignalInfo) -> bool,
     {
-        if let Some(signal) = self.base.thread_group().take_next_signal_where(&predicate) {
+        if let Some(signal) = self.signals.take_next_where(&predicate) {
+            self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
             Some(signal)
         } else {
-            let s = self.signals.take_next_where(&predicate);
-            self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
-            s
+            self.base.thread_group().take_next_signal_where(&predicate)
         }
     }
 
@@ -613,18 +609,20 @@ impl TaskMutableState<Base = Task> {
         self.take_next_signal_where(predicate)
     }
 
-    /// Removes and returns a pending signal that is unblocked by the current signal mask.
+    /// Removes and returns a pending signal that is unblocked by the current signal mask or forced.
     ///
-    /// Returns `None` if there are no unblocked signals pending.
+    /// Returns `None` if there are no deliverable signals pending.
     pub fn take_any_signal(&mut self) -> Option<SignalInfo> {
-        self.take_signal_with_mask(self.signal_mask())
+        let signal_mask = self.signal_mask();
+        let predicate = |s: &SignalInfo| !signal_mask.has_signal(s.signal) || s.force;
+        self.take_next_signal_where(predicate)
     }
 
     /// Removes and returns a pending signal that is unblocked by `signal_mask`.
     ///
     /// Returns `None` if there are no signals pending that are unblocked by `signal_mask`.
     pub fn take_signal_with_mask(&mut self, signal_mask: SigSet) -> Option<SignalInfo> {
-        let predicate = |s: &SignalInfo| !signal_mask.has_signal(s.signal) || s.force;
+        let predicate = |s: &SignalInfo| !signal_mask.has_signal(s.signal);
         self.take_next_signal_where(predicate)
     }
 

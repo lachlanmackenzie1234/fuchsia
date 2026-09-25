@@ -16,6 +16,7 @@
 #include <ucontext.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <climits>
 #include <csignal>
@@ -1790,5 +1791,106 @@ TEST(SignalHandling, SigtimedwaitReceivesBlockedIgnoredSignal) {
 
   ASSERT_TRUE(helper.WaitForChildren());
 }
+
+#if (!__has_feature(address_sanitizer))
+class HandlerEntryPointFaultTest : public testing::TestWithParam<uintptr_t> {};
+
+TEST_P(HandlerEntryPointFaultTest, FaultAtEntryResetsToDefault) {
+  const uintptr_t handler_offset = GetParam();
+  constexpr size_t kAltStackSize = 0x10000;
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  // Allocate a shared sigaltstack initialized to zero so the parent can inspect how many signal
+  // frames were pushed before the child terminated.
+  auto altstack = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, kAltStackSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+
+  auto fault_page = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
+  test_helper::ForkHelper helper;
+  helper.ExpectSignal(SIGSEGV);
+  helper.RunInForkedProcess([&] {
+    ASSERT_EQ(setup_sigaltstack_at(reinterpret_cast<uintptr_t>(altstack.mapping()), kAltStackSize),
+              0);
+
+    struct sigaction sa = {};
+    sa.sa_handler = reinterpret_cast<sighandler_t>(
+        reinterpret_cast<uintptr_t>(fault_page.mapping()) | handler_offset);
+    sa.sa_flags = SA_ONSTACK;
+    ASSERT_EQ(sigaction(SIGSEGV, &sa, nullptr), 0);
+
+    // Trigger an initial SIGSEGV. The kernel will push one frame onto `altstack`, mask SIGSEGV,
+    // and jump to `sa.sa_handler`, which immediately faults on instruction fetch at its own entry
+    // point.
+    *reinterpret_cast<volatile char *>(fault_page.mapping()) = 0;
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  const auto *bytes = static_cast<const uint8_t *>(altstack.mapping());
+  const bool upper_half_written = std::any_of(bytes + kAltStackSize / 2, bytes + kAltStackSize,
+                                              [](uint8_t b) { return b != 0; });
+  const bool lower_half_written =
+      std::any_of(bytes, bytes + kAltStackSize / 2, [](uint8_t b) { return b != 0; });
+
+  // Without SA_NODEFER, SIGSEGV is masked upon entering the handler, so the fault at the
+  // handler's entry point must reset SIGSEGV to SIG_DFL immediately after writing a single frame
+  // near the top of `altstack`.
+  EXPECT_TRUE(upper_half_written);
+  EXPECT_FALSE(lower_half_written);
+}
+
+TEST_P(HandlerEntryPointFaultTest, FaultAtEntryWithNodeferExhaustsAltStack) {
+  const uintptr_t handler_offset = GetParam();
+  constexpr size_t kAltStackSize = 0x10000;
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  auto altstack = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, kAltStackSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+
+  auto fault_page = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
+  test_helper::ForkHelper helper;
+  helper.ExpectSignal(SIGSEGV);
+  helper.RunInForkedProcess([&] {
+    ASSERT_EQ(setup_sigaltstack_at(reinterpret_cast<uintptr_t>(altstack.mapping()), kAltStackSize),
+              0);
+
+    struct sigaction sa = {};
+    sa.sa_handler = reinterpret_cast<sighandler_t>(
+        reinterpret_cast<uintptr_t>(fault_page.mapping()) | handler_offset);
+    sa.sa_flags = SA_ONSTACK | SA_NODEFER;
+    ASSERT_EQ(sigaction(SIGSEGV, &sa, nullptr), 0);
+
+    // Trigger an initial SIGSEGV. With SA_NODEFER, SIGSEGV remains unmasked upon handler entry, so
+    // the kernel recursively pushes frames down `altstack` until `altstack` overflows and SIGSEGV
+    // is reset to SIG_DFL.
+    *reinterpret_cast<volatile char *>(fault_page.mapping()) = 0;
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  const auto *bytes = static_cast<const uint8_t *>(altstack.mapping());
+  const bool upper_half_written = std::any_of(bytes + kAltStackSize / 2, bytes + kAltStackSize,
+                                              [](uint8_t b) { return b != 0; });
+  const bool lower_half_written =
+      std::any_of(bytes, bytes + kAltStackSize / 2, [](uint8_t b) { return b != 0; });
+
+  EXPECT_TRUE(upper_half_written);
+  EXPECT_TRUE(lower_half_written);
+}
+
+#if defined(__arm__)
+constexpr uintptr_t kHandlerEntryOffsets[] = {0U, 1U};
+#else
+constexpr uintptr_t kHandlerEntryOffsets[] = {0U};
+#endif
+
+INSTANTIATE_TEST_SUITE_P(SignalHandling, HandlerEntryPointFaultTest,
+                         testing::ValuesIn(kHandlerEntryOffsets),
+                         [](const testing::TestParamInfo<uintptr_t> &info) {
+                           return info.param == 1 ? "ThumbEntry" : "AlignedEntry";
+                         });
+#endif  // (!__has_feature(address_sanitizer))
 
 }  // namespace

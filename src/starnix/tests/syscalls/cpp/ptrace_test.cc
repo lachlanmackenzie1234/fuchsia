@@ -1369,7 +1369,12 @@ TEST(PtraceTest, PtraceAttachesToParentThread) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
-__attribute__((noinline)) void FunctionToBreak() {
+#if defined(__arm__)
+__attribute__((noinline, target("arm")))
+#else
+__attribute__((noinline))
+#endif
+void FunctionToBreak() {
   // Placeholder instruction to be replaced with a breakpoint by tracer.
   // Depending on the architecture, `nop` can be as small as 1 byte, so pad the function with
   // multiple `nop` instructions to ensure that the breakpoint does not overwrite the next
@@ -1383,6 +1388,38 @@ __attribute__((noinline)) void FunctionToBreak() {
       "nop\n"
       "nop\n"
       "nop\n");
+}
+
+long PokeBreakpoint(pid_t child_pid, const void *breakpoint_addr) {
+  errno = 0;
+  long original_data = ptrace(PTRACE_PEEKDATA, child_pid, breakpoint_addr, 0);
+  if (original_data == -1 && errno != 0) {
+    kill(child_pid, SIGKILL);
+    ADD_FAILURE() << "PTRACE_PEEKDATA failed: " << strerror(errno) << "(" << errno << ")";
+    return -1;
+  }
+
+  // Depending on the architecture and bitness, the breakpoint instruction could be smaller than
+  // word length. Read original word, and overwrite the breakpoint instruction to it but keep the
+  // rest as is.
+#if defined(__x86_64__)
+  const long break_insn = 0xCC;
+  long breakpoint_data = (original_data & ~0xFFL) | break_insn;
+#elif defined(__aarch64__)
+  const long break_insn = 0xD4200000;
+  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+#elif defined(__arm__)
+  const long break_insn = 0xE1200070;
+  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+#elif defined(__riscv)
+  const long break_insn = 0x00100073;
+  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+#else
+#error "Unsupported architecture"
+#endif
+
+  SAFE_SYSCALL(ptrace(PTRACE_POKEDATA, child_pid, breakpoint_addr, breakpoint_data));
+  return original_data;
 }
 
 // Sets a breakpoint in the child process using PTRACE_POKEDATA and expects that the child process
@@ -1409,34 +1446,10 @@ class SoftwareBreakpointTest : public ::testing::Test {
  protected:
   // Set a breakpoint at the given address in the process with ptrace POKEDATA.
   void SetBreakpointAndContinue() const {
-    const void *breakpoint_addr = reinterpret_cast<void *>(&FunctionToBreak);
-    errno = 0;
-    long original_data = ptrace(PTRACE_PEEKDATA, child_pid_, breakpoint_addr, 0);
-    if (original_data == -1 && errno != 0) {
-      kill(child_pid_, SIGKILL);
-      FAIL() << "PTRACE_PEEKDATA failed: " << strerror(errno) << "(" << errno << ")";
+    PokeBreakpoint(child_pid_, reinterpret_cast<void *>(&FunctionToBreak));
+    if (::testing::Test::HasFailure()) {
+      return;
     }
-
-    // Depending on the architecture and bitness, the breakpoint instruction could be smaller than
-    // word length. Read original word, and overwrite the breakpoint instruction to it but keep the
-    // rest as is.
-#if defined(__x86_64__)
-    const long break_insn = 0xCC;
-    long breakpoint_data = (original_data & ~0xFFL) | break_insn;
-#elif defined(__aarch64__)
-    const long break_insn = 0xD4200000;
-    long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
-#elif defined(__arm__)
-    const long break_insn = 0xE1200070;
-    long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
-#elif defined(__riscv)
-    const long break_insn = 0x00100073;
-    long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
-#else
-#error "Unsupported architecture"
-#endif
-
-    SAFE_SYSCALL(ptrace(PTRACE_POKEDATA, child_pid_, breakpoint_addr, breakpoint_data));
     SAFE_SYSCALL(ptrace(PTRACE_CONT, child_pid_, 0, 0));
   }
 
@@ -2772,6 +2785,114 @@ TEST(PtraceTest, SyscallExecutesSideEffectBeforeSigstop) {
   // Detach tracee and wake it from group-stop with SIGCONT so it exits cleanly.
   ASSERT_THAT(ptrace(PTRACE_DETACH, tracee_pid, nullptr, 0), SyscallSucceeds());
   SAFE_SYSCALL(kill(tracee_pid, SIGCONT));
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+// Verifies that replacing a forced hardware exception signal (SIGTRAP from a software breakpoint)
+// with a blocked signal via PTRACE_CONT does not bypass the tracee's signal mask or reset its
+// handler to SIG_DFL.
+TEST(PtraceTest, ReplaceForcedSignalWithBlockedSignal) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  pid_t child_pid = helper.RunInForkedProcess([] {
+    static volatile sig_atomic_t sigusr1_delivered = 0;
+    struct sigaction sa = {};
+    sa.sa_handler = [](int) { sigusr1_delivered = 1; };
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    SAFE_SYSCALL(sigprocmask(SIG_BLOCK, &mask, nullptr));
+
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+    SAFE_SYSCALL(raise(SIGSTOP));
+
+    FunctionToBreak();
+
+    // SIGUSR1 is blocked, so the injected replacement signal must remain pending rather than
+    // being force-delivered or resetting the handler to SIG_DFL.
+    ASSERT_EQ(sigusr1_delivered, 0);
+    sigset_t pending;
+    sigemptyset(&pending);
+    SAFE_SYSCALL(sigpending(&pending));
+    ASSERT_TRUE(sigismember(&pending, SIGUSR1));
+
+    SAFE_SYSCALL(sigprocmask(SIG_UNBLOCK, &mask, nullptr));
+    ASSERT_EQ(sigusr1_delivered, 1);
+  });
+
+  int status = 0;
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+
+  const void *breakpoint_addr = reinterpret_cast<const void *>(&FunctionToBreak);
+  long original_data = PokeBreakpoint(child_pid, breakpoint_addr);
+  ASSERT_FALSE(::testing::Test::HasFailure());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+
+  // Wait for the forced SIGTRAP from the breakpoint exception.
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP);
+
+  // Restore original instruction and replace the forced SIGTRAP with SIGUSR1.
+  ASSERT_THAT(ptrace(PTRACE_POKEDATA, child_pid, breakpoint_addr, original_data),
+              SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, SIGUSR1), SyscallSucceeds());
+
+  // When the child unblocks SIGUSR1 via sigprocmask(SIG_UNBLOCK), it enters signal-delivery-stop.
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGUSR1);
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, SIGUSR1), SyscallSucceeds());
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+// Verifies that replacing a forced hardware exception signal (SIGTRAP from a software breakpoint)
+// with an ignored signal (SIG_IGN) via PTRACE_CONT does not reset its disposition to SIG_DFL.
+TEST(PtraceTest, ReplaceForcedSignalWithIgnoredSignal) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  pid_t child_pid = helper.RunInForkedProcess([] {
+    struct sigaction sa = {};
+    sa.sa_handler = SIG_IGN;
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+    SAFE_SYSCALL(raise(SIGSTOP));
+
+    FunctionToBreak();
+
+    // SIGUSR1 should have been ignored and its disposition must still be SIG_IGN.
+    struct sigaction current_sa = {};
+    SAFE_SYSCALL(sigaction(SIGUSR1, nullptr, &current_sa));
+    ASSERT_EQ(current_sa.sa_handler, SIG_IGN);
+    sigset_t pending;
+    sigemptyset(&pending);
+    SAFE_SYSCALL(sigpending(&pending));
+    ASSERT_FALSE(sigismember(&pending, SIGUSR1));
+  });
+
+  int status = 0;
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+
+  const void *breakpoint_addr = reinterpret_cast<const void *>(&FunctionToBreak);
+  long original_data = PokeBreakpoint(child_pid, breakpoint_addr);
+  ASSERT_FALSE(::testing::Test::HasFailure());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+
+  // Wait for the forced SIGTRAP from the breakpoint exception.
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP);
+
+  // Restore original instruction and replace the forced SIGTRAP with SIGUSR1.
+  ASSERT_THAT(ptrace(PTRACE_POKEDATA, child_pid, breakpoint_addr, original_data),
+              SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, SIGUSR1), SyscallSucceeds());
 
   EXPECT_TRUE(helper.WaitForChildren());
 }
