@@ -204,14 +204,10 @@ bool AccumulateMaxPaddingBytesFromHeightLowerBound(
 
   // max width based on height_lower_bound, space within buffer_settings_size_bytes, and
   // bytes_per_row_divisor
-  max_width_upper_bound =
-      CheckMin(max_width_upper_bound,
-               CheckDiv(CheckDiv(buffer_settings_size_bytes, stride_bytes_per_width_pixel),
-                        height_lower_bound));
-  max_width_upper_bound =
-      CheckDiv(CheckRoundDown(CheckMul(max_width_upper_bound, stride_bytes_per_width_pixel),
-                              constraints_bytes_per_row_divisor),
-               stride_bytes_per_width_pixel);
+  auto max_bytes_per_row_upper_bound = CheckRoundDown(
+      CheckDiv(buffer_settings_size_bytes, height_lower_bound), constraints_bytes_per_row_divisor);
+  max_width_upper_bound = CheckMin(
+      max_width_upper_bound, CheckDiv(max_bytes_per_row_upper_bound, stride_bytes_per_width_pixel));
 
   // account for max_size.width
   max_width_upper_bound = CheckMin(max_width_upper_bound, constraints_max_size_width);

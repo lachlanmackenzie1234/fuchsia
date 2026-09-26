@@ -3489,7 +3489,7 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
     return false;
   }
   if (constraints.pad_for_block_size()->width() > 1 ||
-      constraints.pad_for_block_size()->width() > 1) {
+      constraints.pad_for_block_size()->height() > 1) {
     if (*constraints.pixel_format() == fuchsia_images2::PixelFormat::kDoNotCare) {
       LogError(FROM_HERE,
                "pad_for_block_size not currently supported with PixelFormat::kDoNotCare");
@@ -3936,7 +3936,12 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormat(
       std::max(acc->pad_for_block_size()->width(), c.pad_for_block_size()->width());
   acc->pad_for_block_size()->height() =
       std::max(acc->pad_for_block_size()->height(), c.pad_for_block_size()->height());
-  if (acc->pad_for_block_size()->width() > 1) {
+  // When pad_for_block_size width > 1 or height > 1, we require that bytes_per_row_divisor ensure
+  // a bytes_per_row that aligns to a block width (in bytes) boundary even if the block width is 1.
+  //
+  // In other words, padding for block size is considered active when either width or height is more
+  // than 1.
+  if (acc->pad_for_block_size()->width() > 1 || acc->pad_for_block_size()->height() > 1) {
     auto pixel_format_and_modifier =
         PixelFormatAndModifier(*acc->pixel_format(), *acc->pixel_format_modifier());
     uint32_t stride_bytes_per_width_pixel =
