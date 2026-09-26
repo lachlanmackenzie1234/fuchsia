@@ -136,9 +136,9 @@ if [[ -f "$fx_resultstore_config" ]]; then
   # shellcheck source=/dev/null
   source "$fx_resultstore_config"
   # Unify and normalize into CONFIG_RESULTSTORE_ENABLED
-  if [[ -n "${resultstore}" ]]; then
+  if [[ -n "${resultstore:-}" ]]; then
     CONFIG_RESULTSTORE_ENABLED="${resultstore}"
-  elif [[ "${RESULTSTORE_ENABLED}" -eq 1 ]]; then
+  elif [[ "${RESULTSTORE_ENABLED:-0}" -eq 1 ]]; then
     CONFIG_RESULTSTORE_ENABLED="all"
   fi
   unset RESULTSTORE_ENABLED
