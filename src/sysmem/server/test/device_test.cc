@@ -502,5 +502,164 @@ TEST_F(FakeDdkSysmem, RegisterHeap_SecureHeap_Denied) {
   });
 }
 
+TEST_F(FakeDdkSysmem, PadBeyondImageSizeBytesOverflowFailure) {
+  auto collection_client = AllocateNonSharedCollection();
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count() = 1;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  bmc.min_size_bytes() = 0x80000000;
+  bmc.cpu_domain_supported() = true;
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  auto& ifc = constraints.image_format_constraints().emplace();
+  ifc.emplace_back();
+  ifc.back().pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+  ifc.back().color_spaces() = {fuchsia_images2::ColorSpace::kSrgb};
+  ifc.back().min_size() = {1, 1};
+  ifc.back().max_size() = {100, 100};
+  ifc.back().size_alignment() = {1, 1};
+  ifc.back().min_bytes_per_row() = 4;
+  ifc.back().max_bytes_per_row() = 400;
+  ifc.back().bytes_per_row_divisor() = 1;
+  ifc.back().max_width_times_height() = 10000;
+  // 0x80000000 + 0x80000000 = 0x100000000 which overflows uint32.
+  ifc.back().pad_beyond_image_size_bytes() = 0x80000000;
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_FALSE(wait_result.is_ok());
+}
+
+TEST_F(FakeDdkSysmem, TotalSizeBytesOverflowFailure) {
+  auto collection_client = AllocateNonSharedCollection();
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count() = 2;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  // 0x8000000000000000 * 2 = 0 in 64-bit arithmetic
+  bmc.min_size_bytes() = 0x8000000000000000ULL;
+  bmc.cpu_domain_supported() = true;
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_FALSE(wait_result.is_ok());
+}
+
+TEST_F(FakeDdkSysmem, ZeroBytesPerRowDivisor) {
+  auto collection_client = AllocateNonSharedCollection();
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count() = 1;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  bmc.min_size_bytes() = zx_system_get_page_size();
+  bmc.cpu_domain_supported() = true;
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  auto& ifc = constraints.image_format_constraints().emplace();
+  ifc.emplace_back();
+  ifc[0].pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+  ifc[0].pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+  ifc[0].bytes_per_row_divisor() = 0;
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  // Should fail allocation cleanly without crashing sysmem.
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_TRUE(!wait_result.is_ok());
+}
+
+TEST_F(FakeDdkSysmem, OverflowPadForBlockSize) {
+  auto collection_client = AllocateNonSharedCollection();
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count() = 1;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  bmc.min_size_bytes() = zx_system_get_page_size();
+  bmc.cpu_domain_supported() = true;
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  auto& ifc = constraints.image_format_constraints().emplace();
+  ifc.emplace_back();
+  ifc[0].pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+  ifc[0].pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+  ifc[0].pad_for_block_size() = fuchsia_math::SizeU{0x40000000, 1};
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  // Should fail allocation cleanly without crashing sysmem.
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_TRUE(!wait_result.is_ok());
+}
+
+TEST_F(FakeDdkSysmem, OverflowMinSizeWidthRoundUp) {
+  auto collection_client = AllocateNonSharedCollection();
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count() = 1;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  bmc.min_size_bytes() = zx_system_get_page_size();
+  bmc.cpu_domain_supported() = true;
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  auto& ifc = constraints.image_format_constraints().emplace();
+  ifc.emplace_back();
+  ifc[0].pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+  ifc[0].pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+  ifc[0].min_size() = fuchsia_math::SizeU{0xFFFFFFFF, 100};
+  ifc[0].size_alignment() = fuchsia_math::SizeU{2, 1};
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  // Should fail allocation cleanly without crashing sysmem.
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_TRUE(!wait_result.is_ok());
+}
+
+TEST_F(FakeDdkSysmem, OverflowBytesPerRowDivisorRoundUp) {
+  auto collection_client = AllocateNonSharedCollection();
+
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count() = 1;
+  auto& bmc = constraints.buffer_memory_constraints().emplace();
+  bmc.min_size_bytes() = zx_system_get_page_size();
+  bmc.cpu_domain_supported() = true;
+  constraints.usage().emplace().cpu() = fuchsia_sysmem::kCpuUsageRead;
+
+  auto& ifc = constraints.image_format_constraints().emplace();
+  ifc.emplace_back();
+  ifc[0].pixel_format() = fuchsia_images2::PixelFormat::kR8G8B8A8;
+  ifc[0].pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+  ifc[0].min_bytes_per_row() = 0xFFFFFF00;
+  ifc[0].bytes_per_row_divisor() = 256;
+
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection(std::move(collection_client));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  EXPECT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  // Should fail allocation cleanly without crashing sysmem.
+  auto wait_result = collection->WaitForAllBuffersAllocated();
+  EXPECT_TRUE(!wait_result.is_ok());
+}
+
 }  // namespace
 }  // namespace sysmem_service

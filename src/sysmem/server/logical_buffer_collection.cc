@@ -54,9 +54,7 @@
 #include "src/sysmem/server/usage_pixel_format_cost.h"
 
 using safemath::CheckAdd;
-using safemath::CheckDiv;
 using safemath::CheckMul;
-using safemath::CheckSub;
 
 namespace sysmem_service {
 
@@ -290,8 +288,9 @@ fit::result<zx_status_t, bool> IsColorSpaceArrayDoNotCare(
 }
 
 [[nodiscard]] fit::result<std::monostate, uint32_t> LeastCommonMultiple(uint32_t a, uint32_t b) {
-  ZX_DEBUG_ASSERT(a != 0);
-  ZX_DEBUG_ASSERT(b != 0);
+  if (a == 0 || b == 0) {
+    return fit::error(std::monostate{});
+  }
   // this computes the least common multiple without factoring the numbers; by doing this with
   // uint64_t, we avoid undefined behavior of std::lcm given that a and b are uint32_t, but then we
   // need to check whether the result fits in uint32_t
@@ -3264,6 +3263,11 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
   // next row of pixels' offset from start of buffer and memory address of the start of the next row
   // is odd).
   FIELD_DEFAULT_1(constraints, bytes_per_row_divisor);
+  if (*constraints.bytes_per_row_divisor() == 0) {
+    // instead, leave field un-set or set to a value >= 1
+    LogError(FROM_HERE, "bytes_per_row_divisor set to 0 not permitted");
+    return false;
+  }
   FIELD_DEFAULT_FALSE(constraints, require_bytes_per_row_at_pixel_boundary);
 
   FIELD_DEFAULT_1(constraints, start_offset_divisor);
@@ -3333,28 +3337,54 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
   // Avoid requiring clients to round up if the client is just using a min as-is. This must be done
   // after adjustments to the divisor(s) and alignment(s) (above) and before min > max is checked
   // for (below).
-  constraints.min_size()->width() =
-      fbl::round_up(constraints.min_size()->width(), constraints.size_alignment()->width());
-  constraints.min_size()->height() =
-      fbl::round_up(constraints.min_size()->height(), constraints.size_alignment()->height());
-  constraints.min_bytes_per_row() =
-      fbl::round_up(*constraints.min_bytes_per_row(), *constraints.bytes_per_row_divisor());
+  if (!CheckRoundUp(constraints.min_size()->width(), constraints.size_alignment()->width())
+           .AssignIfValid(&constraints.min_size()->width())) {
+    LogError(FROM_HERE, "min_size.width round_up overflow");
+    return false;
+  }
+  if (!CheckRoundUp(constraints.min_size()->height(), constraints.size_alignment()->height())
+           .AssignIfValid(&constraints.min_size()->height())) {
+    LogError(FROM_HERE, "min_size.height round_up overflow");
+    return false;
+  }
+  uint32_t min_bytes_per_row;
+  if (!CheckRoundUp(*constraints.min_bytes_per_row(), *constraints.bytes_per_row_divisor())
+           .AssignIfValid(&min_bytes_per_row)) {
+    LogError(FROM_HERE, "min_bytes_per_row round_up overflow");
+    return false;
+  }
+  constraints.min_bytes_per_row() = min_bytes_per_row;
 
   // Avoid claiming a max is supported if that max isn't conformant with divisor(s) and
   // alignment(s). The value 0xFFFFFFFF is left alone, despite it being odd, since that value is
   // documented as the default if there's no explicit limit and some clients may check for and/or
   // expect 0xFFFFFFFF when no participant specifies a max.
   if (constraints.max_size()->width() != std::numeric_limits<uint32_t>::max()) {
-    constraints.max_size()->width() =
-        fbl::round_down(constraints.max_size()->width(), constraints.size_alignment()->width());
+    uint32_t max_width;
+    if (!CheckRoundDown(constraints.max_size()->width(), constraints.size_alignment()->width())
+             .AssignIfValid(&max_width)) {
+      LogError(FROM_HERE, "max_size.width round_down overflow");
+      return false;
+    }
+    constraints.max_size()->width() = max_width;
   }
   if (constraints.max_size()->height() != std::numeric_limits<uint32_t>::max()) {
-    constraints.max_size()->height() =
-        fbl::round_down(constraints.max_size()->height(), constraints.size_alignment()->height());
+    uint32_t max_height;
+    if (!CheckRoundDown(constraints.max_size()->height(), constraints.size_alignment()->height())
+             .AssignIfValid(&max_height)) {
+      LogError(FROM_HERE, "max_size.height round_down overflow");
+      return false;
+    }
+    constraints.max_size()->height() = max_height;
   }
   if (constraints.max_bytes_per_row() != std::numeric_limits<uint32_t>::max()) {
-    constraints.max_bytes_per_row() =
-        fbl::round_down(*constraints.max_bytes_per_row(), *constraints.bytes_per_row_divisor());
+    uint32_t max_bytes_per_row;
+    if (!CheckRoundDown(*constraints.max_bytes_per_row(), *constraints.bytes_per_row_divisor())
+             .AssignIfValid(&max_bytes_per_row)) {
+      LogError(FROM_HERE, "max_bytes_per_row round_down overflow");
+      return false;
+    }
+    constraints.max_bytes_per_row() = max_bytes_per_row;
   }
 
   if (!constraints.color_spaces().has_value()) {
@@ -3397,12 +3427,6 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
   }
   if (!IsNonZeroPowerOf2(constraints.display_rect_alignment()->height())) {
     LogError(FROM_HERE, "non-power-of-2 display_rect_alignment.height not supported");
-    return false;
-  }
-
-  if (*constraints.bytes_per_row_divisor() == 0) {
-    // instead, leave field un-set or set to a value >= 1
-    LogError(FROM_HERE, "bytes_per_row_divisor set to 0 not permitted");
     return false;
   }
 
@@ -3946,8 +3970,12 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormat(
         PixelFormatAndModifier(*acc->pixel_format(), *acc->pixel_format_modifier());
     uint32_t stride_bytes_per_width_pixel =
         ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier);
-    uint32_t block_width_in_bytes =
-        stride_bytes_per_width_pixel * acc->pad_for_block_size()->width();
+    uint32_t block_width_in_bytes = 0;
+    if (!CheckMul(stride_bytes_per_width_pixel, acc->pad_for_block_size()->width())
+             .AssignIfValid(&block_width_in_bytes)) {
+      LogError(FROM_HERE, "stride_bytes_per_width_pixel * pad_for_block_size.width overflow");
+      return false;
+    }
     // This is to avoid a block-using producer writing into valid pixels at the start of the next
     // row. In other words, each "pixel" in each block needs its own memory location. We apply this
     // constraint regardless of whether the block-using participant is writing or only reading. In
@@ -4300,18 +4328,26 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
     for (auto& required_max_size : *local_required_max_size_list) {
       // We use required_max_size.width because that's the max width that the producer (or
       // initiator) wants these buffers to be able to hold.
-      min_image.size()->width() = fbl::round_up(
-          std::max(image_format_constraints.min_size()->width(), required_max_size.width()),
-          image_format_constraints.size_alignment()->width());
+      if (!CheckRoundUp(
+               std::max(image_format_constraints.min_size()->width(), required_max_size.width()),
+               image_format_constraints.size_alignment()->width())
+               .AssignIfValid(&min_image.size()->width())) {
+        LogError(FROM_HERE, "size_alignment.width caused size.width round_up overflow");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
       if (min_image.size()->width() > image_format_constraints.max_size()->width()) {
         LogError(FROM_HERE, "size_alignment.width caused size.width > max_size.width");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
       }
       // We use required_max_size.height because that's the max height that the producer (or
       // initiator) needs these buffers to be able to hold.
-      min_image.size()->height() = fbl::round_up(
-          std::max(image_format_constraints.min_size()->height(), required_max_size.height()),
-          image_format_constraints.size_alignment()->height());
+      if (!CheckRoundUp(
+               std::max(image_format_constraints.min_size()->height(), required_max_size.height()),
+               image_format_constraints.size_alignment()->height())
+               .AssignIfValid(&min_image.size()->height())) {
+        LogError(FROM_HERE, "size_alignment.height caused size.height round_up overflow");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
       if (min_image.size()->height() > image_format_constraints.max_size()->height()) {
         LogError(FROM_HERE, "size_alignment.height caused size.height > max_size.height");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
@@ -4324,16 +4360,22 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
         LogError(FROM_HERE, "stride_bytes_per_width_pixel * size.width failed");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
       }
-      // TODO: Make/use a safemath-y version of fbl::round_up().
-      min_image.bytes_per_row() = fbl::round_up(
-          std::max(one_row_non_padding_bytes, *image_format_constraints.min_bytes_per_row()),
-          *image_format_constraints.bytes_per_row_divisor());
+      uint32_t bytes_per_row;
+      if (!CheckRoundUp(
+               std::max(one_row_non_padding_bytes, *image_format_constraints.min_bytes_per_row()),
+               *image_format_constraints.bytes_per_row_divisor())
+               .AssignIfValid(&bytes_per_row)) {
+        LogError(FROM_HERE, "bytes_per_row_divisor caused bytes_per_row round_up overflow");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+      min_image.bytes_per_row() = bytes_per_row;
       if (*min_image.bytes_per_row() > *image_format_constraints.max_bytes_per_row()) {
         LogError(FROM_HERE,
                  "bytes_per_row_divisor caused bytes_per_row > "
                  "max_bytes_per_row");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
       }
+
       uint32_t min_image_width_times_height;
       if (!CheckMul(min_image.size()->width(), min_image.size()->height())
                .AssignIfValid(&min_image_width_times_height)) {
@@ -4391,8 +4433,13 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
   // after this below to ensure that producers don't eat into the padding with their valid image
   // data.
   //
+  if (min_size_bytes > kMaxSizeBytesPerBuffer) {
+    LogError(FROM_HERE, "min_size_bytes > kMaxSizeBytesPerBuffer");
+    return fpromise::error(ZX_ERR_NO_MEMORY);
+  }
+
   // Don't modify buffer_settings.size_bytes() again below here.
-  buffer_settings.size_bytes() = safe_cast<uint32_t>(min_size_bytes);
+  buffer_settings.size_bytes() = min_size_bytes;
 
   // These pad_* checks happen after min_size_bytes == 0 check above because padding is not allowed
   // to be the only reason that buffers would be non-zero size, and after buffer_settings.size_bytes
@@ -4445,8 +4492,14 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
     // The worst case for pad_beyond_image_size_bytes is simply to add those bytes to
     // BufferMemorySettings.size_bytes, because by definition no ImageFormatImageSize is allowed to
     // exceed BufferMemorySettings.size_bytes.
-    uint64_t size_bytes_plus_padding_beyond_image_bytes =
-        *buffer_settings.size_bytes() + *image_format_constraints.pad_beyond_image_size_bytes();
+    uint64_t size_bytes_plus_padding_beyond_image_bytes;
+    if (!CheckAdd(safe_cast<uint64_t>(*buffer_settings.size_bytes()),
+                  safe_cast<uint64_t>(*image_format_constraints.pad_beyond_image_size_bytes()))
+             .AssignIfValid(&size_bytes_plus_padding_beyond_image_bytes)) {
+      LogError(FROM_HERE,
+               "BufferMemorySettings.size_bytes + pad_beyond_image_size_bytes overflowed uint64");
+      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+    }
     if (size_bytes_plus_padding_beyond_image_bytes > min_size_bytes) {
       if (size_bytes_plus_padding_beyond_image_bytes > max_size_bytes) {
         LogError(
@@ -4458,23 +4511,21 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
     }
   }
 
-  buffer_settings.raw_vmo_size() = fbl::round_up(min_size_bytes, zx_system_get_page_size());
-  if (*buffer_settings.raw_vmo_size() < min_size_bytes) {
+  uint64_t raw_vmo_size;
+  if (!CheckRoundUp(min_size_bytes, safe_cast<uint64_t>(zx_system_get_page_size()))
+           .AssignIfValid(&raw_vmo_size)) {
     LogError(FROM_HERE, "raw_vmo_size overflows when rounding to multiple of page_size");
     return fpromise::error(ZX_ERR_NO_MEMORY);
   }
+  buffer_settings.raw_vmo_size() = raw_vmo_size;
 
   // For purposes of enforcing max_size_bytes, we intentionally don't care that a VMO can only be a
   // multiple of page size.
-
-  uint64_t total_size_bytes = min_size_bytes * result.buffers()->size();
-  if (total_size_bytes > kMaxTotalSizeBytesPerCollection) {
-    LogError(FROM_HERE, "total_size_bytes > kMaxTotalSizeBytesPerCollection");
-    return fpromise::error(ZX_ERR_NO_MEMORY);
-  }
-
-  if (min_size_bytes > kMaxSizeBytesPerBuffer) {
-    LogError(FROM_HERE, "min_size_bytes > kMaxSizeBytesPerBuffer");
+  uint64_t total_size_bytes;
+  if (!CheckMul(min_size_bytes, safe_cast<uint64_t>(result.buffers()->size()))
+           .AssignIfValid(&total_size_bytes) ||
+      total_size_bytes > kMaxTotalSizeBytesPerCollection) {
+    LogError(FROM_HERE, "total_size_bytes > kMaxTotalSizeBytesPerCollection or overflowed");
     return fpromise::error(ZX_ERR_NO_MEMORY);
   }
   ZX_DEBUG_ASSERT(min_size_bytes <= std::numeric_limits<uint32_t>::max());

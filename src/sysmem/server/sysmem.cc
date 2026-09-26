@@ -74,12 +74,6 @@ constexpr int64_t kDefaultContiguousMemorySize = -5;
 
 constexpr char kSysmemConfigFilename[] = "/sysmem-config/config.sysmem_config_persistent_fidl";
 
-// fbl::round_up() doesn't work on signed types.
-template <typename T>
-T AlignUp(T value, T divisor) {
-  return (value + divisor - 1) / divisor * divisor;
-}
-
 // Helper function to build owned HeapProperties table with coherency domain support.
 fuchsia_hardware_sysmem::HeapProperties BuildHeapPropertiesWithCoherencyDomainSupport(
     bool cpu_supported, bool ram_supported, bool inaccessible_supported, bool need_clear,
@@ -599,9 +593,16 @@ zx::result<> Sysmem::Initialize(const CreateArgs& create_args) {
 
   constexpr int64_t kMinProtectedAlignment = 64 * 1024;
   assert(kMinProtectedAlignment % zx_system_get_page_size() == 0);
-  contiguous_memory_size =
-      AlignUp(contiguous_memory_size, safe_cast<int64_t>(zx_system_get_page_size()));
-  protected_memory_size = AlignUp(protected_memory_size, kMinProtectedAlignment);
+  if (!CheckRoundUp(contiguous_memory_size, safe_cast<int64_t>(zx_system_get_page_size()))
+           .AssignIfValid(&contiguous_memory_size)) {
+    LOG(ERROR, "contiguous_memory_size overflow during alignment");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  if (!CheckRoundUp(protected_memory_size, kMinProtectedAlignment)
+           .AssignIfValid(&protected_memory_size)) {
+    LOG(ERROR, "protected_memory_size overflow during alignment");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
 
   auto heap = sysmem::MakeHeap(bind_fuchsia_sysmem_heap::HEAP_TYPE_SYSTEM_RAM, 0);
   RunSyncOnLoop([this, &heap] {
