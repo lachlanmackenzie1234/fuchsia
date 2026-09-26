@@ -18,16 +18,17 @@ CodecBuffer::CodecBuffer(CodecImpl* parent, Info buffer_info, CodecVmoRange vmo_
   zx_status_t get_info_status =
       vmo_range_.vmo().get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr);
   ZX_ASSERT(get_info_status == ZX_OK);
-  vmo_size_bytes_ = vmo_info.size_bytes;
+  raw_vmo_size_ = vmo_info.size_bytes;
+  ZX_ASSERT(vmo_offset() <= raw_vmo_size_ && size() <= raw_vmo_size_ - vmo_offset());
   zx_status_t vmo_status =
-      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &vmo_);
+      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, raw_vmo_size_, &vmo_);
   ZX_ASSERT(vmo_status == ZX_OK);
   zx_status_t parent_status =
-      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &parent_vmo_);
+      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, raw_vmo_size_, &parent_vmo_);
   ZX_ASSERT(parent_status == ZX_OK);
   zx::vmo until_remove_started_child_vmo;
   zx_status_t until_remove_started_status = parent_vmo_.create_child(
-      ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &until_remove_started_child_vmo);
+      ZX_VMO_CHILD_SLICE, 0, raw_vmo_size_, &until_remove_started_child_vmo);
   ZX_ASSERT(until_remove_started_status == ZX_OK);
   {
     std::scoped_lock lock(until_remove_started_child_vmo_lock_);
@@ -42,11 +43,10 @@ CodecBuffer::~CodecBuffer() {
   zx_status_t status;
   if (is_mapped_) {
     ZX_DEBUG_ASSERT(buffer_base_);
+    uint64_t adjusted_vmo_offset = fbl::round_down(vmo_offset(), zx_system_get_page_size());
     uintptr_t unmap_address =
         fbl::round_down(reinterpret_cast<uintptr_t>(base()), zx_system_get_page_size());
-    size_t unmap_len =
-        fbl::round_up(reinterpret_cast<uintptr_t>(base() + size()), zx_system_get_page_size()) -
-        unmap_address;
+    size_t unmap_len = raw_vmo_size_ - adjusted_vmo_offset;
     status = zx::vmar::root_self()->unmap(unmap_address, unmap_len);
     if (status != ZX_OK) {
       parent_->FailFatal("CodecBuffer::~CodecBuffer() failed to unmap() Buffer - status: %d",
@@ -83,11 +83,11 @@ bool CodecBuffer::Map() {
 
   // We must page-align the mapping (since HW can only map at page granularity).  This means the
   // mapping may include up to PAGE_SIZE - 1 bytes before vmo_usable_start, and up to
-  // PAGE_SIZE - 1 bytes after vmo_usable_start + vmo_usable_size.  The usage of the mapping is
-  // expected to stay within CodecBuffer::base() to CodecBuffer::base() + vmo_usable_size.
+  // raw_vmo_size_.  The meaningful content usage of the mapping is expected to stay within
+  // CodecBuffer::base() to CodecBuffer::base() + size(), while padding-only accesses may extend up
+  // to raw_vmo_size_.
   uint64_t adjusted_vmo_offset = fbl::round_down(vmo_offset(), zx_system_get_page_size());
-  size_t len =
-      fbl::round_up(vmo_offset() + size(), zx_system_get_page_size()) - adjusted_vmo_offset;
+  size_t len = raw_vmo_size_ - adjusted_vmo_offset;
   zx_status_t res = zx::vmar::root_self()->map(flags, 0, vmo(), adjusted_vmo_offset, len, &tmp);
   if (res != ZX_OK) {
     LOG(ERROR, "Failed to map %zu byte buffer vmo (res %d)", size(), res);
@@ -121,6 +121,8 @@ zx_paddr_t CodecBuffer::physical_base() const {
 }
 
 size_t CodecBuffer::size() const { return vmo_range_.size(); }
+
+size_t CodecBuffer::raw_vmo_size() const { return raw_vmo_size_; }
 
 const zx::vmo& CodecBuffer::vmo() const { return vmo_; }
 
@@ -159,7 +161,7 @@ zx::vmo CodecBuffer::CreateChildVmoFromParent() const {
   ZX_ASSERT(vmo_info.num_children > 0);
   zx::vmo child_vmo;
   zx_status_t child_status =
-      parent_vmo_.create_child(ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &child_vmo);
+      parent_vmo_.create_child(ZX_VMO_CHILD_SLICE, 0, raw_vmo_size_, &child_vmo);
   ZX_ASSERT(child_status == ZX_OK);
   return child_vmo;
 }
@@ -190,12 +192,13 @@ zx_status_t CodecBuffer::Pin() {
   // also works fine.
   is_known_contiguous_ = true;
 
-  // We must page-align the pin (since pining is page granularity).  This means the pin may include
-  // up to PAGE_SIZE - 1 bytes before vmo_usable_start, and up to PAGE_SIZE - 1 bytes after
-  // vmo_usable_start + vmo_usable_size. The usage of the pin is expected to stay within
-  // CodecBuffer::base() to CodecBuffer::base() + vmo_usable_size.
+  // We must page-align the pin (since pinning is page granularity).  This means the pin may include
+  // up to PAGE_SIZE - 1 bytes before vmo_usable_start, and up to raw_vmo_size_.  The meaningful
+  // content usage of the pin is expected to stay within CodecBuffer::physical_base() to
+  // CodecBuffer::physical_base() + size(), while padding-only accesses may extend up to VMO offset
+  // raw_vmo_size_.
   uint64_t pin_offset = fbl::round_down(vmo_offset(), zx_system_get_page_size());
-  uint64_t pin_size = fbl::round_up(vmo_offset() + size(), zx_system_get_page_size()) - pin_offset;
+  uint64_t pin_size = raw_vmo_size_ - pin_offset;
 
   uint32_t options = ZX_BTI_CONTIGUOUS | ZX_BTI_PERM_READ;
   if (port() == kOutputPort) {

@@ -764,6 +764,8 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
     [[nodiscard]] uint64_t vmo_usable_start(uint32_t buffer_index);
     // only called when not dynamic buffers
     [[nodiscard]] uint64_t vmo_usable_size();
+    // only called when not dynamic buffers
+    [[nodiscard]] uint64_t raw_vmo_size();
 
     // When not dynamic buffers, called only after SetBufferCollectionInfo.
     //

@@ -117,7 +117,17 @@ class CodecBuffer {
   // This will ZX_PANIC() if the buffer hasn't been pinned yet, or if !is_known_contiguous().
   zx_paddr_t physical_base() const;
 
+  // The max size in bytes of meaningful/valid content starting at vmo_offset()
+  // (from sysmem BufferMemorySettings.size_bytes). Producers must fit all
+  // valid image/packet data within size().
   size_t size() const;
+
+  // The total VMO size in bytes (from sysmem BufferMemorySettings.raw_vmo_size /
+  // zx_vmo_get_size). When sysmem pad_* constraints are used, raw_vmo_size()
+  // includes trailing padding space beyond vmo_offset() + size() that is mapped
+  // and accessible for padding/over-read/over-write, but must not hold
+  // meaningful content.
+  size_t raw_vmo_size() const;
 
   // This VMO is owned by CodecBuffer, but can be used temporarily (in a
   // non-owned fashion) to get VMO info or similar.
@@ -341,7 +351,7 @@ class CodecBuffer {
 
   // This owns the vmo handle originally used to create this CodecBuffer.
   CodecVmoRange vmo_range_;
-  uint64_t vmo_size_bytes_ = 0;
+  size_t raw_vmo_size_ = 0;
   // This is a child of vmo_range_.vmo that's returned from vmo(). This is part of enforcing that
   // the CodecAdapter can't assume that vmo(s) returned from GetChildVmo() are derived from vmo().
   //

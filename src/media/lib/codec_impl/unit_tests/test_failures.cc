@@ -37,6 +37,7 @@ constexpr zx::duration kWaitTimeout = zx::sec(30);
 void PopulateTestBufferSettings(fuchsia::sysmem2::BufferMemorySettings* buffer_settings,
                                 uint64_t size_bytes) {
   buffer_settings->set_size_bytes(size_bytes);
+  buffer_settings->set_raw_vmo_size(size_bytes);
   buffer_settings->set_is_physically_contiguous(false);
   buffer_settings->set_is_secure(false);
   buffer_settings->set_coherency_domain(fuchsia::sysmem2::CoherencyDomain::CPU);

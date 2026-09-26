@@ -3572,7 +3572,7 @@ void CodecImpl::OnBufferCollectionInfoInternal(
     if (IsCoreCodecMappedBufferUseful(port)) {
       std::optional<FakeMapRange> new_fake_map_range;
       zx_status_t status =
-          FakeMapRange::Create(port_settings_[port]->vmo_usable_size(), &new_fake_map_range);
+          FakeMapRange::Create(port_settings_[port]->raw_vmo_size(), &new_fake_map_range);
       if (status != ZX_OK) {
         LogEvent(
             media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_InitializationError);
@@ -3626,6 +3626,7 @@ void CodecImpl::OnBufferCollectionInfoInternal(
                                   .lifetime_ordinal = buffer_lifetime_ordinal,
                                   .index = i,
                                   .is_secure = is_secure};
+    // CodecBuffer will query raw_vmo_size from Zircon based on the VMO.
     CodecVmoRange vmo_range(std::move(vmos[i]), vmo_usable_start, vmo_usable_size);
     if (port == kInputPort) {
       AddInputBuffer_StreamControl(std::move(buffer_info), std::move(vmo_range));
@@ -4664,6 +4665,13 @@ void CodecImpl::OnGetVmoInfoCompletion(
       return;
     }
 
+    // At this point GetVmoInfo has succeeded on a duplicate handle of
+    // adding_buffer->unverified_vmo_ (same koid) with need_single_buffer_settings set to true. Any
+    // non-sysmem VMO (or client-created child slice of a sysmem VMO) has a koid unknown to sysmem
+    // and already failed GetVmoInfo with NOT_FOUND, which was handled cleanly via FailLocked() in
+    // the result.is_error() check above. Because we trust sysmem and sysmem VMOs are non-resizable
+    // slices of size raw_vmo_size, these asserts are checking sysmem/kernel invariants rather than
+    // client-controlled inputs.
     CodecBuffer::Info buffer_info;
     buffer_info.port = port;
     buffer_info.lifetime_ordinal = buffer_lifetime_ordinal;
@@ -4679,8 +4687,12 @@ void CodecImpl::OnGetVmoInfoCompletion(
     uint64_t vmo_size;
     zx_status_t get_size_status = adding_buffer->unverified_vmo_.get_size(&vmo_size);
     ZX_ASSERT(get_size_status == ZX_OK);
-    // buffer VMO is now verified
-    auto vmo_range = CodecVmoRange(std::move(adding_buffer->unverified_vmo_), 0, vmo_size);
+    ZX_ASSERT(buffer_settings.raw_vmo_size().has_value());
+    ZX_ASSERT(vmo_size == buffer_settings.raw_vmo_size().value());
+    ZX_ASSERT(buffer_settings.size_bytes().has_value());
+    uint64_t content_size = buffer_settings.size_bytes().value();
+    // CodecBuffer will query raw_vmo_size from Zircon based on the VMO.
+    auto vmo_range = CodecVmoRange(std::move(adding_buffer->unverified_vmo_), 0, content_size);
 
     auto buffer = std::unique_ptr<CodecBuffer>(
         new CodecBuffer(this, std::move(buffer_info), std::move(vmo_range)));
@@ -4729,7 +4741,7 @@ void CodecImpl::OnGetVmoInfoCompletion(
       if (port_settings_[port]->is_secure() && IsCoreCodecMappedBufferUseful(port)) {
         std::optional<FakeMapRange> new_fake_map_range;
         zx_status_t status =
-            FakeMapRange::Create(port_settings_[port]->vmo_usable_size(), &new_fake_map_range);
+            FakeMapRange::Create(port_settings_[port]->raw_vmo_size(), &new_fake_map_range);
         if (status != ZX_OK) {
           LogEvent(media_metrics::
                        StreamProcessorEvents2MigratedMetricDimensionEvent_InitializationError);
@@ -7805,6 +7817,15 @@ uint64_t CodecImpl::PortSettings::vmo_usable_start(uint32_t buffer_index) {
 uint64_t CodecImpl::PortSettings::vmo_usable_size() {
   ZX_DEBUG_ASSERT(buffer_collection_info_);
   return buffer_collection_info_->settings()->buffer_settings()->size_bytes().value();
+}
+
+uint64_t CodecImpl::PortSettings::raw_vmo_size() {
+  ZX_DEBUG_ASSERT(buffer_collection_info_);
+  const auto& info = *buffer_collection_info_;
+  ZX_DEBUG_ASSERT(info.settings().has_value());
+  ZX_DEBUG_ASSERT(info.settings()->buffer_settings().has_value());
+  ZX_DEBUG_ASSERT(info.settings()->buffer_settings()->raw_vmo_size().has_value());
+  return info.settings()->buffer_settings()->raw_vmo_size().value();
 }
 
 bool CodecImpl::PortSettings::is_secure() {
