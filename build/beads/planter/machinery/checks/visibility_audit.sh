@@ -86,12 +86,20 @@ def get_distinct_areas(rdep_pkgs, pkg_path):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
     return sorted({get_pkg_area(p) for p in pkgs if get_pkg_area(p)})
 
+VG_ROOT = "vendor/" + "google"
+VG_SUBPKGS = "//" + VG_ROOT + ":__subpackages__"
+
 def recommend_narrow_visibility(rdep_pkgs, pkg_path):
-    pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
-    if not pkgs:
+    raw_pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
+    if not raw_pkgs:
         return []
+    has_vendor_google = any(p == VG_ROOT or p.startswith(VG_ROOT + "/") for p in raw_pkgs)
+    pkgs = [p for p in raw_pkgs if p != VG_ROOT and not p.startswith(VG_ROOT + "/")]
+    vendor_entries = [VG_SUBPKGS] if has_vendor_google else []
+    if not pkgs:
+        return vendor_entries
     if len(pkgs) <= 5:
-        result = []
+        result = list(vendor_entries)
         for p in pkgs:
             if any(p != other and p.startswith(other + "/") for other in pkgs if len(other.split("/")) >= 3):
                 continue
@@ -111,7 +119,7 @@ def recommend_narrow_visibility(rdep_pkgs, pkg_path):
             d3 = "/".join(parts[:3])
             by_d3.setdefault(d3, []).append(p)
 
-    result = set()
+    result = set(vendor_entries)
     for d3, group in sorted(by_d3.items()):
         parts_d3 = d3.split("/")
         if len(parts_d3) < 3:
@@ -147,14 +155,16 @@ def recommend_narrow_visibility(rdep_pkgs, pkg_path):
     return sorted(result)
 
 def recommend_area_rollup_visibility(rdep_pkgs, pkg_path):
-    pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
-    if not pkgs:
+    raw_pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
+    if not raw_pkgs:
         return []
+    has_vendor_google = any(p == VG_ROOT or p.startswith(VG_ROOT + "/") for p in raw_pkgs)
+    pkgs = [p for p in raw_pkgs if p != VG_ROOT and not p.startswith(VG_ROOT + "/")]
     by_area = {}
     for p in pkgs:
         area = get_pkg_area(p)
         by_area.setdefault(area, []).append(p)
-    result = set()
+    result = {VG_SUBPKGS} if has_vendor_google else set()
     for area, group in sorted(by_area.items()):
         if area in BANNED_UMBRELLA_SUBPKGS:
             for item in recommend_narrow_visibility(group, pkg_path):
@@ -538,11 +548,43 @@ for rel_path in sorted(candidate_files):
                     "remediation": f"Replace '//:__subpackages__' with {json.dumps(rec_target_vis)}."
                 })
             else:
+                if val.startswith("//" + VG_ROOT + "/"):
+                    findings.append({
+                        "source": "visibility_audit",
+                        "category": "internal_vendor_subpath_visibility",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": lineno,
+                        "message": (
+                            f"Target '{target_name}' exposes internal vendor subpath '{val}' in visibility. "
+                            f"Never use internal vendor subpaths in visibility; expose to '{VG_SUBPKGS}' instead."
+                        ),
+                        "remediation": (
+                            f"Replace '{val}' with '\"{VG_SUBPKGS}\"' and re-run fx bazel2gn."
+                        ),
+                    })
+                    continue
+
                 m_sub = re.match(r"^//([^:]+):__subpackages__$", val)
                 m_pkg = re.match(r"^//([^:]+):__pkg__$", val)
 
                 if m_sub:
                     prefix = m_sub.group(1).strip("/")
+                    if prefix == VG_ROOT:
+                        has_vg_rdep = any(
+                            r == VG_ROOT or r.startswith(VG_ROOT + "/") for r in target_rdeps
+                        )
+                        if not has_vg_rdep and not has_macro_injected_rdeps:
+                            findings.append({
+                                "source": "visibility_audit",
+                                "category": "false_positive_rdep_visibility",
+                                "severity": "error",
+                                "file": rel_path,
+                                "line": lineno,
+                                "message": f"Target '{target_name}' grants visibility to '{val}', but no package in that vendor tree actually depends on '{target_name}'.",
+                                "remediation": f"Remove '{val}' from visibility.",
+                            })
+                        continue
                     parts = prefix.split("/")
                     depth = len(parts)
                     covered_rdeps = sorted(

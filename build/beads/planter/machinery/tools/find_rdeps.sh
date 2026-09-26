@@ -196,12 +196,26 @@ def get_distinct_areas(rdep_pkgs):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
     return sorted({f"//{get_pkg_area(p)}" for p in pkgs if get_pkg_area(p)})
 
+VG_ROOT = "vendor/" + "google"
+VG_SUBPKGS = "//" + VG_ROOT + ":__subpackages__"
+
+def sanitize_rdep_pkg(p):
+    p = p.strip("/")
+    if p == VG_ROOT or p.startswith(VG_ROOT + "/"):
+        return VG_ROOT
+    return p
+
 def recommend_narrow_visibility(rdep_pkgs):
-    pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
-    if not pkgs:
+    raw_pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
+    if not raw_pkgs:
         return []
+    has_vendor_google = any(p == VG_ROOT or p.startswith(VG_ROOT + "/") for p in raw_pkgs)
+    pkgs = [p for p in raw_pkgs if p != VG_ROOT and not p.startswith(VG_ROOT + "/")]
+    vendor_entries = [VG_SUBPKGS] if has_vendor_google else []
+    if not pkgs:
+        return vendor_entries
     if len(pkgs) <= 5:
-        result = []
+        result = list(vendor_entries)
         for p in pkgs:
             if any(p != other and p.startswith(other + "/") for other in pkgs if len(other.split("/")) >= 3):
                 continue
@@ -221,7 +235,7 @@ def recommend_narrow_visibility(rdep_pkgs):
             d3 = "/".join(parts[:3])
             by_d3.setdefault(d3, []).append(p)
 
-    result = set()
+    result = set(vendor_entries)
     for d3, group in sorted(by_d3.items()):
         parts_d3 = d3.split("/")
         if len(parts_d3) < 3:
@@ -257,14 +271,16 @@ def recommend_narrow_visibility(rdep_pkgs):
     return sorted(result)
 
 def recommend_area_rollup_visibility(rdep_pkgs):
-    pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
-    if not pkgs:
+    raw_pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
+    if not raw_pkgs:
         return []
+    has_vendor_google = any(p == VG_ROOT or p.startswith(VG_ROOT + "/") for p in raw_pkgs)
+    pkgs = [p for p in raw_pkgs if p != VG_ROOT and not p.startswith(VG_ROOT + "/")]
     by_area = {}
     for p in pkgs:
         area = get_pkg_area(p)
         by_area.setdefault(area, []).append(p)
-    result = set()
+    result = {VG_SUBPKGS} if has_vendor_google else set()
     for area, group in sorted(by_area.items()):
         if area in BANNED_UMBRELLA_AREAS:
             for item in recommend_narrow_visibility(group):
@@ -304,12 +320,12 @@ def recommend_visibility(rdep_pkgs):
 
 print(json.dumps({
     "target_package": f"//{target_pkg}",
-    "true_rdep_packages": sorted(f"//{p}" for p in true_rdep_packages),
+    "true_rdep_packages": sorted({f"//{sanitize_rdep_pkg(p)}" for p in true_rdep_packages}),
     "distinct_rdep_areas": get_distinct_areas(true_rdep_packages),
     "is_globally_used": is_globally_used_target(true_rdep_packages),
     "recommended_visibility": recommend_visibility(true_rdep_packages),
     "per_target_rdeps": {
-        t: sorted(f"//{p}" for p in rset) for t, rset in per_target_rdeps.items()
+        t: sorted({f"//{sanitize_rdep_pkg(p)}" for p in rset}) for t, rset in per_target_rdeps.items()
     },
     "per_target_is_globally_used": {
         t: is_globally_used_target(rset) for t, rset in per_target_rdeps.items()
@@ -323,7 +339,7 @@ print(json.dumps({
     "per_target_narrow_visibility": {
         t: recommend_narrow_visibility(rset) for t, rset in per_target_rdeps.items()
     },
-    "excluded_visibility_allowlist_packages": sorted(f"//{p}" for p in visibility_only_packages),
+    "excluded_visibility_allowlist_packages": sorted({f"//{sanitize_rdep_pkg(p)}" for p in visibility_only_packages}),
     "excluded_gn_only_or_verification_references": sorted(excluded_gn_only_references),
 }, indent=2))
 PYEOF
