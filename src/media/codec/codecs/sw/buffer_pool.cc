@@ -15,6 +15,7 @@ const CodecBuffer* BufferPool::AllocateBuffer(size_t alloc_len) {
     return nullptr;
   }
   auto& buffer = *maybe_buffer;
+  ZX_ASSERT(alloc_len <= buffer->size());
 
   {
     std::lock_guard<std::mutex> lock(lock_);
