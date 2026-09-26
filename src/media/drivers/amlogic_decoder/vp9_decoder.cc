@@ -53,6 +53,8 @@ using HevcDecodeSize = HevcAssistScratchN;
 
 using DebugReg1 = HevcAssistScratchG;
 
+constexpr uint32_t kLcuMvBytes = 0x240;
+
 const char* Vp9Decoder::DecoderStateName(DecoderState state) {
   switch (state) {
     case DecoderState::kInitialWaitingForInput:
@@ -312,6 +314,14 @@ zx_status_t Vp9Decoder::Initialize() {
   return InitializeHardware();
 }
 
+// static
+uint64_t Vp9Decoder::GetMpredBufferSize(uint32_t width, uint32_t height) {
+  uint64_t rounded_width = fbl::round_up(static_cast<uint64_t>(width), 64u);
+  uint64_t rounded_height = fbl::round_up(static_cast<uint64_t>(height), 32u);
+  uint64_t lcu_count = (rounded_width / 64) * (rounded_height / 32);
+  return fbl::round_up(lcu_count * kLcuMvBytes, static_cast<uint64_t>(zx_system_get_page_size()));
+}
+
 zx_status_t Vp9Decoder::InitializeBuffers() {
   TRACE_DURATION("media", "Vp9Decoder::InitializeBuffers");
 
@@ -375,12 +385,11 @@ zx_status_t Vp9Decoder::InitializeBuffers() {
   ZX_DEBUG_ASSERT(!on_deck_internal_buffers_.has_value() ||
                   on_deck_internal_buffers_->mpred_buffers_.empty());
   // The largest coding unit is assumed to be 64x32.
-  constexpr uint32_t kLcuMvBytes = 0x240;
   // Round up 1080 to 1088 and 2160 to 2176 so that all dimensions are divisible by 64, in case of
   // decoding a portrait mode video.
-  constexpr uint32_t kLcuCount = kUseLessRam ? 1920 * 1088 / (64 * 32) : 4096 * 2176 / (64 * 32);
-  uint64_t rounded_up_size =
-      fbl::round_up(kLcuCount * kLcuMvBytes, static_cast<uint64_t>(zx_system_get_page_size()));
+  uint32_t init_width = kUseLessRam ? 1920 : 4096;
+  uint32_t init_height = kUseLessRam ? 1088 : 2176;
+  uint64_t rounded_up_size = GetMpredBufferSize(init_width, init_height);
   constexpr uint32_t kMpredAlignment = (1 << 16);
   constexpr bool kMpredIsWritable = true;
   constexpr bool kMpredIsMappingNeeded = false;
@@ -1500,7 +1509,8 @@ bool Vp9Decoder::FindNewFrameBuffer(HardwareRenderParams* params, bool params_ch
 
   DLOG("coded_width: %u coded_height: %u stride: %u", coded_width, coded_height, stride);
 
-  // Support up to 4kx2k, the hardware limit.
+  // Support up to 4kx2k, the hardware limit. Note there is another check just below related to
+  // kUseLessRam, which must be false in order for 4kx2k to actually decode.
   constexpr uint32_t kMaxWidth = 4096, kMaxHeight = 2176;
   if (coded_width > kMaxWidth || coded_height > kMaxHeight) {
     LogEvent(media_metrics::
@@ -1508,6 +1518,28 @@ bool Vp9Decoder::FindNewFrameBuffer(HardwareRenderParams* params, bool params_ch
     LOG(ERROR, "Invalid stream size %dx%d", coded_width, coded_height);
     CallErrorHandler();
     return false;
+  }
+
+  ZX_DEBUG_ASSERT(!cached_mpred_buffers_.empty());
+  if (cached_mpred_buffers_.empty()) {
+    // This is unreachable unless we have a bug elsewhere.
+    LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_UnreachableError);
+    LOG(ERROR, "cached_mpred_buffers_.empty()");
+    CallErrorHandler();
+    return false;
+  }
+
+  {
+    uint64_t needed_size = GetMpredBufferSize(params->hw_width, params->hw_height);
+    if (needed_size > cached_mpred_buffers_.back()->size()) {
+      // See also kUseLessRam.
+      LogEvent(media_metrics::
+                   StreamProcessorEvents2MigratedMetricDimensionEvent_DimensionsUnsupportedError);
+      LOG(ERROR, "Mpred buffer size insufficient: needed %lu, cached %lu (width %u height %u)",
+          needed_size, cached_mpred_buffers_.back()->size(), params->hw_width, params->hw_height);
+      CallErrorHandler();
+      return false;
+    }
   }
 
   bool buffers_allocated = !!frames_[0]->frame || !!frames_[0]->on_deck_frame;
