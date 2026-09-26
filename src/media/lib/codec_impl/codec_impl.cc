@@ -31,8 +31,7 @@
 #include "lib/media/codec_impl/codec_port.h"
 #include "src/media/lib/codec_impl/dispatcher.h"
 #include "src/media/lib/codec_impl/utils.h"
-
-#include <src/media/lib/metrics/metrics.cb.h>
+#include "src/media/lib/metrics/metrics.cb.h"
 
 // "is_bound_checks" - In several places that send a message, we check is_bound() first, only
 // because of ZX_POL_BAD_HANDLE ZX_POL_ACTION_EXCEPTION which typically only applies in a driver
@@ -220,7 +219,7 @@ CodecImpl::~CodecImpl() {
   // We need ~binding_ to run on fidl_thread() else it's not safe to
   // un-bind unilaterally.  We could potentially relax this if BindAsync() was
   // never called, but for now we just require this always.
-  ZX_DEBUG_ASSERT(IsFidl());
+  ZX_ASSERT(IsFidl());
 
   // See UnbindAsync() and the BindAsync() error handler. The non-legacy way
   // never allows ~CodecImpl until after the client error handler has run.
@@ -7367,27 +7366,22 @@ CodecImpl::PortSettings::PortSettings(CodecImpl* parent, CodecPort port,
       buffer_lifetime_ordinal_(buffer_lifetime_ordinal) {}
 
 CodecImpl::PortSettings::~PortSettings() {
-  // To be safe, the unbind needs to occur on the FIDL thread.  In addition, we want to send a clean
-  // Close() to avoid causing the LogicalBufferCollection to fail.  Since we're not a crashing
-  // process, this is a clean close by definition.
-  //
-  // TODO(https://fxbug.dev/42112876): Consider _not_ sending Close() for unexpected failures
-  // initiated by the server. Consider whether to have a Close() on StreamProcessor to disambiguate
-  // clean vs. unexpected StreamProcessor channel close.
-  if (!parent_->IsFidl()) {
-    parent_->PostToSharedFidl([buffer_collection = std::move(buffer_collection_)] {
-      // Sysmem will notice the Close() before the PEER_CLOSED.
-      if (!!buffer_collection && buffer_collection->is_valid()) {
-        // ignore potential one-way send failure
-        (void)(*buffer_collection)->Release();
+  if (buffer_collection_.has_value()) {
+    if (!parent_->IsFidl()) {
+      // This disables the buffer_collection_ Client fidl error callback.
+      buffer_collection_->EnsurePreparedForAsyncDelete();
+      parent_->PostToSharedFidl([buffer_collection = TakeOptional(buffer_collection_)]() mutable {
+        ZX_DEBUG_ASSERT(buffer_collection.has_value());
+        if (buffer_collection.has_value() && buffer_collection->held() &&
+            buffer_collection->held()->is_valid()) {
+          std::ignore = (*buffer_collection->held())->Release();
+        }
+      });
+    } else {
+      if (buffer_collection_->held() && buffer_collection_->held()->is_valid()) {
+        std::ignore = (*buffer_collection_->held())->Release();
       }
-      // ~buffer_collection on FIDL thread
-    });
-    ZX_DEBUG_ASSERT(!buffer_collection_);
-  } else {
-    if (!!buffer_collection_) {
-      // ignore potential one-way send failure
-      (void)(*buffer_collection_)->Release();
+      buffer_collection_.reset();
     }
   }
 }
@@ -7489,16 +7483,17 @@ CodecImpl::PortSettings::NewBufferCollectionRequest(
   ZX_DEBUG_ASSERT(!buffer_collection_);
   auto collection_endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollection>();
   ZX_ASSERT(collection_endpoints.is_ok());
-  buffer_collection_ = std::make_unique<Client<fuchsia_sysmem2::BufferCollection>>();
-  buffer_collection_->Bind(std::move(collection_endpoints->client), dispatcher,
-                           std::move(on_error));
+  auto client = std::make_unique<Client<fuchsia_sysmem2::BufferCollection>>();
+  client->Bind(std::move(collection_endpoints->client), dispatcher, std::move(on_error));
+  buffer_collection_.emplace(&parent_->shared_fidl_queue_, std::move(client));
   return std::move(collection_endpoints->server);
 }
 
 std::unique_ptr<CodecImpl::Client<fuchsia_sysmem2::BufferCollection>>&
 CodecImpl::PortSettings::buffer_collection() {
   ZX_DEBUG_ASSERT(parent_->IsFidl());
-  return buffer_collection_;
+  ZX_DEBUG_ASSERT(buffer_collection_.has_value());
+  return buffer_collection_->held();
 }
 
 void CodecImpl::PortSettings::UnbindBufferCollection() {

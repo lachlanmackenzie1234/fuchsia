@@ -501,19 +501,31 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
     explicit AsyncEventHandler(ErrorFunction error_function = nullptr)
         : error_function_(std::move(error_function)) {}
     void set_error_handler(ErrorFunction error_function) {
+      std::lock_guard<std::mutex> lock(lock_);
       error_function_ = std::move(error_function);
     }
-    [[nodiscard]] bool is_error_handler_set() { return !!error_function_; }
+    void clear_error_handler() {
+      std::lock_guard<std::mutex> lock(lock_);
+      error_function_ = nullptr;
+    }
+    [[nodiscard]] bool is_error_handler_set() {
+      std::lock_guard<std::mutex> lock(lock_);
+      return !!error_function_;
+    }
 
    private:
     void on_fidl_error(fidl::UnbindInfo error) override {
-      // Client code must set an error function before binding.
-      ZX_DEBUG_ASSERT(error_function_);
-      // move locally so doesn't get deallocated while running
-      auto local_error_function = std::move(error_function_);
-      local_error_function(error);
+      ErrorFunction local_error_function;
+      {
+        std::lock_guard<std::mutex> lock(lock_);
+        local_error_function = std::move(error_function_);
+      }
+      if (local_error_function) {
+        std::move(local_error_function)(error);
+      }
     }
-    ErrorFunction error_function_;
+    std::mutex lock_;
+    ErrorFunction error_function_ __TA_GUARDED(lock_);
   };
 
   // the order of base classes is significant; the AsyncEventHandler is a base instead of a member
@@ -523,6 +535,12 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
    public:
     using ErrorFunction = typename AsyncEventHandler<Protocol>::ErrorFunction;
     Client() = default;
+
+    ~Client() { AsyncEventHandler<Protocol>::clear_error_handler(); }
+
+    void PrepareForAsyncDelete() { AsyncEventHandler<Protocol>::clear_error_handler(); }
+
+    using AsyncEventHandler<Protocol>::clear_error_handler;
 
     // No move because AsyncEventHandler* is held by fidl::Client.
     Client(Client&& to_move) = delete;
@@ -782,9 +800,10 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
     uint64_t buffer_constraints_version_ordinal_ = 0;
     uint64_t buffer_lifetime_ordinal_ = 0;
 
-    // This is in a unique_ptr<> because ~PortSettings does an async post to the fidl thread to send
-    // a Release().
-    std::unique_ptr<Client<fuchsia_sysmem2::BufferCollection>> buffer_collection_;
+    // This is in a ThreadSafeDeleter because ~PortSettings can run on a non-FIDL thread and must
+    // delete Client on the FIDL thread.
+    std::optional<ThreadSafeDeleter<std::unique_ptr<Client<fuchsia_sysmem2::BufferCollection>>>>
+        buffer_collection_;
 
     // In the case of partial_settings_, the remainder of the settings arrive
     // from sysmem in a BufferCollectionInfo_2.  When that arrives from

@@ -40,6 +40,7 @@ _codec_impl_internal_sources = [
   "decryptor_adapter.cc",
   "fake_map_range.cc",
   "log.cc",
+  "utils.h",
 ]
 
 _codec_impl_internal_public = [

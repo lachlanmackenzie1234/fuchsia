@@ -211,11 +211,45 @@ TEST_F(CodecImplFailures, InputBufferCollectionSysmemFailure) {
   sysmem_request_ = nullptr;
 
   RunLoopUntil([&allocator]() { return allocator.collection().is_waiting(); });
-  ASSERT_TRUE(error_handler_ran_ == 0);
+  ASSERT_FALSE(error_handler_ran_);
   ASSERT_TRUE(allocator.collection().is_waiting());
 
   allocator.collection().FailAllocation();
 
   RunLoopUntil([this]() { return error_handler_ran_; });
   ASSERT_TRUE(error_handler_ran_);
+}
+
+TEST_F(CodecImplFailures, InputBufferCollectionSysmemFailureDuringDestruction) {
+  StreamProcessorPtr processor;
+
+  processor.events().OnInputConstraints = [this, &processor](auto input_constraints) {
+    fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token;
+    token_request_ = token.NewRequest();
+
+    codec_adapter_->SetBufferCollectionConstraints(kInputPort,
+                                                   CreateValidInputBufferCollectionConstraints());
+
+    processor->SetInputBufferPartialSettings(
+        CreateStreamBufferPartialSettings(1, input_constraints, std::move(token)));
+  };
+
+  Create(processor.NewRequest());
+
+  TestAllocator allocator;
+  allocator.Bind(std::move(sysmem_request_.value()));
+  sysmem_request_ = nullptr;
+
+  RunLoopUntil([&allocator]() { return allocator.collection().is_waiting(); });
+  ASSERT_FALSE(error_handler_ran_);
+  ASSERT_TRUE(allocator.collection().is_waiting());
+
+  // Fail allocation and immediately destroy CodecImpl and close processor client.
+  allocator.collection().FailAllocation();
+  codec_impl_ = nullptr;
+  processor = nullptr;
+
+  // Run remaining loop tasks to ensure any pending FIDL error handlers on shared_fidl_thread
+  // execute safely without Use-After-Free or misaligned address crashes.
+  RunLoopUntilIdle();
 }
