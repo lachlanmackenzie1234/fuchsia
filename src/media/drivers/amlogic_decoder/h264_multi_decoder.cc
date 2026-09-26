@@ -16,6 +16,7 @@
 #include <optional>
 
 #include <fbl/algorithm.h>
+#include <safemath/checked_math.h>
 
 #include "decoder_instance.h"
 #include "h264_utils.h"
@@ -2480,9 +2481,26 @@ void H264MultiDecoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_
       return;
     }
 
+    const size_t vmo_size = io_buffer_size(&frame->buffer, 0);
+    const safemath::CheckedNumeric<uint32_t> y_plane_bytes =
+        safemath::CheckedNumeric<uint32_t>(stride) * coded_height;
+    const safemath::CheckedNumeric<uint32_t> uv_plane_bytes =
+        safemath::CheckedNumeric<uint32_t>(stride) * (coded_height / 2);
+    const safemath::CheckedNumeric<uint32_t> total_vmo_bytes = y_plane_bytes + uv_plane_bytes;
+    if (!total_vmo_bytes.IsValid() || vmo_size < total_vmo_bytes.ValueOrDie()) {
+      LogEvent(
+          media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_InitializationError);
+      // ValueOrDefault() returns StrictNumeric<uint32_t>, which needs an explicit cast for variadic
+      // LOG().
+      LOG(ERROR, "Insufficient frame vmo bytes: vmo_size %zu < required %u", vmo_size,
+          static_cast<uint32_t>(total_vmo_bytes.ValueOrDefault(0)));
+      CallErrorHandler();
+      return;
+    }
+
     // Flush so that there are no dirty CPU cache lines that would potentially overwrite HW-written
     // data.
-    io_buffer_cache_flush(&frame->buffer, 0, io_buffer_size(&frame->buffer, 0));
+    io_buffer_cache_flush(&frame->buffer, 0, vmo_size);
     BarrierAfterFlush();
 
     frame->hw_width = coded_width;
@@ -2490,7 +2508,7 @@ void H264MultiDecoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_
     frame->coded_width = coded_width;
     frame->coded_height = coded_height;
     frame->stride = stride;
-    frame->uv_plane_offset = stride * coded_height;
+    frame->uv_plane_offset = y_plane_bytes.ValueOrDie();
     frame->display_width = pending_display_width_;
     frame->display_height = pending_display_height_;
     frame->index = i;

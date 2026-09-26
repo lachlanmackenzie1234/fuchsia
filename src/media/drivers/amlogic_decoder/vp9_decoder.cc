@@ -14,6 +14,7 @@
 #include <memory>
 
 #include <fbl/algorithm.h>
+#include <safemath/checked_math.h>
 
 #include "device_type.h"
 #include "firmware_blob.h"
@@ -699,7 +700,17 @@ void Vp9Decoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_t code
   ZX_DEBUG_ASSERT(state_ == DecoderState::kPausedAtHeader);
   ZX_ASSERT(owner_->IsDecoderCurrent(this));
   ZX_DEBUG_ASSERT(valid_frames_count_ == 0);
-  uint32_t frame_vmo_bytes = stride * coded_height * 3 / 2;
+  const safemath::CheckedNumeric<uint32_t> y_plane_bytes =
+      safemath::CheckedNumeric<uint32_t>(stride) * coded_height;
+  const safemath::CheckedNumeric<uint32_t> uv_plane_bytes =
+      safemath::CheckedNumeric<uint32_t>(stride) * (coded_height / 2);
+  const safemath::CheckedNumeric<uint32_t> frame_vmo_bytes = y_plane_bytes + uv_plane_bytes;
+  if (!frame_vmo_bytes.IsValid()) {
+    LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_InitializationError);
+    LOG(ERROR, "Frame vmo bytes overflow: stride %u, coded_height %u", stride, coded_height);
+    CallErrorHandler();
+    return;
+  }
   BarrierBeforeInvalidate();
   for (uint32_t i = 0; i < frames.size(); i++) {
     auto video_frame = std::make_shared<VideoFrame>();
@@ -711,7 +722,7 @@ void Vp9Decoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_t code
     video_frame->coded_width = coded_width;
     video_frame->coded_height = coded_height;
     video_frame->stride = stride;
-    video_frame->uv_plane_offset = video_frame->stride * video_frame->coded_height;
+    video_frame->uv_plane_offset = y_plane_bytes.ValueOrDie();
     video_frame->index = i;
 
     video_frame->codec_buffer = frames[i].buffer_ptr();
@@ -730,11 +741,14 @@ void Vp9Decoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_t code
       CallErrorHandler();
       return;
     }
-    size_t vmo_size = io_buffer_size(&video_frame->buffer, 0);
-    if (vmo_size < frame_vmo_bytes) {
+    const size_t vmo_size = io_buffer_size(&video_frame->buffer, 0);
+    if (vmo_size < frame_vmo_bytes.ValueOrDie()) {
       LogEvent(
           media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_InitializationError);
-      LOG(ERROR, "Insufficient frame vmo bytes: %ld < %d", vmo_size, frame_vmo_bytes);
+      // ValueOrDie() returns StrictNumeric<uint32_t>, which needs an explicit cast for variadic
+      // LOG().
+      LOG(ERROR, "Insufficient frame vmo bytes: %zu < %u", vmo_size,
+          static_cast<uint32_t>(frame_vmo_bytes.ValueOrDie()));
       CallErrorHandler();
       return;
     }
