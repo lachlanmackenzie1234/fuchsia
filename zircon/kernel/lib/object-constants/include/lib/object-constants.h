@@ -48,11 +48,6 @@ constexpr size_t kFifoDispatcherStateSize = 72;
 constexpr size_t kFifoDispatcherStateAlign = 8;
 constexpr size_t kFifoDispatcherStateOffset = 48;
 
-// Size, alignment, and offset for GuestDispatcherState.
-constexpr size_t kGuestDispatcherStateSize = 48;
-constexpr size_t kGuestDispatcherStateAlign = 8;
-constexpr size_t kGuestDispatcherStateOffset = 48;
-
 // Size, alignment, and offset for IoBufferDispatcherState.
 constexpr size_t kIoBufferDispatcherStateSize = 64;
 constexpr size_t kIoBufferDispatcherStateAlign = 8;

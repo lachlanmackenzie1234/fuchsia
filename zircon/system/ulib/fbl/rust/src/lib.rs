@@ -79,6 +79,4 @@ pub use wavl_tree::{
 };
 
 #[doc(hidden)]
-pub use zr::OpaqueFacade;
-#[doc(hidden)]
 pub use zr::static_assert as __static_assert;

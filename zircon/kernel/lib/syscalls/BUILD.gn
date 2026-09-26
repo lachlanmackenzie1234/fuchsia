@@ -127,7 +127,6 @@ kernel_rust_mod("syscalls-rs") {
     "debuglog.rs",
     "event.rs",
     "fifo.rs",
-    "guest.rs",
     "iob.rs",
     "iommu.rs",
     "job.rs",
