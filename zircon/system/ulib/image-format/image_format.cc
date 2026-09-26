@@ -781,7 +781,7 @@ bool linear_is_single_plane(fuchsia_images2::PixelFormat pixel_format) {
     case fuchsia_images2::PixelFormat::kR8G8:
     case fuchsia_images2::PixelFormat::kA2R10G10B10:
     case fuchsia_images2::PixelFormat::kA2B10G10R10:
-    case fuchsia_images2::PixelFormat::kP010:
+    case fuchsia_images2::PixelFormat::kYuy2:
     case fuchsia_images2::PixelFormat::kR8G8B8:
       return true;
     case fuchsia_images2::PixelFormat::kInvalid:
@@ -789,7 +789,7 @@ bool linear_is_single_plane(fuchsia_images2::PixelFormat pixel_format) {
     case fuchsia_images2::PixelFormat::kI420:
     case fuchsia_images2::PixelFormat::kM420:
     case fuchsia_images2::PixelFormat::kNv12:
-    case fuchsia_images2::PixelFormat::kYuy2:
+    case fuchsia_images2::PixelFormat::kP010:
     case fuchsia_images2::PixelFormat::kMjpeg:
     case fuchsia_images2::PixelFormat::kYv12:
     default:

@@ -585,7 +585,7 @@ TEST(PadForBlockSize, MiniStress) {
   //
   // This does not always apply to max_size, which sometimes has max of {0x7FFFFFFF, 0xFFFFFFFF}.
   constexpr uint32_t kMaxDimension = 16384;
-  constexpr uint32_t kMinSizeAlignmentDimLog2 = 1;
+  constexpr uint32_t kMinSizeAlignmentDimLog2 = 0;
   constexpr uint32_t kMaxSizeAlignmentDimLog2 = 12;
   // bytes_per_row_divisor is intentionally not required to be a power of 2
   constexpr uint32_t kMinBytesPerRowDivisor = 1;
@@ -614,6 +614,7 @@ TEST(PadForBlockSize, MiniStress) {
       fuchsia_images2::PixelFormat::kL8,          fuchsia_images2::PixelFormat::kR8,
       fuchsia_images2::PixelFormat::kR8G8,        fuchsia_images2::PixelFormat::kA2R10G10B10,
       fuchsia_images2::PixelFormat::kA2B10G10R10, fuchsia_images2::PixelFormat::kR8G8B8,
+      fuchsia_images2::PixelFormat::kYuy2,
   };
   // Currently there are no fuchsia_images2::PixelFormatModifier values which could return true from
   // ImageFormatIsNonTiledSinglePlane other than Linear (whether that's by definition doesn't need
@@ -976,7 +977,7 @@ TEST(PadForBlockSize, MiniStress2) {
   constexpr uint32_t kMaxBlockSizeDimLog2 = 6;
   constexpr uint32_t kMinDimension = 1;
   constexpr uint32_t kMaxDimension = 256;
-  constexpr uint32_t kMinSizeAlignmentDimLog2 = 1;
+  constexpr uint32_t kMinSizeAlignmentDimLog2 = 0;
   constexpr uint32_t kMaxSizeAlignmentDimLog2 = 6;
   constexpr uint32_t kMinBytesPerRowDivisor = 1;
   constexpr uint32_t kMaxBytesPerRowDivisorFactor = 8;
@@ -1002,6 +1003,7 @@ TEST(PadForBlockSize, MiniStress2) {
       fuchsia_images2::PixelFormat::kL8,          fuchsia_images2::PixelFormat::kR8,
       fuchsia_images2::PixelFormat::kR8G8,        fuchsia_images2::PixelFormat::kA2R10G10B10,
       fuchsia_images2::PixelFormat::kA2B10G10R10, fuchsia_images2::PixelFormat::kR8G8B8,
+      fuchsia_images2::PixelFormat::kYuy2,
   };
   const fuchsia_images2::PixelFormatModifier kLinear =
       fuchsia_images2::PixelFormatModifier::kLinear;
