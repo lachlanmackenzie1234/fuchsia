@@ -161,5 +161,7 @@ rustc_library("flex_fidl") {
   ]
   if (is_fuchsia) {
     deps += [ "//sdk/rust/zx" ]
+  } else {
+    deps += [ "//src/lib/fuchsia-emulated-handle" ]
   }
 }

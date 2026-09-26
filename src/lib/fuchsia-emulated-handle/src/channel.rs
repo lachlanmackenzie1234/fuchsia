@@ -172,7 +172,7 @@ impl Channel {
         RecvEtcMsg { channel: self, buf }
     }
 
-    /// Creates a new `Channel` from a previously-created `emulated_handle::Channel`.
+    /// Creates a new `Channel` from a previously-created `crate::Channel`.
     pub fn from_channel(channel: super::Channel) -> Self {
         Channel { channel }
     }

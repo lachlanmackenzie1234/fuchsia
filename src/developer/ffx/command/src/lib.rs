@@ -387,7 +387,7 @@ pub async fn exit(
         Ok(_) | Err(Error::ExitWithCode(_)) => (),
     }
 
-    if timeout::timeout(SHUTDOWN_TIMEOUT, fuchsia_async::emulated_handle::shut_down_handles())
+    if timeout::timeout(SHUTDOWN_TIMEOUT, fuchsia_emulated_handle::shut_down_handles())
         .await
         .is_err()
     {

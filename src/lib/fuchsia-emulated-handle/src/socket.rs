@@ -38,7 +38,7 @@ impl std::fmt::Debug for Socket {
 }
 
 impl Socket {
-    /// Construct an `Socket` from an existing `emulated_handle::Socket`
+    /// Construct an `Socket` from an existing `crate::Socket`
     pub fn from_socket(socket: super::Socket) -> Self {
         Socket { socket }
     }

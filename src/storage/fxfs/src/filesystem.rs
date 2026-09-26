@@ -74,7 +74,7 @@ const CLEAN_TRANSFER_BUFFER_INTERVAL: Duration = Duration::from_secs(60);
 pub type WakeLease = zx::NullableHandle;
 
 #[cfg(not(target_os = "fuchsia"))]
-pub type WakeLease = fasync::emulated_handle::Handle;
+pub type WakeLease = fuchsia_emulated_handle::Handle;
 
 pub trait PowerManager: Send + Sync {
     /// Returns a stream of battery status changes (true if using battery).
