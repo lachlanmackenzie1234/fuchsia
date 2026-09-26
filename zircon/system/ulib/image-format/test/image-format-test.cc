@@ -6,7 +6,6 @@
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 
-#include <fbl/array.h>
 #include <zxtest/zxtest.h>
 
 namespace sysmem_v1 = fuchsia_sysmem;
