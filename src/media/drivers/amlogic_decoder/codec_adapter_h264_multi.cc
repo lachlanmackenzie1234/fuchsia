@@ -429,6 +429,7 @@ void CodecAdapterH264Multi::CoreCodecAddBuffer(CodecPort port, const CodecBuffer
     buffer->CacheFlush(0, static_cast<uint32_t>(buffer->size()));
   }
 
+  std::lock_guard<std::mutex> lock(lock_);
   all_output_buffers_.push_back(buffer);
 }
 
@@ -440,10 +441,13 @@ void CodecAdapterH264Multi::CoreCodecConfigureBuffers(
   ZX_DEBUG_ASSERT(port == kOutputPort);
   // output
 
+  std::lock_guard<std::mutex> lock(lock_);
   ZX_DEBUG_ASSERT(all_output_packets_.empty());
   ZX_DEBUG_ASSERT(free_output_packets_.empty());
   ZX_DEBUG_ASSERT(!all_output_buffers_.empty());
   ZX_DEBUG_ASSERT(all_output_buffers_.size() <= packets.size());
+  all_output_packets_.reserve(packets.size());
+  free_output_packets_.reserve(packets.size());
   for (auto& packet : packets) {
     all_output_packets_.push_back(packet.get());
     free_output_packets_.push_back(packet.get()->packet_index());
