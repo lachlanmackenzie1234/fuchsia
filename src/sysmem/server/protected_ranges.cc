@@ -1277,6 +1277,11 @@ bool ProtectedRanges::DoOpMergeRanges(const Range& first_range, const Range& sec
   ranges_bytes_ += new_range.length();
   ranges_.emplace(std::move(new_range));
 
+  ZX_DEBUG_ASSERT(is_dynamic_);
+  if (is_dynamic_) {
+    ranges_control_->ZeroProtectedSubRange(true, gap_going_away);
+  }
+
   return true;
 }
 
