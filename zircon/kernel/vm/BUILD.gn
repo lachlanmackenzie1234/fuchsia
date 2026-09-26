@@ -56,6 +56,7 @@ source_set("vm") {
     "vm_address_region.cc",
     "vm_address_region_or_mapping.cc",
     "vm_aspace.cc",
+    "vm_aspace_ffi.cc",
     "vm_cow_pages.cc",
     "vm_cow_pages_ffi.cc",
     "vm_mapping.cc",
