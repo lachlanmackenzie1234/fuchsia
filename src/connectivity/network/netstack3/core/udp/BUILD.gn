@@ -15,7 +15,6 @@ rustc_library_with_features("netstack3-udp") {
     "src/counters.rs",
     "src/diagnostics.rs",
     "src/lib.rs",
-    "src/settings.rs",
   ]
   deps = [
     "//src/connectivity/lib/net-types",
