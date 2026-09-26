@@ -16,6 +16,8 @@ pub enum TargetInfoQuery {
     VSock(u32),
     /// Match a target which has a USB emulated VSock address with the given CID.
     Usb(u32),
+    /// Match a target which has a UART serial connection endpoint matching the given endpoint.
+    Uart(String),
     First,
 }
 
@@ -56,6 +58,7 @@ impl TargetInfoQuery {
             Self::Addr(socket_addr) => Some(TargetAddr::Net(*socket_addr)),
             Self::VSock(id) => Some(TargetAddr::VSockCtx(*id)),
             Self::Usb(id) => Some(TargetAddr::UsbCtx(*id)),
+            Self::Uart(endpoint) => Some(TargetAddr::Uart(endpoint.clone())),
         }
     }
 
@@ -90,6 +93,9 @@ impl TargetInfoQuery {
                 .any(|a| address_matcher(addr, &mut a.into(), t.ssh_port.unwrap_or(22))),
             Self::VSock(cid) => t.addresses.iter().filter_map(|x| x.cid_vsock()).any(|x| x == *cid),
             Self::Usb(cid) => t.addresses.iter().filter_map(|x| x.cid_usb()).any(|x| x == *cid),
+            Self::Uart(endpoint) => {
+                t.addresses.iter().any(|addr| matches!(addr, TargetAddr::Uart(e) if e == endpoint))
+            }
             Self::First => true,
         }
     }
@@ -111,6 +117,7 @@ impl TargetInfoQuery {
             TargetInfoQuery::Id(_) => DiscoverySources::USB_FASTBOOT,
             TargetInfoQuery::VSock(_) => DiscoverySources::EMULATOR,
             TargetInfoQuery::Usb(_) => DiscoverySources::USB_VSOCK,
+            TargetInfoQuery::Uart(_) => DiscoverySources::UART,
             _ => {
                 DiscoverySources::MDNS
                     | DiscoverySources::MANUAL
@@ -118,6 +125,7 @@ impl TargetInfoQuery {
                     | DiscoverySources::USB_FASTBOOT
                     | DiscoverySources::USB_VSOCK
                     | DiscoverySources::GCE
+                    | DiscoverySources::UART
             }
         }
     }
@@ -155,30 +163,42 @@ impl TryFrom<String> for TargetInfoQuery {
     /// If the string can be parsed as some kind of IP address, will attempt to
     /// match based on that, else fall back to the nodename or ID matches.
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        if s == "" {
+        if s.is_empty() {
             return Ok(Self::First);
         }
-        if s.starts_with("id:") {
-            // "id:" is used when we _know_ something is an ID,
-            // and want to preserve that across the client/daemon boundary
-            return Ok(Self::Id(String::from(&s[3..])));
+        if let Some(rest) = s.strip_prefix("id:") {
+            return Ok(Self::Id(rest.to_string()));
         }
-        if s.starts_with("serial:") {
-            return Ok(Self::Id(String::from(&s[7..])));
+        if let Some(rest) = s.strip_prefix("serial:") {
+            return Ok(Self::Id(rest.to_string()));
         }
-        if s.starts_with("usb:cid:") {
-            let cid = s["usb:cid:".len()..]
+        if let Some(endpoint) = s.strip_prefix("uart:") {
+            if endpoint.is_empty() {
+                return Err(crate::error::Error::ParseError(
+                    "UART query requires a non-empty endpoint (e.g. uart:/dev/ttyUSB0)".to_string(),
+                ));
+            }
+            return Ok(Self::Uart(endpoint.to_string()));
+        }
+        if let Some(cid_str) = s.strip_prefix("usb:cid:") {
+            let cid = cid_str
                 .parse()
                 .map_err(|e| crate::error::Error::ParseError(format!("Invalid USB CID: {e}")))?;
             return Ok(Self::Usb(cid));
         }
-        if s.starts_with("vsock:cid:") {
-            let cid = s["vsock:cid:".len()..]
+        if let Some(cid_str) = s.strip_prefix("vsock:cid:") {
+            let cid = cid_str
                 .parse()
                 .map_err(|e| crate::error::Error::ParseError(format!("Invalid VSock CID: {e}")))?;
             return Ok(Self::VSock(cid));
         }
 
+        Self::parse_address_or_nodename(s)
+    }
+}
+
+impl TargetInfoQuery {
+    fn parse_address_or_nodename(s: String) -> Result<Self, crate::error::Error> {
         let (addr, scope, port) = match netext::parse_address_parts(s.as_str()) {
             Ok(r) => r,
             Err(e) => {
@@ -228,6 +248,9 @@ impl From<&TargetInfoQuery> for String {
             TargetInfoQuery::VSock(cid) => {
                 format!("vsock:cid:{}", cid)
             }
+            TargetInfoQuery::Uart(endpoint) => {
+                format!("uart:{}", endpoint)
+            }
             TargetInfoQuery::NodenameOrId(nnos) => {
                 format!("{}", nnos)
             }
@@ -250,6 +273,7 @@ impl From<TargetAddr> for TargetInfoQuery {
             TargetAddr::Net(socket_addr) => Self::Addr(socket_addr),
             TargetAddr::VSockCtx(cid) => Self::VSock(cid),
             TargetAddr::UsbCtx(cid) => Self::Usb(cid),
+            TargetAddr::Uart(endpoint) => Self::Uart(endpoint),
         }
     }
 }
@@ -272,7 +296,13 @@ mod test {
                 | DiscoverySources::USB_FASTBOOT
                 | DiscoverySources::USB_VSOCK
                 | DiscoverySources::GCE
+                | DiscoverySources::UART
         );
+
+        // Uart query should only use UART source
+        let query = TargetInfoQuery::try_from("uart:/path/to/socket").unwrap();
+        let sources = query.discovery_sources();
+        assert_eq!(sources, DiscoverySources::UART);
 
         // IP Address shouldn't use USB source
         let query = TargetInfoQuery::try_from("1.2.3.4").unwrap();
@@ -357,6 +387,11 @@ mod test {
         "Test Usb"
     )]
     #[test_case(
+        TargetInfoQuery::Uart("/dev/tty".to_string()),
+        Some(TargetAddr::Uart("/dev/tty".to_string()));
+        "Test Uart"
+    )]
+    #[test_case(
         TargetInfoQuery::First,
         None;
         "Test First"
@@ -385,6 +420,10 @@ mod test {
     #[test_case(
         "vsock:cid:12";
         "Test Vsock Cid"
+    )]
+    #[test_case(
+        "uart:/dev/ttyUSB0";
+        "Test Uart"
     )]
     #[test_case(
         "tressoftheemeraldsea";
@@ -419,6 +458,11 @@ mod test {
         TargetInfoQuery::Usb(12),
         Some("usb:cid:12".to_string());
         "Test Usb Cid"
+    )]
+    #[test_case(
+        TargetInfoQuery::Uart("/dev/tty".to_string()),
+        Some("uart:/dev/tty".to_string());
+        "Test Uart"
     )]
     #[test_case(
         TargetInfoQuery::Id("totallynothoid".to_string()),
@@ -459,7 +503,6 @@ mod test {
         let q = TargetInfoQuery::try_from("serial:123456").unwrap();
         assert_eq!(String::from(q), "id:123456");
     }
-
     #[test]
     fn test_query_match_description_ipv4_and_ipv6_scope_edge_cases() {
         use std::net::{Ipv4Addr, Ipv6Addr};
@@ -545,5 +588,10 @@ mod test {
         assert!(TargetInfoQuery::Usb(100).match_description(&usb_desc));
         assert!(!TargetInfoQuery::Usb(101).match_description(&usb_desc));
         assert!(!TargetInfoQuery::VSock(100).match_description(&usb_desc));
+    }
+
+    #[test]
+    fn test_empty_uart_query_is_err() {
+        assert!(TargetInfoQuery::try_from("uart:").is_err());
     }
 }

@@ -155,7 +155,7 @@ mod tests {
         let handle = discovery::TargetHandle {
             node_name: Some("test-device".to_string()),
             state: discovery::TargetState::Product {
-                addrs: vec![addr],
+                addrs: vec![addr.clone()],
                 serial: Some("sn12345".to_string()),
             },
             manual: false,

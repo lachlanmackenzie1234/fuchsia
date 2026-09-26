@@ -469,6 +469,8 @@ bitflags! {
         const FASTBOOT_FILE = 1 << 4;
         const USB_VSOCK = 1 << 5;
         const GCE = 1 << 6;
+        /// Target was discovered or can be queried via the UART transport watcher.
+        const UART = 1 << 7;
     }
 }
 

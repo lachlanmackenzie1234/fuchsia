@@ -25,6 +25,7 @@ impl AsDiagnosticMessage for u8 {
             v if v == DiscoverySources::USB_VSOCK.bits() => "",
             v if v == DiscoverySources::USB_FASTBOOT.bits() => "",
             v if v == DiscoverySources::GCE.bits() => "",
+            v if v == DiscoverySources::UART.bits() => "",
             b => panic!(
                 "Un-handled bit type: {b}. This may be a failure from the discovery library of ffx. Please report this to {}",
                 errors::BUG_REPORT_URL
@@ -78,6 +79,7 @@ pub fn format_query(query: &TargetInfoQuery) -> ReadableQuery {
         TargetInfoQuery::Id(s) => ("id (serial number)", TermSafe::from_str_escaped(s).to_string()),
         TargetInfoQuery::Usb(u) => ("usb", u.to_string()),
         TargetInfoQuery::VSock(v) => ("vsock", v.to_string()),
+        TargetInfoQuery::Uart(u) => ("uart", TermSafe::from_str_escaped(u).to_string()),
     };
     ReadableQuery { kind, value }
 }
@@ -356,5 +358,10 @@ mod tests {
         let formatted_query_id = format_query(&query_id);
         assert!(!formatted_query_id.value.contains('\x1b'));
         assert_eq!(formatted_query_id.value, "query\\u{1b}[35m_id");
+
+        let query_uart = TargetInfoQuery::Uart("query\x1b[36m_uart".to_string());
+        let formatted_query_uart = format_query(&query_uart);
+        assert!(!formatted_query_uart.value.contains('\x1b'));
+        assert_eq!(formatted_query_uart.value, "query\\u{1b}[36m_uart");
     }
 }
