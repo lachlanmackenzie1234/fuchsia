@@ -1262,6 +1262,12 @@ bool Vp9Decoder::CanBeSwappedIn() {
 
 void Vp9Decoder::ShowExistingFrame(HardwareRenderParams* params) {
   TRACE_DURATION("media", "Vp9Decoder::ShowExistingFrame");
+  if (params->frame_to_show >= std::size(reference_frame_map_)) {
+    LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_GenericDecodeError);
+    LOG(ERROR, "frame_to_show too large: %u", params->frame_to_show);
+    CallErrorHandler();
+    return;
+  }
   Frame* frame = reference_frame_map_[params->frame_to_show];
   if (!frame) {
     LogEvent(media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_MissingPictureError);
