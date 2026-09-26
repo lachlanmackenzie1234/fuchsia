@@ -905,13 +905,25 @@ void Vp9Decoder::SetPausedAtEndOfStream() {
   state_ = DecoderState::kPausedAtEndOfStream;
 }
 
-void Vp9Decoder::AdaptProbabilityCoefficients(uint32_t adapt_prob_status) {
+bool Vp9Decoder::AdaptProbabilityCoefficients(uint32_t adapt_prob_status) {
   TRACE_DURATION("media", "Vp9Decoder::AdaptProbabilityCoefficients");
   constexpr uint32_t kFrameContextSize = 0x1000;
   constexpr uint32_t kVp9FrameContextCount = 4;
   constexpr uint32_t kProbSize = 496 * 2 * 4;  // 3968 < 4096
   static_assert(kProbSize <= kFrameContextSize);
   if ((adapt_prob_status & 0xff) == 0xfd) {
+    uint32_t frame_context_idx = adapt_prob_status >> 8;
+    // TBD if the FW/HW would ever report frame_context_idx that fails this check, but even if not,
+    // it could be FW version dependent, so check in SW regardless.
+    if (frame_context_idx >= kVp9FrameContextCount) {
+      LogEvent(
+          media_metrics::StreamProcessorEvents2MigratedMetricDimensionEvent_GenericDecodeError);
+      LOG(ERROR, "frame_context_idx out of bounds: %u (max: %u)", frame_context_idx,
+          kVp9FrameContextCount - 1);
+      CallErrorHandler();
+      return false;
+    }
+
     // current_frame_data_ still reflects the frame that just finished decoding.
     uint32_t previous_fc = current_frame_data_.keyframe;
 
@@ -922,7 +934,6 @@ void Vp9Decoder::AdaptProbabilityCoefficients(uint32_t adapt_prob_status) {
     working_buffers_->count_buffer.buffer().CacheFlushInvalidate(
         0, working_buffers_->count_buffer.buffer().size());
 
-    uint32_t frame_context_idx = adapt_prob_status >> 8;
     uint8_t* previous_prob_buffer = working_buffers_->probability_buffer.buffer().virt_base() +
                                     frame_context_idx * kFrameContextSize;
     uint8_t* current_prob_buffer = working_buffers_->probability_buffer.buffer().virt_base() +
@@ -947,6 +958,7 @@ void Vp9Decoder::AdaptProbabilityCoefficients(uint32_t adapt_prob_status) {
         0, working_buffers_->count_buffer.buffer().size());
     Vp9AdaptProbReg::Get().FromValue(0).WriteTo(owner_->dosbus());
   }
+  return true;
 }
 
 void Vp9Decoder::HandleInterrupt() {
@@ -968,7 +980,10 @@ void Vp9Decoder::HandleInterrupt() {
 
   owner_->watchdog()->Cancel();
 
-  AdaptProbabilityCoefficients(adapt_prob_status);
+  if (!AdaptProbabilityCoefficients(adapt_prob_status)) {
+    owner_->TryToReschedule();
+    return;
+  }
 
   if (dec_status == kVp9InputBufferEmpty) {
     // TODO: We'll want to use this to continue filling input data of
