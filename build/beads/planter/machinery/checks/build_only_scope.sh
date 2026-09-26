@@ -10,8 +10,8 @@ set -euo pipefail
 # .go, .fidl, .cml, .json5, etc.) in the migration change is a scope violation:
 # migrations must be pure build-graph refactors with zero behavioral/source diff.
 #
-# Files inspected: the HEAD commit (git diff-tree HEAD) plus uncommitted working
-# tree / index changes (git diff HEAD) plus untracked files.
+# Files inspected: `git diff $PLANTER_CHANGE_BASE` (the task's commit, if HEAD is
+# the task's commit, plus uncommitted changes) plus untracked files.
 #
 # Allowed paths (build-definition surface):
 #   - BUILD.gn, BUILD.bazel, BUILD (any directory)
@@ -48,8 +48,10 @@ def git_lines(args):
 
 
 changed = set()
-changed.update(git_lines(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"]))
-changed.update(git_lines(["diff", "--name-only", "HEAD"]))
+# The task's change: everything since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is the task's own
+# commit, "HEAD" when HEAD is unrelated upstream history) plus untracked files.
+change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+changed.update(git_lines(["diff", "--name-only", change_base]))
 changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 
 
@@ -68,7 +70,6 @@ findings = []
 for path in sorted(changed):
     if is_build_file(path):
         continue
-    in_target = bool(target_dir) and (path == target_dir or path.startswith(target_dir + "/"))
     findings.append({
         "source": "build_only_scope",
         "category": "non_build_file_modified",
@@ -77,11 +78,10 @@ for path in sorted(changed):
         "line": 0,
         "message": (
             f"Migration modifies non-build file '{path}'"
-            + (" inside the target package" if in_target else "")
             + ". GN-to-Bazel migrations must not change source code, tests, manifests, or data files."
         ),
         "remediation": (
-            "Revert this file to its pre-migration contents (git checkout HEAD~1 -- <file> or "
+            "Revert this file to its pre-migration contents (git checkout $PLANTER_CHANGE_BASE -- <file> or "
             "git checkout -- <file>). If the Bazel build surfaces new lint/compile errors, fix the "
             "BUILD.bazel attributes (lint_config, rustc_flags, configs, features, deps) to reproduce "
             "the GN behavior instead of editing sources; if parity is impossible, stop and report it."

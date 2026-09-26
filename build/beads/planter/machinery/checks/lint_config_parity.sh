@@ -8,7 +8,7 @@ set -euo pipefail
 # Deterministic check for lint-driven source edits during GN-to-Bazel migrations.
 #
 # 1. lint_driven_source_edit (error): any non-build file changed in the migration
-#    change (HEAD commit + uncommitted) whose diff hunks look like a lint/warning
+#    change (git diff $PLANTER_CHANGE_BASE) whose diff hunks look like a lint/warning
 #    "fix" (removed .clone(), added #[allow]/#[expect]/NOLINT, unused-import
 #    removal, `let _ =` insertion, etc.). Reports exact file:line evidence.
 # 2. lint_config_semantics (warning): BUILD.bazel `lint_config = "<label>"` whose
@@ -63,10 +63,11 @@ LINT_PATTERNS = [
 
 findings = []
 
-# Collect unified diffs of the migration change: HEAD commit + working tree.
+# Collect the unified diff of the task's change since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is
+# the task's own commit, "HEAD" when HEAD is unrelated upstream history).
+change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 diff_texts = [
-    git(["show", "--format=", "--unified=0", "HEAD"]),
-    git(["diff", "--unified=0", "HEAD"]),
+    git(["diff", "--unified=0", change_base]),
 ]
 
 seen = set()
@@ -110,7 +111,7 @@ for text in diff_texts:
                         "GN-to-Bazel migrations must not edit sources to silence lints/warnings."
                     ),
                     "remediation": (
-                        "Revert the source edit (git checkout HEAD~1 -- <file> / git checkout -- <file>). "
+                        "Revert the source edit (git checkout $PLANTER_CHANGE_BASE -- <file>). "
                         "Pre-existing lint findings are out of scope. If the Bazel build newly reports this "
                         "lint, restore lint parity in BUILD.bazel (lint_config, rustc_flags, testonly, "
                         "features) instead; if impossible, stop and report the blocker."

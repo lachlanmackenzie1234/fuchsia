@@ -13,5 +13,9 @@
   - Only `BUILD.gn` (deletion), `BUILD.bazel`, and build registration lists (`*.gni` / `*.bzl`) may change. Never edit source files (`.rs`, `.cc`, `.h`, `.py`, `.fidl`, `.cml`, etc.), even to silence a new lint or warning.
   - If the Bazel target fails lint/compile where GN passed, reproduce the GN `configs` in Bazel (`lint_config`, `rustc_flags`, `copts`, `features`) instead of touching sources; if impossible, stop and report.
   - GN `configs += [ <lint config> ]` appends to default lints; Bazel `lint_config` replaces the macro default. Expect lint-set drift (including in `with_unit_tests` test code) and never "fix" it in sources.
-  - If Bazel clippy fails only on `with_unit_tests` test code, follow coder rule 6 (explicit `rustc_test` with the area's test lint config).
-  - Before finishing, confirm `git status --porcelain`, `git diff --name-only HEAD`, and `git show --stat HEAD` list only build-definition files.
+  - If Bazel clippy fails only on `with_unit_tests` test code, follow coder rule 6 (explicit `rustc_test` whose `lint_config` is the label of the area's test-flavored `rust_lint_config` itself, never a new alias).
+  - Before finishing, confirm `git status --porcelain` and `git diff --name-only $PLANTER_CHANGE_BASE` list only build-definition files.
+- **Shared Lint Configs (coder "Shared Lint Config Reuse")**:
+  - Reference the defining `rust_lint_config` (or a pre-existing wrapper label); never add an `alias()` or other wrapper that only re-exports a lint config.
+  - Area `rust_lint_config`s load the default clippy/rustc dicts from the `.bzl` in `//build/config/rust/lints` and spell out only their own entries; if the defaults are still private dicts in that BUILD.bazel, export them to a `.bzl` in the same change (verbatim, with `LINT.IfChange`/`LINT.ThenChange` markers moved and BUILD.gn `LINT.ThenChange` paths updated, existing targets kept). Replace copies of the defaults in any file you edit.
+  - If the lint config's package still has dual-build users, keep its same-named GN `config()` counterpart next to the Bazel target (bazel2gn copies `lint_config` verbatim).
