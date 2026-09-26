@@ -956,12 +956,12 @@ pub fn verify_program(
     let mut verification_context = VerificationContext::new(calling_context, logger, &code, states);
     while let Some(mut context) = verification_context.states.pop() {
         if let Some(terminating_contexts) =
-            verification_context.terminating_contexts.get(&context.pc)
+            verification_context.terminating_contexts.get(context.pc)
         {
             // Check whether there exist a context that terminate and prove that this context does
             // also terminate.
             if let Some(ending_context) =
-                terminating_contexts.iter().find(|c| c.computation_context >= context)
+                terminating_contexts.iter().rev().find(|c| c.computation_context >= context)
             {
                 // One such context has been found, this proves the current context terminates.
                 // If the context has a parent, register the data dependencies and try to terminate
@@ -1015,8 +1015,8 @@ struct VerificationContext<'a> {
     iteration: usize,
     /// Keep track of the context that terminates at a given pc. The list of context will all be
     /// incomparables as each time a bigger context is computed, the smaller ones are removed from
-    /// the list.
-    terminating_contexts: BTreeMap<ProgramCounter, Vec<TerminatingContext>>,
+    /// the list. Indexed directly by `ProgramCounter` (`0..code.len()`) for O(1) lookup.
+    terminating_contexts: Vec<Vec<TerminatingContext>>,
     /// The current set of struct access instructions that will need to be updated when the
     /// program is linked. This is also used to ensure that a given instruction always loads the
     /// same field. If this is not the case, the verifier will reject the program.
@@ -1037,7 +1037,7 @@ impl<'a> VerificationContext<'a> {
             code,
             counter: 0,
             iteration: 0,
-            terminating_contexts: Default::default(),
+            terminating_contexts: (0..code.len()).map(|_| Vec::new()).collect(),
             struct_access_instructions: Default::default(),
         }
     }
@@ -1115,7 +1115,7 @@ impl StackOffset {
 /// The state of the stack
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Stack {
-    data: HashMap<usize, Type>,
+    data: BTreeMap<usize, Type>,
 }
 
 impl Stack {
@@ -1344,29 +1344,38 @@ impl PartialOrd for Stack {
         let mut data_iter1 = self.data.iter().peekable();
         let mut data_iter2 = other.data.iter().peekable();
         loop {
-            let k1 = data_iter1.peek().map(|(k, _)| *k);
-            let k2 = data_iter2.peek().map(|(k, _)| *k);
-            let k = match (k1, k2) {
+            let (v1, v2) = match (data_iter1.peek(), data_iter2.peek()) {
                 (None, None) => return Some(result),
-                (Some(k), None) => {
+                (Some((_, v1)), None) => {
+                    let v1 = *v1;
                     data_iter1.next();
-                    *k
+                    (v1, &Type::UNINITIALIZED)
                 }
-                (None, Some(k)) => {
+                (None, Some((_, v2))) => {
+                    let v2 = *v2;
                     data_iter2.next();
-                    *k
+                    (&Type::UNINITIALIZED, v2)
                 }
-                (Some(k1), Some(k2)) => {
-                    if k1 <= k2 {
+                (Some((k1, v1)), Some((k2, v2))) => match k1.cmp(k2) {
+                    Ordering::Less => {
+                        let v1 = *v1;
                         data_iter1.next();
+                        (v1, &Type::UNINITIALIZED)
                     }
-                    if k2 <= k1 {
+                    Ordering::Greater => {
+                        let v2 = *v2;
                         data_iter2.next();
+                        (&Type::UNINITIALIZED, v2)
                     }
-                    *std::cmp::min(k1, k2)
-                }
+                    Ordering::Equal => {
+                        let (v1, v2) = (*v1, *v2);
+                        data_iter1.next();
+                        data_iter2.next();
+                        (v1, v2)
+                    }
+                },
             };
-            result = associate_orderings(result, self.get(k).partial_cmp(other.get(k))?)?;
+            result = associate_orderings(result, v1.partial_cmp(v2)?)?;
         }
     }
 }
@@ -2137,8 +2146,7 @@ impl ComputationContext {
             }
 
             // 3. Add the cleared state to the set of `terminating_contexts`
-            let terminating_contexts =
-                verification_context.terminating_contexts.entry(current.pc).or_default();
+            let terminating_contexts = &mut verification_context.terminating_contexts[current.pc];
             let mut is_dominated = false;
             terminating_contexts.retain(|c| match c.computation_context.partial_cmp(&current) {
                 Some(Ordering::Less) => false,
@@ -2182,14 +2190,14 @@ impl Drop for ComputationContext {
 /// a proof that a program in a state `t2` finish.
 impl PartialOrd for ComputationContext {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.pc != other.pc || self.resources != other.resources {
+        if self.pc != other.pc || self.resources.len() != other.resources.len() {
             return None;
         }
-        let mut result = self.stack.partial_cmp(&other.stack)?;
-        result = associate_orderings(
-            result,
-            Type::compare_list(self.registers.iter(), other.registers.iter())?,
-        )?;
+        let mut result = Type::compare_list(self.registers.iter(), other.registers.iter())?;
+        result = associate_orderings(result, self.stack.partial_cmp(&other.stack)?)?;
+        if self.resources != other.resources {
+            return None;
+        }
         let mut array_bound_iter1 = self.array_bounds.iter().peekable();
         let mut array_bound_iter2 = other.array_bounds.iter().peekable();
         let result = loop {
