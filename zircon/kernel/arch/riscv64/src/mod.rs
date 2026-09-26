@@ -79,33 +79,37 @@ pub fn is_valid_user_pc(pc: usize) -> bool {
     (pc == 0) || (is_user_accessible(pc) && !is_kernel_address(pc))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(ktest)]
+/// Architecture unit tests for riscv64.
+#[unittest::suite(name = "riscv64")]
+mod riscv64_tests {
+    use unittest::{assert_false, assert_true};
 
+    /// Tests `is_kernel_address`.
     #[test]
     fn test_is_kernel_address() {
-        assert!(is_kernel_address(KERNEL_ASPACE_BASE));
-        assert!(is_kernel_address(KERNEL_ASPACE_BASE + 0x1000));
-        assert!(is_kernel_address(KERNEL_ASPACE_BASE + KERNEL_ASPACE_SIZE - 1));
-        assert!(!is_kernel_address(0));
-        assert!(!is_kernel_address(0x1000));
-        assert!(!is_kernel_address(0x0000_003f_ffff_ffff));
-        assert!(!is_kernel_address(KERNEL_ASPACE_BASE - 1));
+        assert_true!(is_kernel_address(KERNEL_ASPACE_BASE));
+        assert_true!(is_kernel_address(KERNEL_ASPACE_BASE + 0x1000));
+        assert_true!(is_kernel_address(KERNEL_ASPACE_BASE + (KERNEL_ASPACE_SIZE - 1)));
+        assert_false!(is_kernel_address(0));
+        assert_false!(is_kernel_address(0x1000));
+        assert_false!(is_kernel_address(0x0000_003f_ffff_ffff));
+        assert_false!(is_kernel_address(KERNEL_ASPACE_BASE - 1));
     }
 
+    /// Tests `is_valid_user_pc`.
     #[test]
     fn test_is_valid_user_pc() {
         // Null pointer is valid (used for threads intended to fault).
-        assert!(is_valid_user_pc(0));
+        assert_true!(is_valid_user_pc(0));
         // Valid userspace addresses.
-        assert!(is_valid_user_pc(0x1000));
-        assert!(is_valid_user_pc(0x0000_003f_ffff_0000));
+        assert_true!(is_valid_user_pc(0x1000));
+        assert_true!(is_valid_user_pc(0x0000_003f_ffff_0000));
         // Inaccessible user address (bit 38 set).
-        assert!(!is_valid_user_pc(0x0000_0040_0000_0000));
+        assert_false!(is_valid_user_pc(0x0000_0040_0000_0000));
         // Kernel address.
-        assert!(!is_valid_user_pc(KERNEL_ASPACE_BASE));
-        assert!(!is_valid_user_pc(0xffff_ffff_8000_0000));
+        assert_false!(is_valid_user_pc(KERNEL_ASPACE_BASE));
+        assert_false!(is_valid_user_pc(0xffff_ffff_8000_0000));
     }
 }
 

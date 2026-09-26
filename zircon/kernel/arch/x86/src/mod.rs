@@ -627,56 +627,62 @@ pub unsafe extern "C" fn rust_arch_dump(state: *const zx_restricted_state_t) {
     dump(state);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(ktest)]
+/// Architecture unit tests for x86.
+#[unittest::suite(name = "x86")]
+mod x86_tests {
+    use unittest::{assert_err, assert_false, assert_ok, assert_true};
 
+    /// Tests `is_user_accessible`.
     #[test]
     fn test_is_user_accessible() {
-        assert!(is_user_accessible(0x00000000_00100000));
-        assert!(is_user_accessible(0x00007fff_ffffffff));
-        assert!(!is_user_accessible(0x00008000_00000000));
-        assert!(!is_user_accessible(0xffff8000_00000000));
+        assert_true!(is_user_accessible(0x00000000_00100000));
+        assert_true!(is_user_accessible(0x00007fff_ffffffff));
+        assert_false!(is_user_accessible(0x00008000_00000000));
+        assert_false!(is_user_accessible(0xffff8000_00000000));
     }
 
+    /// Tests `validate_state_pre_restricted_entry`.
     #[test]
     fn test_validate_state_pre_restricted_entry() {
-        let mut state = zx_restricted_state_t::default();
-        state.ip = 0x1000;
-        assert_eq!(validate_state_pre_restricted_entry(&state), Ok(()));
+        let state = zx_restricted_state_t { ip: 0x1000, ..Default::default() };
+        assert_ok!(validate_state_pre_restricted_entry(&state));
 
-        state.ip = 0xffff_8000_0000_0000;
-        assert_eq!(validate_state_pre_restricted_entry(&state), Err(Status::BAD_STATE));
+        let state_bad = zx_restricted_state_t { ip: 0xffff_8000_0000_0000, ..Default::default() };
+        assert_err!(validate_state_pre_restricted_entry(&state_bad), Status::BAD_STATE);
     }
 
+    /// Tests `dump`.
     #[test]
     fn test_dump() {
         let state = zx_restricted_state_t::default();
         dump(&state);
     }
 
+    /// Tests `is_kernel_address`.
     #[test]
     fn test_is_kernel_address() {
-        assert!(is_kernel_address(KERNEL_ASPACE_BASE));
-        assert!(is_kernel_address(KERNEL_ASPACE_BASE + 0x1000));
-        assert!(is_kernel_address(usize::MAX));
-        assert!(!is_kernel_address(0));
-        assert!(!is_kernel_address(0x1000));
-        assert!(!is_kernel_address(0x0000_7fff_ffff_ffff));
-        assert!(!is_kernel_address(KERNEL_ASPACE_BASE - 1));
+        assert_true!(is_kernel_address(KERNEL_ASPACE_BASE));
+        assert_true!(is_kernel_address(KERNEL_ASPACE_BASE + 0x1000));
+        assert_true!(is_kernel_address(usize::MAX));
+        assert_false!(is_kernel_address(0));
+        assert_false!(is_kernel_address(0x1000));
+        assert_false!(is_kernel_address(0x0000_7fff_ffff_ffff));
+        assert_false!(is_kernel_address(KERNEL_ASPACE_BASE - 1));
     }
 
+    /// Tests `is_valid_user_pc`.
     #[test]
     fn test_is_valid_user_pc() {
         // Null pointer is valid (used for threads intended to fault).
-        assert!(is_valid_user_pc(0));
+        assert_true!(is_valid_user_pc(0));
         // Valid userspace addresses.
-        assert!(is_valid_user_pc(0x1000));
-        assert!(is_valid_user_pc(0x0000_7fff_ffff_0000));
+        assert_true!(is_valid_user_pc(0x1000));
+        assert_true!(is_valid_user_pc(0x0000_7fff_ffff_0000));
         // Non-canonical address.
-        assert!(!is_valid_user_pc(0x0000_8000_0000_0000));
+        assert_false!(is_valid_user_pc(0x0000_8000_0000_0000));
         // Kernel address.
-        assert!(!is_valid_user_pc(KERNEL_ASPACE_BASE));
-        assert!(!is_valid_user_pc(0xffff_8000_0000_0000));
+        assert_false!(is_valid_user_pc(KERNEL_ASPACE_BASE));
+        assert_false!(is_valid_user_pc(0xffff_8000_0000_0000));
     }
 }

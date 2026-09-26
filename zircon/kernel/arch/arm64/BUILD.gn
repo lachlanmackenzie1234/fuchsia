@@ -233,6 +233,7 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/debug",
     ]
+    test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
   }
 
   source_set("tests") {
