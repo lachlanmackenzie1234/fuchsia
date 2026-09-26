@@ -50,7 +50,7 @@ source_set("codec_impl_tests") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//src/lib/testing/loop_fixture",
-    "//src/media/lib/codec_impl",
+    "//src/media/lib/codec_impl:codec_impl_dynamic",
     "//src/media/lib/codec_impl/test_utils",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",

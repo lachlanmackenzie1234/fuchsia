@@ -135,6 +135,20 @@ source_set("codec_impl") {
   ]
 }
 
+# Non-driver variant with dynamic buffer support enabled
+# (CODEC_IMPL_INTERNAL_ENABLE_DYNAMIC_BUFFERS=1), used by unit tests and
+# components that exercise dynamic buffer lifetimes.
+source_set("codec_impl_dynamic") {
+  sources = [
+    "dispatcher_via_async_loop.cc",
+    "log_via_fprintf.cc",
+  ]
+  public_deps = [
+    ":codec_impl_internal_dynamic",
+    "//src/lib/fxl",
+  ]
+}
+
 # DFv1 driver variant
 #
 # This uses async::Loop (not DFv2 fdf::SynchronizedDispatcher; see

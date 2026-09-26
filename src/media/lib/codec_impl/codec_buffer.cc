@@ -18,18 +18,22 @@ CodecBuffer::CodecBuffer(CodecImpl* parent, Info buffer_info, CodecVmoRange vmo_
   zx_status_t get_info_status =
       vmo_range_.vmo().get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr);
   ZX_ASSERT(get_info_status == ZX_OK);
+  vmo_size_bytes_ = vmo_info.size_bytes;
   zx_status_t vmo_status =
-      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_info.size_bytes, &vmo_);
+      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &vmo_);
   ZX_ASSERT(vmo_status == ZX_OK);
   zx_status_t parent_status =
-      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_info.size_bytes, &parent_vmo_);
+      vmo_range_.vmo().create_child(ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &parent_vmo_);
   ZX_ASSERT(parent_status == ZX_OK);
   zx::vmo until_remove_started_child_vmo;
   zx_status_t until_remove_started_status = parent_vmo_.create_child(
-      ZX_VMO_CHILD_SLICE, 0, vmo_info.size_bytes, &until_remove_started_child_vmo);
+      ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &until_remove_started_child_vmo);
   ZX_ASSERT(until_remove_started_status == ZX_OK);
-  until_remove_started_child_vmo_ =
-      std::make_shared<zx::vmo>(std::move(until_remove_started_child_vmo));
+  {
+    std::scoped_lock lock(until_remove_started_child_vmo_lock_);
+    until_remove_started_child_vmo_ =
+        std::make_shared<zx::vmo>(std::move(until_remove_started_child_vmo));
+  }
   zero_children_wait_.emplace(this, parent_vmo_.get(), ZX_VMO_ZERO_CHILDREN);
 }
 
@@ -121,11 +125,43 @@ size_t CodecBuffer::size() const { return vmo_range_.size(); }
 const zx::vmo& CodecBuffer::vmo() const { return vmo_; }
 
 zx::vmo CodecBuffer::GetChildVmo() const {
-  ZX_ASSERT(!!until_remove_started_child_vmo_);
-  zx::vmo dup;
-  zx_status_t dup_status = until_remove_started_child_vmo_->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
-  ZX_ASSERT_MSG(dup_status == ZX_OK, "dup_status: %s", zx_status_get_string(dup_status));
-  return dup;
+  std::shared_ptr<zx::vmo> local_vmo;
+  {
+    std::scoped_lock lock(until_remove_started_child_vmo_lock_);
+    local_vmo = until_remove_started_child_vmo_;
+  }
+  if (local_vmo) {
+    // duplicate() is lower overhead than create_child(), which at this point is the only
+    // remaining reason this path exists.
+    zx::vmo dup;
+    zx_status_t dup_status = local_vmo->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
+    ZX_ASSERT_MSG(dup_status == ZX_OK, "dup_status: %s", zx_status_get_string(dup_status));
+    return dup;
+  }
+  return CreateChildVmoFromParent();
+}
+
+zx::vmo CodecBuffer::CreateChildVmoFromParent() const {
+  // When a CodecAdapter that supports dynamic buffers retains a buffer beyond
+  // CoreCodecRemoveBuffer / EnsureBuffersNotConfigured (by holding a handle obtained earlier from
+  // GetChildVmo()) and subsequently emits an output packet referencing this buffer via
+  // CodecPacket::SetBuffer(), GetKeepAlive() / GetChildVmo() can be called after
+  // until_remove_started_child_vmo_ has already been reset. Because the CodecAdapter still holds
+  // at least one child VMO of parent_vmo_, parent_vmo_ has not yet seen ZX_VMO_ZERO_CHILDREN, and
+  // we can create a new child slice of parent_vmo_ to keep parent_vmo_ alive until the packet is
+  // recycled.
+  // Intentionally a release ZX_ASSERT (not ZX_DEBUG_ASSERT) to guard against buggy CodecAdapter(s)
+  // that call GetChildVmo() / SetBuffer() after dropping all previously-obtained child handles.
+  zx_info_vmo vmo_info{};
+  zx_status_t get_info_status =
+      parent_vmo_.get_info(ZX_INFO_VMO, &vmo_info, sizeof(vmo_info), nullptr, nullptr);
+  ZX_ASSERT(get_info_status == ZX_OK);
+  ZX_ASSERT(vmo_info.num_children > 0);
+  zx::vmo child_vmo;
+  zx_status_t child_status =
+      parent_vmo_.create_child(ZX_VMO_CHILD_SLICE, 0, vmo_size_bytes_, &child_vmo);
+  ZX_ASSERT(child_status == ZX_OK);
+  return child_vmo;
 }
 
 uint64_t CodecBuffer::vmo_offset() const { return vmo_range_.offset(); }
@@ -234,8 +270,29 @@ void CodecBuffer::OnZeroChildren(async_dispatcher_t* dispatcher, async::WaitBase
 }
 
 CodecBuffer::KeepAlive CodecBuffer::GetKeepAlive() const {
-  ZX_DEBUG_ASSERT(until_remove_started_child_vmo_);
-  return KeepAlive(until_remove_started_child_vmo_);
+  {
+    std::scoped_lock lock(until_remove_started_child_vmo_lock_);
+    if (until_remove_started_child_vmo_) {
+      return KeepAlive(until_remove_started_child_vmo_);
+    }
+  }
+  return KeepAlive(std::make_shared<zx::vmo>(CreateChildVmoFromParent()));
+}
+
+void CodecBuffer::ResetUntilRemoveStartedChildVmo() {
+  std::shared_ptr<zx::vmo> to_drop;
+  {
+    std::scoped_lock lock(until_remove_started_child_vmo_lock_);
+    if (until_remove_started_child_vmo_) {
+      VLOGF("until_remove_started_child_vmo_.reset() - port: %u buffer: %p", port(), this);
+      to_drop = std::move(until_remove_started_child_vmo_);
+    }
+  }
+}
+
+bool CodecBuffer::HasUntilRemoveStartedChildVmoForDebug() const {
+  std::scoped_lock lock(until_remove_started_child_vmo_lock_);
+  return static_cast<bool>(until_remove_started_child_vmo_);
 }
 
 fit::function<void(ScopedLock&)> CodecBuffer::TakePendingRemoveCompletion() {

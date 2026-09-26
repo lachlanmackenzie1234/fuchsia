@@ -49,13 +49,15 @@ class CodecAdapterEvents {
   // call is properly ordered with respect to onCoreCodecOutputPacket() and
   // onCoreCodecOutputEndOfStream() calls.
   //
-  // When not using dynamic buffers, a call to
+  // When !IsSupportsDynamicBuffers(), a call to
   // onCoreCodecMidStreamOutputConstraintsChange2 must not be followed by any
   // more output (including EndOfStream) until the associated output re-config
   // is completed by a call to CoreCodecMidStreamOutputBufferReConfigFinish().
   //
-  // When using dynamic buffers there is no such restriction - the core codec is
-  // free to output a packet or EOS using any currently-added buffer (see also
+  // When IsSupportsDynamicBuffers() is true, there is no such restriction - the
+  // core codec is free to output a packet or EOS using an older active
+  // buffer_lifetime_ordinal (while holding a buffer child VMO from GetChildVmo)
+  // or using any currently-added buffer (see also
   // EnableSameOutputBufferConcurrentlyInFlight).
   //
   // The constraints_version value is in the same sequence as
