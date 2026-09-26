@@ -1187,6 +1187,13 @@ bool H264MultiDecoder::InitializeRefPics(
       continue;
     }
 
+    // Backstop check to prevent stack-buffer-overflow out-of-bounds write of ref_list
+    // if the calling/parsing code has bugs or we somehow process a list with >= 32 elements.
+    ZX_DEBUG_ASSERT(ref_index < 32);
+    if (ref_index >= 32) {
+      break;
+    }
+
     // Offset into AncNCanvasAddr registers.
     uint32_t canvas_index = internal_picture->index;
     constexpr uint32_t kFrameFlag = 0x3;
@@ -1628,8 +1635,22 @@ void H264MultiDecoder::HandleSliceHeadDone() {
     slice->num_ref_idx_active_override_flag = true;
     slice->num_ref_idx_l0_active_minus1 =
         params_.data[HardwareRenderParams::kNumRefIdxL0ActiveMinus1];
+    if (slice->num_ref_idx_l0_active_minus1 >= 32) {
+      LogEvent(media_metrics::
+                   StreamProcessorEvents2MigratedMetricDimensionEvent_NumRefIdxDefaultActiveError);
+      LOG(ERROR, "slice->num_ref_idx_l0_active_minus1 >= 32");
+      OnFatalError();
+      return;
+    }
     slice->num_ref_idx_l1_active_minus1 =
         params_.data[HardwareRenderParams::kNumRefIdxL1ActiveMinus1];
+    if (slice->num_ref_idx_l1_active_minus1 >= 32) {
+      LogEvent(media_metrics::
+                   StreamProcessorEvents2MigratedMetricDimensionEvent_NumRefIdxDefaultActiveError);
+      LOG(ERROR, "slice->num_ref_idx_l1_active_minus1 >= 32");
+      OnFatalError();
+      return;
+    }
     // checked above
     ZX_DEBUG_ASSERT(slice_nalu.nal_unit_type != media::H264NALU::kCodedSliceExtension);
     // Each cmd is 2 uint16_t in src, and src has room for 33 commands so that the list of commands
