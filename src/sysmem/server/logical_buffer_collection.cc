@@ -4859,9 +4859,13 @@ TrackedParentVmo::~TrackedParentVmo() {
   // In some error paths, we just delete.
   CancelWait();
 
-  if (do_delete_) {
-    do_delete_(this);
-  }
+  // Some do_delete_ callbacks are not safe to run from within ~TrackedParentVmo, so we require that
+  // TakeDeleteCallback has already been called before ~TrackedParentVmo (and the do_delete_
+  // callback already run, though this check alone isn't sufficient to check that).
+  //
+  // In async cleanup case (normal), this gets cleaned up via OnZeroChildren. In sync cleanup case
+  // after AllocateVmo fails due to no memory, this gets cleaned up in ~LogicalBuffer.
+  ZX_DEBUG_ASSERT(!do_delete_);
 }
 
 zx_status_t TrackedParentVmo::StartWait(async_dispatcher_t* dispatcher) {
@@ -4882,6 +4886,8 @@ zx_status_t TrackedParentVmo::CancelWait() {
   waiting_ = false;
   return zero_children_wait_.Cancel();
 }
+
+TrackedParentVmo::DoDelete TrackedParentVmo::TakeDeleteCallback() { return std::move(do_delete_); }
 
 zx::vmo TrackedParentVmo::TakeVmo() {
   ZX_DEBUG_ASSERT(!waiting_);
@@ -5877,7 +5883,8 @@ LogicalBuffer::LogicalBuffer(fbl::RefPtr<LogicalBufferCollection> logical_buffer
               *tracked_strong_parent_vmo->child_koid());
         }
 
-        // won't have a pointer if ~LogicalBuffer before ZX_VMO_ZERO_CHILDREN
+        // Keep alive until the end of this lambda (both when called from OnZeroChildren and when
+        // called from ~LogicalBuffer).
         auto local_tracked_strong_parent_vmo = std::move(strong_parent_vmo_);
         ZX_DEBUG_ASSERT(!strong_parent_vmo_);
 
@@ -5962,6 +5969,47 @@ LogicalBuffer::LogicalBuffer(fbl::RefPtr<LogicalBufferCollection> logical_buffer
   // strong_parent_vmo_ for ZX_VMO_ZERO_CHILDREN purposes
 }
 
+LogicalBuffer::~LogicalBuffer() {
+  // In the normal async cleanup case, the do_delete_ callbacks will have already run and there
+  // won't be any to run here. In the sync cleanup case after failing an AllocateVmo due to out of
+  // memory, we run the do_delete_ callbacks here in the same order they would have run if
+  // OnZeroChildren had triggered them.
+  //
+  // The alternative of letting cleanup occur async after failure of AllocateVmo would allow this to
+  // be slightly "cleaner" locally in the server, but unfortunately would be worse overall because a
+  // client retry could end up getting another AllocateVmo failure due to the partially allocated
+  // BufferCollection not having deleted its VMOs yet.
+
+  // 1. Trigger weak parent VMO do_delete_ callbacks first.
+  while (!weak_parent_vmos_.empty()) {
+    auto node = weak_parent_vmos_.extract(weak_parent_vmos_.begin());
+    auto do_delete = node.mapped()->TakeDeleteCallback();
+    if (do_delete) {
+      do_delete(node.mapped().get());
+    }
+  }
+
+  // 2. Trigger strong parent VMO do_delete_ callback next.
+  if (strong_parent_vmo_) {
+    auto* raw_strong_parent = strong_parent_vmo_.get();
+    auto do_delete = raw_strong_parent->TakeDeleteCallback();
+    if (do_delete) {
+      do_delete(raw_strong_parent);
+    }
+    strong_parent_vmo_.reset();
+  }
+
+  // 3. Trigger parent VMO do_delete_ callback last.
+  if (parent_vmo_) {
+    auto* raw_parent = parent_vmo_.get();
+    auto do_delete = raw_parent->TakeDeleteCallback();
+    if (do_delete) {
+      do_delete(raw_parent);
+    }
+    parent_vmo_.reset();
+  }
+}
+
 bool LogicalBuffer::is_ok() { return error_ == ZX_OK; }
 
 zx_status_t LogicalBuffer::error() {
@@ -6025,10 +6073,16 @@ fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBuffer::CreateWeakVmo(
           logical_buffer_collection_->parent_sysmem_->RemoveVmoKoid(
               *tracked_sent_weak_parent_vmo->child_koid());
         }
-        // This erase can fail if ~tracked_sent_weak_parent_vmo in an error path before added to
-        // weak_parent_vmos_.
+        // This erase is a no-op if do_delete runs in an error path before added to
+        // weak_parent_vmos_, or during ~LogicalBuffer after extract().
         weak_parent_vmos_.erase(tracked_sent_weak_parent_vmo);
       });
+  auto clean_up_weak_parent_vmo = fit::defer([&tracked_sent_weak_parent_vmo] {
+    auto do_delete = tracked_sent_weak_parent_vmo->TakeDeleteCallback();
+    if (do_delete) {
+      do_delete(tracked_sent_weak_parent_vmo.get());
+    }
+  });
 
   // Makes a copy since TrackedParentVmo can outlast Node.
   tracked_sent_weak_parent_vmo->set_client_debug_info(client_debug_info);
@@ -6065,6 +6119,7 @@ fit::result<zx_status_t, std::optional<zx::vmo>> LogicalBuffer::CreateWeakVmo(
   auto emplace_result = weak_parent_vmos_.try_emplace(tracked_sent_weak_parent_vmo.get(),
                                                       std::move(tracked_sent_weak_parent_vmo));
   ZX_ASSERT(emplace_result.second);
+  clean_up_weak_parent_vmo.cancel();
 
   return fit::ok(std::move(child_same_rights));
 }
