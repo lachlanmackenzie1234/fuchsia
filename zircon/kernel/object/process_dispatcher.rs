@@ -42,12 +42,43 @@ crate::object::dispatcher::impl_dispatcher_facade!(
     zx_types::ZX_OBJ_TYPE_PROCESS
 );
 
+/// A wrapper around a raw pointer to the current [`ProcessDispatcher`].
+///
+/// This type explicitly does not implement [`Send`] or [`Sync`], guaranteeing that it cannot be
+/// shared with or sent to other threads. Because the current thread must be part of this process,
+/// the process cannot be destroyed while this thread is executing, making it safe to dereference
+/// the raw pointer into a [`ProcessDispatcher`] reference.
+#[derive(Debug)]
+pub struct CurrentProcessDispatcher {
+    ptr: *const ProcessDispatcher,
+}
+
+impl core::ops::Deref for CurrentProcessDispatcher {
+    type Target = ProcessDispatcher;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: `CurrentProcessDispatcher` does not implement `Send` or `Sync`, so it cannot be
+        // shared with other threads. The only way `self.ptr` could become invalid is if the
+        // process has been destroyed, which cannot happen while this thread (which is part of the
+        // process) is executing.
+        unsafe { &*self.ptr }
+    }
+}
+
 impl ProcessDispatcher {
+    /// Returns a wrapper that dereferences to the current [`ProcessDispatcher`].
+    #[inline]
+    pub fn get_current() -> CurrentProcessDispatcher {
+        // SAFETY: Calling `cpp_process_dispatcher_current` is safe when executing in a valid
+        // thread context.
+        let ptr = unsafe { cpp_process_dispatcher_current() };
+        CurrentProcessDispatcher { ptr }
+    }
+
     /// Executes the given function with a reference to the current process.
     pub fn with_current<R>(f: impl FnOnce(&ProcessDispatcher) -> R) -> R {
-        // SAFETY: The current process is guaranteed to be valid for the duration of the call.
-        let proc = unsafe { &*cpp_process_dispatcher_current() };
-        f(proc)
+        f(&Self::get_current())
     }
 
     /// Returns whether this `ProcessDispatcher` is the current process.

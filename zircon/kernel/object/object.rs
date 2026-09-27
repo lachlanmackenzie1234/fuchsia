@@ -92,7 +92,7 @@ pub use msi_allocation::MsiAllocation;
 pub use msi_dispatcher::MsiDispatcher;
 pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
 pub use pinned_memory_token_dispatcher::{PinnedMemoryTokenDispatcher, dev_vaddr_t};
-pub use process_dispatcher::{HandleTableReadGuard, ProcessDispatcher};
+pub use process_dispatcher::{CurrentProcessDispatcher, HandleTableReadGuard, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource::{
     StrictValidation, validate_ranged_resource, validate_ranged_resource_dispatcher,
