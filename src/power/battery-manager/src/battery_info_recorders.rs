@@ -200,6 +200,10 @@ impl FaultDetector {
         new_raw_level: Option<f32>,
         new_charge_status: Option<ChargeStatus>,
     ) -> FaultRecoveryEvent {
+        if new_raw_level.is_none() {
+            return FaultRecoveryEvent::None;
+        }
+
         let prev_raw_level = self.state.borrow().previous_raw_level;
         let prev_charge_status = self.state.borrow().previous_charge_status;
         let mut recovery_event = FaultRecoveryEvent::None;
