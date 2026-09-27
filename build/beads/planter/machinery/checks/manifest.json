@@ -32,6 +32,24 @@
             "enabled": true
         },
         {
+            "name": "bazel_minimality",
+            "description": "Audits BUILD.bazel files for redundant default attributes (crate_name == name, version = \"0.1.0\" on internal rustc_* targets, default crate_root) and flags drive-by edits to unrelated packages outside the target directory.",
+            "script_file": "bazel_minimality.sh",
+            "enabled": true
+        },
+        {
+            "name": "cq_reachability",
+            "description": "Verifies that migrated test targets remain wired into group(\"tests\") in BUILD.gn/BUILD.bazel and that Case 2 dual-build packages register //<pkg>:verify_bazel2gn.",
+            "script_file": "cq_reachability.sh",
+            "enabled": true
+        },
+        {
+            "name": "confidentiality_check",
+            "description": "Blocks internal vendor subpaths, internal domain names, personal email addresses, user handle mentions, and reviewer/person names from being added in the change.",
+            "script_file": "confidentiality_check.sh",
+            "enabled": true
+        },
+        {
             "name": "build_verification",
             "description": "Builds the change: `fx build` (GN targets and all GN dependents), `fx build --host //build:bazel2gn_verifications` (BUILD.gn/BUILD.bazel drift), and `fx bazel build --config=fuchsia_platform` / `--config=host` of `//<dir>:all` for every changed directory with a BUILD.bazel. Emits one ERROR finding with the relevant log lines per failing step. Set PLANTER_SKIP_BUILD=1 to skip.",
             "script_file": "build_verification.sh",

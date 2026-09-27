@@ -87,8 +87,10 @@ Reviewers reject wrapper labels that hide which lints apply, and copies of the d
    - NEVER use multi-domain library/test catch-all wildcards (`"//src/lib:__subpackages__"`, `"//sdk/lib:__subpackages__"`, `"//src/testing:__subpackages__"`, `"//src/tests:__subpackages__"`). Always list the specific library package (`//src/lib/<crate>:__pkg__`) or specific domain subtree (`//src/lib/<domain>:__subpackages__`, depth >= 3).
    - For non-global targets (`<= 15` narrow entries), NEVER roll up external callers in another top-level area (`//src/<area>`, depth 2, such as `//src/storage:__subpackages__"`, `//src/connectivity:__subpackages__"`, `//src/starnix:__subpackages__"`, `//src/sys:__subpackages__"`, `//src/devices:__subpackages__"`) into a depth-2 `"//src/<area>:__subpackages__"` wildcard when the target resides outside `//src/<area>`. Instead, list the exact caller packages (`//src/<area>/<path>:__pkg__`) or their depth >= 3 component subtrees (`//src/<area>/<subcomponent>:__subpackages__`).
    - For non-global targets (`<= 15` narrow entries), never use a depth >= 3 `//P:__subpackages__` wildcard if only a single package `//Q` under `//P` depends on the target (use `"//Q:__pkg__"` instead) or if all callers under `//P` share a strictly deeper Lowest Common Ancestor `//P/sub` (use `"//P/sub:__subpackages__"` or exact `:__pkg__` entries instead). Always prefer `per_target_recommended_visibility` from `find_rdeps`.
-6. **Package-Scoped Execution**:
+   - **Vendor Visibility (`"//vendor/google:__subpackages__"`)**: When adding visibility for callers in the vendor tree, NEVER list internal subpaths (never `:__pkg__` or `:__subpackages__` on a vendor subdirectory). Always expose the target using `"//vendor/google:__subpackages__"` (which `fx bazel2gn` converts to `"//vendor/google/*"` in `BUILD.gn`).
+6. **Package-Scoped Execution & `BUILD.bazel` Minimality**:
    - Keep your work scoped to the target package(s), the dependency directories you migrate under "Dependencies Without a Bazel Build", and the specific files mentioned in findings/comments. After editing any `BUILD.bazel` file in a dual-build package, always run `fx bazel2gn -d <dir>` to keep `BUILD.gn` synchronized.
+   - Omit redundant default attributes in `BUILD.bazel`: do NOT specify `crate_name` when it equals `name` (or `name` with `-` replaced by `_`), do NOT specify `version = "0.1.0"` on internal `rustc_*` targets, and do NOT specify `crate_root = "src/lib.rs"` on `rustc_library` or `crate_root = "src/main.rs"` on `rustc_binary`.
    - Do NOT modify `//build/tools/bazel2gn/**` or other build-system internals unless the task is specifically targeting those directories. Adding entries to registration lists such as `//build/bazel2gn_verification_targets.gni` is expected and allowed, and so is exporting the default lint dicts from a `.bzl` in `//build/config/rust/lints` (see "Shared Lint Config Reuse").
 
 ## Dependencies Without a Bazel Build (Migrate Them, Don't Stop)
@@ -99,13 +101,15 @@ A Bazel target can only depend on Bazel targets. When a target you are migrating
 4. **Only stop** if a required dependency cannot have a Bazel target at all: it is a GN-only construct with no Bazel mapping (e.g. a GN `action`/`compiled_action`/`generated_file` without a Bazel counterpart), or it lives in build-system or prebuilt internals (`//build/**`, `//prebuilt/**`, unmapped `//third_party/**`). Then report the exact dependency chain in the CoderReport `summary`.
 5. **Report it**: start the `summary` with `Also migrated dependencies: //a, //b (needed by //target)` whenever you migrated extra directories, and include their files in `modified_files`.
 
-## Build Verification (Required Before Reporting)
-Static checks and reviewers only read files; builds are the proof. From `$PLANTER_WORKDIR`, run and fix until all pass (fix BUILD files, never sources):
+## Build & Test Verification (Required Before Reporting)
+Static checks and reviewers only read files; builds and tests are the proof. From `$PLANTER_WORKDIR`, run and fix until all pass (fix BUILD files, never sources):
 1. `fx bazel2gn -d <dir>` for every dual-build directory you touched (target and migrated dependencies).
 2. `fx build` (incremental, whole product: rebuilds the migrated GN targets and all their GN dependents).
 3. `fx build --host //build:bazel2gn_verifications` (fails if any BUILD.gn drifted from BUILD.bazel).
 4. `fx bazel build --config=fuchsia_platform //<dir>:all` for every touched directory with a `BUILD.bazel` (including `//build/config/rust/lints` and the area lint-config package when you changed them), and also `fx bazel build --config=host //<dir>:all` for directories with host targets (`HOST_CONSTRAINTS`, `*_host_tool`, host tests).
-The `build_verification` check runs exactly these commands after you report, and a failure sends the task back to you with the log. In the `summary`, list the commands you ran and their result.
+5. Execute any migrated unit/host tests (e.g. `fx bazel test --config=host //<dir>:<test>` or `fx test <test>`), ensure every migrated test target (`rustc_test`, `cc_test`, `go_test`, `fuchsia_unittest_package`, `fuchsia_test_package`) remains wired into `group("tests")`, and record the verification commands executed in `tests_run`.
+6. Never include internal repository or vendor subpaths, internal domain names, Fuchsia Gerrit banned words, personal email addresses, user handle mentions, or reviewer/person names in any comment, commit message, or `CoderReport`. Keep `summary` lines wrapped at `<= 72` characters, and if you create or amend a git commit, keep the subject line (first line) to 50-65 characters (`<= 65` characters) and wrap body lines at `<= 72` characters.
+The `build_verification` check runs the build commands after you report, and a failure sends the task back to you with the log. In the `summary`, list the commands you ran and their result.
 
 ## Run the Checks Before Reporting
 After you report, planter runs every check in `checks/manifest.json` and sends the change back for another round if any of them reports an ERROR or WARNING. Run the same checks yourself first with `run_checks.sh` (on `$PATH`): it runs exactly what planter runs, prints every finding with its remediation, and exits 1 while any finding blocks.
@@ -114,4 +118,4 @@ After you report, planter runs every check in `checks/manifest.json` and sends t
 If you are certain a finding is a false positive, do not reshape the change just to get past the check: leave it and explain why, with evidence, in the `summary`. Planter still sends the change back, and repeated false positives make it evolve the check. In the `summary`, include the result of your last `run_checks.sh` run.
 
 Always output a final JSON block matching CoderReport:
-{"summary": "...", "modified_files": ["..."], "migration_case": "case1_full_removal|case2_dual_build"}
+{"summary": "...", "modified_files": ["..."], "migration_case": "case1_full_removal|case2_dual_build", "tests_run": ["..."]}
