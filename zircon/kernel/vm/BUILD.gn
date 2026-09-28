@@ -772,14 +772,43 @@ kernel_bindgen_crate("page-source-bindings") {
     "cpp_multi_page_request_construct",
     "cpp_multi_page_request_destroy",
     "cpp_multi_page_request_cancel_requests",
+    "cpp_page_request_get_type",
+    "cpp_page_request_get_offset",
+    "cpp_page_request_get_len",
+    "cpp_page_request_provider_node",
+    "cpp_page_source_on_pages_failed",
+    "cpp_page_source_is_valid_internal_failure_code",
+    "cpp_page_source_paged_vmo_lock_is_held",
   ]
-  type_allowlist = [ "MultiPageRequest" ]
-  additional_bindgen_flags = [
-    "--opaque-type=MultiPageRequest",
-    "--no-recursive-allowlist",
-    "--blocklist-function=MultiPageRequest_.*",
+  type_allowlist = [
+    "MultiPageRequest",
+    "PageRequest",
+    "PageSource",
+    "PageSourceProperties",
+    "page_request_type",
   ]
-  raw_lines = [ "#![no_std]" ]
+  type_blocklist = [ "zx_status_t" ]
+  opaque_types = [
+    "MultiPageRequest",
+    "PageRequest",
+    "PageSource",
+  ]
+  rustified_enum = [ "page_request_type" ]
+  function_blocklist = [
+    "MultiPageRequest_.*",
+    "PageRequest_.*",
+    "PageSource_.*",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::zx_status_t;",
+  ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
 }
 
 kernel_bindgen_crate("vm-page-list-bindings") {
