@@ -177,6 +177,7 @@ bazel2gn_verification_targets = [
   "//src/lib/versioning/version-history/rust/proc-macro:verify_bazel2gn",
   "//src/lib/versioning/version-history/rust:verify_bazel2gn",
   "//src/lib/webpki-roots-fuchsia:verify_bazel2gn",
+  "//src/performance/lib/fxt/rust:verify_bazel2gn",
   "//src/starnix/lib/asm_utils:verify_bazel2gn",
   "//src/starnix/lib/atomic_bitflags:verify_bazel2gn",
   "//src/starnix/lib/composite_fd:verify_bazel2gn",
