@@ -159,6 +159,16 @@ class Node {
     entry_valid_secs_ = secs;
   }
 
+  void SetAttrValidDuration(uint64_t secs) {
+    std::lock_guard guard(mtx_);
+    attr_valid_secs_ = secs;
+  }
+
+  void IncrementNlink() {
+    std::lock_guard guard(mtx_);
+    nlink_++;
+  }
+
   uint64_t UpdateNodeid(uint64_t id) {
     std::lock_guard guard(mtx_);
     std::swap(id, id_);
@@ -175,12 +185,16 @@ class Node {
         .ino = id_,
         .size = size_,
         .mode = type_ | perms_,
+        .nlink = nlink_,
     };
   }
 
-  void PopulateAttr(fuse_attr& attr) {
+  void PopulateAttr(fuse_attr_out& attr_out) {
     std::lock_guard guard(mtx_);
-    PopulateAttrLocked(attr);
+    attr_out = {
+        .attr_valid = attr_valid_secs_,
+    };
+    PopulateAttrLocked(attr_out.attr);
   }
 
   void PopulateEntry(fuse_entry_out& entry_out) {
@@ -189,6 +203,7 @@ class Node {
         .nodeid = id_,
         .generation = generation_,
         .entry_valid = entry_valid_secs_,
+        .attr_valid = attr_valid_secs_,
     };
     PopulateAttrLocked(entry_out.attr);
   }
@@ -203,8 +218,10 @@ class Node {
   uint64_t id_ __TA_GUARDED(mtx_) = 0;
   uint64_t generation_ __TA_GUARDED(mtx_) = 1;
   uint64_t entry_valid_secs_ __TA_GUARDED(mtx_) = 0;
+  uint64_t attr_valid_secs_ __TA_GUARDED(mtx_) = 0;
   uint32_t perms_ __TA_GUARDED(mtx_) = S_IRWXU | S_IRWXG | S_IRWXO;
   uint64_t size_ __TA_GUARDED(mtx_) = 0;
+  uint32_t nlink_ __TA_GUARDED(mtx_) = 1;
 };
 
 class Directory : public Node {
@@ -584,7 +601,7 @@ class FuseServer {
                                                  const struct fuse_in_header& in_header,
                                                  const struct fuse_getattr_in* getattr_in) {
     fuse_attr_out attr_out = {};
-    node->PopulateAttr(attr_out.attr);
+    node->PopulateAttr(attr_out);
     return WriteStructResponse(in_header, attr_out);
   }
 
@@ -1773,10 +1790,9 @@ TEST_P(FuseServerCacheAttributesTest, CacheAttributes) {
       if (in_header.nodeid != FUSE_ROOT_ID) {
         calls_to_non_root_getattr_.fetch_add(1, std::memory_order_relaxed);
       }
-      fuse_attr_out attr_out = {
-          .attr_valid = getattr_attr_valid_,
-      };
-      node->PopulateAttr(attr_out.attr);
+      fuse_attr_out attr_out = {};
+      node->PopulateAttr(attr_out);
+      attr_out.attr_valid = getattr_attr_valid_;
       return WriteStructResponse(in_header, attr_out);
     }
 
@@ -2313,4 +2329,38 @@ TEST_F(FuseServerTest, PassthroughMmap) {
   void* non_pt_addr = mmap(nullptr, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, non_pt_fd.get(), 0);
   EXPECT_EQ(non_pt_addr, MAP_FAILED);
   EXPECT_EQ(errno, ENODEV);
+}
+
+TEST_F(FuseServerTest, LookupUpdatesExistingNodeAttributes) {
+  auto server = std::make_shared<CountingFuseServer>(0, 0);
+  FileSystem& fs = server->fs();
+  fs.RootDir()->SetEntryValidDuration(std::numeric_limits<uint64_t>::max());
+  fs.RootDir()->SetAttrValidDuration(std::numeric_limits<uint64_t>::max());
+  std::shared_ptr<File> file = fs.AddFileAtRoot("file1");
+  fs.RootDir()->AddChild("file2", file);
+  file->SetEntryValidDuration(std::numeric_limits<uint64_t>::max());
+  file->SetAttrValidDuration(std::numeric_limits<uint64_t>::max());
+
+  ASSERT_TRUE(Mount(server));
+
+  std::string file1_path = GetMountDir() + "/file1";
+  std::string file2_path = GetMountDir() + "/file2";
+
+  fbl::unique_fd fd1(open(file1_path.c_str(), O_RDONLY));
+  ASSERT_TRUE(fd1.is_valid()) << strerror(errno);
+
+  struct stat st = {};
+  ASSERT_EQ(fstat(fd1.get(), &st), 0) << strerror(errno);
+  EXPECT_EQ(st.st_nlink, 1u);
+  EXPECT_EQ(server->NonRootGetAttrCount(), 0u);
+
+  // Simulate an external link count change returned when looking up a second
+  // hard link to the already-cached node.
+  file->IncrementNlink();
+  fbl::unique_fd fd2(open(file2_path.c_str(), O_RDONLY));
+  ASSERT_TRUE(fd2.is_valid()) << strerror(errno);
+
+  ASSERT_EQ(fstat(fd1.get(), &st), 0) << strerror(errno);
+  EXPECT_EQ(st.st_nlink, 2u);
+  EXPECT_EQ(server->NonRootGetAttrCount(), 0u);
 }

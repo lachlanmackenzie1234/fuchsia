@@ -686,6 +686,8 @@ impl FuseNode {
         if entry.nodeid == 0 {
             return error!(ENOENT);
         }
+        let attr_valid_duration = attr_valid_to_duration(entry.attr_valid, entry.attr_valid_nsec)?;
+        let mut created = false;
         let node = node.fs().get_and_validate_or_create_node(
             entry.nodeid,
             |node| {
@@ -693,13 +695,14 @@ impl FuseNode {
                 fuse_node.generation == entry.generation
             },
             || {
+                created = true;
                 let fuse_node =
                     FuseNode::new(self.connection.clone(), entry.nodeid, entry.generation);
                 let mut info = FsNodeInfo::default();
                 FuseNode::update_node_info_from_attr(
                     &mut info,
                     entry.attr,
-                    attr_valid_to_duration(entry.attr_valid, entry.attr_valid_nsec)?,
+                    attr_valid_duration,
                     &fuse_node.attributes_valid_until,
                 )?;
                 Ok(FsNode::new_uncached(
@@ -715,6 +718,16 @@ impl FuseNode {
         if !DirEntry::is_reserved_name(name) {
             let fuse_node = FuseNode::from_node(&node);
             fuse_node.state.lock().nlookup += 1;
+            if !created {
+                node.update_info(|info| {
+                    FuseNode::update_node_info_from_attr(
+                        info,
+                        entry.attr,
+                        attr_valid_duration,
+                        &fuse_node.attributes_valid_until,
+                    )
+                })?;
+            }
         }
         Ok(node)
     }
