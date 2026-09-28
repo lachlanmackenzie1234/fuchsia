@@ -46,12 +46,7 @@ impl Expando {
     /// The slot is added to the expando lazily but the same instance is returned every time the
     /// expando is queried for the same type.
     pub fn get<T: Any + Send + Sync + Default + 'static>(&self) -> Arc<T> {
-        let mut properties = self.properties.lock();
-        let type_id = TypeId::of::<T>();
-        let slot =
-            properties.entry(type_id).or_insert_with(|| ExpandoSlot::new(Arc::new(T::default())));
-        assert_eq!(type_id, slot.value.deref().type_id());
-        slot.downcast().expect("downcast of expando slot was successful")
+        self.get_or_init(T::default)
     }
 
     /// Get the slot in the expando associated with the given type, running `init` to initialize
