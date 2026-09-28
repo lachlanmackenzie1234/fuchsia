@@ -40,60 +40,12 @@ const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
 #[cfg(test)]
 use {mockall::mock, mockall::predicate::*};
 
-/// Check if daemon discovery is disabled, resolving locally if so.
-pub async fn maybe_locally_resolve_target_spec(
-    target_spec: &TargetInfoQuery,
-    env_context: &EnvironmentContext,
-) -> Result<TargetInfoQuery> {
-    // This should be read as "is discovery enabled on the daemon".
-    if crate::is_discovery_enabled(env_context) {
-        Ok(target_spec.clone())
-    } else {
-        log::warn!(
-            "crate::is_discovery_enabled is false - using local target resolution. is_usb_discovery_disabled is {}, is_mdns_discovery_disabled is {}",
-            ffx_config::is_usb_discovery_disabled(env_context),
-            ffx_config::is_mdns_discovery_disabled(env_context)
-        );
-
-        let discovery = build_discovery_from_config(env_context);
-        let resolver = DefaultTargetResolver::new(discovery);
-        locally_resolve_target_spec(target_spec, &resolver, env_context).await
-    }
-}
-
 fn replace_default_port(sa: SocketAddr) -> SocketAddr {
     let mut sa = sa;
     if sa.port() == 0 {
         sa.set_port(TARGET_DEFAULT_PORT);
     }
     sa
-}
-
-/// Attempts to resolve the query into an explicit string query that can be
-/// passed to the daemon. If already an address or serial number, just return
-/// it. Otherwise, perform discovery to find the address or serial #. Returns
-/// Some(_) if a target has been found, None otherwise.
-async fn locally_resolve_target_spec<T: TargetResolver>(
-    target_spec: &TargetInfoQuery,
-    resolver: &T,
-    env_context: &EnvironmentContext,
-) -> Result<TargetInfoQuery> {
-    let query = TargetInfoQuery::from(target_spec.clone());
-    let explicit_spec = match query {
-        // If an address is passed in, make sure that the default port is filled in if it hadn't
-        // been explicit, then just pass it on to the daemon as is
-        TargetInfoQuery::Addr(addr) => format!("{}", replace_default_port(addr)),
-        TargetInfoQuery::Id(sn) => format!("id:{sn}"),
-        _ => {
-            let source = target_source_for_query(target_spec, env_context);
-            let resolution =
-                resolver.resolve_single_target(&target_spec, true, env_context, source).await?;
-            log::debug!("Locally resolved target '{target_spec:?}' to {:?}", resolution.discovered);
-            resolution.target.to_spec()
-        }
-    };
-
-    Ok(TargetInfoQuery::try_from(explicit_spec)?)
 }
 
 fn target_error_to_analytics<'a>(
@@ -1215,140 +1167,10 @@ mod test {
         (sa, addr_spec)
     }
 
-    #[fuchsia::test]
-    async fn test_can_resolve_target_locally_addr() {
-        let test_env = ffx_config::test_init().unwrap();
-        let resolver = MockTargetResolver::new();
-        // A network address will resolve to itself
-        let (_, addr_spec) = get_addr_and_spec();
-        // Note that this will fail if we try to call resolve_target_spec()
-        // since we haven't mocked a return value. So it's also checking that no
-        // resolution is done.
-        let target_spec =
-            locally_resolve_target_spec(&addr_spec.clone(), &resolver, &test_env.context)
-                .await
-                .unwrap();
-        assert_eq!(target_spec, addr_spec.clone().into());
-    }
-
-    #[fuchsia::test]
-    async fn test_can_resolve_target_locally_id() {
-        let test_env = ffx_config::test_init().unwrap();
-        let resolver = MockTargetResolver::new();
-        // An ID spec will resolve to itself
-        let id = "abcdef".to_string();
-        let id_spec = TargetInfoQuery::Id(id.clone());
-        // Note that this will fail if we try to call resolve_target_spec()
-        // since we still haven't mocked a return value. So it's also checking that no
-        // resolution is done.
-        let target_spec =
-            locally_resolve_target_spec(&id_spec.clone(), &resolver, &test_env.context)
-                .await
-                .unwrap();
-        assert_eq!(target_spec, id_spec.clone());
-    }
-
     fn make_target_handle_for_product(name: &str, sa: SocketAddr) -> TargetHandle {
         let state = discovery::TargetState::Product { addrs: vec![sa.into()], serial: None };
         let th = TargetHandle { node_name: Some(String::from(name)), state, manual: false };
         th
-    }
-
-    #[fuchsia::test]
-    async fn test_can_resolve_target_locally_dns() {
-        let test_env = ffx_config::test_init().unwrap();
-        let mut resolver = MockTargetResolver::new();
-        // A DNS name will satisfy the resolution request
-        let name = "foobar".to_string();
-        let name_spec = TargetInfoQuery::NodenameOrId(name.clone());
-        let (sa, addr_spec) = get_addr_and_spec();
-        let th = make_target_handle_for_product(&name, sa);
-        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
-        let target_spec =
-            locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
-                .await
-                .unwrap();
-        assert_eq!(target_spec, addr_spec);
-    }
-
-    #[fuchsia::test]
-    async fn test_cannot_resolve_target_locally_id_name() {
-        let test_env = ffx_config::test_init().unwrap();
-        let mut resolver = MockTargetResolver::new();
-        // Test with "<id>", _not_ "id:<id>"
-        let id = "abcdef".to_string();
-        let th = TargetHandle {
-            node_name: None,
-            state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
-                serial_number: id.clone(),
-                connection_state: discovery::FastbootConnectionState::Usb,
-            }),
-            manual: false,
-        };
-        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
-        let target_spec = locally_resolve_target_spec(
-            &(TargetInfoQuery::try_from(id.clone()).unwrap()),
-            &resolver,
-            &test_env.context,
-        )
-        .await;
-        assert!(target_spec.is_err())
-    }
-
-    #[fuchsia::test]
-    async fn test_can_resolve_target_locally_name_ambiguous() {
-        let test_env = ffx_config::test_init().unwrap();
-        let mut resolver = MockTargetResolver::new();
-        // An ambiguous name will result in an error
-        let name = "foobar".to_string();
-        let (sa, _) = get_addr_and_spec();
-        let th1 = make_target_handle_for_product(&name, sa);
-        let th2 = make_target_handle_for_product(&name, sa);
-        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th1, th2]));
-        let target_spec_res = locally_resolve_target_spec(
-            &(TargetInfoQuery::try_from("foo".to_string()).unwrap()),
-            &resolver,
-            &test_env.context,
-        )
-        .await;
-        assert!(target_spec_res.is_err());
-        assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("multiple targets"));
-    }
-
-    #[fuchsia::test]
-    async fn test_can_resolve_target_locally_first() {
-        let test_env = ffx_config::test_init().unwrap();
-        let mut resolver = MockTargetResolver::new();
-        // A "first" query will satisfy the resolution request
-        let first_spec = TargetInfoQuery::First;
-        let (sa, addr_spec) = get_addr_and_spec();
-        let th = make_target_handle_for_product("foo", sa);
-        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
-        let target_spec =
-            locally_resolve_target_spec(&first_spec, &resolver, &test_env.context).await.unwrap();
-        assert_eq!(target_spec, addr_spec);
-    }
-
-    #[fuchsia::test]
-    async fn test_can_resolve_target_locally_first_ambiguous() {
-        let test_env = ffx_config::test_init().unwrap();
-        let mut resolver = MockTargetResolver::new();
-        // A "first" query will fail if there are multiple matches
-        let name = "foobar".to_string();
-        let (sa, _) = get_addr_and_spec();
-        let th1 = make_target_handle_for_product(&name, sa);
-        let th2 = make_target_handle_for_product(&name, sa);
-        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
-        resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th1, th2]));
-        let first_spec = TargetInfoQuery::First;
-        let target_spec_res =
-            locally_resolve_target_spec(&first_spec, &resolver, &test_env.context).await;
-        assert!(target_spec_res.is_err());
-        assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("More than one device"));
     }
 
     #[fuchsia::test]
@@ -1446,18 +1268,18 @@ mod test {
         let mut resolver = MockTargetResolver::new();
         let name = "foobar".to_string();
         let name_spec = TargetInfoQuery::NodenameOrId(name.clone());
-        let (sa, addr_spec) = get_addr_and_spec();
+        let (sa, _) = get_addr_and_spec();
         let th = make_target_handle_for_product(&name, sa);
 
         // Even though cache exists (empty), because of cache miss, it must fall back to manual and discovery queries:
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver.expect_discovered_targets().return_once(move |_| Ok(vec![th]));
 
-        let target_spec =
-            locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
-                .await
-                .unwrap();
-        assert_eq!(target_spec, addr_spec);
+        let resolution = resolver
+            .resolve_single_target(&name_spec, true, &test_env.context, Some(TargetSource::Default))
+            .await
+            .unwrap();
+        assert_eq!(resolution.addr().unwrap(), sa);
     }
 
     #[fuchsia::test]
@@ -1477,7 +1299,7 @@ mod test {
 
         // Write a cache file containing our target info!
         let cache_file = get_discovery_cache_file(&test_env.context).unwrap();
-        let (sa, addr_spec) = get_addr_and_spec();
+        let (sa, _) = get_addr_and_spec();
 
         let mut target_info = crate::TargetInfo::default();
         target_info.nodename = Some("foobar".to_string());
@@ -1493,11 +1315,11 @@ mod test {
         // If the resolver attempts to call them, MockTargetResolver will panic,
         // validating that discovery was indeed bypassed on cache hit.
 
-        let target_spec =
-            locally_resolve_target_spec(&name_spec.clone(), &resolver, &test_env.context)
-                .await
-                .unwrap();
-        assert_eq!(target_spec, addr_spec);
+        let resolution = resolver
+            .resolve_single_target(&name_spec, true, &test_env.context, Some(TargetSource::Default))
+            .await
+            .unwrap();
+        assert_eq!(resolution.addr().unwrap(), sa);
     }
 
     // Tests that `build_discovery_from_config` reads and applies the discovery timeout from the

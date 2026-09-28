@@ -335,10 +335,6 @@ impl Isolate {
         self.tmpdir.path()
     }
 
-    pub fn ascendd_path(&self) -> PathBuf {
-        self.tmpdir.path().join("daemon.sock")
-    }
-
     pub fn env_context(&self) -> &EnvironmentContext {
         &self.env_ctx
     }

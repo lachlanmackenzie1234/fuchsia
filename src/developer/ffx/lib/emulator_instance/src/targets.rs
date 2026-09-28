@@ -64,7 +64,6 @@ pub struct EmulatorTargetInfo {
     pub nodename: String,
     pub addresses: Vec<EmulatorAddr>,
     pub serial_number: Option<String>,
-    pub ssh_port: Option<u16>,
 }
 
 /// Action to take for a Target based on an
@@ -251,7 +250,6 @@ impl EmulatorWatcher {
                                     nodename: instance_name,
                                     addresses: vec![],
                                     serial_number: None,
-                                    ssh_port: None,
                                 };
                                 return Some(EmulatorTargetAction::Remove(target_info));
                             }
@@ -263,7 +261,6 @@ impl EmulatorWatcher {
                                     nodename: instance_name,
                                     addresses: vec![],
                                     serial_number: None,
-                                    ssh_port: None,
                                 };
                                 return Some(EmulatorTargetAction::Remove(target_info));
                             }
@@ -342,7 +339,7 @@ impl EmulatorWatcher {
             _ => None,
         };
 
-        Some(EmulatorTargetInfo { nodename, addresses, serial_number, ssh_port })
+        Some(EmulatorTargetInfo { nodename, addresses, serial_number })
     }
 }
 
@@ -614,7 +611,6 @@ mod tests {
                     nodename: emu_instance_name.clone(),
                     addresses: vec![],
                     serial_number: None,
-                    ssh_port: None,
                 })),
             ),
             (
@@ -623,7 +619,6 @@ mod tests {
                     nodename: instance_data.get_name().to_string(),
                     addresses: vec![loopback.clone()],
                     serial_number: None,
-                    ssh_port: Some(3322),
                 })),
             ),
             (
@@ -632,7 +627,6 @@ mod tests {
                     nodename: serial_instance_data.get_name().to_string(),
                     addresses: vec![loopback],
                     serial_number: Some("EM-123456789".to_string()),
-                    ssh_port: Some(3322),
                 })),
             ),
             (EmulatorInstanceEvent::Data(Box::new(tap_instance_data.clone())), None),
@@ -727,7 +721,6 @@ mod tests {
             .expect("Should create target for TAP+VSOCK");
         assert_eq!(target.nodename, "emu-tap-vsock");
         assert_eq!(target.addresses, vec![EmulatorAddr::Vsock { cid: 42 }]);
-        assert_eq!(target.ssh_port, None);
     }
 
     #[test]
@@ -748,7 +741,6 @@ mod tests {
         let target = EmulatorWatcher::make_target(&instance_data)
             .expect("Should create target for User+VSOCK+SSH");
         assert_eq!(target.nodename, "emu-user-vsock-ssh");
-        assert_eq!(target.ssh_port, Some(8022));
         assert!(target.addresses.contains(&EmulatorAddr::Vsock { cid: 99 }));
         assert!(target.addresses.contains(&EmulatorAddr::LoopbackPort(8022)));
     }

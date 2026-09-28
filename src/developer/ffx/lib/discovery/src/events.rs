@@ -628,7 +628,6 @@ mod test {
                 nodename: "foo".to_string(),
                 addresses: vec![emulator_instance::EmulatorAddr::LoopbackPort(8080)],
                 serial_number: None,
-                ssh_port: Some(8080),
             };
             let emulator_event = emulator_instance::EmulatorTargetAction::Add(info);
             assert_eq!(
@@ -645,7 +644,6 @@ mod test {
                 nodename: "foo".to_string(),
                 addresses: vec![emulator_instance::EmulatorAddr::LoopbackPort(8080)],
                 serial_number: None,
-                ssh_port: Some(8080),
             };
             let emulator_event = emulator_instance::EmulatorTargetAction::Remove(info);
             assert_eq!(
@@ -662,7 +660,6 @@ mod test {
                 nodename: "foo".to_string(),
                 addresses: vec![emulator_instance::EmulatorAddr::LoopbackPort(8080)],
                 serial_number: Some("EM-9876".to_string()),
-                ssh_port: Some(8080),
             };
             let emulator_event = emulator_instance::EmulatorTargetAction::Add(info);
             assert_eq!(
@@ -769,7 +766,6 @@ mod test {
                 emulator_instance::EmulatorAddr::LoopbackPort(8022),
             ],
             serial_number: None,
-            ssh_port: Some(8022),
         };
         let handle = TargetHandle::from(emu_info);
         assert_eq!(handle.node_name.as_deref(), Some("fuchsia-emulator-hybrid"));

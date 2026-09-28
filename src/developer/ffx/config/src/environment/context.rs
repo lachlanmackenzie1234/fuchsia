@@ -879,7 +879,6 @@ mod test {
             context.get_default_env_path().unwrap(),
             isolate_dir.join(crate::paths::ENV_FILE)
         );
-        assert_eq!(context.get_default_ascendd_path().unwrap(), isolate_dir.join("daemon.sock"));
         assert_eq!(context.get_runtime_path().unwrap(), isolate_dir.join("runtime"));
         assert_eq!(context.get_cache_path().unwrap(), isolate_dir.join("cache"));
         assert_eq!(context.get_config_path().unwrap(), isolate_dir.join("config"));
