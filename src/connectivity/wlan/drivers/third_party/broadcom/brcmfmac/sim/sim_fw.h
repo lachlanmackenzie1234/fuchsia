@@ -340,6 +340,9 @@ class SimFirmware {
   void SetRecoveryHook(fit::function<void()> recovery_hook) {
     recovery_hook_ = std::move(recovery_hook);
   }
+  void SetCommandHook(fit::function<void(uint32_t cmd)> command_hook) {
+    command_hook_ = std::move(command_hook);
+  }
 
   // Allow simulation to set CapabilityIovars
   void SetCapabilityIovars(CapabilityIovars new_iovars) { capability_iovars_ = new_iovars; }
@@ -757,6 +760,7 @@ class SimFirmware {
   fit::function<zx_status_t()> suspend_hook_;
   fit::function<zx_status_t()> resume_hook_;
   fit::function<void()> recovery_hook_;
+  fit::function<void(uint32_t cmd)> command_hook_;
 };
 
 }  // namespace wlan::brcmfmac

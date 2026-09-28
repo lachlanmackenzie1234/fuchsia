@@ -401,6 +401,9 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
     return ZX_ERR_INVALID_ARGS;
   }
   dcmd = reinterpret_cast<brcmf_proto_bcdc_dcmd*>(msg);
+  if (command_hook_) {
+    command_hook_(dcmd->cmd);
+  }
   // The variable-length payload immediately follows the header
   uint8_t* data = reinterpret_cast<uint8_t*>(dcmd) + hdr_size;
   size_t data_len = len - hdr_size;
