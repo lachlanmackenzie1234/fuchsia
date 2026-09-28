@@ -11,6 +11,7 @@ pub use crate::events::{
 use crate::fastboot_file_watcher::FastbootWatcher;
 use crate::gce_watcher::GceWatcher;
 use crate::query::TargetInfoQuery;
+use crate::uart_watcher::UartWatcher;
 use crate::usb_vsock_watcher::UsbVsockWatcher;
 use bitflags::bitflags;
 use ffx_config::EnvironmentContext;
@@ -43,6 +44,7 @@ pub mod gce_watcher;
 pub mod instance_watcher;
 mod merge;
 pub mod query;
+mod uart_watcher;
 mod usb_vsock_watcher;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -70,6 +72,9 @@ pub struct TargetStream {
 
     /// Watches for GCE instance events
     gce_watcher: Option<GceWatcher>,
+
+    /// Watches for UART events
+    uart_watcher: Option<UartWatcher>,
 
     /// This is where results from the various watchers are published.
     queue: UnboundedReceiver<TargetEvent>,
@@ -101,6 +106,9 @@ where
 
     /// GCE watcher.
     pub gce_watcher: Option<GceWatcher>,
+
+    /// Watches for UART events
+    pub uart_watcher: Option<UartWatcher>,
 }
 
 impl<Mdns, Fusb, Man> TargetStreamConfig<Mdns, Fusb, Man>
@@ -119,6 +127,7 @@ where
             usb_vsock_watcher: None,
             fastboot_file_watcher: None,
             gce_watcher: None,
+            uart_watcher: None,
         }
     }
 
@@ -149,6 +158,11 @@ where
     pub fn set_gce_watcher(&mut self, g: GceWatcher) {
         self.gce_watcher = Some(g);
     }
+
+    /// Configures an active [`UartWatcher`] to observe UART target connections.
+    pub fn set_uart_watcher(&mut self, watcher: UartWatcher) {
+        self.uart_watcher = Some(watcher);
+    }
 }
 
 impl TargetStream {
@@ -174,6 +188,7 @@ impl TargetStream {
             usb_vsock_watcher: config.usb_vsock_watcher,
             fastboot_file_watcher: config.fastboot_file_watcher,
             gce_watcher: config.gce_watcher,
+            uart_watcher: config.uart_watcher,
             queue,
         }
     }
@@ -184,6 +199,7 @@ pub struct DiscoveryBuilder {
     fastboot_devices_file_path: Option<PathBuf>,
     usb_vsock_driver_socket_path: Option<PathBuf>,
     gce_instance_root: Option<PathBuf>,
+    uart_driver_socket_dir: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
     state_filter: TargetStateFilter,
@@ -240,6 +256,17 @@ impl DiscoveryBuilder {
         self
     }
 
+    /// Configures the directory containing UART driver metadata files and daemon sockets.
+    ///
+    /// If `uart_driver_socket_dir` is `Some`, automatically enables [`DiscoverySources::UART`].
+    pub fn with_uart_driver_socket_dir(mut self, uart_driver_socket_dir: Option<PathBuf>) -> Self {
+        if uart_driver_socket_dir.is_some() {
+            self.uart_driver_socket_dir = uart_driver_socket_dir;
+            self.sources.insert(DiscoverySources::UART);
+        }
+        self
+    }
+
     /// Specify the timeout in milliseconds. (Specified as u64 instead of
     /// Duration because the value will normally come from config, so we'll do
     /// the conversion here rather then having every caller do it.)
@@ -267,6 +294,7 @@ impl DiscoveryBuilder {
             fastboot_devices_file_path: self.fastboot_devices_file_path,
             usb_vsock_driver_socket_path: self.usb_vsock_driver_socket_path,
             gce_instance_root: self.gce_instance_root,
+            uart_driver_socket_dir: self.uart_driver_socket_dir,
             sources: self.sources,
             timeout: self.timeout,
             state_filter: self.state_filter,
@@ -306,6 +334,7 @@ impl Default for DiscoveryBuilder {
             fastboot_devices_file_path: None,
             usb_vsock_driver_socket_path: None,
             gce_instance_root: None,
+            uart_driver_socket_dir: None,
             sources: DiscoverySources::default(),
             timeout: Some(DEFAULT_TIMEOUT),
             state_filter: TargetStateFilter::default(),
@@ -346,6 +375,7 @@ pub struct Discovery {
     fastboot_devices_file_path: Option<PathBuf>,
     usb_vsock_driver_socket_path: Option<PathBuf>,
     gce_instance_root: Option<PathBuf>,
+    uart_driver_socket_dir: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
     state_filter: TargetStateFilter,
@@ -382,6 +412,7 @@ impl Discovery {
             self.fastboot_devices_file_path.clone(),
             self.usb_vsock_driver_socket_path.clone(),
             self.gce_instance_root.clone(),
+            self.uart_driver_socket_dir.clone(),
             self.sources,
         )?;
         if let Some(timeout) = self.timeout {
@@ -486,6 +517,7 @@ fn wait_for_devices(
     fastboot_devices_file_path: Option<PathBuf>,
     usb_vsock_driver_socket_path: Option<PathBuf>,
     gce_instance_root: Option<PathBuf>,
+    uart_driver_socket_dir: Option<PathBuf>,
     sources: DiscoverySources,
 ) -> Result<TargetStream> {
     let mut config = TargetStreamConfig::new();
@@ -547,8 +579,15 @@ fn wait_for_devices(
 
     if sources.contains(DiscoverySources::GCE) {
         if let Some(instance_root) = gce_instance_root {
-            config.set_gce_watcher(GceWatcher::new(instance_root, sender)?)
+            config.set_gce_watcher(GceWatcher::new(instance_root, sender.clone())?)
         }
+    }
+
+    // UART watcher
+    if let Some(socket_dir) = uart_driver_socket_dir
+        && sources.contains(DiscoverySources::UART)
+    {
+        config.set_uart_watcher(UartWatcher::new(socket_dir, sender)?);
     }
 
     Ok(TargetStream::new(context, config, queue))
@@ -664,6 +703,7 @@ pub mod test {
             emulator_watcher: None,
             fastboot_file_watcher: None,
             gce_watcher: None,
+            uart_watcher: None,
             queue,
         };
 
@@ -929,6 +969,7 @@ pub mod test {
         let mut stream = wait_for_devices(
             &env.context,
             Some(instance_dir.clone()),
+            None,
             None,
             None,
             None,

@@ -18,6 +18,7 @@ use futures::{FutureExt, Stream, StreamExt, pin_mut};
 use std::fmt::{Debug, Display};
 use std::future::Future;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use target_errors::{FfxTargetError, TargetSource};
@@ -424,6 +425,15 @@ pub(crate) fn build_discovery_builder(
         builder = builder.with_gce_instance_root(gce_instance_root);
     }
 
+    if sources.contains(DiscoverySources::UART) {
+        let uart_driver_socket_dir = ctx
+            .get::<PathBuf, _>("shared_data")
+            .ok()
+            .or_else(|| ctx.get_shared_data_path().ok())
+            .map(|p| p.join(uart_driver_api::UART_SHARED_SUBDIR));
+        builder = builder.with_uart_driver_socket_dir(uart_driver_socket_dir);
+    }
+
     builder
 }
 
@@ -446,6 +456,9 @@ pub fn build_discovery_builder_common(ctx: &EnvironmentContext) -> DiscoveryBuil
     }
     if !ctx.get(ffx_config::keys::NETWORK_ENABLED).unwrap_or(true) {
         sources.remove(DiscoverySources::MDNS);
+    }
+    if !ctx.get(ffx_config::keys::UART_ENABLED).unwrap_or(false) {
+        sources.remove(DiscoverySources::UART);
     }
     build_discovery_builder(sources, ctx)
 }
@@ -536,6 +549,9 @@ pub fn get_discovery_stream(
     if mdns && ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
+    if ctx.get(keys::UART_ENABLED).unwrap_or(false) {
+        sources = sources | DiscoverySources::UART;
+    }
     Ok(get_discovery_stream_with_sources(query, sources, ctx)?)
 }
 
@@ -563,6 +579,9 @@ pub async fn get_discovered_targets(
     }
     if mdns && ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
+    }
+    if ctx.get(keys::UART_ENABLED).unwrap_or(false) {
+        sources = sources | DiscoverySources::UART;
     }
     // Get nodename, in case we're trying to find an exact match
     Ok(get_discovered_targets_with_sources(query, sources, ctx).await?)
