@@ -1504,23 +1504,25 @@ impl FsNodeOps for FuseNode {
 
     fn link(
         &self,
-        _node: &FsNode,
+        node: &FsNode,
         current_task: &CurrentTask,
         name: &FsStr,
         child: &FsNodeHandle,
     ) -> Result<(), Errno> {
         let child_node = FuseNode::from_node(child);
-        self.connection
-            .lock()
-            .execute_operation(
-                current_task,
-                self,
-                FuseOperation::Link {
-                    link_in: uapi::fuse_link_in { oldnodeid: child_node.nodeid },
-                    name: name.to_owned(),
-                },
-            )
-            .map(|_| ())
+        let response = self.connection.lock().execute_operation(
+            current_task,
+            self,
+            FuseOperation::Link {
+                link_in: uapi::fuse_link_in { oldnodeid: child_node.nodeid },
+                name: name.to_owned(),
+            },
+        )?;
+        let entry = response.entry().ok_or_else(|| errno!(EINVAL))?;
+        if entry.nodeid != child_node.nodeid || entry.generation != child_node.generation {
+            return error!(EINVAL);
+        }
+        self.fs_node_from_entry(node, name, entry).map(|_| ())
     }
 
     fn unlink(

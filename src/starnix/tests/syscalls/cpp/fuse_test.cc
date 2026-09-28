@@ -169,6 +169,12 @@ class Node {
     nlink_++;
   }
 
+  void DecrementNlink() {
+    std::lock_guard guard(mtx_);
+    EXPECT_GT(nlink_, 0u);
+    nlink_--;
+  }
+
   uint64_t UpdateNodeid(uint64_t id) {
     std::lock_guard guard(mtx_);
     std::swap(id, id_);
@@ -557,9 +563,25 @@ class FuseServer {
         break;
       }
       case FUSE_BATCH_FORGET:
-      case FUSE_FORGET:
         // no-op; these don't expect a response.
         break;
+      case FUSE_FORGET: {
+        struct fuse_forget_in forget_in = {};
+        memcpy(&forget_in, in_payload, sizeof(forget_in));
+        OK_OR_RETURN(HandleForget(in_header, &forget_in));
+        break;
+      }
+      case FUSE_LINK: {
+        struct fuse_link_in link_in = {};
+        memcpy(&link_in, in_payload, sizeof(link_in));
+        OK_OR_RETURN(HandleLink(node, in_header, &link_in,
+                                reinterpret_cast<const char*>(in_payload) + sizeof(link_in)));
+        break;
+      }
+      case FUSE_UNLINK: {
+        OK_OR_RETURN(HandleUnlink(node, in_header, reinterpret_cast<const char*>(in_payload)));
+        break;
+      }
       case FUSE_RENAME2: {
         struct fuse_rename2_in rename_in = {};
         memcpy(&rename_in, in_payload, sizeof(rename_in));
@@ -716,6 +738,49 @@ class FuseServer {
       return WriteDataFreeResponse(in_header, -ENOTDIR);
 
     if (dir->RemoveChild(name)) {
+      return WriteAckResponse(in_header);
+    } else {
+      return WriteDataFreeResponse(in_header, -ENOENT);
+    }
+  }
+
+  virtual testing::AssertionResult HandleForget(const struct fuse_in_header& in_header,
+                                                const struct fuse_forget_in* forget_in) {
+    return testing::AssertionSuccess();
+  }
+
+  virtual testing::AssertionResult HandleLink(const std::shared_ptr<Node>& dir_node,
+                                              const struct fuse_in_header& in_header,
+                                              const struct fuse_link_in* link_in,
+                                              const char* name) {
+    const std::shared_ptr dir = std::dynamic_pointer_cast<Directory>(dir_node);
+    if (!dir) {
+      return WriteDataFreeResponse(in_header, -ENOTDIR);
+    }
+
+    auto target_node = fs_.Lookup(link_in->oldnodeid);
+    if (!target_node) {
+      return WriteDataFreeResponse(in_header, -ENOENT);
+    }
+
+    target_node->IncrementNlink();
+    dir->AddChild(name, target_node);
+
+    fuse_entry_out entry_out = {};
+    target_node->PopulateEntry(entry_out);
+    return WriteStructResponse(in_header, entry_out);
+  }
+
+  virtual testing::AssertionResult HandleUnlink(const std::shared_ptr<Node>& dir_node,
+                                                const struct fuse_in_header& in_header,
+                                                const char* name) {
+    const std::shared_ptr dir = std::dynamic_pointer_cast<Directory>(dir_node);
+    if (!dir) {
+      return WriteDataFreeResponse(in_header, -ENOTDIR);
+    }
+
+    if (auto child = dir->RemoveChild(name)) {
+      child->DecrementNlink();
       return WriteAckResponse(in_header);
     } else {
       return WriteDataFreeResponse(in_header, -ENOENT);
@@ -2363,4 +2428,70 @@ TEST_F(FuseServerTest, LookupUpdatesExistingNodeAttributes) {
   ASSERT_EQ(fstat(fd1.get(), &st), 0) << strerror(errno);
   EXPECT_EQ(st.st_nlink, 2u);
   EXPECT_EQ(server->NonRootGetAttrCount(), 0u);
+}
+
+TEST_F(FuseServerTest, LinkUpdatesEntry) {
+  class LinkTestServer : public CountingFuseServer {
+   public:
+    LinkTestServer() : CountingFuseServer(0, 0) {}
+
+    uint64_t WaitForForget() {
+      std::unique_lock guard(forget_mtx_);
+      forget_cv_.wait(guard, [&]() { return forget_nlookup_.has_value(); });
+      return *forget_nlookup_;
+    }
+
+   protected:
+    testing::AssertionResult HandleForget(const struct fuse_in_header& in_header,
+                                          const struct fuse_forget_in* forget_in) override {
+      std::lock_guard guard(forget_mtx_);
+      forget_nlookup_ = forget_in->nlookup;
+      forget_cv_.notify_all();
+      return testing::AssertionSuccess();
+    }
+
+   private:
+    std::mutex forget_mtx_;
+    std::condition_variable forget_cv_;
+    std::optional<uint64_t> forget_nlookup_;
+  };
+
+  auto server = std::make_shared<LinkTestServer>();
+  FileSystem& fs = server->fs();
+  fs.RootDir()->SetEntryValidDuration(std::numeric_limits<uint64_t>::max());
+  fs.RootDir()->SetAttrValidDuration(std::numeric_limits<uint64_t>::max());
+  std::shared_ptr<File> file = fs.AddFileAtRoot("file");
+  file->SetEntryValidDuration(std::numeric_limits<uint64_t>::max());
+  file->SetAttrValidDuration(std::numeric_limits<uint64_t>::max());
+
+  ASSERT_TRUE(Mount(server));
+
+  std::string file_path = GetMountDir() + "/file";
+  std::string link_path = GetMountDir() + "/link";
+
+  fbl::unique_fd fd(open(file_path.c_str(), O_RDONLY));
+  ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+
+  struct stat st = {};
+  ASSERT_EQ(fstat(fd.get(), &st), 0) << strerror(errno);
+  EXPECT_EQ(st.st_nlink, 1u);
+  EXPECT_EQ(server->NonRootGetAttrCount(), 0u);
+
+  ASSERT_EQ(link(file_path.c_str(), link_path.c_str()), 0) << strerror(errno);
+
+  // Verify that the node attributes cached from FUSE_LINK's fuse_entry_out
+  // reflect the updated link count without requiring a separate FUSE_GETATTR.
+  ASSERT_EQ(fstat(fd.get(), &st), 0) << strerror(errno);
+  EXPECT_EQ(st.st_nlink, 2u);
+  if (test_helper::IsStarnix()) {
+    EXPECT_EQ(server->NonRootGetAttrCount(), 0u);
+  }
+
+  fd.reset();
+  ASSERT_EQ(unlink(file_path.c_str()), 0) << strerror(errno);
+  ASSERT_EQ(unlink(link_path.c_str()), 0) << strerror(errno);
+
+  // Both the initial lookup of "file" and the FUSE_LINK for "link" increment
+  // the lookup count, so FUSE_FORGET should report nlookup == 2.
+  EXPECT_EQ(server->WaitForForget(), 2u);
 }
