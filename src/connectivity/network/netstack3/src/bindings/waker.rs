@@ -16,7 +16,12 @@ use futures::future::FutureExt as _;
 use log::{debug, info, warn};
 use netstack3_core::sync::Mutex;
 
-use crate::bindings::util::{DataNotifier, DataWatcher, ResultExt as _};
+use crate::bindings::util::ResultExt as _;
+
+mod state;
+
+pub(crate) use state::DataNotifier;
+use state::DataWatcher;
 
 /// The signal we raise to signal the other side to resume when data is available.
 const GROUP_WAKEUP_SIGNAL: zx::Signals =
