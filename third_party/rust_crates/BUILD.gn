@@ -20519,6 +20519,7 @@ rustc_test("sapphire-sync-v0_1_0.test") {
 
   deps = []
   deps += [ ":parking_lot-v0_12_5" ]
+  deps += [ ":proptest-v1_11_0" ]
 
   rustenv = []
 
