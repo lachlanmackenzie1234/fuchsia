@@ -12,6 +12,9 @@ set -euo pipefail
 #    - version = "0.1.0" on first-party (in-tree) rustc_* targets
 #    - crate_root = "src/lib.rs" on rustc_library
 #    - crate_root = "src/main.rs" on rustc_binary
+#    and genrule commands added by the change that derive paths or arguments with
+#    shell command substitution ($$(dirname ...), $$(python3 -c ...), backticks) or
+#    hard-code bazel-out/ paths instead of using Bazel's predefined genrule variables.
 # 2. Runs `buildifier -lint=warn -format=json -mode=check` (with an AST fallback
 #    for `.bzl` module docstrings) on all changed and target-package Starlark
 #    files (`BUILD.bazel`, `BUILD`, `*.bzl`, `*.bazel`, `MODULE.bazel`),
@@ -197,6 +200,8 @@ for rel_path, full_path in bazel_files:
         tree = ast.parse(source, filename=rel_path)
     except Exception:
         continue
+    # Whitespace-free copy of the file at the change base: code found in it verbatim predates the change.
+    base_bazel_flat = re.sub(r"\s+", "", "".join(git_lines(["show", f"{change_base}:{rel_path}"])))
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -318,6 +323,59 @@ for rel_path, full_path in bazel_files:
                             f"`target_compatible_with = [\"{cond}\"]`, and re-run `fx bazel2gn`."
                         ),
                     })
+
+        # 6. genrule commands added or changed by the migration build paths and arguments from
+        #    Bazel's predefined variables and Starlark values, not from shell command substitution
+        #    at execution time (e.g. `$$(dirname $(location <one input>))`, `$$(python3 -c ...)`)
+        #    or hard-coded output-tree paths.
+        if rule_name == "genrule":
+            for kw in node.keywords:
+                if kw.arg not in ("cmd", "cmd_bash"):
+                    continue
+                segment = ast.get_source_segment(source, kw.value) or ""
+                if segment and re.sub(r"\s+", "", segment) in base_bazel_flat:
+                    continue
+                cmd_text = " ".join(
+                    n.value
+                    for n in ast.walk(kw.value)
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                )
+                problems = [f"`$$({m.group(1)} ...)`" for m in re.finditer(r"\$\$\(\s*([^\s()]*)", cmd_text)]
+                if "`" in cmd_text:
+                    problems.append("a backtick command substitution")
+                problems += [
+                    f"a hard-coded `{m.group(1)}/` path"
+                    for m in re.finditer(r"\b(bazel-(?:out|bin|genfiles)|execroot)/", cmd_text)
+                ]
+                problems = list(dict.fromkeys(problems))
+                if not problems:
+                    continue
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "genrule_cmd_shell_derived_paths",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": kw.lineno,
+                    "message": (
+                        f"genrule '{target_name}' `{kw.arg}` derives paths or arguments in the shell at "
+                        f"execution time or hard-codes output-tree paths: {', '.join(problems)}. Reviewers "
+                        "reject this as non-canonical (e.g. the `dirname` of one arbitrary input to get a "
+                        "directory), and bazel2gn only converts `$@`/`$<` and literal words to GN action args."
+                    ),
+                    "remediation": (
+                        "Build the command from Bazel's predefined genrule variables: outputs `$@`/`$(OUTS)`, "
+                        "the output directory `$(@D)`/`$(RULEDIR)` (never `dirname $@` or `bazel-out/...`), "
+                        "inputs `$<`/`$(SRCS)`/`$(execpath <label>)`/`$(execpaths <label>)`. A directory of "
+                        "checked-in inputs that GN passes as `rebase_path(\"<dir>\", root_build_dir)` is "
+                        "`package_name() + \"/<dir>\"` (genrules run from the execution root, where the "
+                        "package's sources are under its package path), with a comment saying it holds "
+                        "checked-in inputs. A value GN computes at gen time (e.g. a `read_file(\"<f>\", "
+                        "\"json\")` list) is written out in BUILD.bazel as a Starlark list wrapped in "
+                        "`# LINT.IfChange` / `# LINT.ThenChange(<f>)` and joined into the command "
+                        "(`\" \".join(<LIST>)`), not read by a `python3 -c`/`cat`/`jq` subshell. Re-run "
+                        "`fx bazel2gn -d <dir>` and `fx bazel build` for the package."
+                    ),
+                })
 
     # 5. GN read_file("<manifest>", "json") + foreach() expanded into static BUILD.bazel lists
     #    without LINT.IfChange / LINT.ThenChange(<manifest>) when <manifest> remains in the tree.
@@ -444,8 +502,17 @@ if buildifier_bin and starlark_rels:
                             f"Format '{fname}' with `prebuilt/third_party/buildifier/linux-x64/buildifier {fname}` (or `fx format-code`)."
                         ),
                     })
+                is_autogen = False
+                try:
+                    with open(os.path.join(workdir, fname), "r", encoding="utf-8") as f:
+                        head_txt = f.read(2048)
+                    is_autogen = bool(re.search(r"AUTO-GENERATED|DO NOT EDIT", head_txt, re.I))
+                except Exception:
+                    pass
                 for w in file_res.get("warnings", []):
                     w_cat = w.get("category", "buildifier_lint")
+                    if w_cat == "module-docstring" and is_autogen:
+                        continue
                     w_line = w.get("start", {}).get("line", 1) or 1
                     w_msg = (w.get("message") or "").strip()
                     if w_cat == "module-docstring":
@@ -479,6 +546,8 @@ if not buildifier_ran:
         try:
             with open(os.path.join(workdir, rel), "r", encoding="utf-8") as f:
                 src = f.read()
+            if re.search(r"AUTO-GENERATED|DO NOT EDIT", src[:2048], re.I):
+                continue
             tree = ast.parse(src, filename=rel)
         except Exception:
             continue

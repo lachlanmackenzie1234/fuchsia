@@ -235,8 +235,11 @@ for pkg_dir in sorted(candidate_dirs):
         for t in bazel_targets:
             tname = t["name"]
             rule = t["rule"]
-            in_pre_gn = tname in gn_info["pre_targets"]
-            ref_in_pre_gn = bool(
+            in_pre_gn = (
+                tname in gn_info["pre_targets"]
+                and gn_info["pre_targets"][tname][0] in CONVERTIBLE_GN_TEMPLATES
+            )
+            ref_in_pre_gn = rule in CONVERTIBLE_BAZEL_RULES and bool(
                 re.search(r'":' + re.escape(tname) + r'(?:"|\()', gn_info["pre_text"])
             )
             if t["skip_line"] is not None and (

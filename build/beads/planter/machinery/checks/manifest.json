@@ -45,7 +45,7 @@
         },
         {
             "name": "bazel_minimality",
-            "description": "Audits BUILD.bazel and .bzl files for redundant default attributes (crate_name == name, version = \"0.1.0\" on internal rustc_* targets, default crate_root), single-platform srcs = select({..., \"//conditions:default\": []}) workarounds that should use target_compatible_with, inline-expanded GN read_file() lists missing LINT.IfChange/LINT.ThenChange, buildifier formatting and buildifier_lint warnings, and drive-by edits to unrelated packages outside the target directory.",
+            "description": "Audits BUILD.bazel and .bzl files for redundant default attributes (crate_name == name, version = \"0.1.0\" on internal rustc_* targets, default crate_root), single-platform srcs = select({..., \"//conditions:default\": []}) workarounds that should use target_compatible_with, inline-expanded GN read_file() lists missing LINT.IfChange/LINT.ThenChange, genrule commands added by the change that derive paths or arguments in the shell ($$(dirname $(location <one input>)), $$(python3 -c ...), backticks) or hard-code bazel-out/ paths instead of Bazel's predefined genrule variables ($@, $<, $(SRCS), $(execpath), $(@D), $(RULEDIR)) and Starlark values, buildifier formatting and buildifier_lint warnings, and drive-by edits to unrelated packages outside the target directory.",
             "script_file": "bazel_minimality.sh",
             "enabled": true
         },
