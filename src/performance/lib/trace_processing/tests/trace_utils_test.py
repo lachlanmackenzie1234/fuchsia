@@ -99,14 +99,20 @@ class TraceUtilsTest(unittest.TestCase):
 
         filtered = list(
             trace_utils.filter_events(
-                events, category="cat_a", name="name_a", type=trace_model.Event
+                iter(events),
+                category="cat_a",
+                name="name_a",
+                type=trace_model.Event,
             )
         )
         self.assertEqual(filtered, [events[0]])
 
         filtered2 = list(
             trace_utils.filter_events(
-                events, category="cat_c", name="name_c", type=trace_model.Event
+                iter(events),
+                category="cat_c",
+                name="name_c",
+                type=trace_model.Event,
             )
         )
         self.assertEqual(filtered2, [])
@@ -165,14 +171,14 @@ class TraceUtilsTest(unittest.TestCase):
 
         filtered = list(
             trace_utils.filter_events(
-                events, name={"name_a", "name_c"}, type=trace_model.Event
+                iter(events), name={"name_a", "name_c"}, type=trace_model.Event
             )
         )
         self.assertEqual(filtered, [events[0], events[2]])
 
         filtered2 = list(
             trace_utils.filter_events(
-                events, name=["name_b", "name_c"], type=trace_model.Event
+                iter(events), name=["name_b", "name_c"], type=trace_model.Event
             )
         )
         self.assertEqual(filtered2, [events[1], events[2]])
@@ -219,7 +225,7 @@ class TraceUtilsTest(unittest.TestCase):
 
         filtered: List[trace_model.Event] = list(
             trace_utils.filter_events(
-                events,
+                iter(events),
                 category="cat_a",
                 name="name_a",
                 type=trace_model.DurationEvent,
@@ -229,7 +235,7 @@ class TraceUtilsTest(unittest.TestCase):
 
         filtered2: List[trace_model.Event] = list(
             trace_utils.filter_events(
-                events,
+                iter(events),
                 category="cat_c",
                 name="name_c",
                 type=trace_model.DurationEvent,
@@ -239,7 +245,7 @@ class TraceUtilsTest(unittest.TestCase):
 
         filtered3: List[trace_model.Event] = list(
             trace_utils.filter_events(
-                events,
+                iter(events),
                 category="cat_a",
                 name="name_a",
                 type=trace_model.InstantEvent,

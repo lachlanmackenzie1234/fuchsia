@@ -9,10 +9,8 @@ import dataclasses
 import itertools
 import logging
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import (
-    Iterable,
-    Iterator,
     MutableSequence,
     NotRequired,
     Self,
@@ -71,7 +69,7 @@ class VirtualProcessingSlice:
 class CpuProcessingRateTimeline:
     """Encapsulates the processing rate shifts for a single CPU core."""
 
-    def __init__(self, rates: Iterable[ProcessingRateSample]):
+    def __init__(self, rates: Collection[ProcessingRateSample]):
         """Constructor.
 
         Args:
@@ -193,20 +191,15 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[metrics.TestCaseResult]:
-        all_events: Iterator[trace_model.Event] = model.all_events()
-        cpu_usage_events: Iterable[
-            trace_model.CounterEvent
-        ] = trace_utils.filter_events(
-            all_events,
-            name=_CPU_USAGE_EVENT_NAME,
-            type=trace_model.CounterEvent,
-        )
-
         cpu_starts: list[float] = []
         cpu_percentages: list[float] = []
 
         # Parse the start time and percentage for each `Event`.
-        for event in cpu_usage_events:
+        for event in trace_utils.filter_events(
+            model.all_events(),
+            name=_CPU_USAGE_EVENT_NAME,
+            type=trace_model.CounterEvent,
+        ):
             cpu_starts.append(event.start.to_epoch_delta().to_nanoseconds())
             cpu_percentages.append(
                 event.args.get("average_cpu_percentage") or 0
@@ -605,7 +598,7 @@ class DurationsBreakdown:
                 cpu,
                 sorted(
                     trace_utils.filter_records(
-                        records, trace_model.ContextSwitch
+                        iter(records), trace_model.ContextSwitch
                     ),
                     key=lambda record: record.start,
                 ),

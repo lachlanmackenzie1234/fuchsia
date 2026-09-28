@@ -13,7 +13,7 @@ import time
 import types
 from collections.abc import Collection, Sequence, Set
 from importlib.resources import as_file, files
-from typing import Any, Iterable, Self
+from typing import Any, Self
 
 from perf_publish import data  # type: ignore[attr-defined]
 from perf_publish import device_types, metrics_allowlist, summarize
@@ -54,7 +54,7 @@ ENV_FUCHSIA_DEVICE_TYPE: str = "FUCHSIA_DEVICE_TYPE"
 
 
 def publish_fuchsiaperf(
-    fuchsia_perf_file_paths: Iterable[str | os.PathLike[str]],
+    fuchsia_perf_file_paths: Collection[str | os.PathLike[str]],
     expected_metric_names_filename: str | os.PathLike[str],
     test_data_module: types.ModuleType | None = None,
     env: dict[str, str] = dict(os.environ),
@@ -85,7 +85,7 @@ def publish_fuchsiaperf(
 class CatapultConverter:
     def __init__(
         self,
-        fuchsia_perf_file_paths: Iterable[str | os.PathLike[str]],
+        fuchsia_perf_file_paths: Collection[str | os.PathLike[str]],
         expected_metric_names_filename: str | os.PathLike[str],
         test_data_module: types.ModuleType | None = None,
         master: str | None = None,
@@ -239,7 +239,7 @@ class CatapultConverter:
         )
 
     def _check_extension_and_relocate(
-        self, fuchsia_perf_file_paths: Iterable[str | os.PathLike[str]]
+        self, fuchsia_perf_file_paths: Collection[str | os.PathLike[str]]
     ) -> list[str]:
         perf_file_paths = list(map(str, fuchsia_perf_file_paths))
         if len(perf_file_paths) == 0:
@@ -274,7 +274,7 @@ class CatapultConverter:
     @classmethod
     def from_env(
         cls,
-        fuchsia_perf_file_paths: Iterable[str | os.PathLike[str]],
+        fuchsia_perf_file_paths: Collection[str | os.PathLike[str]],
         expected_metric_names_filename: str | os.PathLike[str],
         test_data_module: types.ModuleType | None = None,
         env: dict[str, str] = dict(os.environ),

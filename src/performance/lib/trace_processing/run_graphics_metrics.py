@@ -131,7 +131,7 @@ def main() -> None:
     trace_results = scenic.ScenicMetricsProcessor().process_metrics(model)
 
     metrics.TestCaseResult.write_fuchsiaperf_json(
-        results=trace_results,
+        results=iter(trace_results),
         test_suite="Manual",
         output_path=pathlib.Path(args.output_path),
     )

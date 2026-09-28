@@ -10,7 +10,8 @@ import random
 import tempfile
 import unittest
 import unittest.mock as mock
-from typing import Any, Callable, Iterable
+from collections.abc import Collection
+from typing import Any, Callable
 
 import perf_publish.publish as publish
 
@@ -156,7 +157,7 @@ class CatapultConverterTest(unittest.TestCase):
 
     def make_catapult_converter_for_test(
         self,
-        fuchsia_perf_file_paths: Iterable[str | os.PathLike[str]],
+        fuchsia_perf_file_paths: Collection[str | os.PathLike[str]],
         expected_metric_names_filename: str,
         env: dict[str, str],
         subprocess_check_call: Any,

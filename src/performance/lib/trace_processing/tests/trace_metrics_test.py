@@ -67,7 +67,7 @@ class TestCaseResultTest(unittest.TestCase):
             )
 
             metrics.TestCaseResult.write_fuchsiaperf_json(
-                results,
+                iter(results),
                 test_suite=test_suite,
                 output_path=actual_output_path,
             )

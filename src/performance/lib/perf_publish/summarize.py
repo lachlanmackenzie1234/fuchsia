@@ -9,7 +9,8 @@ a concise and human-readable format.
 import json
 import os
 import statistics
-from typing import Any, Iterable, TextIO
+from collections.abc import Collection
+from typing import Any, TextIO
 
 
 def write_fuchsiaperf_json(
@@ -36,7 +37,7 @@ def mean_excluding_warm_up(values: list[int | float]) -> float:
 
 
 def summarize_perf_files(
-    json_files: Iterable[str | os.PathLike[str]],
+    json_files: Collection[str | os.PathLike[str]],
 ) -> list[dict[str, Any]]:
     """
     This function takes a set of "raw data" fuchsiaperf files as input

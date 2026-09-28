@@ -402,7 +402,7 @@ class TraceImportingTest(unittest.TestCase):
         self.assertEqual(len(events), 4)
 
         flow_events: List[trace_model.FlowEvent] = list(
-            trace_utils.filter_events(events, type=trace_model.FlowEvent)
+            trace_utils.filter_events(iter(events), type=trace_model.FlowEvent)
         )
         flow_events.sort(key=lambda x: x.start)
         self.assertEqual(len(flow_events), 3)
@@ -420,7 +420,9 @@ class TraceImportingTest(unittest.TestCase):
         self.assertEqual(len(model.processes), 1)
         self.assertEqual(len(process.threads), 1)
         flow_events: List[trace_model.FlowEvent] = list(
-            trace_utils.filter_events(thread.events, type=trace_model.FlowEvent)
+            trace_utils.filter_events(
+                iter(thread.events), type=trace_model.FlowEvent
+            )
         )
         self.assertEqual(len(flow_events), 6)
         self.assertEqual(
