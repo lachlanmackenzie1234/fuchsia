@@ -8,6 +8,12 @@
             "enabled": true
         },
         {
+            "name": "gn_dep_parity",
+            "description": "Compares every migrated GN target's dependency labels and edge kinds with its BUILD.gn at $PLANTER_CHANGE_BASE, in every changed package that keeps a BUILD.gn (following GN groups the target newly depends on): errors when a dependency was swapped for a sibling target of the same package (e.g. a GN-only *_static wrapper carrying link settings replaced by the library it wraps), when a removed dependency carried link-affecting settings, or when a public_deps edge with public_configs became private without the configs being re-exported as all_dependent_configs (bazel2gn emits Rust deps as private GN deps); reports dependencies no target of the package uses anymore as INFO.",
+            "script_file": "gn_dep_parity.sh",
+            "enabled": true
+        },
+        {
             "name": "visibility_audit",
             "description": "Audits BUILD.bazel visibility attributes for package-level default_visibility, missing target visibility, overly narrow sprawling visibility lists (>15 entries across >=6 areas on globally-used platform libraries/test utilities that should use target-level //visibility:public or 2-3 level rollups), unjustified //visibility:public on narrow targets, redundant :__pkg__, disguised public wildcards, multi-domain umbrella wildcards, cross-area depth-2 wildcards, overbroad depth>=3 LCA wildcards, and false-positive rdeps",
             "script_file": "visibility_audit.sh",
@@ -21,19 +27,19 @@
         },
         {
             "name": "lint_config_parity",
-            "description": "Flags lint-driven source edits (removed .clone(), added #[allow]/#[expect]/NOLINT, removed use imports, let _ =) in non-build files with file:line evidence, and warns when BUILD.bazel lint_config is outside //build/config/rust/lints (Bazel replaces default lints, GN appends).",
+            "description": "Flags lint-driven source edits (removed .clone(), added #[allow]/#[expect]/NOLINT, removed use imports, let _ =) in non-build files with file:line evidence, and warns when a BUILD.bazel lint_config outside //build/config/rust/lints fails to resolve to a rust_lint_config that includes the default clippy and rustc lint sets (Bazel replaces default lints, GN appends).",
             "script_file": "lint_config_parity.sh",
             "enabled": true
         },
         {
             "name": "shared_config_reuse",
-            "description": "Flags lint-config indirection and duplication in the change: new alias() targets that only re-export a rust_lint_config (or lint-named config), dict literals in changed BUILD.bazel/.bzl files that copy the default clippy/rustc lint entries owned by //build/config/rust/lints instead of loading its exported .bzl constants, dual-build lint_config labels without a same-named GN config() in the label's package (bazel2gn copies lint_config verbatim), and LINT.ThenChange references newly broken by moving lint dicts.",
+            "description": "Flags lint-config and GN build-argument indirection and duplication in the change: new alias() targets that only re-export a rust_lint_config (or lint-named config), dict literals in changed BUILD.bazel/.bzl files that copy the default clippy/rustc lint entries owned by //build/config/rust/lints instead of loading its exported .bzl constants, dual-build lint_config labels without a same-named GN config() in the label's package (bazel2gn copies lint_config verbatim), LINT.ThenChange references newly broken by moving lint dicts, and GN declare_args() build arguments duplicated in .bzl/BUILD.bazel instead of being exported via //build/bazel:gn_build_variables_for_bazel to @fuchsia_build_info//:args.bzl with LINT.IfChange/ThenChange comments.",
             "script_file": "shared_config_reuse.sh",
             "enabled": true
         },
         {
             "name": "bazel_minimality",
-            "description": "Audits BUILD.bazel files for redundant default attributes (crate_name == name, version = \"0.1.0\" on internal rustc_* targets, default crate_root) and flags drive-by edits to unrelated packages outside the target directory.",
+            "description": "Audits BUILD.bazel and .bzl files for redundant default attributes (crate_name == name, version = \"0.1.0\" on internal rustc_* targets, default crate_root), buildifier formatting and buildifier_lint warnings (including missing .bzl module docstrings and unused loads), and drive-by edits to unrelated packages outside the target directory.",
             "script_file": "bazel_minimality.sh",
             "enabled": true
         },
@@ -51,7 +57,7 @@
         },
         {
             "name": "build_verification",
-            "description": "Builds the change: `fx build` (GN targets and all GN dependents), `fx build --host //build:bazel2gn_verifications` (BUILD.gn/BUILD.bazel drift), and `fx bazel build --config=fuchsia_platform` / `--config=host` of `//<dir>:all` for every changed directory with a BUILD.bazel. Emits one ERROR finding with the relevant log lines per failing step. Set PLANTER_SKIP_BUILD=1 to skip.",
+            "description": "Builds the change: `fx build` (the configured product graph, which can leave out the migrated packages' tests and many GN dependents), then `fx build <labels>` for GN targets the product graph may leave out (the changed packages' :tests groups and test binaries, and GN tests, binaries and libraries in other packages that depend on a changed package, limited to labels in the GN graph; catches GN-only link failures such as undefined operator new after a dependency label or edge changed), `fx build --host //build:bazel2gn_verifications` (BUILD.gn/BUILD.bazel drift), and `fx bazel build --config=fuchsia_platform` / `--config=host` of `//<dir>:all` for every changed directory with a BUILD.bazel. Emits one ERROR finding with the relevant log lines per failing step. Set PLANTER_SKIP_BUILD=1 to skip, PLANTER_BUILD_DRY_RUN=1 to only list the planned commands.",
             "script_file": "build_verification.sh",
             "enabled": true
         }

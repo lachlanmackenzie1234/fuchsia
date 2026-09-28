@@ -68,16 +68,46 @@ if os.path.isfile(bazel_file):
     except Exception:
         pass
 
+CONVERTIBLE_GN_TEMPLATES = {
+    "static_library",
+    "source_set",
+    "shared_library",
+    "executable",
+    "library_headers",
+    "rustc_library",
+    "rustc_binary",
+    "rustc_macro",
+    "rustc_test",
+    "go_library",
+    "go_binary",
+    "go_test",
+    "python_library",
+    "python_binary",
+    "fidl",
+    "sdk_source_set",
+    "sdk_static_library",
+    "sdk_shared_library",
+    "zx_library",
+}
+
 gn_only_targets = {"verify_bazel2gn", "tests", "benchmarks"}
 if os.path.isfile(gn_file):
     try:
         with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
             gn_src = f.read()
-        above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else ""
-        for m in re.finditer(r'^\s*[a-zA-Z0-9_]+\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
-            t = m.group(1)
-            if t not in bazel_targets:
-                gn_only_targets.add(t)
+        if "BAZEL2GN SENTINEL" in gn_src:
+            above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0]
+            for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
+                t = m.group(2)
+                if t not in bazel_targets:
+                    gn_only_targets.add(t)
+        elif not bazel_targets:
+            for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
+                tmpl, t = m.group(1), m.group(2)
+                if tmpl in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
+                    bazel_targets.append(t)
+                elif tmpl not in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
+                    gn_only_targets.add(t)
     except Exception:
         pass
 

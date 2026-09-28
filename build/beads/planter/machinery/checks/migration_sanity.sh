@@ -109,7 +109,7 @@ changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 for p in changed:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
         d = os.path.dirname(p).strip("/")
-        if d:
+        if d and d != "build/bazel":
             candidate_dirs.add(d)
 
 
@@ -161,6 +161,32 @@ def parse_bazel_targets(bazel_path):
     return targets
 
 
+def find_closing_brace(text, open_idx):
+    depth, in_str, i, n = 0, False, open_idx, len(text)
+    while i < n:
+        c = text[i]
+        if in_str:
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "#":
+            nl = text.find("\n", i)
+            i = n if nl < 0 else nl
+            continue
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return n
+
+
 def parse_gn_file(gn_path):
     try:
         text = open(gn_path, encoding="utf-8").read()
@@ -177,7 +203,10 @@ def parse_gn_file(gn_path):
     for tm in target_re.finditer(pre_text):
         tmpl, name = tm.group(1), tm.group(2)
         line_no = pre_text.count("\n", 0, tm.start()) + 1
-        pre_targets[name] = (tmpl, line_no)
+        brace_idx = tm.end() - 1
+        end_idx = find_closing_brace(pre_text, brace_idx)
+        body = pre_text[brace_idx + 1 : end_idx]
+        pre_targets[name] = (tmpl, line_no, body)
     return {
         "has_sentinel": has_sentinel,
         "has_verify": has_verify,
@@ -208,7 +237,7 @@ for pkg_dir in sorted(candidate_dirs):
             rule = t["rule"]
             in_pre_gn = tname in gn_info["pre_targets"]
             ref_in_pre_gn = bool(
-                re.search(r'":' + re.escape(tname) + r'(?:"\|\()', gn_info["pre_text"])
+                re.search(r'":' + re.escape(tname) + r'(?:"|\()', gn_info["pre_text"])
             )
             if t["skip_line"] is not None and (
                 rule in CONVERTIBLE_BAZEL_RULES or in_pre_gn or ref_in_pre_gn
@@ -236,8 +265,72 @@ for pkg_dir in sorted(candidate_dirs):
                     ),
                 })
 
-        for gname, (gtmpl, gline) in sorted(gn_info["pre_targets"].items()):
+        for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
             if gtmpl in CONVERTIBLE_GN_TEMPLATES:
+                unmigrated_deps = []
+                declare_args_deps = []
+                for dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', gbody):
+                    dep_pkg = dm.group(1).strip("/")
+                    if (
+                        not dep_pkg
+                        or dep_pkg == pkg_dir
+                        or dep_pkg.startswith(("build/", "prebuilt/", "third_party/", "out/"))
+                    ):
+                        continue
+                    dep_gn = os.path.join(workdir, dep_pkg, "BUILD.gn")
+                    dep_bazel = os.path.join(workdir, dep_pkg, "BUILD.bazel")
+                    if os.path.isfile(dep_gn) and not os.path.isfile(dep_bazel):
+                        if f"//{dep_pkg}" not in unmigrated_deps:
+                            unmigrated_deps.append(f"//{dep_pkg}")
+                        try:
+                            dep_gn_txt = open(dep_gn, encoding="utf-8").read()
+                            if "declare_args(" in dep_gn_txt and f"//{dep_pkg}" not in declare_args_deps:
+                                declare_args_deps.append(f"//{dep_pkg}")
+                        except Exception:
+                            pass
+
+                attr_hints = []
+                if gtmpl == "rustc_binary":
+                    out_m = re.search(r'\b(?:output_name|name)\s*=\s*"([^"]+)"', gbody)
+                    if out_m and out_m.group(1) != gname:
+                        attr_hints.append(
+                            f"set `crate_name = \"{out_m.group(1)}\"` on `rustc_binary(name = \"{gname}\")` in '{bazel_rel}' "
+                            f"(bazel2gn maps `crate_name` on `rustc_binary` to `output_name = \"{out_m.group(1)}\"` in BUILD.gn; "
+                            "omit dummy `version` strings)"
+                        )
+                    src_m = re.search(r'\bsource_root\s*=\s*"([^"]+)"', gbody)
+                    if src_m and src_m.group(1) != "src/main.rs":
+                        attr_hints.append(f"set `crate_root = \"{src_m.group(1)}\"`")
+                if gtmpl.startswith("rustc_"):
+                    cfg_m = re.search(r'\bconfigs\s*\+=\s*\[\s*"([^"]+)"\s*\]', gbody)
+                    if cfg_m:
+                        attr_hints.append(f"map `configs += [ \"{cfg_m.group(1)}\" ]` to `lint_config = \"{cfg_m.group(1)}\"`")
+
+                dep_msg = (
+                    f" Unmigrated first-party dependencies referenced by `{gname}` that also need a BUILD.bazel in this change: "
+                    + ", ".join(unmigrated_deps)
+                    + "."
+                    if unmigrated_deps
+                    else ""
+                )
+                dep_rem = ""
+                if unmigrated_deps:
+                    dep_rem = (
+                        " First migrate unmigrated dependency package(s) "
+                        + ", ".join(unmigrated_deps)
+                        + " (create their BUILD.bazel, sync with `fx bazel2gn -d <dep_dir>`, and register `verify_bazel2gn`)."
+                    )
+                    if declare_args_deps:
+                        dep_rem += (
+                            " For `declare_args()` in "
+                            + ", ".join(declare_args_deps)
+                            + ", keep `declare_args() { ... }` in a `.gni` file (imported above `## BAZEL2GN SENTINEL` in its BUILD.gn), "
+                            "export `<arg>` via `generated_file(\"gn_build_variables_for_bazel\")` in `//build/bazel/BUILD.gn` with "
+                            "`# LINT.IfChange` / `# LINT.ThenChange(...)` on both sides, `load(\"@fuchsia_build_info//:args.bzl\", \"<arg>\")` "
+                            "in its BUILD.bazel, and translate `if (<arg>) { features = [ ... ] }` as `crate_features = [\"...\"] if <arg> else []`."
+                        )
+                hint_rem = (" In '" + bazel_rel + "', " + "; ".join(attr_hints) + ".") if attr_hints else ""
+
                 findings.append({
                     "source": "migration_sanity",
                     "category": "duplicate_target_above_sentinel",
@@ -248,12 +341,15 @@ for pkg_dir in sorted(candidate_dirs):
                         f"Convertible GN target `{gtmpl}(\"{gname}\")` remains above `## BAZEL2GN SENTINEL` "
                         f"in '{gn_rel}'"
                         + (" (duplicating the target in BUILD.bazel)" if gname in bazel_names else "")
-                        + ". All convertible library/binary targets (including reference/bitrot-prevention libraries) "
+                        + ". All convertible library/binary targets (including benchmark binaries and reference/bitrot-prevention libraries) "
                         "must be migrated to BUILD.bazel and generated below the sentinel by `fx bazel2gn`."
+                        + dep_msg
                     ),
                     "remediation": (
                         f"Define `{gname}` in '{bazel_rel}' without `# @bazel2gn:skip`, delete `{gtmpl}(\"{gname}\")` "
                         f"from above `## BAZEL2GN SENTINEL` in '{gn_rel}', and run `fx bazel2gn -d {pkg_dir}`."
+                        + dep_rem
+                        + hint_rem
                     ),
                 })
 

@@ -39,10 +39,11 @@ if target_dir:
     if os.path.isfile(os.path.join(workdir, rel_bazel)):
         candidate_files.add(rel_bazel)
 
+change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 git_cmds = [
-    ["git", "-C", workdir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
-    ["git", "-C", workdir, "diff", "--name-only", "HEAD", "--", "*BUILD.bazel"],
+    ["git", "-C", workdir, "diff", "--name-only", change_base, "--", "*BUILD.bazel"],
     ["git", "-C", workdir, "diff", "--cached", "--name-only", "--", "*BUILD.bazel"],
+    ["git", "-C", workdir, "ls-files", "--others", "--exclude-standard", "--", "*BUILD.bazel"],
 ]
 for cmd in git_cmds:
     try:
@@ -367,6 +368,10 @@ for rel_path in sorted(candidate_files):
             src = f.read()
         tree = ast.parse(src, filename=rel_path)
     except Exception:
+        continue
+    # Generated files (e.g. crate_universe's third_party/rust_crates/vendor/*/BUILD.bazel)
+    # get their visibility from the generator; fix the generator input instead.
+    if re.search(r"^#\s*[@]generated\b", "\n".join(src.splitlines()[:10]), flags=re.MULTILINE):
         continue
 
     preexisting_vis = get_preexisting_vis_strings(rel_path)
