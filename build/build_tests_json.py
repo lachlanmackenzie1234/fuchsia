@@ -346,6 +346,7 @@ def build_tests_json(
     )
 
     validation_errors: list[str] = []
+    build_only_test_names: set[str] = set()
 
     # Resolve, validate, and filter environments for tests from metadata.
     for test in tests:
@@ -368,6 +369,9 @@ def build_tests_json(
         except ValueError as err:
             validation_errors.append(f"{test_id}: {err}")
 
+        if test.get("build_only", False):
+            build_only_test_names.add(test_name)
+
     # For every group of tests that are supposed to target a specific product
     # bundle, we parse the tests, add `product_bundle: <name>` and add the test
     # to `tests`. When infra reads the final tests.json file, it will read that
@@ -386,7 +390,10 @@ def build_tests_json(
             pprint.pp(product_bundle_names)
             sys.exit(1)
 
-        raw_group_envs = test_group.get("environments", [])
+        group_build_only = test_group.get("build_only", False)
+        raw_group_envs = (
+            [] if group_build_only else test_group.get("environments", [])
+        )
         override_test_environments = test_group.get(
             "override_test_environments", True
         )
@@ -421,11 +428,10 @@ def build_tests_json(
         # environments.
         for test in product_bundle_tests:
             test_info = test.get("test", {})
-            name = test_info["name"] + "-" + product_bundle_name
-            test_info["name"] = name
+            original_name = test_info["name"]
+            name = original_name + "-" + product_bundle_name
             test_label = test_info.get("label")
             test_id = f"{name} ({test_label})" if test_label else name
-            test["product_bundle"] = product_bundle_name
 
             try:
                 resolve_test_environments(
@@ -441,7 +447,26 @@ def build_tests_json(
             except ValueError as err:
                 validation_errors.append(f"{test_id}: {err}")
 
-        tests += product_bundle_tests
+            # Check `build_only` after `resolve_test_environments()`, because
+            # environment resolution validates the test's environment specs and
+            # sets `build_only = True` if all of the test's environments are
+            # filtered out (or if the product_bundle_test_group itself has no
+            # runnable environments / is build_only).
+            #
+            # If the resolved test is build-only, do not mark it with a
+            # product_bundle or append the product_bundle_name to its name, and
+            # deduplicate it against other build-only tests: build-only tests
+            # are never flashed or run against the product bundle, and the
+            # underlying test target to build is identical.
+            if test.get("build_only", False):
+                if original_name in build_only_test_names:
+                    continue
+                build_only_test_names.add(original_name)
+            else:
+                test_info["name"] = name
+                test["product_bundle"] = product_bundle_name
+
+            tests.append(test)
 
     if validation_errors:
         raise ValueError(

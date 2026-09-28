@@ -46,6 +46,9 @@ import("//build/python/python_action.gni")
 #     [list of scopes] The environments to run these tests on.
 #     See //docs/contribute/testing/environments.md.
 #
+#   build_only (optional; default = false)
+#     [bool] If true, the tests in this group are built but not run.
+#
 #   override_test_environments (optional; default = true)
 #     [bool] If true, override the environments set by individual tests with
 #     the environments specified for this group. If false, the group's
@@ -82,9 +85,16 @@ template("product_bundle_test_group") {
       _product_bundle_name = target_name
     }
 
-    _environments = []
-    if (defined(invoker.environments)) {
-      _environments = invoker.environments
+    _build_only = defined(invoker.build_only) && invoker.build_only
+    if (_build_only) {
+      assert(!defined(invoker.environments),
+             "build_only test groups should not specify environments")
+      _environments = []
+    } else {
+      _environments = []
+      if (defined(invoker.environments)) {
+        _environments = invoker.environments
+      }
     }
 
     _override_test_environments = true
@@ -121,6 +131,7 @@ template("product_bundle_test_group") {
         pb_test_groups = [
           {
             product_bundle_name = _product_bundle_name
+            build_only = _build_only
             environments = _environments
             override_test_environments = _override_test_environments
             tests_json = rebase_path(_tests_json, root_build_dir)

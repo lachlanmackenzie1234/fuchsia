@@ -161,8 +161,13 @@ class BuildTestsJsonTest(unittest.TestCase):
         tests_json_path = self.build_dir / "pb_tests.json"
         tests_json_path.write_text(tests_json_str)
 
+        env = {"dimensions": {"device_type": "Vim3"}}
         test_groups = [
-            {"product_bundle_name": "my_pb", "tests_json": str(tests_json_path)}
+            {
+                "product_bundle_name": "my_pb",
+                "environments": [env],
+                "tests_json": str(tests_json_path),
+            }
         ]
         product_bundles = [{"name": "my_pb"}]
         (_, tests) = self._test([], test_groups, product_bundles)
@@ -171,14 +176,12 @@ class BuildTestsJsonTest(unittest.TestCase):
             {
                 "product_bundle": "my_pb",
                 "test": {"name": "test1-my_pb"},
-                "build_only": True,
-                "environments": [],
+                "environments": [env],
             },
             {
                 "product_bundle": "my_pb",
                 "test": {"name": "test2-my_pb"},
-                "build_only": True,
-                "environments": [],
+                "environments": [env],
             },
         ]
         self.assertEqual(expected_tests_json, tests)
@@ -786,8 +789,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "environments": [astro_env, vim3_env],
             },
             {
-                "test": {"name": "build_only_pb_test-my_pb"},
-                "product_bundle": "my_pb",
+                "test": {"name": "build_only_pb_test"},
                 "build_only": True,
                 "environments": [],
             },
@@ -839,8 +841,98 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "environments": [vim3_env],
             },
             {
-                "test": {"name": "disjoint_pb_test-my_pb"},
-                "product_bundle": "my_pb",
+                "test": {"name": "disjoint_pb_test"},
+                "build_only": True,
+                "environments": [],
+            },
+        ]
+        self.assertEqual(expected_tests, tests)
+
+    def test_product_bundle_test_group_consolidates_build_only_tests(
+        self,
+    ) -> None:
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+        vim3_env = {"dimensions": {"device_type": "Vim3"}}
+
+        tests_from_metadata = [
+            # Already build-only in metadata:
+            {
+                "test": {"name": "already_build_only"},
+                "build_only": True,
+            },
+            # Filtered out to build-only in metadata (Vim3 not in allowed_device_types):
+            {
+                "test": {"name": "filtered_to_build_only"},
+                "environments": [vim3_env],
+            },
+            # Runnable in metadata (NOT build-only):
+            {"test": {"name": "runnable_in_main"}},
+            # Already build-only in metadata, and will be deduplicated against those
+            # in PBs.
+            {
+                "test": {"name": "test_1"},
+                "build_only": True,
+            },
+        ]
+
+        pb_tests = [
+            {"test": {"name": "test_1"}},
+            {"test": {"name": "test_2"}},
+            {"test": {"name": "test_3"}},
+            {"test": {"name": "test_4"}},
+        ]
+        pb_tests_json_path = self.build_dir / "pb_tests.json"
+        pb_tests_json_path.write_text(json.dumps(pb_tests))
+
+        test_groups = [
+            {
+                "product_bundle_name": "my_pb",
+                "build_only": True,
+                "tests_json": str(pb_tests_json_path),
+            },
+            {
+                "product_bundle_name": "my_other_pb",
+                "build_only": True,
+                "tests_json": str(pb_tests_json_path),
+            },
+        ]
+        product_bundles = [{"name": "my_pb"}, {"name": "my_other_pb"}]
+        (_, tests) = self._test(
+            tests_from_metadata, test_groups, product_bundles
+        )
+
+        expected_tests = [
+            {
+                "test": {"name": "already_build_only"},
+                "build_only": True,
+                "environments": [],
+            },
+            {
+                "test": {"name": "filtered_to_build_only"},
+                "build_only": True,
+                "environments": [],
+            },
+            {
+                "test": {"name": "runnable_in_main"},
+                "environments": [aemu_env],
+            },
+            {
+                "test": {"name": "test_1"},
+                "build_only": True,
+                "environments": [],
+            },
+            {
+                "test": {"name": "test_2"},
+                "build_only": True,
+                "environments": [],
+            },
+            {
+                "test": {"name": "test_3"},
+                "build_only": True,
+                "environments": [],
+            },
+            {
+                "test": {"name": "test_4"},
                 "build_only": True,
                 "environments": [],
             },
