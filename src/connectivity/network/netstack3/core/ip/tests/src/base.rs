@@ -2330,12 +2330,17 @@ fn test_multicast_forwarding_receive_ip_packet_action<I: IpExt + TestIpExt>() {
 }
 
 /// Tests that multicast forwarding preserves packet metadata (such as marks)
-/// across all forwarded targets as well as local delivery.
+/// across all forwarded targets, local delivery, and when packets are stashed
+/// in the pending queue awaiting a route.
 #[netstack3_core::context_ip_bounds(I, FakeBindingsCtx)]
 #[ip_test(I)]
-#[test_case(false; "forwarding only")]
-#[test_case(true; "with local delivery")]
-fn test_multicast_forwarding_preserves_metadata<I: IpExt + TestIpExt>(local_delivery: bool) {
+#[test_case(false, false; "forwarding only")]
+#[test_case(true, false; "with local delivery")]
+#[test_case(false, true; "queued packets")]
+fn test_multicast_forwarding_preserves_metadata<I: IpExt + TestIpExt>(
+    local_delivery: bool,
+    queue_packets: bool,
+) {
     let mut builder = FakeCtxBuilder::default();
     for _ in 0..3 {
         let _dev_idx = builder.add_device_with_ip(
@@ -2367,10 +2372,14 @@ fn test_multicast_forwarding_preserves_metadata<I: IpExt + TestIpExt>(local_deli
     ]
     .into();
     let route = MulticastRoute::new_forward(dev.clone(), targets).unwrap();
-    assert_eq!(
-        ctx.core_api().multicast_forwarding::<I>().add_multicast_route(key, route),
-        Ok(None)
-    );
+    if !queue_packets {
+        assert_eq!(
+            ctx.core_api()
+                .multicast_forwarding::<I>()
+                .add_multicast_route(key.clone(), route.clone()),
+            Ok(None)
+        );
+    }
 
     // Join the multicast group on `dev` for local delivery.
     if local_delivery {
@@ -2447,6 +2456,18 @@ fn test_multicast_forwarding_preserves_metadata<I: IpExt + TestIpExt>(local_deli
         udp_buf,
         marks,
     );
+
+    if queue_packets {
+        // No route matched, so the packet was queued in the pending table rather
+        // than forwarded immediately, and no frames were transmitted.
+        assert_matches!(&ctx.bindings_ctx.take_ethernet_frames()[..], []);
+
+        // Installing the route flushes the pending queue.
+        assert_eq!(
+            ctx.core_api().multicast_forwarding::<I>().add_multicast_route(key, route),
+            Ok(None)
+        );
+    }
 
     // Forwarding to `other_dev1` and `other_dev2` preserved `marks`, allowing
     // both forwarded packets to pass egress filtering and be transmitted.

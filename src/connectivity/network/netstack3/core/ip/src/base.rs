@@ -4609,6 +4609,7 @@ where
                 Some(address_status),
                 dst_ip,
                 frame_dst,
+                *marks,
                 max_fragment_len,
             )
         }
@@ -4685,6 +4686,7 @@ where
                 Some(address_status),
                 dst_ip,
                 frame_dst,
+                *marks,
                 max_fragment_len,
             )
         }
@@ -4757,6 +4759,7 @@ fn receive_ip_multicast_packet_action<
     address_status: Option<I::AddressStatus>,
     dst_ip: SpecifiedAddr<I::Addr>,
     frame_dst: Option<LocalFrameDestination>,
+    marks: Marks,
     max_fragment_len: Option<usize>,
 ) -> ReceivePacketAction<I, CC::DeviceId> {
     let targets = multicast_forwarding::lookup_multicast_route_or_stash_packet(
@@ -4766,6 +4769,7 @@ fn receive_ip_multicast_packet_action<
         device,
         frame_dst,
         max_fragment_len,
+        marks,
     );
     match (targets, address_status) {
         (Some(targets), address_status) => {
@@ -4824,6 +4828,7 @@ fn receive_ip_packet_action_common<
             None,
             dst_ip,
             frame_dst,
+            *marks,
             max_fragment_len,
         );
     }
