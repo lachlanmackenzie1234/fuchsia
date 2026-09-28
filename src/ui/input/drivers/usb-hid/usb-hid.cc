@@ -381,7 +381,19 @@ void UsbHidbus::FindDescriptors(usb::Interface interface, const usb_hid_descript
                                 const usb_endpoint_descriptor_t** endptout) {
   for (const auto& descriptor : interface.GetDescriptorList()) {
     if (descriptor.b_descriptor_type == USB_DT_HID) {
-      *hid_desc = reinterpret_cast<const usb_hid_descriptor_t*>(&descriptor);
+      if (descriptor.b_length < sizeof(usb_hid_descriptor_t)) {
+        fdf::error("HID descriptor is too small (b_length = {})", descriptor.b_length);
+        continue;
+      }
+      auto temp_hid_desc = reinterpret_cast<const usb_hid_descriptor_t*>(&descriptor);
+      if (descriptor.b_length <
+          sizeof(usb_hid_descriptor_t) +
+              temp_hid_desc->bNumDescriptors * sizeof(usb_hid_descriptor_entry_t)) {
+        fdf::error("HID descriptor bLength {} is too small for bNumDescriptors {}",
+                   descriptor.b_length, temp_hid_desc->bNumDescriptors);
+        continue;
+      }
+      *hid_desc = temp_hid_desc;
     } else if (descriptor.b_descriptor_type == USB_DT_ENDPOINT) {
       auto endpt_desc = reinterpret_cast<const usb_endpoint_descriptor_t*>(&descriptor);
       if (usb_ep_type(endpt_desc) == fdescriptor::EndpointType::kInterrupt) {

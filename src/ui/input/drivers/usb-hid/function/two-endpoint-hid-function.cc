@@ -89,15 +89,17 @@ void FakeUsbHidFunction::Control(ControlRequest& request, ControlCompleter::Sync
       return;
     }
   }
-  if (setup.b_request() == USB_HID_SET_REPORT) {
-    report_ = write;
-    completer.Reply(zx::ok(std::vector<uint8_t>{}));
-    return;
-  }
-  if (setup.b_request() == USB_HID_SET_PROTOCOL) {
-    hid_protocol_ = static_cast<fhidbus::wire::HidProtocol>(setup.w_value());
-    completer.Reply(zx::ok(std::vector<uint8_t>{}));
-    return;
+  if (setup.bm_request_type() == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
+    if (setup.b_request() == USB_HID_SET_REPORT) {
+      report_ = write;
+      completer.Reply(zx::ok(std::vector<uint8_t>{}));
+      return;
+    }
+    if (setup.b_request() == USB_HID_SET_PROTOCOL) {
+      hid_protocol_ = static_cast<fhidbus::wire::HidProtocol>(setup.w_value());
+      completer.Reply(zx::ok(std::vector<uint8_t>{}));
+      return;
+    }
   }
   completer.Reply(zx::error(ZX_ERR_IO_REFUSED));
 }
@@ -269,6 +271,7 @@ void FakeUsbHidFunction::UsbEndpointOutCallback(
   for (auto& completion : completions) {
     if (*completion.status() == ZX_OK) {
       usb::FidlRequest wrapped_req(std::move(*completion.request()));
+      wrapped_req.CacheFlushInvalidate(out_ep_.GetMapped());
       report_.resize(*completion.transfer_size());
       zx::result<std::vector<size_t>> res = wrapped_req.CachedCopyFrom(
           0, report_.data(), *completion.transfer_size(), out_ep_.GetMapped());
