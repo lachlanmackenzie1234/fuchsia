@@ -532,6 +532,13 @@ impl DynamicFileSource for WaitingFile {
 #[derive(Debug, Default)]
 struct FuseNodeMutableState {
     nlookup: u64,
+
+    /// Validity deadline from the most recent entry reply (e.g. to `FUSE_LOOKUP`) that returned
+    /// this node, for the `DirEntry` created for that reply.
+    ///
+    /// Taken by `create_dir_entry_ops` so that the new `DirEntry` is not revalidated before the
+    /// deadline, like Linux does with `fuse_change_entry_timeout()`.
+    entry_valid_until: Option<zx::MonotonicInstant>,
 }
 
 #[derive(Debug)]
@@ -687,6 +694,10 @@ impl FuseNode {
             return error!(ENOENT);
         }
         let attr_valid_duration = attr_valid_to_duration(entry.attr_valid, entry.attr_valid_nsec)?;
+        let entry_valid_until = zx::MonotonicInstant::after(attr_valid_to_duration(
+            entry.entry_valid,
+            entry.entry_valid_nsec,
+        )?);
         let mut created = false;
         let node = node.fs().get_and_validate_or_create_node(
             entry.nodeid,
@@ -714,10 +725,14 @@ impl FuseNode {
                 ))
             },
         )?;
-        // . and .. do not get their lookup count increased.
+        // . and .. do not get their lookup count increased, nor a `DirEntry` of their own.
         if !DirEntry::is_reserved_name(name) {
             let fuse_node = FuseNode::from_node(&node);
-            fuse_node.state.lock().nlookup += 1;
+            {
+                let mut state = fuse_node.state.lock();
+                state.nlookup += 1;
+                state.entry_valid_until = Some(entry_valid_until);
+            }
             if !created {
                 node.update_info(|info| {
                     FuseNode::update_node_info_from_attr(
@@ -801,7 +816,7 @@ impl FileOps for FuseFileObject {
         }
 
         // EOF bounds capping to prevent reading past file limits.
-        let file_size = file.node().info().size;
+        let file_size = file.node().fetch_and_refresh_info(current_task)?.size;
         if offset >= file_size {
             return Ok(0);
         }
@@ -888,10 +903,14 @@ impl FileOps for FuseFileObject {
         if file.node().info().mode.is_dir() {
             return error!(EISDIR);
         }
-        if let Some(file_object) = self.passthrough_file.upgrade() {
-            return file_object.ops().write(&file_object, current_task, offset, data);
-        }
         let node = Self::get_fuse_node(file);
+        if let Some(file_object) = self.passthrough_file.upgrade() {
+            let written = file_object.ops().write(&file_object, current_task, offset, data)?;
+            if written > 0 {
+                node.invalidate_attributes();
+            }
+            return Ok(written);
+        }
 
         let max_transfer = self.connection.max_write_size();
         let mut total_written = 0;
@@ -1173,12 +1192,6 @@ struct FuseDirEntry {
     valid_until: AtomicMonotonicInstant,
 }
 
-impl Default for FuseDirEntry {
-    fn default() -> Self {
-        Self { valid_until: zx::MonotonicInstant::INFINITE_PAST.into() }
-    }
-}
-
 impl DirEntryOps for FuseDirEntry {
     fn revalidate(&self, current_task: &CurrentTask, dir_entry: &DirEntry) -> Result<bool, Errno> {
         // Relaxed because the attributes valid until atomic is not used to synchronize
@@ -1318,7 +1331,13 @@ impl FsNodeOps for FuseNode {
     }
 
     fn create_dir_entry_ops(&self) -> Box<dyn DirEntryOps> {
-        Box::new(FuseDirEntry::default())
+        let valid_until = self
+            .state
+            .lock()
+            .entry_valid_until
+            .take()
+            .unwrap_or(zx::MonotonicInstant::INFINITE_PAST);
+        Box::new(FuseDirEntry { valid_until: valid_until.into() })
     }
 
     fn create_file_ops(

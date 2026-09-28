@@ -548,9 +548,13 @@ class FuseServer {
         OK_OR_RETURN(HandleRead(node, in_header, &read_in));
         break;
       }
-      case FUSE_WRITE:
-        OK_OR_RETURN(WriteDataFreeResponse(in_header, -ENOTSUP));
+      case FUSE_WRITE: {
+        struct fuse_write_in write_in = {};
+        memcpy(&write_in, in_payload, sizeof(write_in));
+        OK_OR_RETURN(HandleWrite(node, in_header, &write_in,
+                                 reinterpret_cast<const char*>(in_payload) + sizeof(write_in)));
         break;
+      }
       case FUSE_RELEASEDIR:
       case FUSE_RELEASE: {
         struct fuse_release_in release_in = {};
@@ -902,6 +906,13 @@ class FuseServer {
   virtual testing::AssertionResult HandleRead(std::shared_ptr<Node> node,
                                               const struct fuse_in_header& in_header,
                                               const struct fuse_read_in* read_in) {
+    return WriteDataFreeResponse(in_header, -ENOTSUP);
+  }
+
+  virtual testing::AssertionResult HandleWrite(std::shared_ptr<Node> node,
+                                               const struct fuse_in_header& in_header,
+                                               const struct fuse_write_in* write_in,
+                                               const void* buffer) {
     return WriteDataFreeResponse(in_header, -ENOTSUP);
   }
 };
@@ -2494,4 +2505,100 @@ TEST_F(FuseServerTest, LinkUpdatesEntry) {
   // Both the initial lookup of "file" and the FUSE_LINK for "link" increment
   // the lookup count, so FUSE_FORGET should report nlookup == 2.
   EXPECT_EQ(server->WaitForForget(), 2u);
+}
+
+TEST_F(FuseServerTest, CreateWriteAndReadWithValidEntry) {
+  class ReadWriteServer : public CountingFuseServer {
+   public:
+    ReadWriteServer() : CountingFuseServer(0, 0) {}
+
+   protected:
+    testing::AssertionResult HandleCreate(const std::shared_ptr<Node>& dir_node,
+                                          const struct fuse_in_header& in_header,
+                                          const struct fuse_create_in* create_in,
+                                          const char* name) override {
+      const std::shared_ptr dir = std::dynamic_pointer_cast<Directory>(dir_node);
+      if (!dir) {
+        return WriteDataFreeResponse(in_header, -ENOTDIR);
+      }
+
+      std::shared_ptr<File> node = fs().AddFileAt(dir, std::string(name));
+      node->SetEntryValidDuration(std::numeric_limits<uint64_t>::max());
+      node->SetAttrValidDuration(std::numeric_limits<uint64_t>::max());
+
+      struct {
+        fuse_entry_out entry_out;
+        fuse_open_out open_out;
+      } response = {};
+      node->PopulateEntry(response.entry_out);
+      response.open_out.fh = GetNextFileHandle();
+      return WriteStructResponse(in_header, response);
+    }
+
+    testing::AssertionResult HandleWrite(std::shared_ptr<Node> node,
+                                         const struct fuse_in_header& in_header,
+                                         const struct fuse_write_in* write_in,
+                                         const void* buffer) override {
+      std::lock_guard guard(data_mtx_);
+      size_t end = static_cast<size_t>(write_in->offset) + write_in->size;
+      if (content_.size() < end) {
+        content_.resize(end);
+      }
+      memcpy(content_.data() + write_in->offset, buffer, write_in->size);
+      node->SetSize(content_.size());
+
+      fuse_write_out write_out = {
+          .size = write_in->size,
+      };
+      return WriteStructResponse(in_header, write_out);
+    }
+
+    testing::AssertionResult HandleRead(std::shared_ptr<Node> node,
+                                        const struct fuse_in_header& in_header,
+                                        const struct fuse_read_in* read_in) override {
+      std::lock_guard guard(data_mtx_);
+      if (read_in->offset >= content_.size()) {
+        return WriteDataResponse(in_header, nullptr, 0);
+      }
+      size_t available = content_.size() - static_cast<size_t>(read_in->offset);
+      size_t to_read = std::min<size_t>(read_in->size, available);
+      return WriteDataResponse(in_header, content_.data() + read_in->offset, to_read);
+    }
+
+   private:
+    std::mutex data_mtx_;
+    std::string content_;
+  };
+
+  auto server = std::make_shared<ReadWriteServer>();
+  server->fs().RootDir()->SetEntryValidDuration(std::numeric_limits<uint64_t>::max());
+  server->fs().RootDir()->SetAttrValidDuration(std::numeric_limits<uint64_t>::max());
+  ASSERT_TRUE(Mount(server));
+
+  std::string file_path = GetMountDir() + "/hellosdcardtest";
+  constexpr std::string_view kTestData = "Hello sdcard test\n";
+
+  {
+    fbl::unique_fd fd(open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600));
+    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+    ASSERT_EQ(write(fd.get(), kTestData.data(), kTestData.size()),
+              static_cast<ssize_t>(kTestData.size()))
+        << strerror(errno);
+  }
+
+  uint64_t lookups_after_create = server->LookupCount();
+
+  {
+    fbl::unique_fd fd(open(file_path.c_str(), O_RDONLY));
+    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+    char buf[64] = {};
+    ssize_t bytes_read = read(fd.get(), buf, sizeof(buf));
+    ASSERT_EQ(bytes_read, static_cast<ssize_t>(kTestData.size())) << strerror(errno);
+    EXPECT_EQ(std::string_view(buf, static_cast<size_t>(bytes_read)), kTestData);
+  }
+
+  EXPECT_EQ(server->LookupCount(), lookups_after_create);
+  if (test_helper::IsStarnix()) {
+    EXPECT_EQ(server->NonRootGetAttrCount(), 1u);
+  }
 }
