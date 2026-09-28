@@ -1184,7 +1184,7 @@ pub fn check_socket_getsockopt_access(
 }
 
 /// Checks if the `current_task` is allowed to set socket options on `socket`.
-/// Corresponds to the `socket_getsockopt()` LSM hook.
+/// Corresponds to the `socket_setsockopt()` LSM hook.
 pub fn check_socket_setsockopt_access(
     current_task: &CurrentTask,
     socket: &Socket,
