@@ -40,7 +40,7 @@ mod tests {
     #[fuchsia::test]
     fn test_flow_begin() {
         let trace_only_var = 6;
-        let flow_id: Id = 5u64.into();
+        let flow_id: Id = u64::from(Id::new()).into();
         flow_begin!("category", "name", flow_id);
         flow_begin!("category", "name", flow_id, "arg" => 5);
         flow_begin!("category", "name", flow_id, "arg" => 5, "arg2" => trace_only_var);

@@ -37,6 +37,13 @@ impl From<u64> for Id {
     }
 }
 
+impl From<Id> for u64 {
+    #[inline]
+    fn from(_id: Id) -> Self {
+        0
+    }
+}
+
 #[inline]
 pub const fn use_args<'a>(_args: &'a [Arg<'_>]) {}
 
