@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/driver/logging/cpp/logger.h>
+
 #include "usb-cdc-ecm-lib.h"
 
 struct FuzzInput {
@@ -55,7 +57,19 @@ usb_protocol_ops_t kFuzzedUsbProtocolOps = {
     .get_descriptors = UsbGetDescriptors,
 };
 
+// The code under test logs through the DFv2 logger, which requires a global logger instance to be
+// set. The fuzzer does not run inside a driver host, so provide a default-constructed (no-op)
+// logger; emitting real log records would only slow the fuzzer down.
+static fdf::Logger& NoOpLogger() {
+  static fdf::Logger logger;
+  return logger;
+}
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* Data, size_t Size) {
+  if (!fdf::Logger::HasGlobalInstance()) {
+    fdf::Logger::SetGlobalInstance(&NoOpLogger());
+  }
+
   FuzzInput input = {.data = Data, .size = Size};
   usb_protocol_t protocol = {.ops = &kFuzzedUsbProtocolOps, .ctx = &input};
   usb::UsbDevice usb = usb::UsbDevice(&protocol);

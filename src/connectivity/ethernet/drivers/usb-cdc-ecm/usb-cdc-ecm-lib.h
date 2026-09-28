@@ -9,8 +9,7 @@
 #include <fuchsia/hardware/ethernet/c/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <fuchsia/hardware/usb/descriptor/c/banjo.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/sync/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/result.h>
@@ -19,7 +18,6 @@
 #include <memory>
 
 #include <fbl/auto_lock.h>
-#include <src/lib/listnode/listnode.h>
 #include <usb/cdc.h>
 #include <usb/usb.h>
 
@@ -71,11 +69,11 @@ class UsbCdcDescriptorParser {
         mtu_(mtu),
         mac_addr_(mac_addr) {}
 
-  static const uint16_t kCdcSupportedVersion = 0x0110; /* 1.10 */
+  static constexpr uint16_t kCdcSupportedVersion = 0x0110; /* 1.10 */
 
   // MAC address is stored in a string descriptor in UTF-16 format, so we get one byte of
   // address for each 32 bits of text.
-  static const size_t kExpectedStringSize =
+  static constexpr size_t kExpectedStringSize =
       sizeof(usb_string_descriptor_t) + ETH_MAC_SIZE * sizeof(uint32_t);
 
   static zx::result<MacAddress> ParseMacAddress(usb::UsbDevice& usb,

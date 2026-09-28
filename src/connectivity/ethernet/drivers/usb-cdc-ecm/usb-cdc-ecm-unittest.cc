@@ -2,17 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
+
 #include <vector>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
 #include "usb-cdc-ecm-lib.h"
 #include "usb/usb.h"
 
 namespace {
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
-class UsbCdcEcmTest : public zxtest::Test {
+class UsbCdcEcmTest : public ::testing::Test {
  public:
   void SetUp() override {
     proto_.ops = &ops_;
@@ -85,6 +88,10 @@ class UsbCdcEcmTest : public zxtest::Test {
   void* descriptors_ = nullptr;
   size_t descriptor_length_ = 0;
   usb_desc_iter_t iter;
+
+  // The code under test logs through the DFv2 logger, which requires a global logger instance to
+  // be set. These tests do not run inside a driver host, so provide one here.
+  fdf_testing::ScopedGlobalLogger logger_;
 };
 
 TEST_F(UsbCdcEcmTest, ParseUsbDescriptorTest) {
