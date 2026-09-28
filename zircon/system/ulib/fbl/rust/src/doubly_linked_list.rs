@@ -335,16 +335,19 @@ where
     }
 
     /// Returns true if the list is empty.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         is_sentinel_ptr(self.head)
     }
 
     /// Returns a reference to the first element of the list, or `None` if it is empty.
+    #[inline]
     pub fn front(&self) -> Option<&P::Target> {
         if self.is_empty() { None } else { unsafe { Some(&*self.head) } }
     }
 
     /// Returns a mutable reference to the first element of the list, or `None` if it is empty.
+    #[inline]
     pub fn front_mut(&mut self) -> Option<&mut P::Target> {
         if self.is_empty() { None } else { unsafe { Some(&mut *self.head) } }
     }
@@ -366,6 +369,7 @@ where
     /// # Panics
     ///
     /// Panics if the object is already in a container.
+    #[inline]
     pub fn push_front(&mut self, ptr: P)
     where
         P: ManagedPtr,
@@ -385,6 +389,7 @@ where
     ///
     /// The caller must ensure that `ptr` is a valid pointer to a `T` and that the object outlives
     /// the reference from the list.
+    #[inline]
     pub unsafe fn push_front_raw(&mut self, ptr: P) {
         let head = self.head;
         let mut cursor = CursorMut { list: self, current: head };
@@ -399,6 +404,7 @@ where
     /// # Panics
     ///
     /// Panics if the object is already in a container.
+    #[inline]
     pub fn push_back(&mut self, ptr: P)
     where
         P: ManagedPtr,
@@ -418,6 +424,7 @@ where
     ///
     /// The caller must ensure that `ptr` is a valid pointer to an object that is not
     /// currently in any list.
+    #[inline]
     pub unsafe fn push_back_raw(&mut self, ptr: P) {
         let sentinel = self.get_sentinel();
         let mut cursor = CursorMut { list: self, current: sentinel };
@@ -428,6 +435,7 @@ where
     }
 
     /// Removes and returns the first element of the list, or `None` if it is empty.
+    #[inline]
     pub fn pop_front(&mut self) -> Option<P> {
         if self.is_empty() {
             return None;
@@ -458,6 +466,7 @@ where
     ///
     /// The caller must ensure that `obj` is a valid reference to an object that is
     /// currently in this list instance.
+    #[inline]
     pub unsafe fn erase(&mut self, obj: &P::Target) -> Option<P> {
         let ptr = obj as *const P::Target as *mut P::Target;
         let node = obj.get_node();
@@ -493,6 +502,7 @@ where
 
     /// Finds the first element matching the predicate, removes it from the list,
     /// and returns it. Returns `None` if no element matches.
+    #[inline]
     pub fn erase_if<F>(&mut self, mut f: F) -> Option<P>
     where
         F: FnMut(&P::Target) -> bool,
@@ -517,12 +527,14 @@ where
     }
 
     /// Returns a cursor positioned at the front of the list.
+    #[inline]
     pub fn cursor_front_mut(&mut self) -> CursorMut<'_, P, Tag, S> {
         let head = self.head;
         CursorMut { list: self, current: head }
     }
 
     /// Returns a cursor positioned at the back (end sentinel) of the list.
+    #[inline]
     pub fn cursor_back_mut(&mut self) -> CursorMut<'_, P, Tag, S> {
         let sentinel = self.get_sentinel();
         CursorMut { list: self, current: sentinel }
@@ -549,6 +561,7 @@ where
         self.cursor_back_mut().splice(other);
     }
 
+    #[inline]
     pub fn iter(&self) -> Iterator<'_, P, Tag> {
         Iterator::new(self)
     }
@@ -559,6 +572,7 @@ where
     }
 
     /// Returns a unidirectional forward iterator over the elements of the list.
+    #[inline]
     pub fn forward_iter(&self) -> ForwardIterator<'_, P, Tag> {
         ForwardIterator::new(self.head)
     }
@@ -585,6 +599,7 @@ where
     P::Target: DoublyLinkedListContainable<P::Target, Tag>,
 {
     /// Returns the number of elements in the list.
+    #[inline]
     pub fn len(&self) -> usize {
         self.size.get()
     }

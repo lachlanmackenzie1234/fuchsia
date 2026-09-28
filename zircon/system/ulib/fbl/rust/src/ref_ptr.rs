@@ -174,11 +174,13 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
     /// Every call to `add_ref` should be balanced by a subsequent drop of a
     /// `RefPtr` (e.g. constructed via `RefPtr::from_raw`), otherwise memory will
     /// be leaked. It is safe to leak memory in Rust.
+    #[inline]
     pub fn add_ref(target: &T) {
         target.ref_count().add_ref();
     }
 
     /// Constructs a `RefPtr` from a reference by incrementing its ref count.
+    #[inline]
     pub fn from_ref(target: &T) -> Self {
         target.ref_count().add_ref();
         RefPtr { ptr: NonNull::from(target) }
@@ -187,12 +189,14 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
 
 impl<T: HasRefCount + Recyclable> Deref for RefPtr<T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &Self::Target {
         unsafe { self.ptr.as_ref() }
     }
 }
 
 impl<T: HasRefCount + Recyclable> Clone for RefPtr<T> {
+    #[inline]
     fn clone(&self) -> Self {
         self.deref().ref_count().add_ref();
         RefPtr { ptr: self.ptr }
@@ -200,6 +204,7 @@ impl<T: HasRefCount + Recyclable> Clone for RefPtr<T> {
 }
 
 impl<T: HasRefCount + Recyclable> Drop for RefPtr<T> {
+    #[inline]
     fn drop(&mut self) {
         if self.deref().ref_count().release() {
             unsafe {
@@ -210,6 +215,7 @@ impl<T: HasRefCount + Recyclable> Drop for RefPtr<T> {
 }
 
 impl<T: HasRefCount + Recyclable> PartialEq for RefPtr<T> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         RefPtr::ptr_eq(self, other)
     }
