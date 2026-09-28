@@ -122,9 +122,8 @@
         //     to: "#base-drivers",
         // },
         {
-            protocol: "fuchsia.component.resolution.Resolver",
+            protocol: "fuchsia.component.resolution.Resolver-base",
             from: "#pkg-cache",
-            as: "fuchsia.component.resolution.Resolver-base",
             to: "#driver_index",
 
             // pkg-cache depends on fshost for blobfs and fshost depends transitively on
