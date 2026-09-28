@@ -62,7 +62,6 @@ rustc_library("fbl") {
     configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
     configs += [ "//zircon/kernel/switch:allow-let-unit-value" ]
     configs += [ "//zircon/kernel/switch:allow-type-complexity" ]
-    configs += [ "//zircon/kernel/switch:allow-len-zero" ]
     configs += [ "//zircon/kernel/switch:allow-needless-late-init" ]
     configs += [ "//zircon/kernel/switch:allow-unnecessary-unwrap" ]
     configs += [ "//zircon/kernel/switch:allow-new-without-default" ]

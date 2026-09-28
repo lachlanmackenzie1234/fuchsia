@@ -247,7 +247,7 @@ impl<T, A: Allocator> Vector<T, A> {
 
     fn grow_for_new_element(&mut self) -> Result<(), AllocError> {
         if self.size == self.buf.len() {
-            let new_capacity = if self.buf.len() == 0 {
+            let new_capacity = if self.buf.is_empty() {
                 CAPACITY_MINIMUM
             } else {
                 self.buf.len() * CAPACITY_GROWTH_FACTOR
