@@ -3764,21 +3764,22 @@ pub fn receive_ipv4_packet<
     );
     match action {
         ReceivePacketAction::MulticastForward { targets, address_status, dst_ip } => {
-            // TOOD(https://fxbug.dev/364242513): Support connection tracking of
-            // the multiplexed flows created by multicast forwarding. Here, we
-            // use the existing metadata for the first action taken, and then
-            // a default instance for each subsequent action. The first action
-            // will populate the conntrack table with an entry, which will then
-            // be used by all subsequent forwards.
-            let mut packet_metadata = Some(packet_metadata);
+            // Multicast forwarding replicates a single flow across multiple
+            // targets. We split the metadata so that marks and socket info are
+            // preserved for all targets and local delivery. The first target
+            // takes the unconfirmed conntrack entry to populate the table,
+            // which subsequent forwards share.
             for MulticastRouteTarget { output_interface, min_ttl } in targets.as_ref() {
                 clone_packet_for_mcast_forwarding! {
                     let (copy_of_data, copy_of_buffer, copy_of_packet) = packet
                 };
+                let SplitMulticastPacketMetadata { primary: this_packet_metadata, secondary } =
+                    packet_metadata.split_for_multicast();
+                packet_metadata = secondary;
                 determine_ip_packet_forwarding_action::<Ipv4, _, _>(
                     core_ctx,
                     copy_of_packet,
-                    packet_metadata.take().unwrap_or_default(),
+                    this_packet_metadata,
                     Some(*min_ttl),
                     device,
                     &output_interface,
@@ -3808,10 +3809,12 @@ pub fn receive_ipv4_packet<
                     device,
                     frame_dst,
                     packet,
-                    packet_metadata.take().unwrap_or_default(),
+                    packet_metadata,
                     receive_meta,
                 )
                 .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
+            } else {
+                packet_metadata.acknowledge_drop();
             }
         }
         ReceivePacketAction::Deliver { address_status, internal_forwarding } => {
@@ -4243,21 +4246,22 @@ pub fn receive_ipv6_packet<
         max_fragment_len,
     ) {
         ReceivePacketAction::MulticastForward { targets, address_status, dst_ip } => {
-            // TOOD(https://fxbug.dev/364242513): Support connection tracking of
-            // the multiplexed flows created by multicast forwarding. Here, we
-            // use the existing metadata for the first action taken, and then
-            // a default instance for each subsequent action. The first action
-            // will populate the conntrack table with an entry, which will then
-            // be used by all subsequent forwards.
-            let mut packet_metadata = Some(packet_metadata);
+            // Multicast forwarding replicates a single flow across multiple
+            // targets. We split the metadata so that marks and socket info are
+            // preserved for all targets and local delivery. The first target
+            // takes the unconfirmed conntrack entry to populate the table,
+            // which subsequent forwards share.
             for MulticastRouteTarget { output_interface, min_ttl } in targets.as_ref() {
                 clone_packet_for_mcast_forwarding! {
                     let (copy_of_data, copy_of_buffer, copy_of_packet) = packet
                 };
+                let SplitMulticastPacketMetadata { primary: this_packet_metadata, secondary } =
+                    packet_metadata.split_for_multicast();
+                packet_metadata = secondary;
                 determine_ip_packet_forwarding_action::<Ipv6, _, _>(
                     core_ctx,
                     copy_of_packet,
-                    packet_metadata.take().unwrap_or_default(),
+                    this_packet_metadata,
                     Some(*min_ttl),
                     device,
                     &output_interface,
@@ -4288,10 +4292,12 @@ pub fn receive_ipv6_packet<
                     device,
                     frame_dst,
                     packet,
-                    packet_metadata.take().unwrap_or_default(),
+                    packet_metadata,
                     receive_meta,
                 )
                 .unwrap_or_else(|icmp_sender| icmp_sender.send(core_ctx, bindings_ctx, buffer));
+            } else {
+                packet_metadata.acknowledge_drop();
             }
         }
         ReceivePacketAction::Deliver { address_status: _, internal_forwarding } => {

@@ -54,8 +54,8 @@ use netstack3_base::testutil::{
     set_logger_for_test,
 };
 use netstack3_base::{
-    InstantContext as _, IpDeviceAddr, LocalFrameDestination, Mark, MarkDomain, Marks,
-    NetworkParsingContext, NetworkSerializationContext,
+    InstantContext as _, IpDeviceAddr, LocalFrameDestination, Mark, MarkMatcher, MarkMatchers,
+    Marks, NetworkParsingContext, NetworkSerializationContext,
 };
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, MaxEthernetFrameSize,
@@ -64,6 +64,7 @@ use netstack3_core::device::{
 use netstack3_core::filter::{
     Action, Hook, IpRoutines, NatRoutines, PacketMatcher, Routine, Routines, Rule, Tuple,
 };
+use netstack3_core::ip::MarkDomain;
 use netstack3_core::socket::{ListenerInfo, SocketInfo};
 use netstack3_core::testutil::{
     Ctx, CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx, FakeCtxBuilder,
@@ -2326,6 +2327,147 @@ fn test_multicast_forwarding_receive_ip_packet_action<I: IpExt + TestIpExt>() {
         receive_ip_packet_action::<I>(&mut ctx, &dev, mcast_addr),
         ReceivePacketAction::Drop { reason: DropReason::MulticastNoInterest }
     );
+}
+
+/// Tests that multicast forwarding preserves packet metadata (such as marks)
+/// across all forwarded targets as well as local delivery.
+#[netstack3_core::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+#[test_case(false; "forwarding only")]
+#[test_case(true; "with local delivery")]
+fn test_multicast_forwarding_preserves_metadata<I: IpExt + TestIpExt>(local_delivery: bool) {
+    let mut builder = FakeCtxBuilder::default();
+    for _ in 0..3 {
+        let _dev_idx = builder.add_device_with_ip(
+            I::TEST_ADDRS.local_mac,
+            I::TEST_ADDRS.local_ip.get(),
+            I::TEST_ADDRS.subnet,
+        );
+    }
+    let (mut ctx, device_ids) = builder.build();
+    let [dev_eth, other_dev1_eth, other_dev2_eth] =
+        device_ids.try_into().expect("there should be three devices");
+    let dev: DeviceId<_> = dev_eth.into();
+    let other_dev1: DeviceId<_> = other_dev1_eth.clone().into();
+    let other_dev2: DeviceId<_> = other_dev2_eth.clone().into();
+
+    let mcast_addr: I::Addr =
+        I::map_ip((), |()| net_ip_v4!("224.0.1.1"), |()| net_ip_v6!("ff0e::1"));
+
+    // Enable multicast forwarding and install a route forwarding from `dev`
+    // to both `other_dev1` (1st target) and `other_dev2` (2nd target).
+    assert!(ctx.core_api().multicast_forwarding::<I>().enable());
+    ctx.test_api().set_multicast_forwarding_enabled::<I>(&dev, true);
+
+    let key =
+        MulticastRouteKey::<I>::new(I::TEST_ADDRS.remote_ip.get(), mcast_addr.clone()).unwrap();
+    let targets: MulticastRouteTargets<_> = [
+        MulticastRouteTarget { output_interface: other_dev1, min_ttl: NonZeroU8::new(1).unwrap() },
+        MulticastRouteTarget { output_interface: other_dev2, min_ttl: NonZeroU8::new(1).unwrap() },
+    ]
+    .into();
+    let route = MulticastRoute::new_forward(dev.clone(), targets).unwrap();
+    assert_eq!(
+        ctx.core_api().multicast_forwarding::<I>().add_multicast_route(key, route),
+        Ok(None)
+    );
+
+    // Join the multicast group on `dev` for local delivery.
+    if local_delivery {
+        let Ctx { core_ctx, bindings_ctx } = &mut ctx;
+        ip::device::join_ip_multicast::<I, _, _>(
+            &mut core_ctx.context(),
+            bindings_ctx,
+            &dev,
+            MulticastAddr::new(mcast_addr).unwrap(),
+        );
+    }
+
+    // Create a UDP socket to receive locally delivered packets on `dev`.
+    const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(12345).unwrap();
+    const REMOTE_PORT: NonZeroU16 = NonZeroU16::new(54321).unwrap();
+    let mut udp_api = ctx.core_api().udp::<I>();
+    let receiver = udp_api.create();
+    udp_api.listen(&receiver, None, Some(LOCAL_PORT)).unwrap();
+
+    // Install filter rules so that packets are dropped at local ingress and
+    // egress unless they carry Mark1 == 100.
+    fn drop_unmarked_routines<I: IpExt>() -> Routines<I, FakeBindingsCtx, &'static str> {
+        let drop_unmarked_rule = Rule {
+            matcher: PacketMatcher {
+                mark_matcher: Some(MarkMatchers::new([(
+                    MarkDomain::Mark1,
+                    MarkMatcher::Marked { mask: !0, start: 100, end: 100, invert: true },
+                )])),
+                ..Default::default()
+            },
+            action: Action::Drop,
+            validation_info: "drop packets without mark 100",
+        };
+        Routines {
+            ip: IpRoutines {
+                local_ingress: Hook {
+                    routines: vec![Routine { rules: vec![drop_unmarked_rule.clone()] }],
+                },
+                egress: Hook { routines: vec![Routine { rules: vec![drop_unmarked_rule] }] },
+                ..Default::default()
+            },
+            nat: NatRoutines::default(),
+        }
+    }
+    ctx.core_api()
+        .filter()
+        .set_filter_state(drop_unmarked_routines::<Ipv4>(), drop_unmarked_routines::<Ipv6>())
+        .unwrap();
+
+    const PAYLOAD: &'static [u8] = b"hello";
+    let udp_buf = Buf::new(PAYLOAD.to_vec(), ..)
+        .wrap_in(UdpPacketBuilder::new(
+            I::TEST_ADDRS.remote_ip.get(),
+            mcast_addr,
+            Some(REMOTE_PORT),
+            LOCAL_PORT,
+        ))
+        .wrap_in(<I as packet_formats::ip::IpExt>::PacketBuilder::new(
+            I::TEST_ADDRS.remote_ip.get(),
+            mcast_addr,
+            64,
+            IpProto::Udp.into(),
+        ))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .unwrap_b();
+
+    let _ = ctx.bindings_ctx.take_ethernet_frames();
+
+    let marks = Marks::new([(MarkDomain::Mark1, 100)]);
+    ctx.test_api().receive_ip_packet_with_marks::<I, _>(
+        &dev,
+        Some(LocalFrameDestination::Multicast),
+        udp_buf,
+        marks,
+    );
+
+    // Forwarding to `other_dev1` and `other_dev2` preserved `marks`, allowing
+    // both forwarded packets to pass egress filtering and be transmitted.
+    assert_matches!(
+        &ctx.bindings_ctx.take_ethernet_frames()[..],
+        [(dev1, _frame1), (dev2, _frame2)] => {
+            assert_eq!(dev1, &other_dev1_eth.downgrade());
+            assert_eq!(dev2, &other_dev2_eth.downgrade());
+        }
+    );
+
+    if local_delivery {
+        // Local delivery on `dev` preserved `marks`, allowing the packet to pass
+        // local_ingress filtering and be delivered to the listening UDP socket.
+        assert_matches!(
+            &ctx.bindings_ctx.take_udp_received(&receiver)[..],
+            [payload] => assert_eq!(payload, PAYLOAD)
+        );
+    } else {
+        assert!(ctx.bindings_ctx.take_udp_received(&receiver)[..].is_empty());
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
