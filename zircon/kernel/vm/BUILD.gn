@@ -138,17 +138,44 @@ kernel_bindgen_crate("evictor-bindings") {
   notice_year = 2026
 
   function_allowlist = [
-    "cpp_evictor_destroy",
+    "cpp_evictor_disable_eviction",
     "cpp_evictor_init",
   ]
-  type_allowlist = [ "Evictor" ]
-  opaque_types = [ "Evictor" ]
+  type_allowlist = [
+    "Evictor",
+    "Evictor_EvictionLevel",
+    "Evictor_EvictionTarget",
+    "Evictor_EvictedPageCounts",
+    "Evictor_ReclaimFunction",
+    "Evictor_FreePagesFunction",
+    "ktl::atomic",
+    "std::atomic",
+  ]
+  type_blocklist = [
+    "AutounsignalEvent",
+    "Thread",
+    "Evictor_Output",
+    "Evictor_TriggerReason",
+    "Evictor_EvictionResult",
+    "Evictor_EvictorStats",
+  ]
+  opaque_types = [
+    "Evictor_ReclaimFunction",
+    "Evictor_FreePagesFunction",
+    "ktl::atomic",
+    "std::atomic",
+  ]
+  rustified_enum = [ "Evictor_EvictionLevel" ]
   function_blocklist = [ "Evictor_.*" ]
-  type_blocklist = [ "Evictor_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//zircon/kernel/kernel:event-bindings" ]
 
-  raw_lines = [ "#![no_std]" ]
-  expect_lints = []
+  raw_lines = [
+    "#![no_std]",
+    "pub use event_bindings::AutounsignalEvent;",
+    "pub type Thread = core::ffi::c_void;",
+  ]
+  expect_lints = [ "non_camel_case_types" ]
 }
 
 library_headers("headers") {
