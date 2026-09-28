@@ -164,6 +164,21 @@ closed protocol Session {
             id uint16;
         };
     }) error zx.Status;
+
+    /// Registers an inline encryption key handle (`key_token` returned by
+    /// `fuchsia.hardware.inlineencryption/Device.ProgramKey`) with this session.
+    ///
+    /// Returns a session-scoped `slot` token that can be passed in
+    /// `BlockFifoRequest.slot` when `BlockIoFlag.INLINE_ENCRYPTION_ENABLED` is set.
+    ///
+    /// * error `ZX_ERR_ACCESS_DENIED` if `key_token` is not a valid inline encryption key token
+    ///   for this block device, or if the key has been evicted.
+    /// * error `ZX_ERR_NOT_SUPPORTED` if the device does not support inline encryption.
+    strict RegisterKey(resource struct {
+        key_token zx.Handle:EVENTPAIR;
+    }) -> (struct {
+        slot uint8;
+    }) error zx.Status;
 };
 
 type DeviceFlag = strict bits : uint32 {

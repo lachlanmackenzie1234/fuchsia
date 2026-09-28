@@ -298,6 +298,14 @@ pub trait BlockClient: Send + Sync {
     /// Detaches the given vmo-id from the device.
     fn detach_vmo(&self, vmo_id: VmoId) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
+    /// Registers an inline encryption key handle with the session, returning a session-scoped slot.
+    fn register_key(
+        &self,
+        _key_token: zx::EventPair,
+    ) -> impl Future<Output = Result<u8, zx::Status>> + Send {
+        async { Err(zx::Status::NOT_SUPPORTED) }
+    }
+
     /// Reads from the device at |device_offset| into the given buffer slice.
     fn read_at(
         &self,
@@ -767,6 +775,14 @@ impl BlockClient for RemoteBlockClient {
 
     fn detach_vmo(&self, vmo_id: VmoId) -> impl Future<Output = Result<(), zx::Status>> {
         self.common.detach_vmo(vmo_id)
+    }
+
+    async fn register_key(&self, key_token: zx::EventPair) -> Result<u8, zx::Status> {
+        self.session
+            .register_key(key_token)
+            .await
+            .map_err(fidl_to_status)?
+            .map_err(zx::Status::err_from_raw)
     }
 
     fn read_at_with_opts_traced(
@@ -1325,6 +1341,12 @@ mod tests {
                                                 responder,
                                             } => responder
                                                 .send(Ok(&block::VmoId { id: 1 }))
+                                                .expect("send failed"),
+                                            block::SessionRequest::RegisterKey {
+                                                responder,
+                                                ..
+                                            } => responder
+                                                .send(Err(zx::Status::NOT_SUPPORTED.into_raw()))
                                                 .expect("send failed"),
                                             block::SessionRequest::Close { responder } => {
                                                 fifo_future_abort.abort();
