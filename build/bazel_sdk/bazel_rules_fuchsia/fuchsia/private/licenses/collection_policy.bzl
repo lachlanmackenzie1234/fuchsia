@@ -57,6 +57,7 @@ ignore_policy = struct(
         # after the last `+`) would be stable.
         # TODO(https://fxbug.dev/566262167): Stop matching canonical repo names.
         "+_repo_rules+internal_sdk",  # TODO(https://fxbug.dev/42081016): sdk atoms should provide licenses.
+        "+_repo_rules5+fuchsia_prebuilt_rust",  # TODO(https://fxbug.dev/564889889): rust prebuilts should provide licenses.
         "+_repo_rules6+assembly_developer_overrides",  # Local development overrides don't provide licenses.
     ]),
 
