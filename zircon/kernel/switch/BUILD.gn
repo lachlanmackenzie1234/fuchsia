@@ -648,7 +648,6 @@ clippy_lints = [
   "needless-late-init",
   "new-without-default",
   "non-canonical-clone-impl",
-  "ptr-eq",
   "redundant-pattern-matching",
   "suspicious-arithmetic-impl",
   "too-many-arguments",

@@ -64,7 +64,7 @@ impl<T, const DATA_BITS: usize, const CHECK_ALIGNMENT: bool> PartialEq<*const T>
     for PackedPointer<T, DATA_BITS, CHECK_ALIGNMENT>
 {
     fn eq(&self, other: &*const T) -> bool {
-        self.ptr() as *const T == *other
+        core::ptr::eq(self.ptr(), *other)
     }
 }
 
