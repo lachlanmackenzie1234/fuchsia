@@ -987,6 +987,9 @@ impl VolumesDirectory {
 
     async fn handle_set_limit(self: &Arc<Self>, store_id: u64, bytes: u64) -> Result<(), Error> {
         let store = self.root_volume.volume_directory().store();
+        if store.filesystem().allocator().get_owner_bytes_limit(store_id) == Some(bytes) {
+            return Ok(());
+        }
         let mut transaction = store.new_transaction(lock_keys![], Options::default()).await?;
         store.filesystem().allocator().set_bytes_limit(&mut transaction, store_id, bytes)?;
         transaction.commit().await?;
