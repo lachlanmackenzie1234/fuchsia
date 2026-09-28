@@ -219,9 +219,7 @@ impl IoBufferSharedRegionDispatcher {
             return Err(Status::NO_SPACE);
         }
 
-        // SAFETY: `base` is page-aligned and points to valid mapped kernel memory for the
-        // lifetime of `self`, and `Header` contains only atomic fields.
-        let header = unsafe { &*(self.state().base.0 as *const Header) };
+        let header = self.state().base.0 as *const Header;
         let get_ptr =
             |offset: usize| -> *mut u8 { (self.state().base.0 + page::SIZE + offset) as *mut u8 };
 
@@ -229,14 +227,19 @@ impl IoBufferSharedRegionDispatcher {
             let fault = {
                 ksync::lock!(let guard = self.state().lock.lock());
 
-                // TODO(https://fxbug.dev/551552519): Should head and tail use volatile atomics?
                 // Relaxed ordering because only the kernel modifies this value while holding the
                 // dispatcher lock.
-                let head = header.head.load(Ordering::Relaxed) as usize;
+                // SAFETY: `header` is page-aligned and points to valid mapped kernel memory for the
+                // lifetime of `self`.
+                let head = unsafe { (&raw const (*header).head).load_volatile(Ordering::Relaxed) }
+                    as usize;
                 // Acquire ordering so that the following writes are not reordered before this load
                 // since otherwise it is possible that we will overwrite a message that userspace
                 // has not finished reading yet.
-                let tail = header.tail.load(Ordering::Acquire) as usize;
+                // SAFETY: `header` is page-aligned and points to valid mapped kernel memory for the
+                // lifetime of `self`.
+                let tail = unsafe { (&raw const (*header).tail).load_volatile(Ordering::Acquire) }
+                    as usize;
 
                 if tail > head
                     || usize::MAX - head < rounded_message_size
@@ -254,7 +257,7 @@ impl IoBufferSharedRegionDispatcher {
                     // SAFETY: `get_ptr(offset)` points to mapped kernel memory and is 8-byte
                     // aligned because `base` is page-aligned, and both `head` and `buffer_size` are
                     // multiples of 8.
-                    unsafe { ptr::write(get_ptr(offset).cast(), val) };
+                    unsafe { ptr::write_volatile(get_ptr(offset).cast(), val) };
                     offset = (offset + size_of_val(&val)) % buffer_size;
                 };
                 write_u64(tag);
@@ -303,7 +306,18 @@ impl IoBufferSharedRegionDispatcher {
                         // Release ordering so that the previous writes are not reordered after this
                         // store since otherwise it is possible for userspace to read old data when
                         // it notices the change in head value.
-                        header.head.fetch_add(rounded_message_size as u64, Ordering::Release);
+                        //
+                        // Only the kernel modifies `head` and all updates are serialized by the
+                        // dispatcher lock.
+                        //
+                        // SAFETY: `header` is page-aligned and points to valid mapped kernel memory
+                        // for the lifetime of `self`.
+                        unsafe {
+                            (&raw const (*header).head).store_volatile(
+                                (head + rounded_message_size) as u64,
+                                Ordering::Release,
+                            );
+                        }
                         self.update_state_with_strobe_locked(
                             guard.token(),
                             0,
