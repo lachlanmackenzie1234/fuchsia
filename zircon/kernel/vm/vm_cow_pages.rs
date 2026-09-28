@@ -16,7 +16,7 @@ use core::marker::{PhantomData, PhantomPinned};
 use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
-use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
+use fbl::{HasRefCount, HasRefCountUpgradeable, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
 use ksync::{KMutex, KMutexGuard, LockClass, LockToken, RawCriticalMutex};
 use pin_init::{PinInit, pin_data};
@@ -234,6 +234,8 @@ impl HasRefCount for VmCowPages {
         unsafe { &*(raw.cast::<RefCounted>()) }
     }
 }
+
+impl HasRefCountUpgradeable for VmCowPages {}
 
 unsafe impl Recyclable for VmCowPages {
     unsafe fn recycle(ptr: NonNull<Self>) {
