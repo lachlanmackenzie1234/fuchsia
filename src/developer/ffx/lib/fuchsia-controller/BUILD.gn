@@ -99,7 +99,6 @@ python_library("fidl_bindings") {
     "_encoder.py",
     "_fidl_common.py",
     "_ipc.py",
-    "_ir.py",
     "_registry.py",
     "_server.py",
   ]
