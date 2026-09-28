@@ -142,6 +142,20 @@ generated_file("gn_build_variables_for_bazel") {
   # LINT.ThenChange(//src/lib/fuchsia-sync/build/args.gni)
 
   # LINT.IfChange
+  declaration = "//src/starnix/lib/starnix_sync/build/args.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "starnix_sync_detect_lock_dep_cycles"
+      value = starnix_sync_detect_lock_dep_cycles
+      type = "bool"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//src/starnix/lib/starnix_sync/build/args.gni)
+
+  # LINT.IfChange
   declaration = "//build/info/info.gni"
   import(declaration)
   contents += [
