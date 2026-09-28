@@ -45,7 +45,7 @@ zx_status_t cpp_vm_object_paged_resize(VmObjectPaged* vmo, uint64_t size);
 void cpp_vm_object_paged_unmap_and_call(VmObjectPaged* vmo, uint64_t offset, uint64_t len,
                                         void (*call_fn)(void* ctx), void* call_ctx);
 void cpp_vm_object_paged_set_user_stream_size(VmObjectPaged* vmo, StreamSizeManager* ssm);
-bool cpp_vm_object_paged_user_stream_size(const VmObjectPaged* vmo, uint64_t* out_stream_size);
+bool cpp_vm_object_paged_user_stream_size_locked(VmObjectPaged* vmo, uint64_t* out_stream_size);
 
 __END_CDECLS
 

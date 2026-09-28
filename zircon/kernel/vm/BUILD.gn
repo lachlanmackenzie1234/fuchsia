@@ -977,11 +977,20 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "cpp_vm_object_as_vm_object_paged",
     "cpp_vm_object_paged_as_vm_object",
     "cpp_vm_object_paged_create",
+    "cpp_vm_object_paged_set_user_stream_size",
+    "cpp_vm_object_paged_zero_range",
+    "cpp_vm_object_paged_zero_range_untracked",
+    "cpp_vm_object_paged_resize",
+    "cpp_vm_object_paged_unmap_and_call",
+    "cpp_vm_object_paged_user_stream_size_locked",
     "cpp_vm_object_paged_create_contiguous",
     "cpp_vm_object_paged_debug_get_cow_pages",
     "cpp_vm_object_paged_debug_get_page",
   ]
-  type_allowlist = [ "VmObjectPaged" ]
+  type_allowlist = [
+    "VmObjectPaged",
+    "StreamSizeManager",
+  ]
   type_blocklist = [
     "VmCowPages",
     "VmObject",
@@ -997,7 +1006,10 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "VmObjectPaged_kResizable",
     "VmObjectPaged_kSlice",
   ]
-  opaque_types = [ "VmObjectPaged" ]
+  opaque_types = [
+    "VmObjectPaged",
+    "StreamSizeManager",
+  ]
   function_blocklist = [ "VmObjectPaged_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   expect_lints = [

@@ -124,10 +124,9 @@ FFI_ALWAYS_INLINE void cpp_vm_object_paged_set_user_stream_size(VmObjectPaged* v
   vmo->SetUserStreamSize(fbl::ImportFromRawPtr(ssm));
 }
 
-FFI_ALWAYS_INLINE bool cpp_vm_object_paged_user_stream_size(const VmObjectPaged* vmo,
-                                                            uint64_t* out_stream_size) {
-  Guard<CriticalMutex> vmo_guard{vmo->lock()};
-  auto result = const_cast<VmObjectPaged*>(vmo)->user_stream_size_locked();
+FFI_ALWAYS_INLINE bool cpp_vm_object_paged_user_stream_size_locked(
+    VmObjectPaged* vmo, uint64_t* out_stream_size) TA_NO_THREAD_SAFETY_ANALYSIS {
+  auto result = vmo->user_stream_size_locked();
   if (result.has_value()) {
     *out_stream_size = result.value();
     return true;

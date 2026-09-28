@@ -52,7 +52,7 @@ mod vmo_rs {
     use unittest::{
         assert_eq, assert_false, assert_ge, assert_le, assert_lt, assert_ok, assert_true,
         expect_eq, expect_false, expect_gt, expect_le, expect_ne, expect_ok, expect_true,
-        unwrap_ok,
+        unwrap_ok, unwrap_some,
     };
     use zx_status::Status;
     use zx_types::ZX_KOID_KERNEL;
@@ -4495,7 +4495,7 @@ mod vmo_rs {
         expect_eq!(PmmOptDelayReuse::Yes, c_cow.should_delay_reuse_on_free());
     }
 
-    /// Tests that setting user stream size on a VMO does not alter VMO size.
+    /// Test stream functionality in kernel objects.
     #[test]
     fn vmo_user_stream_size_test() {
         let _scanner_disable = AutoVmScannerDisable::new();
@@ -4503,16 +4503,27 @@ mod vmo_rs {
         // 4 page VMO.
         let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, 4 * PAGE_SIZE));
 
-        expect_eq!(vmo.size(), 4 * PAGE_SIZE);
+        {
+            ksync::lock!(let vmo_guard = vmo.lock());
+            expect_eq!(vmo.size_locked(vmo_guard.token()), 4 * PAGE_SIZE);
+            // Should not have an allocated stream size.
+            let result = vmo.user_stream_size_locked(vmo_guard.token());
+            expect_false!(result.is_some());
+        }
 
         // Give VMO a user-defined stream size of 2 pages.
         let ssm =
             unwrap_ok!(crate::vm::stream_size_manager::StreamSizeManager::create(2 * PAGE_SIZE));
-        vmo.set_user_stream_size(ssm.clone());
+        vmo.set_user_stream_size(ssm);
 
-        expect_eq!(ssm.get_stream_size(), 2 * PAGE_SIZE);
+        {
+            ksync::lock!(let vmo_guard = vmo.lock());
+            let result = vmo.user_stream_size_locked(vmo_guard.token());
+            let stream_size = unwrap_some!(result);
+            expect_eq!(stream_size, 2 * PAGE_SIZE);
 
-        // VMO size should be unchanged.
-        expect_eq!(vmo.size(), 4 * PAGE_SIZE);
+            // VMO size should be unchanged.
+            expect_eq!(vmo.size_locked(vmo_guard.token()), 4 * PAGE_SIZE);
+        }
     }
 }

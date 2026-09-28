@@ -5,15 +5,16 @@
 // https://opensource.org/licenses/MIT
 
 use super::page::VmPagePtr;
-use super::stream_size_manager::StreamSizeManager;
 use super::vm_cow_pages::VmCowPages;
-use super::vm_object::VmObject;
+use super::vm_object::{VmObject, VmObjectLockClass};
 use super::vm_object_paged_ffi::*;
 use crate::user_copy::{UserInIovec, UserOutIovec};
+use crate::vm::stream_size_manager::StreamSizeManager;
 use core::marker::PhantomPinned;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use fbl::{IsOpaqueRefCounted, RefPtr};
+use ksync::LockToken;
 use vm_object_paged_bindings as bindings;
 use zr::Opaque;
 use zx_status::Status;
@@ -197,7 +198,8 @@ impl VmObjectPaged {
         if length == 0 {
             return Ok(());
         }
-        let status = unsafe { cpp_vm_object_paged_zero_range(self.as_raw(), offset, length) };
+        let status =
+            unsafe { bindings::cpp_vm_object_paged_zero_range(self.as_raw(), offset, length) };
         Status::ok(status)
     }
 
@@ -206,14 +208,15 @@ impl VmObjectPaged {
         if length == 0 {
             return Ok(());
         }
-        let status =
-            unsafe { cpp_vm_object_paged_zero_range_untracked(self.as_raw(), offset, length) };
+        let status = unsafe {
+            bindings::cpp_vm_object_paged_zero_range_untracked(self.as_raw(), offset, length)
+        };
         Status::ok(status)
     }
 
     /// Resizes the VMO.
     pub fn resize(&self, size: u64) -> Result<(), Status> {
-        let status = unsafe { cpp_vm_object_paged_resize(self.as_raw(), size) };
+        let status = unsafe { bindings::cpp_vm_object_paged_resize(self.as_raw(), size) };
         Status::ok(status)
     }
 
@@ -235,7 +238,7 @@ impl VmObjectPaged {
         let cookie = (&raw mut ctx).cast::<core::ffi::c_void>();
         // SAFETY: `self.as_raw()` is a valid `VmObjectPaged`.
         unsafe {
-            cpp_vm_object_paged_unmap_and_call(
+            bindings::cpp_vm_object_paged_unmap_and_call(
                 self.as_raw(),
                 offset,
                 length,
@@ -245,21 +248,33 @@ impl VmObjectPaged {
         }
     }
 
-    /// Sets the user-defined stream size manager for this VMO.
+    /// Provides the VMO with a user defined queryable byte aligned size. This provided size
+    /// can then be referenced in other operations, but otherwise has no effect. The VMO will
+    /// never read or act on this value unless instructed by user operations, and it is
+    /// therefore the responsibility of the user to ensure any synchronization of the
+    /// reported value with the operation being requested.
     pub fn set_user_stream_size(&self, ssm: RefPtr<StreamSizeManager>) {
         let raw_ssm = RefPtr::into_raw(ssm).cast_mut();
         // SAFETY: `self.as_raw()` and `raw_ssm` are valid pointers.
         unsafe {
-            cpp_vm_object_paged_set_user_stream_size(self.as_raw(), raw_ssm.cast());
+            bindings::cpp_vm_object_paged_set_user_stream_size(self.as_raw(), raw_ssm.cast());
         }
     }
 
-    /// Returns the user stream size if set.
-    pub fn user_stream_size(&self) -> Option<u64> {
+    /// Queries the user defined stream size, which is distinct from the VMO size.
+    ///
+    /// Stream size is byte-aligned and is not guaranteed to be in the range of the VMO. The lock
+    /// does not guard the user changing the value via a syscall, so multiple calls under the same
+    /// lock acquisition can have different results.
+    pub fn user_stream_size_locked(
+        &self,
+        _token: &LockToken<'_, VmObjectLockClass>,
+    ) -> Option<u64> {
         let mut stream_size = 0u64;
         // SAFETY: `self.as_raw()` is a valid pointer.
-        let has_value =
-            unsafe { cpp_vm_object_paged_user_stream_size(self.as_raw(), &mut stream_size) };
+        let has_value = unsafe {
+            bindings::cpp_vm_object_paged_user_stream_size_locked(self.as_raw(), &mut stream_size)
+        };
         if has_value { Some(stream_size) } else { None }
     }
 }

@@ -38,33 +38,4 @@ unsafe extern "C" {
         cb: extern "C" fn(*mut core::ffi::c_void, u64, usize),
         cookie: *mut core::ffi::c_void,
     ) -> zx_types::zx_status_t;
-    pub(crate) fn cpp_vm_object_paged_zero_range(
-        vmo: *mut bindings::VmObjectPaged,
-        offset: u64,
-        length: u64,
-    ) -> zx_types::zx_status_t;
-    pub(crate) fn cpp_vm_object_paged_zero_range_untracked(
-        vmo: *mut bindings::VmObjectPaged,
-        offset: u64,
-        length: u64,
-    ) -> zx_types::zx_status_t;
-    pub(crate) fn cpp_vm_object_paged_resize(
-        vmo: *mut bindings::VmObjectPaged,
-        size: u64,
-    ) -> zx_types::zx_status_t;
-    pub(crate) fn cpp_vm_object_paged_unmap_and_call(
-        vmo: *mut bindings::VmObjectPaged,
-        offset: u64,
-        length: u64,
-        call_fn: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
-        call_ctx: *mut core::ffi::c_void,
-    );
-    pub(crate) fn cpp_vm_object_paged_set_user_stream_size(
-        vmo: *mut bindings::VmObjectPaged,
-        ssm: *mut core::ffi::c_void,
-    );
-    pub(crate) fn cpp_vm_object_paged_user_stream_size(
-        vmo: *mut bindings::VmObjectPaged,
-        out_stream_size: *mut u64,
-    ) -> bool;
 }
