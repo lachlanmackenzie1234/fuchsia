@@ -27,7 +27,7 @@ use starnix_modules_hvdcp_opti::hvdcp_opti_init;
 use starnix_modules_input::uinput::register_uinput_device;
 use starnix_modules_input::{
     DEFAULT_KEYBOARD_DEVICE_ID, DEFAULT_TOUCH_DEVICE_ID, EventProxyMode, InputDevice,
-    new_input_relay,
+    InputDeviceInfo, KEYBOARD_INPUT_ID, MOUSE_INPUT_ID, TOUCH_INPUT_ID, new_input_relay,
 };
 use starnix_modules_kgsl::kgsl_device_init;
 use starnix_modules_magma::magma_device_init;
@@ -554,10 +554,20 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
             (framebuffer_info.xres as i32, framebuffer_info.yres as i32)
         };
 
-        let touch_device =
-            InputDevice::new_touch(display_width, display_height, &kernel.inspect_node);
-        let keyboard_device = InputDevice::new_keyboard(&kernel.inspect_node);
-        let mouse_device = InputDevice::new_mouse(&kernel.inspect_node);
+        let touch_device = InputDevice::new_touch(
+            display_width,
+            display_height,
+            InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+            &kernel.inspect_node,
+        );
+        let keyboard_device = InputDevice::new_keyboard(
+            InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+            &kernel.inspect_node,
+        );
+        let mouse_device = InputDevice::new_mouse(
+            InputDeviceInfo::new(MOUSE_INPUT_ID, "starnix_mouse".to_string()),
+            &kernel.inspect_node,
+        );
 
         touch_device.clone().register(kernel, DEFAULT_TOUCH_DEVICE_ID)?;
         keyboard_device.clone().register(kernel, DEFAULT_KEYBOARD_DEVICE_ID)?;

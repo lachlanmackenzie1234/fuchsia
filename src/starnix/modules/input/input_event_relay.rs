@@ -3,6 +3,51 @@
 // found in the LICENSE file.
 
 use crate::{InputDeviceStatus, InputFile, uinput};
+
+// Add a fuchsia-specific vendor ID. 0xfc1a is currently not allocated
+// to any vendor in the USB spec.
+//
+// May not be zero, see below.
+pub const FUCHSIA_VENDOR_ID: u16 = 0xfc1a;
+pub const FUCHSIA_KEYBOARD_PRODUCT_ID: u16 = 0x1;
+pub const FUCHSIA_TOUCH_PRODUCT_ID: u16 = 0x2;
+pub const FUCHSIA_MOUSE_PRODUCT_ID: u16 = 0x3;
+
+// Touch, keyboard, and mouse input IDs should be distinct.
+// Per https://www.linuxjournal.com/article/6429, the bus type should be populated with a
+// sensible value, but other fields may not be.
+//
+// While this may be the case for Linux itself, Android is not so relaxed.
+// Devices with apparently-invalid vendor or product IDs don't get extra
+// device configuration.  So we must make a minimum effort to present
+// sensibly-looking product and vendor IDs.  Zero version only means that
+// version-specific config files will not be applied.
+//
+// For background, see:
+//
+// * Allowable file locations:
+//   https://source.android.com/docs/core/interaction/input/input-device-configuration-files#location
+// * Android configuration selection code:
+//   https://source.corp.google.com/h/googleplex-android/platform/superproject/main/+/main:frameworks/native/libs/input/InputDevice.cpp;l=60;drc=285211e60bff87fc5a9c9b4105a4b4ccb7edffaf
+pub const TOUCH_INPUT_ID: uapi::input_id = uapi::input_id {
+    bustype: uapi::BUS_VIRTUAL as u16,
+    vendor: FUCHSIA_VENDOR_ID,
+    product: FUCHSIA_TOUCH_PRODUCT_ID,
+    version: 0,
+};
+pub const KEYBOARD_INPUT_ID: uapi::input_id = uapi::input_id {
+    bustype: uapi::BUS_VIRTUAL as u16,
+    vendor: FUCHSIA_VENDOR_ID,
+    product: FUCHSIA_KEYBOARD_PRODUCT_ID,
+    version: 1,
+};
+pub const MOUSE_INPUT_ID: uapi::input_id = uapi::input_id {
+    bustype: uapi::BUS_VIRTUAL as u16,
+    vendor: FUCHSIA_VENDOR_ID,
+    product: FUCHSIA_MOUSE_PRODUCT_ID,
+    version: 1,
+};
+
 use fidl::endpoints::{ClientEnd, RequestStream};
 use fidl_fuchsia_ui_input::TouchDeviceInfo;
 use fidl_fuchsia_ui_input3::{
@@ -135,7 +180,7 @@ impl DeviceRegistration {
     fn ensure_registered(&mut self) {
         let Self::Pending { kernel, device, device_id } = self else { return };
         match device.clone().register(kernel, *device_id) {
-            Ok(()) => *self = Self::Registered,
+            Ok(_) => *self = Self::Registered,
             Err(e) => {
                 log_warn!("unable to register input device {device_id:?}: {e:?}");
                 // Intentionally abandon registering the mouse device after one failed attempt
@@ -1286,14 +1331,25 @@ pub async fn start_input_relays_for_test(
 ) {
     let inspector = fuchsia_inspect::Inspector::default();
 
-    let touch_device = crate::InputDevice::new_touch(700, 1200, inspector.root());
+    let touch_device = crate::InputDevice::new_touch(
+        700,
+        1200,
+        crate::InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+        inspector.root(),
+    );
     let touch_file = touch_device.open_test(current_task).expect("Failed to create input file");
 
-    let keyboard_device = crate::InputDevice::new_keyboard(inspector.root());
+    let keyboard_device = crate::InputDevice::new_keyboard(
+        crate::InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+        inspector.root(),
+    );
     let keyboard_file =
         keyboard_device.open_test(current_task).expect("Failed to create input file");
 
-    let mouse_device = crate::InputDevice::new_mouse(inspector.root());
+    let mouse_device = crate::InputDevice::new_mouse(
+        crate::InputDeviceInfo::new(MOUSE_INPUT_ID, "starnix_mouse".to_string()),
+        inspector.root(),
+    );
     let mouse_file = mouse_device.open_test(current_task).expect("Failed to create input file");
 
     let (touch_source_client_end, touch_source_stream) =
@@ -1518,6 +1574,7 @@ mod test {
         let inspector = fuchsia_inspect::Inspector::default();
         let device_file = Arc::new(InputFile::new_touch(
             input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+            "touch_test",
             1000,
             1000,
             inspector.root(),
@@ -1786,6 +1843,7 @@ mod test {
             let inspector = fuchsia_inspect::Inspector::default();
             let device_id_10_file = Arc::new(InputFile::new_keyboard(
                 input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+                "keyboard_test",
                 inspector.root(),
             ));
             open_files.lock().push(Arc::downgrade(&device_id_10_file));
@@ -1860,6 +1918,7 @@ mod test {
             let inspector = fuchsia_inspect::Inspector::default();
             let device_id_10_file = Arc::new(InputFile::new_keyboard(
                 input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+                "keyboard_test",
                 inspector.root(),
             ));
             open_files.lock().push(Arc::downgrade(&device_id_10_file));
@@ -2196,11 +2255,22 @@ mod test {
             let kernel = current_task.kernel().clone();
             let inspector = fuchsia_inspect::Inspector::default();
 
-            let touch_device = crate::InputDevice::new_touch(700, 1200, inspector.root());
-            let keyboard_device = crate::InputDevice::new_keyboard(inspector.root());
+            let touch_device = crate::InputDevice::new_touch(
+                700,
+                1200,
+                crate::InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                inspector.root(),
+            );
+            let keyboard_device = crate::InputDevice::new_keyboard(
+                crate::InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+                inspector.root(),
+            );
             // Do not open `mouse_device` before registration so we test production ordering:
             // userspace can only open `/dev/input/event2` after `DeviceRegistry` registration.
-            let mouse_device = crate::InputDevice::new_mouse(inspector.root());
+            let mouse_device = crate::InputDevice::new_mouse(
+                crate::InputDeviceInfo::new(MOUSE_INPUT_ID, "starnix_mouse".to_string()),
+                inspector.root(),
+            );
 
             let (touch_source_client_end, _touch_source_stream) =
                 fidl::endpoints::create_request_stream::<fuipointer::TouchSourceV2Marker>();

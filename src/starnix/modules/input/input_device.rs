@@ -5,76 +5,17 @@
 use crate::InputFile;
 use crate::input_event_relay::OpenedFiles;
 use futures::FutureExt;
-use starnix_core::device::kobject::DeviceMetadata;
+use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, FsString, NamespaceNode};
 use starnix_sync::{InputDeviceFileNodesLock, LockDepMutex};
 use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::input_id;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{BUS_VIRTUAL, input_id};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
-
-// Add a fuchsia-specific vendor ID. 0xfc1a is currently not allocated
-// to any vendor in the USB spec.
-//
-// May not be zero, see below.
-const FUCHSIA_VENDOR_ID: u16 = 0xfc1a;
-
-// May not be zero, see below.
-const FUCHSIA_TOUCH_PRODUCT_ID: u16 = 0x2;
-
-// May not be zero, see below.
-const FUCHSIA_KEYBOARD_PRODUCT_ID: u16 = 0x1;
-
-// May not be zero, see below.
-const FUCHSIA_MOUSE_PRODUCT_ID: u16 = 0x3;
-
-// Touch, keyboard, and mouse input IDs should be distinct.
-// Per https://www.linuxjournal.com/article/6429, the bus type should be populated with a
-// sensible value, but other fields may not be.
-//
-// While this may be the case for Linux itself, Android is not so relaxed.
-// Devices with apparently-invalid vendor or product IDs don't get extra
-// device configuration.  So we must make a minimum effort to present
-// sensibly-looking product and vendor IDs.  Zero version only means that
-// version-specific config files will not be applied.
-//
-// For background, see:
-//
-// * Allowable file locations:
-//   https://source.android.com/docs/core/interaction/input/input-device-configuration-files#location
-// * Android configuration selection code:
-//   https://source.corp.google.com/h/googleplex-android/platform/superproject/main/+/main:frameworks/native/libs/input/InputDevice.cpp;l=60;drc=285211e60bff87fc5a9c9b4105a4b4ccb7edffaf
-const TOUCH_INPUT_ID: input_id = input_id {
-    bustype: BUS_VIRTUAL as u16,
-    // Make sure that vendor ID and product ID at least seem plausible.  See
-    // above for details.
-    vendor: FUCHSIA_VENDOR_ID,
-    product: FUCHSIA_TOUCH_PRODUCT_ID,
-    // Version is OK to be zero, but config files named `Product_yyyy_Vendor_zzzz_Version_ttt.*`
-    // will not work.
-    version: 0,
-};
-const KEYBOARD_INPUT_ID: input_id = input_id {
-    bustype: BUS_VIRTUAL as u16,
-    // Make sure that vendor ID and product ID at least seem plausible.  See
-    // above for details.
-    vendor: FUCHSIA_VENDOR_ID,
-    product: FUCHSIA_KEYBOARD_PRODUCT_ID,
-    version: 1,
-};
-
-const MOUSE_INPUT_ID: input_id = input_id {
-    bustype: BUS_VIRTUAL as u16,
-    // Make sure that vendor ID and product ID at least seem plausible.  See
-    // above for details.
-    vendor: FUCHSIA_VENDOR_ID,
-    product: FUCHSIA_MOUSE_PRODUCT_ID,
-    version: 1,
-};
 
 #[derive(Clone)]
 enum InputDeviceId {
@@ -237,6 +178,18 @@ impl InputDeviceStatus {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct InputDeviceInfo {
+    pub input_id: input_id,
+    pub name: String,
+}
+
+impl InputDeviceInfo {
+    pub fn new(input_id: input_id, name: String) -> Arc<Self> {
+        Arc::new(Self { input_id, name })
+    }
+}
+
 #[derive(Clone)]
 pub struct InputDevice {
     device_type: InputDeviceId,
@@ -244,12 +197,15 @@ pub struct InputDevice {
     pub open_files: OpenedFiles,
 
     pub inspect_status: Arc<InputDeviceStatus>,
+
+    pub info: Arc<InputDeviceInfo>,
 }
 
 impl InputDevice {
     pub fn new_touch(
         display_width: i32,
         display_height: i32,
+        info: Arc<InputDeviceInfo>,
         inspect_node: &fuchsia_inspect::Node,
     ) -> Self {
         let node = inspect_node.create_child("touch_device");
@@ -257,46 +213,49 @@ impl InputDevice {
             device_type: InputDeviceId::Touch(display_width, display_height),
             open_files: Default::default(),
             inspect_status: InputDeviceStatus::new(node),
+            info,
         }
     }
 
-    pub fn new_keyboard(inspect_node: &fuchsia_inspect::Node) -> Self {
+    pub fn new_keyboard(info: Arc<InputDeviceInfo>, inspect_node: &fuchsia_inspect::Node) -> Self {
         let node = inspect_node.create_child("keyboard_device");
         InputDevice {
             device_type: InputDeviceId::Keyboard,
             open_files: Default::default(),
             inspect_status: InputDeviceStatus::new(node),
+            info,
         }
     }
 
-    pub fn new_mouse(inspect_node: &fuchsia_inspect::Node) -> Self {
+    pub fn new_mouse(info: Arc<InputDeviceInfo>, inspect_node: &fuchsia_inspect::Node) -> Self {
         let node = inspect_node.create_child("mouse_device");
         InputDevice {
             device_type: InputDeviceId::Mouse,
             open_files: Default::default(),
             inspect_status: InputDeviceStatus::new(node),
+            info,
         }
     }
 
-    pub fn register(self, kernel: &Kernel, device_id: u32) -> Result<(), Errno> {
+    pub fn register(self, kernel: &Kernel, minor: u32) -> Result<Device, Errno> {
         let registry = &kernel.device_registry;
 
         let input_class = registry.objects.input_class();
         registry.register_device(
             kernel,
-            FsString::from(format!("event{}", device_id)).as_ref(),
+            FsString::from(format!("event{}", minor)).as_ref(),
             DeviceMetadata::new(
-                format!("input/event{}", device_id).into(),
-                StarnixDeviceId::new(INPUT_MAJOR, device_id),
+                format!("input/event{}", minor).into(),
+                StarnixDeviceId::new(INPUT_MAJOR, minor),
                 DeviceMode::Char,
             ),
             input_class,
             self,
-        )?;
-        Ok(())
+        )
     }
 
     pub fn open_internal(&self) -> Box<dyn FileOps> {
+        let info = self.info.clone();
         let input_file = match self.device_type {
             InputDeviceId::Touch(display_width, display_height) => {
                 let mut file_nodes = self.inspect_status.file_nodes.lock();
@@ -305,7 +264,8 @@ impl InputDevice {
                     .node
                     .create_child(format!("touch_file_{}", file_nodes.len()));
                 let file = Arc::new(InputFile::new_touch(
-                    TOUCH_INPUT_ID,
+                    info.input_id,
+                    &info.name,
                     display_width,
                     display_height,
                     &child_node,
@@ -319,7 +279,8 @@ impl InputDevice {
                     .inspect_status
                     .node
                     .create_child(format!("keyboard_file_{}", file_nodes.len()));
-                let file = Arc::new(InputFile::new_keyboard(KEYBOARD_INPUT_ID, &child_node));
+                let file =
+                    Arc::new(InputFile::new_keyboard(info.input_id, &info.name, &child_node));
                 file_nodes.push(child_node);
                 file
             }
@@ -329,7 +290,7 @@ impl InputDevice {
                     .inspect_status
                     .node
                     .create_child(format!("mouse_file_{}", file_nodes.len()));
-                let file = Arc::new(InputFile::new_mouse(MOUSE_INPUT_ID, &child_node));
+                let file = Arc::new(InputFile::new_mouse(info.input_id, &info.name, &child_node));
                 file_nodes.push(child_node);
                 file
             }
@@ -378,7 +339,9 @@ mod test {
     #![allow(clippy::unused_unit)] // for compatibility with `test_case`
 
     use super::*;
-    use crate::input_event_relay::{self, EventProxyMode};
+    use crate::input_event_relay::{
+        self, EventProxyMode, KEYBOARD_INPUT_ID, MOUSE_INPUT_ID, TOUCH_INPUT_ID,
+    };
     use anyhow::anyhow;
     use assert_matches::assert_matches;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
@@ -482,7 +445,12 @@ mod test {
         y_max: i32,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuipointer::TouchSourceV2RequestStream) {
-        let input_device = InputDevice::new_touch(x_max, y_max, inspector.root());
+        let input_device = InputDevice::new_touch(
+            x_max,
+            y_max,
+            InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+            inspector.root(),
+        );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
 
         let (touch_source_client_end, touch_source_stream) =
@@ -533,7 +501,10 @@ mod test {
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuiinput::KeyboardListenerProxy) {
-        let input_device = InputDevice::new_keyboard(inspector.root());
+        let input_device = InputDevice::new_keyboard(
+            InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+            inspector.root(),
+        );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
         let (keyboard_proxy, mut keyboard_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
@@ -583,7 +554,10 @@ mod test {
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuipolicy::MediaButtonsListenerProxy) {
-        let input_device = InputDevice::new_keyboard(inspector.root());
+        let input_device = InputDevice::new_keyboard(
+            InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+            inspector.root(),
+        );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
         let (device_registry_proxy, mut device_listener_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
@@ -631,7 +605,10 @@ mod test {
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
     ) -> (InputDevice, FileHandle, fuipointer::MouseSourceV2RequestStream) {
-        let input_device = InputDevice::new_mouse(inspector.root());
+        let input_device = InputDevice::new_mouse(
+            InputDeviceInfo::new(MOUSE_INPUT_ID, "starnix_mouse".to_string()),
+            inspector.root(),
+        );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
 
         let (touch_source_client_end, _touch_source_stream) =
@@ -1994,6 +1971,7 @@ mod test {
             let touch_device = InputDevice::new_touch(
                 1200, /* screen width */
                 720,  /* screen height */
+                InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
                 &inspector.root(),
             );
             let _file_obj = touch_device.open_test(&current_task);
@@ -2142,7 +2120,12 @@ mod test {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
 
-            let input_device = InputDevice::new_touch(700, 700, inspector.root());
+            let input_device = InputDevice::new_touch(
+                700,
+                700,
+                InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                inspector.root(),
+            );
             let input_file_0 =
                 input_device.open_test(&current_task).expect("Failed to create input file");
 
@@ -2317,7 +2300,12 @@ mod test {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
 
-            let input_device = InputDevice::new_touch(700, 700, inspector.root());
+            let input_device = InputDevice::new_touch(
+                700,
+                700,
+                InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                inspector.root(),
+            );
             let file_handle =
                 input_device.open_test(&current_task).expect("Failed to create input file");
 
@@ -2399,7 +2387,10 @@ mod test {
     async fn keyboard_input_initialized_with_inspect_node() {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
-            let keyboard_device = InputDevice::new_keyboard(&inspector.root());
+            let keyboard_device = InputDevice::new_keyboard(
+                InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+                &inspector.root(),
+            );
             let _file_obj = keyboard_device.open_test(&current_task);
 
             assert_data_tree!(inspector, root: {
@@ -2514,7 +2505,10 @@ mod test {
     async fn mouse_input_initialized_with_inspect_node() {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
-            let mouse_device = InputDevice::new_mouse(&inspector.root());
+            let mouse_device = InputDevice::new_mouse(
+                InputDeviceInfo::new(MOUSE_INPUT_ID, "starnix_mouse".to_string()),
+                &inspector.root(),
+            );
             let _file_obj = mouse_device.open_test(&current_task);
 
             assert_data_tree!(inspector, root: {
@@ -2643,7 +2637,12 @@ mod test {
     async fn eviocgname_zero_buffer_length_succeeds() {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
-            let touch_device = InputDevice::new_touch(700, 1200, &inspector.root());
+            let touch_device = InputDevice::new_touch(
+                700,
+                1200,
+                InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                &inspector.root(),
+            );
             let file =
                 touch_device.open_test(&current_task).expect("Failed to open touch input file");
 
@@ -2671,7 +2670,12 @@ mod test {
     async fn evdev_variable_length_ioctls_succeed() {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
-            let touch_device = InputDevice::new_touch(700, 1200, &inspector.root());
+            let touch_device = InputDevice::new_touch(
+                700,
+                1200,
+                InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                &inspector.root(),
+            );
             let file =
                 touch_device.open_test(&current_task).expect("Failed to open touch input file");
 
@@ -2746,7 +2750,12 @@ mod test {
     async fn evdev_current_state_queries_succeed() {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
-            let touch_device = InputDevice::new_touch(700, 1200, &inspector.root());
+            let touch_device = InputDevice::new_touch(
+                700,
+                1200,
+                InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                &inspector.root(),
+            );
             let file =
                 touch_device.open_test(&current_task).expect("Failed to open touch input file");
 
@@ -2790,7 +2799,10 @@ mod test {
     async fn keyboard_input_file_ioctls() {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
-            let keyboard_device = InputDevice::new_keyboard(&inspector.root());
+            let keyboard_device = InputDevice::new_keyboard(
+                InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+                &inspector.root(),
+            );
             let file = keyboard_device
                 .open_test(&current_task)
                 .expect("Failed to open keyboard input file");
