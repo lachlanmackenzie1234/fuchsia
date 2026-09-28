@@ -170,4 +170,9 @@ FFI_ALWAYS_INLINE void* cpp_priority_changer_lock(const PriorityChanger* pc)
   return pc->lock();
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_debug_get_discardable_page_counts(
+    const VmCowPages* cow, VmCowPages::DiscardablePageCounts* out_counts) {
+  *out_counts = cow->DebugGetDiscardablePageCounts();
+}
+
 }  // extern "C"

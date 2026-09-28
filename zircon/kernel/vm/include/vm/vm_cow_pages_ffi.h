@@ -13,6 +13,7 @@
 
 #include <kernel/ffi.h>
 
+#include "vm/discardable_vmo_tracker.h"
 #include "vm/vm_cow_pages.h"
 
 __BEGIN_CDECLS
@@ -58,6 +59,8 @@ bool cpp_vm_cow_pages_can_borrow(const VmCowPages* cow);
 bool cpp_vm_cow_pages_can_evict(const VmCowPages* cow);
 bool cpp_vm_cow_pages_is_discardable(const VmCowPages* cow);
 VmCowPages* cpp_vm_cow_pages_upgrade_from_raw(VmCowPages* cow);
+void cpp_vm_cow_pages_debug_get_discardable_page_counts(
+    const VmCowPages* cow, VmCowPages::DiscardablePageCounts* out_counts);
 
 void cpp_priority_changer_construct(ffi::Uninitialized<PriorityChanger>* out, VmCowPages* cow,
                                     int64_t delta);

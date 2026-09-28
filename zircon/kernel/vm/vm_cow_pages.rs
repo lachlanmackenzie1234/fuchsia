@@ -30,6 +30,7 @@ pub type VmCowReclaimFailure = bindings::VmCowReclaimFailure;
 pub type VmCowReclaimSuccess = bindings::VmCowReclaimSuccess;
 pub type VmCowReclaimType = bindings::VmCowReclaimSuccess_Type;
 pub type PageSourceType = bindings::PageSourceType;
+pub type DiscardablePageCounts = bindings::VmCowPages_DiscardablePageCounts;
 
 /// Controls the type of `VmPageOrMarker` slot in `self` `VmCowPages`' `page_list_` that can be
 /// overwritten by the `add_[new_]page[s]_locked` functions. It is the caller's responsibility to
@@ -275,7 +276,8 @@ impl VmCowPages {
         if ptr.is_null() {
             None
         } else {
-            // SAFETY: `cpp_vm_cow_pages_upgrade_from_raw` incremented the refcount, so we can adopt it.
+            // SAFETY: `cpp_vm_cow_pages_upgrade_from_raw` incremented the refcount,
+            // so we can adopt it.
             unsafe { RefPtr::try_from_raw(ptr.cast::<Self>()) }
         }
     }
@@ -611,6 +613,23 @@ impl VmCowPages {
     pub fn debug_get_populated_slots_count(&self) -> u32 {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
         unsafe { bindings::cpp_vm_cow_pages_debug_get_populated_slots_count(self.as_raw()) }
+    }
+
+    /// Returns the number of locked and unlocked pages in this discardable VMO (zero counts if
+    /// this VMO is not discardable, or has not opted into locking / unlocking yet).
+    ///
+    /// See `DiscardableVmoTracker::debug_discardable_page_counts()`.
+    pub fn debug_get_discardable_page_counts(&self) -> DiscardablePageCounts {
+        let mut counts = DiscardablePageCounts { locked: 0, unlocked: 0 };
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, and `counts` is valid
+        // for writing.
+        unsafe {
+            bindings::cpp_vm_cow_pages_debug_get_discardable_page_counts(
+                self.as_raw(),
+                &mut counts,
+            );
+        }
+        counts
     }
 }
 
