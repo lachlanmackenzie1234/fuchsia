@@ -7,28 +7,20 @@ import("//build/test.gni")
 
 group("test") {
   testonly = true
-  deps = [ ":smbios-test" ]
+  deps = [ ":smbios-test-test" ]
 }
 
-test("smbios-test") {
-  output_name = "smbios-test-test"
-  if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
-  }
+test("smbios-test-test") {
   sources = [ "smbios-test.cc" ]
   deps = [
-    "//sdk/lib/fdio",
-    "//zircon/system/ulib/smbios",
-    "//zircon/system/ulib/zxtest",
+    "..",
+    "//src/lib/fxl/test:gtest_main",
   ]
 }
 
 fuchsia_unittest_package("smbios-test-pkg") {
   package_name = "smbios-test-test"
-  deps = [ ":smbios-test" ]
+  deps = [ ":smbios-test-test" ]
 }
 
 group("tests") {

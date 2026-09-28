@@ -2,22 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_SMBIOS_SMBIOS_H_
-#define LIB_SMBIOS_SMBIOS_H_
+#ifndef ZIRCON_KERNEL_LIB_SMBIOS_INCLUDE_LIB_SMBIOS_SMBIOS_H_
+#define ZIRCON_KERNEL_LIB_SMBIOS_INCLUDE_LIB_SMBIOS_SMBIOS_H_
 
 #include <lib/fit/function.h>
 #include <lib/zx/result.h>
 #include <stdint.h>
+#include <zircon/assert.h>
 #include <zircon/types.h>
 
-#include <variant>
-
-#include <fbl/macros.h>
-#include <fbl/ref_ptr.h>
-
-#ifndef _KERNEL
 #include <optional>
-#endif
+#include <variant>
 
 #define SMBIOS2_ANCHOR "_SM_"
 #define SMBIOS2_INTERMEDIATE_ANCHOR "_DMI_"
@@ -59,6 +54,9 @@ class StringTable {
   StringTable();
   ~StringTable();
 
+  StringTable(const StringTable&) = delete;
+  StringTable& operator=(const StringTable&) = delete;
+
   // Construct a StringTable from a header and a max possible length.  The
   // length includes the formatted portion (h->length).
   zx_status_t Init(const Header* h, size_t max_struct_len);
@@ -79,8 +77,6 @@ class StringTable {
   void Dump() const;
 
  private:
-  DISALLOW_COPY_ASSIGN_AND_MOVE(StringTable);
-
   const char* start_ = nullptr;
   size_t length_ = 0;
 };
@@ -341,7 +337,7 @@ static_assert(sizeof(SystemInformationStruct2_4) == 0x1b, "");
 //
 // StructType must refer to a structure with a member "hdr" of type "Header".
 template <typename StructType, typename FieldType>
-std::optional<FieldType> ReadOptionalField(const StructType* s, FieldType StructType::*field) {
+std::optional<FieldType> ReadOptionalField(const StructType* s, FieldType StructType::* field) {
   const auto end = reinterpret_cast<const std::byte*>(s) + s->hdr.length;
   const auto field_end = reinterpret_cast<const std::byte*>(&(s->*field) + 1);
   if (field_end > end) {
@@ -404,4 +400,4 @@ static_assert(std::is_standard_layout_v<BaseboardInformationStruct>);
 
 }  // namespace smbios
 
-#endif  // LIB_SMBIOS_SMBIOS_H_
+#endif  // ZIRCON_KERNEL_LIB_SMBIOS_INCLUDE_LIB_SMBIOS_SMBIOS_H_
