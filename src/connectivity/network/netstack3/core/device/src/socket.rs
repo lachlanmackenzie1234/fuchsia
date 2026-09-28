@@ -2023,7 +2023,7 @@ mod tests {
                 DeviceSocketMetadata {
                     device_id: DEVICE,
                     metadata: FakeSendMetadata,
-                    ip_layer_metadata: DeviceIpLayerMetadata::default(),
+                    ip_layer_metadata: DeviceIpLayerMetadata::empty(),
                 },
                 buf,
             )

@@ -235,7 +235,7 @@ where
                     RecvIpFrameMeta::<_, _, Ipv4>::new(
                         device_id,
                         None,
-                        DeviceIpLayerMetadata::default(),
+                        DeviceIpLayerMetadata::new_for_rx_packet(),
                         parsing_context,
                         gso_info,
                     ),
@@ -251,7 +251,7 @@ where
                     RecvIpFrameMeta::<_, _, Ipv6>::new(
                         device_id,
                         None,
-                        DeviceIpLayerMetadata::default(),
+                        DeviceIpLayerMetadata::new_for_rx_packet(),
                         parsing_context,
                         gso_info,
                     ),

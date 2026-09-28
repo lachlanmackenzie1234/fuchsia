@@ -18,6 +18,7 @@ use futures::TryStreamExt as _;
 use log::{error, info, warn};
 use net_types::ethernet::Mac;
 use net_types::ip::IpVersion;
+use netstack3_core::CoreTxMetadata;
 use netstack3_core::device::{
     DeviceId, EthernetLinkDevice, LoopbackDevice, PureIpDevice, PureIpHeaderParams, WeakDeviceId,
 };
@@ -26,7 +27,7 @@ use netstack3_core::device_socket::{
     EthernetHeaderParams, Frame, FrameDestination, IpFrame, Protocol, ReceiveFrameError,
     ReceivedFrame, SendFrameErrorReason, SentFrame, SocketId, SocketInfo, TargetDevice,
 };
-use netstack3_core::ip::DeviceIpLayerMetadata;
+use netstack3_core::ip::{DeviceIpLayerMetadata, Marks};
 use netstack3_core::sync::{Mutex, RwLock};
 use packet::Buf;
 use packet_formats::ethernet::EtherType;
@@ -520,7 +521,10 @@ impl<'a> RequestHandler<'a> {
 
         // TODO(https://fxbug.dev/391946195): Apply send buffer enforcement for
         // device sockets instead of using empty metadata.
-        let ip_layer_metadata = DeviceIpLayerMetadata::default();
+        let ip_layer_metadata = DeviceIpLayerMetadata::from_tx_metadata_and_marks(
+            CoreTxMetadata::default(),
+            Marks::default(),
+        );
         let result = match device {
             DeviceId::Loopback(device_id) => {
                 let metadata = match kind {

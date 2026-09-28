@@ -126,7 +126,7 @@ fn no_loopback_addrs_on_the_wire<I: IpLayerIpExt + TestIpExt>() {
         &MultipleDevicesId::A,
         IpPacketDestination::Neighbor(I::TEST_ADDRS.remote_ip),
         frame,
-        IpLayerPacketMetadata::default(),
+        IpLayerPacketMetadata::new_empty(),
         Mtu::no_limit(),
     )
     .map_err(|e| e.into_err());
@@ -459,7 +459,7 @@ fn send_respects_device_mtu<I: IpLayerIpExt + TestIpExt>() {
         &mut bindings_ctx,
         meta.clone(),
         body.clone(),
-        IpLayerPacketMetadata::default(),
+        IpLayerPacketMetadata::new_empty(),
     )
     .expect("send ip packet");
     let [((), frame)] = core_ctx.frames.take_frames().try_into().expect("more than one frame sent");
@@ -474,7 +474,7 @@ fn send_respects_device_mtu<I: IpLayerIpExt + TestIpExt>() {
             &mut bindings_ctx,
             meta.clone(),
             body.clone(),
-            IpLayerPacketMetadata::default(),
+            IpLayerPacketMetadata::new_empty(),
         )
         .map_err(|ErrorAndSerializer { error, serializer: _ }| error),
         Err(IpSendFrameErrorReason::Device(SendFrameErrorReason::SizeConstraintsViolation))
@@ -487,7 +487,7 @@ fn send_respects_device_mtu<I: IpLayerIpExt + TestIpExt>() {
         &mut bindings_ctx,
         meta,
         body,
-        IpLayerPacketMetadata::default(),
+        IpLayerPacketMetadata::new_empty(),
     )
     .expect("send ip packet")
 }

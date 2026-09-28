@@ -136,8 +136,6 @@ pub const IPV6_DEFAULT_SUBNET: Subnet<Ipv6Addr> =
 /// Note: This metadata may be regenerated when packet handling requires
 /// performing multiple actions (e.g. sending the packet out multiple interfaces
 /// as part of multicast forwarding).
-#[derive(Derivative)]
-#[derivative(Default(bound = ""))]
 pub struct IpLayerPacketMetadata<
     I: packet_formats::ip::IpExt,
     A,
@@ -185,7 +183,7 @@ struct IpLayerPacketMetadataDropCheck {
 /// Metadata that is produced and consumed by the IP layer for each packet, but
 /// which also traverses the device layer.
 #[derive(Derivative)]
-#[derivative(Debug(bound = ""), Default(bound = ""))]
+#[derivative(Debug(bound = ""))]
 pub struct DeviceIpLayerMetadata<BT: TxMetadataBindingsTypes> {
     /// Weak reference to this packet's connection tracking entry, if the packet is
     /// tracked.
@@ -210,11 +208,28 @@ pub struct DeviceIpLayerMetadata<BT: TxMetadataBindingsTypes> {
 }
 
 impl<BT: TxMetadataBindingsTypes> DeviceIpLayerMetadata<BT> {
+    /// Creates a new instance with the specified `tx_metadata` and `marks`.
+    pub fn from_tx_metadata_and_marks(tx_metadata: BT::TxMetadata, marks: Marks) -> Self {
+        Self { conntrack_entry: None, tx_metadata, marks }
+    }
+
     /// Discards the remaining IP layer information and returns only the tx
     /// metadata used for buffer ownership.
     pub fn into_tx_metadata(self) -> BT::TxMetadata {
         self.tx_metadata
     }
+
+    /// Creates a new instance for a received packet.
+    pub fn new_for_rx_packet() -> Self {
+        Self { conntrack_entry: None, tx_metadata: Default::default(), marks: Default::default() }
+    }
+
+    /// Creates an empty [`DeviceIpLayerMetadata`].
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn empty() -> Self {
+        Self { conntrack_entry: None, tx_metadata: Default::default(), marks: Default::default() }
+    }
+
     /// Creates new IP layer metadata with the marks.
     #[cfg(any(test, feature = "testutils"))]
     pub fn with_marks(marks: Marks) -> Self {
@@ -319,6 +334,12 @@ impl<I: IpExt, A, BT: FilterBindingsTypes + TxMetadataBindingsTypes>
             #[cfg(debug_assertions)]
             drop_check: Default::default(),
         }
+    }
+
+    /// Creates a new empty [`IpLayerPacketMetadata`].
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn new_empty() -> Self {
+        Self::new_local_tx(Default::default(), Default::default(), None)
     }
 
     pub(crate) fn into_parts(
@@ -5088,11 +5109,11 @@ pub trait IpLayerHandler<I: IpExt + FragmentationIpExt + FilterIpExt, BC>:
         S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>;
 }
 
-impl<
+impl<I, BC, CC> IpLayerHandler<I, BC> for CC
+where
     I: IpLayerIpExt,
     BC: IpLayerBindingsContext<I, <CC as DeviceIdContext<AnyDevice>>::DeviceId>,
     CC: IpLayerEgressContext<I, BC> + IpDeviceEgressStateContext<I> + IpDeviceMtuContext<I>,
-> IpLayerHandler<I, BC> for CC
 {
     fn send_ip_packet_from_device<S>(
         &mut self,
@@ -5104,7 +5125,13 @@ impl<
         S: TransportPacketSerializer<I>,
         S::Buffer: BufferMut,
     {
-        send_ip_packet_from_device(self, bindings_ctx, meta, body, IpLayerPacketMetadata::default())
+        send_ip_packet_from_device(
+            self,
+            bindings_ctx,
+            meta,
+            body,
+            IpLayerPacketMetadata::new_local_tx(Default::default(), Default::default(), None),
+        )
     }
 
     fn send_ip_frame<S>(
@@ -5123,7 +5150,7 @@ impl<
             device,
             destination,
             body,
-            IpLayerPacketMetadata::default(),
+            IpLayerPacketMetadata::new_local_tx(Default::default(), Default::default(), None),
             Mtu::no_limit(),
         )
     }

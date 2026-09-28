@@ -191,7 +191,7 @@ fn test_send_frame() {
         DeviceSocketMetadata {
             device_id: eth_device,
             metadata: None,
-            ip_layer_metadata: DeviceIpLayerMetadata::default(),
+            ip_layer_metadata: DeviceIpLayerMetadata::empty(),
         },
         body,
     )

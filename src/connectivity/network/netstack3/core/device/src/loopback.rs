@@ -136,8 +136,6 @@ pub struct LoopbackDeviceState<D: WeakDeviceIdentifier, BT: TxMetadataBindingsTy
     >,
 }
 
-#[derive(Derivative)]
-#[derivative(Default(bound = ""))]
 /// Metadata associated with a frame in the Loopback TX queue.
 pub struct LoopbackTxQueueMeta<D: WeakDeviceIdentifier, BT: TxMetadataBindingsTypes> {
     /// Device that should be used to deliver the packet. If not set then the
