@@ -16,6 +16,7 @@ mod debug;
 mod debuglog;
 mod event;
 mod fifo;
+mod guest;
 mod iob;
 mod iommu;
 mod job;
