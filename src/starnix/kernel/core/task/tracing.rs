@@ -5,11 +5,13 @@
 use crate::task::{Kernel, PidTable};
 use fuchsia_rcu::RcuReadScope;
 use starnix_logging::{log_debug, log_error, log_warn};
-use starnix_sync::LockDepRwLock;
+use starnix_sync::{
+    LockDepMutex, LockDepRwLock, PidToKoidMapInnerLock, TracePerformanceEventManagerStateLock,
+};
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 use zx::Koid;
 
 /// The Zircon koids backing one `Task`.
@@ -131,12 +133,12 @@ pub struct TracePerformanceEventManager {
     active_sessions: AtomicUsize,
 
     /// Serializes session lifecycle transitions (0 -> 1 initialization and 1 -> 0 cleanup).
-    state_lock: Mutex<()>,
+    state_lock: LockDepMutex<(), TracePerformanceEventManagerStateLock>,
 
     /// The bidirectional mapping table. Readers take short read locks per lookup; the
     /// only writers are task spawns while recording (one insert each) and the session
     /// seed/release transitions.
-    map: LockDepRwLock<PidKoidMap, starnix_sync::PidToKoidMapInnerLock>,
+    map: LockDepRwLock<PidKoidMap, PidToKoidMapInnerLock>,
 }
 
 impl TracePerformanceEventManager {
@@ -145,7 +147,7 @@ impl TracePerformanceEventManager {
         Self {
             weak_kernel,
             active_sessions: AtomicUsize::new(0),
-            state_lock: Mutex::new(()),
+            state_lock: LockDepMutex::new(()),
             map: LockDepRwLock::new(PidKoidMap::default()),
         }
     }
@@ -225,7 +227,7 @@ impl TracePerformanceEventManager {
     /// Increments the session count, seeding the map from the kernel pid table when this
     /// is the first session.
     fn start_session_internal(&self) {
-        let _guard = self.state_lock.lock().unwrap();
+        let _guard = self.state_lock.lock();
         let current = self.active_sessions.fetch_add(1, Ordering::AcqRel);
         if current == 0 {
             if let Some(kernel) = self.weak_kernel.upgrade() {
@@ -239,7 +241,7 @@ impl TracePerformanceEventManager {
 
     /// Decrements the session count, releasing the map when the last session drops.
     fn stop_session_internal(&self) {
-        let _guard = self.state_lock.lock().unwrap();
+        let _guard = self.state_lock.lock();
         if self.active_sessions.load(Ordering::Acquire) == 0 {
             log_error!("session stopped without an active session");
             return;

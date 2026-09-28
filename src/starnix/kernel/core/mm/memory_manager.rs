@@ -34,7 +34,10 @@ use smallvec::SmallVec;
 use starnix_ext::map_ext::EntryExt;
 use starnix_lifecycle::DropNotifier;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, track_stub};
-use starnix_sync::{LockDepMutex, MmDumpable, Mutex, RwLock, RwLockWriteGuard, ordered_write_lock};
+use starnix_sync::{
+    LockDepMutex, MemoryManagerCachedStatsLock, MmDumpable, RwLock, RwLockWriteGuard,
+    ordered_write_lock,
+};
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::math::{round_down_to_system_page_size, round_up_to_system_page_size};
@@ -3126,7 +3129,8 @@ pub struct MemoryManager {
     pub arch_width: ArchWidth,
 
     /// Cached memory stats to avoid expensive Zircon VMAR walks on sequential reads.
-    pub cached_stats: Mutex<Option<(zx::MonotonicInstant, MemoryStats)>>,
+    pub cached_stats:
+        LockDepMutex<Option<(zx::MonotonicInstant, MemoryStats)>, MemoryManagerCachedStatsLock>,
 }
 
 impl ArchSpecific for MemoryManager {
@@ -3282,7 +3286,7 @@ impl MemoryManager {
             inflight_vmspliced_payloads: Default::default(),
             drop_notifier: DropNotifier::default(),
             arch_width,
-            cached_stats: Mutex::default(),
+            cached_stats: LockDepMutex::default(),
         }))
     }
 

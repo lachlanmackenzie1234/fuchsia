@@ -21,10 +21,9 @@ use crate::vfs::{
 };
 use fuchsia_rcu::{RcuArc, RcuBox, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
-use fuchsia_sync::Mutex;
 use starnix_logging::log_warn;
 use starnix_rcu::RcuHashMap;
-use starnix_sync::{LockDepMutex, NamespaceFlagsLock};
+use starnix_sync::{LockDepMutex, MountSubmountsLock, NamespaceFlagsLock};
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
@@ -360,7 +359,7 @@ struct MountRelations {
     /// The parent mount and the directory entry in the parent where this mount is mounted.
     mountpoint: RcuBox<Option<(Weak<Mount>, Weak<DirEntry>)>>,
     /// The active submounts, keyed by the directory entry in this mount where they are mounted.
-    submounts: Mutex<HashMap<PtrKey<DirEntry>, Submount>>,
+    submounts: LockDepMutex<HashMap<PtrKey<DirEntry>, Submount>, MountSubmountsLock>,
     /// A lock-free RCU friendly view of [submounts].
     submount_lookup: RcuRawHashMap<WeakKey<DirEntry>, Weak<Mount>>,
     /// The membership of this mount in its peer group.

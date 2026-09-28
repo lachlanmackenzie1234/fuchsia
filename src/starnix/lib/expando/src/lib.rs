@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_sync::Mutex;
+use starnix_sync::{ExpandoLock, LockDepMutex};
 use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
 use std::marker::{Send, Sync};
@@ -37,7 +37,7 @@ impl ExpandoSlot {
 /// the module know that no other code is accessing its slot on the expando.
 #[derive(Debug, Default)]
 pub struct Expando {
-    properties: Mutex<BTreeMap<TypeId, ExpandoSlot>>,
+    properties: LockDepMutex<BTreeMap<TypeId, ExpandoSlot>, ExpandoLock>,
 }
 
 impl Expando {
@@ -109,6 +109,7 @@ impl Expando {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use starnix_sync::Mutex;
 
     #[derive(Debug, Default)]
     struct MyStruct {

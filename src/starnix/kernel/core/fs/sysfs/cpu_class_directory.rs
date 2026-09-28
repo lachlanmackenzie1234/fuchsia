@@ -12,6 +12,7 @@ use fidl_fuchsia_power_cpu as fcpu;
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{bug_ref, log_warn};
+use starnix_sync::{CpuFreqProxyCacheLock, LockDepMutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::{errno, error, from_status_like_fdio};
@@ -359,7 +360,8 @@ fn connect_to_cpu_device_by_domain_id(
 }
 
 fn create_scaling_cur_freq_file(domain_id: u64) -> impl FsNodeOps {
-    let proxy_cache = starnix_sync::Mutex::new(None::<fcpuctrl::DeviceSynchronousProxy>);
+    let proxy_cache =
+        LockDepMutex::<_, CpuFreqProxyCacheLock>::new(None::<fcpuctrl::DeviceSynchronousProxy>);
     SimpleFileNode::new(move |_| {
         let mut guard = proxy_cache.lock();
         if guard.is_none() {
