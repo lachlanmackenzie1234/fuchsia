@@ -246,6 +246,7 @@ kernel_bindgen_crate("vm-constants-rs") {
   notice_year = 2026
   var_allowlist = [
     "kVmObjectPhysicalState.*",
+    "kVmDebugCompressor.*",
     "kVmCachePolicyMask",
     "kVmPageList.*",
     "kPmmNodeIndexZeroBits",
@@ -567,8 +568,6 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_set_aging_event",
     "cpp_page_queues_debug_get_lru_thread",
     "cpp_page_queues_debug_get_mru_thread",
-    "cpp_debug_compressor_init",
-    "cpp_debug_compressor_destroy",
   ]
   type_allowlist = [
     "AgeReason",
@@ -1336,9 +1335,11 @@ kernel_rust_mod("vm-rs") {
     "//src/lib/kalloc",
     "//src/lib/kprint",
     "//src/lib/ksync",
+    "//src/lib/lockdep/rust:lockdep",
     "//src/lib/zr",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:pin-init",
+    "//third_party/rust_crates:rand",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/heap:heap-rs",
