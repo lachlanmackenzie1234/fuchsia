@@ -29,6 +29,7 @@ pub trait DispatcherOps {
 
     fn dispatcher(&self) -> *const Dispatcher;
 
+    #[inline]
     fn on_zero_handles(&self) {
         // SAFETY: self.dispatcher() returns a valid pointer to an initialized Dispatcher.
         unsafe {
@@ -36,6 +37,7 @@ pub trait DispatcherOps {
         }
     }
 
+    #[inline]
     fn clear_signals(&self, signals: zx_types::zx_signals_t) {
         // SAFETY: self.dispatcher() returns a valid pointer to an initialized Dispatcher.
         unsafe {
@@ -43,10 +45,12 @@ pub trait DispatcherOps {
         }
     }
 
+    #[inline]
     fn update_state(&self, clear_mask: u32, set_mask: u32) {
         self.update_state_with_strobe(clear_mask, set_mask, 0);
     }
 
+    #[inline]
     fn update_state_with_strobe(&self, clear_mask: u32, set_mask: u32, strobe_mask: u32) {
         // SAFETY: self.dispatcher() returns a valid pointer to an initialized Dispatcher.
         unsafe {
@@ -54,6 +58,7 @@ pub trait DispatcherOps {
         }
     }
 
+    #[inline]
     fn update_state_locked(
         &self,
         token: &LockToken<'_, Self::LockClass>,
@@ -63,6 +68,7 @@ pub trait DispatcherOps {
         self.update_state_with_strobe_locked(token, clear_mask, set_mask, 0);
     }
 
+    #[inline]
     fn update_state_with_strobe_locked(
         &self,
         _token: &LockToken<'_, Self::LockClass>,
@@ -82,6 +88,7 @@ pub trait DispatcherOps {
         }
     }
 
+    #[inline]
     fn signals_state_locked(
         &self,
         _token: &LockToken<'_, Self::LockClass>,
@@ -100,13 +107,14 @@ macro_rules! impl_dispatcher_facade {
     };
     ($(#[$meta:meta])* $vis:vis struct $type:ident, $obj_type:expr, $lock_class:ty) => {
         $(#[$meta])*
-        #[repr(C)]
+        #[repr(C, align(8))]
         $vis struct $type {
             _facade: fbl::OpaqueRefCountedFacade<$crate::object::Dispatcher>,
         }
 
         impl core::ops::Deref for $type {
             type Target = $crate::object::Dispatcher;
+            #[inline]
             fn deref(&self) -> &Self::Target {
                 // SAFETY: `self` is a valid facade reference, and the base `Dispatcher`
                 // is part of the same allocation.
@@ -124,6 +132,7 @@ macro_rules! impl_dispatcher_facade {
             const TYPE: zx_types::zx_obj_type_t = $obj_type;
             type LockClass = $lock_class;
 
+            #[inline]
             fn dispatcher(&self) -> *const $crate::object::Dispatcher {
                 self as *const Self as *const $crate::object::Dispatcher
             }
@@ -150,15 +159,14 @@ macro_rules! impl_dispatcher_facade_with_state {
 
             impl $type {
                 /// Returns a reference to the underlying state object.
+                #[inline]
                 pub fn state(&self) -> &$state {
                     // SAFETY: The state object is located at a verified offset within the
                     // same allocation as the facade.
                     unsafe {
-                        let ptr = (self as *const Self)
-                            .cast::<u8>()
-                            .add($offset_const as usize)
-                            .cast::<$state>();
-                        &*ptr
+                        &*(self as *const Self)
+                            .wrapping_byte_add($offset_const as usize)
+                            .cast::<$state>()
                     }
                 }
             }
@@ -288,6 +296,7 @@ macro_rules! impl_peered_dispatcher_facade_with_state {
             }
 
             /// Returns the related KOID of the peer dispatcher.
+            #[inline]
             pub fn get_related_koid(&self) -> zx_types::zx_koid_t {
                 self.state().peered.peer_koid()
             }
@@ -429,6 +438,7 @@ pub(crate) use impl_dispatcher_state_init;
 
 fbl::impl_opaque_ref_counted_facade!(
     /// Base facade type for kernel Dispatchers.
+    #[repr(align(8))]
     pub struct Dispatcher,
     cpp_dispatcher_recycle,
     cpp_dispatcher_get_ref_counted,
@@ -436,18 +446,21 @@ fbl::impl_opaque_ref_counted_facade!(
 
 impl Dispatcher {
     /// Returns the ZX object type of this Dispatcher.
+    #[inline]
     pub fn get_type(&self) -> zx_types::zx_obj_type_t {
         // SAFETY: self is a valid reference to an initialized Dispatcher.
         unsafe { cpp_dispatcher_get_type(self) }
     }
 
     /// Returns the kernel object ID (KOID) of this Dispatcher.
+    #[inline]
     pub fn get_koid(&self) -> zx_types::zx_koid_t {
         // SAFETY: self is a valid reference to an initialized Dispatcher.
         unsafe { super::dispatcher_ffi::cpp_dispatcher_get_koid(self) }
     }
 
     /// Returns the related koid of this Dispatcher.
+    #[inline]
     pub fn get_related_koid(&self) -> zx_types::zx_koid_t {
         // SAFETY: self is a valid reference to an initialized Dispatcher.
         unsafe { cpp_dispatcher_get_related_koid(self) }

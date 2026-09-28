@@ -9,24 +9,30 @@
 
 extern "C" {
 
-void cpp_dispatcher_on_zero_handles(Dispatcher* disp) { disp->on_zero_handles(); }
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dispatcher_on_zero_handles(Dispatcher* disp) { disp->on_zero_handles(); }
 
-void cpp_dispatcher_clear_signals(Dispatcher* disp, zx_signals_t signals) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dispatcher_clear_signals(Dispatcher* disp, zx_signals_t signals) {
   disp->ClearSignals(signals);
 }
 
-void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask,
-                                 zx_signals_t strobe_mask) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask,
+                                                   zx_signals_t set_mask,
+                                                   zx_signals_t strobe_mask) {
   disp->UpdateState(clear_mask, set_mask, strobe_mask);
 }
 
-void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
-                                        zx_signals_t set_mask,
-                                        zx_signals_t strobe_mask) TA_NO_THREAD_SAFETY_ANALYSIS {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_dispatcher_update_state_locked(
+    Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask,
+    zx_signals_t strobe_mask) TA_NO_THREAD_SAFETY_ANALYSIS {
   disp->UpdateStateLocked(clear_mask, set_mask, strobe_mask);
 }
 
-zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp)
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp)
     TA_NO_THREAD_SAFETY_ANALYSIS {
   return disp->GetSignalsStateLocked();
 }

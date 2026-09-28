@@ -297,7 +297,6 @@ impl PinnedDrop for ResourceDispatcherState {
 }
 
 crate::object::dispatcher::impl_dispatcher_facade_with_state!(
-    #[repr(align(8))]
     pub struct ResourceDispatcher,
     ResourceDispatcherState,
     ZX_OBJ_TYPE_RESOURCE,

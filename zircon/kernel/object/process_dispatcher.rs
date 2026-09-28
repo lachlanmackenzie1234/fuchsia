@@ -77,6 +77,7 @@ impl ProcessDispatcher {
     }
 
     /// Executes the given function with a reference to the current process.
+    #[inline]
     pub fn with_current<R>(f: impl FnOnce(&ProcessDispatcher) -> R) -> R {
         f(&Self::get_current())
     }
@@ -223,6 +224,7 @@ impl ProcessDispatcher {
     }
 
     /// Returns the timer slack policy for this process.
+    #[inline]
     pub fn get_timer_slack_policy(&self) -> crate::kernel::deadline::TimerSlack {
         let mut slack = crate::kernel::deadline::TimerSlack::none();
         // SAFETY: `self` is a valid `ProcessDispatcher` reference and `slack` points to valid memory.
