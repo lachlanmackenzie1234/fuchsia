@@ -397,8 +397,7 @@ where
     }
 }
 
-impl<CC, BC> SendableFrameMeta<CC, BC>
-    for DeviceSocketMetadata<LoopbackDevice, <CC as DeviceIdContext<LoopbackDevice>>::DeviceId>
+impl<CC, BC> SendableFrameMeta<CC, BC> for DeviceSocketMetadata<LoopbackDevice, CC, BC>
 where
     CC: TransmitQueueHandler<
             LoopbackDevice,
@@ -418,8 +417,8 @@ where
         S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
-        let Self { device_id, metadata } = self;
-        let tx_meta = LoopbackTxQueueMeta::default();
+        let Self { device_id, metadata, ip_layer_metadata } = self;
+        let tx_meta = LoopbackTxQueueMeta { target_device: None, ip_layer_metadata };
         match metadata {
             Some(EthernetHeaderParams { dest_addr, protocol }) => send_as_ethernet_frame_to_dst(
                 core_ctx,

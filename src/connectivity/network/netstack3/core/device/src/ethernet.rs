@@ -826,14 +826,13 @@ impl DeviceSocketSendTypes for EthernetLinkDevice {
     type Metadata = Option<EthernetHeaderParams>;
 }
 
-impl<
+impl<BC, CC> SendableFrameMeta<CC, BC> for DeviceSocketMetadata<EthernetLinkDevice, CC, BC>
+where
     BC: EthernetIpLinkDeviceBindingsContext,
-    CC: EthernetIpLinkDeviceDynamicStateContext<BC>
+    CC: DeviceIdContext<EthernetLinkDevice, DeviceId = EthernetDeviceId<BC>>
+        + EthernetIpLinkDeviceDynamicStateContext<BC>
         + TransmitQueueHandler<EthernetLinkDevice, BC, Meta = BC::TxMetadata>
         + ResourceCounterContext<CC::DeviceId, DeviceCounters>,
-> SendableFrameMeta<CC, BC> for DeviceSocketMetadata<EthernetLinkDevice, EthernetDeviceId<BC>>
-where
-    CC: DeviceIdContext<EthernetLinkDevice, DeviceId = EthernetDeviceId<BC>>,
 {
     fn send_meta<S>(
         self,
@@ -845,10 +844,8 @@ where
         S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
-        let Self { device_id, metadata } = self;
-        // TODO(https://fxbug.dev/391946195): Apply send buffer enforcement from
-        // device sockets instead of using default.
-        let tx_meta: BC::TxMetadata = Default::default();
+        let Self { device_id, metadata, ip_layer_metadata } = self;
+        let tx_meta = ip_layer_metadata.into_tx_metadata();
         match metadata {
             Some(EthernetHeaderParams { dest_addr, protocol }) => send_as_ethernet_frame_to_dst(
                 core_ctx,
