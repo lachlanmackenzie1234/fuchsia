@@ -1186,15 +1186,13 @@ impl CurrentTask {
         {
             let mut thread_group_state = self.thread_group().write();
             thread_group_state.exit_signal = Some(SIGCHLD);
-            for (_, weak_child) in &mut thread_group_state.children {
-                if let Some(child) = weak_child.upgrade() {
-                    // This allow_subclass is safe because locking parent then child strictly
-                    // follows the top-down traversal of the thread group tree, which cannot form
-                    // cycles.
-                    let _token = starnix_sync::allow_subclass();
-                    let mut child_state = child.write();
-                    child_state.exit_signal = Some(SIGCHLD);
-                }
+            for child in thread_group_state.children() {
+                // This allow_subclass is safe because locking parent then child strictly
+                // follows the top-down traversal of the thread group tree, which cannot form
+                // cycles.
+                let _token = starnix_sync::allow_subclass();
+                let mut child_state = child.write();
+                child_state.exit_signal = Some(SIGCHLD);
             }
         }
 

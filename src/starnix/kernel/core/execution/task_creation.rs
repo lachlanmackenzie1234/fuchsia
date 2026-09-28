@@ -181,7 +181,7 @@ pub fn create_init_child_process(
         let mut new_process_writer = task.thread_group().write();
         new_process_writer.parent =
             Some(ThreadGroupParent::new(Arc::downgrade(&init_task.thread_group())));
-        init_writer.children.insert(task.tid.id, Arc::downgrade(task.thread_group()));
+        init_writer.children.insert(task.pid.clone());
     }
     // A child process created via fork(2) inherits its parent's
     // resource limits.  Resource limits are preserved across execve(2).
