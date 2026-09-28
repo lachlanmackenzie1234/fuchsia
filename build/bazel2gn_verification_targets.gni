@@ -101,6 +101,7 @@ bazel2gn_verification_targets = [
   "//src/lib/analytics/cpp/google_analytics_4:verify_bazel2gn",
   "//src/lib/analytics/cpp/metric_properties:verify_bazel2gn",
   "//src/lib/analytics/rust:verify_bazel2gn",
+  "//src/lib/bitrs:verify_bazel2gn",
   "//src/lib/buf-read-ext:verify_bazel2gn",
   "//src/lib/chunked-compression:verify_bazel2gn",
   "//src/lib/cmdline:verify_bazel2gn",
