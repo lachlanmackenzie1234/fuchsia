@@ -47,6 +47,7 @@ rustc_binary("bin") {
     "//src/lib/include_str_from_working_dir",
     "//src/lib/mapped-vmo",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
+    "//src/sys/lib/fuchsia_backoff",
     "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
     "//src/sys/pkg/lib/async-generator",
     "//src/sys/pkg/lib/blobfs",

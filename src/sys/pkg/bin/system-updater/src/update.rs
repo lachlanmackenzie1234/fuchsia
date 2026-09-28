@@ -1315,9 +1315,11 @@ impl PackagelessAttempt<'_> {
             None
         };
         let manifest_bytes =
-            fetch_url(&update_url, manifest_range, self.config.manifest_headers.clone())
-                .await
-                .map_err(PrepareError::FetchUrl)?;
+            fuchsia_backoff::retry_or_last_error(ManifestFetchBackoff::default(), || {
+                fetch_url(&update_url, manifest_range, self.config.manifest_headers.clone())
+            })
+            .await
+            .map_err(PrepareError::FetchUrl)?;
         let manifest_size = manifest_bytes.len() as u64;
 
         let manifest = update_package::signed_manifest::parse_and_verify(
@@ -1956,6 +1958,60 @@ async fn replace_retained_blobs(
         error!("error serving {} protocol: {:#}", fpkg::RetainedBlobsMarker::DEBUG_NAME, anyhow!(e))
     });
     replace_resp.await.context("calling RetainedBlobs.Replace")
+}
+
+fn is_transient_fetch_error(err: &fetch_url::errors::FetchUrlError) -> bool {
+    use fetch_url::errors::FetchUrlError::*;
+    match err {
+        LoaderFetchError(_)
+        | ReadFromSocketError(_)
+        | SizeReadMismatch(_, _)
+        | UrlReadBodyError
+        | NoStatusResponse => true,
+        UnexpectedHttpStatusCode(_)
+        | FidlHttpServiceConnectionError(_)
+        | LoaderFIDLError(_)
+        | DuplicateRangeHeader => false,
+    }
+}
+
+#[derive(Default)]
+struct ManifestFetchBackoff {
+    retries: u32,
+}
+
+impl fuchsia_backoff::Backoff<fetch_url::errors::FetchUrlError> for ManifestFetchBackoff {
+    fn next_backoff(&mut self, err: &fetch_url::errors::FetchUrlError) -> Option<Duration> {
+        const MAX_MANIFEST_FETCH_RETRIES: u32 = 2;
+        if self.retries < MAX_MANIFEST_FETCH_RETRIES && is_transient_fetch_error(err) {
+            let delay = 1 << self.retries;
+            self.retries += 1;
+            warn!(
+                "failed to fetch manifest (attempt {}/{}), retrying in {delay}s: {}",
+                self.retries,
+                MAX_MANIFEST_FETCH_RETRIES + 1,
+                stringify_error(err)
+            );
+            Some(Duration::from_secs(delay))
+        } else {
+            None
+        }
+    }
+}
+
+// Replicates `format!("{:#}", anyhow!(err))` but without consuming `err` or converting it into an
+// `anyhow::Error`, so that the original, un-type-erased error can be propagated.
+// Normally errors should either be propagated XOR logged, but in this case `fuchsia_backoff`
+// doesn't know in advance whether to retry or not, so we only get a reference to the error and
+// can't convert it into an anyhow::Error.
+fn stringify_error(mut err: &dyn std::error::Error) -> String {
+    let mut result = err.to_string();
+    while let Some(source) = err.source() {
+        use std::fmt::Write as _;
+        let _ = write!(result, ": {source}");
+        err = source;
+    }
+    result
 }
 
 #[cfg(test)]

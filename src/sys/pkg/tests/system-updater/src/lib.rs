@@ -1088,13 +1088,23 @@ type ResumeHandle = oneshot::Sender<()>;
 
 struct MockHttpLoaderService {
     manifest: Option<Vec<u8>>,
+    responses: Mutex<std::collections::VecDeque<fhttp::Response>>,
     blocker: Mutex<Option<oneshot::Sender<ResumeHandle>>>,
     received_headers: Mutex<Vec<Vec<fhttp::Header>>>,
 }
 
 impl MockHttpLoaderService {
     fn new(manifest: Option<Vec<u8>>) -> Self {
-        Self { manifest, blocker: Mutex::new(None), received_headers: Mutex::new(Vec::new()) }
+        Self {
+            manifest,
+            responses: Mutex::new(std::collections::VecDeque::new()),
+            blocker: Mutex::new(None),
+            received_headers: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn push_response(&self, response: fhttp::Response) {
+        self.responses.lock().push_back(response);
     }
 
     fn received_headers(&self) -> Vec<Vec<fhttp::Header>> {
@@ -1125,6 +1135,11 @@ impl MockHttpLoaderService {
 
                     if let Some(headers) = &request.headers {
                         self.received_headers.lock().push(headers.clone());
+                    }
+
+                    if let Some(response) = self.responses.lock().pop_front() {
+                        let _ = responder.send(response);
+                        continue;
                     }
 
                     let url = request.url.unwrap();
