@@ -331,7 +331,7 @@ where
 
     /// Removes all elements from the list.
     pub fn clear(&mut self) {
-        while let Some(_) = self.pop_front() {}
+        while self.pop_front().is_some() {}
     }
 
     /// Inserts an element after the specified position.
