@@ -351,7 +351,7 @@ class Adb:
             # a wedged adbd out-of-band if ADB later becomes unresponsive.
             self._cache_adbd_pid()
             atexit.register(self.close)
-        except Exception:
+        except BaseException:
             self.close()
             raise
 

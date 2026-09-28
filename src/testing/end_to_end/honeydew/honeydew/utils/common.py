@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Common utils used across Honeydew."""
+
 import asyncio
 import inspect
 import logging
@@ -27,7 +28,7 @@ def _retry_condition(end_time: float | None = None) -> bool:
 
 @decorators.liveness_check
 async def wait_for_state(
-    state_fn: (Callable[[], bool] | Callable[[], Awaitable[bool]]),
+    state_fn: Callable[[], bool] | Callable[[], Awaitable[bool]],
     expected_state: bool,
     timeout: float | None = None,
     wait_time: float = 1,
@@ -140,7 +141,7 @@ def wait_for_state_sync(
 
 @decorators.liveness_check
 async def retry(
-    fn: (Callable[[], object] | Callable[[], Awaitable[object]]),
+    fn: Callable[[], object] | Callable[[], Awaitable[object]],
     timeout: float | None = None,
     wait_time: int = 1,
 ) -> object:
@@ -238,6 +239,12 @@ def read_from_dict(
         return None
 
 
+class _TimeLimitExpired(BaseException):
+    """Internal BaseException raised by SIGALRM in time_limit to unwind the stack
+    without being caught or swallowed by inner `except Exception:` or
+    `except HoneydewTimeoutError:` blocks."""
+
+
 @contextmanager
 def time_limit(
     timeout: int,
@@ -254,7 +261,7 @@ def time_limit(
             the time limit.
 
     Raises:
-        errors.HoneydewTimeoutError: If time limit is reached and exception_type is None.
+        errors.HoneydewTimeoutError: If time limit is reached and exception_type is not passed.
     """
 
     def sigalarm_handler(signum: int, _: types.FrameType | None) -> None:
@@ -265,11 +272,26 @@ def time_limit(
             exception_type.__name__,
             exception_message,
         )
-        raise exception_type(exception_message)
+        raise _TimeLimitExpired(exception_message)
 
+    _LOGGER.info("Setting a time limit of %s sec...", timeout)
+    start_time: float = time.time()
     signal.signal(signal.SIGALRM, sigalarm_handler)
     signal.alarm(timeout)
     try:
         yield
+        _LOGGER.info(
+            "Finished within the time limit of %s sec (took %.2f sec).",
+            timeout,
+            time.time() - start_time,
+        )
+    except _TimeLimitExpired as err:
+        _LOGGER.warning(
+            "Time limit of %s sec reached. Raising %s('%s')",
+            timeout,
+            exception_type.__name__,
+            exception_message,
+        )
+        raise exception_type(exception_message) from err
     finally:
         signal.alarm(0)
