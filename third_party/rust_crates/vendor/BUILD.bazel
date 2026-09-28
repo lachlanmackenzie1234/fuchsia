@@ -2329,86 +2329,86 @@ alias(
 )
 
 alias(
-    name = "rust_icu_common-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_common-5.6.0:rust_icu_common",
+    name = "rust_icu_common-5.8.0",
+    actual = "//third_party/rust_crates/vendor/rust_icu_common-5.8.0:rust_icu_common",
     tags = ["manual"],
 )
 
 alias(
     name = "rust_icu_common",
-    actual = "//third_party/rust_crates/vendor/rust_icu_common-5.6.0:rust_icu_common",
+    actual = "//third_party/rust_crates/vendor/rust_icu_common-5.8.0:rust_icu_common",
     tags = ["manual"],
 )
 
 alias(
-    name = "rust_icu_sys-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_sys-5.6.0:rust_icu_sys",
+    name = "rust_icu_sys-5.8.0",
+    actual = "//third_party/rust_crates/vendor/rust_icu_sys-5.8.0:rust_icu_sys",
     tags = ["manual"],
 )
 
 alias(
     name = "rust_icu_sys",
-    actual = "//third_party/rust_crates/vendor/rust_icu_sys-5.6.0:rust_icu_sys",
+    actual = "//third_party/rust_crates/vendor/rust_icu_sys-5.8.0:rust_icu_sys",
     tags = ["manual"],
 )
 
 alias(
-    name = "rust_icu_ucal-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_ucal-5.6.0:rust_icu_ucal",
+    name = "rust_icu_ucal-5.8.0",
+    actual = "//third_party/rust_crates/vendor/rust_icu_ucal-5.8.0:rust_icu_ucal",
     tags = ["manual"],
 )
 
 alias(
     name = "rust_icu_ucal",
-    actual = "//third_party/rust_crates/vendor/rust_icu_ucal-5.6.0:rust_icu_ucal",
+    actual = "//third_party/rust_crates/vendor/rust_icu_ucal-5.8.0:rust_icu_ucal",
     tags = ["manual"],
 )
 
 alias(
-    name = "rust_icu_udat-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_udat-5.6.0:rust_icu_udat",
+    name = "rust_icu_udat-5.8.0",
+    actual = "//third_party/rust_crates/vendor/rust_icu_udat-5.8.0:rust_icu_udat",
     tags = ["manual"],
 )
 
 alias(
     name = "rust_icu_udat",
-    actual = "//third_party/rust_crates/vendor/rust_icu_udat-5.6.0:rust_icu_udat",
+    actual = "//third_party/rust_crates/vendor/rust_icu_udat-5.8.0:rust_icu_udat",
     tags = ["manual"],
 )
 
 alias(
-    name = "rust_icu_udata-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_udata-5.6.0:rust_icu_udata",
+    name = "rust_icu_udata-5.8.0",
+    actual = "//third_party/rust_crates/vendor/rust_icu_udata-5.8.0:rust_icu_udata",
     tags = ["manual"],
 )
 
 alias(
     name = "rust_icu_udata",
-    actual = "//third_party/rust_crates/vendor/rust_icu_udata-5.6.0:rust_icu_udata",
+    actual = "//third_party/rust_crates/vendor/rust_icu_udata-5.8.0:rust_icu_udata",
     tags = ["manual"],
 )
 
 alias(
-    name = "rust_icu_uloc-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_uloc-5.6.0:rust_icu_uloc",
+    name = "rust_icu_uloc-5.8.0",
+    actual = "//third_party/rust_crates/vendor/rust_icu_uloc-5.8.0:rust_icu_uloc",
     tags = ["manual"],
 )
 
 alias(
     name = "rust_icu_uloc",
-    actual = "//third_party/rust_crates/vendor/rust_icu_uloc-5.6.0:rust_icu_uloc",
+    actual = "//third_party/rust_crates/vendor/rust_icu_uloc-5.8.0:rust_icu_uloc",
     tags = ["manual"],
 )
 
 alias(
-    name = "rust_icu_ustring-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_ustring-5.6.0:rust_icu_ustring",
+    name = "rust_icu_ustring-5.8.0",
+    actual = "//third_party/rust_crates/vendor/rust_icu_ustring-5.8.0:rust_icu_ustring",
     tags = ["manual"],
 )
 
 alias(
     name = "rust_icu_ustring",
-    actual = "//third_party/rust_crates/vendor/rust_icu_ustring-5.6.0:rust_icu_ustring",
+    actual = "//third_party/rust_crates/vendor/rust_icu_ustring-5.8.0:rust_icu_ustring",
     tags = ["manual"],
 )
 

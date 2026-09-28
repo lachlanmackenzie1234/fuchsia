@@ -314,13 +314,13 @@ openssl = { version = "0.10.81", features = ["unstable_boringssl"] }
 pkcs1 = "0.7.5"
 pkcs8 = "0.11.0"
 pkcs8-0_10_2 = { package = "pkcs8", version = "0.10.2" }
-rust_icu_common = { version = "5.6.0", default-features = false, features = ["renaming"] }
-rust_icu_sys = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
-rust_icu_ucal = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_udat = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_udata = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_uloc = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
-rust_icu_ustring = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_common = { version = "5.8.0", default-features = false, features = ["renaming"] }
+rust_icu_sys = { version = "5.8.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_ucal = { version = "5.8.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_udat = { version = "5.8.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_udata = { version = "5.8.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_uloc = { version = "5.8.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
+rust_icu_ustring = { version = "5.8.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 sec1 = { version = "0.8.1", features = ["alloc", "der", "zeroize"] }
 sec1-0_7_3 = { package = "sec1", version = "0.7.3", features = ["alloc", "der", "pkcs8", "zeroize"] }
 spki = { version = "0.8.0", features = ["alloc"] }
@@ -1096,7 +1096,7 @@ configs = [
 
 # Please keep the rust_icu_* crates together in this list.
 # Refer to //build/icu/README.md for the details of the approach.
-[gn.package.rust_icu_common."5.6.0"]
+[gn.package.rust_icu_common."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
@@ -1105,7 +1105,7 @@ visibility = [
   "//src/lib/icu_data/rust/icu_data:*",
   "//src/lib/intl/lookup/rust:*",
 ]
-[gn.package.rust_icu_sys."5.6.0"]
+[gn.package.rust_icu_sys."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
@@ -1114,7 +1114,7 @@ visibility = [
   "//src/lib/intl/lookup/rust:*",
   "//src/ui/lib/input_pipeline:*",
 ]
-[gn.package.rust_icu_ucal."5.6.0"]
+[gn.package.rust_icu_ucal."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
@@ -1123,10 +1123,10 @@ visibility = [
   "//src/lib/icu_data/rust/icu_data:*",
   "//src/lib/intl/lookup/rust:*",
 ]
-[gn.package.rust_icu_udat."5.6.0"]
+[gn.package.rust_icu_udat."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
-[gn.package.rust_icu_udata."5.6.0"]
+[gn.package.rust_icu_udata."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
@@ -1135,7 +1135,7 @@ visibility = [
   "//src/lib/icu_data/rust/icu_data:*",
   "//src/lib/intl/lookup/rust:*",
 ]
-[gn.package.rust_icu_uenum."5.6.0"]
+[gn.package.rust_icu_uenum."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
@@ -1143,7 +1143,7 @@ visibility = [
   ":*",
   "//src/settings/intl:*",
 ]
-[gn.package.rust_icu_uloc."5.6.0"]
+[gn.package.rust_icu_uloc."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
@@ -1152,7 +1152,7 @@ visibility = [
   "//src/lib/intl/lookup/rust:*",
   "//src/settings/intl:*",
 ]
-[gn.package.rust_icu_ustring."5.6.0"]
+[gn.package.rust_icu_ustring."5.8.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 
