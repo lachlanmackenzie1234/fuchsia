@@ -26,6 +26,7 @@ use tokio::sync::Mutex;
 use crate::analytics::PointOfFailure;
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
+use crate::uart_connector::UartConnector;
 use crate::usb_connector::{UsbConnector, try_daemon_autostart};
 use crate::vsock_connector::VSockConnector;
 use crate::{TargetInfo, get_target_specifier_with_source, target_source_for_query};
@@ -962,12 +963,14 @@ impl Resolution {
                         ))
                     })?
                 }
-                ResolutionTarget::Uart(_) => {
-                    return Err(crate::error::FfxTargetCrateError::Knock(
+                ResolutionTarget::Uart(endpoint) => {
+                    let connector = UartConnector::new(endpoint.clone(), context)?;
+                    emit_target_connection_event("UART").await;
+                    Connection::new(connector).await.map_err(|e| {
                         crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
-                            "UART connector not yet implemented".to_string(),
-                        )),
-                    ));
+                            format!("{:?}", e),
+                        ))
+                    })?
                 }
                 ResolutionTarget::TestMock(f) => f()?,
                 ResolutionTarget::TestMockAsync(f) => f().await?,
@@ -1640,5 +1643,35 @@ mod test {
                 .unwrap();
         assert_eq!(res_vsock.vsock_cid(), Some(12345));
         assert_eq!(res_vsock.usb_cid(), None);
+    }
+
+    #[fuchsia::test]
+    async fn test_resolve_invalid_uart() {
+        let test_env = ffx_config::test_env().build().unwrap();
+        // 1. Relative path (not allowed)
+        let err =
+            UartConnector::new("./my-relative-port".to_string(), &test_env.context).unwrap_err();
+        assert!(matches!(
+            err,
+            FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::TargetNotFound, .. }
+        ));
+
+        // 2. Non-existent absolute path
+        let err =
+            UartConnector::new("/non/existent/port".to_string(), &test_env.context).unwrap_err();
+        assert!(matches!(
+            err,
+            FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::TargetNotFound, .. }
+        ));
+
+        // 3. Regular file (invalid type)
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let err =
+            UartConnector::new(temp_file.path().to_string_lossy().to_string(), &test_env.context)
+                .unwrap_err();
+        assert!(matches!(
+            err,
+            FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::TargetNotFound, .. }
+        ));
     }
 }

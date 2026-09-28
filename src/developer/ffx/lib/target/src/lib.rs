@@ -24,6 +24,7 @@ pub mod connection;
 pub mod info;
 pub mod list;
 pub mod ssh_connector;
+pub mod uart_connector;
 pub mod usb_connector;
 pub mod vsock_connector;
 
