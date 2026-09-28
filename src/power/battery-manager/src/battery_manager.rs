@@ -483,7 +483,7 @@ impl BatteryManager {
         let raw_level = info.level_percent;
         let new_charge_status = info.charge_status;
         let recovery_event = self.info_recorders.update(raw_level, new_charge_status);
-        self.info_recorders.record_raw_level_on_change(raw_level);
+        self.info_recorders.record_raw_level_on_change(&info);
 
         let old_is_plugged_in = Polisher::is_plugged_in(&self.cached_battery_info.borrow());
         let new_is_plugged_in = Polisher::is_plugged_in(&info);
@@ -606,8 +606,6 @@ impl BatteryManager {
 
     fn publish_to_inspect(&self, info: &fpower::BatteryInfo) {
         self.info_recorders.record_level_on_change(info);
-        self.info_recorders.record_present_voltage(info.present_voltage_mv);
-        self.info_recorders.record_remaining_capacity(info.remaining_charge_uah);
         self.info_recorders.record_present_current(info.present_charging_current_ua);
         self.info_recorders.record_average_current(info.average_charging_current_ua);
         self.info_recorders.record_health_on_change(info.health);
