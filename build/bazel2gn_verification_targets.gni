@@ -86,6 +86,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/lib/termio:verify_bazel2gn",
   "//src/developer/ffx/lib/timeout:verify_bazel2gn",
   "//src/developer/ffx/lib/trace:verify_bazel2gn",
+  "//src/developer/ffx/lib/usb_driver_api",
   "//src/developer/ffx/lib/version:verify_bazel2gn",
   "//src/developer/ffx/lib/writer:verify_bazel2gn",
   "//src/developer/ffx/plugins/completion:verify_bazel2gn",
