@@ -30,8 +30,8 @@ report.
    `fx bazel2gn -d <dir>` for every dual-build directory you touched.
 3. Get each target's visibility from `find_rdeps` (`per_target_recommended_visibility`): it
    already applies the scoping rules the `visibility_audit` check enforces.
-4. Iterate with `run_checks.sh --skip-build` (seconds) until it passes, then build and test
-   (see "Build & Test Verification") and finish with a full `run_checks.sh`.
+4. Iterate with `run_checks.sh --skip-build` (seconds) plus targeted builds of what you touched,
+   then finish with ONE full `run_checks.sh` (see "Verify, Then Run the Checks Once").
 5. Report with the CoderReport JSON.
 
 The change is a pure build-graph refactor: edit only build-definition files (`BUILD.gn`,
@@ -81,6 +81,17 @@ that needs the `cc` crate, which is only an empty stub in-tree) is fixed in this
    <crate> (needed by //target)`.
 
 ## Expressing GN Semantics in Bazel (bazel2gn Techniques)
+- **C/C++ library type (`alwayslink`)**: a GN `source_set()` links all its objects into every
+  dependent; a `static_library()`, like a Bazel `cc_library` without `alwayslink`, only the ones
+  that resolve symbols. Keep the link semantics whether or not GN is kept: a GN `source_set()`
+  becomes a `cc_library`/`fx_cc_library` with `alwayslink = True`, a GN `static_library()` one
+  without `alwayslink`. With bazel2gn this also keeps the GN type (it emits `source_set()` only
+  for `alwayslink = True`). Switching drops static initializers and other unreferenced objects
+  (or links extra ones). `sdk_source_set()` has its own mapping.
+- **GN target types**: with bazel2gn, every GN target keeps its template; keep a GN-only wrapper
+  template above the sentinel when bazel2gn has no equivalent. If a template must change (e.g. a
+  wrapper expanded into exactly what it generated), dispute the check finding and say why it is
+  equivalent. The `gn_target_type_parity` check enforces both rules.
 - **C/C++ `copts` that are GN `configs`**: bazel2gn only maps a few warning flags to GN configs
   and fails with `unexpected copt <flag>` on others. Keep any package-local `config(...)` above
   the sentinel, put the equivalent flags in `copts`, and name the GN configs with a suffix
@@ -172,30 +183,32 @@ fails GN links in CQ (undefined `operator new`/`operator delete`). `gn_dep_parit
 - Removing an unused `test_deps` entry that Bazel's `unused_crate_dependencies` rejects is fine
   when GN never built that test; say so in the `summary`.
 
-## Build & Test Verification (Required Before Reporting)
-From `$PLANTER_WORKDIR`, run and fix until all pass (fix BUILD files, never sources):
-1. `fx build` (the configured product graph only), then the GN targets of the touched
-   directories and their dependents that are in the configured graph. Get the exact command
-   from `PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`: `fx build <label>`
-   fails with `Unknown GN label (not in the configured graph)` for labels outside it (most
-   `//<dir>:tests` groups).
-2. `fx build --host //build:bazel2gn_verifications` (fails if a BUILD.gn drifted).
-3. `fx bazel build --config=fuchsia_platform //<dir>:all` for every touched directory with a
-   BUILD.bazel, plus `--config=host` for directories with host targets.
-4. Run runnable host/unit tests (e.g. `fx bazel test --config=host //<dir>:<test>`).
-5. Record in `tests_run` (and any commit `Test:` footer) ONLY commands you ran that exited 0:
-   planter re-runs them verbatim before upload.
-6. Commit messages and the `summary` use ASCII only and contain no internal paths, internal
-   domain names, email addresses, user handles or person names; keep `summary` lines and commit body lines
-   at `<= 72` characters and a commit subject at `<= 65` characters.
-
-## Run the Checks Before Reporting
+## Verify, Then Run the Checks Once
 After you report, planter runs every check and sends the change back if any reports an ERROR or
 WARNING. `run_checks.sh` (on `$PATH`) runs exactly what planter runs, prints every finding with
-its remediation, and exits 1 while any finding blocks.
-1. While iterating, run `run_checks.sh --skip-build` and fix every ERROR and WARNING.
-2. As your last step, run `run_checks.sh` without flags (it also builds); it must exit 0. It
-   does not wait for a machinery evolution in progress; do not wait for one either.
+its remediation, and exits 1 while any finding blocks. Its `build_verification` check runs every
+build planter requires (`fx build`, the GN dependents in the configured graph,
+`fx build --host //build:bazel2gn_verifications`, and `fx bazel build` for fuchsia and host), so
+do NOT run those builds by hand as well: each full product build takes minutes. From
+`$PLANTER_WORKDIR`:
+1. While iterating, run `run_checks.sh --skip-build` (seconds) and fix every ERROR and WARNING.
+   For fast compile feedback on your own edits, `fx bazel2gn -d <dir>` and
+   `fx bazel build --config=fuchsia_platform //<dir>:all` (plus `--config=host` for host targets)
+   on the directories you touched are fine. Fix BUILD files, never sources.
+2. Run runnable host/unit tests of the touched directories (e.g.
+   `fx bazel test --config=host //<dir>:<test>`).
+3. As your last step, run `run_checks.sh` without flags exactly once more after your final edit;
+   it must exit 0. Planter reuses the result of that full run when the change is unchanged, so
+   do not edit anything after it. It does not wait for a machinery evolution in progress; do not
+   wait for one either.
+4. Record in `tests_run` (and any commit `Test:` footer) ONLY commands you ran that exited 0:
+   planter re-runs them verbatim before upload. Get the exact GN build commands from
+   `PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`: `fx build <label>` fails
+   with `Unknown GN label (not in the configured graph)` for labels outside it (most
+   `//<dir>:tests` groups).
+5. Commit messages and the `summary` use ASCII only and contain no internal paths, internal
+   domain names, email addresses, user handles or person names; keep `summary` lines and commit body lines
+   at `<= 72` characters and a commit subject at `<= 65` characters.
 If you are certain a finding is a false positive, do not reshape the change to get past it:
 leave it and explain why, with evidence, in the `summary`. Include the result of your last
 `run_checks.sh` run in the `summary`.

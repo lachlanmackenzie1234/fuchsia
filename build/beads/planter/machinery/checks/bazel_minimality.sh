@@ -276,6 +276,91 @@ for rel_path, full_path in bazel_files:
                     ),
                 })
 
+        # 4. Platform/CPU-specific target using srcs = select({cond: [...], "//conditions:default": []})
+        #    instead of target_compatible_with = [cond].
+        for kw in node.keywords:
+            if kw.arg != "srcs":
+                continue
+            val = kw.value
+            if (
+                isinstance(val, ast.Call)
+                and isinstance(val.func, ast.Name)
+                and val.func.id == "select"
+                and val.args
+                and isinstance(val.args[0], ast.Dict)
+            ):
+                d = val.args[0]
+                non_default_keys = []
+                has_empty_default = False
+                for k_node, v_node in zip(d.keys, d.values):
+                    if isinstance(k_node, ast.Constant) and isinstance(k_node.value, str):
+                        if k_node.value == "//conditions:default":
+                            if isinstance(v_node, ast.List) and len(v_node.elts) == 0:
+                                has_empty_default = True
+                        else:
+                            non_default_keys.append(k_node.value)
+                if has_empty_default and len(non_default_keys) == 1:
+                    cond = non_default_keys[0]
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "select_srcs_instead_of_target_compatible_with",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": kw.lineno,
+                        "message": (
+                            f"Target '{target_name}' ({rule_name}) gates all `srcs` behind "
+                            f"`select({{\"{cond}\": [...], \"//conditions:default\": []}})` "
+                            "instead of restricting the target with `target_compatible_with`."
+                        ),
+                        "remediation": (
+                            f"Set `srcs` directly to the source list on '{target_name}', replace the "
+                            f"`select()` + `# @bazel2gn:raw_overwrite` workaround with "
+                            f"`target_compatible_with = [\"{cond}\"]`, and re-run `fx bazel2gn`."
+                        ),
+                    })
+
+    # 5. GN read_file("<manifest>", "json") + foreach() expanded into static BUILD.bazel lists
+    #    without LINT.IfChange / LINT.ThenChange(<manifest>) when <manifest> remains in the tree.
+    pkg_dir = os.path.dirname(rel_path)
+    base_gn_lines = git_lines(["show", f"{change_base}:{pkg_dir}/BUILD.gn"])
+    base_gn_text = "\n".join(base_gn_lines)
+    if base_gn_text:
+        for m in re.finditer(r'\bread_file\(\s*"([^"]+)"\s*,\s*"json"\s*\)', base_gn_text):
+            manifest_rel_pkg = m.group(1)
+            if manifest_rel_pkg.startswith("//"):
+                manifest_repo_rel = manifest_rel_pkg[2:]
+            else:
+                manifest_repo_rel = os.path.normpath(os.path.join(pkg_dir, manifest_rel_pkg))
+            manifest_abs = os.path.join(workdir, manifest_repo_rel)
+            if not os.path.isfile(manifest_abs):
+                continue
+            has_then_change = bool(
+                re.search(
+                    r"#\s*LINT\.ThenChange\([^)]*" + re.escape(os.path.basename(manifest_rel_pkg)),
+                    source,
+                )
+            )
+            if not has_then_change:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "missing_lint_then_change_for_manifest_list",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": 1,
+                    "message": (
+                        f"'{rel_path}' inline-expands a file list that `{pkg_dir}/BUILD.gn` previously "
+                        f"loaded via `read_file(\"{manifest_rel_pkg}\", \"json\")`, while "
+                        f"'{manifest_repo_rel}' still exists without `# LINT.IfChange` / "
+                        f"`# LINT.ThenChange({manifest_rel_pkg})`."
+                    ),
+                    "remediation": (
+                        f"Wrap the expanded file list in '{rel_path}' with `# LINT.IfChange` and "
+                        f"`# LINT.ThenChange({manifest_rel_pkg})` (or remove '{manifest_repo_rel}' if "
+                        "no script or tool uses it anymore)."
+                    ),
+                })
+
+
 
 # 4. Starlark formatting and buildifier_lint hygiene (including .bzl module-docstring).
 def is_starlark_file(rel: str) -> bool:

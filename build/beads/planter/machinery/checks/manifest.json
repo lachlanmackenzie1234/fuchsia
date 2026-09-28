@@ -14,6 +14,12 @@
             "enabled": true
         },
         {
+            "name": "gn_target_type_parity",
+            "description": "Verifies that a migration keeps what GN builds. With bazel2gn (BUILD.gn kept), no converted GN target may change type: a source_set() must not become a static_library() (the cc_library needs alwayslink = True) or vice versa, and no other template may change (e.g. an sdk_source_set, or a GN-only wrapper template). When a GN target is removed (full removal), the cc_library/fx_cc_library of the same name in BUILD.bazel must set alwayslink = True if and only if it was a GN source_set().",
+            "script_file": "gn_target_type_parity.sh",
+            "enabled": true
+        },
+        {
             "name": "visibility_audit",
             "description": "Audits BUILD.bazel visibility attributes for package-level default_visibility, missing target visibility, overly narrow sprawling visibility lists (>15 entries across >=6 areas on globally-used platform libraries/test utilities that should use target-level //visibility:public or 2-3 level rollups), unjustified //visibility:public on narrow targets, redundant :__pkg__, disguised public wildcards, multi-domain umbrella wildcards, cross-area depth-2 wildcards, overbroad depth>=3 LCA wildcards, and false-positive rdeps",
             "script_file": "visibility_audit.sh",
@@ -39,7 +45,7 @@
         },
         {
             "name": "bazel_minimality",
-            "description": "Audits BUILD.bazel and .bzl files for redundant default attributes (crate_name == name, version = \"0.1.0\" on internal rustc_* targets, default crate_root), buildifier formatting and buildifier_lint warnings (including missing .bzl module docstrings and unused loads), and drive-by edits to unrelated packages outside the target directory.",
+            "description": "Audits BUILD.bazel and .bzl files for redundant default attributes (crate_name == name, version = \"0.1.0\" on internal rustc_* targets, default crate_root), single-platform srcs = select({..., \"//conditions:default\": []}) workarounds that should use target_compatible_with, inline-expanded GN read_file() lists missing LINT.IfChange/LINT.ThenChange, buildifier formatting and buildifier_lint warnings, and drive-by edits to unrelated packages outside the target directory.",
             "script_file": "bazel_minimality.sh",
             "enabled": true
         },

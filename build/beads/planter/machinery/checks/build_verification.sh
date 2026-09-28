@@ -37,8 +37,19 @@ set -uo pipefail
 # With several target directories planter runs checks once per directory; this
 # check only builds on the run for the first one.
 #
+# Result reuse: a run whose builds all pass records a fingerprint of exactly
+# what it built in <git dir>/planter-build-verification.json. A later run with
+# the same fingerprint reuses that result instead of rebuilding (reported as an
+# INFO finding), so planter does not repeat the coder's final `run_checks.sh`.
+# The fingerprint covers this script, the git tree of the whole working tree
+# (committed or not, including untracked files), the build directories and
+# steps, args.gn, the last jiri update and the environment below. Failures are
+# never reused, and a result expires after PLANTER_BUILD_REUSE_TTL seconds.
+#
 # Environment:
 #   PLANTER_SKIP_BUILD=1          skip the builds (reports an INFO finding).
+#   PLANTER_BUILD_NO_REUSE=1      always build; do not reuse a recorded result.
+#   PLANTER_BUILD_REUSE_TTL=<secs>  max age of a reused result (default 21600).
 #   PLANTER_BUILD_DRY_RUN=1       run nothing; report the planned commands as
 #                                 INFO findings.
 #   PLANTER_BUILD_TIMEOUT=<secs>  per-step timeout (default 5400).
@@ -55,13 +66,16 @@ if [[ -n "$TARGET_DIR" && -n "$first_dir" && "$TARGET_DIR" != "$first_dir" ]]; t
   exit 0
 fi
 
-python3 - "$WORKDIR" "$TARGET_DIRS" <<'PYEOF'
+python3 - "$WORKDIR" "$TARGET_DIRS" "${BASH_SOURCE[0]}" <<'PYEOF'
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 
 workdir = os.path.abspath(sys.argv[1])
 target_dirs = [d.strip().strip("/") for d in sys.argv[2].split() if d.strip().strip("/")]
@@ -403,7 +417,97 @@ if change_base != "HEAD":
                         ),
                     })
 
+STEP_BLOCKING = ("ERROR", "WARNING")
+reuse_path = None
+reuse_key = None
+reused = None
+if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0"):
+    def _git_bytes(args):
+        return subprocess.run(["git", "-C", workdir] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout
+
+    def _file_digest(path):
+        h = hashlib.sha256()
+        try:
+            if os.path.islink(path):
+                h.update(b"link:" + os.readlink(path).encode())
+            else:
+                with open(path, "rb") as f:
+                    for chunk in iter(lambda: f.read(1 << 20), b""):
+                        h.update(chunk)
+        except OSError:
+            h.update(b"missing")
+        return h.hexdigest()
+
+    def _worktree_tree():
+        # The git tree of the whole working tree (tracked edits and untracked, non-ignored files),
+        # so committing the change after a run does not change the fingerprint. Uses a copy of
+        # the index so the real one is untouched and its stat cache keeps this fast.
+        git_dir = _git_bytes(["rev-parse", "--absolute-git-dir"]).decode().strip()
+        fd, index = tempfile.mkstemp(dir=git_dir, prefix=".planter-build-verification-index.")
+        os.close(fd)
+        try:
+            try:
+                shutil.copyfile(os.path.join(git_dir, "index"), index)
+            except OSError:
+                os.unlink(index)
+            env = dict(os.environ, GIT_INDEX_FILE=index)
+            subprocess.run(["git", "-C", workdir, "add", "-A", "."], env=env, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=True)
+            return subprocess.run(["git", "-C", workdir, "write-tree"], env=env, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, check=True).stdout
+        finally:
+            try:
+                os.unlink(index)
+            except OSError:
+                pass
+
+    def _fingerprint():
+        h = hashlib.sha256()
+
+        def _add(label, data):
+            if isinstance(data, str):
+                data = data.encode()
+            h.update(label.encode() + b"\0" + str(len(data)).encode() + b"\0" + data)
+
+        _add("script", _file_digest(sys.argv[3]))
+        _add("tree", _worktree_tree())
+        _add("dirs", json.dumps([sorted(dirs), sorted(bazel_dirs), sorted(host_dirs)]))
+        _add("steps", json.dumps([[n, c] for n, c in steps]))
+        _add("env", json.dumps([timeout, dependent_limit]))
+        build_dir = (read(".fx-build-dir") or "").strip()
+        _add("build_dir", build_dir)
+        if build_dir:
+            _add("args.gn", _file_digest(os.path.join(workdir, build_dir, "args.gn")))
+        _add("jiri", _file_digest(os.path.join(workdir, ".jiri_root", "update_history", "latest")))
+        return h.hexdigest()
+
+    try:
+        git_dir = _git_bytes(["rev-parse", "--absolute-git-dir"]).decode().strip()
+        reuse_path = os.path.join(git_dir, "planter-build-verification.json")
+        reuse_key = _fingerprint()
+        ttl = int(os.environ.get("PLANTER_BUILD_REUSE_TTL", "21600"))
+        with open(reuse_path) as f:
+            rec = json.load(f)
+        if rec.get("key") == reuse_key and 0 <= time.time() - rec.get("time", 0) <= ttl:
+            cached = rec.get("findings")
+            if isinstance(cached, list) and not any(c.get("severity") in STEP_BLOCKING for c in cached):
+                reused = cached
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        pass
+
 failed = set()
+step_findings_start = len(findings)
+if reused is not None:
+    findings.extend(reused)
+    findings.append({
+        "source": "build_verification",
+        "category": "build_reused",
+        "severity": "INFO",
+        "message": "Reused the passing build result recorded for this exact change "
+                   f"({time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rec['time']))}); "
+                   "set PLANTER_BUILD_NO_REUSE=1 to rebuild.",
+    })
+    steps = []
 for name, cmd in steps:
     if name == "gn_build_dependents":
         if "gn_build" in failed:
@@ -445,6 +549,18 @@ for name, cmd in steps:
     })
     if name == "gn_build" and re.search(r"fx set|no build directory|Unable to find build directory", output, re.I):
         break  # The tree is not configured; the remaining steps would fail the same way.
+
+step_findings = findings[step_findings_start:]
+if reused is None and reuse_key and not any(f.get("severity") in STEP_BLOCKING for f in step_findings):
+    try:
+        if _fingerprint() != reuse_key:
+            raise OSError("the change was edited during the build")
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(reuse_path), prefix=".planter-build-verification.")
+        with os.fdopen(fd, "w") as f:
+            json.dump({"key": reuse_key, "time": time.time(), "findings": step_findings}, f)
+        os.replace(tmp, reuse_path)
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        pass
 
 print(json.dumps(findings, indent=2))
 PYEOF
