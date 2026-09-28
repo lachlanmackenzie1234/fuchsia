@@ -44,11 +44,13 @@ impl PerCpuState {
     }
 
     /// Returns a pointer to the `begin` counter for the given index.
+    #[inline]
     fn begin_counter(&self, index: usize) -> *mut usize {
         self.counts[index].begin.get()
     }
 
     /// Returns a pointer to the `end` counter for the given index.
+    #[inline]
     fn end_counter(&self, index: usize) -> *mut usize {
         self.counts[index].end.get()
     }
@@ -77,41 +79,44 @@ impl RcuReadCounters {
     }
 
     /// Returns the state for a specific CPU.
+    #[inline]
     fn get_state(&self, cpu: u32) -> &PerCpuState {
         &self.per_cpu_counts[cpu as usize]
-    }
-
-    #[inline]
-    unsafe fn get_rseq() -> Rseq {
-        unsafe {
-            match Rseq::try_get() {
-                Some(rseq) => rseq,
-                None => {
-                    // Permanently claim the rseq registration for this thread. There currently
-                    // aren't other uses for rseq and claiming it allows us to avoid registartion
-                    // overhead on future accesses.
-                    crate::state_machine::register_thread().leak();
-                    Rseq::get()
-                }
-            }
-        }
     }
 
     /// Signals the start of a read-side critical section.
     ///
     /// This increments the `begin` counter for the current CPU. It uses RSEQ to ensure the
     /// increment is atomic with respect to the current CPU.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `rseq` is registered for the calling thread with
+    /// `rcu_critical_section()`, and `index` is within bounds of the read counters.
     #[inline]
-    pub(crate) fn begin(&self, index: usize) {
-        unsafe {
-            let rseq = Self::get_rseq();
-            loop {
-                let cpu = rseq.current_cpu();
-                let counter = self.get_state(cpu).begin_counter(index);
-                if rseq_add(&rseq, counter, 1, cpu) {
-                    break;
-                }
+    pub(crate) unsafe fn begin(&self, rseq: &Rseq, index: usize) {
+        loop {
+            // SAFETY: The caller guarantees `rseq` is valid and active for the current thread.
+            let cpu = unsafe { rseq.current_cpu() };
+            let counter = self.get_state(cpu).begin_counter(index);
+            // SAFETY: The caller guarantees `counter` is valid for `cpu` and `rseq` has
+            // `rcu_critical_section()` registered.
+            if unsafe { rseq_add(rseq, counter, 1, cpu) } {
+                break;
             }
+        }
+    }
+
+    /// Signals the start of a read-side critical section when the thread is not pre-registered.
+    ///
+    /// Registers the thread with RSEQ for the duration of the outermost RCU read lock.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn begin_slow(&self, index: usize) {
+        let rseq = fuchsia_rseq::rseq_register_thread_with_cs(rcu_critical_section());
+        // SAFETY: `rseq` was registered with `rcu_critical_section()` on the line above.
+        unsafe {
+            self.begin(&rseq, index);
         }
     }
 
@@ -119,17 +124,43 @@ impl RcuReadCounters {
     ///
     /// This increments the `end` counter for the current CPU. It uses RSEQ to ensure the increment
     /// is atomic with respect to the current CPU.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `rseq` is registered for the calling thread with
+    /// `rcu_critical_section()`, and `index` is within bounds of the read counters.
     #[inline]
-    pub(crate) fn end(&self, index: usize) {
-        unsafe {
-            let rseq = Self::get_rseq();
-            loop {
-                let cpu = rseq.current_cpu();
-                let counter = self.get_state(cpu).end_counter(index);
-                if rseq_add(&rseq, counter, 1, cpu) {
-                    break;
-                }
+    pub(crate) unsafe fn end(&self, rseq: &Rseq, index: usize) {
+        loop {
+            // SAFETY: The caller guarantees `rseq` is valid and active for the current thread.
+            let cpu = unsafe { rseq.current_cpu() };
+            let counter = self.get_state(cpu).end_counter(index);
+            // SAFETY: The caller guarantees `counter` is valid for `cpu` and `rseq` has
+            // `rcu_critical_section()` registered.
+            if unsafe { rseq_add(rseq, counter, 1, cpu) } {
+                break;
             }
+        }
+    }
+
+    /// Signals the end of a read-side critical section when the thread is not pre-registered.
+    ///
+    /// Unregisters the thread from RSEQ after ending the outermost RCU read lock.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn end_slow(&self, index: usize) {
+        // SAFETY: `begin_slow` registered the current thread when entering the outermost
+        // RCU read lock, and we unregister it immediately after `end()`.
+        let rseq = unsafe { Rseq::get() };
+        // SAFETY: `begin_slow` registered `rseq` with `rcu_critical_section()` and it is not
+        // unregistered until below.
+        unsafe {
+            self.end(&rseq, index);
+        }
+        // SAFETY: The thread was temporarily registered in `begin_slow` and `end()` has
+        // completed; `rseq` is no longer accessed and no other handles or critical sections exist.
+        unsafe {
+            fuchsia_rseq::rseq_unregister_thread();
         }
     }
 
@@ -217,6 +248,7 @@ pub(crate) fn rcu_critical_section() -> RseqCriticalSection {
 ///
 /// The caller must ensure that `counter` points to a per-CPU counter for the given CPU and that
 /// `rcu_critical_section()` is currently active in `rseq` for the calling thread.
+#[inline]
 unsafe fn rseq_add(rseq: &Rseq, counter: *mut usize, value: usize, cpu: u32) -> bool {
     // SAFETY: The caller guarantees `counter` is valid for `cpu` and `rseq` has
     // `rcu_critical_section()` registered to abort if preempted or migrated before
