@@ -1446,8 +1446,13 @@ impl ObjectStore {
         }
     }
 
-    /// Purges an object that is in the graveyard. If a truncate guard is not provided, one will be
-    /// acquired.
+    /// Tombstones (purges) an object that is in the graveyard by deallocating its extents,
+    /// removing its graveyard entry, and inserting an LSM-tree tombstone record
+    /// (`ObjectValue::None`). If a truncate guard is not provided, one will be acquired.
+    ///
+    /// Callers outside of [`ObjectStore`] should generally prefer
+    /// [`FxFilesystem::tombstone_object`] or [`Graveyard::queue_tombstone_object`] so that
+    /// transaction reservations are configured appropriately for the store.
     pub async fn tombstone_object(
         &self,
         object_id: u64,
@@ -1580,7 +1585,13 @@ impl ObjectStore {
         Ok(())
     }
 
-    // Purges an object's attribute that is in the graveyard.
+    /// Tombstones (purges) an object's attribute that is in the graveyard by deallocating its
+    /// extents, removing its graveyard entry, and inserting an LSM-tree tombstone record
+    /// (`ObjectValue::None`).
+    ///
+    /// Callers outside of [`ObjectStore`] should generally prefer
+    /// [`FxFilesystem::tombstone_attribute`] or [`Graveyard::queue_tombstone_attribute`] so that
+    /// transaction reservations are configured appropriately for the store.
     pub async fn tombstone_attribute(
         &self,
         object_id: u64,
