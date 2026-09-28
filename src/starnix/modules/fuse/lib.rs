@@ -69,7 +69,6 @@ uapi::check_arch_independent_layout! {
     fuse_attr_out {}
     fuse_create_in {}
     fuse_dirent {}
-    fuse_entry_bpf_out {}
     fuse_entry_out {}
     fuse_flush_in {}
     fuse_forget_in {}
@@ -1193,18 +1192,14 @@ impl DirEntryOps for FuseDirEntry {
             (parent, name)
         };
         let parent = FuseNode::from_node(&parent.node);
-        let FuseEntryOutExtended {
-            arg:
-                uapi::fuse_entry_out {
-                    nodeid,
-                    generation,
-                    entry_valid,
-                    entry_valid_nsec,
-                    attr,
-                    attr_valid,
-                    attr_valid_nsec,
-                },
-            ..
+        let uapi::fuse_entry_out {
+            nodeid,
+            generation,
+            entry_valid,
+            entry_valid_nsec,
+            attr,
+            attr_valid,
+            attr_valid_nsec,
         } = match parent.connection.lock().execute_operation(
             current_task,
             parent,
@@ -2458,7 +2453,7 @@ impl RunningOperationKind {
                 Ok(FuseResponse::Init(Self::to_response::<uapi::fuse_init_out>(&buffer)))
             }
             Self::Lookup | Self::Mkdir | Self::Mknod | Self::Link | Self::Symlink => {
-                Ok(FuseResponse::Entry(Self::to_response::<FuseEntryOutExtended>(&buffer)))
+                Ok(FuseResponse::Entry(Self::to_response::<uapi::fuse_entry_out>(&buffer)))
             }
             Self::Open { .. } => {
                 Ok(FuseResponse::Open(Self::to_response::<uapi::fuse_open_out>(&buffer)))
@@ -2676,7 +2671,7 @@ enum FuseResponse {
     Access(Result<(), Errno>),
     Attr(uapi::fuse_attr_out),
     Create(CreateResponse),
-    Entry(FuseEntryOutExtended),
+    Entry(uapi::fuse_entry_out),
     GetXAttr(ValueOrSize<FsString>),
     Init(uapi::fuse_init_out),
     Open(uapi::fuse_open_out),
@@ -2694,7 +2689,7 @@ enum FuseResponse {
 
 impl FuseResponse {
     fn entry(&self) -> Option<&uapi::fuse_entry_out> {
-        if let Self::Entry(entry) = self { Some(&entry.arg) } else { None }
+        if let Self::Entry(entry) = self { Some(entry) } else { None }
     }
 }
 
@@ -2707,18 +2702,6 @@ struct CreateResponse {
 
 static_assertions::const_assert_eq!(
     std::mem::offset_of!(CreateResponse, open),
-    std::mem::size_of::<uapi::fuse_entry_out>()
-);
-
-#[repr(C)]
-#[derive(Clone, Debug, KnownLayout, FromBytes, IntoBytes, Immutable)]
-struct FuseEntryOutExtended {
-    arg: uapi::fuse_entry_out,
-    bpf_arg: uapi::fuse_entry_bpf_out,
-}
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(FuseEntryOutExtended, bpf_arg),
     std::mem::size_of::<uapi::fuse_entry_out>()
 );
 
