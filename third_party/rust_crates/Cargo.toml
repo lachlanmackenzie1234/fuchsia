@@ -92,7 +92,7 @@ cpio = "0.4.1"
 crc = "3.4.0"
 crc32fast = "1.5.0"
 criterion = { version = "0.8.2", default-features = false, features = ["csv_output", "cargo_bench_support"] }
-crossbeam = "0.8.4"
+crossbeam = "0.8.5"
 crossbeam-utils = "0.8.23"
 csv = "1.4.0"
 darling = "0.23.0"

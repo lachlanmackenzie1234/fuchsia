@@ -667,14 +667,14 @@ alias(
 )
 
 alias(
-    name = "crossbeam-0.8.4",
-    actual = "//third_party/rust_crates/vendor/crossbeam-0.8.4:crossbeam",
+    name = "crossbeam-0.8.5",
+    actual = "//third_party/rust_crates/vendor/crossbeam-0.8.5:crossbeam",
     tags = ["manual"],
 )
 
 alias(
     name = "crossbeam",
-    actual = "//third_party/rust_crates/vendor/crossbeam-0.8.4:crossbeam",
+    actual = "//third_party/rust_crates/vendor/crossbeam-0.8.5:crossbeam",
     tags = ["manual"],
 )
 

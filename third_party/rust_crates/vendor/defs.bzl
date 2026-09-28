@@ -341,7 +341,7 @@ _NORMAL_DEPENDENCIES = {
             "crc": Label("//third_party/rust_crates/vendor/crc-3.4.0:crc"),
             "crc32fast": Label("//third_party/rust_crates/vendor/crc32fast-1.5.0:crc32fast"),
             "criterion": Label("//third_party/rust_crates/vendor/criterion-0.8.2:criterion"),
-            "crossbeam": Label("//third_party/rust_crates/vendor/crossbeam-0.8.4:crossbeam"),
+            "crossbeam": Label("//third_party/rust_crates/vendor/crossbeam-0.8.5:crossbeam"),
             "crossbeam-utils": Label("//third_party/rust_crates/vendor/crossbeam-utils-0.8.23:crossbeam_utils"),
             "csv": Label("//third_party/rust_crates/vendor/csv-1.4.0:csv"),
             "darling": Label("//third_party/rust_crates/vendor/darling-0.23.0:darling"),

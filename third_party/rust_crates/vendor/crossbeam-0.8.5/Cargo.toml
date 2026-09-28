@@ -13,12 +13,18 @@
 edition = "2021"
 rust-version = "1.61"
 name = "crossbeam"
-version = "0.8.4"
+version = "0.8.5"
+build = false
 exclude = [
     "/.*",
     "/ci",
     "/tools",
 ]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 description = "Tools for concurrent programming"
 homepage = "https://github.com/crossbeam-rs/crossbeam"
 readme = "README.md"
@@ -37,6 +43,34 @@ categories = [
 ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/crossbeam-rs/crossbeam"
+
+[features]
+alloc = [
+    "crossbeam-epoch/alloc",
+    "crossbeam-queue/alloc",
+]
+default = ["std"]
+nightly = [
+    "crossbeam-epoch/nightly",
+    "crossbeam-utils/nightly",
+    "crossbeam-queue/nightly",
+]
+std = [
+    "alloc",
+    "crossbeam-channel/std",
+    "crossbeam-deque/std",
+    "crossbeam-epoch/std",
+    "crossbeam-queue/std",
+    "crossbeam-utils/std",
+]
+
+[lib]
+name = "crossbeam"
+path = "src/lib.rs"
+
+[[test]]
+name = "subcrates"
+path = "tests/subcrates.rs"
 
 [dependencies.crossbeam-channel]
 version = "0.5.10"
@@ -65,22 +99,18 @@ default-features = false
 [dev-dependencies.rand]
 version = "0.8"
 
-[features]
-alloc = [
-    "crossbeam-epoch/alloc",
-    "crossbeam-queue/alloc",
-]
-default = ["std"]
-nightly = [
-    "crossbeam-epoch/nightly",
-    "crossbeam-utils/nightly",
-    "crossbeam-queue/nightly",
-]
-std = [
-    "alloc",
-    "crossbeam-channel/std",
-    "crossbeam-deque/std",
-    "crossbeam-epoch/std",
-    "crossbeam-queue/std",
-    "crossbeam-utils/std",
+[lints.clippy.declare_interior_mutable_const]
+level = "allow"
+priority = 1
+
+[lints.clippy.lint_groups_priority]
+level = "allow"
+priority = 1
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = [
+    "cfg(crossbeam_loom)",
+    "cfg(crossbeam_sanitize)",
 ]

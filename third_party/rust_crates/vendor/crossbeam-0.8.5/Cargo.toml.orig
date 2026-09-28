@@ -2,9 +2,9 @@
 name = "crossbeam"
 # When publishing a new version:
 # - Update CHANGELOG.md
-# - Update README.md
-# - Create "crossbeam-X.Y.Z" git tag
-version = "0.8.4"
+# - Update README.md (when increasing major or minor version)
+# - Run './tools/publish.sh crossbeam <version>'
+version = "0.8.5"
 edition = "2021"
 rust-version = "1.61"
 license = "MIT OR Apache-2.0"
@@ -50,6 +50,9 @@ crossbeam-utils = { version = "0.8.18", path = "crossbeam-utils", default-featur
 [dev-dependencies]
 rand = "0.8"
 
+[lints]
+workspace = true
+
 [workspace]
 resolver = "2"
 members = [
@@ -59,6 +62,16 @@ members = [
   "crossbeam-deque",
   "crossbeam-epoch",
   "crossbeam-queue",
-  "crossbeam-skiplist",
+  # "crossbeam-skiplist", # Not published from this branch.
   "crossbeam-utils",
 ]
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(crossbeam_loom)',
+  'cfg(crossbeam_sanitize)',
+] }
+[workspace.lints.clippy]
+# Suppress buggy or noisy clippy lints
+declare_interior_mutable_const = { level = "allow", priority = 1 } # https://github.com/rust-lang/rust-clippy/issues/7665
+lint_groups_priority = { level = "allow", priority = 1 } # https://github.com/rust-lang/rust-clippy/issues/12920
