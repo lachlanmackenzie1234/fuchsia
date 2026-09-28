@@ -58,7 +58,7 @@ pub use packed_pointer::PackedPointer;
 pub use pin_init;
 pub use ptr_traits::{ManagedPtr, PtrTraits};
 pub use recyclable::{Recyclable, UninitRecyclable};
-pub use ref_counted::{HasRefCount, RefCounted};
+pub use ref_counted::{HasRefCount, HasRefCountUpgradeable, RefCounted};
 pub use ref_ptr::RefPtr;
 pub use ring_buffer::RingBuffer;
 pub use sentinel::*;

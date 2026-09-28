@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::recyclable::{Recyclable, UninitRecyclable};
-use crate::ref_counted::HasRefCount;
+use crate::ref_counted::{HasRefCount, HasRefCountUpgradeable};
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr::NonNull;
@@ -187,6 +187,42 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
     }
 }
 
+impl<T: HasRefCount + Recyclable + HasRefCountUpgradeable> RefPtr<T> {
+    /// Constructs a RefPtr from a raw T* which is being held alive by RefPtr
+    /// with the caveat that the existing RefPtr might be in the process of
+    /// destructing the T object. When the T object is in the destructor, the
+    /// resulting RefPtr is null, otherwise the resulting RefPtr points to T*
+    /// with the updated reference count.
+    ///
+    /// The only way for this to be a valid pattern is that the call is made
+    /// while holding some lock and that the same lock also is used to protect the
+    /// value of T* .
+    ///
+    /// This pattern is needed in collaborating objects which cannot hold a
+    /// RefPtr to each other because it would cause a reference cycle. Instead
+    /// there is a raw pointer from one to the other and a RefPtr in the
+    /// other direction. When needed the raw pointer can be upgraded via
+    /// make_ref_ptr_upgrade_from_raw and operated outside the lock.
+    ///
+    /// # Safety
+    ///
+    /// - The caller must ensure that `ptr` is valid.
+    /// - `ptr` must have been allocated in such a way that calling `T::recycle(ptr)` is a
+    ///   correct way to deallocate the pointer.
+    /// - Caller must hold a lock or otherwise know that `ptr` lives for the duration of this
+    ///   method.
+    pub unsafe fn make_ref_ptr_upgrade_from_raw(ptr: *const T) -> Option<Self> {
+        // SAFETY: The caller must ensure that ptr is valid.
+        unsafe {
+            if !ptr.as_ref_unchecked().ref_count().add_ref_maybe_in_destructor() {
+                None
+            } else {
+                Some(Self::from_raw(ptr))
+            }
+        }
+    }
+}
+
 impl<T: HasRefCount + Recyclable> Deref for RefPtr<T> {
     type Target = T;
     #[inline]
@@ -288,7 +324,10 @@ mod tests {
     use core::sync::atomic::{AtomicBool, Ordering};
 
     extern crate alloc;
+    extern crate std;
     use alloc::sync::Arc;
+    use std::sync::{Barrier, Mutex};
+    use std::thread;
 
     #[unsafe(no_mangle)]
     pub extern "C" fn rust_recycle_test_rust_ref_counted(ptr: *mut c_void) {
@@ -435,5 +474,94 @@ mod tests {
             drop(ref_ptr2);
             assert!(destroyed.load(Ordering::Relaxed));
         }
+    }
+
+    #[fbl::ref_counted]
+    #[derive(crate::Recyclable)]
+    #[repr(C)]
+    struct RawUpgradeTester {
+        mutex: Arc<Mutex<()>>,
+        destroying: Arc<AtomicBool>,
+        destroying_barrier: Option<Arc<Barrier>>,
+    }
+
+    impl HasRefCountUpgradeable for RawUpgradeTester {}
+
+    impl Drop for RawUpgradeTester {
+        fn drop(&mut self) {
+            self.destroying.store(true, Ordering::SeqCst);
+            if let Some(barrier) = &self.destroying_barrier {
+                barrier.wait();
+            }
+            let _guard = self.mutex.lock().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_upgrade_fail() {
+        let mutex = Arc::new(Mutex::new(()));
+        let destroying = Arc::new(AtomicBool::new(false));
+        let destroying_barrier = Arc::new(Barrier::new(2));
+
+        let ref_ptr = make_ref_counted!(RawUpgradeTester {
+            mutex: mutex.clone(),
+            destroying: destroying.clone(),
+            destroying_barrier: Some(destroying_barrier.clone()),
+        })
+        .unwrap();
+        let raw = RefPtr::as_ptr(&ref_ptr);
+
+        let handle = {
+            let _guard = mutex.lock().unwrap();
+            let handle = thread::spawn(move || {
+                // Dropping `ref_ptr` will call the destructor, which we expect to
+                // block because `test_upgrade_fail` is holding the mutex.
+                drop(ref_ptr);
+            });
+
+            // Wait until the thread is in the destructor.
+            destroying_barrier.wait();
+            assert!(destroying.load(Ordering::SeqCst));
+
+            // The RawUpgradeTester must be blocked in the destructor, the upgrade will fail.
+            // SAFETY: `raw` is valid because the destructor is blocked on `mutex`.
+            let upgrade1 = unsafe { RefPtr::make_ref_ptr_upgrade_from_raw(raw) };
+            assert!(upgrade1.is_none());
+
+            // Verify that the previous upgrade attempt did not change the refcount.
+            // SAFETY: `raw` is valid because the destructor is blocked on `mutex`.
+            let upgrade2 = unsafe { RefPtr::make_ref_ptr_upgrade_from_raw(raw) };
+            assert!(upgrade2.is_none());
+
+            handle
+        };
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_upgrade_success() {
+        let mutex = Arc::new(Mutex::new(()));
+        let destroying = Arc::new(AtomicBool::new(false));
+
+        let ref_ptr = make_ref_counted!(RawUpgradeTester {
+            mutex: mutex.clone(),
+            destroying: destroying.clone(),
+            destroying_barrier: None,
+        })
+        .unwrap();
+        let raw = RefPtr::as_ptr(&ref_ptr);
+
+        {
+            let _guard = mutex.lock().unwrap();
+            // RawUpgradeTester is not in the destructor so the upgrade should
+            // succeed.
+            // SAFETY: `raw` is valid because `ref_ptr` is alive.
+            let upgrade = unsafe { RefPtr::make_ref_ptr_upgrade_from_raw(raw) };
+            assert!(upgrade.is_some());
+        }
+
+        drop(ref_ptr);
+        assert!(destroying.load(Ordering::SeqCst));
     }
 }
