@@ -166,7 +166,7 @@ impl CryptService {
                                 EncryptionKeyId::from(wrapping_key_id),
                                 object_type,
                             ) {
-                                Ok((ref wrapped, ref key)) => Ok((wrapped, key)),
+                                Ok((ref wrapped, ref key)) => Ok((wrapped, key, None)),
                                 Err(e) => Err(e.into_raw()),
                             },
                         )
@@ -177,7 +177,7 @@ impl CryptService {
                 Ok(CryptRequest::UnwrapKey { owner, wrapped_key, responder }) => {
                     responder
                         .send(match self.unwrap_key(owner, wrapped_key) {
-                            Ok(ref unwrapped) => Ok(unwrapped),
+                            Ok(ref unwrapped) => Ok((unwrapped, None)),
                             Err(e) => Err(e.into_raw()),
                         })
                         .unwrap_or_else(

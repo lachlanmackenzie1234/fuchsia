@@ -78,19 +78,23 @@ closed protocol Crypt {
 
     /// Creates a new key wrapped with the key identified by `wrapping_key_id`.  `owner` identifies
     /// the owner of the key and must be supplied to `UnwrapKey` along with  `wrapping_key_id`.
-    /// The `wrapping_key_id` has no meaning to Fxfs.
+    /// The `wrapping_key_id` has no meaning to Fxfs.  If the key uses hardware inline encryption,
+    /// `key_token` is returned so the filesystem can register the key with its block session.
     strict CreateKeyWithId(struct {
         owner uint64;
         wrapping_key_id array<uint8, 16>;
         object_type ObjectType;
-    }) -> (struct {
+    }) -> (resource struct {
         wrapped_key WrappedKey;
         unwrapped_key vector<uint8>:80;
+        key_token zx.Handle:<EVENTPAIR, optional>;
     }) error zx.Status;
 
     /// Unwraps a key.  `owner` must be the same as that passed to `CreateKey`.
     /// This can fail due to permission reasons, but an incorrect key or owner will not fail;
     /// it will just return an unwrapped key that won't actually decrpyt the data.
+    /// If the key uses hardware inline encryption, `key_token` is returned so the filesystem can
+    /// register the key with its block session.
     /// ZX_ERR_UNAVAILABLE is returned if the key is known but cannot be unwrapped (e.g. it is
     /// locked).
     /// ZX_ERR_NOT_FOUND is returned if the key is not known. In some cases, implementations are
@@ -99,8 +103,9 @@ closed protocol Crypt {
     strict UnwrapKey(struct {
         owner uint64;
         wrapped_key WrappedKey;
-    }) -> (struct {
+    }) -> (resource struct {
         unwrapped_key vector<uint8>:128;
+        key_token zx.Handle:<EVENTPAIR, optional>;
     }) error zx.Status;
 };
 

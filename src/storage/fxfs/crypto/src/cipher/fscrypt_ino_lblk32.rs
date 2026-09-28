@@ -180,7 +180,14 @@ pub(super) struct FscryptInoLblk32FileCipher {
 
 impl FscryptInoLblk32FileCipher {
     pub fn new(key: &UnwrappedKey) -> Self {
-        Self { slot: key[0], ino_hash_key: key[1..17].try_into().unwrap() }
+        // TODO(https://fxbug.dev/520619432): Once starnix_crypt passes `key_token` instead of
+        // prepending the slot byte to `unwrapped_key`, always use `key.slot().unwrap()` and
+        // `key[..16]`.
+        if let Some(slot) = key.slot() {
+            Self { slot, ino_hash_key: key[..16].try_into().unwrap() }
+        } else {
+            Self { slot: key[0], ino_hash_key: key[1..17].try_into().unwrap() }
+        }
     }
 
     #[inline(always)]
@@ -310,7 +317,8 @@ impl FscryptSoftwareInoLblk32FileCipher {
 #[cfg(test)]
 mod tests {
     use super::{
-        BLOCK_SIZE, FscryptInoLblk32DirCipher, FscryptSoftwareInoLblk32FileCipher, UnwrappedKey,
+        BLOCK_SIZE, FscryptInoLblk32DirCipher, FscryptInoLblk32FileCipher,
+        FscryptSoftwareInoLblk32FileCipher, UnwrappedKey,
     };
     use crate::Cipher;
     use crate::cipher::fscrypt_test_data;
@@ -320,7 +328,7 @@ mod tests {
     #[test]
     fn test_encrypt_filename() {
         let mut unwrapped_key = UnwrappedKey::new([0; 64].to_vec());
-        unwrapped_key.0[0] = 0x10;
+        unwrapped_key[0] = 0x10;
         let cipher: Arc<dyn Cipher> = Arc::new(FscryptInoLblk32DirCipher::new(&unwrapped_key));
         let object_id = 2;
 
@@ -402,7 +410,7 @@ mod tests {
         // cat in.txt
         // ```
         let mut unwrapped_key = UnwrappedKey::new([0; 64].to_vec());
-        unwrapped_key.0[0] = 0x10;
+        unwrapped_key[0] = 0x10;
         let cipher: Arc<dyn Cipher> = Arc::new(FscryptInoLblk32DirCipher::new(&unwrapped_key));
         let object_id = 2;
 
@@ -421,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_generated_filenames() {
-        let cipher: Arc<dyn Cipher> = Arc::new(FscryptInoLblk32DirCipher::new(&UnwrappedKey(
+        let cipher: Arc<dyn Cipher> = Arc::new(FscryptInoLblk32DirCipher::new(&UnwrappedKey::new(
             fscrypt::to_directory_keys(
                 fscrypt_test_data::KEY,
                 fscrypt_test_data::UUID,
@@ -449,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_generated_casefold_filenames() {
-        let unwrapped = UnwrappedKey(
+        let unwrapped = UnwrappedKey::new(
             fscrypt::to_directory_keys(
                 fscrypt_test_data::KEY,
                 fscrypt_test_data::UUID,
@@ -488,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_generated_casefold_symlinks() {
-        let unwrapped = UnwrappedKey(
+        let unwrapped = UnwrappedKey::new(
             fscrypt::to_directory_keys(
                 fscrypt_test_data::KEY,
                 fscrypt_test_data::UUID,
@@ -578,5 +586,20 @@ mod tests {
         // Verify multi-block decrypt restores all blocks at once.
         cipher.decrypt(&mut multi_block_buf, base_tweak).expect("multi-block decrypt failed");
         assert_eq!(multi_block_buf, original_plaintext);
+    }
+
+    #[test]
+    fn test_file_cipher_uses_registered_slot() {
+        let ino_hash_key = [0xab; 16];
+        let unwrapped_with_slot = UnwrappedKey::new_with_slot(ino_hash_key.to_vec(), Some(42));
+        let cipher = FscryptInoLblk32FileCipher::new(&unwrapped_with_slot);
+
+        let mut legacy_bytes = vec![42];
+        legacy_bytes.extend_from_slice(&ino_hash_key);
+        let legacy_cipher = FscryptInoLblk32FileCipher::new(&UnwrappedKey::new(legacy_bytes));
+
+        let (dun, slot) = cipher.crypt_ctx(7, 0, 3 * BLOCK_SIZE as u64).unwrap();
+        assert_eq!(slot, 42);
+        assert_eq!(Some((dun, slot)), legacy_cipher.crypt_ctx(7, 0, 3 * BLOCK_SIZE as u64));
     }
 }

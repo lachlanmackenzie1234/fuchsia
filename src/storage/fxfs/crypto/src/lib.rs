@@ -38,16 +38,33 @@ pub const FXFS_WRAPPED_KEY_SIZE: usize = FXFS_KEY_SIZE + 16;
 /// Essentially just a vector by another name to indicate that it holds unwrapped key material.
 /// The length of an unwrapped key depends on the type of key that is wrapped.
 #[derive(Debug)]
-pub struct UnwrappedKey(Vec<u8>);
+pub struct UnwrappedKey {
+    key: Vec<u8>,
+    /// Optional inline encryption key slot registered with the block device.
+    slot: Option<u8>,
+}
 impl UnwrappedKey {
     pub fn new(key: Vec<u8>) -> Self {
-        UnwrappedKey(key)
+        Self { key, slot: None }
+    }
+
+    pub fn new_with_slot(key: Vec<u8>, slot: Option<u8>) -> Self {
+        Self { key, slot }
+    }
+
+    pub fn slot(&self) -> Option<u8> {
+        self.slot
     }
 }
 impl std::ops::Deref for UnwrappedKey {
     type Target = Vec<u8>;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.key
+    }
+}
+impl std::ops::DerefMut for UnwrappedKey {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.key
     }
 }
 

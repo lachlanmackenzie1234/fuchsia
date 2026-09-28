@@ -106,7 +106,8 @@ mod tests {
             })
             .detach();
 
-            let crypt = Arc::new(RemoteCrypt::new(crypt_client));
+            let crypt =
+                Arc::new(RemoteCrypt::new_with_device(crypt_client, self.filesystem.device()));
             let root_volume =
                 root_volume(self.filesystem.clone()).await.expect("root_volume failed");
             let vol = root_volume
@@ -146,7 +147,8 @@ mod tests {
             })
             .detach();
 
-            let crypt = Arc::new(RemoteCrypt::new(crypt_client));
+            let crypt =
+                Arc::new(RemoteCrypt::new_with_device(crypt_client, self.filesystem.device()));
             let root_volume =
                 root_volume(self.filesystem.clone()).await.expect("root_volume failed");
             root_volume
@@ -640,7 +642,7 @@ mod tests {
                 .expect("CryptService failed");
         })
         .detach();
-        let crypt = Arc::new(RemoteCrypt::new(crypt_client));
+        let crypt = Arc::new(RemoteCrypt::new_with_device(crypt_client, fs.device()));
         let store = root_volume
             .volume(
                 "starnix",

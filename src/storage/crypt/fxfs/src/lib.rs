@@ -4,10 +4,10 @@
 
 use anyhow::{Context, Error};
 use fidl_fuchsia_fxfs::{
-    CryptCreateKeyResult, CryptCreateKeyWithIdResult, CryptManagementAddWrappingKeyResult,
+    CryptCreateKeyResult, CryptManagementAddWrappingKeyResult,
     CryptManagementForgetWrappingKeyResult, CryptManagementRequest, CryptManagementRequestStream,
-    CryptManagementSetActiveKeyResult, CryptRequest, CryptRequestStream, CryptUnwrapKeyResult,
-    KeyPurpose, ObjectType as FxfsFidlObjectType, WrappedKey,
+    CryptManagementSetActiveKeyResult, CryptRequest, CryptRequestStream, KeyPurpose,
+    ObjectType as FxfsFidlObjectType, WrappedKey,
 };
 
 use futures::stream::TryStreamExt;
@@ -44,7 +44,7 @@ impl CryptService {
         owner: u64,
         wrapping_key_id: u128,
         object_type: FxfsFidlObjectType,
-    ) -> CryptCreateKeyWithIdResult {
+    ) -> Result<(WrappedKey, Vec<u8>), i32> {
         let (encryption_key, unwrapped_key) = self
             .inner
             .create_key_with_id(owner, wrapping_key_id.to_le_bytes(), object_type)
@@ -54,7 +54,7 @@ impl CryptService {
         Ok((WrappedKey::from(encryption_key), (*unwrapped_key).to_vec()))
     }
 
-    async fn unwrap_key(&self, owner: u64, wrapped_key: WrappedKey) -> CryptUnwrapKeyResult {
+    async fn unwrap_key(&self, owner: u64, wrapped_key: WrappedKey) -> Result<Vec<u8>, i32> {
         let unwrapped_key =
             self.inner.unwrap_key(&wrapped_key, owner).await.map_err(|e| e.into_raw())?;
         Ok((*unwrapped_key).to_vec())
@@ -119,7 +119,7 @@ impl CryptService {
                                         )
                                         .await
                                     {
-                                        Ok((ref wrapped, ref key)) => Ok((wrapped, key)),
+                                        Ok((ref wrapped, ref key)) => Ok((wrapped, key, None)),
                                         Err(e) => Err(e),
                                     },
                                 )
@@ -138,7 +138,7 @@ impl CryptService {
                                 .send({
                                     response = self.unwrap_key(owner, wrapped_key).await;
                                     match &response {
-                                        Ok(v) => Ok(&v[..]),
+                                        Ok(v) => Ok((&v[..], None)),
                                         Err(e) => Err(*e),
                                     }
                                 })
