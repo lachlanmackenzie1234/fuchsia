@@ -1824,6 +1824,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dd6caf6059519a65843af8fe2a3ae298b14b80179855aeb4adc2c1934ee619"
 
 [[package]]
+name = "fragile"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdb2ef9571de3fe79fb6b3b7f0567ddcce6b6c9cefdbc76af63895cf97b54649"
+dependencies = [
+ "futures-core",
+]
+
+[[package]]
 name = "fsevent-sys"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1915,7 +1924,7 @@ dependencies = [
  "flate2",
  "flyweights",
  "foreign-types",
- "fragile",
+ "fragile 3.0.0",
  "fuse3",
  "futures",
  "futures-executor",
@@ -3185,7 +3194,7 @@ checksum = "1a6ceddfe3ce334925e96bf420fdb2dcee5bed6c632a168ece622676dadeaf8a"
 dependencies = [
  "cfg-if",
  "downcast",
- "fragile",
+ "fragile 2.0.1",
  "mockall_derive",
  "predicates",
  "predicates-tree",

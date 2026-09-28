@@ -688,11 +688,11 @@ group("foreign-types-0.3.2") {
 }
 
 group("fragile") {
-  public_deps = [ ":fragile-v2_0_1" ]
+  public_deps = [ ":fragile-v3_0_0" ]
 }
 
-group("fragile-2.0.1") {
-  public_deps = [ ":fragile-v2_0_1" ]
+group("fragile-3.0.0") {
+  public_deps = [ ":fragile-v3_0_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -9776,6 +9776,40 @@ rustc_library("fragile-v2_0_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":fragile-v2_0_1.license" ]
+}
+
+license("fragile-v3_0_0.license") {
+  public_package_name = "fragile"
+  license_files = [ "//third_party/rust_crates/vendor/fragile-3.0.0/LICENSE" ]
+}
+
+rustc_library("fragile-v3_0_0") {
+  crate_name = "fragile"
+  source_root = "//third_party/rust_crates/vendor/fragile-3.0.0/src/lib.rs"
+  output_name = "fragile-1b5cc5e7753db670"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":futures-core-v0_3_34" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=1b5cc5e7753db670",
+    "-Cextra-filename=-1b5cc5e7753db670",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"future\"",
+    "--cfg=feature=\"futures-core\"",
+    "--cfg=feature=\"stream\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":fragile-v3_0_0.license" ]
 }
 
 license("fsevent-sys-v4_1_0.license") {

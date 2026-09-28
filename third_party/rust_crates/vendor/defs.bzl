@@ -360,7 +360,7 @@ _NORMAL_DEPENDENCIES = {
             "flate2": Label("//third_party/rust_crates/vendor/flate2-1.1.9:flate2"),
             "flyweights": Label("//third_party/rust_crates/vendor/flyweights-0.1.5:flyweights"),
             "foreign-types": Label("//third_party/rust_crates/vendor/foreign-types-0.3.2:foreign_types"),
-            "fragile": Label("//third_party/rust_crates/vendor/fragile-2.0.1:fragile"),
+            "fragile": Label("//third_party/rust_crates/vendor/fragile-3.0.0:fragile"),
             "futures": Label("//third_party/rust_crates/vendor/futures-0.3.34:futures"),
             "futures-executor": Label("//third_party/rust_crates/vendor/futures-executor-0.3.34:futures_executor"),
             "futures-io": Label("//third_party/rust_crates/vendor/futures-io-0.3.34:futures_io"),
