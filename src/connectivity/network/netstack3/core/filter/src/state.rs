@@ -315,6 +315,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for Rule<I, BT, ()> {
                 dst_address,
                 transport_protocol,
                 external_matcher,
+                mark_matcher,
             } = matcher;
 
             fn record_matcher<Inspector: netstack3_base::Inspector, M: InspectableValue>(
@@ -333,6 +334,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes> Inspectable for Rule<I, BT, ()> {
             record_matcher(inspector, "dst_address", dst_address);
             record_matcher(inspector, "transport_protocol", transport_protocol);
             record_matcher(inspector, "external_matcher", external_matcher);
+            record_matcher(inspector, "mark_matcher", mark_matcher);
         });
         inspector.delegate_inspectable(action);
     }
@@ -597,6 +599,20 @@ pub trait FilterPacketMetadata {
 #[derive(Default)]
 pub struct FakePacketMetadata {
     marks: Marks,
+}
+
+impl FakePacketMetadata {
+    /// Creates a new `FakePacketMetadata` with the specified marks.
+    #[cfg(any(test, feature = "testutils"))]
+    pub fn new(marks: Marks) -> Self {
+        Self { marks }
+    }
+}
+
+impl From<Marks> for FakePacketMetadata {
+    fn from(marks: Marks) -> Self {
+        Self { marks }
+    }
 }
 
 impl<I: IpExt, A, BT: FilterBindingsTypes> FilterIpMetadata<I, A, BT> for FakePacketMetadata {
