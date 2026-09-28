@@ -20,6 +20,7 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/logging:lib",
     "//src/developer/ffx/lib/usb_driver_api:lib",
+    "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:libc",
@@ -39,7 +40,6 @@ ffx_tool("ffx_usb_driver") {
   deps = [
     ":lib",
     "//src/developer/ffx/lib/version:lib",
-    "//src/lib/fuchsia-async",
   ]
   sources = [ "src/main.rs" ]
 }
