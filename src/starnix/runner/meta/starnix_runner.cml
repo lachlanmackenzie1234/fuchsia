@@ -157,6 +157,7 @@
                 "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.display.singleton.DisplayPower",
                 "fuchsia.ui.display.singleton.Info",
+                "fuchsia.ui.input.DeviceListenerRegistry",
                 "fuchsia.ui.input3.Keyboard",
                 "fuchsia.ui.policy.DeviceListenerRegistry",
                 "fuchsia.ui.test.input.Registry",
