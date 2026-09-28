@@ -1,4 +1,4 @@
-//! Tests for the zero channel flavor.
+//! Tests for the list channel flavor.
 
 use std::any::Any;
 use std::sync::atomic::AtomicUsize;
@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
-use crossbeam_channel::{bounded, select, Receiver};
+use crossbeam_channel::{select, unbounded, Receiver};
 use crossbeam_channel::{RecvError, RecvTimeoutError, TryRecvError};
 use crossbeam_channel::{SendError, SendTimeoutError, TrySendError};
 use crossbeam_utils::thread::scope;
@@ -18,46 +18,58 @@ fn ms(ms: u64) -> Duration {
 
 #[test]
 fn smoke() {
-    let (s, r) = bounded(0);
-    assert_eq!(s.try_send(7), Err(TrySendError::Full(7)));
+    let (s, r) = unbounded();
+    s.try_send(7).unwrap();
+    assert_eq!(r.try_recv(), Ok(7));
+
+    s.send(8).unwrap();
+    assert_eq!(r.recv(), Ok(8));
+
     assert_eq!(r.try_recv(), Err(TryRecvError::Empty));
+    assert_eq!(r.recv_timeout(ms(1000)), Err(RecvTimeoutError::Timeout));
 }
 
 #[test]
 fn capacity() {
-    let (s, r) = bounded::<()>(0);
-    assert_eq!(s.capacity(), Some(0));
-    assert_eq!(r.capacity(), Some(0));
+    let (s, r) = unbounded::<()>();
+    assert_eq!(s.capacity(), None);
+    assert_eq!(r.capacity(), None);
 }
 
 #[test]
 fn len_empty_full() {
-    let (s, r) = bounded(0);
+    let (s, r) = unbounded();
 
     assert_eq!(s.len(), 0);
     assert!(s.is_empty());
-    assert!(s.is_full());
+    assert!(!s.is_full());
     assert_eq!(r.len(), 0);
     assert!(r.is_empty());
-    assert!(r.is_full());
+    assert!(!r.is_full());
 
-    scope(|scope| {
-        scope.spawn(|_| s.send(0).unwrap());
-        scope.spawn(|_| r.recv().unwrap());
-    })
-    .unwrap();
+    s.send(()).unwrap();
+
+    assert_eq!(s.len(), 1);
+    assert!(!s.is_empty());
+    assert!(!s.is_full());
+    assert_eq!(r.len(), 1);
+    assert!(!r.is_empty());
+    assert!(!r.is_full());
+
+    r.recv().unwrap();
 
     assert_eq!(s.len(), 0);
     assert!(s.is_empty());
-    assert!(s.is_full());
+    assert!(!s.is_full());
     assert_eq!(r.len(), 0);
     assert!(r.is_empty());
-    assert!(r.is_full());
+    assert!(!r.is_full());
 }
 
 #[test]
+#[cfg_attr(miri, ignore)] // this test makes timing assumptions, but Miri is so slow it violates them
 fn try_recv() {
-    let (s, r) = bounded(0);
+    let (s, r) = unbounded();
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -77,7 +89,7 @@ fn try_recv() {
 
 #[test]
 fn recv() {
-    let (s, r) = bounded(0);
+    let (s, r) = unbounded();
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -100,7 +112,7 @@ fn recv() {
 
 #[test]
 fn recv_timeout() {
-    let (s, r) = bounded::<i32>(0);
+    let (s, r) = unbounded::<i32>();
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -120,123 +132,123 @@ fn recv_timeout() {
 }
 
 #[test]
-fn try_send() {
-    let (s, r) = bounded(0);
+fn recv_timeout_nonempty_expired() {
+    let (s, r) = unbounded::<i32>();
+    s.send(5).unwrap();
+    // A non-empty channel yields an already-available message even with a zero (elapsed) timeout.
+    assert_eq!(r.recv_timeout(ms(0)), Ok(5));
+    assert_eq!(r.recv_timeout(ms(0)), Err(RecvTimeoutError::Timeout));
+}
 
-    scope(|scope| {
-        scope.spawn(move |_| {
-            assert_eq!(s.try_send(7), Err(TrySendError::Full(7)));
-            thread::sleep(ms(1500));
-            assert_eq!(s.try_send(8), Ok(()));
-            thread::sleep(ms(500));
-            assert_eq!(s.try_send(9), Err(TrySendError::Disconnected(9)));
-        });
-        scope.spawn(move |_| {
-            thread::sleep(ms(1000));
-            assert_eq!(r.recv(), Ok(8));
-        });
-    })
-    .unwrap();
+#[test]
+fn try_send() {
+    #[cfg(miri)]
+    const COUNT: usize = 50;
+    #[cfg(not(miri))]
+    const COUNT: usize = 1000;
+
+    let (s, r) = unbounded();
+    for i in 0..COUNT {
+        assert_eq!(s.try_send(i), Ok(()));
+    }
+
+    drop(r);
+    assert_eq!(s.try_send(777), Err(TrySendError::Disconnected(777)));
 }
 
 #[test]
 fn send() {
-    let (s, r) = bounded(0);
+    #[cfg(miri)]
+    const COUNT: usize = 50;
+    #[cfg(not(miri))]
+    const COUNT: usize = 1000;
 
-    scope(|scope| {
-        scope.spawn(move |_| {
-            s.send(7).unwrap();
-            thread::sleep(ms(1000));
-            s.send(8).unwrap();
-            thread::sleep(ms(1000));
-            s.send(9).unwrap();
-        });
-        scope.spawn(move |_| {
-            thread::sleep(ms(1500));
-            assert_eq!(r.recv(), Ok(7));
-            assert_eq!(r.recv(), Ok(8));
-            assert_eq!(r.recv(), Ok(9));
-        });
-    })
-    .unwrap();
+    let (s, r) = unbounded();
+    for i in 0..COUNT {
+        assert_eq!(s.send(i), Ok(()));
+    }
+
+    drop(r);
+    assert_eq!(s.send(777), Err(SendError(777)));
 }
 
 #[test]
 fn send_timeout() {
-    let (s, r) = bounded(0);
+    #[cfg(miri)]
+    const COUNT: usize = 50;
+    #[cfg(not(miri))]
+    const COUNT: usize = 1000;
 
-    scope(|scope| {
-        scope.spawn(move |_| {
-            assert_eq!(
-                s.send_timeout(7, ms(1000)),
-                Err(SendTimeoutError::Timeout(7))
-            );
-            assert_eq!(s.send_timeout(8, ms(1000)), Ok(()));
-            assert_eq!(
-                s.send_timeout(9, ms(1000)),
-                Err(SendTimeoutError::Disconnected(9))
-            );
-        });
-        scope.spawn(move |_| {
-            thread::sleep(ms(1500));
-            assert_eq!(r.recv(), Ok(8));
-        });
-    })
-    .unwrap();
+    let (s, r) = unbounded();
+    for i in 0..COUNT {
+        assert_eq!(s.send_timeout(i, ms(i as u64)), Ok(()));
+    }
+
+    drop(r);
+    assert_eq!(
+        s.send_timeout(777, ms(0)),
+        Err(SendTimeoutError::Disconnected(777))
+    );
+}
+
+#[test]
+fn send_after_disconnect() {
+    let (s, r) = unbounded();
+
+    s.send(1).unwrap();
+    s.send(2).unwrap();
+    s.send(3).unwrap();
+
+    drop(r);
+
+    assert_eq!(s.send(4), Err(SendError(4)));
+    assert_eq!(s.try_send(5), Err(TrySendError::Disconnected(5)));
+    assert_eq!(
+        s.send_timeout(6, ms(0)),
+        Err(SendTimeoutError::Disconnected(6))
+    );
+}
+
+#[test]
+fn recv_after_disconnect() {
+    let (s, r) = unbounded();
+
+    s.send(1).unwrap();
+    s.send(2).unwrap();
+    s.send(3).unwrap();
+
+    drop(s);
+
+    assert_eq!(r.recv(), Ok(1));
+    assert_eq!(r.recv(), Ok(2));
+    assert_eq!(r.recv(), Ok(3));
+    assert_eq!(r.recv(), Err(RecvError));
 }
 
 #[test]
 fn len() {
-    #[cfg(miri)]
-    const COUNT: usize = 50;
-    #[cfg(not(miri))]
-    const COUNT: usize = 25_000;
-
-    let (s, r) = bounded(0);
+    let (s, r) = unbounded();
 
     assert_eq!(s.len(), 0);
     assert_eq!(r.len(), 0);
 
-    scope(|scope| {
-        scope.spawn(|_| {
-            for i in 0..COUNT {
-                assert_eq!(r.recv(), Ok(i));
-                assert_eq!(r.len(), 0);
-            }
-        });
+    for i in 0..50 {
+        s.send(i).unwrap();
+        assert_eq!(s.len(), i + 1);
+    }
 
-        scope.spawn(|_| {
-            for i in 0..COUNT {
-                s.send(i).unwrap();
-                assert_eq!(s.len(), 0);
-            }
-        });
-    })
-    .unwrap();
+    for i in 0..50 {
+        r.recv().unwrap();
+        assert_eq!(r.len(), 50 - i - 1);
+    }
 
     assert_eq!(s.len(), 0);
     assert_eq!(r.len(), 0);
-}
-
-#[test]
-fn disconnect_wakes_sender() {
-    let (s, r) = bounded(0);
-
-    scope(|scope| {
-        scope.spawn(move |_| {
-            assert_eq!(s.send(()), Err(SendError(())));
-        });
-        scope.spawn(move |_| {
-            thread::sleep(ms(1000));
-            drop(r);
-        });
-    })
-    .unwrap();
 }
 
 #[test]
 fn disconnect_wakes_receiver() {
-    let (s, r) = bounded::<()>(0);
+    let (s, r) = unbounded::<()>();
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -253,11 +265,11 @@ fn disconnect_wakes_receiver() {
 #[test]
 fn spsc() {
     #[cfg(miri)]
-    const COUNT: usize = 50;
+    const COUNT: usize = 100;
     #[cfg(not(miri))]
     const COUNT: usize = 100_000;
 
-    let (s, r) = bounded(0);
+    let (s, r) = unbounded();
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -278,12 +290,12 @@ fn spsc() {
 #[test]
 fn mpmc() {
     #[cfg(miri)]
-    const COUNT: usize = 50;
+    const COUNT: usize = 100;
     #[cfg(not(miri))]
     const COUNT: usize = 25_000;
     const THREADS: usize = 4;
 
-    let (s, r) = bounded::<usize>(0);
+    let (s, r) = unbounded::<usize>();
     let v = (0..COUNT).map(|_| AtomicUsize::new(0)).collect::<Vec<_>>();
 
     scope(|scope| {
@@ -305,6 +317,8 @@ fn mpmc() {
     })
     .unwrap();
 
+    assert_eq!(r.try_recv(), Err(TryRecvError::Empty));
+
     for c in v {
         assert_eq!(c.load(Ordering::SeqCst), THREADS);
     }
@@ -313,12 +327,12 @@ fn mpmc() {
 #[test]
 fn stress_oneshot() {
     #[cfg(miri)]
-    const COUNT: usize = 50;
+    const COUNT: usize = 100;
     #[cfg(not(miri))]
     const COUNT: usize = 10_000;
 
     for _ in 0..COUNT {
-        let (s, r) = bounded(1);
+        let (s, r) = unbounded();
 
         scope(|scope| {
             scope.spawn(|_| r.recv().unwrap());
@@ -331,12 +345,12 @@ fn stress_oneshot() {
 #[test]
 fn stress_iter() {
     #[cfg(miri)]
-    const COUNT: usize = 50;
+    const COUNT: usize = 100;
     #[cfg(not(miri))]
-    const COUNT: usize = 1000;
+    const COUNT: usize = 100_000;
 
-    let (request_s, request_r) = bounded(0);
-    let (response_s, response_r) = bounded(0);
+    let (request_s, request_r) = unbounded();
+    let (response_s, response_r) = unbounded();
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -348,7 +362,7 @@ fn stress_iter() {
                         return;
                     }
                 }
-                let _ = request_s.try_send(());
+                request_s.send(()).unwrap();
             }
         });
 
@@ -365,7 +379,7 @@ fn stress_iter() {
 fn stress_timeout_two_threads() {
     const COUNT: usize = 100;
 
-    let (s, r) = bounded(0);
+    let (s, r) = unbounded();
 
     scope(|scope| {
         scope.spawn(|_| {
@@ -373,11 +387,7 @@ fn stress_timeout_two_threads() {
                 if i % 2 == 0 {
                     thread::sleep(ms(50));
                 }
-                loop {
-                    if let Ok(()) = s.send_timeout(i, ms(10)) {
-                        break;
-                    }
-                }
+                s.send(i).unwrap();
             }
         });
 
@@ -424,9 +434,10 @@ fn drops() {
 
     for _ in 0..RUNS {
         let steps = rng.gen_range(0..STEPS);
+        let additional = rng.gen_range(0..STEPS / 10);
 
         DROPS.store(0, Ordering::SeqCst);
-        let (s, r) = bounded::<DropCounter>(0);
+        let (s, r) = unbounded::<DropCounter>();
 
         scope(|scope| {
             scope.spawn(|_| {
@@ -443,45 +454,63 @@ fn drops() {
         })
         .unwrap();
 
+        for _ in 0..additional {
+            s.try_send(DropCounter).unwrap();
+        }
+
         assert_eq!(DROPS.load(Ordering::SeqCst), steps);
         drop(s);
         drop(r);
-        assert_eq!(DROPS.load(Ordering::SeqCst), steps);
+        assert_eq!(DROPS.load(Ordering::SeqCst), steps + additional);
     }
+}
+
+#[test]
+fn linearizable() {
+    #[cfg(miri)]
+    const COUNT: usize = 100;
+    #[cfg(not(miri))]
+    const COUNT: usize = 25_000;
+    const THREADS: usize = 4;
+
+    let (s, r) = unbounded();
+
+    scope(|scope| {
+        for _ in 0..THREADS {
+            scope.spawn(|_| {
+                for _ in 0..COUNT {
+                    s.send(0).unwrap();
+                    r.try_recv().unwrap();
+                }
+            });
+        }
+    })
+    .unwrap();
 }
 
 #[test]
 fn fairness() {
     #[cfg(miri)]
-    const COUNT: usize = 50;
+    const COUNT: usize = 100;
     #[cfg(not(miri))]
     const COUNT: usize = 10_000;
 
-    let (s1, r1) = bounded::<()>(0);
-    let (s2, r2) = bounded::<()>(0);
+    let (s1, r1) = unbounded::<()>();
+    let (s2, r2) = unbounded::<()>();
 
-    scope(|scope| {
-        scope.spawn(|_| {
-            let mut hits = [0usize; 2];
-            for _ in 0..COUNT {
-                select! {
-                    recv(r1) -> _ => hits[0] += 1,
-                    recv(r2) -> _ => hits[1] += 1,
-                }
-            }
-            assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
-        });
+    for _ in 0..COUNT {
+        s1.send(()).unwrap();
+        s2.send(()).unwrap();
+    }
 
-        let mut hits = [0usize; 2];
-        for _ in 0..COUNT {
-            select! {
-                send(s1, ()) -> _ => hits[0] += 1,
-                send(s2, ()) -> _ => hits[1] += 1,
-            }
+    let mut hits = [0usize; 2];
+    for _ in 0..COUNT {
+        select! {
+            recv(r1) -> _ => hits[0] += 1,
+            recv(r2) -> _ => hits[1] += 1,
         }
-        assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
-    })
-    .unwrap();
+    }
+    assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
 }
 
 #[test]
@@ -491,77 +520,52 @@ fn fairness_duplicates() {
     #[cfg(not(miri))]
     const COUNT: usize = 10_000;
 
-    let (s, r) = bounded::<()>(0);
+    let (s, r) = unbounded();
 
-    scope(|scope| {
-        scope.spawn(|_| {
-            let mut hits = [0usize; 5];
-            for _ in 0..COUNT {
-                select! {
-                    recv(r) -> _ => hits[0] += 1,
-                    recv(r) -> _ => hits[1] += 1,
-                    recv(r) -> _ => hits[2] += 1,
-                    recv(r) -> _ => hits[3] += 1,
-                    recv(r) -> _ => hits[4] += 1,
-                }
-            }
-            assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
-        });
+    for _ in 0..COUNT {
+        s.send(()).unwrap();
+    }
 
-        let mut hits = [0usize; 5];
-        for _ in 0..COUNT {
-            select! {
-                send(s, ()) -> _ => hits[0] += 1,
-                send(s, ()) -> _ => hits[1] += 1,
-                send(s, ()) -> _ => hits[2] += 1,
-                send(s, ()) -> _ => hits[3] += 1,
-                send(s, ()) -> _ => hits[4] += 1,
-            }
+    let mut hits = [0usize; 5];
+    for _ in 0..COUNT {
+        select! {
+            recv(r) -> _ => hits[0] += 1,
+            recv(r) -> _ => hits[1] += 1,
+            recv(r) -> _ => hits[2] += 1,
+            recv(r) -> _ => hits[3] += 1,
+            recv(r) -> _ => hits[4] += 1,
         }
-        assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
-    })
-    .unwrap();
+    }
+    assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
 }
 
 #[test]
 fn recv_in_send() {
-    let (s, r) = bounded(0);
+    let (s, r) = unbounded();
+    s.send(()).unwrap();
 
-    scope(|scope| {
-        scope.spawn(|_| {
-            thread::sleep(ms(100));
-            r.recv()
-        });
-
-        scope.spawn(|_| {
-            thread::sleep(ms(500));
-            s.send(()).unwrap();
-        });
-
-        select! {
-            send(s, r.recv().unwrap()) -> _ => {}
-        }
-    })
-    .unwrap();
+    select! {
+        send(s, assert_eq!(r.recv(), Ok(()))) -> _ => {}
+    }
 }
 
 #[test]
 fn channel_through_channel() {
     #[cfg(miri)]
-    const COUNT: usize = 50;
+    const COUNT: usize = 100;
     #[cfg(not(miri))]
     const COUNT: usize = 1000;
 
     type T = Box<dyn Any + Send>;
 
-    let (s, r) = bounded::<T>(0);
+    let (s, r) = unbounded::<T>();
 
     scope(|scope| {
         scope.spawn(move |_| {
             let mut s = s;
 
             for _ in 0..COUNT {
-                let (new_s, new_r) = bounded(0);
+                let (new_s, new_r) = unbounded();
                 let new_r: T = Box::new(Some(new_r));
 
                 s.send(new_r).unwrap();
@@ -584,4 +588,19 @@ fn channel_through_channel() {
         });
     })
     .unwrap();
+}
+
+// If `Block` is created on the stack, the array of slots will multiply this `BigStruct` and
+// probably overflow the thread stack. It's now directly created on the heap to avoid this.
+#[test]
+fn stack_overflow() {
+    const N: usize = 32_768;
+    struct BigStruct {
+        _data: [u8; N],
+    }
+
+    let (sender, receiver) = unbounded::<BigStruct>();
+    sender.send(BigStruct { _data: [0u8; N] }).unwrap();
+
+    for _data in receiver.try_iter() {}
 }

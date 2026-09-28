@@ -1,4 +1,4 @@
-//! Tests for the array channel flavor.
+//! Tests for the zero channel flavor.
 
 use std::any::Any;
 use std::sync::atomic::AtomicUsize;
@@ -18,68 +18,46 @@ fn ms(ms: u64) -> Duration {
 
 #[test]
 fn smoke() {
-    let (s, r) = bounded(1);
-    s.send(7).unwrap();
-    assert_eq!(r.try_recv(), Ok(7));
-
-    s.send(8).unwrap();
-    assert_eq!(r.recv(), Ok(8));
-
+    let (s, r) = bounded(0);
+    assert_eq!(s.try_send(7), Err(TrySendError::Full(7)));
     assert_eq!(r.try_recv(), Err(TryRecvError::Empty));
-    assert_eq!(r.recv_timeout(ms(1000)), Err(RecvTimeoutError::Timeout));
 }
 
 #[test]
 fn capacity() {
-    for i in 1..10 {
-        let (s, r) = bounded::<()>(i);
-        assert_eq!(s.capacity(), Some(i));
-        assert_eq!(r.capacity(), Some(i));
-    }
+    let (s, r) = bounded::<()>(0);
+    assert_eq!(s.capacity(), Some(0));
+    assert_eq!(r.capacity(), Some(0));
 }
 
 #[test]
 fn len_empty_full() {
-    let (s, r) = bounded(2);
+    let (s, r) = bounded(0);
 
     assert_eq!(s.len(), 0);
     assert!(s.is_empty());
-    assert!(!s.is_full());
+    assert!(s.is_full());
     assert_eq!(r.len(), 0);
     assert!(r.is_empty());
-    assert!(!r.is_full());
-
-    s.send(()).unwrap();
-
-    assert_eq!(s.len(), 1);
-    assert!(!s.is_empty());
-    assert!(!s.is_full());
-    assert_eq!(r.len(), 1);
-    assert!(!r.is_empty());
-    assert!(!r.is_full());
-
-    s.send(()).unwrap();
-
-    assert_eq!(s.len(), 2);
-    assert!(!s.is_empty());
-    assert!(s.is_full());
-    assert_eq!(r.len(), 2);
-    assert!(!r.is_empty());
     assert!(r.is_full());
 
-    r.recv().unwrap();
+    scope(|scope| {
+        scope.spawn(|_| s.send(0).unwrap());
+        scope.spawn(|_| r.recv().unwrap());
+    })
+    .unwrap();
 
-    assert_eq!(s.len(), 1);
-    assert!(!s.is_empty());
-    assert!(!s.is_full());
-    assert_eq!(r.len(), 1);
-    assert!(!r.is_empty());
-    assert!(!r.is_full());
+    assert_eq!(s.len(), 0);
+    assert!(s.is_empty());
+    assert!(s.is_full());
+    assert_eq!(r.len(), 0);
+    assert!(r.is_empty());
+    assert!(r.is_full());
 }
 
 #[test]
 fn try_recv() {
-    let (s, r) = bounded(100);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -99,7 +77,7 @@ fn try_recv() {
 
 #[test]
 fn recv() {
-    let (s, r) = bounded(100);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -122,7 +100,7 @@ fn recv() {
 
 #[test]
 fn recv_timeout() {
-    let (s, r) = bounded::<i32>(100);
+    let (s, r) = bounded::<i32>(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -143,22 +121,19 @@ fn recv_timeout() {
 
 #[test]
 fn try_send() {
-    let (s, r) = bounded(1);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
-            assert_eq!(s.try_send(1), Ok(()));
-            assert_eq!(s.try_send(2), Err(TrySendError::Full(2)));
+            assert_eq!(s.try_send(7), Err(TrySendError::Full(7)));
             thread::sleep(ms(1500));
-            assert_eq!(s.try_send(3), Ok(()));
+            assert_eq!(s.try_send(8), Ok(()));
             thread::sleep(ms(500));
-            assert_eq!(s.try_send(4), Err(TrySendError::Disconnected(4)));
+            assert_eq!(s.try_send(9), Err(TrySendError::Disconnected(9)));
         });
         scope.spawn(move |_| {
             thread::sleep(ms(1000));
-            assert_eq!(r.try_recv(), Ok(1));
-            assert_eq!(r.try_recv(), Err(TryRecvError::Empty));
-            assert_eq!(r.recv(), Ok(3));
+            assert_eq!(r.recv(), Ok(8));
         });
     })
     .unwrap();
@@ -166,19 +141,17 @@ fn try_send() {
 
 #[test]
 fn send() {
-    let (s, r) = bounded(1);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
-        scope.spawn(|_| {
+        scope.spawn(move |_| {
             s.send(7).unwrap();
             thread::sleep(ms(1000));
             s.send(8).unwrap();
             thread::sleep(ms(1000));
             s.send(9).unwrap();
-            thread::sleep(ms(1000));
-            s.send(10).unwrap();
         });
-        scope.spawn(|_| {
+        scope.spawn(move |_| {
             thread::sleep(ms(1500));
             assert_eq!(r.recv(), Ok(7));
             assert_eq!(r.recv(), Ok(8));
@@ -190,64 +163,26 @@ fn send() {
 
 #[test]
 fn send_timeout() {
-    let (s, r) = bounded(2);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
-            assert_eq!(s.send_timeout(1, ms(1000)), Ok(()));
-            assert_eq!(s.send_timeout(2, ms(1000)), Ok(()));
             assert_eq!(
-                s.send_timeout(3, ms(500)),
-                Err(SendTimeoutError::Timeout(3))
+                s.send_timeout(7, ms(1000)),
+                Err(SendTimeoutError::Timeout(7))
             );
-            thread::sleep(ms(1000));
-            assert_eq!(s.send_timeout(4, ms(1000)), Ok(()));
-            thread::sleep(ms(1000));
-            assert_eq!(s.send(5), Err(SendError(5)));
+            assert_eq!(s.send_timeout(8, ms(1000)), Ok(()));
+            assert_eq!(
+                s.send_timeout(9, ms(1000)),
+                Err(SendTimeoutError::Disconnected(9))
+            );
         });
         scope.spawn(move |_| {
-            thread::sleep(ms(1000));
-            assert_eq!(r.recv(), Ok(1));
-            thread::sleep(ms(1000));
-            assert_eq!(r.recv(), Ok(2));
-            assert_eq!(r.recv(), Ok(4));
+            thread::sleep(ms(1500));
+            assert_eq!(r.recv(), Ok(8));
         });
     })
     .unwrap();
-}
-
-#[test]
-fn send_after_disconnect() {
-    let (s, r) = bounded(100);
-
-    s.send(1).unwrap();
-    s.send(2).unwrap();
-    s.send(3).unwrap();
-
-    drop(r);
-
-    assert_eq!(s.send(4), Err(SendError(4)));
-    assert_eq!(s.try_send(5), Err(TrySendError::Disconnected(5)));
-    assert_eq!(
-        s.send_timeout(6, ms(500)),
-        Err(SendTimeoutError::Disconnected(6))
-    );
-}
-
-#[test]
-fn recv_after_disconnect() {
-    let (s, r) = bounded(100);
-
-    s.send(1).unwrap();
-    s.send(2).unwrap();
-    s.send(3).unwrap();
-
-    drop(s);
-
-    assert_eq!(r.recv(), Ok(1));
-    assert_eq!(r.recv(), Ok(2));
-    assert_eq!(r.recv(), Ok(3));
-    assert_eq!(r.recv(), Err(RecvError));
 }
 
 #[test]
@@ -256,39 +191,8 @@ fn len() {
     const COUNT: usize = 50;
     #[cfg(not(miri))]
     const COUNT: usize = 25_000;
-    #[cfg(miri)]
-    const CAP: usize = 50;
-    #[cfg(not(miri))]
-    const CAP: usize = 1000;
 
-    let (s, r) = bounded(CAP);
-
-    assert_eq!(s.len(), 0);
-    assert_eq!(r.len(), 0);
-
-    for _ in 0..CAP / 10 {
-        for i in 0..50 {
-            s.send(i).unwrap();
-            assert_eq!(s.len(), i + 1);
-        }
-
-        for i in 0..50 {
-            r.recv().unwrap();
-            assert_eq!(r.len(), 50 - i - 1);
-        }
-    }
-
-    assert_eq!(s.len(), 0);
-    assert_eq!(r.len(), 0);
-
-    for i in 0..CAP {
-        s.send(i).unwrap();
-        assert_eq!(s.len(), i + 1);
-    }
-
-    for _ in 0..CAP {
-        r.recv().unwrap();
-    }
+    let (s, r) = bounded(0);
 
     assert_eq!(s.len(), 0);
     assert_eq!(r.len(), 0);
@@ -297,16 +201,14 @@ fn len() {
         scope.spawn(|_| {
             for i in 0..COUNT {
                 assert_eq!(r.recv(), Ok(i));
-                let len = r.len();
-                assert!(len <= CAP);
+                assert_eq!(r.len(), 0);
             }
         });
 
         scope.spawn(|_| {
             for i in 0..COUNT {
                 s.send(i).unwrap();
-                let len = s.len();
-                assert!(len <= CAP);
+                assert_eq!(s.len(), 0);
             }
         });
     })
@@ -318,11 +220,10 @@ fn len() {
 
 #[test]
 fn disconnect_wakes_sender() {
-    let (s, r) = bounded(1);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
-            assert_eq!(s.send(()), Ok(()));
             assert_eq!(s.send(()), Err(SendError(())));
         });
         scope.spawn(move |_| {
@@ -335,7 +236,7 @@ fn disconnect_wakes_sender() {
 
 #[test]
 fn disconnect_wakes_receiver() {
-    let (s, r) = bounded::<()>(1);
+    let (s, r) = bounded::<()>(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -352,11 +253,11 @@ fn disconnect_wakes_receiver() {
 #[test]
 fn spsc() {
     #[cfg(miri)]
-    const COUNT: usize = 100;
+    const COUNT: usize = 50;
     #[cfg(not(miri))]
     const COUNT: usize = 100_000;
 
-    let (s, r) = bounded(3);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -382,7 +283,7 @@ fn mpmc() {
     const COUNT: usize = 25_000;
     const THREADS: usize = 4;
 
-    let (s, r) = bounded::<usize>(3);
+    let (s, r) = bounded::<usize>(0);
     let v = (0..COUNT).map(|_| AtomicUsize::new(0)).collect::<Vec<_>>();
 
     scope(|scope| {
@@ -412,12 +313,12 @@ fn mpmc() {
 #[test]
 fn stress_oneshot() {
     #[cfg(miri)]
-    const COUNT: usize = 100;
+    const COUNT: usize = 50;
     #[cfg(not(miri))]
     const COUNT: usize = 10_000;
 
     for _ in 0..COUNT {
-        let (s, r) = bounded(1);
+        let (s, r) = bounded(0);
 
         scope(|scope| {
             scope.spawn(|_| r.recv().unwrap());
@@ -430,12 +331,12 @@ fn stress_oneshot() {
 #[test]
 fn stress_iter() {
     #[cfg(miri)]
-    const COUNT: usize = 100;
+    const COUNT: usize = 50;
     #[cfg(not(miri))]
-    const COUNT: usize = 100_000;
+    const COUNT: usize = 1000;
 
-    let (request_s, request_r) = bounded(1);
-    let (response_s, response_r) = bounded(1);
+    let (request_s, request_r) = bounded(0);
+    let (response_s, response_r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
@@ -447,7 +348,7 @@ fn stress_iter() {
                         return;
                     }
                 }
-                request_s.send(()).unwrap();
+                let _ = request_s.try_send(());
             }
         });
 
@@ -464,7 +365,7 @@ fn stress_iter() {
 fn stress_timeout_two_threads() {
     const COUNT: usize = 100;
 
-    let (s, r) = bounded(2);
+    let (s, r) = bounded(0);
 
     scope(|scope| {
         scope.spawn(|_| {
@@ -500,7 +401,7 @@ fn stress_timeout_two_threads() {
 #[test]
 fn drops() {
     #[cfg(miri)]
-    const RUNS: usize = 10;
+    const RUNS: usize = 20;
     #[cfg(not(miri))]
     const RUNS: usize = 100;
     #[cfg(miri)]
@@ -523,10 +424,9 @@ fn drops() {
 
     for _ in 0..RUNS {
         let steps = rng.gen_range(0..STEPS);
-        let additional = rng.gen_range(0..50);
 
         DROPS.store(0, Ordering::SeqCst);
-        let (s, r) = bounded::<DropCounter>(50);
+        let (s, r) = bounded::<DropCounter>(0);
 
         scope(|scope| {
             scope.spawn(|_| {
@@ -543,63 +443,45 @@ fn drops() {
         })
         .unwrap();
 
-        for _ in 0..additional {
-            s.send(DropCounter).unwrap();
-        }
-
         assert_eq!(DROPS.load(Ordering::SeqCst), steps);
         drop(s);
         drop(r);
-        assert_eq!(DROPS.load(Ordering::SeqCst), steps + additional);
+        assert_eq!(DROPS.load(Ordering::SeqCst), steps);
     }
-}
-
-#[test]
-fn linearizable() {
-    #[cfg(miri)]
-    const COUNT: usize = 50;
-    #[cfg(not(miri))]
-    const COUNT: usize = 25_000;
-    const THREADS: usize = 4;
-
-    let (s, r) = bounded(THREADS);
-
-    scope(|scope| {
-        for _ in 0..THREADS {
-            scope.spawn(|_| {
-                for _ in 0..COUNT {
-                    s.send(0).unwrap();
-                    r.try_recv().unwrap();
-                }
-            });
-        }
-    })
-    .unwrap();
 }
 
 #[test]
 fn fairness() {
     #[cfg(miri)]
-    const COUNT: usize = 100;
+    const COUNT: usize = 50;
     #[cfg(not(miri))]
     const COUNT: usize = 10_000;
 
-    let (s1, r1) = bounded::<()>(COUNT);
-    let (s2, r2) = bounded::<()>(COUNT);
+    let (s1, r1) = bounded::<()>(0);
+    let (s2, r2) = bounded::<()>(0);
 
-    for _ in 0..COUNT {
-        s1.send(()).unwrap();
-        s2.send(()).unwrap();
-    }
+    scope(|scope| {
+        scope.spawn(|_| {
+            let mut hits = [0usize; 2];
+            for _ in 0..COUNT {
+                select! {
+                    recv(r1) -> _ => hits[0] += 1,
+                    recv(r2) -> _ => hits[1] += 1,
+                }
+            }
+            assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
+        });
 
-    let mut hits = [0usize; 2];
-    for _ in 0..COUNT {
-        select! {
-            recv(r1) -> _  => hits[0] += 1,
-            recv(r2) -> _  => hits[1] += 1,
+        let mut hits = [0usize; 2];
+        for _ in 0..COUNT {
+            select! {
+                send(s1, ()) -> _ => hits[0] += 1,
+                send(s2, ()) -> _ => hits[1] += 1,
+            }
         }
-    }
-    assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
+        assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
+    })
+    .unwrap();
 }
 
 #[test]
@@ -609,63 +491,77 @@ fn fairness_duplicates() {
     #[cfg(not(miri))]
     const COUNT: usize = 10_000;
 
-    let (s, r) = bounded::<()>(COUNT);
+    let (s, r) = bounded::<()>(0);
 
-    for _ in 0..COUNT {
-        s.send(()).unwrap();
-    }
+    scope(|scope| {
+        scope.spawn(|_| {
+            let mut hits = [0usize; 5];
+            for _ in 0..COUNT {
+                select! {
+                    recv(r) -> _ => hits[0] += 1,
+                    recv(r) -> _ => hits[1] += 1,
+                    recv(r) -> _ => hits[2] += 1,
+                    recv(r) -> _ => hits[3] += 1,
+                    recv(r) -> _ => hits[4] += 1,
+                }
+            }
+            assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
+        });
 
-    let mut hits = [0usize; 5];
-    for _ in 0..COUNT {
-        select! {
-            recv(r) -> _ => hits[0] += 1,
-            recv(r) -> _ => hits[1] += 1,
-            recv(r) -> _ => hits[2] += 1,
-            recv(r) -> _ => hits[3] += 1,
-            recv(r) -> _ => hits[4] += 1,
+        let mut hits = [0usize; 5];
+        for _ in 0..COUNT {
+            select! {
+                send(s, ()) -> _ => hits[0] += 1,
+                send(s, ()) -> _ => hits[1] += 1,
+                send(s, ()) -> _ => hits[2] += 1,
+                send(s, ()) -> _ => hits[3] += 1,
+                send(s, ()) -> _ => hits[4] += 1,
+            }
         }
-    }
-    assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
+        assert!(hits.iter().all(|x| *x >= COUNT / hits.len() / 2));
+    })
+    .unwrap();
 }
 
 #[test]
 fn recv_in_send() {
-    let (s, _r) = bounded(1);
-    s.send(()).unwrap();
+    let (s, r) = bounded(0);
 
-    #[allow(unreachable_code)]
-    {
+    scope(|scope| {
+        scope.spawn(|_| {
+            thread::sleep(ms(100));
+            r.recv()
+        });
+
+        scope.spawn(|_| {
+            thread::sleep(ms(500));
+            s.send(()).unwrap();
+        });
+
         select! {
-            send(s, panic!()) -> _ => panic!(),
-            default => {}
+            send(s, r.recv().unwrap()) -> _ => {}
         }
-    }
-
-    let (s, r) = bounded(2);
-    s.send(()).unwrap();
-
-    select! {
-        send(s, assert_eq!(r.recv(), Ok(()))) -> _ => {}
-    }
+    })
+    .unwrap();
 }
 
 #[test]
 fn channel_through_channel() {
     #[cfg(miri)]
-    const COUNT: usize = 100;
+    const COUNT: usize = 50;
     #[cfg(not(miri))]
     const COUNT: usize = 1000;
 
     type T = Box<dyn Any + Send>;
 
-    let (s, r) = bounded::<T>(1);
+    let (s, r) = bounded::<T>(0);
 
     scope(|scope| {
         scope.spawn(move |_| {
             let mut s = s;
 
             for _ in 0..COUNT {
-                let (new_s, new_r) = bounded(1);
+                let (new_s, new_r) = bounded(0);
                 let new_r: T = Box::new(Some(new_r));
 
                 s.send(new_r).unwrap();
@@ -688,57 +584,4 @@ fn channel_through_channel() {
         });
     })
     .unwrap();
-}
-
-#[test]
-fn panic_on_drop() {
-    struct Msg1<'a>(&'a mut bool);
-    impl Drop for Msg1<'_> {
-        fn drop(&mut self) {
-            if *self.0 && !std::thread::panicking() {
-                panic!("double drop");
-            } else {
-                *self.0 = true;
-            }
-        }
-    }
-
-    struct Msg2<'a>(&'a mut bool);
-    impl Drop for Msg2<'_> {
-        fn drop(&mut self) {
-            if *self.0 {
-                panic!("double drop");
-            } else {
-                *self.0 = true;
-                panic!("first drop");
-            }
-        }
-    }
-
-    // normal
-    let (s, r) = bounded(2);
-    let (mut a, mut b) = (false, false);
-    s.send(Msg1(&mut a)).unwrap();
-    s.send(Msg1(&mut b)).unwrap();
-    drop(s);
-    drop(r);
-    assert!(a);
-    assert!(b);
-
-    // panic on drop
-    let (s, r) = bounded(2);
-    let (mut a, mut b) = (false, false);
-    s.send(Msg2(&mut a)).unwrap();
-    s.send(Msg2(&mut b)).unwrap();
-    drop(s);
-    let res = std::panic::catch_unwind(move || {
-        drop(r);
-    });
-    assert_eq!(
-        *res.unwrap_err().downcast_ref::<&str>().unwrap(),
-        "first drop"
-    );
-    assert!(a);
-    // Elements after the panicked element will leak.
-    assert!(!b);
 }

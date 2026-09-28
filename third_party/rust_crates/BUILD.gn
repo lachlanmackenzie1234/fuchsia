@@ -6806,7 +6806,7 @@ rustc_library("crossbeam-v0_8_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":crossbeam-channel-v0_5_15" ]
+  deps += [ ":crossbeam-channel-v0_5_17" ]
   deps += [ ":crossbeam-deque-v0_8_6" ]
   deps += [ ":crossbeam-epoch-v0_9_18" ]
   deps += [ ":crossbeam-queue-v0_3_12" ]
@@ -6832,20 +6832,20 @@ rustc_library("crossbeam-v0_8_4") {
   applicable_licenses = [ ":crossbeam-v0_8_4.license" ]
 }
 
-license("crossbeam-channel-v0_5_15.license") {
+license("crossbeam-channel-v0_5_17.license") {
   public_package_name = "crossbeam_channel"
   license_files = [
-    "//third_party/rust_crates/vendor/crossbeam-channel-0.5.15/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/crossbeam-channel-0.5.15/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/crossbeam-channel-0.5.15/LICENSE-THIRD-PARTY",
+    "//third_party/rust_crates/vendor/crossbeam-channel-0.5.17/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crossbeam-channel-0.5.17/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/crossbeam-channel-0.5.17/LICENSE-THIRD-PARTY",
   ]
 }
 
-rustc_library("crossbeam-channel-v0_5_15") {
+rustc_library("crossbeam-channel-v0_5_17") {
   crate_name = "crossbeam_channel"
   source_root =
-      "//third_party/rust_crates/vendor/crossbeam-channel-0.5.15/src/lib.rs"
-  output_name = "crossbeam_channel-b8677b88ac423bff"
+      "//third_party/rust_crates/vendor/crossbeam-channel-0.5.17/src/lib.rs"
+  output_name = "crossbeam_channel-5553546d349d1916"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -6858,14 +6858,14 @@ rustc_library("crossbeam-channel-v0_5_15") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b8677b88ac423bff",
-    "-Cextra-filename=-b8677b88ac423bff",
+    "-Cmetadata=5553546d349d1916",
+    "-Cextra-filename=-5553546d349d1916",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crossbeam-channel-v0_5_15.license" ]
+  applicable_licenses = [ ":crossbeam-channel-v0_5_17.license" ]
 }
 
 license("crossbeam-deque-v0_8_6.license") {
