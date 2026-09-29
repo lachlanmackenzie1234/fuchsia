@@ -28,6 +28,7 @@ group("dynamic_dictionaries") {
 # CML.
 group("delivery_type") {
   visibility = [
+    "//src/connectivity/network/dhcpv4/server/*",
     "//src/connectivity/policy/http-client/*",
     "//src/devices/bin/driver-index:*",
     "//src/diagnostics/persistence/*",
