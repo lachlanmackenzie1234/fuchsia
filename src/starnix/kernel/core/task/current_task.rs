@@ -387,6 +387,22 @@ impl CurrentTask {
     /// Change the current and real creds of the task. This is invalid to call while temporary
     /// credentials are present.
     pub fn set_creds(&self, creds: Credentials) {
+        // From <https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html>:
+        //
+        //   The parent-death signal setting is also cleared upon changes
+        //   to any of the following thread credentials: effective user ID,
+        //   effective group ID, filesystem user ID, or filesystem group ID.
+        let prev = self.current_creds();
+        let clear_parent_death_signal = creds.euid != prev.euid
+            || creds.egid != prev.egid
+            || creds.fsuid != prev.fsuid
+            || creds.fsgid != prev.fsgid;
+        std::mem::drop(prev);
+
+        if clear_parent_death_signal {
+            self.thread_group().write().set_parent_death_signal(None);
+        }
+
         let creds = Arc::new(creds);
         self.write_creds().update(self, creds);
     }
@@ -1135,6 +1151,16 @@ impl CurrentTask {
         self.running_state().unshare_files(self);
         self.files().exec();
 
+        // From <https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html>:
+        //
+        //   It is also (since Linux 2.4.36 / 2.6.23) cleared when
+        //   executing a set-user-ID or set-group-ID binary, or a binary that
+        //   has associated capabilities (see capabilities(7)); otherwise, this
+        //   value is preserved across execve(2).
+        if resolved_program.secure_exec {
+            self.thread_group().write().set_parent_death_signal(None);
+        }
+
         {
             let mut state = self.write();
 
@@ -1152,14 +1178,6 @@ impl CurrentTask {
 
             state.set_sigaltstack(None);
             state.robust_list_head = RobustListHeadPtr::null(self);
-            // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
-            //
-            //   If a set-user-ID or set-group-ID
-            //   program is being executed, then the parent death signal set by
-            //   prctl(2) PR_SET_PDEATHSIG flag is cleared.
-            //
-            // TODO(https://fxbug.dev/356684424): Implement the behavior above once we support
-            // the PR_SET_PDEATHSIG flag.
         }
 
         security::bprm_committing_creds(self, &resolved_program)?;
@@ -1595,18 +1613,19 @@ impl CurrentTask {
             let original_parent;
 
             // Make sure to drop these locks ASAP to avoid inversion
-            let thread_group_state = {
+            let (thread_group_state, creator_task) = {
                 let thread_group_state = self.thread_group().write();
                 if clone_parent {
                     // With the CLONE_PARENT flag, the parent of the new task is our parent
                     // instead of ourselves.
                     weak_original_parent =
                         thread_group_state.parent.clone().ok_or_else(|| errno!(EINVAL))?;
+                    let creator_task = weak_original_parent.creator_task().cloned();
                     std::mem::drop(thread_group_state);
                     original_parent = weak_original_parent.upgrade();
-                    original_parent.write()
+                    (original_parent.write(), creator_task)
                 } else {
-                    thread_group_state
+                    (thread_group_state, Some(self.weak_task()))
                 }
             };
 
@@ -1662,6 +1681,10 @@ impl CurrentTask {
                         command.clone(),
                     )?
                 };
+
+                if let Some(parent) = &mut task_info.thread_group.write().parent {
+                    parent.set_creator_task(creator_task);
+                }
 
                 cgroup2_pid_table.inherit_cgroup(self.thread_group(), &task_info.thread_group);
 

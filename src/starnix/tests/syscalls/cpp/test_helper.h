@@ -148,7 +148,7 @@ class SignalMaskHelper {
   void waitForSignal(int signal);
 
   // Blocks the execution until the specified signal is received or timed out.
-  int timedWaitForSignal(int signal, time_t msec);
+  int timedWaitForSignal(int signal, time_t msec, siginfo_t *siginfo = nullptr);
 
   // Sets the signal mask of the process with _sigmaskCopy.
   void restoreSigmask();

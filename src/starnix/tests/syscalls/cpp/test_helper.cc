@@ -263,12 +263,14 @@ void SignalMaskHelper::waitForSignal(int signal) {
   ASSERT_EQ(sig, signal);
 }
 
-int SignalMaskHelper::timedWaitForSignal(int signal, time_t msec) {
-  siginfo_t siginfo;
-  struct timespec ts;
-  ts.tv_sec = 0;
-  ts.tv_nsec = msec * 1000000;
-  return static_cast<int>(TEMP_FAILURE_RETRY(sigtimedwait(&this->_sigset, &siginfo, &ts)));
+int SignalMaskHelper::timedWaitForSignal(int signal, time_t msec, siginfo_t *siginfo) {
+  siginfo_t local_siginfo;
+  struct timespec ts = {
+      .tv_sec = msec / 1000,
+      .tv_nsec = (msec % 1000) * 1000000,
+  };
+  siginfo_t *target_info = siginfo ? siginfo : &local_siginfo;
+  return static_cast<int>(TEMP_FAILURE_RETRY(sigtimedwait(&this->_sigset, target_info, &ts)));
 }
 
 void SignalMaskHelper::restoreSigmask() { sigprocmask(SIG_SETMASK, &this->_sigmaskCopy, nullptr); }
