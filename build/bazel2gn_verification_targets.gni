@@ -236,6 +236,7 @@ bazel2gn_verification_targets = [
   "//src/sys/pkg/lib/fuchsia-hash:verify_bazel2gn",
   "//src/sys/pkg/lib/repo:verify_bazel2gn",
   "//src/sys/pkg/lib/work-queue:verify_bazel2gn",
+  "//src/sys/pkg/scripts/gen_eager_package_config:verify_bazel2gn",
   "//src/sys/pkg/testing/fake-omaha-client:verify_bazel2gn",
   "//src/sys/pkg/testing/mock-crash-reporter:verify_bazel2gn",
   "//src/sys/pkg/testing/mock-paver:verify_bazel2gn",
