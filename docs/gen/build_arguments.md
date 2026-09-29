@@ -945,7 +945,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -1644,7 +1644,7 @@ This should never be set as a build argument.
 }
   x86_64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/24/lib/x86_64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = ""
+  libunwind_so = "../../../../out/not-default/libunwind.so"
   resource_dir = "lib/clang/24"
   variants = {
   asan = {
@@ -9075,10 +9075,11 @@ From //src/starnix/modules/kgsl/BUILD.gn:12
 
 Whether to use lockdep to detect cycles in the lock acquisition graph.
 Enabled by default in balanced and debug modes.
+LINT.IfChange
 
 **Current value (from the default):** `false`
 
-From //src/starnix/lib/starnix_sync/build/args.gni:8
+From //src/starnix/lib/starnix_sync/build/args.gni:9
 
 ### sysmem_contiguous_guard_page_count
 
