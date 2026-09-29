@@ -880,6 +880,13 @@ class BuildTestsJsonTest(unittest.TestCase):
             {"test": {"name": "test_2"}},
             {"test": {"name": "test_3"}},
             {"test": {"name": "test_4"}},
+            {
+                "test": {
+                    "name": "pure_host_test",
+                    "os": "linux",
+                },
+                "expects_ssh": False,
+            },
         ]
         pb_tests_json_path = self.build_dir / "pb_tests.json"
         pb_tests_json_path.write_text(json.dumps(pb_tests))
@@ -935,6 +942,15 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "test": {"name": "test_4"},
                 "build_only": True,
                 "environments": [],
+            },
+            {
+                "test": {
+                    "name": "pure_host_test",
+                    "os": "linux",
+                },
+                "build_only": True,
+                "environments": [],
+                "expects_ssh": False,
             },
         ]
         self.assertEqual(expected_tests, tests)
