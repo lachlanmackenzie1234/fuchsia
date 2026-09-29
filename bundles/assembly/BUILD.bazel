@@ -516,11 +516,6 @@ assembly_input_bundle(
         },
         {
             "set": "bootfs",
-            "package_target": "//bundles/assembly/bazel_inputs/src/devices/ml/drivers/usb-harriet:package",
-            "driver_components": ["meta/usb-harriet.cm"],
-        },
-        {
-            "set": "bootfs",
             "package_target": "//bundles/assembly/bazel_inputs/src/devices/serial/drivers/usb-cdc-acm:package",
             "driver_components": ["meta/usb-cdc-acm.cm"],
         },

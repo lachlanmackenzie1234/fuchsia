@@ -263,7 +263,6 @@ group("usb_host_drivers") {
     "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/asix-88772b:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/usb-cdc-ecm:package",
     "//bundles/assembly/bazel_inputs/src/devices/block/drivers/usb-mass-storage:package",
-    "//bundles/assembly/bazel_inputs/src/devices/ml/drivers/usb-harriet:package",
     "//bundles/assembly/bazel_inputs/src/devices/serial/drivers/ftdi:package",
     "//bundles/assembly/bazel_inputs/src/devices/serial/drivers/usb-cdc-acm:package",
     "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-composite:package",
