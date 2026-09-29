@@ -48,6 +48,7 @@ source_set("kernel") {
     "timer.cc",
     "timer_ffi.cc",
     "wait.cc",
+    "wait_ffi.cc",
   ]
 
   deps = [
