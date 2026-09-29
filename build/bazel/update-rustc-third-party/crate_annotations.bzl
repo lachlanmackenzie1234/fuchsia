@@ -31,6 +31,15 @@ CRATE_ANNOTATIONS = {
             ],
         ),
     ],
+    "alloca": [
+        crate.annotation(
+            version = "*",
+            deps = [
+                "//third_party/rust_crates/compat/alloca-0.4.0:alloca-c",
+            ],
+            gen_build_script = False,
+        ),
+    ],
     "anyhow": [
         crate.annotation(
             version = "1.0.104",

@@ -157,6 +157,20 @@ generated_file("gn_build_variables_for_bazel") {
   # LINT.ThenChange(//src/starnix/lib/starnix_sync/build/args.gni)
 
   # LINT.IfChange
+  declaration = "//src/developer/fuchsia-criterion/build/args.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "local_bench"
+      value = local_bench
+      type = "bool"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//src/developer/fuchsia-criterion/build/args.gni)
+
+  # LINT.IfChange
   declaration = "//build/info/info.gni"
   import(declaration)
   contents += [
