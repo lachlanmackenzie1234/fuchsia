@@ -764,6 +764,13 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/libc",
     ]
   }
+
+  source_set("linuxboot-embed") {
+    public = [ "include/phys/linuxboot-embed.h" ]
+    public_configs = [ ":includes" ]
+    sources = [ "linuxboot-embed.cc" ]
+    deps = [ "//zircon/kernel/lib/arch" ]
+  }
 }
 
 source_set("zbi") {
