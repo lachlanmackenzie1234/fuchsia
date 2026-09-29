@@ -18,10 +18,9 @@ pub use fxt_layout::{
     LargeRecordHeader, RecordHeader, RecordType, StringRefHeader,
 };
 use kalloc::Box;
-pub use kstring::declare_interned_category;
-use kstring::declare_interned_string;
 use kstring::interned_category::InternedCategory;
 pub use kstring::interned_string::InternedString;
+pub use kstring::{declare_interned_category, declare_interned_string};
 use spsc_buffer::{Buffer, NoOpAllocator, Reservation};
 use zx_status::Status;
 use zx_types::zx_status_t;
@@ -74,6 +73,7 @@ pub enum ArgValue<'a> {
     String(&'a str),
     Pointer(usize),
     Koid(u64),
+    Blob(&'a [u8]),
 }
 
 impl<'a> From<bool> for ArgValue<'a> {
@@ -109,6 +109,11 @@ impl<'a> From<f64> for ArgValue<'a> {
 impl<'a> From<&'a str> for ArgValue<'a> {
     fn from(v: &'a str) -> Self {
         ArgValue::String(v)
+    }
+}
+impl<'a> From<&'a [u8]> for ArgValue<'a> {
+    fn from(v: &'a [u8]) -> Self {
+        ArgValue::Blob(v)
     }
 }
 
@@ -205,6 +210,7 @@ impl<'a> Argument<'a> {
             | ArgValue::Pointer(_)
             | ArgValue::Koid(_) => 2,
             ArgValue::String(s) => 1 + s.len().min(0x7fff).div_ceil(8),
+            ArgValue::Blob(b) => 1 + b.len().div_ceil(8).min(0x7fff),
         }
     }
 
@@ -272,6 +278,14 @@ impl<'a> Argument<'a> {
                     ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Bool);
                 header.set_value_bits(*v as u32);
                 res.write_word(header.bits())?;
+            }
+            ArgValue::Blob(b) => {
+                let mut header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Blob);
+                let byte_len = b.len().min((size_words as usize - 1) * 8);
+                header.set_value_bits(byte_len as u32);
+                res.write_word(header.bits())?;
+                res.write_bytes(&b[..byte_len])?;
             }
         }
         Ok(())
@@ -1474,6 +1488,7 @@ mod tests {
             Argument::new(DROP_STATS_REF, "hello_world"),
             Argument::new(DROP_STATS_REF, ArgValue::Pointer(0x12345678)),
             Argument::new(DROP_STATS_REF, Koid(9999)),
+            Argument::new(DROP_STATS_REF, &b"blob_payload"[..]),
         ];
 
         let total_arg_words: usize = args.iter().map(|a| a.size_words()).sum();
@@ -1592,6 +1607,15 @@ mod tests {
         );
         expect_eq!(koid_val, 9999);
         word_idx += 2;
+
+        // 10: Blob (1 header + 2 payload words = 3 words)
+        let blob_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(blob_hdr & 0xf, 10); // kBlob
+        expect_eq!((blob_hdr >> 4) & 0xfff, 3);
+        expect_eq!((blob_hdr >> 32) as u32, 12); // 12 bytes
+        expect_true!(&read_bytes[(word_idx + 1) * 8..(word_idx + 1) * 8 + 12] == b"blob_payload");
+        word_idx += 3;
 
         expect_eq!(word_idx, total_words);
     }
