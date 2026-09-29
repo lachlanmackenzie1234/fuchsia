@@ -807,8 +807,7 @@ group("cobalt_default_config") {
 }
 
 group("factory_reset_trigger") {
-  deps =
-      [ "//bundles/assembly/bazel_inputs/src/recovery/factory-reset-trigger" ]
+  deps = []
 }
 
 group("common_standard") {

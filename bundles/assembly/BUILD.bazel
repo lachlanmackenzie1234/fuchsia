@@ -2276,7 +2276,7 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "factory_reset_trigger",
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/recovery/factory-reset-trigger",
+        "//src/recovery/factory-reset-trigger",
     ],
     core_shards = [
         "//src/recovery/factory-reset-trigger:meta/factory-reset-trigger.core_shard.cml",

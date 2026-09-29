@@ -78,5 +78,6 @@ fx_package(
     ],
     visibility = [
         "//build/bazel/rules/tests:__subpackages__",
+        "//bundles/assembly:__subpackages__",
     ],
 )
