@@ -110,6 +110,46 @@ def _bazel_disallowed_workspace_root_package_labels(ctx):
             kwargs["end_col"] = finding["end_col"]
         ctx.emit.finding(message = finding["message"], **kwargs)
 
+def _bazel_no_repo_rules_canonical_names(ctx):
+    """Rejects hardcoded canonical names of `use_repo_rule()` repositories.
+
+    Bzlmod names each `use_repo_rule()` repository after the declaration's
+    position in its `MODULE.bazel` (`+_repo_rules<N>+<name>`), so adding or
+    moving a declaration silently renames every one after it. See
+    https://fxbug.dev/566262167. Note: this assumption may change when we roll a
+    new Bazel version.
+    """
+
+    pattern = r"_repo_rules\d*\+"
+
+    # Canonical names get hardcoded where code has to name a repository it
+    # can't see by its apparent name: Starlark in another module's repo
+    # mapping, or Python that builds labels or parses Bazel query output.
+    # Other file types are left alone so that e.g. docs explaining the naming
+    # scheme aren't flagged.
+    files = ctx.scm.affected_files(glob = ["*.bazel", "*.bzl", "*.py"])
+    for path, meta in files.items():
+        for num, line in meta.new_lines():
+            for match in ctx.re.allmatches(pattern, line):
+                ctx.emit.finding(
+                    level = "error",
+                    message = (
+                        "Don't hardcode the canonical name of a " +
+                        "`use_repo_rule()` repository; it encodes the " +
+                        "declaration's position in MODULE.bazel and changes " +
+                        "whenever a `use_repo_rule()` is added or moved " +
+                        "above it. Refer to the repository by its apparent " +
+                        "name instead (e.g. `@internal_sdk`), passing it " +
+                        "through a label-typed attribute or `inject_repo()` " +
+                        "if it isn't visible where it's used."
+                    ),
+                    filepath = path,
+                    line = num,
+                    col = match.offset + 1,
+                    end_col = match.offset + 1 + len(match.groups[0]),
+                )
+
 def register_bazel_checks():
     shac.register_check(shac.check(_bazel_default_applicable_licenses, formatter = False))
     shac.register_check(shac.check(_bazel_disallowed_workspace_root_package_labels, formatter = False))
+    shac.register_check(shac.check(_bazel_no_repo_rules_canonical_names, formatter = False))
