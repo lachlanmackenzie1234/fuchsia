@@ -890,7 +890,7 @@ impl ClientIface for SmeClientIface {
 
     fn on_signal_report(&self, ind: fidl_internal::SignalReportIndication) {
         if let Some(connected_network) = self.connected_network.lock().as_mut() {
-            connected_network.rssi = ind.rssi_dbm;
+            connected_network.rssi = ind.rssi_dbm.unwrap_or(0);
         }
     }
 
@@ -3374,18 +3374,20 @@ mod tests {
 
         assert_matches!(test_values.iface.get_connected_network(), None);
         test_values.iface.on_signal_report(fidl_internal::SignalReportIndication {
-            rssi_dbm: -40,
-            snr_db: 20,
-            tx_rate_500kbps: 0,
+            rssi_dbm: Some(-40),
+            snr_db: Some(20),
+            tx_rate_500kbps: Some(0),
+            ..Default::default()
         });
         assert_matches!(test_values.iface.get_connected_network(), None);
 
         *test_values.iface.connected_network.lock() = Some(test_utils::fake_connected_network());
         assert_matches!(test_values.iface.get_connected_network().map(|n| n.rssi), Some(-35));
         test_values.iface.on_signal_report(fidl_internal::SignalReportIndication {
-            rssi_dbm: -40,
-            snr_db: 20,
-            tx_rate_500kbps: 0,
+            rssi_dbm: Some(-40),
+            snr_db: Some(20),
+            tx_rate_500kbps: Some(0),
+            ..Default::default()
         });
         assert_matches!(test_values.iface.get_connected_network().map(|n| n.rssi), Some(-40));
     }

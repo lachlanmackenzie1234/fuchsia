@@ -693,12 +693,13 @@ async fn connected_state(
                         }
                         fidl_sme::ConnectTransactionEvent::OnSignalReport { ind } => {
                             // Update connection data
-                            options.ap_state.tracked.signal = ind.into();
+                            let signal: types::Signal = ind.clone().into();
+                            options.ap_state.tracked.signal = signal;
 
                             // Update list of signals
                             options.tracked_signals.add(types::TimestampedSignal {
                                 time: fasync::MonotonicInstant::now(),
-                                signal: ind.into(),
+                                signal,
                             });
 
                             notify_on_signal_report(
@@ -916,7 +917,7 @@ fn notify_on_signal_report(
     common_options.status_publisher.publish_status(Status::from_ap_state(&options.ap_state));
 
     // Send signal report metrics
-    common_options.telemetry_sender.send(TelemetryEvent::OnSignalReport { ind });
+    common_options.telemetry_sender.send(TelemetryEvent::OnSignalReport { ind: ind.clone() });
 
     // Forward signal report data to roam monitor.
     let _ = options
@@ -1488,9 +1489,10 @@ mod tests {
         // Respond with a SignalReport, which should not unblock connecting_state
         connect_txn_handle
             .send_on_signal_report(&fidl_internal::SignalReportIndication {
-                rssi_dbm: -25,
-                snr_db: 30,
-                tx_rate_500kbps: 0,
+                rssi_dbm: Some(-25),
+                snr_db: Some(30),
+                tx_rate_500kbps: Some(0),
+                ..Default::default()
             })
             .expect("failed to send singal report");
 
@@ -3083,7 +3085,12 @@ mod tests {
             let rssi_1 = -50;
             let snr_1 = 25;
             let fidl_signal_report =
-                fidl_internal::SignalReportIndication { rssi_dbm: rssi_1, snr_db: snr_1 , tx_rate_500kbps: 0};
+                fidl_internal::SignalReportIndication {
+                    rssi_dbm: Some(rssi_1),
+                    snr_db: Some(snr_1),
+                    tx_rate_500kbps: Some(0),
+                    ..Default::default()
+                };
             connect_txn_handle
                 .send_on_signal_report(&fidl_signal_report)
                 .expect("failed to send signal report");
@@ -3115,7 +3122,12 @@ mod tests {
             let rssi_2 = -30;
             let snr_2 = 35;
             let fidl_signal_report =
-                fidl_internal::SignalReportIndication { rssi_dbm: rssi_2, snr_db: snr_2 , tx_rate_500kbps: 0};
+                fidl_internal::SignalReportIndication {
+                    rssi_dbm: Some(rssi_2),
+                    snr_db: Some(snr_2),
+                    tx_rate_500kbps: Some(0),
+                    ..Default::default()
+                };
             connect_txn_handle
                 .send_on_signal_report(&fidl_signal_report)
                 .expect("failed to send signal report");

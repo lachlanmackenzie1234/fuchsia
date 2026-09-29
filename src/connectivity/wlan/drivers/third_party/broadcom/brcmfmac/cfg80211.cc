@@ -2706,33 +2706,33 @@ static void cfg80211_signal_ind(net_device* ndev) {
 
   // Send signal report indication only if client is in connected state
   if (brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTED, &ifp->vif->sme_state)) {
-    fuchsia_wlan_fullmac_wire::WlanFullmacSignalReportIndication signal_ind = {};
     int8_t rssi, snr;
     if (brcmf_get_rssi_snr(ndev, &rssi, &snr) == ZX_OK) {
-      signal_ind.rssi_dbm = rssi;
-      signal_ind.snr_db = snr;
+      auto arena = fdf::Arena::Create(0, 0);
+      if (arena.is_error()) {
+        BRCMF_ERR("Failed to create Arena status=%s", arena.status_string());
+        return;
+      }
+      auto builder = fuchsia_wlan_fullmac_wire::WlanFullmacSignalReportIndication::Builder(*arena);
+      builder.rssi_dbm(rssi);
+      builder.snr_db(snr);
 
       // Get the negotiated rate
       uint32_t rate = 0;
       bcme_status_t fw_err = BCME_OK;
       int status = brcmf_fil_cmd_data_get(ifp, BRCMF_C_GET_RATE, &rate, sizeof(rate), &fw_err);
       if (status == ZX_OK) {
-        signal_ind.tx_rate_500kbps = rate;
+        builder.tx_rate_500kbps(rate);
       } else {
         BRCMF_INFO("Failed to get rate: %s, fw err %s", zx_status_get_string(status),
                    brcmf_fil_get_errstr(fw_err));
-        signal_ind.tx_rate_500kbps = 0;
+        builder.tx_rate_500kbps(0);
       }
 
       // Store the value in ndev (dumped out when link goes down)
       ndev->last_known_rssi_dbm = rssi;
       ndev->last_known_snr_db = snr;
-      auto arena = fdf::Arena::Create(0, 0);
-      if (arena.is_error()) {
-        BRCMF_ERR("Failed to create Arena status=%s", arena.status_string());
-        return;
-      }
-      auto result = ndev->if_proto.buffer(*arena)->SignalReport(signal_ind);
+      auto result = ndev->if_proto.buffer(*arena)->SignalReport(builder.Build());
       if (!result.ok()) {
         BRCMF_ERR("Failed to send signal report result.status: %s", result.status_string());
         return;

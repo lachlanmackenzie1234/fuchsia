@@ -1368,10 +1368,10 @@ impl ClientState {
                     if matches!(state.link_state, LinkState::LinkUp(_)) {
                         state
                             .connect_txn_sink
-                            .send(ConnectTransactionEvent::OnSignalReport { ind });
+                            .send(ConnectTransactionEvent::OnSignalReport { ind: ind.clone() });
                     }
-                    state.latest_ap_state.rssi_dbm = ind.rssi_dbm;
-                    state.latest_ap_state.snr_db = ind.snr_db;
+                    state.latest_ap_state.rssi_dbm = ind.rssi_dbm.unwrap_or(0);
+                    state.latest_ap_state.snr_db = ind.snr_db.unwrap_or(0);
                     state.last_signal_report_time = now();
                     state.into()
                 }
@@ -5628,9 +5628,14 @@ mod tests {
 
         let (cmd, mut connect_txn_stream) = connect_command_one();
         let state = link_up_state(cmd);
-        let input_ind =
-            fidl_internal::SignalReportIndication { rssi_dbm: -42, snr_db: 20, tx_rate_500kbps: 0 };
-        let state = state.on_mlme_event(MlmeEvent::SignalReport { ind: input_ind }, &mut h.context);
+        let input_ind = fidl_internal::SignalReportIndication {
+            rssi_dbm: Some(-42),
+            snr_db: Some(20),
+            tx_rate_500kbps: Some(0),
+            ..Default::default()
+        };
+        let state =
+            state.on_mlme_event(MlmeEvent::SignalReport { ind: input_ind.clone() }, &mut h.context);
         let serving_ap_info = assert_matches!(state.status(),
                                                      ClientSmeStatus::Connected(serving_ap_info) =>
                                                      serving_ap_info);
@@ -5647,9 +5652,14 @@ mod tests {
                                                  serving_ap_info.signal_report_time);
         assert!(signal_report_time < time_b);
 
-        let input_ind =
-            fidl_internal::SignalReportIndication { rssi_dbm: -24, snr_db: 10, tx_rate_500kbps: 0 };
-        let state = state.on_mlme_event(MlmeEvent::SignalReport { ind: input_ind }, &mut h.context);
+        let input_ind = fidl_internal::SignalReportIndication {
+            rssi_dbm: Some(-24),
+            snr_db: Some(10),
+            tx_rate_500kbps: Some(0),
+            ..Default::default()
+        };
+        let state =
+            state.on_mlme_event(MlmeEvent::SignalReport { ind: input_ind.clone() }, &mut h.context);
         let serving_ap_info = assert_matches!(state.status(),
                                                      ClientSmeStatus::Connected(serving_ap_info) =>
                                                      serving_ap_info);

@@ -689,10 +689,14 @@ mod tests {
         });
 
         // Test sending OnSignalReport
-        let input_ind =
-            fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 30, tx_rate_500kbps: 0 };
+        let input_ind = fidl_internal::SignalReportIndication {
+            rssi_dbm: Some(-40),
+            snr_db: Some(30),
+            tx_rate_500kbps: Some(0),
+            ..Default::default()
+        };
         sme_proxy
-            .unbounded_send(ConnectTransactionEvent::OnSignalReport { ind: input_ind })
+            .unbounded_send(ConnectTransactionEvent::OnSignalReport { ind: input_ind.clone() })
             .expect("expect sending ConnectTransactionEvent to succeed");
         assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
         let event = assert_matches!(poll_stream_fut(&mut exec, &mut fidl_client_fut), Poll::Ready(Some(Ok(event))) => event);

@@ -143,7 +143,7 @@ pub struct Signal {
 
 impl From<fidl_internal::SignalReportIndication> for Signal {
     fn from(ind: fidl_internal::SignalReportIndication) -> Signal {
-        Signal { rssi_dbm: ind.rssi_dbm, snr_db: ind.snr_db }
+        Signal { rssi_dbm: ind.rssi_dbm.unwrap_or(0), snr_db: ind.snr_db.unwrap_or(0) }
     }
 }
 

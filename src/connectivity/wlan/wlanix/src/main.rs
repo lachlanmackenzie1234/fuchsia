@@ -1238,8 +1238,8 @@ async fn handle_client_connect_transactions<C: ClientIface + 'static, P: PowerMa
                 }
             }
             Ok(fidl_sme::ConnectTransactionEvent::OnSignalReport { ind }) => {
-                ctx.current_rssi_dbm = ind.rssi_dbm;
-                ctx.current_snr_db = ind.snr_db;
+                ctx.current_rssi_dbm = ind.rssi_dbm.unwrap_or(0);
+                ctx.current_snr_db = ind.snr_db.unwrap_or(0);
                 iface.on_signal_report(ind);
             }
             Ok(fidl_sme::ConnectTransactionEvent::OnChannelSwitched { info }) => {
@@ -5460,8 +5460,12 @@ mod tests {
 
         establish_open_connection(&mut test_helper, &mut test_fut, &mut mcast_stream);
 
-        let mocked_signal_report =
-            fidl_internal::SignalReportIndication { rssi_dbm: -35, snr_db: 20, tx_rate_500kbps: 0 };
+        let mocked_signal_report = fidl_internal::SignalReportIndication {
+            rssi_dbm: Some(-35),
+            snr_db: Some(20),
+            tx_rate_500kbps: Some(0),
+            ..Default::default()
+        };
         {
             let client_iface = test_helper.iface_manager.get_client_iface();
             let transaction_handle = client_iface.transaction_handle.lock();
