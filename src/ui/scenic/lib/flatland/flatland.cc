@@ -1732,6 +1732,12 @@ void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) 
     return;
   }
 
+  if (!types::RectangleF::IsValid(rect.origin(), rect.extent())) {
+    error_reporter_->ERROR() << "SetImageSampleRegion called with invalid rect";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetImageSampleRegion called with content id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2138,8 +2144,8 @@ void Flatland::SetHitRegions(TransformId transform_id,
     const auto& rect = region.region;
 
     if (!types::RectangleF::IsValid(rect)) {
-      error_reporter_->ERROR() << "SetHitRegions failed, contains invalid dimensions: ("
-                               << rect.width << "," << rect.height << ")";
+      error_reporter_->ERROR() << "SetHitRegions failed, contains invalid rect: (" << rect.x << ","
+                               << rect.y << "," << rect.width << "," << rect.height << ")";
       CloseConnection(FlatlandError::kBadOperation);
       return;
     }

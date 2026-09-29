@@ -548,6 +548,42 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
     Present(flatland, /*expect_success=*/false);
   }
 
+  // Width/height should not be NaN.
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    fuchsia_math::wire::RectF rect = {0, 0, NAN, 10};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
+
+    flatland->CreateTransform(kId);
+    flatland->SetRootTransform(kId);
+    flatland->SetHitRegions(kId, {region});
+    Present(flatland, /*expect_success=*/false);
+  }
+
+  // Origin should not be NaN.
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    fuchsia_math::wire::RectF rect = {NAN, 0, 10, 10};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
+
+    flatland->CreateTransform(kId);
+    flatland->SetRootTransform(kId);
+    flatland->SetHitRegions(kId, {region});
+    Present(flatland, /*expect_success=*/false);
+  }
+
+  // Coordinates should not be infinite.
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland();
+    fuchsia_math::wire::RectF rect = {0, 0, INFINITY, 10};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
+
+    flatland->CreateTransform(kId);
+    flatland->SetRootTransform(kId);
+    flatland->SetHitRegions(kId, {region});
+    Present(flatland, /*expect_success=*/false);
+  }
+
   // Negative origin should succeed.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
