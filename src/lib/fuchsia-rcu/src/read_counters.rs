@@ -30,8 +30,10 @@ impl PerCpuCount {
 }
 
 /// Per-CPU state containing the counters.
+///
+/// Aligned to 64 bytes to ensure each CPU's state has its own cache line.
 #[derive(Debug)]
-#[repr(C)]
+#[repr(C, align(64))]
 struct PerCpuState {
     /// Two sets of counters are maintained, one for even generations and one for odd generations.
     counts: [PerCpuCount; 2],
@@ -67,6 +69,7 @@ const MAX_CPUS: usize = 32;
 /// by RSEQ) and read by other CPUs using volatile reads, which produces a consistent view of the
 /// counters (with appropriate barriers).
 unsafe impl Sync for RcuReadCounters {}
+#[repr(C, align(64))]
 pub(crate) struct RcuReadCounters {
     /// Array of per-CPU states.
     per_cpu_counts: [PerCpuState; MAX_CPUS as usize],
