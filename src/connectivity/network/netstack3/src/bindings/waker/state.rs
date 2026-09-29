@@ -2,19 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! A multiple-producer, single-consumer notification mechanism.
+//! State shared between the sockets in a wake group and the task serving it.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::Poll;
+use std::task::{Poll, Waker};
 
+use assert_matches::assert_matches;
 use futures::Future;
-use futures::task::AtomicWaker;
+use netstack3_core::sync::Mutex;
+use replace_with::replace_with_and;
 
+/// The state of a wake group.
 #[derive(Debug, Default)]
-struct DataAvailable {
-    available: AtomicBool,
-    waker: AtomicWaker,
+enum WakeState {
+    /// The client is awake.
+    #[default]
+    Awake,
+    /// The client is asleep.
+    ///
+    /// Holds a [`Waker`] for data arrival notifications. That `Waker` is `None`
+    /// if the wake group task hasn't yet polled the future waiting for
+    /// notifications.
+    Asleep(Option<Waker>),
+    /// The client is waking up.
+    ///
+    /// Data arrived while the client was asleep, and we are in the process of
+    /// waking it.
+    // TODO(https://fxbug.dev/538164589): Hold delegated wake leases from
+    // netdevice until the client is awake.
+    Waking,
+    /// The client is disconnected.
+    ///
+    /// No more state transitions can happen to this wake group and all
+    /// notifications are no-ops.
+    Defunct,
 }
 
 /// The notifier side of the underlying data availability signal.
@@ -22,67 +43,78 @@ struct DataAvailable {
 /// Notifiers can be cloned to allow for multiple current producers.
 #[derive(Debug, Clone)]
 pub(crate) struct DataNotifier {
-    inner: Arc<DataAvailable>,
+    inner: Arc<Mutex<WakeState>>,
 }
 
 impl DataNotifier {
-    /// Notifies the watcher that data is available.
-    ///
-    /// If the watcher is not currently waiting, the notification will have no
-    /// effect until the watcher starts waiting. Multiple notifications are
-    /// coalesced.
+    /// Notifies the watcher that data is available if the watcher is waiting.
     pub(crate) fn notify(&self) {
-        let DataAvailable { available, waker } = &*self.inner;
+        let waker = replace_with_and(&mut *self.inner.lock(), |state| match state {
+            WakeState::Awake | WakeState::Waking | WakeState::Defunct => (state, None),
+            // RACE: The waker here is None if the watcher has called
+            // client_asleep_wait_for_data but not yet polled the future. This
+            // is fine because the future will just resolve on the first poll.
+            WakeState::Asleep(waker) => (WakeState::Waking, waker),
+        });
 
-        let prev = available.swap(true, Ordering::Relaxed);
-        if !prev {
+        if let Some(waker) = waker {
+            // This doesn't need to be under the lock. The waiting future can't
+            // have woken up without this call, so there isn't a race.
             waker.wake();
         }
     }
 }
 
-/// The receiver side of the underlying data availability signal.
-///
-/// The watcher is used to wait for notifications from one or more
-/// [`DataNotifier`]s.
+/// Handle to the shared wake group state, owned by the task serving the group.
 #[derive(Debug)]
-pub(crate) struct DataWatcher {
-    inner: Arc<DataAvailable>,
+pub(crate) struct WakeGroupState {
+    inner: Arc<Mutex<WakeState>>,
 }
 
-impl DataWatcher {
-    /// Creates a new watcher and notifier pair.
+impl Drop for WakeGroupState {
+    fn drop(&mut self) {
+        // Become defunct on teardown so any lingering DataNotifiers held by
+        // sockets become no-ops, and any stored wakers or held wake leases are
+        // dropped.
+        *self.inner.lock() = WakeState::Defunct;
+    }
+}
+
+impl WakeGroupState {
+    /// Creates a new [`WakeGroupState`] and [`DataNotifier`] pair.
     pub(crate) fn new() -> (Self, DataNotifier) {
-        let watcher = DataWatcher { inner: Arc::new(DataAvailable::default()) };
-        let notifier = DataNotifier { inner: Arc::clone(&watcher.inner) };
-        (watcher, notifier)
+        let state = WakeGroupState { inner: Arc::new(Mutex::default()) };
+        let notifier = DataNotifier { inner: Arc::clone(&state.inner) };
+        (state, notifier)
     }
 
-    /// Resets the data availability state and returns a future that completes when
-    /// a new notification is received.
+    /// Records that the client is awake and will no longer be notified for
+    /// incoming data.
+    pub(crate) fn client_awake(&self) {
+        let mut state = self.inner.lock();
+        assert_matches!(*state, WakeState::Waking | WakeState::Asleep(_));
+        *state = WakeState::Awake;
+    }
+
+    /// Records that the client is asleep and incoming data should attempt to wake it.
     ///
-    /// To be clear, this method clears any previous notification, and the returned
-    /// future will only complete the *next* time [`DataNotifier::notify`] is
-    /// called.
-    pub(crate) fn reset_and_wait(&mut self) -> impl Future<Output = ()> + use<'_> {
-        let DataAvailable { available, waker } = &*self.inner;
+    /// Returns a future that completes once data has arrived.
+    pub(crate) fn client_asleep_wait_for_data(&self) -> impl Future<Output = ()> + use<'_> {
+        let mut state = self.inner.lock();
+        assert_matches!(*state, WakeState::Awake);
+        *state = WakeState::Asleep(None);
 
-        available.store(false, Ordering::Relaxed);
-
-        futures::future::poll_fn(|cx| {
-            if available.load(Ordering::Relaxed) {
-                return Poll::Ready(());
+        futures::future::poll_fn(move |cx| {
+            let mut state = self.inner.lock();
+            match &mut *state {
+                WakeState::Waking => Poll::Ready(()),
+                WakeState::Asleep(stored_waker) => {
+                    *stored_waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+                WakeState::Awake => unreachable!("waited for data while client is awake"),
+                WakeState::Defunct => unreachable!("waited for data while defunct"),
             }
-
-            waker.register(cx.waker());
-
-            // Check again after registering the waker to avoid a race where a notifier
-            // flipped the flag after we checked it but before we registered to be woken up,
-            // which would result in a lost notification.
-            if available.load(Ordering::Relaxed) {
-                return Poll::Ready(());
-            }
-            Poll::Pending
         })
     }
 }
@@ -95,25 +127,26 @@ mod tests {
     fn notifications() {
         let mut exec = fuchsia_async::TestExecutor::new();
 
-        let (mut watcher, tcp) = DataWatcher::new();
+        let (state, tcp) = WakeGroupState::new();
         let udp = tcp.clone();
 
         // If we notify before the watcher wait has been initialized, the watcher is not
         // notified.
         tcp.notify();
-        let mut fut = watcher.reset_and_wait();
+        let mut fut = state.client_asleep_wait_for_data();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // If we notify after the watcher wait has been initialized, it should wake the
         // watcher future.
         tcp.notify();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
-        drop(fut);
-
         // If we notify again before a new watcher wait is initialized, again, the
         // notification is swallowed.
+        state.client_awake();
+        drop(fut);
+
         tcp.notify();
-        let mut fut = watcher.reset_and_wait();
+        let mut fut = state.client_asleep_wait_for_data();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // We can notify arbitrarily many times on the same notifier or on arbitrarily
@@ -123,11 +156,12 @@ mod tests {
         udp.notify();
         tcp.notify();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Ready(()));
-        drop(fut);
-
         // But the notifications are coalesced, so a subsequent wait should not
         // complete.
-        let mut fut = watcher.reset_and_wait();
+        state.client_awake();
+        drop(fut);
+
+        let mut fut = state.client_asleep_wait_for_data();
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
     }
 }
