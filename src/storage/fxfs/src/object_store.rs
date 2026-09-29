@@ -2464,7 +2464,13 @@ impl ObjectStore {
         let mut transaction = parent_store
             .new_transaction(
                 lock_keys![LockKey::object(parent_store.store_object_id, self.store_object_id)],
-                Options::default(),
+                Options {
+                    // We must skip journal checks because this transaction might be needed to
+                    // compact.
+                    skip_journal_checks: true,
+                    borrow_metadata_space: true,
+                    ..Default::default()
+                },
             )
             .await?;
 
@@ -4140,75 +4146,6 @@ mod tests {
 
         fsck(fs.clone()).await.expect("fsck failed");
         fsck_volume(&fs, store.store_object_id(), None).await.expect("fsck_volume failed");
-    }
-
-    #[fuchsia::test]
-    async fn test_object_id_cipher_roll_no_space() {
-        let fs = test_filesystem().await;
-        let crypt = Arc::new(new_insecure_crypt());
-
-        {
-            let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-            let store = root_volume
-                .new_volume(
-                    "test",
-                    NewChildStoreOptions {
-                        options: StoreOptions {
-                            crypt: Some(crypt.clone()),
-                            ..StoreOptions::default()
-                        },
-                        ..Default::default()
-                    },
-                )
-                .await
-                .expect("new_volume failed");
-
-            let root_directory = Directory::open(&store, store.root_directory_object_id())
-                .await
-                .expect("open failed");
-
-            // Force the next object ID allocation to roll the object ID cipher.
-            match &mut *store.last_object_id.lock() {
-                LastObjectId::Encrypted { id, .. } => {
-                    *id |= 0xffffffff;
-                }
-                _ => unreachable!(),
-            }
-
-            let mut transaction = store
-                .new_transaction(
-                    lock_keys![LockKey::object(
-                        store.store_object_id(),
-                        store.root_directory_object_id()
-                    )],
-                    Options::default(),
-                )
-                .await
-                .expect("new_transaction failed");
-
-            // Reserve all remaining free space in the allocator so that rolling the object ID
-            // cipher fails with NoSpace rather than borrowing metadata space.
-            let reservation = fs.allocator().reserve_with(None, |limit| limit);
-            let err = root_directory
-                .create_child_file(&mut transaction, "test")
-                .await
-                .err()
-                .expect("create_child_file should fail with NoSpace");
-            assert!(FxfsError::NoSpace.matches(&err), "unexpected error: {err:?}");
-
-            std::mem::drop(reservation);
-
-            let object = root_directory
-                .create_child_file(&mut transaction, "test")
-                .await
-                .expect("create_child_file failed");
-            transaction.commit().await.expect("commit failed");
-
-            assert_eq!(object.object_id() & OBJECT_ID_HI_MASK, 1u64 << 32);
-        }
-
-        fsck(fs.clone()).await.expect("fsck failed");
-        fs.close().await.expect("Close failed");
     }
 
     #[fuchsia::test(threads = 2)]
