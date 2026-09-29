@@ -56,6 +56,10 @@
             name: "cobalt",
             url: "fake_cobalt#meta/fake_cobalt.cm",
         },
+        {
+            name: "erofs",
+            url: "erofs#meta/erofs.cm",
+        },
     ],
     capabilities: [
         { protocol: "fuchsia.test.Suite" },
@@ -98,6 +102,11 @@
         {
             protocol: [ "fuchsia.starnix.runner.Manager" ],
             from: "#runner",
+            to: [ "#kernel" ],
+        },
+        {
+            protocol: [ "fuchsia.erofs.Erofs" ],
+            from: "#erofs",
             to: [ "#kernel" ],
         },
         {
