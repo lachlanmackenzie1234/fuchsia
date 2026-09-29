@@ -208,26 +208,31 @@ void AsyncBacktraceSubscription::CollectAndReportAsyncBacktrace(Thread* thread) 
             .id = static_cast<int64_t>(thread_koid),
             .name = weak_thread->GetName(),
             .processId = GetProcessKoid(weak_thread.get()),
-            .tasks = weak_thread->GetAsyncTaskTree().Map<dap::AsyncTaskNode>(
-                [&file_provider](const zxdb::AsyncTask& task, dap::AsyncTaskNode* node) {
-                  if (uint64_t task_id = task.GetId(); task_id != 0) {
-                    node->id = zxdb::to_hex_string(task_id);
-                  }
-                  node->name = task.GetIdentifier().GetFullName();
-                  const zxdb::Location& location = task.GetLocation();
-                  if (location.file_line().is_valid()) {
-                    auto file_metadata = file_provider.GetFileMetadata(
-                        location.file_line().file(), location.file_line().comp_dir());
-                    if (!file_metadata.has_error()) {
-                      node->file = file_metadata.take_value().full_path;
-                      node->line = location.file_line().line();
-                    }
-                  }
-                },
-                [](dap::AsyncTaskNode* node) { return &node->children; }),
+            .tasks = FormatAsyncTaskTree(weak_thread->GetAsyncTaskTree(), file_provider),
         });
       });
   thread->GetAsyncTaskTree().Sync(thread->GetStack(), it->second.callback());
+}
+
+dap::array<dap::AsyncTaskNode> FormatAsyncTaskTree(const AsyncTaskTree& tree,
+                                                   const SourceFileProviderImpl& file_provider) {
+  return tree.Map<dap::AsyncTaskNode>(
+      [&file_provider](const zxdb::AsyncTask& task, dap::AsyncTaskNode* node) {
+        if (uint64_t task_id = task.GetId(); task_id != 0) {
+          node->id = zxdb::to_hex_string(task_id);
+        }
+        node->name = task.GetIdentifier().GetFullName();
+        const zxdb::Location& location = task.GetLocation();
+        if (location.file_line().is_valid()) {
+          auto file_metadata = file_provider.GetFileMetadata(location.file_line().file(),
+                                                             location.file_line().comp_dir());
+          if (!file_metadata.has_error()) {
+            node->file = file_metadata.take_value().full_path;
+            node->line = location.file_line().line();
+          }
+        }
+      },
+      [](dap::AsyncTaskNode* node) { return &node->children; });
 }
 
 }  // namespace zxdb
