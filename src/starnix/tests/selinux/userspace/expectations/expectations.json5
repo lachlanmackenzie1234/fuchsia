@@ -20,12 +20,6 @@
                 // TODO(https://fxbug.dev/398654361)
                 "BinderTest/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
 
-                // TODO: https://fxbug.dev/558674709 - Evaluate binder permissions against cached
-                // target SID.
-                "BinderTest.TargetUsesCachedSid",
-                "BinderTest.TargetUsesCachedSidTransferBinder",
-                "BinderTest.TargetUsesCachedSidTransferFile",
-
                 // TODO(https://fxbug.dev/521343708) - Support SELinux context= and rootcontext=
                 // mount options on cgroupfs v2.
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/Context",

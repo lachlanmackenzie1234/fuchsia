@@ -7,8 +7,8 @@
 
 use super::selinux_hooks::audit::Auditable;
 use super::{
-    BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
-    KernelState, PerfEventState, common_cap, selinux_hooks, yama,
+    BpfMapState, BpfProgState, FileObjectState, FileSystemState, KernelState, PerfEventState,
+    common_cap, selinux_hooks, yama,
 };
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::perf::PerfEventFile;
@@ -235,45 +235,61 @@ pub fn kernel_init_security(
 
 /// Checks whether the given `current_task` can become the binder context manager.
 /// Corresponds to the `binder_set_context_mgr` hook.
-pub fn binder_set_context_mgr(current_task: &CurrentTask) -> Result<(), Errno> {
+pub fn binder_set_context_mgr(
+    current_task: &CurrentTask,
+    context_mgr_creds: &Credentials,
+) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.binder_set_context_mgr");
     if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::binder::binder_set_context_mgr(security_server, current_task)
+        selinux_hooks::binder::binder_set_context_mgr(
+            security_server,
+            current_task,
+            context_mgr_creds,
+        )
     })
 }
 
-/// Checks whether the given `current_task` can perform a transaction to `target_task`.
+/// Checks whether the given `current_task` can perform a transaction from `source_creds` to `target_creds`.
 /// Corresponds to the `binder_transaction` hook.
 pub fn binder_transaction(
     current_task: &CurrentTask,
-    target_task: &Task,
-    connection_state: &BinderConnectionState,
+    source_creds: &Credentials,
+    target_creds: &Credentials,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.binder_transaction");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::binder::binder_transaction(
             security_server,
-            &connection_state.state,
             current_task,
-            target_task,
+            source_creds,
+            target_creds,
         )
     })
 }
 
-/// Checks whether the given `current_task` can transfer Binder objects to `target_task`.
+/// Checks whether the given `current_task` can transfer Binder objects from `source_creds` to `target_creds`.
 /// Corresponds to the `binder_transfer_binder` hook.
-pub fn binder_transfer_binder(current_task: &CurrentTask, target_task: &Task) -> Result<(), Errno> {
+pub fn binder_transfer_binder(
+    current_task: &CurrentTask,
+    source_creds: &Credentials,
+    target_creds: &Credentials,
+) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.binder_transfer_binder");
     if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::binder::binder_transfer_binder(security_server, current_task, target_task)
+        selinux_hooks::binder::binder_transfer_binder(
+            security_server,
+            current_task,
+            source_creds,
+            target_creds,
+        )
     })
 }
 
-/// Checks whether the given `receiving_task` can receive `file` in a Binder transaction.
+/// Checks whether the receiving process with `target_creds` can receive `file` in a Binder transaction.
 /// Corresponds to the `binder_transfer_file` hook.
 pub fn binder_transfer_file(
     current_task: &CurrentTask,
-    receiving_task: &Task,
+    target_creds: &Credentials,
     file: &FileObject,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.binder_transfer_file");
@@ -281,24 +297,22 @@ pub fn binder_transfer_file(
         selinux_hooks::binder::binder_transfer_file(
             security_server,
             current_task,
-            receiving_task,
+            target_creds,
             file,
         )
     })
 }
 
-/// Returns the serialized Security Context associated with the specified state.
-/// If the state's SID cannot be resolved then None is returned.
+/// Returns the serialized Security Context associated with the specified credentials.
+/// If the SID cannot be resolved then None is returned.
 pub fn binder_get_context(
     current_task: &CurrentTask,
-    connection_state: &BinderConnectionState,
+    source_creds: &Credentials,
 ) -> Option<Vec<u8>> {
     track_hook_duration!("security.hooks.binder_get_context");
     if_selinux_else(
         current_task,
-        |security_server| {
-            selinux_hooks::binder::binder_get_context(&security_server, &connection_state.state)
-        },
+        |security_server| selinux_hooks::binder::binder_get_context(&security_server, source_creds),
         || None,
     )
 }
@@ -822,13 +836,6 @@ pub fn file_receive(current_task: &CurrentTask, file: &FileObject) -> Result<(),
 pub fn file_alloc_security(current_task: &CurrentTask) -> FileObjectState {
     track_hook_duration!("security.hooks.file_alloc_security");
     FileObjectState { state: selinux_hooks::file::file_alloc_security(current_task) }
-}
-
-/// Returns the security context to be assigned to a BinderConnection, based on the task that
-/// creates it.
-pub fn binder_connection_alloc(current_task: &CurrentTask) -> BinderConnectionState {
-    track_hook_duration!("security.hooks.binder_connection_alloc");
-    BinderConnectionState { state: selinux_hooks::binder::binder_connection_alloc(current_task) }
 }
 
 /// Returns the security context to be assigned to a BPM map object, based on the task that

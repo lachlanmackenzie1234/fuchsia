@@ -36,7 +36,6 @@ pub mod tests {
         DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
         ProtectionFlags,
     };
-    use starnix_core::security;
     use starnix_core::task::{CurrentTask, ExitStatus, Kernel, SimpleWaiter, Waiter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{Anon, FdFlags, FdNumber, FileHandle, FileObject, anon_fs};
@@ -98,7 +97,6 @@ pub mod tests {
         device: Weak<BinderDriver>,
         proc: OwnedRef<BinderProcess>,
         thread: OwnedRef<BinderThread>,
-        connection_security_state: security::BinderConnectionState,
         kernel: Arc<Kernel>,
         task: Option<AutoReleasableTask>,
     }
@@ -113,7 +111,6 @@ pub mod tests {
                 device: Arc::downgrade(device),
                 proc,
                 thread,
-                connection_security_state: security::binder_connection_alloc(&task),
                 kernel: current_task.kernel().clone(),
                 task: Some(task),
             }
@@ -128,7 +125,6 @@ pub mod tests {
                 device: Arc::downgrade(device),
                 proc,
                 thread,
-                connection_security_state: security::binder_connection_alloc(current_task),
                 kernel: current_task.kernel().clone(),
                 task: None,
             }
@@ -149,7 +145,6 @@ pub mod tests {
                 if let Some(task) = self.task.as_ref() { &task } else { current_task };
             OperationContext {
                 current_task,
-                connection_security_state: &self.connection_security_state,
                 binder_proc: &self.proc,
                 binder_thread: &self.thread,
                 memory_accessor: current_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -266,12 +261,10 @@ pub mod tests {
         spawn_kernel_and_run(async |current_task| {
             let device = BinderDevice::default();
             let manager = BinderProcessFixture::new_current(current_task, &device);
-            let security_state = security::binder_connection_alloc(current_task);
 
             device
                 .ioctl(
                     current_task,
-                    &security_state,
                     &manager.proc,
                     None,
                     uapi::BINDER_SET_CONTEXT_MGR,
@@ -282,7 +275,6 @@ pub mod tests {
 
             match device.ioctl(
                 current_task,
-                &security_state,
                 &manager.proc,
                 None,
                 uapi::BINDER_SET_CONTEXT_MGR,
@@ -297,7 +289,6 @@ pub mod tests {
             other.task().set_creds(Credentials::with_ids(1, 1));
             match device.ioctl(
                 other.task(),
-                &other.connection_security_state,
                 &other.proc,
                 None,
                 uapi::BINDER_SET_CONTEXT_MGR,
@@ -314,7 +305,6 @@ pub mod tests {
             device
                 .ioctl(
                     current_task,
-                    &security::binder_connection_alloc(current_task),
                     &successor.proc,
                     None,
                     uapi::BINDER_SET_CONTEXT_MGR,
@@ -1446,7 +1436,6 @@ pub mod tests {
                 .copy_transaction_buffers(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    &receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &transaction,
@@ -1520,7 +1509,6 @@ pub mod tests {
                 .translate_objects(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
@@ -1613,7 +1601,6 @@ pub mod tests {
                 .translate_objects(&sender.context(current_task),
                     &mut Vec::new(),
                     receiver.task(),
-                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -1693,7 +1680,6 @@ pub mod tests {
                 .translate_objects(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
@@ -1812,7 +1798,6 @@ pub mod tests {
                 .translate_objects(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
@@ -1967,7 +1952,6 @@ pub mod tests {
                     &sender.context(current_task),
                     &mut Vec::new(),
                     current_task,
-                    current_task,
                     &receiver.proc,
                     &input,
                     None,
@@ -2071,7 +2055,6 @@ pub mod tests {
                     &sender.context(current_task),
                     &mut Vec::new(),
                     receiver.task(),
-                    receiver.task(),
                     &receiver.proc,
                     &input,
                     None,
@@ -2153,7 +2136,6 @@ pub mod tests {
                 .copy_transaction_buffers(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &input,
@@ -2609,7 +2591,6 @@ pub mod tests {
                     &sender.context(current_task),
                     &mut Vec::new(),
                     receiver.task(),
-                    receiver.task(),
                     &receiver.proc,
                     &input,
                     None,
@@ -2656,7 +2637,6 @@ pub mod tests {
                     &sender.context(current_task),
                     &mut Vec::new(),
                     receiver.task(),
-                    receiver.task(),
                     &receiver.proc,
                     &[0 as binder_uintptr_t],
                     &mut transaction_data,
@@ -2691,7 +2671,6 @@ pub mod tests {
                 .translate_objects(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &[0 as binder_uintptr_t],
@@ -2738,7 +2717,6 @@ pub mod tests {
                 .translate_objects(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &[
@@ -2837,7 +2815,6 @@ pub mod tests {
 
             let context = OperationContext {
                 current_task,
-                connection_security_state: &security::binder_connection_alloc(current_task),
                 binder_proc: &binder_proc,
                 binder_thread: &binder_thread,
                 memory_accessor: binder_proc.get_memory_accessor(current_task, None),
@@ -3142,7 +3119,6 @@ pub mod tests {
                     &sender.context(current_task),
                     &mut Vec::new(),
                     receiver.task(),
-                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -3236,7 +3212,6 @@ pub mod tests {
                     &sender.context(current_task),
                     &mut source_files,
                     receiver.task(),
-                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -3298,7 +3273,6 @@ pub mod tests {
                     &sender.context(current_task),
                     &mut Vec::new(),
                     receiver.task(),
-                    receiver.task(),
                     &receiver.proc,
                     &offsets,
                     &mut transaction_data,
@@ -3355,7 +3329,6 @@ pub mod tests {
                 .translate_objects(
                     &sender.context(current_task),
                     &mut Vec::new(),
-                    receiver.task(),
                     receiver.task(),
                     &receiver.proc,
                     &offsets,
@@ -4162,7 +4135,6 @@ pub mod tests {
             // the process queue command without requiring proc_a.thread to re-enter handle_thread_read.
             let looper_context = OperationContext {
                 current_task: &looper_task,
-                connection_security_state: &proc_a.connection_security_state,
                 binder_proc: &proc_a.proc,
                 binder_thread: &looper_thread,
                 memory_accessor: looper_task.as_memory_accessor().expect("as_memory_accessor"),
@@ -4556,7 +4528,6 @@ pub mod tests {
             device
                 .ioctl(
                     current_task,
-                    &security::binder_connection_alloc(current_task),
                     &receiver.proc,
                     None,
                     uapi::BINDER_FREEZE,
@@ -4602,7 +4573,6 @@ pub mod tests {
             device
                 .ioctl(
                     current_task,
-                    &security::binder_connection_alloc(current_task),
                     &receiver.proc,
                     None,
                     uapi::BINDER_GET_FROZEN_INFO,

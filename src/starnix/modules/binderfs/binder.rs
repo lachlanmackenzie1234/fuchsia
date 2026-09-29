@@ -34,8 +34,10 @@ use crate::trace::{
     NAME_HANDLE_THREAD_WRITE, NAME_HANDLE_TRANSACTION, on_command_dequeued,
 };
 use starnix_core::security;
+#[cfg(test)]
+use starnix_core::task::Task;
 use starnix_core::task::{
-    CurrentTask, EventHandler, Kernel, Pid, SimpleWaiter, Task, WaitCanceler, Waiter,
+    CurrentTask, EventHandler, Kernel, Pid, SimpleWaiter, WaitCanceler, Waiter,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -54,6 +56,7 @@ use starnix_types::ownership::{
     OwnedRef, Releasable, Share, TempRef, release_after, release_iter_after, release_on_error,
 };
 use starnix_types::user_buffer::UserBuffer;
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EINTR, Errno};
 use starnix_uapi::math::round_up_to_increment;
@@ -111,13 +114,10 @@ impl DeviceOps for BinderDevice {
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let identifier = self.create_local_process(current_task.pid.clone());
+        let identifier = self
+            .create_local_process(current_task.pid.clone(), current_task.current_creds().clone());
         log_trace!("opened new BinderConnection id={}", identifier);
-        Ok(Box::new(BinderConnection {
-            identifier,
-            device: self.clone(),
-            security_state: security::binder_connection_alloc(current_task),
-        }))
+        Ok(Box::new(BinderConnection { identifier, device: self.clone() }))
     }
 }
 
@@ -128,8 +128,6 @@ pub struct BinderConnection {
     pub identifier: u64,
     /// The implementation of the binder driver.
     device: BinderDevice,
-    /// Security state associated this file object.
-    security_state: security::BinderConnectionState,
 }
 
 impl BinderConnection {
@@ -240,15 +238,7 @@ impl FileOps for BinderConnection {
     ) -> Result<SyscallResult, Errno> {
         let binder_process = self.proc(current_task)?;
         release_after!(binder_process, current_task.kernel(), {
-            self.device.ioctl(
-                current_task,
-                &self.security_state,
-                &binder_process,
-                None,
-                request,
-                arg,
-                Vec::new(),
-            )
+            self.device.ioctl(current_task, &binder_process, None, request, arg, Vec::new())
         })
     }
 
@@ -352,7 +342,6 @@ impl RemoteBinderConnection {
                 RemoteIoctl { ioctl_reads, ioctl_writes: Cell::new(Vec::new()), vmo };
             self.binder_connection.device.ioctl(
                 current_task,
-                &self.binder_connection.security_state,
                 &binder_process,
                 Some(&remote_ioctl),
                 request,
@@ -376,7 +365,6 @@ impl RemoteBinderConnection {
 /// thread.
 pub struct OperationContext<'a> {
     pub current_task: &'a CurrentTask,
-    pub connection_security_state: &'a security::BinderConnectionState,
     pub binder_proc: &'a BinderProcess,
     pub binder_thread: &'a BinderThread,
     pub memory_accessor: &'a dyn MemoryAccessor,
@@ -466,13 +454,14 @@ impl BinderDriver {
     }
 
     /// Creates and register the binder process state to represent a local process with `key`.
-    fn create_local_process(&self, key: Pid) -> u64 {
-        self.create_process(key, None)
+    fn create_local_process(&self, key: Pid, creds: Arc<Credentials>) -> u64 {
+        self.create_process(key, None, creds)
     }
 
     /// Creates and register the binder process state to represent a remote process with `key`.
     fn create_remote_process(&self, key: Pid, resource_accessor: RemoteResourceAccessor) -> u64 {
-        self.create_process(key, Some(Arc::new(resource_accessor)))
+        let creds = resource_accessor.remote_creds.clone();
+        self.create_process(key, Some(Arc::new(resource_accessor)), creds)
     }
 
     /// Creates and register the binder process state to represent a process with `key`.
@@ -480,9 +469,10 @@ impl BinderDriver {
         &self,
         key: Pid,
         resource_accessor: Option<Arc<RemoteResourceAccessor>>,
+        creds: Arc<Credentials>,
     ) -> u64 {
         let identifier = self.next_identifier.next();
-        let binder_process = BinderProcess::new(identifier, key, resource_accessor);
+        let binder_process = BinderProcess::new(identifier, key, resource_accessor, creds);
         assert!(
             self.procs.write().insert(identifier, binder_process).is_none(),
             "process with same identifier created"
@@ -500,7 +490,7 @@ impl BinderDriver {
         key: Pid,
         task: &Task,
     ) -> (OwnedRef<BinderProcess>, OwnedRef<BinderThread>) {
-        let identifier = self.create_local_process(key.clone());
+        let identifier = self.create_local_process(key.clone(), task.clone_creds());
         let binder_process = self.find_process(identifier).expect("find_process");
         let binder_thread =
             binder_process.lock().find_or_register_thread(task).expect("find_or_register_thread");
@@ -529,7 +519,6 @@ impl BinderDriver {
             binder_connection: BinderConnection {
                 identifier,
                 device: BinderDevice(Arc::clone(this)),
-                security_state: security::binder_connection_alloc(current_task),
             },
         })
     }
@@ -564,7 +553,6 @@ impl BinderDriver {
     pub fn ioctl(
         &self,
         current_task: &CurrentTask,
-        connection_security_state: &security::BinderConnectionState,
         binder_proc: &BinderProcess,
         remote_ioctl: Option<&RemoteIoctl>,
         request: u32,
@@ -732,7 +720,7 @@ impl BinderDriver {
                     // Match Linux binder_ioctl_set_ctx_mgr: reject if a live manager is
                     // already set (EBUSY), and lock the manager role to the first setter's
                     // euid (EPERM on mismatch).
-                    security::binder_set_context_mgr(current_task)?;
+                    security::binder_set_context_mgr(current_task, &binder_proc.creds)?;
                     let flags = if request == uapi::BINDER_SET_CONTEXT_MGR_EXT {
                         if user_arg.is_null() {
                             return error!(EINVAL);
@@ -790,7 +778,6 @@ impl BinderDriver {
                     let result = (|| {
                         let context = OperationContext {
                             current_task,
-                            connection_security_state: &connection_security_state,
                             binder_proc,
                             binder_thread: &binder_thread,
                             memory_accessor,
@@ -1060,8 +1047,8 @@ impl BinderDriver {
 
                 security::binder_transaction(
                     context.current_task,
-                    &target_task,
-                    context.connection_security_state,
+                    &context.binder_proc.creds,
+                    &target_proc.creds,
                 )?;
 
                 let security_context: Option<FsString> =
@@ -1069,7 +1056,7 @@ impl BinderDriver {
                         let mut security_context = FsString::from(
                             security::binder_get_context(
                                 context.current_task,
-                                context.connection_security_state,
+                                &context.binder_proc.creds,
                             )
                             .unwrap_or_default(),
                         );
@@ -1083,7 +1070,6 @@ impl BinderDriver {
                 let (buffers, mut transaction_state) = self.copy_transaction_buffers(
                     context,
                     files,
-                    &target_task,
                     target_proc.get_resource_accessor(target_task.deref()),
                     &target_proc,
                     &data,
@@ -1258,7 +1244,6 @@ impl BinderDriver {
             let (buffers, transaction_state) = self.copy_transaction_buffers(
                 context,
                 files,
-                &target_task,
                 target_proc.get_resource_accessor(target_task.deref()),
                 &target_proc,
                 &data,
@@ -1569,7 +1554,6 @@ impl BinderDriver {
         &self,
         source: &OperationContext<'_>,
         source_files: &mut Vec<fbinder::FileHandle>,
-        target_task: &Task,
         target_resource_accessor: &'a dyn ResourceAccessor,
         target_proc: &BinderProcess,
         data: &binder_transaction_data_sg,
@@ -1619,7 +1603,6 @@ impl BinderDriver {
         let transient_transaction_state = self.translate_objects(
             source,
             source_files,
-            target_task,
             target_resource_accessor,
             target_proc,
             allocations.offsets_buffer.as_bytes(),
@@ -1634,8 +1617,8 @@ impl BinderDriver {
     fn translate_files<'a>(
         source: &OperationContext<'_>,
         source_files: &mut Vec<fbinder::FileHandle>,
-        target_task: &Task,
         target_resource_accessor: &'a dyn ResourceAccessor,
+        target_proc: &BinderProcess,
         fds: Vec<FdNumber>,
         add_action: &mut dyn FnMut(FdNumber),
     ) -> Result<Vec<FdNumber>, Errno> {
@@ -1681,7 +1664,7 @@ impl BinderDriver {
                 return error!(ENOENT);
             };
 
-            security::binder_transfer_file(source.current_task, target_task, &(file.0))?;
+            security::binder_transfer_file(source.current_task, &target_proc.creds, &(file.0))?;
 
             target_files.push(file);
         }
@@ -1710,7 +1693,6 @@ impl BinderDriver {
         &self,
         source: &OperationContext<'_>,
         source_files: &mut Vec<fbinder::FileHandle>,
-        target_task: &Task,
         target_resource_accessor: &'a dyn ResourceAccessor,
         target_proc: &BinderProcess,
         offsets: &[binder_uintptr_t],
@@ -1736,7 +1718,11 @@ impl BinderDriver {
                     SerializedBinderObject::from_bytes(&transaction_data[object_offset..])?;
                 let translated_object = match serialized_object {
                     SerializedBinderObject::Handle { handle, flags, cookie } => {
-                        security::binder_transfer_binder(source.current_task, target_task)?;
+                        security::binder_transfer_binder(
+                            source.current_task,
+                            &source.binder_proc.creds,
+                            &target_proc.creds,
+                        )?;
 
                         match handle {
                             Handle::ContextManager => {
@@ -1785,7 +1771,11 @@ impl BinderDriver {
                         }
                     }
                     SerializedBinderObject::Object { local, flags } => {
-                        security::binder_transfer_binder(source.current_task, target_task)?;
+                        security::binder_transfer_binder(
+                            source.current_task,
+                            &source.binder_proc.creds,
+                            &target_proc.creds,
+                        )?;
 
                         let mut actions = RefCountActions::default();
                         release_after!(actions, (), {
@@ -1919,8 +1909,8 @@ impl BinderDriver {
                         let new_fds = Self::translate_files(
                             source,
                             source_files,
-                            target_task,
                             target_resource_accessor,
+                            target_proc,
                             fd_array.iter().map(|fd| FdNumber::from_raw(*fd as i32)).collect(),
                             // Close this FD if the transaction ends either by success or failure.
                             &mut |fd| transaction_state.push_owned_fd(fd),
@@ -1939,8 +1929,8 @@ impl BinderDriver {
             let new_fds = Self::translate_files(
                 source,
                 source_files,
-                target_task,
                 target_resource_accessor,
+                target_proc,
                 files.iter().map(|TransientFile { fd, .. }| *fd).collect(),
                 // Close this FD if the transaction fails.
                 &mut |fd| transaction_state.push_transient_fd(fd),
