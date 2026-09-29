@@ -367,7 +367,7 @@ mod test {
         }
 
         async fn current_marks(&self) -> SocketMarks {
-            *self.proxy.marks.lock().await
+            **self.proxy.marks.lock().await
         }
 
         async fn establish_network(&mut self, initial_marks: Option<fnet::Marks>) -> ActiveNetwork {
@@ -388,7 +388,7 @@ mod test {
         async fn finish_and_assert_marks(self, expected: SocketMarks) {
             let proxy = Arc::clone(&self.proxy);
             self.finish().await;
-            assert_eq!(*proxy.marks.lock().await, expected);
+            assert_eq!(**proxy.marks.lock().await, expected);
         }
     }
 

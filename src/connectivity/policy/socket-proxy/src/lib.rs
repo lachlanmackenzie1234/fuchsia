@@ -11,7 +11,7 @@ use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_inspect::health::Reporter;
-use fuchsia_inspect_derive::{Inspect, WithInspect as _};
+use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect as _};
 use futures::StreamExt as _;
 use futures::lock::Mutex;
 use log::error;
@@ -69,21 +69,44 @@ impl Default for SocketMarks {
     }
 }
 
+impl Unit for SocketMarks {
+    type Data = fuchsia_inspect::Node;
+
+    fn inspect_create(&self, parent: &fuchsia_inspect::Node, name: impl AsRef<str>) -> Self::Data {
+        let mut node = parent.create_child(name.as_ref());
+        self.inspect_update(&mut node);
+        node
+    }
+
+    fn inspect_update(&self, data: &mut Self::Data) {
+        data.atomic_update(|node| {
+            node.clear_recorded();
+            let fnet::Marks { mark_1, mark_2, __source_breaking } = fnet::Marks::from(*self);
+            if let Some(mark_1) = mark_1 {
+                node.record_uint("mark_1", mark_1.into());
+            }
+            if let Some(mark_2) = mark_2 {
+                node.record_uint("mark_2", mark_2.into());
+            }
+            node.record_bool("has_mark", self.has_value());
+        });
+    }
+}
+
 #[derive(Inspect)]
 struct SocketProxy {
-    #[inspect(skip)]
-    marks: Arc<Mutex<SocketMarks>>,
+    marks: Arc<Mutex<IValue<SocketMarks>>>,
     socket_provider: socket_provider::SocketProvider,
 }
 
 impl SocketProxy {
     fn new() -> Self {
-        let marks = Arc::new(Mutex::new(SocketMarks::default()));
+        let marks = Arc::new(Mutex::new(IValue::new(SocketMarks::default())));
         Self { marks: marks.clone(), socket_provider: socket_provider::SocketProvider::new(marks) }
     }
 
     async fn set_marks(&self, marks: SocketMarks) {
-        *self.marks.lock().await = marks;
+        self.marks.lock().await.iset(marks);
     }
 }
 
@@ -143,4 +166,59 @@ pub async fn run() -> Result<(), anyhow::Error> {
     scope.join().await;
 
     Ok(())
+}
+#[cfg(test)]
+mod test {
+    use super::*;
+    use diagnostics_assertions::assert_data_tree;
+
+    const TEST_MARK_1: u32 = 42;
+    const TEST_MARK_2: u32 = 99;
+
+    #[fuchsia::test]
+    async fn test_socket_proxy_set_marks() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let proxy = SocketProxy::new().with_inspect(inspector.root(), "root").expect("attach");
+
+        assert_data_tree!(inspector, root: contains {
+            marks: {
+                has_mark: false,
+            },
+        });
+
+        let marks = SocketMarks {
+            mark_1: OptionalUint32::Value(TEST_MARK_1),
+            mark_2: OptionalUint32::Unset(fposix_socket::Empty),
+        };
+        proxy.set_marks(marks).await;
+        assert_eq!(**proxy.marks.lock().await, marks);
+        assert_data_tree!(inspector, root: contains {
+            marks: {
+                mark_1: u64::from(TEST_MARK_1),
+                has_mark: true,
+            },
+        });
+
+        let both_marks = SocketMarks {
+            mark_1: OptionalUint32::Value(TEST_MARK_1),
+            mark_2: OptionalUint32::Value(TEST_MARK_2),
+        };
+        proxy.set_marks(both_marks).await;
+        assert_eq!(**proxy.marks.lock().await, both_marks);
+        assert_data_tree!(inspector, root: contains {
+            marks: {
+                mark_1: u64::from(TEST_MARK_1),
+                mark_2: u64::from(TEST_MARK_2),
+                has_mark: true,
+            },
+        });
+
+        proxy.set_marks(SocketMarks::default()).await;
+        assert_eq!(**proxy.marks.lock().await, SocketMarks::default());
+        assert_data_tree!(inspector, root: contains {
+            marks: {
+                has_mark: false,
+            },
+        });
+    }
 }
