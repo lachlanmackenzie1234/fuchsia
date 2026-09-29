@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Defines fx_packaged_binary rule and macro for wrapping C++ binaries.
+"""Defines fx_packaged_binary rule and macro for wrapping C++ and Rust binaries.
 
 `fx_packaged_binary` is a convenience macro that wraps a C++ or Rust executable
 binary so it can be packaged into a Fuchsia package by providing the necessary
@@ -22,10 +22,12 @@ Bazel rule attribute definitions (`attr.string(default = ...)`) do not accept
 load(
     "@fuchsia_rules_common//:utils.bzl",
     "get_runfiles_shared_lib_binary_info",
+    "make_resource_struct",
 )
 load(
     "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
     "FUCHSIA_DEBUG_SYMBOLS_ATTRS",
+    "merge_debug_symbol_infos",
 )
 load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
@@ -44,6 +46,7 @@ load(
 )
 load("@prebuilt_clang//:generated_constants.bzl", clang_constants = "constants")
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load("@rules_rust//rust:defs.bzl", "rust_common")
 
 _SUPPORTED_CPUS = [
     "arm64",
@@ -75,14 +78,42 @@ def _fx_packaged_binary_impl(ctx):
         ],
     )
 
+    # Prebuilt debug symbols are propagated directly because they are already
+    # generated. Only one FuchsiaDebugSymbolInfo may be returned, so they are
+    # collected here and merged below.
+    debug_symbol_infos = [ctx.attr._clang_debug_symbols]
+
+    extra_providers = []
+
+    # Rust binaries are linked against a dynamic libstd, so the prebuilt
+    # libstd.so has to travel with them into the package. This is the Bazel
+    # equivalent of GN adding //build/toolchain/runtime:shared-rust-libstd-deps
+    # to every Rust target built with -Cprefer-dynamic.
+    #
+    # This is keyed off CrateInfo rather than an attribute so that callers do
+    # not have to declare what language their binary is written in, and so that
+    # C++ packages never pick up an unnecessary copy of libstd.
+    if rust_common.crate_info in ctx.attr.binary:
+        extra_providers.append(FuchsiaPackageResourcesInfo(resources = [
+            make_resource_struct(
+                src = f,
+                dest = ctx.attr.shared_lib_dest + "/" + f.basename,
+            )
+            for f in ctx.files._rust_libstd_dist
+        ]))
+        debug_symbol_infos.append(FuchsiaDebugSymbolInfo(build_id_dirs_mapping = {
+            ctx.file._rust_debug_symbols_source_search_root: depset(
+                ctx.files._rust_libstd_debug_build_id,
+            ),
+        }))
+
     return [
         DefaultInfo(files = depset([target_in])),
-        # Prebuilt clang debug symbols are propagated directly because they are already generated.
-        ctx.attr._clang_debug_symbols[FuchsiaDebugSymbolInfo],
+        merge_debug_symbol_infos(debug_symbol_infos),
         # The wrapped binary is newly built, so stripping and debug symbol extraction are consolidated
         # in fx_package, and this rule only propagates the unstripped binaries.
         FuchsiaUnstrippedBinariesInfo(binaries = unstripped_binaries),
-    ]
+    ] + extra_providers
 
 _fx_packaged_binary = rule(
     implementation = _fx_packaged_binary_impl,
@@ -124,6 +155,21 @@ _fx_packaged_binary = rule(
             doc = "Prebuilt Clang debug symbols.",
             default = "//build/bazel/toolchains/clang:debug_symbols",
             providers = [FuchsiaDebugSymbolInfo],
+        ),
+        "_rust_libstd_dist": attr.label(
+            doc = "Prebuilt dynamic Rust standard library, needed by Rust binaries at runtime.",
+            default = "//build/bazel/toolchains/rust:libstd_dist",
+            allow_files = True,
+        ),
+        "_rust_libstd_debug_build_id": attr.label(
+            doc = "Prebuilt Rust runtime debug symbols, as a .build-id directory.",
+            default = "//build/bazel/toolchains/rust:libstd_debug_build_id",
+            allow_files = True,
+        ),
+        "_rust_debug_symbols_source_search_root": attr.label(
+            doc = "A file in the directory used to look up sources for the Rust runtime debug symbols.",
+            default = "//build/bazel/toolchains/rust:debug_symbols_source_search_root",
+            allow_single_file = True,
         ),
     } | FUCHSIA_DEBUG_SYMBOLS_ATTRS,
 )

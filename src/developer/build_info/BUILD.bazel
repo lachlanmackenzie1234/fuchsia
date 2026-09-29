@@ -4,10 +4,6 @@
 
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load(
-    "//build/bazel/rules/cc:fx_packaged_binary.bzl",
-    "fx_packaged_binary",
-)
-load(
     "//build/bazel/rules/components:fx_component.bzl",
     "fx_component",
     "fx_component_manifest",
@@ -15,6 +11,10 @@ load(
 load(
     "//build/bazel/rules/packages:fx_package.bzl",
     "fx_package",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
 )
 
 package(default_applicable_licenses = ["//:license"])
