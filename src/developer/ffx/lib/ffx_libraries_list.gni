@@ -32,7 +32,6 @@ all_ffx_libraries = [
   "safe_string",
   "sdk",
   "ssh",
-  "stream_util",
   "symbol-index",
   "symbolize",
   "target",
