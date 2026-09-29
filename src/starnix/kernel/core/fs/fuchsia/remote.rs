@@ -518,7 +518,7 @@ impl RemoteFs {
                     | fio::Flags::FLAG_SEND_REPRESENTATION,
                 &fio::Options {
                     attributes: Some(
-                        fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                        fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
                     ),
                     ..Default::default()
                 },
@@ -643,7 +643,14 @@ impl BaseNode {
                 gid: has.gid.then_some(info.gid),
                 rdev: has.rdev.then_some(info.rdev.bits()),
                 casefold: has.casefold.then_some(info.casefold),
-                wrapping_key_id: if has.wrapping_key_id { info.wrapping_key_id } else { None },
+                encryption_policy: if has.encryption_policy {
+                    info.encryption_policy.map(|p| fio::FscryptPolicy {
+                        key_identifier: p.key_identifier,
+                        flags: fio::FscryptPolicyFlags::from_bits_retain(p.flags.bits()),
+                    })
+                } else {
+                    None
+                },
                 ..Default::default()
             });
             res.map_err(|status| from_status_like_fdio!(status))
@@ -866,9 +873,6 @@ pub(super) fn update_info_from_attrs(info: &mut FsNodeInfo, attrs: &zxio_node_at
     if attrs.has.casefold {
         info.casefold = attrs.casefold;
     }
-    if attrs.has.wrapping_key_id {
-        info.wrapping_key_id = Some(attrs.wrapping_key_id);
-    }
 }
 
 /// Same as `update_info_from_attr` but uses FIDL.
@@ -904,8 +908,11 @@ fn update_info_from_fidl(
     if let Some(casefold) = mutable.casefold {
         info.casefold = casefold;
     }
-    if let Some(wrapping_key_id) = mutable.wrapping_key_id {
-        info.wrapping_key_id = Some(wrapping_key_id);
+    if let Some(policy) = mutable.encryption_policy {
+        info.encryption_policy = Some(crate::vfs::FscryptNodePolicy {
+            key_identifier: policy.key_identifier,
+            flags: crate::vfs::FscryptPolicyFlags::from_bits_retain(policy.flags.bits()),
+        });
     }
 }
 
@@ -1038,17 +1045,18 @@ impl FsNodeOps for RemoteNode {
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         {
-            // It is safe to read the cached node info here because the `wrapping_key_id` is
+            // It is safe to read the cached node info here because the `encryption_policy` is
             // fetched when the node is first opened, and updated when set. We don't expect this to
             // change out from under Starnix.
             let node_info = node.info();
             if node_info.mode.is_dir() {
-                if let Some(wrapping_key_id) = node_info.wrapping_key_id {
+                if let Some(policy) = node_info.encryption_policy {
                     if flags.can_write() {
                         // Locked encrypted directories cannot be opened with write access.
                         let crypt_service =
                             node.fs().crypt_service().ok_or_else(|| errno!(ENOKEY))?;
-                        if !crypt_service.contains_key(EncryptionKeyId::from(wrapping_key_id)) {
+                        if !crypt_service.contains_key(EncryptionKeyId::from(policy.key_identifier))
+                        {
                             return error!(ENOKEY);
                         }
                     }
@@ -1116,7 +1124,7 @@ impl FsNodeOps for RemoteNode {
                         rdev: Some(dev.bits()),
                         ..Default::default()
                     }),
-                    fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                    fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
                     Factory { node_info: &mut node_info, assume_special: !mode.is_reg() },
                 )
                 .map_err(|status| from_status_like_fdio!(status, name))
@@ -1158,7 +1166,7 @@ impl FsNodeOps for RemoteNode {
                         gid: Some(owner.gid),
                         ..Default::default()
                     }),
-                    fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                    fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
                     Factory { node_info: &mut node_info, assume_special: false },
                 )
                 .map_err(|status| from_status_like_fdio!(status, name))
@@ -1187,7 +1195,7 @@ impl FsNodeOps for RemoteNode {
             | fio::NodeAttributesQuery::UID
             | fio::NodeAttributesQuery::GID
             | fio::NodeAttributesQuery::RDEV
-            | fio::NodeAttributesQuery::WRAPPING_KEY_ID
+            | fio::NodeAttributesQuery::ENCRYPTION_POLICY
             | fio::NodeAttributesQuery::VERITY_ENABLED
             | fio::NodeAttributesQuery::CASEFOLD;
 
@@ -1220,7 +1228,7 @@ impl FsNodeOps for RemoteNode {
             | fio::NodeAttributesQuery::UID
             | fio::NodeAttributesQuery::GID
             | fio::NodeAttributesQuery::RDEV
-            | fio::NodeAttributesQuery::WRAPPING_KEY_ID
+            | fio::NodeAttributesQuery::ENCRYPTION_POLICY
             | fio::NodeAttributesQuery::VERITY_ENABLED
             | fio::NodeAttributesQuery::CASEFOLD;
 

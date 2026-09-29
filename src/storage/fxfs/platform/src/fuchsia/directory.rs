@@ -988,7 +988,12 @@ impl vfs::node::Node for FxDirectory {
                     .get_inline_selinux_context()
                     .await
                     .map_err(map_to_status)?,
-                wrapping_key_id: props.dir_type.wrapping_key_id(),
+                encryption_policy: props.dir_type.wrapping_key_id().map(|key_identifier| {
+                    fio::FscryptPolicy {
+                        key_identifier,
+                        flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                    }
+                }),
             },
             Immutable {
                 protocols: fio::NodeProtocolKinds::DIRECTORY,
@@ -2021,7 +2026,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2151,7 +2159,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2285,7 +2296,10 @@ mod tests {
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
         let _ = parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2332,7 +2346,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2450,7 +2467,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2546,7 +2566,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2677,7 +2700,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2686,7 +2712,10 @@ mod tests {
             .expect("update_attributes failed");
         parent_2
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2805,7 +2834,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2814,7 +2846,10 @@ mod tests {
             .expect("update_attributes failed");
         parent_2
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2952,7 +2987,10 @@ mod tests {
 
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -2961,7 +2999,10 @@ mod tests {
             .expect("update_attributes failed");
         parent_2
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID_2),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID_2,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3031,7 +3072,10 @@ mod tests {
 
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3101,7 +3145,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3197,13 +3244,16 @@ mod tests {
                     | fio::NodeAttributesQuery::LINK_COUNT
                     | fio::NodeAttributesQuery::MODIFICATION_TIME
                     | fio::NodeAttributesQuery::CHANGE_TIME
-                    | fio::NodeAttributesQuery::WRAPPING_KEY_ID,
+                    | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
             )
             .await
             .expect("FIDL call failed")
             .map_err(zx::Status::err_from_raw)
             .expect("get_attributes failed");
-        assert_eq!(mutable_attributes.wrapping_key_id, Some(WRAPPING_KEY_ID));
+        assert_eq!(
+            mutable_attributes.encryption_policy.map(|p| p.key_identifier),
+            Some(WRAPPING_KEY_ID)
+        );
         assert_eq!(
             file.read(fio::MAX_BUF)
                 .await
@@ -3240,7 +3290,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3324,7 +3377,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3418,7 +3474,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3517,7 +3576,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3624,7 +3686,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3705,7 +3770,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3796,7 +3864,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await
@@ -3901,7 +3972,10 @@ mod tests {
             .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(WRAPPING_KEY_ID),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier: WRAPPING_KEY_ID,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             })
             .await

@@ -176,6 +176,24 @@ pub type FsNodeReleaser = ObjectReleaser<FsNode, FsNodeReleaserAction>;
 pub type FsNodeHandle = Arc<FsNodeReleaser>;
 pub type WeakFsNodeHandle = Weak<FsNodeReleaser>;
 
+bitflags! {
+    /// Flags configuring an fscrypt encryption policy (`fscrypt_policy_v2.flags`).
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct FscryptPolicyFlags: u8 {
+        const PAD_8 = uapi::FSCRYPT_POLICY_FLAGS_PAD_8 as u8;
+        const PAD_16 = uapi::FSCRYPT_POLICY_FLAGS_PAD_16 as u8;
+        const DIRECT_KEY = uapi::FSCRYPT_POLICY_FLAG_DIRECT_KEY as u8;
+        const IV_INO_LBLK_64 = uapi::FSCRYPT_POLICY_FLAG_IV_INO_LBLK_64 as u8;
+        const IV_INO_LBLK_32 = uapi::FSCRYPT_POLICY_FLAG_IV_INO_LBLK_32 as u8;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FscryptNodePolicy {
+    pub key_identifier: [u8; 16],
+    pub flags: FscryptPolicyFlags,
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct FsNodeInfo {
     pub mode: FileMode,
@@ -191,8 +209,9 @@ pub struct FsNodeInfo {
     pub time_modify: UtcInstant,
     pub casefold: bool,
 
-    // If this node is fscrypt encrypted, stores the id of the user wrapping key used to encrypt it.
-    pub wrapping_key_id: Option<[u8; 16]>,
+    // If this node is fscrypt encrypted, stores the encryption policy (main key identifier and
+    // flags).
+    pub encryption_policy: Option<FscryptNodePolicy>,
 
     // Used to indicate to filesystems that manage timestamps that an access has occurred and to
     // update the node's atime.
@@ -1234,9 +1253,9 @@ impl FsNode {
         _current_task: &CurrentTask,
         node_info: &FsNodeInfo,
     ) -> Result<(), Errno> {
-        if let Some(wrapping_key_id) = node_info.wrapping_key_id {
+        if let Some(policy) = node_info.encryption_policy {
             let crypt_service = self.fs().crypt_service().ok_or_else(|| errno!(ENOKEY))?;
-            if !crypt_service.contains_key(EncryptionKeyId::from(wrapping_key_id)) {
+            if !crypt_service.contains_key(EncryptionKeyId::from(policy.key_identifier)) {
                 return error!(ENOKEY);
             }
         }
@@ -1943,7 +1962,7 @@ impl FsNode {
         has.gid = info.gid != new_info.gid;
         has.rdev = info.rdev != new_info.rdev;
         has.casefold = info.casefold != new_info.casefold;
-        has.wrapping_key_id = info.wrapping_key_id != new_info.wrapping_key_id;
+        has.encryption_policy = info.encryption_policy != new_info.encryption_policy;
 
         if has.casefold && !self.fs().has_casefold_support() {
             return error!(ENOTSUP);
@@ -1958,7 +1977,7 @@ impl FsNode {
             || has.gid
             || has.rdev
             || has.casefold
-            || has.wrapping_key_id
+            || has.encryption_policy
         {
             self.ops().update_attributes(self, current_task, &new_info, has)?;
         }

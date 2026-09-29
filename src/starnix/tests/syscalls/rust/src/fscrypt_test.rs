@@ -61,15 +61,27 @@ mod fscrypt_test {
     }
 
     fn set_encryption_policy(dir: &std::fs::File, identifier: [u8; 16]) -> i32 {
+        set_encryption_policy_with_flags(dir, identifier, FSCRYPT_POLICY_FLAGS_PAD_16 as u8)
+    }
+
+    fn set_encryption_policy_with_flags(
+        dir: &std::fs::File,
+        identifier: [u8; 16],
+        flags: u8,
+    ) -> i32 {
+        let policy = fscrypt_policy_v2 {
+            version: 2,
+            contents_encryption_mode: FSCRYPT_MODE_AES_256_XTS as u8,
+            filenames_encryption_mode: FSCRYPT_MODE_AES_256_CTS as u8,
+            flags,
+            master_key_identifier: identifier,
+            ..Default::default()
+        };
+        // SAFETY:
+        // - `dir` is an open `File`, so `dir.as_raw_fd()` is a valid fd.
+        // - `&policy` is a valid pointer to a correctly initialized `fscrypt_policy_v2`.
+        // - The `ioctl` command accepts a pointer to a `fscrypt_policy_v2` struct.
         let ret = unsafe {
-            let policy = fscrypt_policy_v2 {
-                version: 2,
-                contents_encryption_mode: FSCRYPT_MODE_AES_256_XTS as u8,
-                filenames_encryption_mode: FSCRYPT_MODE_AES_256_CTS as u8,
-                flags: FSCRYPT_POLICY_FLAGS_PAD_16 as u8,
-                master_key_identifier: identifier,
-                ..Default::default()
-            };
             libc::ioctl(dir.as_raw_fd(), FS_IOC_SET_ENCRYPTION_POLICY.try_into().unwrap(), &policy)
         };
         ret
@@ -507,6 +519,44 @@ mod fscrypt_test {
             std::io::Error::last_os_error()
         );
         std::fs::remove_dir_all(dir_path).expect("failed to remove my_dir");
+    }
+
+    #[test]
+    #[serial]
+    fn set_encryption_policy_with_unknown_flags() {
+        let Some(root_path) = get_root_path() else { return };
+        let root_dir = std::fs::File::open(&root_path).expect("open failed");
+        let dir_path = std::path::Path::new(&root_path).join("unknown_flags_dir");
+        std::fs::create_dir_all(dir_path.clone()).unwrap();
+        let dir = std::fs::File::open(dir_path.clone()).unwrap();
+
+        let (ret, arg_vec) = add_encryption_key(&root_dir);
+        assert!(ret == 0, "add encryption key ioctl failed: {:?}", std::io::Error::last_os_error());
+        let (arg_struct_bytes, _) = arg_vec.split_at(std::mem::size_of::<fscrypt_add_key_arg>());
+        let arg_struct = fscrypt_add_key_arg::read_from_bytes(arg_struct_bytes).unwrap();
+        // SAFETY: `arg_struct` was returned by `add_encryption_key`, which initializes `type_` to `FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER`. Therefore, reading `identifier.value` from the union is safe.
+        let identifier = unsafe { arg_struct.key_spec.u.identifier.value };
+
+        // 0x80 is not a policy flag defined by Linux, so the policy must be rejected.
+        let ret = set_encryption_policy_with_flags(&dir, identifier, 0x80);
+        assert_eq!(ret, -1);
+        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::EINVAL));
+
+        // The rejected policy must not have been applied to the directory.
+        let ret = set_encryption_policy(&dir, identifier);
+        assert!(
+            ret == 0,
+            "set encryption policy ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+
+        let ret = remove_encryption_key(&root_dir, identifier);
+        assert!(
+            ret == 0,
+            "remove encryption key ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+        std::fs::remove_dir_all(dir_path).expect("failed to remove unknown_flags_dir");
     }
 
     #[test]

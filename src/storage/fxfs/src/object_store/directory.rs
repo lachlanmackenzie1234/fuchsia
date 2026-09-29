@@ -1142,10 +1142,11 @@ impl<S: HandleOwner> Directory<S> {
         }
 
         let wrapping_key =
-            if let Some(fio::MutableNodeAttributes { wrapping_key_id: Some(id), .. }) =
+            if let Some(fio::MutableNodeAttributes { encryption_policy: Some(policy), .. }) =
                 node_attributes
             {
-                Some((*id, self.set_wrapping_key(&mut transaction, *id).await?))
+                let id = policy.key_identifier;
+                Some((id, self.set_wrapping_key(&mut transaction, id).await?))
             } else {
                 None
             };
@@ -2424,7 +2425,10 @@ mod tests {
             .update_attributes(
                 transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(WRAPPING_KEY_ID),
+                    encryption_policy: Some(fio::FscryptPolicy {
+                        key_identifier: WRAPPING_KEY_ID,
+                        flags: crate::object_store::LEGACY_FSCRYPT_FLAGS,
+                    }),
                     ..Default::default()
                 }),
                 0,
@@ -2509,7 +2513,10 @@ mod tests {
                 .update_attributes(
                     transaction,
                     Some(&fio::MutableNodeAttributes {
-                        wrapping_key_id: Some(WRAPPING_KEY_ID),
+                        encryption_policy: Some(fio::FscryptPolicy {
+                            key_identifier: WRAPPING_KEY_ID,
+                            flags: crate::object_store::LEGACY_FSCRYPT_FLAGS,
+                        }),
                         ..Default::default()
                     }),
                     0,
@@ -2650,7 +2657,10 @@ mod tests {
             .update_attributes(
                 &mut transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(WRAPPING_KEY_ID),
+                    encryption_policy: Some(fio::FscryptPolicy {
+                        key_identifier: WRAPPING_KEY_ID,
+                        flags: crate::object_store::LEGACY_FSCRYPT_FLAGS,
+                    }),
                     ..Default::default()
                 }),
                 None,

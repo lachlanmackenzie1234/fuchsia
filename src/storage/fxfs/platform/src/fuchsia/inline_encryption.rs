@@ -224,7 +224,10 @@ mod tests {
         dir.update_attributes(
             transaction,
             Some(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(key_identifier),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             }),
             0,
@@ -324,7 +327,10 @@ mod tests {
         dir.update_attributes(
             transaction,
             Some(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(key_identifier),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             }),
             0,
@@ -457,7 +463,10 @@ mod tests {
             dir.update_attributes(
                 transaction,
                 Some(&fio::MutableNodeAttributes {
-                    wrapping_key_id: Some(key_identifier),
+                    encryption_policy: Some(fio::FscryptPolicy {
+                        key_identifier,
+                        flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                    }),
                     ..Default::default()
                 }),
                 0,
@@ -503,10 +512,13 @@ mod tests {
                 .expect("open_object failed"),
             );
             let attributes = file
-                .get_attributes(fio::NodeAttributesQuery::WRAPPING_KEY_ID)
+                .get_attributes(fio::NodeAttributesQuery::ENCRYPTION_POLICY)
                 .await
                 .expect("get_attributes failed");
-            assert_eq!(attributes.mutable_attributes.wrapping_key_id, Some(key_identifier));
+            assert_eq!(
+                attributes.mutable_attributes.encryption_policy.map(|p| p.key_identifier),
+                Some(key_identifier)
+            );
         }
         fixture.close().await;
     }
@@ -556,7 +568,10 @@ mod tests {
         dir.update_attributes(
             transaction,
             Some(&fio::MutableNodeAttributes {
-                wrapping_key_id: Some(key_identifier),
+                encryption_policy: Some(fio::FscryptPolicy {
+                    key_identifier,
+                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                }),
                 ..Default::default()
             }),
             0,

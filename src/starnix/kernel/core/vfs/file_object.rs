@@ -921,13 +921,6 @@ pub fn default_vfs_ioctl(
                 track_stub!(TODO("https://fxbug.dev/375649656"), "fscrypt policy v1");
                 return error!(ENOTSUP);
             }
-            if policy.flags != 0 {
-                track_stub!(
-                    TODO("https://fxbug.dev/375700939"),
-                    "fscrypt policy flags",
-                    policy.flags
-                );
-            }
             if policy.contents_encryption_mode as u32 != FSCRYPT_MODE_AES_256_XTS {
                 track_stub!(
                     TODO("https://fxbug.dev/375684057"),
@@ -963,16 +956,30 @@ pub fn default_vfs_ioctl(
                 return error!(ENOKEY);
             }
 
+            // Like Linux, reject flags that aren't defined rather than silently ignoring them.
+            let flags = crate::vfs::FscryptPolicyFlags::from_bits(policy.flags)
+                .ok_or_else(|| errno!(EINVAL))?;
+            if !flags.is_empty() {
+                track_stub!(
+                    TODO("https://fxbug.dev/375700939"),
+                    "fscrypt policy flags",
+                    policy.flags
+                );
+            }
+            let new_policy = crate::vfs::FscryptNodePolicy {
+                key_identifier: policy.master_key_identifier,
+                flags,
+            };
             let attributes = file.node().fetch_and_refresh_info(current_task)?;
-            if let Some(wrapping_key_id) = &attributes.wrapping_key_id {
-                if wrapping_key_id != &policy.master_key_identifier {
+            if let Some(existing_policy) = &attributes.encryption_policy {
+                if existing_policy != &new_policy {
                     return error!(EEXIST);
                 }
             } else {
                 // Don't deadlock! update_attributes will also lock the attributes.
                 std::mem::drop(attributes);
                 file.node().update_attributes(current_task, |info| {
-                    info.wrapping_key_id = Some(policy.master_key_identifier);
+                    info.encryption_policy = Some(new_policy);
                     Ok(())
                 })?;
             }
