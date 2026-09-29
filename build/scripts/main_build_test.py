@@ -311,6 +311,19 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                     f"Failed precedence: args={args}, global={global_val}, local={local_val}",
                 )
 
+    def test_log_dir_argument_parsing(self) -> None:
+        environ = {"FUCHSIA_DIR": "/tmp/fuchsia"}
+        full_args = [
+            "--build-dir",
+            "out/default",
+            "--log-dir",
+            "/my/custom/logdir",
+            "ninja",
+        ]
+        parsed_args = main_build._MAIN_ARG_PARSER.parse_args(full_args)
+        ctx = main_build.FuchsiaBuildContext.from_args(parsed_args, environ)
+        self.assertEqual(ctx.config.log_dir, pathlib.Path("/my/custom/logdir"))
+
     def test_resolve_source_dir_from_env(self) -> None:
         """Verifies resolve_source_dir returns absolute path from environment variable."""
         env = {"FUCHSIA_DIR": "/custom/fuchsia/path"}
@@ -639,6 +652,26 @@ class BuildInvocationTest(MainBuildTestBase):
             mock_write.assert_called_once_with(
                 log_dir / "invocation_id", "uuid-123\n"
             )
+
+    def test_custom_log_dir(self) -> None:
+        custom_path = pathlib.Path("/my/custom/logdir")
+        context = self.create_context(log_dir=custom_path)
+        with self.mock_invocation_context("uuid-123", "ts-456") as (
+            mock_mkdir,
+            mock_write,
+        ):
+            with mock.patch.object(
+                pathlib.Path, "resolve", return_value=custom_path
+            ):
+                invocation = main_build.BuildInvocation(context)
+                self.assertEqual(invocation.build_uuid, "uuid-123")
+                self.assertEqual(invocation.timestamp, "ts-456")
+                self.assertEqual(invocation.log_dir, custom_path)
+
+                mock_mkdir.assert_called_once_with(custom_path)
+                mock_write.assert_called_once_with(
+                    custom_path / "invocation_id", "uuid-123\n"
+                )
 
     def test_get_build_env(self) -> None:
         context = self.create_context()

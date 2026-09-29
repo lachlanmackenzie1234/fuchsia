@@ -156,6 +156,7 @@ class FuchsiaBuildConfig(object):
     resultstore_instance: str | None = None
     cas_instance: str | None = None
     rbe_instance: str | None = None
+    log_dir: pathlib.Path | None = None
 
     @staticmethod
     def from_args(
@@ -181,6 +182,7 @@ class FuchsiaBuildConfig(object):
             resultstore_instance=args.resultstore_instance,
             cas_instance=args.cas_instance,
             rbe_instance=args.rbe_instance,
+            log_dir=args.log_dir,
         )
 
 
@@ -973,13 +975,19 @@ class BuildInvocation(object):
         The invocation id is recorded in the new log directory
         in a file named "invocation_id".
         """
-        logs_root = self.context.out_dir / "_build_logs"
-        build_dir_name = self.context.build_dir.name
-        log_dir_base = logs_root / build_dir_name
-        mkdir(log_dir_base)
+        if self.context.config.log_dir:
+            log_dir = self.context.config.log_dir.resolve()
+        else:
+            logs_root = self.context.out_dir / "_build_logs"
+            build_dir_name = self.context.build_dir.name
+            log_dir_base = logs_root / build_dir_name
+            mkdir(log_dir_base)
 
-        # Use consistent UUID and timestamp
-        log_dir = log_dir_base / f"build.{self.timestamp}.{self.build_uuid[:8]}"
+            # Use consistent UUID and timestamp
+            log_dir = (
+                log_dir_base / f"build.{self.timestamp}.{self.build_uuid[:8]}"
+            )
+
         mkdir(log_dir)
 
         # Record the invocation Id
@@ -1531,6 +1539,14 @@ def _main_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=pathlib.Path, required=True)
     parser.add_argument("--out-dir", type=pathlib.Path)
+    parser.add_argument(
+        "--log-dir",
+        type=pathlib.Path,
+        default=None,
+        help="Specify the directory to write all build logs and diagnostics. "
+        "If not specified, defaults to a timestamped and UUID-tagged subdirectory "
+        "under the build logs root.",
+    )
 
     # Custom handling for boolean flags to support --flag=true/false
     parser.add_argument("--rbe", type=str_to_bool, nargs="?", const=True)
