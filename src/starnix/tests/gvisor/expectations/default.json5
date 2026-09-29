@@ -1335,6 +1335,25 @@
                 // TODO(https://fxbug.dev/297440106): Races on child exit.
                 "AffinityTest.SetAffinityOtherUidRequiresCapSysNice",
                 "SetpriorityTest.OtherUidRequiresCapSysNice",
+
+                // TODO(https://fxbug.dev/566839951): Format ShdPnd as 16-digit hex and emit SigIgn/SigCgt in /proc/[pid]/status.
+                "ProcPidStatusTest.SignalMasks",
+
+                // TODO(https://fxbug.dev/566839792): Implement /proc/sys/user/max_user_namespaces and CLONE_NEWUSER.
+                "ProcSysUserMaxUserNamespaces.HasNumericValue",
+                "ProcSysUserMaxUserNamespaces.WriteUpdatesValue",
+                "ProcSysUserMaxUserNamespaces.RejectsNegativeValue",
+                "ProcSysUserMaxUserNamespaces.WriteRequiresCapSysResource",
+                "ProcSysUserMaxUserNamespaces.WriteDoesNotAffectParentNamespace",
+                "ProcSysUserMaxUserNamespaces.LimitBlocksNestedUserNamespace",
+                "ProcSysUserMaxUserNamespaces.RecursiveLimitBlocksGrandchild",
+                "ProcSysUserMaxUserNamespaces.ExitedNamespaceReleasesCharge",
+                "ProcSysUserMaxUserNamespaces.RefusedNestingReleasesPartialCharge",
+
+                // TODO(https://fxbug.dev/566839736): Flush replica input queue on TCSETSF and TCSETSF2.
+                "PtyTest.TCSETSFFlushesOnlyReplicaInput",
+                "PtyTest.TCSETSFOnMasterFlushesReplicaInput",
+                "PtyTest.TCSETSF2FlushesReplicaInput",
             ],
         },
     ],
