@@ -80,6 +80,9 @@ PREBUILT_BINARY_SETS_JSON = "prebuilt_binaries.json"
 FORCE_NONHERMETIC_REBUILD_SENTINEL = "force_nonhermetic_rebuild"
 LAST_NINJA_BUILD_SUCCESS_STAMP = "last_ninja_build_success.stamp"
 RUST_TARGET_MAPPING_JSON = "rust_target_mapping.json"
+NINJA_BUILD_TRACE_GZ = "ninja_build_trace.json.gz"
+NINJATRACE_JSON_GZ = "ninjatrace.json.gz"
+BUILDSTATS_JSON_GZ = "buildstats.json.gz"
 
 
 @dataclass
@@ -582,6 +585,31 @@ class BuildContext:
         return self.build_dir / RUST_TARGET_MAPPING_JSON
 
     @property
+    def top_ninja_trace_path(self) -> pathlib.Path:
+        """Returns the absolute path to Ninja's raw build trace file."""
+        return self.build_dir / NINJA_BUILD_TRACE_GZ
+
+    @property
+    def ninjatrace_json_path(self) -> pathlib.Path:
+        """Returns the absolute path to the generated Perfetto ninjatrace file."""
+        return self.build_dir / NINJATRACE_JSON_GZ
+
+    @property
+    def buildstats_json_path(self) -> pathlib.Path:
+        """Returns the absolute path to the generated build stats file."""
+        return self.build_dir / BUILDSTATS_JSON_GZ
+
+    @property
+    def generated_sources_json_path(self) -> pathlib.Path:
+        """Returns the absolute path to the generated C++ sources JSON file."""
+        return self.build_dir / GENERATED_SOURCES_JSON
+
+    @property
+    def prebuilt_binary_sets_json_path(self) -> pathlib.Path:
+        """Returns the absolute path to the prebuilt binary sets JSON file."""
+        return self.build_dir / PREBUILT_BINARY_SETS_JSON
+
+    @property
     def artifact_dir(self) -> pathlib.Path | None:
         """Returns the path to the artifact directory if specified in the context spec."""
         return (
@@ -660,18 +688,16 @@ class BuildContext:
     @functools.cached_property
     def generated_sources(self) -> JSONArray:
         """Loads and returns the generated sources list."""
-        path = self.build_dir / GENERATED_SOURCES_JSON
-        if not path.exists():
+        if not self.generated_sources_json_path.exists():
             return []
-        return load_json_list(path)
+        return load_json_list(self.generated_sources_json_path)
 
     @functools.cached_property
     def prebuilt_binary_sets(self) -> JSONArray:
         """Loads and returns the prebuilt binary sets list."""
-        path = self.build_dir / PREBUILT_BINARY_SETS_JSON
-        if not path.exists():
+        if not self.prebuilt_binary_sets_json_path.exists():
             return []
-        return load_json_list(path)
+        return load_json_list(self.prebuilt_binary_sets_json_path)
 
     def _default_and_host_test_targets(self) -> Iterable[str]:
         """Yields default targets or host test targets if configured."""
@@ -681,6 +707,12 @@ class BuildContext:
     def _generated_source_targets(self) -> Iterable[str]:
         """Yields generated C++ source targets if configured."""
         if self.static_spec.include_generated_sources:
+            if not self.generated_sources_json_path.exists():
+                msg(
+                    f"Warning: include_generated_sources is enabled, but {GENERATED_SOURCES_JSON} is missing on disk.",
+                    file=sys.stderr,
+                )
+                return
             for f in self.generated_sources:
                 if isinstance(f, str) and (
                     f.endswith(".cc") or f.endswith(".h")
@@ -690,6 +722,12 @@ class BuildContext:
     def _prebuilt_binary_manifests(self) -> Iterable[str]:
         """Yields prebuilt binary manifest targets if configured."""
         if self.static_spec.include_prebuilt_binary_manifests:
+            if not self.prebuilt_binary_sets_json_path.exists():
+                msg(
+                    f"Warning: include_prebuilt_binary_manifests is enabled, but {PREBUILT_BINARY_SETS_JSON} is missing on disk.",
+                    file=sys.stderr,
+                )
+                return
             for item in self.prebuilt_binary_sets:
                 if not isinstance(item, dict):
                     raise ValueError(
@@ -908,6 +946,84 @@ class BuildContext:
                 f"export_last_build_debug_symbols failed with exit code {res.returncode}"
             )
 
+    def _generate_ninja_traces(
+        self,
+    ) -> tuple[pathlib.Path | None, pathlib.Path | None]:
+        """Generates Perfetto ninjatrace and buildstats files from Ninja's build trace, if available."""
+        if not self.top_ninja_trace_path.is_file():
+            return None, None
+
+        # Warn if the raw trace exists but tool paths fail to load
+        try:
+            paths = self.tool_paths
+        except ValueError as e:
+            msg(
+                f"Warning: Skipping Ninja trace analysis: Failed to decode {TOOL_PATHS_JSON}: {e}",
+                file=sys.stderr,
+            )
+            return None, None
+
+        if not paths:
+            msg(
+                f"Warning: Skipping Ninja trace analysis: {TOOL_PATHS_JSON} is missing or empty.",
+                file=sys.stderr,
+            )
+            return None, None
+
+        ninjatrace_tool = lookup_tool_path(
+            paths, "ninjatrace_prebuilt", self.host
+        )
+        buildstats_tool = lookup_tool_path(
+            paths, "buildstats_prebuilt", self.host
+        )
+
+        if not ninjatrace_tool:
+            msg(
+                "Warning: Skipping Ninja trace analysis: ninjatrace_prebuilt tool path not found in tool paths.",
+                file=sys.stderr,
+            )
+            return None, None
+
+        ninjatrace_out = None
+        buildstats_out = None
+
+        try:
+            # Run ninjatrace to generate ninjatrace.json.gz
+            cmd = [
+                str(self.checkout_dir / ninjatrace_tool),
+                "-ninjabuildtrace",
+                str(self.top_ninja_trace_path),
+                "-trace-json",
+                str(self.ninjatrace_json_path),
+            ]
+            if self.verbose:
+                msg(f"Running ninjatrace: {shlex.join(cmd)}")
+            res = subprocess.run(cmd)
+            if res.returncode == 0:
+                ninjatrace_out = self.ninjatrace_json_path
+
+                # Run buildstats to generate buildstats.json.gz
+                if buildstats_tool:
+                    stats_cmd = [
+                        str(self.checkout_dir / buildstats_tool),
+                        "--ninjatrace",
+                        str(self.ninjatrace_json_path),
+                        "--output",
+                        str(self.buildstats_json_path),
+                    ]
+                    if self.verbose:
+                        msg(f"Running buildstats: {shlex.join(stats_cmd)}")
+                    res_stats = subprocess.run(stats_cmd)
+                    if res_stats.returncode == 0:
+                        buildstats_out = self.buildstats_json_path
+        except OSError as e:
+            msg(
+                f"Warning: Failed to execute Ninja trace post-processing: {e}",
+                file=sys.stderr,
+            )
+
+        return ninjatrace_out, buildstats_out
+
     def produce_build_artifacts(
         self,
         duration_seconds: int,
@@ -921,6 +1037,31 @@ class BuildContext:
         artifacts.ninja_duration_seconds = duration_seconds
         if failure_summary:
             artifacts.failure_summary = failure_summary
+
+        # Generate and register the interactive Perfetto Ninja traces!
+        ninjatrace_path, buildstats_path = self._generate_ninja_traces()
+
+        if ninjatrace_path:
+            artifact_trace_path = self.artifact_dir / ninjatrace_path.name
+            try:
+                shutil.copy2(ninjatrace_path, artifact_trace_path)
+                artifacts.ninjatrace_json_files.append(str(artifact_trace_path))
+            except OSError as e:
+                msg(
+                    f"Warning: Failed to copy {ninjatrace_path.name} to artifact directory: {e}",
+                    file=sys.stderr,
+                )
+
+        if buildstats_path:
+            artifact_stats_path = self.artifact_dir / buildstats_path.name
+            try:
+                shutil.copy2(buildstats_path, artifact_stats_path)
+                artifacts.buildstats_json_files.append(str(artifact_stats_path))
+            except OSError as e:
+                msg(
+                    f"Warning: Failed to copy {buildstats_path.name} to artifact directory: {e}",
+                    file=sys.stderr,
+                )
 
         # Copy debug_symbols.json from build_dir/debug_symbols to artifact_dir if present,
         # and register it in log_files.
