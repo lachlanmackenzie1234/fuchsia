@@ -1480,3 +1480,530 @@ async fn test_register_vmos_out_of_order_and_mismatch() {
     let res = register_vmos(&ep_proxy2, 100, 1, 4096).await;
     assert_eq!(res.err(), Some(Status::INTERNAL));
 }
+
+#[fuchsia::test]
+fn test_test_mode_try_from() {
+    assert_eq!(TestMode::try_from(0), Ok(TestMode::SourceSink));
+    assert_eq!(TestMode::try_from(1), Ok(TestMode::Loopback));
+    assert_eq!(TestMode::try_from(2), Err(Status::INVALID_ARGS));
+    assert_eq!(TestMode::try_from(255), Err(Status::INVALID_ARGS));
+}
+
+#[fuchsia::test]
+fn test_control_request_parsing_and_types() {
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_STANDARD, USB_SETUP_REQ_GET_STATUS),
+        Ok(ControlRequest::Standard(USB_SETUP_REQ_GET_STATUS))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::SetStall as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::SetStall))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ClearStall as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::ClearStall))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ConfigureEndpoint as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::ConfigureEndpoint))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::DisableEndpoint as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::DisableEndpoint))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ConnectEndpoint as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::ConnectEndpoint))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::Deconfigure as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::Deconfigure))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::WritePayload as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::WritePayload))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ReadPayload as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::ReadPayload))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::SetTestMode as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::SetTestMode))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::GetTestMode as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::GetTestMode))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ControlLoopbackOut as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::ControlLoopbackOut))
+    );
+    assert_eq!(
+        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ControlLoopbackIn as u8),
+        Ok(ControlRequest::Vendor(VendorRequest::ControlLoopbackIn))
+    );
+    assert_eq!(ControlRequest::parse(USB_TYPE_VENDOR, 0x99), Err(Status::NOT_SUPPORTED));
+    assert_eq!(ControlRequest::parse(0x20, 0), Err(Status::NOT_SUPPORTED));
+    assert_eq!(ControlRequest::parse(0x60, 0), Err(Status::NOT_SUPPORTED));
+}
+
+#[fuchsia::test]
+fn test_get_usb_protocol_non_int_and_unknown_properties() {
+    let start_args_string_prop = fdf::DriverStartArgs {
+        node_properties_2: Some(vec![fdf::NodePropertyEntry2 {
+            name: "default".to_string(),
+            properties: vec![
+                fdf::NodeProperty2 {
+                    key: BIND_USB_PROTOCOL_KEY.to_string(),
+                    value: fdf::NodePropertyValue::StringValue("not_an_int".to_string()),
+                },
+                fdf::NodeProperty2 {
+                    key: "some.other.key".to_string(),
+                    value: fdf::NodePropertyValue::IntValue(42),
+                },
+            ],
+        }]),
+        ..Default::default()
+    };
+    assert_eq!(get_usb_protocol(&start_args_string_prop), None);
+}
+
+#[fuchsia::test]
+fn test_max_packet_size_for_speed_all_speeds() {
+    assert_eq!(
+        UsbZeroFunctionDevice::max_packet_size_for_speed(fusb_descriptor::UsbSpeed::Full),
+        USB_MAX_PACKET_SIZE_FULL_SPEED
+    );
+    assert_eq!(
+        UsbZeroFunctionDevice::max_packet_size_for_speed(fusb_descriptor::UsbSpeed::High),
+        USB_MAX_PACKET_SIZE_HIGH_SPEED
+    );
+    assert_eq!(
+        UsbZeroFunctionDevice::max_packet_size_for_speed(fusb_descriptor::UsbSpeed::Super),
+        USB_MAX_PACKET_SIZE_SUPER_SPEED
+    );
+    assert_eq!(
+        UsbZeroFunctionDevice::max_packet_size_for_speed(fusb_descriptor::UsbSpeed::EnhancedSuper),
+        USB_MAX_PACKET_SIZE_SUPER_SPEED
+    );
+    assert_eq!(
+        UsbZeroFunctionDevice::max_packet_size_for_speed(fusb_descriptor::UsbSpeed::Low),
+        USB_MAX_PACKET_SIZE_HIGH_SPEED
+    );
+}
+
+#[fuchsia::test]
+fn test_validate_vendor_out_request_errors() {
+    let setup_in = fusb_descriptor::UsbSetup {
+        bm_request_type: 0xC0,
+        b_request: VendorRequest::SetStall as u8,
+        w_value: 1,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(validate_vendor_out_request(&setup_in, &[]), Err(Status::INVALID_ARGS));
+
+    let setup_nonzero_len = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x40,
+        b_request: VendorRequest::SetStall as u8,
+        w_value: 1,
+        w_index: 0,
+        w_length: 2,
+    };
+    assert_eq!(validate_vendor_out_request(&setup_nonzero_len, &[]), Err(Status::INVALID_ARGS));
+
+    let setup_out = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x40,
+        b_request: VendorRequest::SetStall as u8,
+        w_value: 1,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(validate_vendor_out_request(&setup_out, &[0x01]), Err(Status::INVALID_ARGS));
+
+    let setup_large_val = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x40,
+        b_request: VendorRequest::SetStall as u8,
+        w_value: 0x0100,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(validate_vendor_out_request(&setup_large_val, &[]), Err(Status::INVALID_ARGS));
+}
+
+#[fuchsia::test]
+async fn test_mapped_vmo_and_completion_helpers() {
+    let vmo = zx::Vmo::create(4096).unwrap();
+    let mapped_vmos =
+        map_vmos(vec![vmo], 4096, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE).unwrap();
+    assert_eq!(mapped_vmos.len(), 1);
+    let mapped = &mapped_vmos[0];
+    assert_ne!(mapped.as_ptr(), std::ptr::null());
+    assert_ne!(mapped.as_mut_ptr(), std::ptr::null_mut());
+    assert_eq!(mapped.size(), 4096);
+
+    // Empty list map_vmos
+    let empty_mapped = map_vmos(vec![], 4096, zx::VmarFlags::PERM_READ).unwrap();
+    assert!(empty_mapped.is_empty());
+
+    // queue_requests_batch with empty list
+    let (ep_client, _ep_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    assert_eq!(queue_requests_batch(&ep_client.into_proxy(), vec![]).is_ok(), true);
+
+    // completion_vmo_id variations
+    let empty_completion = fusb_endpoint::Completion::default();
+    assert_eq!(completion_vmo_id(&empty_completion), None);
+
+    let no_data_completion = fusb_endpoint::Completion {
+        request: Some(fusb_request::Request::default()),
+        ..Default::default()
+    };
+    assert_eq!(completion_vmo_id(&no_data_completion), None);
+
+    let empty_data_completion = fusb_endpoint::Completion {
+        request: Some(fusb_request::Request { data: Some(vec![]), ..Default::default() }),
+        ..Default::default()
+    };
+    assert_eq!(completion_vmo_id(&empty_data_completion), None);
+
+    let vmo_buffer_completion = fusb_endpoint::Completion {
+        request: Some(fusb_request::Request {
+            data: Some(vec![fusb_request::BufferRegion {
+                buffer: Some(fusb_request::Buffer::unknown_variant_for_testing()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    assert_eq!(completion_vmo_id(&vmo_buffer_completion), None);
+}
+
+#[fuchsia::test]
+async fn test_vendor_and_standard_control_request_edge_cases() {
+    let (iface_c, iface_s) = create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
+    let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_c, ep_in_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_c, ep_out_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_control_edges"));
+    scope.spawn_local(run_mock_function(func_s.into_stream()));
+    scope.spawn_local(run_mock_endpoint(
+        ep_in_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+    scope.spawn_local(run_mock_endpoint(
+        ep_out_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+
+    let f_p = func_c.into_proxy();
+    let ep_i = ep_in_c.into_proxy();
+    let ep_o = ep_out_c.into_proxy();
+    scope.spawn_local(async move {
+        UsbZeroFunctionDevice::new(
+            f_p,
+            ep_i,
+            TEST_EP_IN_ADDR,
+            ep_o,
+            TEST_EP_OUT_ADDR,
+            0,
+            TestMode::SourceSink,
+        )
+        .handle_requests(iface_s.into_stream())
+        .await;
+    });
+
+    let proxy = iface_c.into_proxy();
+
+    // 1. VendorRequest::SetStall on EP0 should fail with INVALID_ARGS
+    let setup_stall_ep0 = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::SetStall as u8,
+        w_value: 0, // EP0
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_stall_ep0, &[]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    // 2. VendorRequest::ClearStall on EP0 should succeed (no-op)
+    let setup_clear_ep0 = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::ClearStall as u8,
+        w_value: 0, // EP0
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(proxy.control(&setup_clear_ep0, &[]).await.unwrap(), Ok(vec![]));
+
+    // 3. VendorRequest::WritePayload with invalid payloads or directions
+    let setup_write_payload_in = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::WritePayload as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: USB_ZERO_WRITE_PAYLOAD.len() as u16,
+    };
+    assert_eq!(
+        proxy.control(&setup_write_payload_in, USB_ZERO_WRITE_PAYLOAD).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    let setup_write_payload_bad = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::WritePayload as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 4,
+    };
+    assert_eq!(
+        proxy.control(&setup_write_payload_bad, &[0, 1, 2, 3]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    // 4. VendorRequest::ReadPayload with invalid direction or small length
+    let setup_read_payload_out = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::ReadPayload as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 4,
+    };
+    assert_eq!(
+        proxy.control(&setup_read_payload_out, &[]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    let setup_read_payload_short = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::ReadPayload as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 2,
+    };
+    assert_eq!(
+        proxy.control(&setup_read_payload_short, &[]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    // 5. VendorRequest::GetTestMode invalid cases
+    let setup_get_mode_bad_val = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::GetTestMode as u8,
+        w_value: 1, // Must be 0
+        w_index: 0,
+        w_length: 1,
+    };
+    assert_eq!(
+        proxy.control(&setup_get_mode_bad_val, &[]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    let setup_get_mode_bad_len = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::GetTestMode as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 2, // Must be 1
+    };
+    assert_eq!(
+        proxy.control(&setup_get_mode_bad_len, &[]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    // 6. VendorRequest::ControlLoopback partial/truncation read
+    let cl_payload = vec![10, 20, 30, 40, 50, 60];
+    let setup_cl_out = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::ControlLoopbackOut as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: cl_payload.len() as u16,
+    };
+    assert_eq!(proxy.control(&setup_cl_out, &cl_payload).await.unwrap(), Ok(vec![]));
+
+    let setup_cl_in_trunc = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::ControlLoopbackIn as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 3, // Only request first 3 bytes
+    };
+    assert_eq!(proxy.control(&setup_cl_in_trunc, &[]).await.unwrap(), Ok(vec![10, 20, 30]));
+
+    // 7. VendorRequest::Deconfigure invalid args
+    let setup_deconfig_in = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::Deconfigure as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_deconfig_in, &[]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    let setup_deconfig_bad_len = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::Deconfigure as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 4,
+    };
+    assert_eq!(
+        proxy.control(&setup_deconfig_bad_len, &[]).await.unwrap(),
+        Err(Status::INVALID_ARGS.into_raw())
+    );
+
+    // 8. Standard USB_SETUP_REQ_GET_STATUS invalid conditions
+    // Out request instead of In
+    let setup_status_out = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x00,
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: 0,
+        w_length: 2,
+    };
+    assert_eq!(
+        proxy.control(&setup_status_out, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // Length != 2
+    let setup_status_len = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x80,
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: 0,
+        w_length: 1,
+    };
+    assert_eq!(
+        proxy.control(&setup_status_len, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // Unknown endpoint status
+    let setup_status_bad_ep = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x82, // IN | ENDPOINT
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: 0x05, // Unknown endpoint
+        w_length: 2,
+    };
+    assert_eq!(
+        proxy.control(&setup_status_bad_ep, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // 9. Standard USB_SETUP_REQ_GET_INTERFACE invalid conditions
+    let setup_get_iface_bad_idx = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x81,
+        b_request: USB_SETUP_REQ_GET_INTERFACE,
+        w_value: 0,
+        w_index: 99, // Wrong interface number
+        w_length: 1,
+    };
+    assert_eq!(
+        proxy.control(&setup_get_iface_bad_idx, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // 10. Standard USB_SETUP_REQ_SET_INTERFACE invalid conditions
+    let setup_set_iface_bad_idx = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x01,
+        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        w_value: 0,
+        w_index: 99, // Wrong interface number
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_set_iface_bad_idx, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // 11. Unhandled standard request (e.g. 0x09 SetConfiguration)
+    let setup_set_config = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x00,
+        b_request: 0x09,
+        w_value: 1,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_set_config, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+}
+
+#[fuchsia::test]
+async fn test_set_configured_superspeed() {
+    let (iface_c, iface_s) = create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
+    let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_c, ep_in_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_c, ep_out_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_superspeed"));
+    scope.spawn_local(run_mock_function(func_s.into_stream()));
+    scope.spawn_local(run_mock_endpoint(
+        ep_in_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+    scope.spawn_local(run_mock_endpoint(
+        ep_out_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+
+    let f_p = func_c.into_proxy();
+    let ep_i = ep_in_c.into_proxy();
+    let ep_o = ep_out_c.into_proxy();
+    scope.spawn_local(async move {
+        UsbZeroFunctionDevice::new(
+            f_p,
+            ep_i,
+            TEST_EP_IN_ADDR,
+            ep_o,
+            TEST_EP_OUT_ADDR,
+            0,
+            TestMode::SourceSink,
+        )
+        .handle_requests(iface_s.into_stream())
+        .await;
+    });
+
+    let proxy = iface_c.into_proxy();
+
+    // Test configuring with SuperSpeed (exercises SuperSpeed companion descriptor creation)
+    assert_eq!(proxy.set_configured(true, fusb_descriptor::UsbSpeed::Super).await.unwrap(), Ok(()));
+
+    // Deconfigure
+    assert_eq!(
+        proxy.set_configured(false, fusb_descriptor::UsbSpeed::Super).await.unwrap(),
+        Ok(())
+    );
+
+    // Test configuring with EnhancedSuper
+    assert_eq!(
+        proxy.set_configured(true, fusb_descriptor::UsbSpeed::EnhancedSuper).await.unwrap(),
+        Ok(())
+    );
+
+    // Deconfigure
+    assert_eq!(proxy.set_configured(false, fusb_descriptor::UsbSpeed::Full).await.unwrap(), Ok(()));
+}
