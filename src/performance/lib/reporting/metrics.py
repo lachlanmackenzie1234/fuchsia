@@ -16,7 +16,7 @@ import inspect as py_inspect
 import json
 import logging
 import pathlib
-from collections.abc import Collection, Iterator
+from collections.abc import Collection
 from typing import (
     Any,
     Callable,
@@ -131,10 +131,7 @@ class TestCaseResult:
 
     @staticmethod
     def write_fuchsiaperf_json(
-        # TODO(https://fxrev.dev/1851755): Pick one of these unioned type
-        # specifications (for the moment we have some callers passing one
-        # and others passing the other.)
-        results: Iterator["TestCaseResult"] | Collection["TestCaseResult"],
+        results: Collection["TestCaseResult"],
         test_suite: str,
         output_path: pathlib.Path,
     ) -> None:
