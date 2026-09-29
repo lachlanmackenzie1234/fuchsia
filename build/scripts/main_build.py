@@ -704,6 +704,7 @@ class FuchsiaBuildContext(object):
         static_path: pathlib.Path | None = None,
         context_path: pathlib.Path | None = None,
         print_artifact_dir: bool = False,
+        print_job_count: bool = False,
         ninja_error_logging_output: pathlib.Path | None = None,
     ) -> Iterable[str]:
         """Constructs and yields command-line arguments for executing fint_build.py.
@@ -713,6 +714,8 @@ class FuchsiaBuildContext(object):
             context_path: Path to the Fint context parameters textproto.
             print_artifact_dir: If True, appends the query flag to print the
               artifact directory path and exits instead of running the build.
+            print_job_count: If True, appends the query flag to print the
+              job_count value and exits instead of running the build.
             ninja_error_logging_output: Path where Ninja should write its error logs (ninja_errors.json).
         """
         yield str(PYTHON_BIN)
@@ -730,6 +733,8 @@ class FuchsiaBuildContext(object):
             yield "--verbose"
         if print_artifact_dir:
             yield "--print-artifact-dir"
+        elif print_job_count:
+            yield "--print-job-count"
         else:
             if ninja_error_logging_output:
                 yield "--ninja-error-logging-output"
@@ -771,6 +776,33 @@ class FuchsiaBuildContext(object):
         except (subprocess.CalledProcessError, OSError) as e:
             msg(
                 f"Failed to delegate artifact_dir parsing to fint_build.py: {e}",
+                file=sys.stderr,
+            )
+        return None
+
+    @functools.cached_property
+    def fint_job_count(self) -> int | None:
+        """Parses and returns the Fint job count from context parameters if specified."""
+        if not self.config.fint_context_path:
+            return None
+
+        try:
+            cmd = list(
+                self._fint_wrapper_cmd(
+                    context_path=self.config.fint_context_path,
+                    print_job_count=True,
+                )
+            )
+            output = subprocess.check_output(
+                cmd,
+                text=True,
+                stderr=subprocess.PIPE,
+            ).strip()
+            if output:
+                return int(output)
+        except (subprocess.CalledProcessError, OSError, ValueError) as e:
+            msg(
+                f"Failed to delegate job_count parsing to fint_build.py: {e}",
                 file=sys.stderr,
             )
         return None
@@ -854,10 +886,17 @@ class FuchsiaBuildContext(object):
 
     @property
     def concurrency(self) -> int:
-        """The -j value to use, the minimum over all limiting factors."""
+        """The -j value to use. Returns the Fint job_count override if present,
+        otherwise the minimum over all limiting factors."""
+        # If a Fint job_count is specified in the context, treat it as a pure override
+        fint_jobs = self.fint_job_count
+        if fint_jobs is not None and fint_jobs > 0:
+            return fint_jobs
+
         factors = [rbe_cpu_concurrency(self.rbe_enabled)]
         if self.config.max_concurrency > 0:
             factors.append(self.config.max_concurrency)
+
         return min(factors)
 
     @functools.cached_property
@@ -1614,7 +1653,7 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         "--max-concurrency",
         type=int,
         default=0,
-        help="Upper bound on the automatically chosen -j value, or 0 for no bound. Ignored when -j is passed explicitly.",
+        help="Upper bound on the automatically chosen -j value, or 0 for no bound. Ignored when -j is passed explicitly or when the Fint context specifies job_count.",
     )
 
     parser.add_argument("--verbose", action="store_true")

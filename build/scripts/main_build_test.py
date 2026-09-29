@@ -242,6 +242,82 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         with mock.patch.object(main_build, "get_cpu_count", return_value=96):
             self.assertEqual(context.concurrency, 960)
 
+    def test_fint_job_count_missing(self) -> None:
+        context = self.create_context(fint_context_path=None)
+        self.assertIsNone(context.fint_job_count)
+
+    def test_fint_job_count_valid(self) -> None:
+        context = self.create_context(
+            fint_context_path=pathlib.Path("/fake/context.textpb")
+        )
+        with mock.patch.object(
+            subprocess, "check_output", return_value="32\n"
+        ) as mock_check:
+            self.assertEqual(context.fint_job_count, 32)
+            mock_check.assert_called_once_with(
+                [
+                    str(main_build.PYTHON_BIN),
+                    "-S",
+                    "-u",
+                    str(context.fint_build_py),
+                    "--context",
+                    "/fake/context.textpb",
+                    "--print-job-count",
+                ],
+                text=True,
+                stderr=subprocess.PIPE,
+            )
+
+    def test_concurrency_fint_context_override(self) -> None:
+        context = self.create_context(
+            rbe=False, fint_context_path=pathlib.Path("/fake/context.textpb")
+        )
+        with mock.patch.object(
+            main_build.FuchsiaBuildContext,
+            "fint_job_count",
+            new_callable=mock.PropertyMock,
+            return_value=32,
+        ):
+            with mock.patch.object(
+                main_build, "get_cpu_count", return_value=64
+            ):
+                self.assertEqual(context.concurrency, 32)
+
+    def test_concurrency_fint_context_override_greater_than_cpu(self) -> None:
+        context = self.create_context(
+            rbe=False, fint_context_path=pathlib.Path("/fake/context.textpb")
+        )
+        with mock.patch.object(
+            main_build.FuchsiaBuildContext,
+            "fint_job_count",
+            new_callable=mock.PropertyMock,
+            return_value=640,
+        ):
+            with mock.patch.object(
+                main_build, "get_cpu_count", return_value=64
+            ):
+                self.assertEqual(context.concurrency, 640)
+
+    def test_concurrency_fint_context_override_ignores_max_concurrency(
+        self,
+    ) -> None:
+        context = self.create_context(
+            rbe=False,
+            fint_context_path=pathlib.Path("/fake/context.textpb"),
+            max_concurrency=16,
+        )
+        with mock.patch.object(
+            main_build.FuchsiaBuildContext,
+            "fint_job_count",
+            new_callable=mock.PropertyMock,
+            return_value=32,
+        ):
+            with mock.patch.object(
+                main_build, "get_cpu_count", return_value=64
+            ):
+                # Even though max_concurrency is set to 16, the Fint job_count override (32) is returned directly
+                self.assertEqual(context.concurrency, 32)
+
     def test_parse_properties(self) -> None:
         test_cases = [
             ("key=value\n", {"key": "value"}),

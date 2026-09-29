@@ -1149,6 +1149,11 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         help="Print the resolved artifact directory from the context spec and exit.",
     )
     parser.add_argument(
+        "--print-job-count",
+        action="store_true",
+        help="Print the resolved job_count from the context spec and exit.",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -1198,6 +1203,17 @@ def main(argv: list[str]) -> int:
         context_spec = load_context_spec(args.context)
         if context_spec.artifact_dir:
             print(context_spec.artifact_dir)
+        return 0
+
+    if args.print_job_count:
+        if not args.context:
+            msg(
+                "Error: --context is required with --print-job-count",
+                file=sys.stderr,
+            )
+            return 1
+        context_spec = load_context_spec(args.context)
+        print(context_spec.job_count)
         return 0
 
     # Ensure build execution requirements are satisfied if not querying

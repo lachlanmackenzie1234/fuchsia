@@ -1233,6 +1233,52 @@ class FintBuildMainTest(unittest.TestCase):
             f_stderr.getvalue(),
         )
 
+    def test_main_print_job_count_success(self) -> None:
+        """Verifies that --print-job-count outputs the correct job count."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            context_file = tmp_path / "context.textproto"
+            context_file.write_text("job_count: 32\n")
+
+            # Redirect stdout to capture the printed job count
+            f_stdout = io.StringIO()
+            with contextlib.redirect_stdout(f_stdout):
+                exit_code = fint_build.main(
+                    ["--context", str(context_file), "--print-job-count"]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(f_stdout.getvalue().strip(), "32")
+
+    def test_main_print_job_count_default_zero(self) -> None:
+        """Verifies that --print-job-count outputs 0 when job_count is omitted."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            context_file = tmp_path / "context.textproto"
+            context_file.write_text('checkout_dir: "/mock/checkout"\n')
+
+            # Redirect stdout to capture the printed job count
+            f_stdout = io.StringIO()
+            with contextlib.redirect_stdout(f_stdout):
+                exit_code = fint_build.main(
+                    ["--context", str(context_file), "--print-job-count"]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(f_stdout.getvalue().strip(), "0")
+
+    def test_main_print_job_count_missing_context(self) -> None:
+        """Verifies that using --print-job-count without --context returns an error."""
+        f_stderr = io.StringIO()
+        with contextlib.redirect_stderr(f_stderr):
+            exit_code = fint_build.main(["--print-job-count"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn(
+            "Error: --context is required with --print-job-count",
+            f_stderr.getvalue(),
+        )
+
     def test_main_missing_required_args(self) -> None:
         """Verifies that missing static or wrapped_cmd returns 2."""
         # 1. Missing static
