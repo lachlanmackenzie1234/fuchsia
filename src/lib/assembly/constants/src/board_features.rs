@@ -101,6 +101,8 @@ pub enum BoardFeature {
     VulkanGpu,
     /// WLAN FullMAC driver support.
     WlanFullmac,
+    /// Power management features for WLAN devices.
+    WlanPowerManagement,
     /// WLAN SoftMAC driver support.
     WlanSoftmac,
     /// eXtensible Host Controller Interface (USB 3.0) support.
@@ -158,6 +160,7 @@ impl AsRef<str> for BoardFeature {
             Self::VideoEncoders => "fuchsia::video_encoders",
             Self::VulkanGpu => "fuchsia::vulkan_gpu",
             Self::WlanFullmac => "fuchsia::wlan_fullmac",
+            Self::WlanPowerManagement => "fuchsia::wlan_power_management",
             Self::WlanSoftmac => "fuchsia::wlan_softmac",
             Self::Xhci => "fuchsia::xhci",
             Self::Unknown(s) => s.as_str(),

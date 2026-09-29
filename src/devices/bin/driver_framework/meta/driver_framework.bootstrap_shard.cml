@@ -113,6 +113,7 @@
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
                 "fuchsia.power.StoragePowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
+                "fuchsia.power.WlanPowerManagementEnabled",
                 "fuchsia.storage.SdmmcCommandQueueingEnabled",
                 "fuchsia.usb.PeripheralConfig.Functions",
             ],

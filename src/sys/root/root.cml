@@ -58,6 +58,7 @@
                 "fuchsia.power.SuspendResumeStuckWarningTimeout",
                 "fuchsia.power.UseSuspender",
                 "fuchsia.power.WaitForSuspendingToken",
+                "fuchsia.power.WlanPowerManagementEnabled",
                 "fuchsia.starnix.fastrpc.ExpectReady",
                 "fuchsia.starnix.mcu.ExpectReady",
                 "fuchsia.storage.SdmmcCommandQueueingEnabled",
