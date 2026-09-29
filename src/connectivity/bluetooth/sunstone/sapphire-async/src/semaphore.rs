@@ -64,10 +64,29 @@ pub struct Semaphore<Mtx> {
     count: Condition<Mtx, usize>,
 }
 
+/// Error returned by [`Semaphore::try_down`] when no permits are available.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct NoPermits;
+
 impl<Mtx: RawMutex> Semaphore<Mtx> {
     /// Creates a new Counting Semaphore with the specified `initial_count` of available permits.
     pub fn new(initial_count: usize) -> Self {
         Self { count: Condition::new(initial_count) }
+    }
+
+    /// Attempts to acquire a permit from the semaphore without blocking.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NoPermits`] if no permits are available.
+    pub fn try_down(&self) -> Result<(), NoPermits> {
+        let mut count = self.count.lock();
+        if *count == 0 {
+            Err(NoPermits)
+        } else {
+            *count -= 1;
+            Ok(())
+        }
     }
 
     /// Asynchronously acquires a permit from the semaphore.
@@ -116,6 +135,17 @@ mod tests {
                 sem.down().await;
             });
         });
+    }
+
+    #[test]
+    fn test_semaphore_try_down() {
+        let sem = TestSemaphore::new(1);
+        assert_eq!(sem.try_down(), Ok(()));
+        assert_eq!(sem.try_down(), Err(NoPermits));
+
+        sem.up();
+        assert_eq!(sem.try_down(), Ok(()));
+        assert_eq!(sem.try_down(), Err(NoPermits));
     }
 
     #[test]
