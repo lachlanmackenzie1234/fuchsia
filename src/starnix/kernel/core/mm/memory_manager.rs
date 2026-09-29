@@ -4570,7 +4570,11 @@ fn write_map(
         }
         MappingNameRef::Vma(name) => {
             fill_to_name(sink);
-            sink.write(b"[anon:");
+            if map.flags().contains(MappingFlags::SHARED) {
+                sink.write(b"[anon_shmem:");
+            } else {
+                sink.write(b"[anon:");
+            }
             sink.write(name.as_bytes());
             sink.write(b"]");
         }
