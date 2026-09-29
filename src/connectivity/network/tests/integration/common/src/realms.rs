@@ -759,7 +759,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 exposes: Some(vec![
                     fposix_socket::ProviderMarker::PROTOCOL_NAME.to_string(),
                     fposix_socket_raw::ProviderMarker::PROTOCOL_NAME.to_string(),
-                    fnp_socketproxy::StarnixNetworksMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 uses: Some(fnetemul::ChildUses::Capabilities(vec![
                     fnetemul::Capability::ChildDep(protocol_dep::<fposix_socket::ProviderMarker>(
@@ -773,12 +772,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     fnetemul::Capability::ChildDep(fnetemul::ChildDep {
                         is_weak: Some(true),
                         ..protocol_dep::<fnp_properties::NetworksMarker>(
-                            constants::netcfg::COMPONENT_NAME,
-                        )
-                    }),
-                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
-                        is_weak: Some(true),
-                        ..protocol_dep::<fnp_socketproxy::NetworkRegistryMarker>(
                             constants::netcfg::COMPONENT_NAME,
                         )
                     }),
