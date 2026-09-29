@@ -971,7 +971,7 @@ enum ProvisioningEvent {
             fidl::Error,
         >,
     ),
-    DnsWatcherResult(Option<DnsServerUpdate>),
+    DnsWatcherResult(DnsServerUpdate),
     RequestStream(Option<RequestStream>),
     Dhcpv4Configuration(
         Option<(InterfaceId, Result<fnet_dhcp_ext::Configuration, fnet_dhcp_ext::Error>)>,
@@ -1134,7 +1134,6 @@ impl<'a> NetCfg<'a> {
                     interface_id,
                 )
             }
-            DnsServersUpdateSource::Netstack => Ok(()),
             DnsServersUpdateSource::Dhcpv6 { interface_id } => {
                 let interface_id = interface_id.try_into().expect("should be nonzero");
                 let InterfaceState { config, provisioning, .. } = self
@@ -1266,37 +1265,7 @@ impl<'a> NetCfg<'a> {
                 .fuse();
         let mut if_watcher_event_stream = pin!(if_watcher_event_stream);
 
-        let dns_server_watcher =
-            fuchsia_component::client::connect_to_protocol::<fnet_name::DnsServerWatcherMarker>()
-                .context("error connecting to dns server watcher")?;
-        let netstack_dns_server_stream = dns_server_watcher::new_dns_server_stream(
-            DnsServersUpdateSource::Netstack,
-            dns_server_watcher,
-        )
-        .map(|(source, result)| DnsServerUpdate {
-            source,
-            payload: DnsWatcherResultPayload::Generic,
-            lifetime: DnsServerLifetime::Undefined,
-            result,
-        })
-        .boxed();
-
-        let dns_watchers = DnsServerWatchers::empty();
-        // `Fuse` (the return of `fuse`) guarantees that once the underlying stream is
-        // exhausted, future attempts to poll the stream will return `None`. This would
-        // be undesirable if we needed to support a scenario where all streams are
-        // exhausted before adding a new stream to the `StreamMap`. However,
-        // `netstack_dns_server_stream` is not expected to end so we can fuse the
-        // `StreamMap` without issue.
-        let mut dns_watchers = dns_watchers.fuse();
-
-        assert!(
-            dns_watchers
-                .get_mut()
-                .insert(DnsServersUpdateSource::Netstack, netstack_dns_server_stream)
-                .is_none(),
-            "dns watchers should be empty"
-        );
+        let mut dns_watchers = DnsServerWatchers::empty();
 
         let mut masquerade_handler = MasqueradeHandler::default();
 
@@ -1402,7 +1371,7 @@ impl<'a> NetCfg<'a> {
                         ProvisioningEvent::InterfaceWatcherResult(if_watcher_res)
                     )
                 }
-                dns_watchers_res = dns_watchers.next() => {
+                dns_watchers_res = dns_watchers.select_next_some() => {
                     Event::ProvisioningEvent(
                         ProvisioningEvent::DnsWatcherResult(dns_watchers_res)
                     )
@@ -1481,7 +1450,7 @@ impl<'a> NetCfg<'a> {
                         )?;
                     // DNS watchers must be propagated to start an RA NDP watcher for the interface
                     // prior to the interface getting enabled in the Netstack.
-                    self.handle_device_instance(instance, dns_watchers.get_mut())
+                    self.handle_device_instance(instance, &mut dns_watchers)
                         .await
                         .context("handle netdev instance")?
                 }
@@ -1536,7 +1505,7 @@ impl<'a> NetCfg<'a> {
                 Event::ProvisioningEvent(event) => {
                     self.handle_provisioning_event(
                         event,
-                        dns_watchers.get_mut(),
+                        &mut dns_watchers,
                         &mut dhcpv6_prefix_provider_requests,
                         &mut dns_server_watcher_incoming_requests,
                         &mut virtualization_handler,
@@ -1578,11 +1547,12 @@ impl<'a> NetCfg<'a> {
                     masquerade_handler.handle_interface_removed(removed_id);
                 }
             }
-            ProvisioningEvent::DnsWatcherResult(dns_watchers_res) => {
-                let DnsServerUpdate { source, payload, lifetime, result } = dns_watchers_res
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("dns watchers stream should never be exhausted")
-                    })?;
+            ProvisioningEvent::DnsWatcherResult(DnsServerUpdate {
+                source,
+                payload,
+                lifetime,
+                result,
+            }) => {
                 let servers = match result {
                     Ok(s) => s,
                     Err(e) => {
@@ -1653,7 +1623,6 @@ impl<'a> NetCfg<'a> {
                         }
                     }
                     DnsServersUpdateSource::Default
-                    | DnsServersUpdateSource::Netstack
                     | DnsServersUpdateSource::Dhcpv4 { .. }
                     | DnsServersUpdateSource::Dhcpv6 { .. }
                     | DnsServersUpdateSource::SocketProxy => {
@@ -5330,11 +5299,11 @@ mod tests {
             .await;
         }
 
-        // Mock a fake DNS update from the netstack.
-        let netstack_servers = vec![DNS_SERVER1];
+        // Mock a fake default DNS update.
+        let default_servers = vec![DNS_SERVER1];
         let ((), ()) = future::join(
             netcfg.update_dns_servers(
-                DnsServersUpdateSource::Netstack,
+                DnsServersUpdateSource::Default,
                 vec![fnet_name::DnsServer_ {
                     address: Some(DNS_SERVER1),
                     source: Some(fnet_name::DnsServerSource::StaticSource(
@@ -5343,7 +5312,7 @@ mod tests {
                     ..Default::default()
                 }],
             ),
-            run_lookup_admin_once(&mut servers.lookup_admin, &netstack_servers),
+            run_lookup_admin_once(&mut servers.lookup_admin, &default_servers),
         )
         .await;
 
@@ -5411,7 +5380,7 @@ mod tests {
                 Some(ipv6addrs(None)),
             )
             .map(|r| r.expect("error handling interface changed event with sockaddr1 removed")),
-            run_lookup_admin_once(&mut servers.lookup_admin, &netstack_servers),
+            run_lookup_admin_once(&mut servers.lookup_admin, &default_servers),
         )
         .await;
         assert!(!dns_watchers.contains_key(&DHCPV6_DNS_SOURCE), "should not have a watcher");
@@ -5447,7 +5416,7 @@ mod tests {
                 None,
             )
             .map(|r| r.expect("error handling interface changed event with interface down")),
-            run_lookup_admin_once(&mut servers.lookup_admin, &netstack_servers),
+            run_lookup_admin_once(&mut servers.lookup_admin, &default_servers),
         )
         .await;
         assert!(!dns_watchers.contains_key(&DHCPV6_DNS_SOURCE), "should not have a watcher");
@@ -5486,7 +5455,7 @@ mod tests {
             .map(|r| {
                 r.expect("error handling interface change event with sockaddr1 replacing sockaddr2")
             }),
-            run_lookup_admin_once(&mut servers.lookup_admin, &netstack_servers),
+            run_lookup_admin_once(&mut servers.lookup_admin, &default_servers),
         )
         .await;
         assert_matches::assert_matches!(client_server.try_next().await, Ok(None));
@@ -5506,7 +5475,7 @@ mod tests {
             netcfg
                 .handle_dns_server_watcher_done(DHCPV6_DNS_SOURCE, &mut dns_watchers)
                 .map(|r| r.expect("error handling completion of dns server watcher")),
-            run_lookup_admin_once(&mut servers.lookup_admin, &netstack_servers),
+            run_lookup_admin_once(&mut servers.lookup_admin, &default_servers),
         )
         .await;
         assert!(!dns_watchers.contains_key(&DHCPV6_DNS_SOURCE), "should not have a watcher");
@@ -5541,7 +5510,7 @@ mod tests {
                     let _removed_interface_id: Option<InterfaceId> =
                         r.expect("error handling interface removed event");
                 }),
-            run_lookup_admin_once(&mut servers.lookup_admin, &netstack_servers),
+            run_lookup_admin_once(&mut servers.lookup_admin, &default_servers),
         )
         .await;
         assert!(!dns_watchers.contains_key(&DHCPV6_DNS_SOURCE), "should not have a watcher");

@@ -35,7 +35,6 @@
                 "fuchsia.net.filter.Control",
                 "fuchsia.net.interfaces.admin.Installer",
                 "fuchsia.net.interfaces.State",
-                "fuchsia.net.name.DnsServerWatcher",
                 "fuchsia.net.name.LookupAdmin",
                 "fuchsia.net.routes.admin.RouteTableV4",
                 "fuchsia.net.routes.admin.RouteTableV6",
