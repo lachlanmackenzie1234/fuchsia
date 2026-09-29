@@ -26,7 +26,6 @@ def run_target_test(
     # use the same configuration in //src/developer/ffx/build/ffx_action.gni
     base_config = [
         "ffx.analytics.disabled=true",
-        "daemon.autostart=false",
         "log.enabled=false",
     ]
 

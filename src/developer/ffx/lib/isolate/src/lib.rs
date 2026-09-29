@@ -361,7 +361,6 @@ impl Isolate {
 
 #[derive(Serialize, Debug)]
 struct UserConfig<'a> {
-    daemon: UserConfigDaemon,
     log: Value,
     test: UserConfigTest,
     targets: UserConfigTargets<'a>,
@@ -397,11 +396,6 @@ struct UserConfigMdns {
     enabled: bool,
 }
 
-#[derive(Serialize, Debug)]
-struct UserConfigDaemon {
-    autostart: bool,
-}
-
 impl<'a> UserConfig<'a> {
     fn for_test(
         log: Value,
@@ -421,7 +415,6 @@ impl<'a> UserConfig<'a> {
             discovery: UserConfigDiscovery { mdns: UserConfigMdns { enabled: discovery } },
             ffx: UserConfigFfx { subtool_search_paths },
             sdk,
-            daemon: UserConfigDaemon { autostart: false },
         }
     }
 }
