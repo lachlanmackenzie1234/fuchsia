@@ -231,6 +231,7 @@ bazel2gn_verification_targets = [
   "//src/sys/pkg/lib/eager-package-config:verify_bazel2gn",
   "//src/sys/pkg/lib/epoch:verify_bazel2gn",
   "//src/sys/pkg/lib/event-queue:verify_bazel2gn",
+  "//src/sys/pkg/lib/far/rust:verify_bazel2gn",
   "//src/sys/pkg/lib/fidl-fuchsia-update-ext:verify_bazel2gn",
   "//src/sys/pkg/lib/forced-fdr:verify_bazel2gn",
   "//src/sys/pkg/lib/fuchsia-hash:verify_bazel2gn",
