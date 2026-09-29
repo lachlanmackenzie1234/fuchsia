@@ -40,9 +40,10 @@ const MEDIUM_DISK: DiskSizedParams = DiskSizedParams {
     snapshot_storage_size_mib: 10,
 };
 
+// Reports are fairly small so there's little reason to store more than 10 MiB.
 const LARGE_DISK: DiskSizedParams = DiskSizedParams {
-    report_cache_size_kib: 25600,
-    report_tmp_size_kib: 25600,
+    report_cache_size_kib: 10240,
+    report_tmp_size_kib: 10240,
     snapshot_storage_size_mib: 25,
 };
 
