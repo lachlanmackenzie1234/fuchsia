@@ -50,9 +50,9 @@ mod vmo_rs {
     use pin_init::stack_pin_init;
     use rand::RngExt as _;
     use unittest::{
-        assert_eq, assert_false, assert_ge, assert_le, assert_lt, assert_ok, assert_true,
-        expect_eq, expect_false, expect_gt, expect_le, expect_ne, expect_ok, expect_true,
-        unwrap_ok, unwrap_some,
+        assert_eq, assert_err, assert_false, assert_ge, assert_le, assert_lt, assert_ok,
+        assert_true, expect_eq, expect_false, expect_gt, expect_le, expect_ne, expect_ok,
+        expect_true, subtest, unwrap_ok, unwrap_some,
     };
     use zx_status::Status;
     use zx_types::ZX_KOID_KERNEL;
@@ -2720,20 +2720,20 @@ mod vmo_rs {
             /*alignment_log2*/ 0
         ));
 
-        // decommit fails as expected
-        assert_eq!(
-            Status::result_into_raw(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE)),
-            Status::NOT_SUPPORTED.into_raw()
+        assert_err!(
+            vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE),
+            Status::NOT_SUPPORTED,
+            "decommit fails as expected\n"
         );
-        // decommit fails as expected
-        assert_eq!(
-            Status::result_into_raw(vmo.decommit_range(0, 4 * PAGE_SIZE)),
-            Status::NOT_SUPPORTED.into_raw()
+        assert_err!(
+            vmo.decommit_range(0, 4 * PAGE_SIZE),
+            Status::NOT_SUPPORTED,
+            "decommit fails as expected\n"
         );
-        // decommit fails as expected
-        assert_eq!(
-            Status::result_into_raw(vmo.decommit_range(alloc_size - PAGE_SIZE, PAGE_SIZE)),
-            Status::NOT_SUPPORTED.into_raw()
+        assert_err!(
+            vmo.decommit_range(alloc_size - PAGE_SIZE, PAGE_SIZE),
+            Status::NOT_SUPPORTED,
+            "decommit fails as expected\n"
         );
     }
 
@@ -2790,10 +2790,12 @@ mod vmo_rs {
         }));
         assert_true!(base_pa != PAddr::from(!0));
 
-        // decommit pretends to work
-        assert_ok!(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE));
-        assert_ok!(vmo.decommit_range(0, 4 * PAGE_SIZE));
-        assert_ok!(vmo.decommit_range(alloc_size - PAGE_SIZE, PAGE_SIZE));
+        assert_ok!(vmo.decommit_range(PAGE_SIZE, 4 * PAGE_SIZE), "decommit pretends to work\n");
+        assert_ok!(vmo.decommit_range(0, 4 * PAGE_SIZE), "decommit pretends to work\n");
+        assert_ok!(
+            vmo.decommit_range(alloc_size - PAGE_SIZE, PAGE_SIZE),
+            "decommit pretends to work\n"
+        );
 
         // Make sure decommit removed pages.  Make sure pages which are present are the correct
         // physical address.
@@ -3422,17 +3424,13 @@ mod vmo_rs {
         // this would prevent the unmap round-up optimization from being triggered.
         let _scanner_disable = AutoVmScannerDisable::new();
 
-        // TODO(https://fxbug.dev/547981705): Improve the ergonomics of `test_vmo` when we have a
-        // convenient way of creating subtests with //zircon/kernel/lib/unittest.
-        let test_vmo = |vmo: RefPtr<VmObject>| -> bool {
+        let test_vmo = subtest!(|vmo: RefPtr<VmObject>| {
             // Commit a page to force an unmap when the range is zeroed.
-            if vmo.commit_range(0, PAGE_SIZE).is_err() {
-                return false;
-            }
+            assert_ok!(vmo.commit_range(0, PAGE_SIZE));
 
             let ka = VmAspace::kernel_aspace();
             // SAFETY: The flags and range are appropriate for creating this mapping.
-            let ptr = match unsafe {
+            let ptr = unwrap_ok!(unsafe {
                 ka.map_object_internal(
                     vmo.clone(),
                     c"test",
@@ -3442,10 +3440,7 @@ mod vmo_rs {
                     vmm_flag::COMMIT,
                     ARCH_RW_FLAGS,
                 )
-            } {
-                Ok(ptr) => ptr,
-                Err(_) => return false,
-            };
+            });
             struct DeferCleanupMapping(*mut c_void);
             impl Drop for DeferCleanupMapping {
                 fn drop(&mut self) {
@@ -3456,8 +3451,8 @@ mod vmo_rs {
             }
             let _cleanup_mapping = DeferCleanupMapping(ptr);
 
-            vmo.zero_range(0, 2 * PAGE_SIZE).is_ok()
-        };
+            expect_ok!(vmo.zero_range(0, 2 * PAGE_SIZE));
+        });
 
         {
             let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
