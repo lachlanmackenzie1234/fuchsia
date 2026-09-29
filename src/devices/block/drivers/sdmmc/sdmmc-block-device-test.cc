@@ -3400,6 +3400,9 @@ TEST_P(SdmmcBlockDeviceTest, NodeToken) {
 TEST_P(SdmmcBlockDeviceTest, InlineCryptoDunOutOfRange) {
   ASSERT_OK(StartDriverForMmc());
 
+  zx::result key_token = block_device_->child_partition_devices()[0]->RegisterKeySlot(1);
+  ASSERT_OK(key_token);
+
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(FakeSdmmcDevice::kBlockSize, 0, &vmo));
 
@@ -3420,6 +3423,12 @@ TEST_P(SdmmcBlockDeviceTest, InlineCryptoDunOutOfRange) {
         .dun = uint64_t{1} << 32,
         .slot = 1,
     };
+    EXPECT_EQ(client->FifoTransaction(&req, 1), ZX_ERR_ACCESS_DENIED);
+
+    zx::result slot = client->RegisterKey(std::move(*key_token));
+    ASSERT_OK(slot);
+    EXPECT_EQ(*slot, 1);
+
     EXPECT_EQ(client->FifoTransaction(&req, 1), ZX_ERR_OUT_OF_RANGE);
   });
 }

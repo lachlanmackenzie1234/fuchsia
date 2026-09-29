@@ -180,14 +180,7 @@ pub(super) struct FscryptInoLblk32FileCipher {
 
 impl FscryptInoLblk32FileCipher {
     pub fn new(key: &UnwrappedKey) -> Self {
-        // TODO(https://fxbug.dev/520619432): Once starnix_crypt passes `key_token` instead of
-        // prepending the slot byte to `unwrapped_key`, always use `key.slot().unwrap()` and
-        // `key[..16]`.
-        if let Some(slot) = key.slot() {
-            Self { slot, ino_hash_key: key[..16].try_into().unwrap() }
-        } else {
-            Self { slot: key[0], ino_hash_key: key[1..17].try_into().unwrap() }
-        }
+        Self { slot: key.slot().unwrap(), ino_hash_key: key[..16].try_into().unwrap() }
     }
 
     #[inline(always)]
@@ -594,12 +587,8 @@ mod tests {
         let unwrapped_with_slot = UnwrappedKey::new_with_slot(ino_hash_key.to_vec(), Some(42));
         let cipher = FscryptInoLblk32FileCipher::new(&unwrapped_with_slot);
 
-        let mut legacy_bytes = vec![42];
-        legacy_bytes.extend_from_slice(&ino_hash_key);
-        let legacy_cipher = FscryptInoLblk32FileCipher::new(&UnwrappedKey::new(legacy_bytes));
-
         let (dun, slot) = cipher.crypt_ctx(7, 0, 3 * BLOCK_SIZE as u64).unwrap();
         assert_eq!(slot, 42);
-        assert_eq!(Some((dun, slot)), legacy_cipher.crypt_ctx(7, 0, 3 * BLOCK_SIZE as u64));
+        assert_eq!(dun, cipher.tweak(7, 3).into());
     }
 }

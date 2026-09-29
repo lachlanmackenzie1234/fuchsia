@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::NonZero;
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use storage_device::buffer::Buffer;
 
 pub mod async_interface;
@@ -190,16 +190,11 @@ struct RegisteredHwKey {
 #[derive(Default)]
 pub struct KeyRegistry {
     keys: Mutex<HashMap<zx::Koid, RegisteredHwKey>>,
-    // TODO(https://fxbug.dev/520619432): Transitional flag so unmigrated inline encryption callers
-    // continue to work until all drivers and clients register keys. Remove once all callers are
-    // migrated.
-    enforced: AtomicBool,
 }
 
 impl KeyRegistry {
     /// Mints a new `zx::EventPair` key token for `hw_slot` and records it in the registry.
     pub fn register_key_slot(&self, hw_slot: u8) -> Result<zx::EventPair, zx::Status> {
-        self.enforced.store(true, Ordering::Relaxed);
         let (server_ep, client_ep) = zx::EventPair::create();
         let server_koid = server_ep.koid()?;
         let key = RegisteredHwKey { hw_slot, server_ep };
@@ -1040,7 +1035,6 @@ impl<SM: SessionManager> SessionHelper<SM> {
     /// the corresponding hardware key slot.
     fn register_key(&self, key_token: zx::EventPair) -> Result<u8, zx::Status> {
         let registry = self.session_manager().key_registry();
-        registry.enforced.store(true, Ordering::Relaxed);
         let info = key_token.basic_info()?;
         let hw_slot = registry.get(info.related_koid).ok_or(zx::Status::ACCESS_DENIED)?;
         self.keys.insert(hw_slot);
@@ -1058,9 +1052,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
         if !flags.contains(BlockIoFlag::INLINE_ENCRYPTION_ENABLED) {
             return Ok(InlineCryptoOptions { is_enabled: false, dun: 0, slot: 0 });
         }
-        if self.session_manager().key_registry().enforced.load(Ordering::Relaxed)
-            && !self.keys.contains(slot)
-        {
+        if !self.keys.contains(slot) {
             return Err(zx::Status::ACCESS_DENIED);
         }
         Ok(InlineCryptoOptions { is_enabled: true, dun, slot })
@@ -4948,14 +4940,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            // 1. Registering an un-minted EventPair must fail with ACCESS_DENIED.
-            let (_forged_a, forged_b) = zx::EventPair::create();
-            assert_eq!(
-                session1.register_key(forged_b).await.unwrap(),
-                Err(zx::Status::ACCESS_DENIED.into_raw())
-            );
-
-            // 2. Using an unregistered slot in a FIFO request must fail with ACCESS_DENIED.
+            // 1. Using an unregistered slot in a FIFO request must fail with ACCESS_DENIED.
             writer1
                 .write_entries(&BlockFifoRequest {
                     command: BlockFifoCommand {
@@ -4975,6 +4960,13 @@ mod tests {
             let mut resp = BlockFifoResponse::default();
             reader1.read_entries(&mut resp).await.unwrap();
             assert_eq!(zx::Status::ok(resp.status), Err(zx::Status::ACCESS_DENIED));
+
+            // 2. Registering an un-minted EventPair must fail with ACCESS_DENIED.
+            let (_forged_a, forged_b) = zx::EventPair::create();
+            assert_eq!(
+                session1.register_key(forged_b).await.unwrap(),
+                Err(zx::Status::ACCESS_DENIED.into_raw())
+            );
 
             // 3. Mint a valid key slot (hw_slot = 42) and register it on session1.
             let client_ep = block_server.register_key_slot(42).unwrap();
