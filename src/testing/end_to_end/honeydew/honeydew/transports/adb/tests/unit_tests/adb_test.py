@@ -884,6 +884,34 @@ class AdbTests(unittest.TestCase):
             timeout=5.0,
         )
 
+    @mock.patch.object(adb.Adb, "run", autospec=True)
+    def test_setprop_quotes_special_characters(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Test setprop quotes prop_name with spaces/metacharacters and empty value."""
+        self.adb_obj.setprop("debug.foo bar; echo $HOME", "")
+
+        mock_run.assert_called_once_with(
+            self.adb_obj,
+            ["shell", "setprop", "'debug.foo bar; echo $HOME'", "''"],
+            timeout=None,
+        )
+
+    @mock.patch.object(adb.Adb, "run", autospec=True)
+    def test_getprop_quotes_special_characters(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Test getprop quotes prop_name with spaces and shell metacharacters."""
+        mock_run.return_value = ""
+
+        self.adb_obj.getprop("debug.foo bar; echo $HOME")
+
+        mock_run.assert_called_once_with(
+            self.adb_obj,
+            ["shell", "getprop", "'debug.foo bar; echo $HOME'"],
+            timeout=None,
+        )
+
     @mock.patch.object(adb.Adb, "getprop", autospec=True)
     def test_wait_for_boot_complete_success_immediately(
         self, mock_getprop: mock.Mock

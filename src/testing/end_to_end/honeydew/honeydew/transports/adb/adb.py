@@ -8,6 +8,7 @@ import contextlib
 import glob
 import logging
 import os
+import shlex
 import shutil
 import stat
 import tarfile
@@ -769,7 +770,10 @@ class Adb:
             value,
             self._device_name,
         )
-        self.run(["shell", "setprop", prop_name, value], timeout=timeout)
+        self.run(
+            ["shell", "setprop", shlex.quote(prop_name), shlex.quote(value)],
+            timeout=timeout,
+        )
 
     def getprop(self, prop_name: str, timeout: float | None = None) -> str:
         """Gets a system property from the device via `adb shell getprop <prop_name>`.
@@ -785,7 +789,7 @@ class Adb:
             AdbCommandError: If the command fails or times out.
         """
         value = self.run(
-            ["shell", "getprop", prop_name], timeout=timeout
+            ["shell", "getprop", shlex.quote(prop_name)], timeout=timeout
         ).strip()
         _LOGGER.debug(
             "Got property '%s' = '%s' on %s",
