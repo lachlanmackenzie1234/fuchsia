@@ -723,12 +723,33 @@ class AdbTests(unittest.TestCase):
         self.assertEqual(self.adb_obj._cached_adbd_pid, "8765")
 
     def test_close(self) -> None:
-        """Test close stops the adb server if running."""
+        """Test close stops the adb server if running and drops the reference."""
         mock_server = mock.Mock()
         self.adb_obj._adb_server = mock_server
         self.adb_obj.close()
         mock_server.stop.assert_called_once()
-        self.assertIs(self.adb_obj._adb_server, mock_server)
+        self.assertIsNone(self.adb_obj._adb_server)
+
+    def test_close_is_idempotent(self) -> None:
+        """Test calling close multiple times only cleans up resources once."""
+        mock_server = mock.Mock()
+        mock_temp_dir = mock.Mock()
+        self.adb_obj._adb_server = mock_server
+        self.adb_obj._temp_vendor_keys_dir = mock_temp_dir
+
+        self.adb_obj.close()
+        self.adb_obj.close()
+
+        mock_server.stop.assert_called_once()
+        mock_temp_dir.cleanup.assert_called_once()
+
+    @mock.patch("atexit.unregister", autospec=True)
+    def test_close_unregisters_atexit_handler(
+        self, mock_unregister: mock.Mock
+    ) -> None:
+        """Test close unregisters its atexit handler."""
+        self.adb_obj.close()
+        mock_unregister.assert_called_once_with(self.adb_obj.close)
 
     def test_close_cleans_up_vendor_keys(self) -> None:
         """Test close cleans up temp vendor keys dir if present."""

@@ -839,12 +839,19 @@ class Adb:
             ) from err
 
     def close(self) -> None:
-        """Cleans up the ADB transport."""
+        """Cleans up the ADB transport.
+
+        Safe to call multiple times.
+        """
+        # Unregister so an explicit close() is not repeated at process exit and
+        # the atexit registry no longer keeps this instance alive.
+        atexit.unregister(self.close)
         if self._adb_server:
             _LOGGER.info(
                 "Stopping isolated ADB server for %s", self._device_name
             )
             self._adb_server.stop()
+            self._adb_server = None
         if self._temp_vendor_keys_dir:
             self._temp_vendor_keys_dir.cleanup()
             self._temp_vendor_keys_dir = None
