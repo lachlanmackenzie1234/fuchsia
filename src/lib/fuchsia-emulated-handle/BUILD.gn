@@ -13,7 +13,7 @@ if (is_host) {
     with_unit_tests = false
     deps = [
       ":fuchsia-emulated-handle",
-      "//sdk/rust/zx-status",
+      "//sdk/rust/zx",
       "//third_party/rust_crates:futures",
     ]
     source_root = "src/shutdown_test.rs"
@@ -76,8 +76,7 @@ rustc_library("fuchsia-emulated-handle") {
   version = "0.1.0"
   with_unit_tests = true
   deps = [
-    "//sdk/rust/zx-status",
-    "//sdk/rust/zx-status-ext",
+    "//sdk/rust/zx",
     "//sdk/rust/zx-types",
     "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:bitflags",

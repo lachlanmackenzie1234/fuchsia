@@ -7,7 +7,7 @@ use futures as _;
 use std::future::Future;
 use std::pin::pin;
 use std::task::{Context, Poll};
-use zx_status::Status;
+use zx::Status;
 
 fn main() {
     let mut noop_ctx = Context::from_waker(&std::task::Waker::noop());
