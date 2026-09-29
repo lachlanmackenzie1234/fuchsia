@@ -489,7 +489,7 @@ where
                 // TODO(https://fxbug.dev/343683914): provide a way to run filter routines
                 // post-NAT, but in the same hook. Currently all filter routines are run before
                 // all NAT routines in the same hook.
-                match nat::perform_nat::<nat::IngressHook, _, _, _, _>(
+                match nat::perform_nat::<nat::IngressHook, _, _, _, _, _>(
                     core_ctx,
                     bindings_ctx,
                     state.nat_installed.get(),
@@ -499,6 +499,7 @@ where
                     &state.installed_routines.get().nat.ingress,
                     packet,
                     Interfaces { ingress: Some(interface), egress: None },
+                    metadata,
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(IngressStopReason::Drop),
                     Verdict::Proceed(Accept) => (),
@@ -556,7 +557,7 @@ where
                 // TODO(https://fxbug.dev/343683914): provide a way to run filter routines
                 // post-NAT, but in the same hook. Currently all filter routines are run before
                 // all NAT routines in the same hook.
-                match nat::perform_nat::<nat::LocalIngressHook, _, _, _, _>(
+                match nat::perform_nat::<nat::LocalIngressHook, _, _, _, _, _>(
                     core_ctx,
                     bindings_ctx,
                     state.nat_installed.get(),
@@ -566,6 +567,7 @@ where
                     &state.installed_routines.get().nat.local_ingress,
                     packet,
                     Interfaces { ingress: Some(interface), egress: None },
+                    metadata,
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(DropOrReject::Drop),
                     Verdict::Proceed(Accept) => (),
@@ -646,7 +648,7 @@ where
                 // TODO(https://fxbug.dev/343683914): provide a way to run filter routines
                 // post-NAT, but in the same hook. Currently all filter routines are run before
                 // all NAT routines in the same hook.
-                match nat::perform_nat::<nat::LocalEgressHook, _, _, _, _>(
+                match nat::perform_nat::<nat::LocalEgressHook, _, _, _, _, _>(
                     core_ctx,
                     bindings_ctx,
                     state.nat_installed.get(),
@@ -656,6 +658,7 @@ where
                     &state.installed_routines.get().nat.local_egress,
                     packet,
                     Interfaces { ingress: None, egress: Some(interface) },
+                    metadata,
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(DropOrReject::Drop),
                     Verdict::Proceed(Accept) => (),
@@ -713,7 +716,7 @@ where
                 // TODO(https://fxbug.dev/343683914): provide a way to run filter routines
                 // post-NAT, but in the same hook. Currently all filter routines are run before
                 // all NAT routines in the same hook.
-                match nat::perform_nat::<nat::EgressHook, _, _, _, _>(
+                match nat::perform_nat::<nat::EgressHook, _, _, _, _, _>(
                     core_ctx,
                     bindings_ctx,
                     state.nat_installed.get(),
@@ -723,6 +726,7 @@ where
                     &state.installed_routines.get().nat.egress,
                     packet,
                     Interfaces { ingress: None, egress: Some(interface) },
+                    metadata,
                 ) {
                     Verdict::Stop(DropPacket) => return Verdict::Stop(DropPacket),
                     Verdict::Proceed(Accept) => (),
@@ -926,7 +930,8 @@ mod tests {
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIpPacket, FakeTcpSegment, FakeUdpPacket, TransportPacketExt,
     };
-    use crate::state::{FakePacketMetadata, IpRoutines, NatRoutines, UninstalledRoutine};
+    use crate::state::testutil::FakePacketMetadata;
+    use crate::state::{IpRoutines, NatRoutines, UninstalledRoutine};
     use crate::testutil::TestIpExt;
 
     impl<I: IpExt> Rule<I, FakeBindingsCtx<I>, ()> {

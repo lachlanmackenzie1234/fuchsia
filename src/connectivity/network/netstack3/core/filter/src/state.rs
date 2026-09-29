@@ -594,51 +594,58 @@ pub trait FilterPacketMetadata {
     fn marks(&self) -> &Marks;
 }
 
-/// No-op implementation of `FilterIpMetadata` and `FilterPacketMetadata`
-/// traits.
-#[derive(Default)]
-pub struct FakePacketMetadata {
-    marks: Marks,
-}
+/// Testing utilities for filtering state.
+#[cfg(any(test, feature = "testutils"))]
+pub mod testutil {
+    use super::*;
 
-impl FakePacketMetadata {
-    /// Creates a new `FakePacketMetadata` with the specified marks.
-    #[cfg(any(test, feature = "testutils"))]
-    pub fn new(marks: Marks) -> Self {
-        Self { marks }
-    }
-}
-
-impl From<Marks> for FakePacketMetadata {
-    fn from(marks: Marks) -> Self {
-        Self { marks }
-    }
-}
-
-impl<I: IpExt, A, BT: FilterBindingsTypes> FilterIpMetadata<I, A, BT> for FakePacketMetadata {
-    fn take_connection_and_direction(
-        &mut self,
-    ) -> Option<(conntrack::Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)> {
-        None
+    /// Fake implementation of `FilterIpMetadata` and `FilterPacketMetadata`
+    /// traits.
+    #[derive(Default)]
+    pub struct FakePacketMetadata {
+        marks: Marks,
     }
 
-    fn replace_connection_and_direction(
-        &mut self,
-        _conn: conntrack::Connection<I, NatConfig<I, A>, BT>,
-        _direction: ConnectionDirection,
-    ) -> Option<conntrack::Connection<I, NatConfig<I, A>, BT>> {
-        None
-    }
-}
-
-impl FilterPacketMetadata for FakePacketMetadata {
-    fn apply_mark_action(&mut self, _domain: MarkDomain, _action: MarkAction) {}
-
-    fn socket_info(&self) -> Option<SocketInfo> {
-        None
+    impl FakePacketMetadata {
+        /// Creates a new `FakePacketMetadata` with the specified marks.
+        pub fn new(marks: Marks) -> Self {
+            Self { marks }
+        }
     }
 
-    fn marks(&self) -> &Marks {
-        &self.marks
+    impl From<Marks> for FakePacketMetadata {
+        fn from(marks: Marks) -> Self {
+            Self { marks }
+        }
+    }
+
+    impl<I: IpExt, A, BT: FilterBindingsTypes> FilterIpMetadata<I, A, BT> for FakePacketMetadata {
+        fn take_connection_and_direction(
+            &mut self,
+        ) -> Option<(conntrack::Connection<I, NatConfig<I, A>, BT>, ConnectionDirection)> {
+            None
+        }
+
+        fn replace_connection_and_direction(
+            &mut self,
+            _conn: conntrack::Connection<I, NatConfig<I, A>, BT>,
+            _direction: ConnectionDirection,
+        ) -> Option<conntrack::Connection<I, NatConfig<I, A>, BT>> {
+            None
+        }
+    }
+
+    impl FilterPacketMetadata for FakePacketMetadata {
+        fn apply_mark_action(&mut self, domain: MarkDomain, action: MarkAction) {
+            action.apply(self.marks.get_mut(domain));
+        }
+
+        fn socket_info(&self) -> Option<SocketInfo> {
+            None
+        }
+
+        fn marks(&self) -> &Marks {
+            &self.marks
+        }
     }
 }

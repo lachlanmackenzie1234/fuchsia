@@ -171,7 +171,7 @@ mod tests {
         ArbitraryValue, FakeIcmpEchoRequest, FakeIpPacket, FakeNullPacket, FakeTcpSegment,
         FakeUdpPacket, TestIpExt, TransportPacketExt,
     };
-    use crate::state::FakePacketMetadata;
+    use crate::state::testutil::FakePacketMetadata;
 
     #[test_case(InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id))]
     #[test_case(InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name))]
