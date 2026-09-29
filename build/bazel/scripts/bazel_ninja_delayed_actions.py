@@ -29,10 +29,8 @@ from bazel_action_utils import (
     update_gn_targets_symlink,
 )
 from workspace_utils import (
-    BazelPackageAndTargetToGnInputsEntriesMap,
-    BazelTargetGnInputsEntriesMap,
     GeneratedWorkspaceFiles,
-    GnTargetsDirectoryManifestEntry,
+    merge_gn_target_manifests,
     record_gn_targets_dir_from_entries,
 )
 
@@ -571,31 +569,6 @@ def main() -> int:
     # Done!  (Don't return the 'rc' from above, that's for the action itself,
     # here we need to return 0 to tell Ninja that the script exited successfully.)
     return 0
-
-
-def merge_gn_target_manifests(
-    manifests: list[Path],
-) -> BazelPackageAndTargetToGnInputsEntriesMap:
-    manifest_entries_package_map = BazelPackageAndTargetToGnInputsEntriesMap()
-    for manifest_path in manifests:
-        with open(manifest_path) as f:
-            for entry_json in json.load(f):
-                entry = GnTargetsDirectoryManifestEntry.from_json_value(
-                    entry_json
-                )
-
-                bazel_package = entry.bazel_package
-                name_map = manifest_entries_package_map.setdefault(
-                    bazel_package, BazelTargetGnInputsEntriesMap()
-                )
-
-                bazel_name = entry.bazel_name
-                found_entry = name_map.setdefault(bazel_name, entry)
-                if found_entry != entry:
-                    raise ValueError(
-                        f"Found duplicate GN target entry for //{bazel_package}:{bazel_name}:  {found_entry.generator_label} vs {entry.generator_label}"
-                    )
-    return manifest_entries_package_map
 
 
 @dataclasses.dataclass

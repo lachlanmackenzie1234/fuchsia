@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/bazel_action.gni")
+
+bazel_action("target_tests") {
+  testonly = true
+  command = "build"
+
+  # LINT.IfChange(target_tests_bazel_target)
+  bazel_target = "//build/bazel/target_tests:target_tests_stamp"
+
+  # LINT.ThenChange(//build/bazel/scripts/bazel_tests_utils.py:target_tests_bazel_target)
+  bazel_config = "fuchsia_platform"
+
+  # The suites themselves are built as top-level Bazel targets, because they
+  # are Bazel test_suite targets: they expose no files to depend on, and are
+  # typically private to their own package.
+  extra_bazel_targets_file = "$root_build_dir/bazel_target_test_suites.txt"
+
+  deps = [
+    # The following are currently needed by `fx_package()`.
+    # TODO(b/519244675): Remove once `package-tool` is migrated to Bazel.
+    "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
+
+    # TODO(b/519243783): Remove once `cmc` is migrated to Bazel.
+    "//tools/cmc:bazel_input($host_toolchain)",
+  ]
+
+  copy_outputs = [
+    {
+      bazel = "{{BAZEL_TARGET_OUT_DIR}}/target_tests.stamp"
+      ninja = "target_tests.stamp"
+    },
+  ]
+}
+
+# Pretends to generate bazel_test_packages.list, which is actually written by
+# regenerator.py during `fx gen`, and depends on `:target_tests` so that the
+# package manifests and blobs listed in it exist on disk before any consumer
+# (such as //build/images/updates:all_package_manifests.list) reads them.
+action("bazel_test_packages.list") {
+  testonly = true
+  script = "//build/scripts/no_op.sh"
+  outputs = [ "$root_build_dir/bazel_test_packages.list" ]
+  args = rebase_path(outputs, root_build_dir)
+  deps = [ ":target_tests" ]
+}

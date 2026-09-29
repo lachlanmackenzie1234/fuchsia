@@ -4,6 +4,7 @@
 
 """Utility functions for working with Bazel test targets."""
 
+import contextlib
 import json
 import os
 import sys
@@ -13,7 +14,9 @@ from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
 sys.path.append(str(_SCRIPT_DIR))
+import bazel_action_utils
 import build_utils
+import workspace_utils
 from build_utils import BazelLauncher, BazelPaths
 
 
@@ -22,7 +25,47 @@ def generate_tests_json(
     command_runner: build_utils.CommandRunner | None = None,
     quiet: bool = True,
 ) -> tuple[list[dict[str, T.Any]], set[Path]]:
-    """Generate a tests.json file corresponding to all Bazel test targets
+    """Generate tests.json entries corresponding to all Bazel test targets.
+
+    Args:
+        bazel_paths: The BazelPaths object to use for path resolution.
+        command_runner: An optional CommandRunner instance.
+        quiet: Whether to print status updates.
+
+    Returns:
+        A pair of two values which are:
+
+        - A list of dictionaries, describing each Bazel test reachable from the
+          `bazel_test_suite()` GN targets, according to the tests.json schema.
+
+        - A set of input paths, whose changes would require a regeneration of
+          the tests.json file.
+    """
+    if not command_runner:
+        command_runner = build_utils.CommandRunner()
+
+    host_tests_json, host_inputs = _generate_host_tests_json(
+        bazel_paths, command_runner, quiet
+    )
+    device_tests_json, device_inputs = _generate_device_tests_json(
+        bazel_paths, command_runner, quiet
+    )
+    return host_tests_json + device_tests_json, host_inputs | device_inputs
+
+
+def _execroot_path_to_ninja_path(bazel_paths: BazelPaths, path: str) -> str:
+    """Convert a path relative to the Bazel execroot to one relative to the Ninja build directory."""
+    return os.path.relpath(
+        bazel_paths.execroot / path, bazel_paths.ninja_build_dir
+    )
+
+
+def _generate_host_tests_json(
+    bazel_paths: BazelPaths,
+    command_runner: build_utils.CommandRunner | None = None,
+    quiet: bool = True,
+) -> tuple[list[dict[str, T.Any]], set[Path]]:
+    """Generate a tests.json file corresponding to all Bazel host test targets
 
     Args:
         bazel_paths: The BazelPaths object to use for path resolution.
@@ -62,8 +105,6 @@ def generate_tests_json(
     # FileNotFoundError in downstream infra scripts.
     bazel_host_tests_debug_manifest.write_text("[]\n")
 
-    if not bazel_host_test_suites_file.exists():
-        return [], {starlark_input}
     suites = bazel_host_test_suites_file.read_text().splitlines()
     if not suites:
         # Skip running `bazel cquery` to get the full list of tests if no Bazel
@@ -92,12 +133,6 @@ def generate_tests_json(
     if ret.returncode != 0:
         raise RuntimeError(f"Failed to run bazel query: {ret.stderr}")
 
-    def make_execroot_path_relative_to_ninja_build_dir(path: str) -> str:
-        """Convert a path relative to the Bazel execroot to a path relative to the Ninja build directory."""
-        return os.path.relpath(
-            bazel_paths.execroot / path, bazel_paths.ninja_build_dir
-        )
-
     target_cpu = "x64"
     args_json_path = bazel_paths.ninja_build_dir / "args.json"
     if args_json_path.exists():
@@ -107,7 +142,7 @@ def generate_tests_json(
 
     tests_json: list[dict[str, T.Any]] = []
     host_test_debug_manifests: list[dict[str, str]] = []
-    targets_missing_test_info: list[str] = []
+    targets_missing_test_info: set[str] = set()
 
     # LINT.IfChange(debug_symbols)
     def _debug_manifest_entry(
@@ -122,8 +157,8 @@ def generate_tests_json(
         """
         return {
             "cpu": cpu,
-            "debug": make_execroot_path_relative_to_ninja_build_dir(
-                unstripped_binary_execroot_path
+            "debug": _execroot_path_to_ninja_path(
+                bazel_paths, unstripped_binary_execroot_path
             ),
             "label": label,
             "os": os_val.lower(),
@@ -143,10 +178,14 @@ def generate_tests_json(
         #    paths relative to the Bazel execroot instead of the Ninja build directory.
         cquery_test = json.loads(line)
 
-        if cquery_test.get("error") == "missing_fuchsia_host_test_info":
-            label = _normalize_label(cquery_test.get("label", "unknown"))
-            if label not in targets_missing_test_info:
-                targets_missing_test_info.append(label)
+        if "error" in cquery_test:
+            if cquery_test["error"] != "missing_fuchsia_host_test_info":
+                raise RuntimeError(
+                    f"Unexpected error in cquery output: {cquery_test}"
+                )
+            targets_missing_test_info.add(
+                _normalize_label(cquery_test.get("label", "unknown"))
+            )
             continue
 
         # LINT.IfChange(cquery_output_schema)
@@ -167,11 +206,11 @@ def generate_tests_json(
                 # source code. For labels in the main workspace, ensure they
                 # start with "//".
                 "source_label": _normalize_label(label),
-                "path": make_execroot_path_relative_to_ninja_build_dir(
-                    cquery_test["launcher_execroot_path"]
+                "path": _execroot_path_to_ninja_path(
+                    bazel_paths, cquery_test["launcher_execroot_path"]
                 ),
-                "runtime_deps": make_execroot_path_relative_to_ninja_build_dir(
-                    cquery_test["runtime_deps_json_execroot_path"]
+                "runtime_deps": _execroot_path_to_ninja_path(
+                    bazel_paths, cquery_test["runtime_deps_json_execroot_path"]
                 ),
                 "os": cquery_test["os"],
                 "cpu": cquery_test["cpu"],
@@ -217,13 +256,13 @@ def generate_tests_json(
     if targets_missing_test_info:
         if len(targets_missing_test_info) == 1:
             raise RuntimeError(
-                f"Target '{targets_missing_test_info[0]}' included in the bazel_host_test_suites GN group is a test target "
+                f"Target '{next(iter(targets_missing_test_info))}' included in the bazel_host_test_suites GN group is a test target "
                 f"but does not provide FuchsiaHostTestInfo. "
                 f"Wrap it with host_go_test(), host_rustc_test(), host_py_test(), or host_test()."
             )
         else:
             targets_list = "\n".join(
-                f"  - {t}" for t in targets_missing_test_info
+                f"  - {t}" for t in sorted(targets_missing_test_info)
             )
             raise RuntimeError(
                 f"The following targets included in the bazel_host_test_suites GN group are test targets "
@@ -232,6 +271,319 @@ def generate_tests_json(
             )
 
     return tests_json, {starlark_input}
+
+
+def _generate_device_tests_json(
+    bazel_paths: BazelPaths,
+    command_runner: build_utils.CommandRunner,
+    quiet: bool = True,
+) -> tuple[list[dict[str, T.Any]], set[Path]]:
+    """Generate tests.json entries for all Bazel fx_test() targets.
+
+    Also writes `bazel_test_packages.list`, which enumerates the package
+    manifests that must be published before the tests can run.
+
+    Args:
+        bazel_paths: The BazelPaths object to use for path resolution.
+        command_runner: The CommandRunner instance to run `bazel` with.
+        quiet: Whether to print status updates.
+
+    Returns:
+        A pair of two values which are:
+
+        - A list of dictionaries, one per test component, according to the
+          tests.json schema.
+
+        - A set of input paths, whose changes would require a regeneration of
+          the tests.json file.
+    """
+    bazel_launcher = BazelLauncher(bazel_paths.launcher, runner=command_runner)
+    starlark_input = _SCRIPT_DIR / "../starlark/FuchsiaTestInfo.cquery"
+
+    # Read the text file enumerating all the Bazel targets listed in the
+    # `target_tests` of `bazel_test_suite` GN targets.
+    bazel_test_suites_file = (
+        bazel_paths.ninja_build_dir / "bazel_target_test_suites.txt"
+    )
+    suites = bazel_test_suites_file.read_text().splitlines()
+
+    # `fx build --fuchsia_platform <label>` runs `bazel build` outside of Ninja
+    # and points @gn_targets at this directory (see tools/devshell/build), so
+    # it has to exist even if the GN graph has no Bazel device tests.
+    # Otherwise that command would fail for any target that uses cmc or
+    # package-tool, e.g. any `fx_package()`.
+    gn_targets_dir = _write_target_tests_gn_targets_dir(bazel_paths)
+
+    if not suites:
+        # Skip running `bazel cquery` to get the full list of tests if no Bazel
+        # device tests are included in the build graph, to save time on regen.
+        write_bazel_test_packages_list(bazel_paths.ninja_build_dir, [])
+        return [], {starlark_input}
+
+    if not quiet:
+        print(
+            f"Running Bazel cquery to populate `tests.json` because there are Bazel device "
+            f"tests ({len(suites)} bazel_test_suite{'' if len(suites) == 1 else 's'}) "
+            f"in your GN graph."
+        )
+
+    # `fx_test()` targets wrap `fx_package()` targets that implicitly depend on
+    # GN-built tools (`cmc` and `package-tool`) exposed through the @gn_targets
+    # repository, whose content is specific to whichever `bazel_action()` last
+    # ran. Point it at the @gn_targets inputs declared on
+    # `//build/bazel/target_tests` so the query below sees the exact same GN
+    # inputs that building the tests will see.
+    with _symlink_gn_targets_for_target_tests(bazel_paths, gn_targets_dir):
+        with tempfile.NamedTemporaryFile(mode="w") as query_file:
+            # TODO(https://fxbug.dev/564574581): `tests()` silently discards
+            # non-test targets, so e.g. a bare `fx_package()` listed in
+            # `target_tests` is dropped from tests.json instead of hitting the
+            # "Wrap them with fx_test()" error below. Report requested labels
+            # that are neither `test_suite()`s nor matched by `tests()`. The
+            # host test path above has the same gap.
+            query_file.write("tests(set(" + " ".join(suites) + "))")
+            query_file.flush()
+
+            ret = bazel_launcher.run_query(
+                "cquery",
+                [
+                    "--config=fuchsia_platform",
+                    "--output=starlark",
+                    f"--starlark:file={starlark_input}",
+                    f"--query_file={query_file.name}",
+                ],
+                False,
+            )
+    if ret.returncode != 0:
+        raise RuntimeError(f"Failed to run bazel query: {ret.stderr}")
+
+    tests_json: list[dict[str, T.Any]] = []
+    package_manifests: list[str] = []
+    targets_missing_test_info: set[str] = set()
+
+    for line in ret.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        cquery_test = json.loads(line)
+
+        if "error" in cquery_test:
+            if cquery_test["error"] != "missing_fuchsia_test_info":
+                raise RuntimeError(
+                    f"Unexpected error in cquery output: {cquery_test}"
+                )
+            targets_missing_test_info.add(
+                _normalize_label(cquery_test.get("label", "unknown"))
+            )
+            continue
+
+        # LINT.IfChange(device_cquery_output_schema)
+        label = cquery_test["label"]
+        package_manifest = _execroot_path_to_ninja_path(
+            bazel_paths, cquery_test["package_manifest_execroot_path"]
+        )
+        package_manifests.append(package_manifest)
+
+        # Unlike the host path above, no CPU remapping is needed here:
+        # `CurrentPlatformInfo` already reports Fuchsia's names (x64, arm64,
+        # riscv64) rather than Bazel's (k8, aarch64).
+        for test_component in cquery_test["test_components"]:
+            package_url = test_component["package_url"]
+            tests_json.append(
+                {
+                    # Left empty so that `build_tests_json.py` fills in this
+                    # build's default environments, as it does for GN tests
+                    # that don't specify any.
+                    # TODO(https://fxbug.dev/564574581): Support overriding
+                    # environments per test.
+                    "environments": [],
+                    "expects_ssh": True,
+                    "test": {
+                        "build_rule": "fx_test",
+                        "cpu": cquery_test["cpu"],
+                        "label": label,
+                        # The source label indicates the location in the tree of
+                        # the source code. For labels in the main workspace,
+                        # ensure they start with "//".
+                        "source_label": _normalize_label(label),
+                        "name": package_url,
+                        "os": cquery_test["os"],
+                        "package_url": package_url,
+                        "package_manifests": [package_manifest],
+                        # TODO(https://fxbug.dev/564574581): Support overriding
+                        # other test spec fields.
+                        "log_settings": {
+                            "max_severity": cquery_test.get(
+                                "max_log_severity", "WARN"
+                            )
+                        },
+                    },
+                }
+            )
+        # LINT.ThenChange(//build/bazel/starlark/FuchsiaTestInfo.cquery:cquery_output_schema)
+
+    if targets_missing_test_info:
+        targets_list = "\n".join(
+            f"  - {t}" for t in sorted(targets_missing_test_info)
+        )
+        raise RuntimeError(
+            f"The following targets included in the `target_tests` of a bazel_test_suite() "
+            f"GN target are test targets but do not provide FuchsiaTestInfo:\n"
+            f"{targets_list}\n"
+            f"Wrap them with fx_test()."
+        )
+
+    write_bazel_test_packages_list(
+        bazel_paths.ninja_build_dir, sorted(set(package_manifests))
+    )
+
+    # Without these, adding an `fx_test()` to a suite would leave tests.json and
+    # bazel_test_packages.list stale until something else triggers `fx gen`.
+    # TODO(https://fxbug.dev/564574581): This misses edits in other packages,
+    # e.g. to an `fx_package()`'s `test_components` defined in a different
+    # BUILD file than its `fx_test()`.
+    build_files = _main_workspace_build_files(
+        bazel_paths.fuchsia_dir,
+        suites + [test["test"]["label"] for test in tests_json],
+    )
+
+    return tests_json, {starlark_input} | build_files
+
+
+def _main_workspace_build_files(
+    fuchsia_dir: Path, labels: T.Iterable[str]
+) -> set[Path]:
+    """Return the BUILD files defining the given main-workspace Bazel labels."""
+    build_files: set[Path] = set()
+    for label in labels:
+        # `_normalize_label` strips `@@//` and `@//` to `//` for main-workspace
+        # labels while leaving external repo labels (`@repo//...`, `@@repo//...`)
+        # prefixed with `@`, which the check below skips.
+        label = _normalize_label(label)
+        if not label.startswith("//"):
+            continue
+        package_dir = fuchsia_dir / label.removeprefix("//").split(":")[0]
+        for name in ("BUILD.bazel", "BUILD"):
+            if (package_dir / name).is_file():
+                build_files.add(package_dir / name)
+                break
+    return build_files
+
+
+# TODO(https://fxbug.dev/519243783, https://fxbug.dev/519244675): Remove
+# `_write_target_tests_gn_targets_dir` and `_symlink_gn_targets_for_target_tests`
+# once `cmc` and `package-tool` are migrated to Bazel and `fx_package()` no
+# longer depends on `@gn_targets`.
+def _write_target_tests_gn_targets_dir(bazel_paths: BazelPaths) -> Path:
+    """Populate `build/bazel/tests_json.gn_targets` from `//build/bazel/target_tests`."""
+    target_infos_file = bazel_paths.ninja_build_dir / "bazel_target_infos.json"
+    bazel_target_infos = json.loads(target_infos_file.read_text())
+    # LINT.IfChange(target_tests_bazel_target)
+    target_tests_label = "//build/bazel/target_tests:target_tests_stamp"
+    # LINT.ThenChange(//build/bazel/target_tests/BUILD.gn:target_tests_bazel_target)
+    manifests = sorted(
+        {
+            bazel_paths.ninja_build_dir / info["gn_targets_manifest"]
+            for info in bazel_target_infos
+            if info["bazel_target"] == target_tests_label
+        }
+    )
+    if not manifests:
+        raise RuntimeError(
+            f"No entry for {target_tests_label} found in {target_infos_file}"
+        )
+
+    # LINT.IfChange(tests_json_gn_targets_dir)
+    gn_targets_dir = (
+        bazel_paths.ninja_build_dir / "build/bazel/tests_json.gn_targets"
+    )
+    # LINT.ThenChange(//tools/devshell/build:tests_json_gn_targets_dir)
+    # `update_gn_targets_symlink()` symlinks `all_licenses.spdx.json` to this
+    # file, so it cannot use that name or it would point at itself.
+    licenses_file = gn_targets_dir / "placeholder_licenses.spdx.json"
+    licenses_file.parent.mkdir(parents=True, exist_ok=True)
+    licenses_file.write_text(
+        "This is a placeholder file, only used to satisfy Bazel analysis of "
+        "test packages during `tests.json` generation."
+    )
+
+    # Parse `//build/bazel/target_tests`'s manifest into the entry map expected
+    # by `record_gn_targets_dir_from_entries()`.
+    generated = workspace_utils.GeneratedWorkspaceFiles()
+    entries = workspace_utils.merge_gn_target_manifests(manifests)
+    workspace_utils.record_gn_targets_dir_from_entries(
+        generated,
+        bazel_paths.ninja_build_dir,
+        entries,
+        licenses_file,
+    )
+    generated.write(gn_targets_dir)
+    return gn_targets_dir
+
+
+@contextlib.contextmanager
+def _symlink_gn_targets_for_target_tests(
+    bazel_paths: BazelPaths,
+    gn_targets_dir: Path,
+) -> T.Iterator[None]:
+    """Temporarily point the @gn_targets symlink at `//build/bazel/target_tests`'s inputs.
+
+    Each `bazel_action()` GN target owns a @gn_targets directory holding just
+    the GN artifacts that action exposes to Bazel, and the (singular) workspace
+    symlink is repointed at it right before the action runs. Pointing the
+    symlink at `//build/bazel/target_tests`'s manifest during `cquery` ensures
+    that `tests.json` generation sees the exact same `@gn_targets` entries that
+    building the test packages will see.
+
+    The previous symlink target is restored on exit to avoid invalidating the
+    @gn_targets repository rule for the next `bazel_action()` that runs.
+
+    Args:
+        bazel_paths: The BazelPaths object to use for path resolution.
+        gn_targets_dir: The directory written by
+            `_write_target_tests_gn_targets_dir()`.
+    """
+    symlink = bazel_paths.workspace / bazel_action_utils.GN_TARGETS_SYMLINK_PATH
+    previous_target = os.readlink(symlink) if symlink.is_symlink() else None
+    bazel_action_utils.update_gn_targets_symlink(bazel_paths, gn_targets_dir)
+    try:
+        yield
+    finally:
+        if previous_target is not None:
+            build_utils.force_raw_symlink(symlink, previous_target)
+        else:
+            symlink.unlink(missing_ok=True)
+
+
+def write_bazel_test_packages_list(
+    ninja_build_dir: Path, package_manifests: list[str]
+) -> None:
+    """Write the list of package manifests for all Bazel test packages.
+
+    The file uses the same schema as `all_package_manifests.list`, and is read
+    by `fx build` (via `all_package_manifests.list`) and `fx test` to publish
+    Bazel test packages before running them.
+
+    It is written even when there are no Bazel test packages or when
+    `export_bazel_tests = false`, so that downstream consumers can always load
+    it as valid JSON.
+    """
+    # LINT.IfChange(bazel_test_packages_list)
+    output = ninja_build_dir / "bazel_test_packages.list"
+    # LINT.ThenChange(//scripts/fxtest/python/main.py:bazel_test_packages_list)
+    content = (
+        json.dumps(
+            {"content": {"manifests": package_manifests}, "version": "1"},
+            indent=2,
+        )
+        + "\n"
+    )
+    # Only overwrite when the contents changed so that `fx gen` does not bump
+    # the file's mtime and force `all_package_manifests.list` and `amber-files`
+    # to rebuild on the next `fx build`.
+    if not output.exists() or output.read_text() != content:
+        output.write_text(content)
 
 
 def _normalize_label(label: str) -> str:

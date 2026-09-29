@@ -1325,6 +1325,10 @@ generated_file("tests_from_metadata") {
     # Pull in tests from the non-device type-specific test groups.
     "//:host_tests",
 
+    # Bazel device tests are not in the metadata graph; this dep only makes
+    # sure they are built.
+    "//:target_tests",
+
     # Pull in tests from the developer
     "//:developer_specified_tests",
 
@@ -1460,6 +1464,16 @@ build_api_module("test_durations") {
   }
 }
 
+# Targets whose transitive dependencies may declare Bazel tests, shared by the
+# two collectors below.
+_bazel_test_suite_roots = [
+  # Pull in tests from the developer
+  "//:developer_specified_tests",
+
+  # And from discoverable, so that --with continues to work
+  "//:discoverable_packages",
+]
+
 # Collect the labels of the Bazel test_suite() and host_xxx_test() targets
 # holding host tests and write them to a text file, one per line. This is
 # __NOT__ a build API module and is only used by //build/bazel/host_tests and by
@@ -1470,20 +1484,14 @@ generated_file("bazel_host_test_suites") {
   walk_keys = [ "bazel_host_test_suite_barrier" ]
   outputs = [ "${root_build_dir}/bazel_host_test_suites.txt" ]
   output_conversion = "list lines"
-  deps = [
-    # Pull in tests from host_labels.
-    # This is deprecated, and tests should be in //:host_tests instead.
-    "//:host",
+  deps = _bazel_test_suite_roots + [
+           # Pull in tests from host_labels.
+           # This is deprecated, and tests should be in //:host_tests instead.
+           "//:host",
 
-    # Pull in tests from the non-device type-specific test groups.
-    "//:host_tests",
-
-    # Pull in tests from the developer
-    "//:developer_specified_tests",
-
-    # And from discoverable, so that --with continues to work
-    "//:discoverable_packages",
-  ]
+           # Pull in tests from the non-device type-specific test groups.
+           "//:host_tests",
+         ]
   metadata = {
     debug_symbol_manifests = [
       {
@@ -1494,6 +1502,21 @@ generated_file("bazel_host_test_suites") {
       },
     ]
   }
+}
+
+# Collect labels of Bazel test_suite() and fx_test() targets that run on
+# a Fuchsia device, and write them to a text file, one per line. This is __NOT__
+# a build API module and is only used by //build/regenerator.
+#
+# These are tracked separately from host tests because they must be queried and
+# built in the `fuchsia_platform` Bazel configuration.
+generated_file("bazel_target_test_suites") {
+  testonly = true
+  data_keys = [ "bazel_target_test_suite" ]
+  walk_keys = [ "bazel_target_test_suite_barrier" ]
+  outputs = [ "${root_build_dir}/bazel_target_test_suites.txt" ]
+  output_conversion = "list lines"
+  deps = _bazel_test_suite_roots
 }
 
 # Tools provided by the build or as prebuilts, to be used outside the build.
@@ -2360,6 +2383,17 @@ group("host_tests") {
   }
 }
 
+# Tests that run on a Fuchsia device or emulator and are built by Bazel.
+#
+# GN-defined device tests are packages, and reach the build graph through the
+# package groups below instead.
+group("target_tests") {
+  testonly = true
+  visibility = [ ":*" ]
+
+  deps = [ "//build/bazel/target_tests" ]
+}
+
 # Can be any test-type. This is for local-developer use only.  It is not for use
 # by infra or products.
 group("developer_specified_tests") {
@@ -2382,6 +2416,7 @@ group("discoverable_packages") {
   testonly = true
   visibility = [
     "//:bazel_host_test_suites",
+    "//:bazel_target_test_suites",
     "//:test_components",
     "//:tests_from_metadata",
     "//build/images/updates:*",

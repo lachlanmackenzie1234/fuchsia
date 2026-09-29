@@ -1046,6 +1046,40 @@ class BazelPackageAndTargetToGnInputsEntriesMap(
     """Maps Bazel package names to a BazelTargetGnInputsEntriesMap instance."""
 
 
+def merge_gn_target_manifests(
+    manifests: list[Path],
+) -> BazelPackageAndTargetToGnInputsEntriesMap:
+    """Merge several gn_targets manifests into a single set of entries.
+
+    Args:
+        manifests: Paths of the per-bazel_action() gn_targets manifests.
+    Returns:
+        The merged entries, keyed by Bazel package then by target name.
+    Raises:
+        ValueError if two manifests disagree about the same Bazel target.
+    """
+    manifest_entries_package_map = BazelPackageAndTargetToGnInputsEntriesMap()
+    for manifest_path in manifests:
+        with open(manifest_path) as f:
+            for entry_json in json.load(f):
+                entry = GnTargetsDirectoryManifestEntry.from_json_value(
+                    entry_json
+                )
+
+                bazel_package = entry.bazel_package
+                name_map = manifest_entries_package_map.setdefault(
+                    bazel_package, BazelTargetGnInputsEntriesMap()
+                )
+
+                bazel_name = entry.bazel_name
+                found_entry = name_map.setdefault(bazel_name, entry)
+                if found_entry != entry:
+                    raise ValueError(
+                        f"Found duplicate GN target entry for //{bazel_package}:{bazel_name}:  {found_entry.generator_label} vs {entry.generator_label}"
+                    )
+    return manifest_entries_package_map
+
+
 def record_gn_targets_dir_from_entries(
     generated: GeneratedWorkspaceFiles,
     build_dir: Path,

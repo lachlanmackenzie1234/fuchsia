@@ -348,7 +348,25 @@ def build_tests_json(
     validation_errors: list[str] = []
     build_only_test_names: set[str] = set()
 
-    # Resolve, validate, and filter environments for tests from metadata.
+    bazel_tests_json: list[dict[str, Any]] = []
+    bazel_inputs: set[Path] = set()
+    if with_bazel_tests:
+        bazel_paths = build_utils.BazelPaths.new(build_dir=build_dir)
+        bazel_tests_json, bazel_inputs = bazel_tests_utils.generate_tests_json(
+            bazel_paths,
+            command_runner,
+            quiet=quiet,
+        )
+    else:
+        # `//build/images/updates:all_package_manifests.list` unconditionally
+        # reads `bazel_test_packages.list`, and its GN action is `no_op.sh`
+        # (`touch`), which would otherwise create an empty non-JSON file.
+        bazel_tests_utils.write_bazel_test_packages_list(build_dir, [])
+
+    tests.extend(bazel_tests_json)
+
+    # Resolve, validate, and filter environments for tests from metadata and
+    # Bazel.
     for test in tests:
         test_info = test.get("test", {})
         test_name = test_info.get("name", "<unknown>")
@@ -473,27 +491,6 @@ def build_tests_json(
             "Invalid test environment specifications found:\n"
             + "\n".join(f"  - {err}" for err in validation_errors)
         )
-
-    if with_bazel_tests:
-        # Now get the list of all Bazel tests.
-        # TODO(digit): This is just host tests for now, also get the list of
-        # Fuchsia Bazel tests.
-        fuchsia_dir = Path(__file__).parent.parent
-        assert (
-            fuchsia_dir / ".jiri_manifest"
-        ).exists(), f"Invalid Fuchsia source directory: {fuchsia_dir}"
-
-        # NOTE: Do not use fuchsia_dir here, since unit tests run with a different source dir,
-        # that BazelPaths.new() will find by walking up from build_dir.
-        bazel_paths = build_utils.BazelPaths.new(build_dir=build_dir)
-        bazel_tests_json, bazel_inputs = bazel_tests_utils.generate_tests_json(
-            bazel_paths,
-            command_runner,
-            quiet=quiet,
-        )
-        tests += bazel_tests_json
-    else:
-        bazel_inputs = set()
 
     # Write the final list of tests to tests.json if the contents changed.
     contents_changed = True

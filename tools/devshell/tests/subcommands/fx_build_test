@@ -454,6 +454,7 @@ TEST_fx-build-with-bazel-label-with-config-host() {
     BT_EXPECT grep -q "bazel" stdout.txt
     BT_EXPECT grep -q "build" stdout.txt
     BT_EXPECT grep -q -e "--config=host" stdout.txt
+    BT_EXPECT grep -q -e "--override_repository=gn_targets+=.*/build/bazel/local_repositories/empty_gn_targets" stdout.txt
     BT_EXPECT grep -q -e "@//src/foo" stdout.txt
 }
 
@@ -462,9 +463,11 @@ TEST_fx-build-with-bazel-label-after-fuchsia-platform() {
     export FX_BUILD_DRY_RUN=1
     BT_EXPECT "${fx}" build --fuchsia_platform @//src/foo ">" stdout.txt
     # Verify that the command reached the end of the stack with correct flags.
+    BT_EXPECT grep -q -e "phony/build/bazel/target_tests/target_tests.bazel_inputs" stdout.txt
     BT_EXPECT grep -q "bazel" stdout.txt
     BT_EXPECT grep -q "build" stdout.txt
     BT_EXPECT grep -q -e "--config=fuchsia_platform" stdout.txt
+    BT_EXPECT grep -q -e "--override_repository=gn_targets+=.*/build/bazel/tests_json.gn_targets" stdout.txt
     BT_EXPECT grep -q -e "@//src/foo" stdout.txt
 }
 

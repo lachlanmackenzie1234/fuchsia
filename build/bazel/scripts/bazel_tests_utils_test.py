@@ -39,6 +39,25 @@ class BazelTestsUtilsTest(unittest.TestCase):
         (
             self.bazel_paths.ninja_build_dir / "bazel_host_test_suites.txt"
         ).write_text("//fake/test1\n//fake/test2")
+        (
+            self.bazel_paths.ninja_build_dir / "bazel_target_test_suites.txt"
+        ).write_text("")
+        (
+            self.bazel_paths.ninja_build_dir
+            / "target_tests.gn_targets_manifest.json"
+        ).write_text("[]")
+        (
+            self.bazel_paths.ninja_build_dir / "bazel_target_infos.json"
+        ).write_text(
+            json.dumps(
+                [
+                    {
+                        "bazel_target": "//build/bazel/target_tests:target_tests_stamp",
+                        "gn_targets_manifest": "target_tests.gn_targets_manifest.json",
+                    }
+                ]
+            )
+        )
 
     def tearDown(self) -> None:
         self._td.cleanup()
@@ -252,6 +271,252 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 }
             ],
         )
+
+    def _setUpDeviceTests(self, suites: list[str]) -> None:
+        """Make only the device cquery run, over the given test suite labels."""
+        (
+            self.bazel_paths.ninja_build_dir / "bazel_host_test_suites.txt"
+        ).write_text("")
+        (
+            self.bazel_paths.ninja_build_dir / "bazel_target_test_suites.txt"
+        ).write_text("\n".join(suites))
+
+    def test_generate_device_tests_json(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        test_info = {
+            "label": "@@//src/my_test:my_test",
+            "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+            "os": "fuchsia",
+            "cpu": "x64",
+            "test_components": [
+                {
+                    "component_name": "my_test",
+                    "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_test.cm",
+                },
+                {
+                    "component_name": "my_other_test",
+                    "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_other_test.cm",
+                },
+            ],
+        }
+        mock_runner.push_result(stdout=json.dumps(test_info))
+
+        tests_json, _ = bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        execroot_path = "gen/build/bazel/output_base/execroot/_main"
+        package_manifest = (
+            f"{execroot_path}/bazel-out/my_test/package_manifest.json"
+        )
+        self.assertEqual(
+            tests_json,
+            [
+                {
+                    "environments": [],
+                    "expects_ssh": True,
+                    "test": {
+                        "build_rule": "fx_test",
+                        "cpu": "x64",
+                        "label": "@@//src/my_test:my_test",
+                        "source_label": "//src/my_test:my_test",
+                        "name": f"fuchsia-pkg://fuchsia.com/my-test-package#meta/{component}.cm",
+                        "os": "fuchsia",
+                        "package_url": f"fuchsia-pkg://fuchsia.com/my-test-package#meta/{component}.cm",
+                        "package_manifests": [package_manifest],
+                        "log_settings": {"max_severity": "WARN"},
+                    },
+                }
+                for component in ("my_test", "my_other_test")
+            ],
+        )
+
+        packages_list = (
+            self.bazel_paths.ninja_build_dir / "bazel_test_packages.list"
+        )
+        self.assertEqual(
+            json.loads(packages_list.read_text()),
+            {"content": {"manifests": [package_manifest]}, "version": "1"},
+        )
+
+        query_command = mock_runner.commands[-1]
+        self.assertIn("cquery", query_command)
+        self.assertIn("--config=fuchsia_platform", query_command)
+        self.assertIn("FuchsiaTestInfo.cquery", query_command)
+
+    def test_generate_device_tests_json_max_log_severity(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/my_test:my_test",
+                    "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "riscv64",
+                    "max_log_severity": "ERROR",
+                    "test_components": [
+                        {
+                            "component_name": "my_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_test.cm",
+                        },
+                    ],
+                }
+            )
+        )
+
+        tests_json, _ = bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        self.assertEqual(len(tests_json), 1)
+        self.assertEqual(
+            tests_json[0]["test"]["log_settings"],
+            {"max_severity": "ERROR"},
+        )
+        # Environments are resolved later by build_tests_json.py, for any CPU.
+        self.assertEqual(tests_json[0]["environments"], [])
+        self.assertEqual(tests_json[0]["test"]["cpu"], "riscv64")
+
+    def test_generate_device_tests_json_build_file_inputs(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests:suite"])
+        suite_build = self.fuchsia_dir / "fake" / "device_tests" / "BUILD.bazel"
+        suite_build.parent.mkdir(parents=True)
+        suite_build.write_text("")
+        test_build = self.fuchsia_dir / "src" / "my_test" / "BUILD"
+        test_build.parent.mkdir(parents=True)
+        test_build.write_text("")
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/my_test:my_test",
+                    "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "x64",
+                    "test_components": [
+                        {
+                            "component_name": "my_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_test.cm",
+                        },
+                    ],
+                }
+            )
+        )
+
+        _, inputs = bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        self.assertIn(suite_build, inputs)
+        self.assertIn(test_build, inputs)
+
+    def test_generate_device_tests_json_missing_test_info(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "error": "missing_fuchsia_test_info",
+                    "label": "@@//src/my_test:my_test",
+                }
+            )
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"do not provide FuchsiaTestInfo:\n  - //src/my_test:my_test",
+        ):
+            bazel_tests_utils.generate_tests_json(
+                self.bazel_paths, command_runner=mock_runner
+            )
+
+    def test_generate_device_tests_json_unexpected_error(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "error": "something_else",
+                    "label": "@@//src/my_test:my_test",
+                }
+            )
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError, r"Unexpected error in cquery output"
+        ):
+            bazel_tests_utils.generate_tests_json(
+                self.bazel_paths, command_runner=mock_runner
+            )
+
+    def test_bazel_test_packages_list_written_when_no_device_tests(
+        self,
+    ) -> None:
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(stdout="")
+
+        bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        packages_list = (
+            self.bazel_paths.ninja_build_dir / "bazel_test_packages.list"
+        )
+        self.assertEqual(
+            json.loads(packages_list.read_text()),
+            {"content": {"manifests": []}, "version": "1"},
+        )
+        # `build/bazel/tests_json.gn_targets` is also populated so that direct
+        # `fx build --fuchsia_platform <label>` invocations can use it even when
+        # no suites are in `bazel_target_test_suites.txt`.
+        self.assertTrue(
+            (
+                self.bazel_paths.ninja_build_dir
+                / "build/bazel/tests_json.gn_targets/BUILD.bazel"
+            ).is_file()
+        )
+
+    def test_missing_target_tests_stamp_entry_raises(self) -> None:
+        self._setUpDeviceTests([])
+        (
+            self.bazel_paths.ninja_build_dir / "bazel_target_infos.json"
+        ).write_text("[]")
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"No entry for //build/bazel/target_tests:target_tests_stamp found in",
+        ):
+            bazel_tests_utils.generate_tests_json(
+                self.bazel_paths, command_runner=MockCommandRunner()
+            )
+
+    def test_write_bazel_test_packages_list_only_writes_if_changed(
+        self,
+    ) -> None:
+        packages_list = (
+            self.bazel_paths.ninja_build_dir / "bazel_test_packages.list"
+        )
+        bazel_tests_utils.write_bazel_test_packages_list(
+            self.bazel_paths.ninja_build_dir, ["obj/foo/package_manifest.json"]
+        )
+        os.utime(packages_list, (1000, 1000))
+
+        bazel_tests_utils.write_bazel_test_packages_list(
+            self.bazel_paths.ninja_build_dir, ["obj/foo/package_manifest.json"]
+        )
+        self.assertEqual(packages_list.stat().st_mtime, 1000)
+
+        bazel_tests_utils.write_bazel_test_packages_list(
+            self.bazel_paths.ninja_build_dir, ["obj/bar/package_manifest.json"]
+        )
+        self.assertNotEqual(packages_list.stat().st_mtime, 1000)
 
 
 if __name__ == "__main__":

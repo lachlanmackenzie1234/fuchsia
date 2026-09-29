@@ -42,6 +42,20 @@ class BuildTestsJsonTest(unittest.TestCase):
             BazelPaths(self.source_dir, self.build_dir).execroot,
             self.build_dir,
         )
+        (self.build_dir / "bazel_target_test_suites.txt").write_text("")
+        (self.build_dir / "target_tests.gn_targets_manifest.json").write_text(
+            "[]"
+        )
+        (self.build_dir / "bazel_target_infos.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "bazel_target": "//build/bazel/target_tests:target_tests_stamp",
+                        "gn_targets_manifest": "target_tests.gn_targets_manifest.json",
+                    }
+                ]
+            )
+        )
 
     def tearDown(self) -> None:
         self._td.cleanup()
@@ -154,6 +168,12 @@ class BuildTestsJsonTest(unittest.TestCase):
             },
         ]
         self.assertEqual(expected_tests, tests)
+        self.assertEqual(
+            json.loads(
+                (self.build_dir / "bazel_test_packages.list").read_text()
+            ),
+            {"content": {"manifests": []}, "version": "1"},
+        )
 
     def test_only_test_groups(self) -> None:
         tests_json = [{"test": {"name": "test1"}}, {"test": {"name": "test2"}}]
@@ -342,6 +362,55 @@ class BuildTestsJsonTest(unittest.TestCase):
         self.assertDictEqual(expected_tests_json[0], tests[0])
         self.assertDictEqual(expected_tests_json[1], tests[1])
 
+    def test_bazel_device_tests_get_default_environments(self) -> None:
+        (self.build_dir / "bazel_target_test_suites.txt").write_text(
+            "//fake/device_tests"
+        )
+        mock_runner = MockCommandRunner()
+        # Host test cquery, which finds no tests.
+        mock_runner.push_result(stdout="")
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/my_test:my_test",
+                    "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "arm64",
+                    "test_components": [
+                        {
+                            "component_name": "my_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test#meta/my_test.cm",
+                        },
+                    ],
+                }
+            )
+        )
+
+        _, tests = self._test(
+            [],
+            [],
+            [],
+            with_bazel_tests=True,
+            command_runner=mock_runner,
+            default_test_environments={
+                "target_cpu": "arm64",
+                "default_environments": [
+                    {"dimensions": {"device_type": "Vim3"}}
+                ],
+                "allowed_device_types": ["Vim3"],
+                "allowed_host_device_types": [],
+            },
+        )
+
+        self.assertEqual(len(tests), 1)
+        self.assertEqual(
+            tests[0]["test"]["package_url"],
+            "fuchsia-pkg://fuchsia.com/my-test#meta/my_test.cm",
+        )
+        self.assertEqual(
+            tests[0]["environments"], [{"dimensions": {"device_type": "Vim3"}}]
+        )
+
     def test_full(self) -> None:
         tests_from_metadata = [
             {
@@ -396,16 +465,6 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "environments": [{"dimensions": {"device_type": "AEMU"}}],
             },
             {
-                "product_bundle": "my_pb",
-                "environments": [env],
-                "test": {"name": "test1-my_pb"},
-            },
-            {
-                "product_bundle": "my_pb",
-                "environments": [env],
-                "test": {"name": "test2-my_pb"},
-            },
-            {
                 "environments": [
                     {
                         "dimensions": {
@@ -424,6 +483,16 @@ class BuildTestsJsonTest(unittest.TestCase):
                     "os": "linux",
                     "cpu": "x64",
                 },
+            },
+            {
+                "product_bundle": "my_pb",
+                "environments": [env],
+                "test": {"name": "test1-my_pb"},
+            },
+            {
+                "product_bundle": "my_pb",
+                "environments": [env],
+                "test": {"name": "test2-my_pb"},
             },
         ]
         self.assertEqual(expected_tests_json, tests)
