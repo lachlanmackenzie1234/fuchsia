@@ -242,12 +242,15 @@ impl StreamDispatcher {
     }
 
     /// Reads data from the stream using an output iovec array.
-    pub fn read_vector(&self, user_data: UserOutIovec) -> Result<usize, Status> {
+    pub fn read_vector(&self, user_data: UserOutIovec) -> (Result<(), Status>, usize) {
         self.state().canary.assert();
 
-        let total_capacity = user_data.get_total_capacity()?;
+        let total_capacity = match user_data.get_total_capacity() {
+            Ok(total_capacity) => total_capacity,
+            Err(status) => return (Err(status), 0),
+        };
         if total_capacity == 0 {
-            return Ok(0);
+            return (Ok(()), 0);
         }
 
         pin_init::stack_pin_init!(let op = StreamSizeManagerOperation::init(&self.state().stream_size_mgr));
@@ -266,21 +269,20 @@ impl StreamDispatcher {
                 // Return |ZX_OK| since there is nothing to be read.
                 let (_, op_token) = stream_size_guard.as_mut().tokens_mut();
                 op.cancel_locked(op_token);
-                return Ok(0);
+                return (Ok(()), 0);
             }
 
             (seek, (size_limit - seek) as usize)
         };
 
-        let result = self.state().vmo.read_user_vector(user_data, offset, length);
-        let read_bytes = result.as_ref().copied().unwrap_or(0);
+        let (status, read_bytes) = self.state().vmo.read_user_vector(user_data, offset, length);
         *seek_guard.as_mut().fields_mut().seek += read_bytes as u64;
 
         // Reacquire the lock to commit the operation.
         ksync::lock!(let mut stream_size_guard = op.lock().lock());
         op.commit_locked(stream_size_guard.as_mut().token_mut());
 
-        if read_bytes > 0 { Ok(read_bytes) } else { result }
+        (if read_bytes > 0 { Ok(()) } else { status }, read_bytes)
     }
 
     /// Reads data from the stream at a specific offset.
@@ -288,12 +290,15 @@ impl StreamDispatcher {
         &self,
         user_data: UserOutIovec,
         offset: zx_off_t,
-    ) -> Result<usize, Status> {
+    ) -> (Result<(), Status>, usize) {
         self.state().canary.assert();
 
-        let total_capacity = user_data.get_total_capacity()?;
+        let total_capacity = match user_data.get_total_capacity() {
+            Ok(total_capacity) => total_capacity,
+            Err(status) => return (Err(status), 0),
+        };
         if total_capacity == 0 {
-            return Ok(0);
+            return (Ok(()), 0);
         }
 
         pin_init::stack_pin_init!(let op = StreamSizeManagerOperation::init(&self.state().stream_size_mgr));
@@ -310,34 +315,36 @@ impl StreamDispatcher {
                 // Return |ZX_OK| since there is nothing to be read.
                 let (_, op_token) = stream_size_guard.as_mut().tokens_mut();
                 op.cancel_locked(op_token);
-                return Ok(0);
+                return (Ok(()), 0);
             }
 
             (size_limit - offset) as usize
         };
 
-        let result = self.state().vmo.read_user_vector(user_data, offset, length);
-        let read_bytes = result.as_ref().copied().unwrap_or(0);
+        let (status, read_bytes) = self.state().vmo.read_user_vector(user_data, offset, length);
 
         // Reacquire the lock to commit the operation.
         ksync::lock!(let mut stream_size_guard = op.lock().lock());
         op.commit_locked(stream_size_guard.as_mut().token_mut());
 
-        if read_bytes > 0 { Ok(read_bytes) } else { result }
+        (if read_bytes > 0 { Ok(()) } else { status }, read_bytes)
     }
 
     /// Writes data to the stream using an input iovec array.
-    pub fn write_vector(&self, user_data: UserInIovec) -> Result<usize, Status> {
+    pub fn write_vector(&self, user_data: UserInIovec) -> (Result<(), Status>, usize) {
         self.state().canary.assert();
 
         if self.is_in_append_mode() {
             return self.append_vector(user_data);
         }
 
-        let total_capacity = user_data.get_total_capacity()?;
+        let total_capacity = match user_data.get_total_capacity() {
+            Ok(total_capacity) => total_capacity,
+            Err(status) => return (Err(status), 0),
+        };
         // Return early if writing zero bytes since there's nothing to do.
         if total_capacity == 0 {
-            return Ok(0);
+            return (Ok(()), 0);
         }
 
         pin_init::stack_pin_init!(let op = StreamSizeManagerOperation::init(&self.state().stream_size_mgr));
@@ -345,9 +352,12 @@ impl StreamDispatcher {
         ksync::lock!(let mut seek_guard = self.state().lock_seek_lock());
         let seek = *seek_guard.fields().seek;
 
-        let (length, prev_stream_size) = self.create_write_op(total_capacity, seek, &op)?;
+        let (length, prev_stream_size) = match self.create_write_op(total_capacity, seek, &op) {
+            Ok(pair) => pair,
+            Err(status) => return (Err(status), 0),
+        };
 
-        let result = if let Some(prev) = prev_stream_size {
+        let (status, written) = if let Some(prev) = prev_stream_size {
             self.state().vmo.write_user_vector_progress(
                 user_data,
                 seek,
@@ -359,17 +369,17 @@ impl StreamDispatcher {
         } else {
             self.state().vmo.write_user_vector(user_data, seek, length as usize)
         };
-        let written = result.as_ref().copied().unwrap_or(0);
 
         // Reacquire the lock to potentially shrink and commit the operation.
         ksync::lock!(let mut stream_size_guard = op.lock().lock());
 
         // Update the stream size operation if operation was partially successful.
         if (written as u64) < length {
+            debug_assert!(status.is_err());
             if written == 0 {
                 // Do not commit the operation if nothing was written.
                 op.cancel_locked(stream_size_guard.as_mut().token_mut());
-                return result;
+                return (status, 0);
             } else {
                 op.shrink_size_locked(
                     stream_size_guard.as_mut().token_mut(),
@@ -381,7 +391,7 @@ impl StreamDispatcher {
         *seek_guard.as_mut().fields_mut().seek += written as u64;
 
         op.commit_locked(stream_size_guard.as_mut().token_mut());
-        if written > 0 { Ok(written) } else { result }
+        (if written > 0 { Ok(()) } else { status }, written)
     }
 
     /// Writes data to the stream at a specific offset.
@@ -389,20 +399,26 @@ impl StreamDispatcher {
         &self,
         user_data: UserInIovec,
         offset: zx_off_t,
-    ) -> Result<usize, Status> {
+    ) -> (Result<(), Status>, usize) {
         self.state().canary.assert();
 
-        let total_capacity = user_data.get_total_capacity()?;
+        let total_capacity = match user_data.get_total_capacity() {
+            Ok(total_capacity) => total_capacity,
+            Err(status) => return (Err(status), 0),
+        };
         // Return early if writing zero bytes
         if total_capacity == 0 {
-            return Ok(0);
+            return (Ok(()), 0);
         }
 
         pin_init::stack_pin_init!(let op = StreamSizeManagerOperation::init(&self.state().stream_size_mgr));
 
-        let (length, prev_stream_size) = self.create_write_op(total_capacity, offset, &op)?;
+        let (length, prev_stream_size) = match self.create_write_op(total_capacity, offset, &op) {
+            Ok(pair) => pair,
+            Err(status) => return (Err(status), 0),
+        };
 
-        let result = if let Some(prev) = prev_stream_size {
+        let (status, written) = if let Some(prev) = prev_stream_size {
             self.state().vmo.write_user_vector_progress(
                 user_data,
                 offset,
@@ -414,17 +430,17 @@ impl StreamDispatcher {
         } else {
             self.state().vmo.write_user_vector(user_data, offset, length as usize)
         };
-        let written = result.as_ref().copied().unwrap_or(0);
 
         // Reacquire the lock to potentially shrink and commit the operation.
         ksync::lock!(let mut stream_size_guard = op.lock().lock());
 
         // Update the stream size operation if operation was partially successful.
         if (written as u64) < length {
+            debug_assert!(status.is_err());
             if written == 0 {
                 // Do not commit the operation if nothing was written.
                 op.cancel_locked(stream_size_guard.as_mut().token_mut());
-                return result;
+                return (status, 0);
             } else {
                 op.shrink_size_locked(
                     stream_size_guard.as_mut().token_mut(),
@@ -434,17 +450,20 @@ impl StreamDispatcher {
         }
 
         op.commit_locked(stream_size_guard.as_mut().token_mut());
-        if written > 0 { Ok(written) } else { result }
+        (if written > 0 { Ok(()) } else { status }, written)
     }
 
     /// Appends data to the end of the stream.
-    pub fn append_vector(&self, user_data: UserInIovec) -> Result<usize, Status> {
+    pub fn append_vector(&self, user_data: UserInIovec) -> (Result<(), Status>, usize) {
         self.state().canary.assert();
 
-        let total_capacity = user_data.get_total_capacity()?;
+        let total_capacity = match user_data.get_total_capacity() {
+            Ok(total_capacity) => total_capacity,
+            Err(status) => return (Err(status), 0),
+        };
         // Return early if writing zero bytes since there's nothing to do.
         if total_capacity == 0 {
-            return Ok(0);
+            return (Ok(()), 0);
         }
 
         let length: usize;
@@ -456,11 +475,13 @@ impl StreamDispatcher {
         {
             ksync::lock!(let mut stream_size_guard = ksync::aliased_lock(self.state().stream_size_mgr.lock(), op.lock()));
 
-            self.state().stream_size_mgr.begin_append_locked(
+            if let Err(status) = self.state().stream_size_mgr.begin_append_locked(
                 &mut stream_size_guard.as_mut().inner_guard(),
                 total_capacity,
                 &op,
-            )?;
+            ) {
+                return (Err(status), 0);
+            }
 
             let (_ssm_token, op_token) = stream_size_guard.as_mut().tokens_mut();
 
@@ -471,7 +492,7 @@ impl StreamDispatcher {
             if vmo_size <= offset {
                 // We can't even perform a partial write
                 op.cancel_locked(op_token);
-                return Err(Status::OUT_OF_RANGE);
+                return (Err(Status::OUT_OF_RANGE), 0);
             }
 
             if vmo_size < new_stream_size {
@@ -482,7 +503,7 @@ impl StreamDispatcher {
             length = (core::cmp::min(vmo_size, new_stream_size) - offset) as usize;
         }
 
-        let result = self.state().vmo.write_user_vector_progress(
+        let (status, written) = self.state().vmo.write_user_vector_progress(
             user_data,
             offset,
             length,
@@ -490,7 +511,6 @@ impl StreamDispatcher {
             write_progress_cb,
             core::ptr::from_ref(&*op).cast_mut().cast(),
         );
-        let written = result.as_ref().copied().unwrap_or(0);
         *seek_guard.as_mut().fields_mut().seek = offset + written as u64;
 
         // Reacquire the lock to potentially shrink and commit the operation.
@@ -500,17 +520,18 @@ impl StreamDispatcher {
 
         // Update the stream size operation if operation was partially successful.
         if written < length {
+            debug_assert!(status.is_err());
             if written == 0 {
                 // Do not commit the operation if nothing was written.
                 op.cancel_locked(op_token);
-                return result;
+                return (status, 0);
             } else {
                 op.shrink_size_locked(op_token, offset + written as u64);
             }
         }
 
         op.commit_locked(op_token);
-        if written > 0 { Ok(written) } else { result }
+        (if written > 0 { Ok(()) } else { status }, written)
     }
 
     /// Sets the seek offset of the stream.

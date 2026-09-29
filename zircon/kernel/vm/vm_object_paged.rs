@@ -27,6 +27,7 @@ pub struct VmObjectPaged {
 }
 
 impl VmObjectPaged {
+    // `VmObject::options_` bitmask is extended with:
     pub const RESIZABLE: u32 = bindings::VmObjectPaged_kResizable;
     pub const CONTIGUOUS: u32 = bindings::VmObjectPaged_kContiguous;
     pub const SLICE: u32 = bindings::VmObjectPaged_kSlice;
@@ -63,7 +64,9 @@ impl VmObjectPaged {
         unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
     }
 
-    /// Create a contiguous paged VMO.
+    /// Create a VMO backed by a contiguous range of physical memory.  The
+    /// returned vmo has all of its pages committed, and does not allow
+    /// decommitting them.
     pub fn create_contiguous(
         pmm_alloc_flags: u32,
         size: u64,
@@ -83,7 +86,7 @@ impl VmObjectPaged {
         unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
     }
 
-    /// Returns the backing `VmCowPages` hierarchy.
+    /// Exposed for testing.
     pub fn debug_get_cow_pages(&self) -> Option<RefPtr<VmCowPages>> {
         let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_cow_pages(self.as_raw()) };
         unsafe { VmCowPages::from_raw(raw) }
@@ -114,7 +117,7 @@ impl VmObjectPaged {
         user_data: UserOutIovec,
         offset: u64,
         length: usize,
-    ) -> Result<usize, Status> {
+    ) -> (Result<(), Status>, usize) {
         let mut actual = 0usize;
         let status = unsafe {
             cpp_vm_object_paged_read_user_vector(
@@ -126,12 +129,7 @@ impl VmObjectPaged {
                 &mut actual,
             )
         };
-        if actual > 0 {
-            Ok(actual)
-        } else {
-            Status::ok(status)?;
-            Ok(0)
-        }
+        (Status::ok(status), actual)
     }
 
     /// Writes data from user vectors into the VMO.
@@ -140,7 +138,7 @@ impl VmObjectPaged {
         user_data: UserInIovec,
         offset: u64,
         length: usize,
-    ) -> Result<usize, Status> {
+    ) -> (Result<(), Status>, usize) {
         let mut actual = 0usize;
         let status = unsafe {
             cpp_vm_object_paged_write_user_vector(
@@ -152,12 +150,7 @@ impl VmObjectPaged {
                 &mut actual,
             )
         };
-        if actual > 0 {
-            Ok(actual)
-        } else {
-            Status::ok(status)?;
-            Ok(0)
-        }
+        (Status::ok(status), actual)
     }
 
     /// Writes data from user vectors into the VMO with progress callback.
@@ -170,7 +163,7 @@ impl VmObjectPaged {
         prev_stream_size: u64,
         cb: extern "C" fn(*mut core::ffi::c_void, u64, usize),
         cookie: *mut core::ffi::c_void,
-    ) -> Result<usize, Status> {
+    ) -> (Result<(), Status>, usize) {
         let mut actual = 0usize;
         let status = unsafe {
             cpp_vm_object_paged_write_user_vector_progress(
@@ -185,15 +178,11 @@ impl VmObjectPaged {
                 cookie,
             )
         };
-        if actual > 0 {
-            Ok(actual)
-        } else {
-            Status::ok(status)?;
-            Ok(0)
-        }
+        (Status::ok(status), actual)
     }
 
-    /// Zeroes a range of bytes in the VMO.
+    /// Zero a range of the VMO. May release physical pages in the process.
+    /// May block on user pager requests and must be called without locks held.
     pub fn zero_range(&self, offset: u64, length: u64) -> Result<(), Status> {
         if length == 0 {
             return Ok(());
@@ -203,7 +192,9 @@ impl VmObjectPaged {
         Status::ok(status)
     }
 
-    /// Zeroes a range of bytes in the VMO without tracking.
+    /// Zero a range of the VMO and also untrack it from any kind of dirty tracking. For committed
+    /// pages, this means that they are released. And any kind of zero markers or intervals that are
+    /// inserted will not subscribe to dirty tracking.
     pub fn zero_range_untracked(&self, offset: u64, length: u64) -> Result<(), Status> {
         if length == 0 {
             return Ok(());
