@@ -28,7 +28,12 @@ set -uo pipefail
 #                              `fx bazel2gn` generates from BUILD.bazel.
 #   4. bazel_build_fuchsia:    `fx bazel build --config=fuchsia_platform //<dir>:all`
 #                              for every changed directory with a BUILD.bazel
-#                              (host-only targets are skipped as incompatible).
+#                              (host-only targets are skipped as incompatible;
+#                              `_validate_json_action` targets such as
+#                              `<fidl>_validate_ir_json` are excluded from top-level
+#                              `:all` so `assert_no_deps_aspect` does not crash on
+#                              their scalar `data` attribute, while `:<fidl>` still
+#                              runs IR JSON validation via `_validation`).
 #   5. bazel_build_host:       `fx bazel build --config=host //<dir>:all` for the
 #                              directories whose BUILD.bazel declares host targets.
 #
@@ -47,7 +52,8 @@ set -uo pipefail
 # never reused, and a result expires after PLANTER_BUILD_REUSE_TTL seconds.
 #
 # Environment:
-#   PLANTER_SKIP_BUILD=1          skip the builds (reports an INFO finding).
+#   PLANTER_SKIP_BUILD=1          skip the builds (still validates commit Test:
+#                                 footers and reports an INFO finding).
 #   PLANTER_BUILD_NO_REUSE=1      always build; do not reuse a recorded result.
 #   PLANTER_BUILD_REUSE_TTL=<secs>  max age of a reused result (default 21600).
 #   PLANTER_BUILD_DRY_RUN=1       run nothing; report the planned commands as
@@ -67,10 +73,12 @@ if [[ -n "$TARGET_DIR" && -n "$first_dir" && "$TARGET_DIR" != "$first_dir" ]]; t
 fi
 
 python3 - "$WORKDIR" "$TARGET_DIRS" "${BASH_SOURCE[0]}" <<'PYEOF'
+import ast
 import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -82,16 +90,8 @@ target_dirs = [d.strip().strip("/") for d in sys.argv[2].split() if d.strip().st
 change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 timeout = int(os.environ.get("PLANTER_BUILD_TIMEOUT", "5400"))
 dry_run = os.environ.get("PLANTER_BUILD_DRY_RUN", "").strip() not in ("", "0")
+skip_build = os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0")
 dependent_limit = int(os.environ.get("PLANTER_DEPENDENT_BUILD_LIMIT", "40"))
-
-if os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0"):
-    print(json.dumps([{
-        "source": "build_verification",
-        "category": "build_skipped",
-        "severity": "INFO",
-        "message": "PLANTER_SKIP_BUILD is set; the migration was NOT built.",
-    }], indent=2))
-    sys.exit(0)
 
 
 def git_lines(args):
@@ -102,12 +102,27 @@ def git_lines(args):
     return [l.strip() for l in out.splitlines() if l.strip()]
 
 
+EXCLUDED_GLOBAL_DIRS = (
+    "bundles/assembly",
+    "build/bazel",
+    "build/bazel2gn",
+    "build/images",
+    "build/config/rust/lints",
+)
+
 dirs = list(target_dirs)
 changed = git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
+changed_set = set(changed)
 for p in changed:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
         d = os.path.dirname(p).strip("/")
-        if d and d != "build/bazel" and d not in dirs:
+        if (
+            d
+            and d not in ("tools", "src", "sdk")
+            and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
+            and not (any(d == os.path.dirname(td) for td in target_dirs) and f"{d}/BUILD.bazel" not in changed_set)
+            and d not in dirs
+        ):
             dirs.append(d)
 
 fx = None
@@ -323,15 +338,75 @@ def dependent_labels():
     return labels, notes
 
 
+FIDL_MACROS = {"fidl_library", "_fidl_library", "fidl_ir"}
+VALIDATE_JSON_MACROS = {"validate_json", "validate_json5", "_validate_json_action"}
+
+
+def validate_json_exclusions(d):
+    """Returns `-//<d>:<target>` exclusions for `_validate_json_action` targets in `d/BUILD.bazel`.
+    `//build/bazel/aspects:assert_no_deps.bzl` iterates `getattr(ctx.rule.attr, "data", [])`, which
+    crashes with `Error: type 'Target' is not iterable` when `:all` applies `assert_no_deps_aspect`
+    at the top level to `_validate_json_action` (`data = attr.label(...)`). Excluding `<name>_validate_ir_json`
+    from top-level `:all` still runs IR JSON validation via `:<name>`'s `_validation` output group."""
+    text = read(f"{d}/BUILD.bazel")
+    if not text:
+        return []
+    out = []
+    seen = set()
+
+    def _add(target):
+        lbl = f"-//{d}:{target}"
+        if lbl not in seen:
+            seen.add(lbl)
+            out.append(lbl)
+
+    try:
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func.id if isinstance(node.func, ast.Name) else (
+                node.func.attr if isinstance(node.func, ast.Attribute) else None
+            )
+            if fn not in FIDL_MACROS and fn not in VALIDATE_JSON_MACROS:
+                continue
+            for kw in node.keywords:
+                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    tname = kw.value.value
+                    _add(f"{tname}_validate_ir_json" if fn in FIDL_MACROS else tname)
+    except SyntaxError:
+        for m in re.finditer(
+            r"\b(fidl_library|_fidl_library|fidl_ir|validate_json5?|_validate_json_action)\s*\(([^)]*)\)",
+            gn_code(text),
+            re.S,
+        ):
+            fn, args_body = m.group(1), m.group(2)
+            nm = re.search(r'\bname\s*=\s*"([^"]+)"', args_body)
+            if nm:
+                tname = nm.group(1)
+                _add(f"{tname}_validate_ir_json" if fn in FIDL_MACROS else tname)
+    return out
+
+
+def bazel_target_args(pkg_dirs):
+    pos = [f"//{d}:all" for d in pkg_dirs]
+    neg = [lbl for d in pkg_dirs for lbl in validate_json_exclusions(d)]
+    return (["--"] + pos + neg) if neg else pos
+
+
+def fmt_cmd(cmd):
+    return shlex.join(["fx"] + cmd[1:])
+
+
 steps = [
     ("gn_build", [fx, "build"]),
     ("gn_build_dependents", None),  # Labels are computed once gn_build has regenerated the GN graph.
     ("bazel2gn_verifications", [fx, "build", "--host", "//build:bazel2gn_verifications"]),
 ]
 if bazel_dirs:
-    steps.append(("bazel_build_fuchsia", [fx, "bazel", "build", "--config=fuchsia_platform"] + [f"//{d}:all" for d in bazel_dirs]))
+    steps.append(("bazel_build_fuchsia", [fx, "bazel", "build", "--config=fuchsia_platform"] + bazel_target_args(bazel_dirs)))
 if host_dirs:
-    steps.append(("bazel_build_host", [fx, "bazel", "build", "--config=host"] + [f"//{d}:all" for d in host_dirs]))
+    steps.append(("bazel_build_host", [fx, "bazel", "build", "--config=host"] + bazel_target_args(host_dirs)))
 
 ERROR_LINE = re.compile(
     r"(^ERROR:|^FAILED:|\berror(\[E\d+\])?:|^error\b|: error\b|\bundefined reference\b|"
@@ -377,50 +452,152 @@ REMEDIATION = {
                            "or the dependents' BUILD files to make it pass.",
     "bazel2gn_verifications": "BUILD.gn no longer matches BUILD.bazel. Run `fx bazel2gn -d <dir>` for every dual-build directory "
                               "you touched (never hand-edit below the BAZEL2GN SENTINEL) and re-run `fx build --host //build:bazel2gn_verifications`.",
-    "bazel_build_fuchsia": "Fix BUILD.bazel so `fx bazel build --config=fuchsia_platform //<dir>:all` passes. If a dependency has no "
+    "bazel_build_fuchsia": "Fix BUILD.bazel so the `bazel_build_fuchsia` command passes. If a dependency has no "
                            "Bazel target yet, migrate that dependency's directory in this change (see the coder instructions).",
-    "bazel_build_host": "Fix BUILD.bazel so `fx bazel build --config=host //<dir>:all` passes. If a dependency has no Bazel target "
+    "bazel_build_host": "Fix BUILD.bazel so the `bazel_build_host` command passes. If a dependency has no Bazel target "
                         "yet, migrate that dependency's directory in this change (see the coder instructions).",
 }
 
 findings = []
 if change_base != "HEAD":
     toolchains_map, _ = load_toolchains()
-    if toolchains_map is not None:
-        commit_msg = "\n".join(git_lines(["log", "-1", "--format=%B", "HEAD"]))
-        for m_line in commit_msg.splitlines():
-            if re.match(r"^\s*Test\s*:", m_line, re.I) and "fx build" in m_line:
-                if "--host" in m_line and "//build:bazel2gn_verifications" in m_line:
-                    continue
-                bad_lbls = []
-                for lbl in re.findall(r"//[^\s,;\"'`]+", m_line):
-                    base_lbl = lbl.split("(", 1)[0]
-                    if base_lbl not in toolchains_map and lbl not in toolchains_map.get(base_lbl, []):
-                        bad_lbls.append(lbl)
-                if bad_lbls:
-                    findings.append({
-                        "source": "build_verification",
-                        "category": "unconfigured_test_footer_label",
-                        "severity": "ERROR",
-                        "file": "",
-                        "line": 0,
-                        "message": (
-                            f"Commit `Test:` footer `{m_line.strip()}` passes GN label(s) not in the configured GN graph "
-                            f"(<build dir>/ninja_outputs.json): {' '.join(bad_lbls)}. `fx build` fails with `Unknown GN label` "
-                            "on labels outside the configured product graph."
-                        ),
-                        "remediation": (
-                            "Amend the commit message `Test:` footer (and only list commands in `CoderReport.tests_run`) to use "
-                            "commands that actually succeed in the configured build (such as `fx build`, "
-                            "`fx build --host //build:bazel2gn_verifications`, `fx bazel build --config=fuchsia_platform //<dir>:all`, "
-                            "and `fx build <configured_label>` from `gn_build_dependents`)."
-                        ),
-                    })
+    commit_msg = "\n".join(git_lines(["log", "-1", "--format=%B", "HEAD"]))
+    test_footer_lines = []
+    for m_line in commit_msg.splitlines():
+        tm = re.match(r"^\s*Test\s*:\s*(.+)$", m_line, re.I)
+        if not tm:
+            continue
+        test_footer_lines.append(m_line.strip())
+        test_cmd = tm.group(1).strip()
+        if re.match(r"^(?:fx|ffx|bazel)\b", test_cmd):
+            syntax_proc = subprocess.run(
+                ["bash", "-n", "-c", test_cmd],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            if syntax_proc.returncode != 0:
+                err_detail = " ".join(syntax_proc.stdout.strip().splitlines()) or f"exit status {syntax_proc.returncode}"
+                findings.append({
+                    "source": "build_verification",
+                    "category": "malformed_test_footer_command",
+                    "severity": "ERROR",
+                    "file": "",
+                    "line": 0,
+                    "message": (
+                        f"Commit `Test:` footer `{m_line.strip()}` has a bash syntax error ({err_detail}). "
+                        "Planter's test_verifier runs `Test:` commands via `bash -c`, so unquoted parentheses "
+                        "in GN toolchain labels like `//pkg:target(//build/toolchain:...)` fail."
+                    ),
+                    "remediation": (
+                        "Quote any GN label containing toolchain parentheses in the commit `Test:` footer and "
+                        "`CoderReport.tests_run` (e.g. `fx build '//pkg:target(//build/toolchain:...)'`), or copy "
+                        "the exact quoted command from `PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`."
+                    ),
+                })
+        if "fx bazel build" in m_line:
+            missing_excls = []
+            for d_all in re.findall(r"//([^\s:;\"'`]+):all\b", m_line):
+                for excl in validate_json_exclusions(d_all.strip("/")):
+                    if excl not in m_line and excl not in missing_excls:
+                        missing_excls.append(excl)
+            if missing_excls:
+                findings.append({
+                    "source": "build_verification",
+                    "category": "unexcluded_validate_json_in_test_footer",
+                    "severity": "ERROR",
+                    "file": "",
+                    "line": 0,
+                    "message": (
+                        f"Commit `Test:` footer `{m_line.strip()}` runs `fx bazel build` with `:all` on a package "
+                        f"defining `fidl_library`/`validate_json` without excluding `{' '.join(missing_excls)}`. "
+                        "`assert_no_deps_aspect` crashes with `Error: type 'Target' is not iterable` when `:all` "
+                        "applies it at the top level to `_validate_json_action`."
+                    ),
+                    "remediation": (
+                        f"Pass `-- ... {' '.join(missing_excls)}` in the commit `Test:` footer and "
+                        "`CoderReport.tests_run` (copy the exact command from "
+                        "`PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`)."
+                    ),
+                })
+        if toolchains_map is not None and "fx build" in m_line:
+            if "--host" in m_line and "//build:bazel2gn_verifications" in m_line:
+                continue
+            bad_lbls = []
+            for lbl in re.findall(r"//[^\s,;\"'`]+", m_line):
+                base_lbl = lbl.split("(", 1)[0]
+                if base_lbl not in toolchains_map and lbl not in toolchains_map.get(base_lbl, []):
+                    bad_lbls.append(lbl)
+            if bad_lbls:
+                findings.append({
+                    "source": "build_verification",
+                    "category": "unconfigured_test_footer_label",
+                    "severity": "ERROR",
+                    "file": "",
+                    "line": 0,
+                    "message": (
+                        f"Commit `Test:` footer `{m_line.strip()}` passes GN label(s) not in the configured GN graph "
+                        f"(<build dir>/ninja_outputs.json): {' '.join(bad_lbls)}. `fx build` fails with `Unknown GN label` "
+                        "on labels outside the configured product graph."
+                    ),
+                    "remediation": (
+                        "Amend the commit message `Test:` footer (and only list commands in `CoderReport.tests_run`) to use "
+                        "commands that actually succeed in the configured build (copy the exact shell-quoted commands from "
+                        "`PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`)."
+                    ),
+                })
+    if len(test_footer_lines) > 3:
+        findings.append({
+            "source": "build_verification",
+            "category": "too_many_test_footer_lines",
+            "severity": "ERROR",
+            "file": "COMMIT_MSG",
+            "line": 0,
+            "message": (
+                f"Commit message has {len(test_footer_lines)} `Test:` footer lines (at most 3 allowed). "
+                "Per-package incremental build or query lines clutter the commit message when more than 3 `Test:` lines are present."
+            ),
+            "remediation": (
+                "Consolidate the commit message `Test:` footers (and `CoderReport.tests_run`) to at most 3 lines: "
+                "combine all migrated `//<dir>:all` targets into a single `fx bazel build --config=fuchsia_platform ...` line "
+                "(and a single `--config=host` line when host targets exist) plus `fx build --host //build:bazel2gn_verifications`, "
+                "and remove redundant per-package `fx build` / `fx bazel build` / `fx bazel query` lines."
+            ),
+        })
 
 STEP_BLOCKING = ("ERROR", "WARNING")
+uploaded_commit = os.environ.get("PLANTER_UPLOADED_COMMIT", "").strip()
+if uploaded_commit and not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0"):
+    try:
+        up_tree = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", f"{uploaded_commit}^{{tree}}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        head_tree = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", "HEAD^{tree}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+    except Exception:
+        up_tree, head_tree = "", ""
+    diff_worktree = git_lines(["diff", "--name-only", "HEAD", "--"])
+    untracked_in_dirs = [
+        u for u in git_lines(["ls-files", "--others", "--exclude-standard"])
+        if any(u == d or u.startswith(d + "/") for d in dirs)
+    ]
+    if up_tree and up_tree == head_tree and not diff_worktree and not untracked_in_dirs:
+        findings.append({
+            "source": "build_verification",
+            "category": "build_reused",
+            "severity": "INFO",
+            "message": f"No files changed since uploaded patchset ({uploaded_commit[:12]}); only commit message Test: footers were verified.",
+        })
+        print(json.dumps(findings, indent=2))
+        sys.exit(0)
+
 reuse_path = None
 reuse_key = None
 reused = None
+reused_time = 0
 if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0"):
     def _git_bytes(args):
         return subprocess.run(["git", "-C", workdir] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout
@@ -469,7 +646,6 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
                 data = data.encode()
             h.update(label.encode() + b"\0" + str(len(data)).encode() + b"\0" + data)
 
-        _add("script", _file_digest(sys.argv[3]))
         _add("tree", _worktree_tree())
         _add("dirs", json.dumps([sorted(dirs), sorted(bazel_dirs), sorted(host_dirs)]))
         _add("steps", json.dumps([[n, c] for n, c in steps]))
@@ -488,15 +664,19 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
         ttl = int(os.environ.get("PLANTER_BUILD_REUSE_TTL", "21600"))
         with open(reuse_path) as f:
             rec = json.load(f)
-        if rec.get("key") == reuse_key and 0 <= time.time() - rec.get("time", 0) <= ttl:
-            cached = rec.get("findings")
+        entry = None
+        if isinstance(rec.get("entries"), dict):
+            entry = rec["entries"].get(reuse_key)
+        if entry is None and rec.get("key") == reuse_key:
+            entry = rec
+        if isinstance(entry, dict) and 0 <= time.time() - entry.get("time", 0) <= ttl:
+            cached = entry.get("findings")
             if isinstance(cached, list) and not any(c.get("severity") in STEP_BLOCKING for c in cached):
                 reused = cached
+                reused_time = entry.get("time", 0)
     except (OSError, ValueError, subprocess.CalledProcessError):
         pass
 
-failed = set()
-step_findings_start = len(findings)
 if reused is not None:
     findings.extend(reused)
     findings.append({
@@ -504,10 +684,24 @@ if reused is not None:
         "category": "build_reused",
         "severity": "INFO",
         "message": "Reused the passing build result recorded for this exact change "
-                   f"({time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rec['time']))}); "
+                   f"({time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(reused_time))}); "
                    "set PLANTER_BUILD_NO_REUSE=1 to rebuild.",
     })
-    steps = []
+    print(json.dumps(findings, indent=2))
+    sys.exit(0)
+
+if skip_build:
+    findings.append({
+        "source": "build_verification",
+        "category": "build_skipped",
+        "severity": "INFO",
+        "message": "PLANTER_SKIP_BUILD is set; the migration was NOT built.",
+    })
+    print(json.dumps(findings, indent=2))
+    sys.exit(0)
+
+failed = set()
+step_findings_start = len(findings)
 for name, cmd in steps:
     if name == "gn_build_dependents":
         if "gn_build" in failed:
@@ -524,7 +718,7 @@ for name, cmd in steps:
             "source": "build_verification",
             "category": "build_dry_run",
             "severity": "INFO",
-            "message": f"PLANTER_BUILD_DRY_RUN: {name} would run `{' '.join(['fx'] + cmd[1:])}`",
+            "message": f"PLANTER_BUILD_DRY_RUN: {name} would run `{fmt_cmd(cmd)}`",
         })
         continue
     try:
@@ -544,20 +738,35 @@ for name, cmd in steps:
         "severity": "ERROR",
         "file": file,
         "line": line,
-        "message": f"`{' '.join(['fx'] + cmd[1:])}` failed ({code}):\n{text}",
+        "message": f"`{fmt_cmd(cmd)}` failed ({code}):\n{text}",
         "remediation": REMEDIATION[name],
     })
     if name == "gn_build" and re.search(r"fx set|no build directory|Unable to find build directory", output, re.I):
         break  # The tree is not configured; the remaining steps would fail the same way.
 
 step_findings = findings[step_findings_start:]
-if reused is None and reuse_key and not any(f.get("severity") in STEP_BLOCKING for f in step_findings):
+if reuse_key and not any(f.get("severity") in STEP_BLOCKING for f in step_findings):
     try:
         if _fingerprint() != reuse_key:
             raise OSError("the change was edited during the build")
+        entries = {}
+        try:
+            with open(reuse_path) as f:
+                old = json.load(f)
+            if isinstance(old.get("entries"), dict):
+                entries = old["entries"]
+            elif old.get("key"):
+                entries[old["key"]] = {"time": old.get("time", 0), "findings": old.get("findings", [])}
+        except (OSError, ValueError):
+            pass
+        now = time.time()
+        entries[reuse_key] = {"time": now, "findings": step_findings}
+        if len(entries) > 20:
+            newest = sorted(entries.items(), key=lambda kv: kv[1].get("time", 0), reverse=True)[:20]
+            entries = dict(newest)
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(reuse_path), prefix=".planter-build-verification.")
         with os.fdopen(fd, "w") as f:
-            json.dump({"key": reuse_key, "time": time.time(), "findings": step_findings}, f)
+            json.dump({"key": reuse_key, "time": now, "findings": step_findings, "entries": entries}, f)
         os.replace(tmp, reuse_path)
     except (OSError, ValueError, subprocess.CalledProcessError):
         pass

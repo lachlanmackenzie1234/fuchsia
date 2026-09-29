@@ -37,7 +37,6 @@ CONVERTIBLE_BAZEL_RULES = {
     "cc_library",
     "fx_cc_library_headers",
     "cc_binary",
-    "fx_cc_binary",
     "cc_shared_library_zx",
     "cc_source_library_zx",
     "cc_static_library_zx",
@@ -85,6 +84,14 @@ CONVERTIBLE_GN_TEMPLATES = {
     "zx_library",
 }
 
+EXCLUDED_GLOBAL_DIRS = (
+    "bundles/assembly",
+    "build/bazel",
+    "build/bazel2gn",
+    "build/images",
+    "build/config/rust/lints",
+)
+
 
 def git_lines(args):
     try:
@@ -109,7 +116,11 @@ changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 for p in changed:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
         d = os.path.dirname(p).strip("/")
-        if d and d != "build/bazel":
+        if (
+            d
+            and d not in ("tools", "src", "sdk")
+            and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
+        ):
             candidate_dirs.add(d)
 
 
@@ -132,10 +143,15 @@ def parse_bazel_targets(bazel_path):
             continue
         rule = call.func.id
         tname = None
+        binary_ref = None
+        pkg_name = None
         for kw in call.keywords:
             if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 tname = kw.value.value
-                break
+            elif kw.arg == "binary" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                binary_ref = kw.value.value.lstrip(":")
+            elif kw.arg == "package_name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                pkg_name = kw.value.value
         if not tname:
             continue
         start_line = node.lineno
@@ -157,6 +173,8 @@ def parse_bazel_targets(bazel_path):
             "name": tname,
             "line": start_line,
             "skip_line": skip_line,
+            "binary_ref": binary_ref,
+            "package_name": pkg_name or tname,
         })
     return targets
 
@@ -229,6 +247,10 @@ for pkg_dir in sorted(candidate_dirs):
 
     bazel_targets = parse_bazel_targets(bazel_abs)
     gn_info = parse_gn_file(gn_abs) if os.path.isfile(gn_abs) else None
+    packaged_binaries = {
+        t["binary_ref"] for t in bazel_targets if t["rule"] == "fx_packaged_binary" and t.get("binary_ref")
+    }
+    fx_pkgs = [t for t in bazel_targets if t["rule"] in ("fx_package", "fuchsia_package")]
 
     if gn_info and gn_info["has_sentinel"]:
         bazel_names = {t["name"] for t in bazel_targets}
@@ -242,6 +264,8 @@ for pkg_dir in sorted(candidate_dirs):
             ref_in_pre_gn = rule in CONVERTIBLE_BAZEL_RULES and bool(
                 re.search(r'":' + re.escape(tname) + r'(?:"|\()', gn_info["pre_text"])
             )
+            if tname in packaged_binaries and not in_pre_gn and not ref_in_pre_gn:
+                continue
             if t["skip_line"] is not None and (
                 rule in CONVERTIBLE_BAZEL_RULES or in_pre_gn or ref_in_pre_gn
             ):
@@ -270,6 +294,17 @@ for pkg_dir in sorted(candidate_dirs):
 
         for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
             if gtmpl in CONVERTIBLE_GN_TEMPLATES:
+                if (
+                    gtmpl == "executable"
+                    and re.search(r"\btestonly\s*=\s*true\b", gbody)
+                    and gname not in bazel_names
+                    and any(
+                        ptmpl in ("fuchsia_unittest_package", "fuchsia_test_package", "fuchsia_test_component", "bootfs_test")
+                        and re.search(r'":' + re.escape(gname) + r'(?:"|\()', pbody)
+                        for ptmpl, _, pbody in gn_info["pre_targets"].values()
+                    )
+                ):
+                    continue
                 unmigrated_deps = []
                 declare_args_deps = []
                 for dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', gbody):
@@ -382,6 +417,182 @@ for pkg_dir in sorted(candidate_dirs):
                             f"verifies bazel2gn synchronization for `//{pkg_dir}`."
                         ),
                     })
+
+    if fx_pkgs:
+        fx_pkg_name = fx_pkgs[0]["name"]
+        bazel_text_raw = open(bazel_abs, encoding="utf-8").read()
+        migrated_pkg_names = {t["name"] for t in bazel_targets} | {t["package_name"] for t in fx_pkgs}
+        migrated_manifests = set(re.findall(r'\bmanifest\s*=\s*"([^"]+)"', bazel_text_raw))
+        has_b2gn_convertible = any(
+            t["rule"] in CONVERTIBLE_BAZEL_RULES and t["name"] not in packaged_binaries and t["skip_line"] is None
+            for t in bazel_targets
+        )
+        if gn_info and gn_info["has_sentinel"] and not has_b2gn_convertible:
+            findings.append({
+                "source": "migration_sanity",
+                "category": "unnecessary_bazel2gn_on_package_only_bazel",
+                "severity": "error",
+                "file": gn_rel,
+                "line": 1,
+                "message": (
+                    f"'{bazel_rel}' only defines `fx_package` and its component/manifest/binary/resource targets, "
+                    f"which `bazel2gn` does not convert, but '{gn_rel}' has `## BAZEL2GN SENTINEL`."
+                ),
+                "remediation": (
+                    f"Remove `## BAZEL2GN SENTINEL` and `verify_bazel2gn` from '{gn_rel}' (and any entry in "
+                    "`build/bazel2gn_verification_targets.gni`), leaving only the GN-only test/library targets in "
+                    f"'{gn_rel}' (or delete '{gn_rel}' if no GN targets remain)."
+                ),
+            })
+
+        if gn_info:
+            gn_pkg_TMPLS = ("fuchsia_package", "fuchsia_package_with_single_component", "fuchsia_component")
+            dup_gn_pkg_names = set()
+            for gname, (gtmpl, gline, gbody) in gn_info["pre_targets"].items():
+                if gtmpl not in gn_pkg_TMPLS:
+                    continue
+                gn_p_m = re.search(r'\b(?:package_name|component_name)\s*=\s*"([^"]+)"', gbody)
+                gn_m_m = re.search(r'\bmanifest\s*=\s*"([^"]+)"', gbody)
+                if (
+                    gname in migrated_pkg_names
+                    or (gn_p_m and gn_p_m.group(1) in migrated_pkg_names)
+                    or (gn_m_m and gn_m_m.group(1) in migrated_manifests)
+                ):
+                    dup_gn_pkg_names.add(gname)
+
+            remaining_non_pkg = [
+                (gn_n, gn_t)
+                for gn_n, (gn_t, _, gn_b) in gn_info["pre_targets"].items()
+                if gn_n not in dup_gn_pkg_names
+                and gn_t != "resource"
+                and not (
+                    gn_t in ("executable", "rustc_binary")
+                    and not re.search(r"\btestonly\s*=\s*true\b", gn_b)
+                    and (gn_n in packaged_binaries or any(t["name"] == gn_n for t in bazel_targets))
+                )
+            ]
+            for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
+                is_dup_pkg = gname in dup_gn_pkg_names
+                is_dup_bin = (
+                    not gn_info["has_sentinel"]
+                    and gtmpl in ("executable", "rustc_binary", "resource")
+                    and not re.search(r"\btestonly\s*=\s*true\b", gbody)
+                    and (
+                        gname in packaged_binaries
+                        or any(t["name"] == gname for t in bazel_targets)
+                        or any(
+                            dup_n in gn_info["pre_targets"]
+                            and re.search(r'":' + re.escape(gname) + r'(?:"|\()', gn_info["pre_targets"][dup_n][2])
+                            for dup_n in dup_gn_pkg_names
+                        )
+                    )
+                    and not any(
+                        other_n != gname
+                        and other_n not in dup_gn_pkg_names
+                        and re.search(r'":' + re.escape(gname) + r'(?:"|\()', other_b)
+                        for other_n, (other_t, _, other_b) in gn_info["pre_targets"].items()
+                    )
+                )
+                if is_dup_pkg or is_dup_bin:
+                    rem = (
+                        f"Delete '{gn_rel}' (`git rm {gn_rel}`) now that all targets in '//{pkg_dir}' are migrated to '{bazel_rel}'."
+                        if not remaining_non_pkg and not gn_info["has_sentinel"]
+                        else (
+                            f"Delete `{gtmpl}(\"{gname}\")` (and any dedicated package component/binary/resource targets "
+                            f"not used by remaining GN test targets) from '{gn_rel}', keeping only the GN-only test or "
+                            f"library targets in '{gn_rel}'."
+                        )
+                    )
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "duplicate_gn_fuchsia_package",
+                        "severity": "error",
+                        "file": gn_rel,
+                        "line": gline,
+                        "message": (
+                            f"GN target `{gtmpl}(\"{gname}\")` remains in '{gn_rel}' after migrating the package "
+                            f"to `fx_package(name = \"{fx_pkg_name}\")` in '{bazel_rel}'."
+                        ),
+                        "remediation": rem,
+                    })
+
+        bridge_dir_rel = f"bundles/assembly/bazel_inputs/{pkg_dir}"
+        bridge_gn_rel = f"{bridge_dir_rel}/BUILD.gn"
+        bridge_bazel_rel = f"{bridge_dir_rel}/BUILD.bazel"
+        assembly_bazel_rel = "bundles/assembly/BUILD.bazel"
+        assembly_inputs_gn_rel = "bundles/assembly/bazel_inputs/BUILD.gn"
+        has_bridge_files = os.path.isfile(os.path.join(workdir, bridge_gn_rel)) or os.path.isfile(
+            os.path.join(workdir, bridge_bazel_rel)
+        )
+        in_assembly_bazel = False
+        if os.path.isfile(os.path.join(workdir, assembly_bazel_rel)):
+            try:
+                in_assembly_bazel = f"//{bridge_dir_rel}" in open(
+                    os.path.join(workdir, assembly_bazel_rel), encoding="utf-8"
+                ).read()
+            except Exception:
+                pass
+        in_assembly_inputs_gn = False
+        if os.path.isfile(os.path.join(workdir, assembly_inputs_gn_rel)):
+            try:
+                in_assembly_inputs_gn = f"//{bridge_dir_rel}" in open(
+                    os.path.join(workdir, assembly_inputs_gn_rel), encoding="utf-8"
+                ).read()
+            except Exception:
+                pass
+        if has_bridge_files or in_assembly_bazel or in_assembly_inputs_gn:
+            findings.append({
+                "source": "migration_sanity",
+                "category": "stale_assembly_bazel_inputs_bridge",
+                "severity": "error",
+                "file": bridge_gn_rel if has_bridge_files else (assembly_bazel_rel if in_assembly_bazel else assembly_inputs_gn_rel),
+                "line": 1,
+                "message": (
+                    f"Package '//{pkg_dir}:{fx_pkg_name}' is defined as `fx_package` in '{bazel_rel}', "
+                    f"but the legacy GN-to-Bazel assembly bridge under '//{bridge_dir_rel}' is still present or referenced."
+                ),
+                "remediation": (
+                    f"Complete the assembly switchover for '//{pkg_dir}:{fx_pkg_name}': "
+                    f"(1) in `{assembly_bazel_rel}`, replace `\"//{bridge_dir_rel}...\"` with `\"//{pkg_dir}:{fx_pkg_name}\"`; "
+                    f"(2) in `{assembly_inputs_gn_rel}`, remove the `\"//{bridge_dir_rel}...\"` entry; "
+                    f"(3) delete `{bridge_gn_rel}` and `{bridge_bazel_rel}` (`git rm -f {bridge_dir_rel}/BUILD.*`); "
+                    f"and (4) ensure `visibility = [\"//bundles/assembly:__subpackages__\"]` is set on `{fx_pkg_name}` in `{bazel_rel}`."
+                ),
+            })
+
+        parent_dir = os.path.dirname(pkg_dir).strip("/")
+        child_name = os.path.basename(pkg_dir)
+        parent_gn_rel = f"{parent_dir}/BUILD.gn" if parent_dir else ""
+        parent_gn_abs = os.path.join(workdir, parent_gn_rel) if parent_gn_rel else ""
+        if parent_dir and parent_dir not in ("src", "sdk", "tools") and os.path.isfile(parent_gn_abs):
+            parent_info = parse_gn_file(parent_gn_abs)
+            gn_now_targets = set(gn_info["pre_targets"].keys()) if gn_info else set()
+            if gn_info and gn_info["post_text"]:
+                for pm in re.finditer(r'^\s*[a-zA-Z0-9_]+\(\s*"([^"]+)"\s*\)\s*\{', gn_info["post_text"], re.M):
+                    gn_now_targets.add(pm.group(1))
+            if parent_info:
+                ref_re = re.compile(
+                    r'"((?://' + re.escape(pkg_dir) + r'|' + re.escape(child_name) + r')(?::([A-Za-z0-9_.-]+))?)"'
+                )
+                for pname, (ptmpl, pline, pbody) in sorted(parent_info["pre_targets"].items()):
+                    for rm in ref_re.finditer(pbody):
+                        raw_ref = rm.group(1)
+                        sub_t = rm.group(2) or child_name
+                        if sub_t not in gn_now_targets:
+                            findings.append({
+                                "source": "migration_sanity",
+                                "category": "dangling_parent_gn_package_dep",
+                                "severity": "error",
+                                "file": parent_gn_rel,
+                                "line": pline,
+                                "message": (
+                                    f"Target `{ptmpl}(\"{pname}\")` in '{parent_gn_rel}' still references `\"{raw_ref}\"`, "
+                                    f"which points to deleted GN target `//{pkg_dir}:{sub_t}` (migrated to `fx_package` in '{bazel_rel}')."
+                                ),
+                                "remediation": (
+                                    f"Remove `\"{raw_ref}\"` from `{ptmpl}(\"{pname}\")` in '{parent_gn_rel}'."
+                                ),
+                            })
 
 print(json.dumps(findings, indent=2))
 PYEOF

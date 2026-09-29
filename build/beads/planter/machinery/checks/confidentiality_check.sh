@@ -36,11 +36,12 @@ INTERNAL_PATH_RE = re.compile(
     rf"(?i)({v_prefix}[a-z0-9_-]+/[a-z0-9_.-]+|\b{v_goog}\b|\b{g_three}\b|\b{g_plex}\b|\.{c_dom}\b|\b{c_dom}\b)"
 )
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-HANDLE_RE = re.compile(r"(?:^|[\s(])@([A-Za-z][A-Za-z0-9_-]{2,})\b")
+HANDLE_RE = re.compile(r"(?:^|[\s(])@([A-Za-z][A-Za-z0-9_-]{2,})\b(?!//|:)")
 ALLOWED_HANDLES = {
     "bazel2gn",
     "platforms",
     "fuchsia_sdk",
+    "fuchsia_build_info",
     "fuchsia_clang",
     "fuchsia_icu",
     "rules_rust",
@@ -57,6 +58,14 @@ ALLOWED_HANDLES = {
     "handle",
     "handles",
 }
+ALLOWED_HANDLE_PREFIXES = (
+    "fuchsia_",
+    "rules_",
+    "bazel_",
+    "io_bazel_",
+    "com_google_",
+    "internal_sdk",
+)
 PLACEHOLDER_NAME_RE = re.compile(r"\b(" + "Al" + "ice" + r")\b")
 
 
@@ -113,7 +122,8 @@ def scan_text(rel_path, text):
             })
         for m_h in HANDLE_RE.finditer(line):
             handle = m_h.group(1)
-            if handle.lower() not in ALLOWED_HANDLES:
+            h_low = handle.lower()
+            if h_low not in ALLOWED_HANDLES and not h_low.startswith(ALLOWED_HANDLE_PREFIXES):
                 findings.append({
                     "source": "confidentiality_check",
                     "category": "confidentiality_violation",

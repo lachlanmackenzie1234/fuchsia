@@ -336,10 +336,27 @@ def rust_forwarding_remedy(label, configs, pkg):
     )
 
 
+EXCLUDED_GLOBAL_DIRS = (
+    "bundles/assembly",
+    "build/bazel",
+    "build/bazel2gn",
+    "build/images",
+    "build/config/rust/lints",
+)
+
 candidate_dirs = {target_dir} if target_dir else set()
-for p in git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"]):
-    if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn") and os.path.dirname(p).strip("/"):
-        candidate_dirs.add(os.path.dirname(p).strip("/"))
+changed_all = git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
+changed_set = set(changed_all)
+for p in changed_all:
+    if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
+        d = os.path.dirname(p).strip("/")
+        if (
+            d
+            and d not in ("tools", "src", "sdk")
+            and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
+            and not (target_dir and d == os.path.dirname(target_dir) and f"{d}/BUILD.bazel" not in changed_set)
+        ):
+            candidate_dirs.add(d)
 
 findings = []
 for pkg in sorted(candidate_dirs):

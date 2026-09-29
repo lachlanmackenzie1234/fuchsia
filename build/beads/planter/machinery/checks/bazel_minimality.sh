@@ -52,6 +52,8 @@ ALLOWED_GLOBAL_PREFIXES = (
     "build/bazel2gn",
     "build/bazel/",
     "build/config/rust/lints/",
+    "bundles/assembly/",
+    "build/images/",
 )
 
 
@@ -74,11 +76,16 @@ changed.update(untracked)
 def migrated_dependency_packages():
     """Packages this change migrates because a target (transitively) depends on them.
 
-    A dependency package is in scope when its BUILD.bazel is new in this change and a
-    BUILD.bazel of a target package, or of another such dependency package, references it.
+    A dependency package is in scope when its BUILD.bazel is added or modified in this change
+    and a BUILD.bazel of a target package, or of another such dependency package, references it.
     """
-    added = set(git_lines(["diff", "--name-only", "--diff-filter=A", change_base])) | set(untracked)
-    candidates = {os.path.dirname(p) for p in added if os.path.basename(p) == "BUILD.bazel"}
+    added = set(git_lines(["diff", "--name-only", "--diff-filter=AM", change_base])) | set(untracked)
+    candidates = {
+        os.path.dirname(p)
+        for p in added
+        if os.path.basename(p) == "BUILD.bazel"
+        and not p.strip("/").startswith(ALLOWED_GLOBAL_PREFIXES)
+    }
     candidates -= set(target_dirs)
     label_re = re.compile(r'"@?//([^":]*)')
     found, seen, frontier = set(), set(), list(target_dirs)

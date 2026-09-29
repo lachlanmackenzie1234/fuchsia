@@ -555,6 +555,47 @@ def run_check(spec):
     return results
 
 
+def commit_msg_only_since_upload():
+    uploaded_commit = os.environ.get("PLANTER_UPLOADED_COMMIT", "").strip()
+    if not uploaded_commit or not workdir:
+        return False
+    try:
+        up_tree = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", f"{uploaded_commit}^{{tree}}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        head_tree = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", "HEAD^{tree}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        if not up_tree or up_tree != head_tree:
+            return False
+        diff_wt = subprocess.check_output(
+            ["git", "-C", workdir, "diff", "--name-only", "HEAD", "--"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        if diff_wt:
+            return False
+        untracked = [
+            u.strip() for u in subprocess.check_output(
+                ["git", "-C", workdir, "ls-files", "--others", "--exclude-standard"],
+                stderr=subprocess.DEVNULL, text=True,
+            ).splitlines() if u.strip()
+        ]
+        if any(any(u == d or u.startswith(d + "/") for d in target_dirs) for u in untracked):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+COMMIT_MSG_CHECKS = {"confidentiality_check", "build_verification"}
+commit_msg_only = not only and commit_msg_only_since_upload()
+if commit_msg_only:
+    enabled = [s for s in enabled if s["name"] in COMMIT_MSG_CHECKS]
+    if len(target_dirs) > 1:
+        target_dirs = target_dirs[:1]
+
 builds_skipped = skip_build or os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0")
 evolution_note = (
     "planter is evolving the machinery alongside you, so the checks may still change. Do not wait "
@@ -565,7 +606,9 @@ if evolution_in_progress:
     log(evolution_note)
 log(
     f"{len(enabled)} check(s) in {workdir}; target dirs: {' '.join(target_dirs) or '(none)'}; "
-    f"change base: {change_base}" + ("; builds skipped" if builds_skipped else "")
+    f"change base: {change_base}"
+    + ("; commit-msg only since upload" if commit_msg_only else "")
+    + ("; builds skipped" if builds_skipped and not commit_msg_only else "")
 )
 rows = []
 all_findings = []
@@ -657,7 +700,7 @@ else:
     print("RESULT: PASS: no blocking findings.")
 if only:
     print("NOTE: only some checks ran (--only). Run all of them before reporting.")
-if builds_skipped:
+if any(f["category"] == "build_skipped" for f in all_findings):
     print("NOTE: the builds were skipped. Run `run_checks.sh` without --skip-build before reporting.")
 if evolution_in_progress:
     print(f"NOTE: {evolution_note}")
