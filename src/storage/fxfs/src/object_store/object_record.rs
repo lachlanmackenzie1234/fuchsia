@@ -583,17 +583,17 @@ pub enum DirType {
     EncryptedCasefold(WrappingKeyId),
 }
 
-/// The fscrypt policy flags implied for fscrypt-encrypted directories in Fxfs: 16-byte filename
-/// padding (`PAD_16`) and `IV_INO_LBLK_32` IV derivation.
+/// The default fscrypt policy flags implied for legacy fscrypt-encrypted nodes in Fxfs: 16-byte
+/// filename padding (`PAD_16`).
 ///
-/// Fxfs does not persist policy flags on disk (`DirType` only records the `WrappingKeyId`), so these
-/// are the flags reported in `fuchsia.io/FscryptPolicy` for encrypted directories and for files
-/// encrypted with `EncryptionKey::FscryptInoLblk32File` keys. Only use this constant to describe
-/// such nodes (or, in tests, to set a policy that matches them); other key types imply different
-/// flags (e.g. files encrypted with `EncryptionKey::Fxfs` keys report only `PAD_16`).
+/// Prior to persisting policy flags in `DirType`, Fxfs only recorded `WrappingKeyId` on disk, so
+/// these are the fallback flags reported in `fuchsia.io/FscryptPolicy` for legacy encrypted
+/// directories and files.
+///
+/// TODO(https://fxbug.dev/527952709): Remove this fallback once all encrypted nodes persist their
+/// fscrypt policy flags on disk and legacy nodes without persisted flags are migrated.
 pub const LEGACY_FSCRYPT_FLAGS: fidl_fuchsia_io::FscryptPolicyFlags =
-    fidl_fuchsia_io::FscryptPolicyFlags::PAD_16
-        .union(fidl_fuchsia_io::FscryptPolicyFlags::IV_INO_LBLK_32);
+    fidl_fuchsia_io::FscryptPolicyFlags::PAD_16;
 
 impl DirType {
     pub fn is_casefold(&self) -> bool {

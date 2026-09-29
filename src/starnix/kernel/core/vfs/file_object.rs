@@ -972,7 +972,12 @@ pub fn default_vfs_ioctl(
             };
             let attributes = file.node().fetch_and_refresh_info(current_task)?;
             if let Some(existing_policy) = &attributes.encryption_policy {
-                if existing_policy != &new_policy {
+                // TODO(https://fxbug.dev/527952709): Remove this fallback once fxfs persists
+                // the encryption policy flags on disk.
+                let flags_match = existing_policy.flags == new_policy.flags
+                    || existing_policy.flags
+                        == (new_policy.flags | crate::vfs::FscryptPolicyFlags::IV_INO_LBLK_32);
+                if existing_policy.key_identifier != new_policy.key_identifier || !flags_match {
                     return error!(EEXIST);
                 }
             } else {

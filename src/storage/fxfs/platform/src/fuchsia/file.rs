@@ -317,6 +317,8 @@ impl FxFile {
                         }));
                     }
                     EncryptionKey::FscryptInoLblk32File { key_identifier } => {
+                        // TODO(https://fxbug.dev/527952709): Remove this fallback once policy flags
+                        // are recorded per-node or inherited directly from the directory record.
                         return Ok(Some(fio::FscryptPolicy {
                             key_identifier: *key_identifier,
                             flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,

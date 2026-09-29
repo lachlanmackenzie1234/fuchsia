@@ -986,6 +986,57 @@ mod fscrypt_test {
 
     #[test]
     #[serial]
+    fn set_encryption_policy_on_directory_encrypted_with_same_policy() {
+        let Some(root_path) = get_root_path() else { return };
+        let root_dir = std::fs::File::open(&root_path).expect("open failed");
+        let dir_path = std::path::Path::new(&root_path).join("same_policy_dir");
+        std::fs::create_dir_all(dir_path.clone()).unwrap();
+
+        let dir = std::fs::File::open(dir_path.clone()).unwrap();
+        let (ret, arg_vec) = add_encryption_key(&root_dir);
+        assert!(ret == 0, "add encryption key ioctl failed: {:?}", std::io::Error::last_os_error());
+        let (arg_struct_bytes, _) = arg_vec.split_at(std::mem::size_of::<fscrypt_add_key_arg>());
+        let arg_struct = fscrypt_add_key_arg::read_from_bytes(arg_struct_bytes).unwrap();
+
+        let ret = unsafe { set_encryption_policy(&dir, arg_struct.key_spec.u.identifier.value) };
+        assert!(
+            ret == 0,
+            "set encryption policy ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+
+        // Setting the policy again on the same open directory must succeed with the same policy.
+        let ret = unsafe { set_encryption_policy(&dir, arg_struct.key_spec.u.identifier.value) };
+        assert!(
+            ret == 0,
+            "re-setting same encryption policy ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+
+        // Reopen the directory and verify setting the policy again still succeeds.
+        drop(dir);
+        let reopened_dir = std::fs::File::open(dir_path.clone()).unwrap();
+        let ret =
+            unsafe { set_encryption_policy(&reopened_dir, arg_struct.key_spec.u.identifier.value) };
+        assert!(
+            ret == 0,
+            "setting same encryption policy on reopened dir failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+
+        // Cleanup
+        let ret =
+            unsafe { remove_encryption_key(&root_dir, arg_struct.key_spec.u.identifier.value) };
+        assert!(
+            ret == 0,
+            "remove encryption key ioctl failed: {:?}",
+            std::io::Error::last_os_error()
+        );
+        std::fs::remove_dir_all(dir_path).expect("failed to remove same_policy_dir");
+    }
+
+    #[test]
+    #[serial]
     fn set_encryption_policy_on_file() {
         let Some(root_path) = get_root_path() else { return };
         let root_dir = std::fs::File::open(&root_path).expect("open failed");
