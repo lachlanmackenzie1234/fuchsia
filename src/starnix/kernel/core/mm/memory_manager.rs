@@ -2342,39 +2342,43 @@ impl MemoryManagerState {
             return error!(EFAULT);
         }
 
-        // Don't create CoW copy of shared memory, go through regular syscall writing.
-        if mapping.flags().contains(MappingFlags::SHARED) {
-            if !mapping.can_write() {
-                // Linux returns EIO here instead of EFAULT.
-                return error!(EIO);
-            }
-            return self.write_mapping_memory(addr, &mapping, &bytes, context);
+        // Don't create CoW copy of shared memory.
+        if mapping.flags().contains(MappingFlags::SHARED) && !mapping.can_write() {
+            // Linux returns EIO here instead of EFAULT.
+            return error!(EIO);
         }
 
-        let backing = match self.get_mapping_backing(&mapping) {
-            MappingBacking::PrivateAnonymous => {
-                // Starnix has a writable handle to private anonymous memory.
-                return context.private_anonymous.write_memory(addr, &bytes);
-            }
-            MappingBacking::Memory(backing) => backing,
+        let memory = match self.get_mapping_backing(&mapping) {
+            MappingBacking::PrivateAnonymous => &context.private_anonymous.backing,
+            MappingBacking::Memory(backing) => backing.memory(),
         };
-
-        let vmo = backing.memory().as_vmo().ok_or_else(|| errno!(EFAULT))?;
-        let addr_offset = backing.address_to_offset(addr);
-        let can_exec =
-            vmo.basic_info().expect("get VMO handle info").rights.contains(Rights::EXECUTE);
+        let vmo = memory.as_vmo().ok_or_else(|| errno!(EFAULT))?;
+        let addr_offset = mapping.address_to_offset(addr);
 
         // Attempt to write to existing VMO
         match vmo.write(&bytes, addr_offset) {
             Ok(()) => {
-                if can_exec {
-                    // Issue a barrier to avoid executing stale instructions.
+                // Only synchronize caches if the mapping itself is currently executable; backing
+                // VMOs (such as `private_anonymous`) may carry `Rights::EXECUTE` even for
+                // non-executable mappings, and Zircon synchronizes the instruction cache if a
+                // mapping is later made executable via `mprotect`.
+                if mapping.can_exec() {
+                    // Synchronize the data and instruction caches across cores and issue an
+                    // instruction stream barrier to avoid executing stale instructions.
+                    memory
+                        .op_range(zx::VmoOp::CACHE_SYNC, addr_offset, bytes.len() as u64)
+                        .map_err(MemoryManager::get_errno_for_vmo_err)?;
                     system_barrier(BarrierType::InstructionStream);
                 }
                 return Ok(());
             }
 
-            Err(zx::Status::ACCESS_DENIED) => { /* Fall through */ }
+            Err(zx::Status::ACCESS_DENIED) => {
+                if mapping.flags().contains(MappingFlags::SHARED) {
+                    return error!(EIO);
+                }
+                // Fall through.
+            }
 
             Err(status) => {
                 return Err(MemoryManager::get_errno_for_vmo_err(status));
@@ -2382,7 +2386,7 @@ impl MemoryManagerState {
         }
 
         // Create a CoW child of the entire VMO and swap with the backing.
-        let mapping_offset = backing.address_to_offset(range.start);
+        let mapping_offset = mapping.address_to_offset(range.start);
         let len = range.end - range.start;
 
         // 1. Obtain a writable child of the VMO.
@@ -2394,9 +2398,11 @@ impl MemoryManagerState {
         // 2. Modify the memory.
         child_vmo.write(&bytes, addr_offset).map_err(MemoryManager::get_errno_for_vmo_err)?;
 
-        // 3. If needed, remint the VMO as executable. Zircon flushes instruction caches when
-        // mapping executable memory below, so a barrier isn't necessary here.
-        let child_vmo = if can_exec {
+        // 3. If the original VMO had `Rights::EXECUTE`, restore it on the child VMO (even if the
+        // mapping is not currently executable) so future `mprotect(..., PROT_EXEC)` calls succeed.
+        // Zircon flushes instruction caches when mapping or protecting executable memory, so a
+        // barrier isn't necessary here.
+        let child_vmo = if memory.get_rights().contains(Rights::EXECUTE) {
             child_vmo
                 .replace_as_executable(&VMEX_RESOURCE)
                 .map_err(MemoryManager::get_errno_for_vmo_err)?
@@ -2424,7 +2430,7 @@ impl MemoryManagerState {
         // 5. Update mappings
         let new_backing = MappingBackingMemory::new(range.start, memory, mapping_offset);
 
-        let mut new_mapping = mapping.clone();
+        let mut new_mapping = mapping;
         new_mapping.set_backing_internal(MappingBacking::Memory(Box::new(new_backing)));
 
         released_mappings.extend(self.mappings.insert(range, new_mapping));
