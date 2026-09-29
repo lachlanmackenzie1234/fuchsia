@@ -74,6 +74,17 @@ impl<Mtx: RawMutex> Semaphore<Mtx> {
         Self { count: Condition::new(initial_count) }
     }
 
+    /// Sets the number of available permits to `new_count`, discarding the previous count, and
+    /// wakes up to `new_count` waiting tasks.
+    ///
+    /// Useful when the guarded resource reports its absolute capacity rather than releasing
+    /// permits one at a time.
+    pub fn reset(&self, new_count: usize) {
+        let mut count = self.count.lock();
+        *count = new_count;
+        self.count.notify_many(new_count);
+    }
+
     /// Attempts to acquire a permit from the semaphore without blocking.
     ///
     /// # Errors
@@ -163,6 +174,56 @@ mod tests {
             sem.up();
             s.run_until_stalled();
             assert!(handle.is_finished(), "Task should be completed after semaphore up");
+        });
+    }
+
+    #[test]
+    fn test_semaphore_reset_overwrites_count() {
+        let sem = TestSemaphore::new(5);
+        sem.reset(2);
+        assert!(sem.try_down().is_ok());
+        assert!(sem.try_down().is_ok());
+        assert!(sem.try_down().is_err());
+
+        sem.reset(0);
+        assert!(sem.try_down().is_err());
+    }
+
+    #[test]
+    fn test_semaphore_reset_wakes_up_to_new_count_waiters() {
+        let sem = TestSemaphore::new(0);
+
+        BoundedExecutor::new(TestExecutor::new(), |s| {
+            let handles: Vec<_> = (0..3).map(|_| s.spawn(sem.down())).collect();
+            s.run_until_stalled();
+            assert!(handles.iter().all(|h| !h.is_finished()));
+
+            sem.reset(2);
+            s.run_until_stalled();
+            assert_eq!(handles.iter().filter(|h| h.is_finished()).count(), 2);
+
+            sem.reset(1);
+            s.run_until_stalled();
+            assert!(handles.iter().all(|h| h.is_finished()));
+        });
+    }
+
+    #[test]
+    fn test_semaphore_reset_to_zero_before_woken_waiter_runs() {
+        let sem = TestSemaphore::new(0);
+
+        BoundedExecutor::new(TestExecutor::new(), |s| {
+            let handle = s.spawn(sem.down());
+            s.run_until_stalled();
+
+            sem.reset(1);
+            sem.reset(0);
+            s.run_until_stalled();
+            assert!(!handle.is_finished(), "the waiter must re-check the count when it runs");
+
+            sem.up();
+            s.run_until_stalled();
+            assert!(handle.is_finished());
         });
     }
 
