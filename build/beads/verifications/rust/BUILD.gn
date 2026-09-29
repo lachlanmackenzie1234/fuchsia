@@ -6,18 +6,18 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 
 if (is_host) {
-  rustc_library("rust_example_lib") {
-    name = "rust_example_lib"
+  rustc_library("beads_rust_example_lib") {
+    name = "beads_rust_example_lib"
     edition = "2024"
     source_root = "src/lib.rs"
     sources = [ "src/lib.rs" ]
   }
 
-  rustc_binary("rust_example_bin") {
-    name = "rust_example_bin"
+  rustc_binary("beads_rust_example_bin") {
+    name = "beads_rust_example_bin"
     edition = "2024"
     source_root = "src/main.rs"
     sources = [ "src/main.rs" ]
-    deps = [ ":rust_example_lib" ]
+    deps = [ ":beads_rust_example_lib" ]
   }
 }
