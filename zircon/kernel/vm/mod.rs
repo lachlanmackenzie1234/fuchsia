@@ -37,7 +37,6 @@ pub mod vm_cow_pages;
 pub mod vm_mapping;
 pub mod vm_object;
 pub mod vm_object_paged;
-pub mod vm_object_paged_ffi;
 pub mod vm_object_physical;
 pub mod vm_page_list;
 pub mod vmm;

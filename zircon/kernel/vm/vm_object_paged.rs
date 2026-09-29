@@ -6,8 +6,7 @@
 
 use super::page::VmPagePtr;
 use super::vm_cow_pages::VmCowPages;
-use super::vm_object::{VmObject, VmObjectLockClass};
-use super::vm_object_paged_ffi::*;
+use super::vm_object::{VmObject, VmObjectLockClass, VmObjectReadWriteOptions};
 use crate::user_copy::{UserInIovec, UserOutIovec};
 use crate::vm::stream_size_manager::StreamSizeManager;
 use core::marker::PhantomPinned;
@@ -115,21 +114,44 @@ impl VmObjectPaged {
     pub fn read_user_vector(
         &self,
         user_data: UserOutIovec,
-        offset: u64,
-        length: usize,
+        mut offset: u64,
+        mut length: usize,
     ) -> (Result<(), Status>, usize) {
-        let mut actual = 0usize;
-        let status = unsafe {
-            cpp_vm_object_paged_read_user_vector(
-                self.as_raw(),
-                user_data.as_user_out_ptr(),
-                user_data.count(),
-                offset,
-                length,
-                &mut actual,
-            )
-        };
-        (Status::ok(status), actual)
+        if length == 0 {
+            return (Ok(()), 0);
+        }
+        if (length as u64) > u64::MAX - offset {
+            return (Err(Status::OUT_OF_RANGE), 0);
+        }
+
+        let mut total = 0usize;
+        let mut status = user_data.for_each(|ptr, mut capacity| {
+            if capacity > length {
+                capacity = length;
+            }
+
+            let (read_status, chunk_actual) =
+                self.read_user(ptr, offset, capacity, VmObjectReadWriteOptions::NONE);
+
+            // Always add `chunk_actual` since some bytes may have been transferred, even on error
+            total += chunk_actual;
+            if let Err(status) = read_status {
+                return status;
+            }
+
+            debug_assert!(chunk_actual == capacity);
+
+            offset += chunk_actual as u64;
+            length -= chunk_actual;
+            if length > 0 { Status::NEXT } else { Status::STOP }
+        });
+
+        // Return `Status::BUFFER_TOO_SMALL` if all of `length` was not transferred.
+        if status.is_ok() && length > 0 {
+            status = Err(Status::BUFFER_TOO_SMALL);
+        }
+
+        (status, total)
     }
 
     /// Writes data from user vectors into the VMO.
@@ -139,46 +161,70 @@ impl VmObjectPaged {
         offset: u64,
         length: usize,
     ) -> (Result<(), Status>, usize) {
-        let mut actual = 0usize;
-        let status = unsafe {
-            cpp_vm_object_paged_write_user_vector(
-                self.as_raw(),
-                user_data.vector(),
-                user_data.count(),
-                offset,
-                length,
-                &mut actual,
-            )
-        };
-        (Status::ok(status), actual)
+        self.write_user_vector_impl(user_data, offset, length, None)
     }
 
     /// Writes data from user vectors into the VMO with progress callback.
-    #[allow(clippy::too_many_arguments)]
-    pub fn write_user_vector_progress(
+    pub fn write_user_vector_with_progress<F: FnMut(u64, usize)>(
         &self,
         user_data: UserInIovec,
         offset: u64,
         length: usize,
-        prev_stream_size: u64,
-        cb: extern "C" fn(*mut core::ffi::c_void, u64, usize),
-        cookie: *mut core::ffi::c_void,
+        mut on_bytes_transferred: F,
     ) -> (Result<(), Status>, usize) {
-        let mut actual = 0usize;
-        let status = unsafe {
-            cpp_vm_object_paged_write_user_vector_progress(
-                self.as_raw(),
-                user_data.vector(),
-                user_data.count(),
-                offset,
-                length,
-                prev_stream_size,
-                &mut actual,
-                cb,
-                cookie,
-            )
-        };
-        (Status::ok(status), actual)
+        self.write_user_vector_impl(user_data, offset, length, Some(&mut on_bytes_transferred))
+    }
+
+    fn write_user_vector_impl(
+        &self,
+        user_data: UserInIovec,
+        mut offset: u64,
+        mut length: usize,
+        mut on_bytes_transferred: Option<&mut dyn FnMut(u64, usize)>,
+    ) -> (Result<(), Status>, usize) {
+        if length == 0 {
+            return (Ok(()), 0);
+        }
+        if (length as u64) > u64::MAX - offset {
+            return (Err(Status::OUT_OF_RANGE), 0);
+        }
+
+        let mut total = 0usize;
+        let mut status = user_data.for_each(|ptr, mut capacity| {
+            if capacity > length {
+                capacity = length;
+            }
+
+            let (write_status, chunk_actual) = match on_bytes_transferred.as_mut() {
+                Some(cb) => self.write_user_with_progress(
+                    ptr,
+                    offset,
+                    capacity,
+                    VmObjectReadWriteOptions::NONE,
+                    &mut **cb,
+                ),
+                None => self.write_user(ptr, offset, capacity, VmObjectReadWriteOptions::NONE),
+            };
+
+            // Always add `chunk_actual` since some bytes may have been transferred, even on error
+            total += chunk_actual;
+            if let Err(status) = write_status {
+                return status;
+            }
+
+            debug_assert!(chunk_actual == capacity);
+
+            offset += chunk_actual as u64;
+            length -= chunk_actual;
+            if length > 0 { Status::NEXT } else { Status::STOP }
+        });
+
+        // Return `Status::BUFFER_TOO_SMALL` if all of `length` was not transferred.
+        if status.is_ok() && length > 0 {
+            status = Err(Status::BUFFER_TOO_SMALL);
+        }
+
+        (status, total)
     }
 
     /// Zero a range of the VMO. May release physical pages in the process.

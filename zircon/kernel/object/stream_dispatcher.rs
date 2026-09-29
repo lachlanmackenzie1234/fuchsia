@@ -139,11 +139,6 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
     object_constants::kStreamDispatcherStateOffset
 );
 
-extern "C" fn write_progress_cb(cookie: *mut core::ffi::c_void, write_offset: u64, len: usize) {
-    let op = unsafe { &*cookie.cast::<StreamSizeManagerOperation>() };
-    op.update_stream_size_from_progress(write_offset + len as u64);
-}
-
 impl StreamDispatcher {
     /// Parses and validates syscall flag options for stream creation.
     pub fn parse_create_syscall_flags(
@@ -358,13 +353,15 @@ impl StreamDispatcher {
         };
 
         let (status, written) = if let Some(prev) = prev_stream_size {
-            self.state().vmo.write_user_vector_progress(
+            self.state().vmo.write_user_vector_with_progress(
                 user_data,
                 seek,
                 length as usize,
-                prev,
-                write_progress_cb,
-                core::ptr::from_ref(&*op).cast_mut().cast(),
+                |write_offset, len| {
+                    if write_offset + len as u64 > prev {
+                        op.update_stream_size_from_progress(write_offset + len as u64);
+                    }
+                },
             )
         } else {
             self.state().vmo.write_user_vector(user_data, seek, length as usize)
@@ -419,13 +416,15 @@ impl StreamDispatcher {
         };
 
         let (status, written) = if let Some(prev) = prev_stream_size {
-            self.state().vmo.write_user_vector_progress(
+            self.state().vmo.write_user_vector_with_progress(
                 user_data,
                 offset,
                 length as usize,
-                prev,
-                write_progress_cb,
-                core::ptr::from_ref(&*op).cast_mut().cast(),
+                |write_offset, len| {
+                    if write_offset + len as u64 > prev {
+                        op.update_stream_size_from_progress(write_offset + len as u64);
+                    }
+                },
             )
         } else {
             self.state().vmo.write_user_vector(user_data, offset, length as usize)
@@ -503,13 +502,11 @@ impl StreamDispatcher {
             length = (core::cmp::min(vmo_size, new_stream_size) - offset) as usize;
         }
 
-        let (status, written) = self.state().vmo.write_user_vector_progress(
+        let (status, written) = self.state().vmo.write_user_vector_with_progress(
             user_data,
             offset,
             length,
-            offset,
-            write_progress_cb,
-            core::ptr::from_ref(&*op).cast_mut().cast(),
+            |write_offset, len| op.update_stream_size_from_progress(write_offset + len as u64),
         );
         *seek_guard.as_mut().fields_mut().seek = offset + written as u64;
 
