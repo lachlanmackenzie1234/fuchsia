@@ -16,6 +16,7 @@ source_set("vm") {
 
   sources = [
     "anonymous_page_request.cc",
+    "anonymous_page_request_ffi.cc",
     "arch_vm_aspace_ffi.cc",
     "attribution_ffi.cc",
     "compression.cc",
@@ -786,6 +787,27 @@ kernel_bindgen_crate("attribution-bindings") {
   expect_lints = [ "non_camel_case_types" ]
 }
 
+kernel_bindgen_crate("anonymous-page-request-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/anonymous_page_request_ffi.h" ]
+  non_rust_deps = [ ":vm" ]
+  output_name = "anonymous_page_request_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_anonymous_page_request_construct",
+    "cpp_anonymous_page_request_destroy",
+    "cpp_anonymous_page_request_cancel",
+  ]
+  type_allowlist = [ "AnonymousPageRequest" ]
+  opaque_types = [ "AnonymousPageRequest" ]
+  function_blocklist = [ "AnonymousPageRequest_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  raw_lines = [ "#![no_std]" ]
+}
+
 kernel_bindgen_crate("page-source-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/page_source_ffi.h" ]
@@ -1303,6 +1325,7 @@ kernel_rust_mod("vm-rs") {
   output_name = "vm"
   source_root = "mod.rs"
   sources = [
+    "anonymous_page_request.rs",
     "arch_vm_aspace.rs",
     "attribution.rs",
     "compression.rs",
@@ -1340,6 +1363,7 @@ kernel_rust_mod("vm-rs") {
   ]
 
   deps = [
+    ":anonymous-page-request-bindings",
     ":attribution-bindings",
     ":compression-bindings",
     ":compressor-bindings",
