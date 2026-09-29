@@ -22,6 +22,9 @@
 namespace nelson {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
+constexpr uint64_t kHiubusLength = 0x1000;
+constexpr uint64_t kAobusLength = 0x1000;
+
 static const std::vector<fpbus::Mmio> nelson_video_mmios{
     {{
         .base = S905D3_CBUS_BASE,
@@ -33,11 +36,11 @@ static const std::vector<fpbus::Mmio> nelson_video_mmios{
     }},
     {{
         .base = S905D3_HIU_BASE,
-        .length = S905D3_HIU_LENGTH,
+        .length = kHiubusLength,
     }},
     {{
         .base = S905D3_AOBUS_BASE,
-        .length = 0x1000,
+        .length = kAobusLength,
     }},
     {{
         .base = S905D3_DMC_BASE,
@@ -97,6 +100,10 @@ static const fpbus::Node video_dev = []() {
 }();
 
 zx_status_t Nelson::VideoInit() {
+  // We only map the first page (0x1000) of the HIU and AOBUS register blocks to limit MMIO access
+  // privilege. Assert that our mapped sizes do not exceed the hardware register block lengths.
+  static_assert(kHiubusLength <= S905D3_HIU_LENGTH);
+  static_assert(kAobusLength <= S905D3_AOBUS_LENGTH);
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('VIDE');
   auto video_canvas = fuchsia_driver_framework::ParentSpec2{{

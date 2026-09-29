@@ -25,6 +25,9 @@ using namespace fuchsia_driver_framework;
 namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
+constexpr uint64_t kAobusLength = 0x1000;
+constexpr uint64_t kHiubusLength = 0x1000;
+
 static const std::vector<fpbus::Mmio> sherlock_hevc_enc_mmios{
     {{
         .base = T931_CBUS_BASE,
@@ -36,11 +39,11 @@ static const std::vector<fpbus::Mmio> sherlock_hevc_enc_mmios{
     }},
     {{
         .base = T931_AOBUS_BASE,
-        .length = 0x1000,
+        .length = kAobusLength,
     }},
     {{
         .base = T931_HIU_BASE,
-        .length = T931_HIU_LENGTH,
+        .length = kHiubusLength,
     }},
     {{
         .base = T931_WAVE420L_BASE,
@@ -85,6 +88,10 @@ static const fpbus::Node hevc_enc_dev = []() {
 }();
 
 zx_status_t Sherlock::HevcEncInit() {
+  // We only map the first page (0x1000) of the AOBUS and HIU register blocks to limit MMIO access
+  // privilege. Assert that our mapped sizes do not exceed the hardware register block lengths.
+  static_assert(kAobusLength <= T931_AOBUS_LENGTH);
+  static_assert(kHiubusLength <= T931_HIU_LENGTH);
   fidl::Arena<> fidl_arena;
 
   std::vector<fuchsia_driver_framework::ParentSpec2> kHevcEncParents = {

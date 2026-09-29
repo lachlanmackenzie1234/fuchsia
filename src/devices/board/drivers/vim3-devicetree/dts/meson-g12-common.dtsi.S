@@ -8,6 +8,9 @@
 #include "sdk/lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gic/arm-gicv2.h"
 #include "vim3-iommu.h"
 
+#define VDEC_HIUBUS_LENGTH 0x1000
+#define VDEC_AOBUS_LENGTH 0x1000
+
 / {
 	interrupt-parent = <&gic>;
 
@@ -29,7 +32,12 @@
 
 		video-decoder@ffd00000 {
 			compatible = "amlogic,g12b-vdec";
-			reg = <0x0 A311D_FULL_CBUS_BASE 0x0 A311D_FULL_CBUS_LENGTH>, <0x0 A311D_DOS_BASE 0x0 A311D_DOS_LENGTH>, <0x0 A311D_HIU_BASE 0x0 A311D_HIU_LENGTH>, <0x0 A311D_AOBUS_BASE 0x0 0x1000>, <0x0 A311D_DMC_BASE 0x0 A311D_DMC_LENGTH>;
+			/* Map only the first page (0x1000) of HIU and AOBUS to limit MMIO access privilege */
+			reg = <0x0 A311D_FULL_CBUS_BASE 0x0 A311D_FULL_CBUS_LENGTH>,
+				<0x0 A311D_DOS_BASE 0x0 A311D_DOS_LENGTH>,
+				<0x0 A311D_HIU_BASE 0x0 VDEC_HIUBUS_LENGTH>,
+				<0x0 A311D_AOBUS_BASE 0x0 VDEC_AOBUS_LENGTH>,
+				<0x0 A311D_DMC_BASE 0x0 A311D_DMC_LENGTH>;
 			iommus = <&stub_iommu VDEC_BTI>;
 			interrupts = <GIC_SPI 23 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 32 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 43 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 44 GIC_IRQ_MODE_EDGE_RISING>;
 			amlogic,canvas = <&canvas>;
