@@ -1464,8 +1464,8 @@ impl MemoryManagerState {
             return error!(EFAULT);
         }
 
-        if advice == MADV_NORMAL {
-            track_stub!(TODO("https://fxbug.dev/322874202"), "madvise undo hints for MADV_NORMAL");
+        if advice == MADV_NORMAL || advice == MADV_RANDOM || advice == MADV_SEQUENTIAL {
+            track_stub!(TODO("https://fxbug.dev/322874202"), "madvise paging hints", advice);
             return Ok(());
         }
 
@@ -1562,14 +1562,6 @@ impl MemoryManagerState {
                     }
                     MADV_POPULATE_READ => {
                         track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_POPULATE_READ");
-                        return error!(EINVAL);
-                    }
-                    MADV_RANDOM => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_RANDOM");
-                        return error!(EINVAL);
-                    }
-                    MADV_SEQUENTIAL => {
-                        track_stub!(TODO("https://fxbug.dev/322874202"), "MADV_SEQUENTIAL");
                         return error!(EINVAL);
                     }
                     MADV_FREE if !mapping.flags().contains(MappingFlags::ANONYMOUS) => {
