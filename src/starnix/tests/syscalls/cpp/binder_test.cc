@@ -527,6 +527,50 @@ TEST_F(BinderTest, BinderObjectCookieMismatch) {
   EXPECT_THAT(pm3.returns_, testing::Not(testing::Contains(BR_FAILED_REPLY)));
 }
 
+// Only the process that opened a binder FD may mmap it, regardless of whether the mapping is
+// private or shared.
+TEST_F(BinderTest, CrossProcessMmapFails) {
+  using namespace starnix_binder;
+  for (int flags : {MAP_PRIVATE, MAP_SHARED}) {
+    SCOPED_TRACE(flags == MAP_PRIVATE ? "MAP_PRIVATE" : "MAP_SHARED");
+
+    // Each binder FD can only be mapped once, so open a new one for each mapping type.
+    fbl::unique_fd binder =
+        fbl::unique_fd(open(TestPath("binderfs/binder").c_str(), O_RDWR | O_CLOEXEC));
+    ASSERT_TRUE(binder) << strerror(errno);
+
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      // Mapping a binder FD from a process other than the one that opened it must fail with
+      // EINVAL.
+      EXPECT_THAT(test_helper::ScopedMMap::MMap(nullptr, kBinderMMapSize, PROT_READ, flags,
+                                                binder.get(), 0),
+                  SyscallResultIsErrno(EINVAL));
+    });
+    ASSERT_TRUE(helper.WaitForChildren());
+
+    // The process that originally opened the binder FD can still mmap it.
+    EXPECT_THAT(
+        test_helper::ScopedMMap::MMap(nullptr, kBinderMMapSize, PROT_READ, flags, binder.get(), 0),
+        SyscallResultIsOk());
+  }
+}
+
+// Unlike mmap, ioctls on a binder FD are permitted from processes other than the one that opened
+// it, e.g. after the FD is inherited across fork() or passed to another process.
+TEST_F(BinderTest, CrossProcessIoctlSucceeds) {
+  fbl::unique_fd binder =
+      fbl::unique_fd(open(TestPath("binderfs/binder").c_str(), O_RDWR | O_CLOEXEC));
+  ASSERT_TRUE(binder) << strerror(errno);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    struct binder_version version = {};
+    EXPECT_THAT(ioctl(binder.get(), BINDER_VERSION, &version), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace
 
 namespace starnix_binder {

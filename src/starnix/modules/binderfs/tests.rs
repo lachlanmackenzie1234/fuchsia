@@ -2785,7 +2785,7 @@ pub mod tests {
             let binder_fd = open_binder_fd(&current_task, &device);
             let binder_connection =
                 binder_fd.downcast_file::<BinderConnection>().expect("must be a BinderConnection");
-            let binder_proc = binder_connection.proc(current_task).unwrap();
+            let binder_proc = binder_connection.proc().unwrap();
             let binder_thread =
                 binder_proc.lock().find_or_register_thread(&current_task.task).unwrap();
 

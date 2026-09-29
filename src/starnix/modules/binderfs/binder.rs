@@ -131,14 +131,8 @@ pub struct BinderConnection {
 }
 
 impl BinderConnection {
-    pub fn proc(&self, current_task: &CurrentTask) -> Result<OwnedRef<BinderProcess>, Errno> {
-        let process = self.device.find_process(self.identifier)?;
-        if process.key == current_task.pid.clone() {
-            Ok(process)
-        } else {
-            process.release(current_task.kernel());
-            error!(EINVAL)
-        }
+    pub fn proc(&self) -> Result<OwnedRef<BinderProcess>, Errno> {
+        self.device.find_process(self.identifier)
     }
 
     pub fn interrupt(&self) {
@@ -170,7 +164,7 @@ impl FileOps for BinderConnection {
         _file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        let binder_process = self.proc(current_task);
+        let binder_process = self.proc();
         release_after!(binder_process, current_task.kernel(), {
             Ok(match &binder_process {
                 Ok(binder_process) => {
@@ -207,7 +201,7 @@ impl FileOps for BinderConnection {
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
         log_trace!("binder wait_async");
-        let binder_process = self.proc(current_task);
+        let binder_process = self.proc();
         release_after!(binder_process, current_task.kernel(), {
             if let Ok(binder_process) = &binder_process {
                 if let Ok(binder_thread) =
@@ -236,7 +230,7 @@ impl FileOps for BinderConnection {
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        let binder_process = self.proc(current_task)?;
+        let binder_process = self.proc()?;
         release_after!(binder_process, current_task.kernel(), {
             self.device.ioctl(current_task, &binder_process, None, request, arg, Vec::new())
         })
@@ -262,7 +256,7 @@ impl FileOps for BinderConnection {
         prot_flags: ProtectionFlags,
         mapping_options: MappingOptions,
     ) -> Result<UserAddress, Errno> {
-        let binder_process = self.proc(current_task)?;
+        let binder_process = self.proc()?;
         let mapping_name = MappingName::File(file.to_mapping(None)?);
         release_after!(binder_process, current_task.kernel(), {
             self.device.mmap(
@@ -301,7 +295,7 @@ impl FileOps for BinderConnection {
 
     fn flush(&self, _file: &FileObject, current_task: &CurrentTask) {
         // Errors are not meaningful on flush.
-        let Ok(binder_process) = self.proc(current_task) else { return };
+        let Ok(binder_process) = self.proc() else { return };
         release_after!(binder_process, current_task.kernel(), {
             binder_process.kick_all_threads()
         });
@@ -321,7 +315,7 @@ impl RemoteBinderConnection {
         vmo: fidl::Vmo,
         mapped_address: u64,
     ) -> Result<(), Errno> {
-        let binder_process = self.binder_connection.proc(current_task)?;
+        let binder_process = self.binder_connection.proc()?;
         release_after!(binder_process, current_task.kernel(), {
             binder_process.map_external_vmo(vmo, mapped_address)
         })
@@ -336,7 +330,7 @@ impl RemoteBinderConnection {
         files: Vec<fbinder::FileHandle>,
         vmo: zx::Vmo,
     ) -> Result<Vec<fbinder::IoctlReadWrite>, Errno> {
-        let binder_process = self.binder_connection.proc(current_task)?;
+        let binder_process = self.binder_connection.proc()?;
         release_after!(binder_process, current_task.kernel(), {
             let remote_ioctl =
                 RemoteIoctl { ioctl_reads, ioctl_writes: Cell::new(Vec::new()), vmo };
@@ -1957,6 +1951,11 @@ impl BinderDriver {
         mapping_options: MappingOptions,
         mapping_name: MappingName,
     ) -> Result<UserAddress, Errno> {
+        // Only the process that opened the binder connection may map its buffer.
+        if binder_proc.key != current_task.pid {
+            return error!(EINVAL);
+        }
+
         // Do not support mapping shared memory more than once.
         let mut shared_memory = binder_proc.shared_memory.lock();
         if shared_memory.is_some() {

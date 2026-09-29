@@ -14,7 +14,6 @@
             matchers: [
                 // TODO: https://fxbug.dev/398654361
                 "binder/001",
-                "binder/004",
                 "binder/008",
 
                 // TODO: https://fxbug.dev/398652723
