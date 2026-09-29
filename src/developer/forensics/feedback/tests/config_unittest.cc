@@ -1724,13 +1724,23 @@ TEST_F(InspectConfigTest, ExposeConfig_SupportsUserInitiatedPoweroffsTrue) {
               BuildConfigMatcher({BoolIs(kSupportsUserInitiatedPoweroffsKey, true)}));
 }
 
+TEST_F(InspectConfigTest, ExposeConfig_PersistedLogsTotalSize) {
+  ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .persisted_logs_total_size = StorageSize::Kilobytes(512),
+                              });
+
+  EXPECT_THAT(InspectTree(), BuildConfigMatcher({UintIs(kPersistedLogsTotalSizeKey, 512)}));
+}
+
 TEST_F(InspectConfigTest, ExposeConfig_FeedbackConfigEnableAll) {
   ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .persisted_logs_total_size = StorageSize::Kilobytes(512),
                                   .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
                                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
                               });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
+                                 UintIs(kPersistedLogsTotalSizeKey, 512),
                                  StringIs(kSnapshotPersistenceMaxTmpSizeKey, "1"),
                                  StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1"),
                                  BoolIs(kSupportsUserInitiatedPoweroffsKey, false),
@@ -1739,6 +1749,7 @@ TEST_F(InspectConfigTest, ExposeConfig_FeedbackConfigEnableAll) {
 
 TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
   ExposeConfig(InspectRoot(), FeedbackConfig{
+                                  .persisted_logs_total_size = StorageSize::Kilobytes(512),
                                   .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
                                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
                                   .supports_user_initiated_poweroffs = true,
@@ -1753,6 +1764,7 @@ TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
                               });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
+                                 UintIs(kPersistedLogsTotalSizeKey, 512),
                                  StringIs(kCrashReportUploadPolicyKey, ToString(kConfigEnabled)),
                                  StringIs(kDailyPerProductCrashReportQuotaKey, "1"),
                                  BoolIs(kEnableDataRedactionKey, true),

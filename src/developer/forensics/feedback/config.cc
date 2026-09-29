@@ -335,6 +335,8 @@ void ExposeConfig(inspect::Node& inspect_root, const FeedbackConfig& feedback_co
         node.RecordBool(kSupportsUserInitiatedPoweroffsKey,
                         feedback_config.supports_user_initiated_poweroffs);
 
+        node.RecordUint(kPersistedLogsTotalSizeKey,
+                        feedback_config.persisted_logs_total_size.ToKilobytes());
         node.RecordString(kSnapshotPersistenceMaxTmpSizeKey, snapshot_persistence_tmp_size);
         node.RecordString(kSnapshotPersistenceMaxCacheSizeKey, snapshot_persistence_cache_size);
       });
