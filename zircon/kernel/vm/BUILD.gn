@@ -1205,6 +1205,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_free",
     "cpp_vm_cow_pages_get_ref_counted",
     "cpp_vm_cow_pages_initialize_page_cache",
+    "cpp_vm_cow_pages_replace_page",
     "cpp_vm_cow_pages_replace_page_with_loaned",
     "cpp_vm_cow_pages_should_delay_reuse_on_free",
     "cpp_vm_cow_pages_debug_get_parent",
@@ -1213,6 +1214,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_debug_get_page",
     "cpp_vm_cow_pages_debug_is_empty",
     "cpp_vm_cow_pages_debug_is_high_memory_priority",
+    "cpp_vm_cow_pages_lock_is_held",
     "cpp_vm_cow_pages_debug_get_discardable_tracker",
     "cpp_vm_cow_pages_reclaim_page",
     "cpp_vm_cow_pages_debug_lookup_readable",
@@ -1221,6 +1223,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_deferred_ops_destroy",
     "cpp_vm_cow_pages_add_new_pages_locked",
     "cpp_vm_cow_pages_zero_pages_locked",
+    "cpp_vm_cow_pages_supply_pages_locked",
     "cpp_vm_cow_pages_debug_get_populated_slots_count",
     "cpp_vm_cow_pages_debug_is_parent_content",
     "cpp_vm_cow_pages_can_borrow",
@@ -1254,12 +1257,15 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages_DiscardablePageCounts",
   ]
   type_blocklist = [
+    "AnonymousPageRequest",
     "MultiPageRequest",
     "PmmOptDelayReuse",
+    "SupplyOptions",
     "VmCompressor",
     "VmCompressor_CompressedRef",
     "VmCompressor_CompressResult",
     "VmPageDoublyLinkedList",
+    "VmPageSpliceList",
     "vm_page_t",
     "zx_status_t",
     "VmCowPages_AddPageTransaction",
@@ -1304,19 +1310,25 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   edition = "2024"
 
   deps = [
+    ":anonymous-page-request-bindings",
     ":compressor-bindings",
     ":page-bindings",
     ":page-source-bindings",
     ":pmm-bindings",
+    ":vm-object-bindings",
+    ":vm-page-list-bindings",
     "//sdk/rust/zx-types",
   ]
 
   raw_lines = [
     "#![no_std]",
+    "use anonymous_page_request_bindings::AnonymousPageRequest;",
     "pub use compressor_bindings::VmCompressor;",
     "use page_bindings::vm_page_t;",
     "use page_source_bindings::MultiPageRequest;",
     "pub use pmm_bindings::{PmmOptDelayReuse, VmPageDoublyLinkedList};",
+    "pub use vm_object_bindings::SupplyOptions;",
+    "use vm_page_list_bindings::VmPageSpliceList;",
     "use zx_types::zx_status_t;",
   ]
 }
