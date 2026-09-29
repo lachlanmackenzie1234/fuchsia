@@ -227,7 +227,7 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
         for item in reproxy_log_dir_abs.iterdir():
             if item.is_file() and item.suffix in (".rrpl", ".rpl"):
                 cas_candidates.append(str(item.resolve()))
-    except Exception:
+    except OSError:
         pass
     if cas_candidates:
         rbe_metadata["cas_upload_candidates"] = cas_candidates
@@ -241,6 +241,31 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
             rbe_metadata[pb_name] = str(candidate)
 
     return rbe_metadata
+
+
+def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
+    """Scans the active build invocation's log directory for rsproxy diagnostic logs.
+
+    Args:
+        log_dir: Path to the active build invocation's log directory.
+
+    Returns:
+        A dictionary containing a "diagnostic_logs" key mapped to a
+        { filename -> filepath } dictionary of rsproxy diagnostic log
+        files, where filename can be one of `rsproxy.{INFO,WARNING,ERROR}`.
+    """
+    resultstore_metadata: JSONObject = {}
+    diagnostic_logs = {}
+
+    for name in ["rsproxy.INFO", "rsproxy.WARNING", "rsproxy.ERROR"]:
+        candidate = log_dir / name
+        if candidate.exists():
+            diagnostic_logs[name] = str(candidate.resolve())
+
+    if diagnostic_logs:
+        resultstore_metadata["diagnostic_logs"] = diagnostic_logs
+
+    return resultstore_metadata
 
 
 def exists(path: pathlib.Path) -> bool:
@@ -948,6 +973,10 @@ class BuildInvocation(object):
         rbe_metadata = _collect_rbe_metadata(log_dir)
         if rbe_metadata:
             metadata["rbe"] = rbe_metadata
+
+        resultstore_metadata = _collect_resultstore_metadata(log_dir)
+        if resultstore_metadata:
+            metadata["resultstore"] = resultstore_metadata
 
         try:
             mkdir(output_path.parent)

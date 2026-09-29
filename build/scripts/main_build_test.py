@@ -1715,6 +1715,12 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             )
             main_build.write_text(reproxy_log_dir / "reproxy_run.rrpl", "rrpl")
 
+            # Create mock rsproxy files
+            main_build.write_text(log_dir / "rsproxy.INFO", "rsproxy info")
+            main_build.write_text(
+                log_dir / "rsproxy.WARNING", "rsproxy warning"
+            )
+
             # Create mock build_profile files
             build_profile_dir = log_dir / "build_profile"
             main_build.mkdir(build_profile_dir)
@@ -1792,6 +1798,18 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             self.assertEqual(
                 data["rbe"]["reproxy_log_pb"],
                 str((reproxy_log_dir / "reproxy_log.pb").resolve()),
+            )
+            # Verify resultstore diagnostic logs
+            self.assertEqual(
+                data["resultstore"]["diagnostic_logs"]["rsproxy.INFO"],
+                str((log_dir / "rsproxy.INFO").resolve()),
+            )
+            self.assertEqual(
+                data["resultstore"]["diagnostic_logs"]["rsproxy.WARNING"],
+                str((log_dir / "rsproxy.WARNING").resolve()),
+            )
+            self.assertNotIn(
+                "rsproxy.ERROR", data["resultstore"]["diagnostic_logs"]
             )
             self.assertEqual(
                 data["build_profile"]["system_profile"],
@@ -2003,6 +2021,39 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                 self.assertIn("build_profile", data)
                 self.assertIn("system_profile", data["build_profile"])
                 self.assertIn("hardware_profile", data["build_profile"])
+
+
+class CollectResultStoreMetadataTest(unittest.TestCase):
+    def test_collect_resultstore_metadata_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+            metadata = main_build._collect_resultstore_metadata(log_dir)
+            self.assertEqual(metadata, {})
+
+    def test_collect_resultstore_metadata_with_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+
+            # Create mock rsproxy files
+            rsproxy_info = log_dir / "rsproxy.INFO"
+            rsproxy_err = log_dir / "rsproxy.ERROR"
+            main_build.write_text(rsproxy_info, "info log")
+            main_build.write_text(rsproxy_err, "error log")
+
+            metadata = main_build._collect_resultstore_metadata(log_dir)
+
+            self.assertIn("diagnostic_logs", metadata)
+            diagnostic_logs = metadata["diagnostic_logs"]
+            assert isinstance(diagnostic_logs, dict)
+            self.assertEqual(
+                diagnostic_logs["rsproxy.INFO"],
+                str(rsproxy_info.resolve()),
+            )
+            self.assertEqual(
+                diagnostic_logs["rsproxy.ERROR"],
+                str(rsproxy_err.resolve()),
+            )
+            self.assertNotIn("rsproxy.WARNING", diagnostic_logs)
 
 
 if __name__ == "__main__":
