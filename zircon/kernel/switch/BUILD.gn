@@ -651,7 +651,6 @@ clippy_lints = [
   "too-many-arguments",
   "type-complexity",
   "unnecessary-cast",
-  "unnecessary-unwrap",
 ]
 foreach(lint, clippy_lints) {
   config("allow-$lint") {

@@ -1008,16 +1008,10 @@ where
                 None
             };
 
-            if rl_child_ns.is_none()
-                || (rl_child_ns.unwrap().rank_parity() == node_ns.rank_parity())
+            if let Some(rl_child_ns) = rl_child_ns
+                && rl_child_ns.rank_parity() != node_ns.rank_parity()
             {
-                // Case #1: single rotation.
-                self.rotate_lr::<RL<LR>>(node, parent);
-                parent_ns.demote_rank();
-                self.observer.record_insert_rotation();
-            } else {
-                // Case #2: double rotation.
-                let rl_child_ns = rl_child_ns.unwrap();
+                // Case #1: double rotation.
                 self.rotate_lr::<LR>(rl_child, node);
                 self.rotate_lr::<RL<LR>>(rl_child, parent);
 
@@ -1025,6 +1019,11 @@ where
                 node_ns.demote_rank();
                 parent_ns.demote_rank();
                 self.observer.record_insert_double_rotation();
+            } else {
+                // Case #2: single rotation.
+                self.rotate_lr::<RL<LR>>(node, parent);
+                parent_ns.demote_rank();
+                self.observer.record_insert_rotation();
             }
         }
     }
