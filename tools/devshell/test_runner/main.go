@@ -2,33 +2,34 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package devshell
+package main
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"testing"
 )
 
 var testscript = flag.String("testscript", "", "test script to execute. Relative paths are relative to the location of the running script. Absolute paths are absolute.")
 var testroot = flag.String("testroot", "", "Root directory of the files needed to execute the test.")
 
 // This is a wrapper for running unit tests.
-func TestExternalScript(t *testing.T) {
+func main() {
+	flag.Parse()
 
 	var (
 		theTest = *testscript
 		theRoot = *testroot
 	)
-	t.Log("Script is", theTest)
 	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
-		t.Errorf("Could not determine execution path: %v", err)
+		fmt.Fprintf(os.Stderr, "Could not determine execution path: %v\n", err)
+		os.Exit(1)
 	}
-	t.Log("Script Dir is ", dir)
 	if !filepath.IsAbs(theTest) {
 		theTest = path.Join(dir, theTest)
 	}
@@ -37,14 +38,20 @@ func TestExternalScript(t *testing.T) {
 	}
 	// Make sure the test is executable.
 	if err := os.Chmod(theTest, 0755); err != nil {
-		t.Errorf("Chmod %v failed: %v", theTest, err)
+		fmt.Fprintf(os.Stderr, "Chmod %v failed: %v\n", theTest, err)
+		os.Exit(1)
 	}
-	t.Log("Running  ", theTest, " in ", theRoot)
 	cmd := exec.Command(theTest)
 	cmd.Dir = theRoot
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Errorf("%v failed: %v", theTest, err)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
+		fmt.Fprintf(os.Stderr, "%v failed: %v\n", theTest, err)
+		os.Exit(1)
 	}
-	t.Log(string(output[:]))
 }
