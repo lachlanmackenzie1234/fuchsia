@@ -175,7 +175,7 @@ p256 = { version = "0.14.0", features = ["ecdh", "pem", "serde"] }
 p256-0_11 = { package = "p256", version = "0.11.1", features = ["ecdh", "pem", "serde"] }
 paste = "1.0.15"
 pathdiff = { version = "0.2.3", features = ["camino"] }
-pem = "3.0.6"
+pem = "4.0.0"
 percent-encoding = "2.3.2"
 pest = "2.9.0"
 pest_derive = "2.9.0"
