@@ -187,19 +187,21 @@ impl RcuReadCounters {
 
         let mut sum = 0usize;
 
-        // This barrier ensures that either a Reader in rcu_read_unlock sees our
-        // advancer.store(WAITING) or we see the Reader's `end` store. If both writes are missed,
-        // we'll sleep here due to seeing active readers and the Reader won't wake us due to seeing
-        // advancer = IDLE.
-        //
-        // With the barrier there are two possibilities:
-        //
-        // i)  A Reader's `end` store is before the barrier. We'll see the end store and consider
-        //     the reader no longer active. We won't seelp
-        // ii) The Reader's `end` store is after the barrier. Then the Reader's advancer
-        //     load is also after the barrier. So then the reader must then observe the WAITING
-        //     that the advancer wrote before the barrier and will wake us.
-        unsafe { zx_membarrier_sync_process_data() };
+        // Pessimistically check if there are active readers and return early if there are any to
+        // avoid emitting a membarrier too frequently. Since this early return only ever returns
+        // `true`, it can't produce a false negative.
+        let mut pre_sum = 0usize;
+        for cpu in 0..num_cpus {
+            let counts = &self.get_state(cpu).counts[index];
+            // SAFETY: Use volatile read to ensure a single instruction loads the data from memory
+            // where it is being written to by another thread without atomic operations.
+            pre_sum = pre_sum
+                .wrapping_sub(unsafe { std::ptr::read_volatile(counts.end.get()) })
+                .wrapping_add(unsafe { std::ptr::read_volatile(counts.begin.get()) });
+        }
+        if pre_sum != 0 {
+            return true;
+        }
 
         // Phase 1: Subtract Ends (read before barrier)
         for cpu in 0..num_cpus {
