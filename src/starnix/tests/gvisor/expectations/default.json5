@@ -746,9 +746,6 @@
                 "ShmTest.ShmInfo",
                 "ShmTest.ShmStat",
 
-                // signalfd_test
-                "Signalfd.RtQueueDeliversPayload",
-
                 // sigaltstack_test - https://fxbug.dev/42159586
                 "SigaltstackTest.ResetByExecve",
 
