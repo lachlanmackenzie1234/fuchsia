@@ -224,6 +224,7 @@ bazel2gn_verification_targets = [
   "//src/sys/lib/fuchsia_backoff:verify_bazel2gn",
   "//src/sys/lib/moniker:verify_bazel2gn",
   "//src/sys/lib/notify-batch-watcher:verify_bazel2gn",
+  "//src/sys/pkg/bin/system-updater/epoch:verify_bazel2gn",
   "//src/sys/pkg/lib/async-generator:verify_bazel2gn",
   "//src/sys/pkg/lib/channel-config:verify_bazel2gn",
   "//src/sys/pkg/lib/context-authenticator:verify_bazel2gn",
