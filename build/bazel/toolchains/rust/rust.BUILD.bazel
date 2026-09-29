@@ -417,7 +417,7 @@ rust_toolchain(
     # that goes into the package, mirroring how GN handles Fuchsia binaries.
     debug_info = _TARGET_DEBUG_INFO,
     dylib_ext = ".so",
-    exec_triple = "riscv64-unknown-fuchsia",
+    exec_triple = "riscv64gc-unknown-fuchsia",
     extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS + [
         # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
         # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
@@ -438,7 +438,7 @@ rust_toolchain(
     staticlib_ext = ".a",
     stdlib_linkflags = [],
     strip_level = _TARGET_STRIP_LEVEL,
-    target_triple = "riscv64-unknown-fuchsia",
+    target_triple = "riscv64gc-unknown-fuchsia",
 )
 
 rust_toolchain_with_build_flags(
