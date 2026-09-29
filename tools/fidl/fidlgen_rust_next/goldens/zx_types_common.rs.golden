@@ -4,7 +4,7 @@
 
 pub mod natural {
 
-    pub type ResultAlias = i32;
+    pub type ResultAlias = ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>;
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(i32)]
@@ -184,7 +184,7 @@ pub mod natural {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ResultProtocolARequest {
-        pub arg: i32,
+        pub arg: ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>,
     }
 
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::ResultProtocolARequest, ___E>
@@ -200,7 +200,7 @@ pub mod natural {
             true
 
                 && <
-                    i32 as ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>
+                    ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status> as ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -319,9 +319,13 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <i32 as ::fidl_next::FromWire<::fidl_next::wire::Int32>>::COPY_OPTIMIZATION
-                    .is_enabled(),
-            )
+            true
+
+                && <
+                    ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status> as ::fidl_next::FromWire<::fidl_next::wire::fuchsia::StatusResult>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -340,7 +344,7 @@ pub mod natural {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(C)]
     pub struct ResultProtocolAResponse {
-        pub result: i32,
+        pub result: ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>,
     }
 
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::ResultProtocolAResponse, ___E>
@@ -356,7 +360,7 @@ pub mod natural {
             true
 
                 && <
-                    i32 as ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>
+                    ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status> as ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
@@ -476,9 +480,13 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <i32 as ::fidl_next::FromWire<::fidl_next::wire::Int32>>::COPY_OPTIMIZATION
-                    .is_enabled(),
-            )
+            true
+
+                && <
+                    ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status> as ::fidl_next::FromWire<::fidl_next::wire::fuchsia::StatusResult>
+                >::COPY_OPTIMIZATION.is_enabled()
+
+        )
         };
 
         #[inline]
@@ -809,11 +817,12 @@ pub mod natural {
 
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ResultStruct {
-        pub result: i32,
+        pub result: ::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>,
 
-        pub result_array: [i32; 10],
+        pub result_array: [::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>; 10],
 
-        pub result_vector: ::std::vec::Vec<i32>,
+        pub result_vector:
+            ::std::vec::Vec<::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>>,
     }
 
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::ResultStruct<'static>, ___E> for ResultStruct
@@ -1174,11 +1183,16 @@ pub mod natural {
 
     #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ResultTable {
-        pub result: ::core::option::Option<i32>,
+        pub result:
+            ::core::option::Option<::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>>,
 
-        pub result_array: ::core::option::Option<[i32; 10]>,
+        pub result_array: ::core::option::Option<
+            [::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>; 10],
+        >,
 
-        pub result_vector: ::core::option::Option<::std::vec::Vec<i32>>,
+        pub result_vector: ::core::option::Option<
+            ::std::vec::Vec<::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>>,
+        >,
     }
 
     impl ResultTable {
@@ -1226,7 +1240,10 @@ pub mod natural {
                     3 => {
                         if let Some(value) = self.result_vector.take() {
                             ::fidl_next::wire::Envelope::encode_value::<
-                                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>,
+                                ::fidl_next::wire::Vector<
+                                    'static,
+                                    ::fidl_next::wire::fuchsia::StatusResult,
+                                >,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, (4294967295, ())
@@ -1239,7 +1256,7 @@ pub mod natural {
                     2 => {
                         if let Some(value) = self.result_array.take() {
                             ::fidl_next::wire::Envelope::encode_value::<
-                                [::fidl_next::wire::Int32; 10],
+                                [::fidl_next::wire::fuchsia::StatusResult; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
@@ -1252,7 +1269,7 @@ pub mod natural {
                     1 => {
                         if let Some(value) = self.result.take() {
                             ::fidl_next::wire::Envelope::encode_value::<
-                                ::fidl_next::wire::Int32,
+                                ::fidl_next::wire::fuchsia::StatusResult,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
@@ -1303,7 +1320,10 @@ pub mod natural {
                     3 => {
                         if let Some(value) = &self.result_vector {
                             ::fidl_next::wire::Envelope::encode_value::<
-                                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>,
+                                ::fidl_next::wire::Vector<
+                                    'static,
+                                    ::fidl_next::wire::fuchsia::StatusResult,
+                                >,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, (4294967295, ())
@@ -1316,7 +1336,7 @@ pub mod natural {
                     2 => {
                         if let Some(value) = &self.result_array {
                             ::fidl_next::wire::Envelope::encode_value::<
-                                [::fidl_next::wire::Int32; 10],
+                                [::fidl_next::wire::fuchsia::StatusResult; 10],
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
@@ -1329,7 +1349,7 @@ pub mod natural {
                     1 => {
                         if let Some(value) = &self.result {
                             ::fidl_next::wire::Envelope::encode_value::<
-                                ::fidl_next::wire::Int32,
+                                ::fidl_next::wire::fuchsia::StatusResult,
                                 ___E,
                             >(
                                 value, preallocated.encoder, &mut out, ()
@@ -1364,23 +1384,27 @@ pub mod natural {
             let result_vector = wire_.table.get(3);
 
             Self {
+                result: result.map(|envelope| {
+                    ::fidl_next::FromWire::from_wire(unsafe {
+                        envelope.read_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
+                    })
+                }),
 
+                result_array: result_array.map(|envelope| {
+                    ::fidl_next::FromWire::from_wire(unsafe {
+                        envelope.read_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
+                    })
+                }),
 
-                result: result.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<::fidl_next::wire::Int32>() }
-                )),
-
-
-                result_array: result_array.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<[::fidl_next::wire::Int32; 10]>() }
-                )),
-
-
-                result_vector: result_vector.map(|envelope| ::fidl_next::FromWire::from_wire(
-                    unsafe { envelope.read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>() }
-                )),
-
-        }
+                result_vector: result_vector.map(|envelope| {
+                    ::fidl_next::FromWire::from_wire(unsafe {
+                        envelope.read_unchecked::<::fidl_next::wire::Vector<
+                                'de,
+                                ::fidl_next::wire::fuchsia::StatusResult,
+                            >>()
+                    })
+                }),
+            }
         }
     }
 
@@ -1388,26 +1412,27 @@ pub mod natural {
         #[inline]
         fn from_wire_ref(wire: &crate::wire::ResultTable<'de>) -> Self {
             Self {
+                result: wire.table.get(1).map(|envelope| {
+                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                        envelope.deref_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
+                    })
+                }),
 
+                result_array: wire.table.get(2).map(|envelope| {
+                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                        envelope.deref_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
+                    })
+                }),
 
-                result: wire.table.get(1)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<::fidl_next::wire::Int32>() }
-                    )),
-
-
-                result_array: wire.table.get(2)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<[::fidl_next::wire::Int32; 10]>() }
-                    )),
-
-
-                result_vector: wire.table.get(3)
-                    .map(|envelope| ::fidl_next::FromWireRef::from_wire_ref(
-                        unsafe { envelope.deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>() }
-                    )),
-
-        }
+                result_vector: wire.table.get(3).map(|envelope| {
+                    ::fidl_next::FromWireRef::from_wire_ref(unsafe {
+                        envelope.deref_unchecked::<::fidl_next::wire::Vector<
+                                'de,
+                                ::fidl_next::wire::fuchsia::StatusResult,
+                            >>()
+                    })
+                }),
+            }
         }
     }
 
@@ -1653,11 +1678,11 @@ pub mod natural {
 
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum ResultUnion {
-        Result(i32),
+        Result(::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>),
 
-        ResultArray([i32; 10]),
+        ResultArray([::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>; 10]),
 
-        ResultVector(::std::vec::Vec<i32>),
+        ResultVector(::std::vec::Vec<::core::result::Result<(), ::fidl_next::fuchsia::zx::Status>>),
 
         UnknownOrdinal_(u64),
     }
@@ -1689,20 +1714,20 @@ pub mod natural {
             match self {
                 Self::Result(value) => ::fidl_next::wire::Union::encode_as::<
                     ___E,
-                    ::fidl_next::wire::Int32,
+                    ::fidl_next::wire::fuchsia::StatusResult,
                 >(value, 1, encoder, raw, ())?,
 
                 Self::ResultArray(value) => ::fidl_next::wire::Union::encode_as::<
                     ___E,
-                    [::fidl_next::wire::Int32; 10],
+                    [::fidl_next::wire::fuchsia::StatusResult; 10],
                 >(value, 2, encoder, raw, ())?,
 
-                Self::ResultVector(value) => {
-                    ::fidl_next::wire::Union::encode_as::<
-                        ___E,
-                        ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>,
-                    >(value, 3, encoder, raw, (4294967295, ()))?
-                }
+                Self::ResultVector(value) => ::fidl_next::wire::Union::encode_as::<
+                    ___E,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::StatusResult>,
+                >(
+                    value, 3, encoder, raw, (4294967295, ())
+                )?,
 
                 Self::UnknownOrdinal_(ordinal) => {
                     return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
@@ -1731,20 +1756,20 @@ pub mod natural {
             match self {
                 ResultUnion::Result(value) => ::fidl_next::wire::Union::encode_as::<
                     ___E,
-                    ::fidl_next::wire::Int32,
+                    ::fidl_next::wire::fuchsia::StatusResult,
                 >(value, 1, encoder, raw, ())?,
 
                 ResultUnion::ResultArray(value) => ::fidl_next::wire::Union::encode_as::<
                     ___E,
-                    [::fidl_next::wire::Int32; 10],
+                    [::fidl_next::wire::fuchsia::StatusResult; 10],
                 >(value, 2, encoder, raw, ())?,
 
-                ResultUnion::ResultVector(value) => {
-                    ::fidl_next::wire::Union::encode_as::<
-                        ___E,
-                        ::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>,
-                    >(value, 3, encoder, raw, (4294967295, ()))?
-                }
+                ResultUnion::ResultVector(value) => ::fidl_next::wire::Union::encode_as::<
+                    ___E,
+                    ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::StatusResult>,
+                >(
+                    value, 3, encoder, raw, (4294967295, ())
+                )?,
 
                 ResultUnion::UnknownOrdinal_(ordinal) => {
                     return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(*ordinal as usize));
@@ -1814,18 +1839,18 @@ pub mod natural {
             let wire = ::core::mem::ManuallyDrop::new(wire);
             match wire.raw.ordinal() {
                 1 => Self::Result(::fidl_next::FromWire::from_wire(unsafe {
-                    wire.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                    wire.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
                 })),
 
                 2 => Self::ResultArray(::fidl_next::FromWire::from_wire(unsafe {
-                    wire.raw.get().read_unchecked::<[::fidl_next::wire::Int32; 10]>()
+                    wire.raw
+                        .get()
+                        .read_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
                 })),
 
-                3 => {
-                    Self::ResultVector(::fidl_next::FromWire::from_wire(unsafe {
-                        wire.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>()
-                    }))
-                }
+                3 => Self::ResultVector(::fidl_next::FromWire::from_wire(unsafe {
+                    wire.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>>()
+                })),
 
                 ord => return Self::UnknownOrdinal_(ord as u64),
             }
@@ -1837,15 +1862,17 @@ pub mod natural {
         fn from_wire_ref(wire: &crate::wire::ResultUnion<'de>) -> Self {
             match wire.raw.ordinal() {
                 1 => Self::Result(::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                    wire.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
+                    wire.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
                 })),
 
                 2 => Self::ResultArray(::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                    wire.raw.get().deref_unchecked::<[::fidl_next::wire::Int32; 10]>()
+                    wire.raw
+                        .get()
+                        .deref_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
                 })),
 
                 3 => Self::ResultVector(::fidl_next::FromWireRef::from_wire_ref(unsafe {
-                    wire.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>()
+                    wire.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>>()
                 })),
 
                 ord => return Self::UnknownOrdinal_(ord as u64),
@@ -4311,7 +4338,7 @@ pub mod natural {
 pub mod wire {
 
     /// The wire type corresponding to [`ResultAlias`](crate::natural::ResultAlias).
-    pub type ResultAlias = ::fidl_next::wire::Int32;
+    pub type ResultAlias = ::fidl_next::wire::fuchsia::StatusResult;
 
     /// The wire type corresponding to [`ResultEnum`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4437,7 +4464,7 @@ pub mod wire {
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct ResultProtocolARequest {
-        pub arg: ::fidl_next::wire::Int32,
+        pub arg: ::fidl_next::wire::fuchsia::StatusResult,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ResultProtocolARequest>(), 4);
@@ -4504,7 +4531,7 @@ pub mod wire {
     #[derive(Clone, Debug)]
     #[repr(C)]
     pub struct ResultProtocolAResponse {
-        pub result: ::fidl_next::wire::Int32,
+        pub result: ::fidl_next::wire::fuchsia::StatusResult,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ResultProtocolAResponse>(), 4);
@@ -4705,11 +4732,11 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ResultStruct<'de> {
-        pub result: ::fidl_next::wire::Int32,
+        pub result: ::fidl_next::wire::fuchsia::StatusResult,
 
-        pub result_array: [::fidl_next::wire::Int32; 10],
+        pub result_array: [::fidl_next::wire::fuchsia::StatusResult; 10],
 
-        pub result_vector: ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>,
+        pub result_vector: ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ResultStruct<'_>>(), 64);
@@ -4915,19 +4942,18 @@ pub mod wire {
 
     impl<'de> Drop for ResultTable<'de> {
         fn drop(&mut self) {
-            let _ = self
-                .table
-                .get(1)
-                .map(|envelope| unsafe { envelope.read_unchecked::<::fidl_next::wire::Int32>() });
+            let _ = self.table.get(1).map(|envelope| unsafe {
+                envelope.read_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
+            });
 
             let _ = self.table.get(2).map(|envelope| unsafe {
-                envelope.read_unchecked::<[::fidl_next::wire::Int32; 10]>()
+                envelope.read_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
             });
 
-            let _ = self.table.get(3).map(|envelope| unsafe {
-                envelope
-                    .read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>()
-            });
+            let _ = self.table.get(3)
+                .map(|envelope| unsafe {
+                    envelope.read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>>()
+                });
         }
     }
 
@@ -4968,11 +4994,10 @@ pub mod wire {
                     0 => unsafe { ::core::hint::unreachable_unchecked() },
 
                     1 => {
-                        ::fidl_next::wire::Envelope::decode_as::<___D, ::fidl_next::wire::Int32>(
-                            slot.as_mut(),
-                            decoder,
-                            (),
-                        )?;
+                        ::fidl_next::wire::Envelope::decode_as::<
+                            ___D,
+                            ::fidl_next::wire::fuchsia::StatusResult,
+                        >(slot.as_mut(), decoder, ())?;
 
                         Ok(())
                     }
@@ -4980,7 +5005,7 @@ pub mod wire {
                     2 => {
                         ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            [::fidl_next::wire::Int32; 10],
+                            [::fidl_next::wire::fuchsia::StatusResult; 10],
                         >(slot.as_mut(), decoder, ())?;
 
                         Ok(())
@@ -4989,7 +5014,10 @@ pub mod wire {
                     3 => {
                         ::fidl_next::wire::Envelope::decode_as::<
                             ___D,
-                            ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>,
+                            ::fidl_next::wire::Vector<
+                                'de,
+                                ::fidl_next::wire::fuchsia::StatusResult,
+                            >,
                         >(slot.as_mut(), decoder, (4294967295, ()))?;
 
                         Ok(())
@@ -5002,35 +5030,41 @@ pub mod wire {
     }
 
     impl<'de> ResultTable<'de> {
-        pub fn result(&self) -> ::core::option::Option<&::fidl_next::wire::Int32> {
+        pub fn result(&self) -> ::core::option::Option<&::fidl_next::wire::fuchsia::StatusResult> {
             unsafe { Some(self.table.get(1)?.deref_unchecked()) }
         }
 
-        pub fn take_result(&mut self) -> ::core::option::Option<::fidl_next::wire::Int32> {
+        pub fn take_result(
+            &mut self,
+        ) -> ::core::option::Option<::fidl_next::wire::fuchsia::StatusResult> {
             unsafe { Some(self.table.get_mut(1)?.take_unchecked()) }
         }
 
-        pub fn result_array(&self) -> ::core::option::Option<&[::fidl_next::wire::Int32; 10]> {
+        pub fn result_array(
+            &self,
+        ) -> ::core::option::Option<&[::fidl_next::wire::fuchsia::StatusResult; 10]> {
             unsafe { Some(self.table.get(2)?.deref_unchecked()) }
         }
 
         pub fn take_result_array(
             &mut self,
-        ) -> ::core::option::Option<[::fidl_next::wire::Int32; 10]> {
+        ) -> ::core::option::Option<[::fidl_next::wire::fuchsia::StatusResult; 10]> {
             unsafe { Some(self.table.get_mut(2)?.take_unchecked()) }
         }
 
         pub fn result_vector(
             &self,
-        ) -> ::core::option::Option<&::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>
-        {
+        ) -> ::core::option::Option<
+            &::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>,
+        > {
             unsafe { Some(self.table.get(3)?.deref_unchecked()) }
         }
 
         pub fn take_result_vector(
             &mut self,
-        ) -> ::core::option::Option<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>
-        {
+        ) -> ::core::option::Option<
+            ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>,
+        > {
             unsafe { Some(self.table.get_mut(3)?.take_unchecked()) }
         }
     }
@@ -5208,18 +5242,22 @@ pub mod wire {
         fn drop(&mut self) {
             match self.raw.ordinal() {
                 1 => {
-                    let _ = unsafe { self.raw.get().read_unchecked::<::fidl_next::wire::Int32>() };
+                    let _ = unsafe {
+                        self.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
+                    };
                 }
 
                 2 => {
                     let _ = unsafe {
-                        self.raw.get().read_unchecked::<[::fidl_next::wire::Int32; 10]>()
+                        self.raw
+                            .get()
+                            .read_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
                     };
                 }
 
                 3 => {
                     let _ = unsafe {
-                        self.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>()
+                        self.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>>()
                     };
                 }
 
@@ -5251,21 +5289,23 @@ pub mod wire {
 
     pub mod result_union {
         pub enum Ref<'de> {
-            Result(&'de ::fidl_next::wire::Int32),
+            Result(&'de ::fidl_next::wire::fuchsia::StatusResult),
 
-            ResultArray(&'de [::fidl_next::wire::Int32; 10]),
+            ResultArray(&'de [::fidl_next::wire::fuchsia::StatusResult; 10]),
 
-            ResultVector(&'de ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>),
+            ResultVector(
+                &'de ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>,
+            ),
 
             UnknownOrdinal_(u64),
         }
 
         pub enum Value<'de> {
-            Result(::fidl_next::wire::Int32),
+            Result(::fidl_next::wire::fuchsia::StatusResult),
 
-            ResultArray([::fidl_next::wire::Int32; 10]),
+            ResultArray([::fidl_next::wire::fuchsia::StatusResult; 10]),
 
-            ResultVector(::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>),
+            ResultVector(::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>),
 
             UnknownOrdinal_(u64),
         }
@@ -5275,18 +5315,18 @@ pub mod wire {
         pub fn as_ref(&self) -> crate::wire::result_union::Ref<'_> {
             match self.raw.ordinal() {
                 1 => crate::wire::result_union::Ref::Result(unsafe {
-                    self.raw.get().deref_unchecked::<::fidl_next::wire::Int32>()
+                    self.raw.get().deref_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
                 }),
 
                 2 => crate::wire::result_union::Ref::ResultArray(unsafe {
-                    self.raw.get().deref_unchecked::<[::fidl_next::wire::Int32; 10]>()
+                    self.raw
+                        .get()
+                        .deref_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
                 }),
 
-                3 => {
-                    crate::wire::result_union::Ref::ResultVector(unsafe {
-                        self.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'_, ::fidl_next::wire::Int32>>()
-                    })
-                }
+                3 => crate::wire::result_union::Ref::ResultVector(unsafe {
+                    self.raw.get().deref_unchecked::<::fidl_next::wire::Vector<'_, ::fidl_next::wire::fuchsia::StatusResult>>()
+                }),
 
                 unknown => crate::wire::result_union::Ref::UnknownOrdinal_(unknown),
             }
@@ -5297,18 +5337,18 @@ pub mod wire {
 
             match this.raw.ordinal() {
                 1 => crate::wire::result_union::Value::Result(unsafe {
-                    this.raw.get().read_unchecked::<::fidl_next::wire::Int32>()
+                    this.raw.get().read_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
                 }),
 
                 2 => crate::wire::result_union::Value::ResultArray(unsafe {
-                    this.raw.get().read_unchecked::<[::fidl_next::wire::Int32; 10]>()
+                    this.raw
+                        .get()
+                        .read_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
                 }),
 
-                3 => {
-                    crate::wire::result_union::Value::ResultVector(unsafe {
-                        this.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>>()
-                    })
-                }
+                3 => crate::wire::result_union::Value::ResultVector(unsafe {
+                    this.raw.get().read_unchecked::<::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>>()
+                }),
 
                 unknown => crate::wire::result_union::Value::UnknownOrdinal_(unknown),
             }
@@ -5327,21 +5367,19 @@ pub mod wire {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::wire::Union::decode_as::<___D, ::fidl_next::wire::Int32>(
-                    raw,
-                    decoder,
-                    (),
-                )?,
+                1 => ::fidl_next::wire::Union::decode_as::<
+                    ___D,
+                    ::fidl_next::wire::fuchsia::StatusResult,
+                >(raw, decoder, ())?,
 
-                2 => ::fidl_next::wire::Union::decode_as::<___D, [::fidl_next::wire::Int32; 10]>(
-                    raw,
-                    decoder,
-                    (),
-                )?,
+                2 => ::fidl_next::wire::Union::decode_as::<
+                    ___D,
+                    [::fidl_next::wire::fuchsia::StatusResult; 10],
+                >(raw, decoder, ())?,
 
                 3 => ::fidl_next::wire::Union::decode_as::<
                     ___D,
-                    ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>,
+                    ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>,
                 >(raw, decoder, (4294967295, ()))?,
 
                 _ => ::fidl_next::wire::Union::decode_unknown(raw, decoder)?,
@@ -5354,16 +5392,22 @@ pub mod wire {
     impl<'de> ::core::fmt::Debug for ResultUnion<'de> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             match self.raw.ordinal() {
-                1 => unsafe { self.raw.get().deref_unchecked::<::fidl_next::wire::Int32>().fmt(f) },
-                2 => unsafe {
-                    self.raw.get().deref_unchecked::<[::fidl_next::wire::Int32; 10]>().fmt(f)
-                },
-                3 => unsafe {
+                1 => unsafe {
                     self.raw
                         .get()
-                        .deref_unchecked::<::fidl_next::wire::Vector<'_, ::fidl_next::wire::Int32>>(
-                        )
+                        .deref_unchecked::<::fidl_next::wire::fuchsia::StatusResult>()
                         .fmt(f)
+                },
+                2 => unsafe {
+                    self.raw
+                        .get()
+                        .deref_unchecked::<[::fidl_next::wire::fuchsia::StatusResult; 10]>()
+                        .fmt(f)
+                },
+                3 => unsafe {
+                    self.raw.get().deref_unchecked::<
+                            ::fidl_next::wire::Vector<'_, ::fidl_next::wire::fuchsia::StatusResult>
+                        >().fmt(f)
                 },
                 _ => unsafe { ::core::hint::unreachable_unchecked() },
             }
@@ -6876,21 +6920,19 @@ pub mod wire_optional {
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::wire::Union::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::wire::Union::decode_as::<___D, ::fidl_next::wire::Int32>(
-                    raw,
-                    decoder,
-                    (),
-                )?,
+                1 => ::fidl_next::wire::Union::decode_as::<
+                    ___D,
+                    ::fidl_next::wire::fuchsia::StatusResult,
+                >(raw, decoder, ())?,
 
-                2 => ::fidl_next::wire::Union::decode_as::<___D, [::fidl_next::wire::Int32; 10]>(
-                    raw,
-                    decoder,
-                    (),
-                )?,
+                2 => ::fidl_next::wire::Union::decode_as::<
+                    ___D,
+                    [::fidl_next::wire::fuchsia::StatusResult; 10],
+                >(raw, decoder, ())?,
 
                 3 => ::fidl_next::wire::Union::decode_as::<
                     ___D,
-                    ::fidl_next::wire::Vector<'de, ::fidl_next::wire::Int32>,
+                    ::fidl_next::wire::Vector<'de, ::fidl_next::wire::fuchsia::StatusResult>,
                 >(raw, decoder, (4294967295, ()))?,
 
                 0 => ::fidl_next::wire::Union::decode_absent(raw)?,
@@ -7218,7 +7260,7 @@ pub mod generic {
         for ResultProtocolARequest<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>,
     {
         #[inline]
         fn encode(
@@ -7249,7 +7291,7 @@ pub mod generic {
         for ResultProtocolAResponse<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>,
     {
         #[inline]
         fn encode(
@@ -7347,9 +7389,12 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
-        T0: ::fidl_next::Encode<::fidl_next::wire::Int32, ___E>,
-        T1: ::fidl_next::Encode<[::fidl_next::wire::Int32; 10], ___E>,
-        T2: ::fidl_next::Encode<::fidl_next::wire::Vector<'static, ::fidl_next::wire::Int32>, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::wire::fuchsia::StatusResult, ___E>,
+        T1: ::fidl_next::Encode<[::fidl_next::wire::fuchsia::StatusResult; 10], ___E>,
+        T2: ::fidl_next::Encode<
+                ::fidl_next::wire::Vector<'static, ::fidl_next::wire::fuchsia::StatusResult>,
+                ___E,
+            >,
     {
         #[inline]
         fn encode(
@@ -7700,7 +7745,7 @@ pub mod result_protocol {
         type Response = ::fidl_next::wire::Result<
             'static,
             crate::wire::ResultProtocolAResponse,
-            ::fidl_next::wire::Int32,
+            ::fidl_next::wire::fuchsia::StatusResult,
         >;
     }
 
@@ -7786,7 +7831,7 @@ pub mod result_protocol {
                 &self,
 
                 arg: impl ::fidl_next::Encode<
-                    ::fidl_next::wire::Int32,
+                    ::fidl_next::wire::fuchsia::StatusResult,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::A, ___T>
