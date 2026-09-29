@@ -29,6 +29,7 @@ group("tests") {
     "fidl:tests",
     "go:tests",
     "licenses:tests",
+    "packages:tests",
     "profile:tests",
     "python:tests($host_toolchain)",
     "rbe:tests",
