@@ -8,6 +8,12 @@
 #include "sdk/lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gic/arm-gicv2.h"
 #include "vim3-iommu.h"
 
+#define VDEC_CBUS_RESET_OFFSET 0x1000
+#define VDEC_CBUS_RESET_LENGTH 0x1000
+#define VDEC_CBUS_DEMUX_OFFSET 0x6000
+#define VDEC_CBUS_DEMUX_LENGTH 0x1000
+#define VDEC_CBUS_PARSER_OFFSET 0xe000
+#define VDEC_CBUS_PARSER_LENGTH 0x1000
 #define VDEC_HIUBUS_LENGTH 0x1000
 #define VDEC_AOBUS_LENGTH 0x1000
 
@@ -32,8 +38,10 @@
 
 		video-decoder@ffd00000 {
 			compatible = "amlogic,g12b-vdec";
-			/* Map only the first page (0x1000) of HIU and AOBUS to limit MMIO access privilege */
-			reg = <0x0 A311D_FULL_CBUS_BASE 0x0 A311D_FULL_CBUS_LENGTH>,
+			/* Map separate page-aligned regions for CBUS Reset, Demux, Parser, HIU, and AOBUS to limit MMIO access privilege */
+			reg = <0x0 (A311D_FULL_CBUS_BASE + VDEC_CBUS_RESET_OFFSET) 0x0 VDEC_CBUS_RESET_LENGTH>,
+				<0x0 (A311D_FULL_CBUS_BASE + VDEC_CBUS_DEMUX_OFFSET) 0x0 VDEC_CBUS_DEMUX_LENGTH>,
+				<0x0 (A311D_FULL_CBUS_BASE + VDEC_CBUS_PARSER_OFFSET) 0x0 VDEC_CBUS_PARSER_LENGTH>,
 				<0x0 A311D_DOS_BASE 0x0 A311D_DOS_LENGTH>,
 				<0x0 A311D_HIU_BASE 0x0 VDEC_HIUBUS_LENGTH>,
 				<0x0 A311D_AOBUS_BASE 0x0 VDEC_AOBUS_LENGTH>,

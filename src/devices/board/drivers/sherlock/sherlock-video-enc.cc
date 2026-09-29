@@ -30,10 +30,6 @@ constexpr uint64_t kHiubusLength = 0x1000;
 
 static const std::vector<fpbus::Mmio> sherlock_video_enc_mmios{
     {{
-        .base = T931_CBUS_BASE,
-        .length = T931_CBUS_LENGTH,
-    }},
-    {{
         .base = T931_DOS_BASE,
         .length = T931_DOS_LENGTH,
     }},
