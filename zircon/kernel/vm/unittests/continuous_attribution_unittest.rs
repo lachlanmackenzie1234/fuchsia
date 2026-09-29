@@ -7,7 +7,6 @@
 #[unittest::suite(name = "continuous_attribution_rust")]
 mod tests {
     use crate::vm::attribution;
-    use crate::vm::compression::CompressorGuard;
     use crate::vm::continuous_attribution_tracker::{
         ContinuousAttributionTracker, StubContinuousAttributionTracker,
     };
@@ -576,7 +575,7 @@ mod tests {
         // Returning early here would discard any failure recorded above, so only skip the part of
         // the test that needs a compressor.
         if let Some(compression) = pmm::node().get_page_compression() {
-            stack_pin_init!(let compressor = CompressorGuard::new(compression));
+            stack_pin_init!(let compressor = compression.acquire_compressor());
             assert_ok!(compressor.as_mut().get().arm());
 
             // SAFETY: `page` is the page committed at offset 0 of `vmo`.
@@ -851,7 +850,7 @@ mod tests {
                 return true;
             };
 
-            stack_pin_init!(let compressor = CompressorGuard::new(compression));
+            stack_pin_init!(let compressor = compression.acquire_compressor());
             assert_ok!(compressor.as_mut().get().arm());
 
             // SAFETY: `page` is the page at offset 0 of `hidden_parent`.

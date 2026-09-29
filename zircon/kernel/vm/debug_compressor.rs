@@ -8,7 +8,6 @@ use crate::kernel::deadline::Deadline;
 use crate::kernel::event::AutounsignalEvent;
 use crate::kernel::thread::{self, AutoPreemptDisabler, ThreadPtr};
 use crate::platform_rs::timer::InstantMono;
-use crate::vm::compression::CompressorGuard;
 use crate::vm::page::VmPagePtr;
 use crate::vm::pmm;
 use crate::vm::vm_cow_pages::{self, VmCowPages};
@@ -95,7 +94,7 @@ zr::static_assert!(
 
 impl DebugCompressor {
     /// Creates an in-place initializer for `DebugCompressor`.
-    fn init() -> impl PinInit<Self, core::convert::Infallible> {
+    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
             lock <- ksync::KSpinlock::init(),
             thread: None.into(),
@@ -282,7 +281,7 @@ impl DebugCompressor {
 
             // Acquire the compression instance, cannot keep this acquired between runs to avoid starving
             // any legitimate compression efforts.
-            stack_pin_init!(let instance = CompressorGuard::new(compression));
+            stack_pin_init!(let instance = compression.acquire_compressor());
 
             // Work through all items in the list and attempt to compress them.
             while let Some(entry) = self.pop() {
