@@ -30,7 +30,7 @@ commit.
       frozen data models (18), grant resolution with the TOML store
       (10.3-10.5), and plan validation, canonicalization, and digests
       carrying the reserved takeover keys (11).
-- [ ] CS5 `[driver-lab] Evidence recording + proxy transport
+- [x] CS5 `[driver-lab] Evidence recording + proxy transport
       abstraction` -- hashed manifest-last evidence bundles (16) and
       the wire-contract-shaped transport seam with the fake proxy
       target (12, 20.3).
