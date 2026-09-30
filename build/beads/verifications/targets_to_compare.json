@@ -6,6 +6,12 @@
         "type": "rustc"
     },
     {
+        "gn": "//build/beads/verifications/rust:beads_rust_example_bin_with_linker_args.actual(//build/toolchain:host_x64)",
+        "bazel": "//build/beads/verifications/rust:beads_rust_example_bin_with_linker_args",
+        "bazel_config": "host",
+        "type": "rustc"
+    },
+    {
         "gn": "//build/beads/verifications/rust:beads_rust_example_lib.actual(//build/toolchain:host_x64)",
         "bazel": "//build/beads/verifications/rust:beads_rust_example_lib",
         "bazel_config": "host",

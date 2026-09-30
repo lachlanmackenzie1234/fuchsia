@@ -19,3 +19,19 @@ rustc_binary("beads_rust_example_bin") {
   sources = [ "src/main.rs" ]
   deps = [ ":beads_rust_example_lib" ]
 }
+
+config("beads_rust_linker_args_config") {
+  rustflags = [
+    "-Clink-arg=-Wl,--build-id=md5",
+    "-Clink-arg=-Wl,--hash-style=sysv",
+  ]
+}
+
+rustc_binary("beads_rust_example_bin_with_linker_args") {
+  name = "beads_rust_example_bin_with_linker_args"
+  edition = "2024"
+  source_root = "src/main.rs"
+  sources = [ "src/main.rs" ]
+  deps = [ ":beads_rust_example_lib" ]
+  configs += [ ":beads_rust_linker_args_config" ]
+}
