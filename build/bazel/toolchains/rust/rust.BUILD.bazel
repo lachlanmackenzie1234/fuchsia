@@ -31,14 +31,17 @@ host_triple = build_config.host_target_triple
 
 # Debug symbols for the prebuilt runtime libraries above, laid out as a
 # .build-id directory in the same way as the prebuilt Clang toolchain.
-filegroup(
-    name = "libstd_debug_build_id",
-    srcs = glob(["lib/debug/.build-id/**"]),
-    visibility = ["//visibility:public"],
-)
-
-# Used as the source search root for the debug symbols above.
-exports_files(["BUILD.bazel"])
+#
+# The directory itself is exported, rather than a glob of its content, because
+# FuchsiaDebugSymbolInfo consumers expect .build-id directories (e.g.
+# `ffx debug symbol-index add` rejects individual files). Bazel tracks the
+# content of source directories used as action inputs.
+#
+# BUILD.bazel is used as the source search root for these debug symbols.
+exports_files([
+    "BUILD.bazel",
+    "lib/debug/.build-id",
+])
 
 # LINT.IfChange
 _HOST_DEBUG_INFO = {

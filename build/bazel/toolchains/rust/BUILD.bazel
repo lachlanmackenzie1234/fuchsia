@@ -30,7 +30,7 @@ filegroup(
 
 filegroup(
     name = "libstd_debug_build_id",
-    srcs = ["@fuchsia_prebuilt_rust//:libstd_debug_build_id"],
+    srcs = ["@fuchsia_prebuilt_rust//:lib/debug/.build-id"],
     visibility = ["//:__subpackages__"],
 )
 

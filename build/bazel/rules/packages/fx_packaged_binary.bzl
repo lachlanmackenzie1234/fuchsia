@@ -102,9 +102,9 @@ def _fx_packaged_binary_impl(ctx):
             for f in ctx.files._rust_libstd_dist
         ]))
         debug_symbol_infos.append(FuchsiaDebugSymbolInfo(build_id_dirs_mapping = {
-            ctx.file._rust_debug_symbols_source_search_root: depset(
-                ctx.files._rust_libstd_debug_build_id,
-            ),
+            ctx.file._rust_debug_symbols_source_search_root: depset([
+                ctx.file._rust_libstd_debug_build_id,
+            ]),
         }))
 
     return [
@@ -164,7 +164,7 @@ _fx_packaged_binary = rule(
         "_rust_libstd_debug_build_id": attr.label(
             doc = "Prebuilt Rust runtime debug symbols, as a .build-id directory.",
             default = "//build/bazel/toolchains/rust:libstd_debug_build_id",
-            allow_files = True,
+            allow_single_file = True,
         ),
         "_rust_debug_symbols_source_search_root": attr.label(
             doc = "A file in the directory used to look up sources for the Rust runtime debug symbols.",
