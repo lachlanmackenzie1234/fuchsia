@@ -15,20 +15,25 @@ mod sizes {
 #[unittest::suite]
 mod aspace_rs {
     use super::sizes::GB;
+    use crate::arch_rs::{
+        KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, USER_ASPACE_BASE, USER_ASPACE_SIZE,
+    };
+    use crate::kernel::thread;
     use crate::kernel::types::VAddr;
     use crate::user_memory::UserMemory;
     use crate::vm::arch_vm_aspace::{
         ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ArchMmuFlags,
     };
-    use crate::vm::pmm;
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm::vaddr_to_paddr;
     use crate::vm::vm_address_region::{self as vmar, MemoryPriority, VmAddressRegionOpChildren};
-    use crate::vm::vm_aspace::{Type, VmAspace, vmm_flag};
+    use crate::vm::vm_aspace::{ShareOpt, Type, VmAspace, vmm_flag};
     use crate::vm::vm_object::{Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
+    use crate::vm::{pmm, vmm};
     use crate::vm_unittests::test_helper::{
-        ARCH_RW_FLAGS, ARCH_RW_USER_FLAGS, fill_and_test, make_committed_pager_vmo,
+        ARCH_RW_FLAGS, ARCH_RW_USER_FLAGS, alloc_user, fill_and_test, fill_and_test_user,
+        make_committed_pager_vmo,
     };
     use core::mem::{MaybeUninit, size_of, size_of_val};
     use fbl::RefPtr;
@@ -36,7 +41,7 @@ mod aspace_rs {
     use page::SIZE as PAGE_SIZE_USIZE;
     use unittest::{
         assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_false, expect_ok,
-        expect_true, unwrap_ok,
+        expect_true, unwrap_ok, unwrap_some,
     };
     use zx_status::Status;
 
@@ -89,6 +94,51 @@ mod aspace_rs {
         expect_ok!(err, "VmAspace::FreeRegion region of memory");
     }
 
+    /// Allocates a new address space and creates a few regions in it, then destroys it.
+    #[test]
+    fn multiple_regions_test() {
+        let alloc_size: usize = 16 * 1024;
+
+        let aspace =
+            unwrap_some!(VmAspace::create(Type::User, c"test aspace"), "VmAspace::Create pointer");
+
+        // SAFETY: Active aspace reference is not invalidated during test.
+        let old_aspace = unsafe { thread::current_active_aspace() };
+        // SAFETY: `aspace` remains valid while active.
+        unsafe { vmm::set_active_aspace(Some(&aspace)) };
+
+        // allocate region 0
+        let ptr0 = unwrap_ok!(
+            alloc_user(&aspace, c"test0", alloc_size),
+            "VmAspace::Alloc region of memory"
+        );
+        // fill with known pattern and test
+        expect_true!(fill_and_test_user(ptr0, alloc_size));
+
+        // allocate region 1
+        let ptr1 = unwrap_ok!(
+            alloc_user(&aspace, c"test1", alloc_size),
+            "VmAspace::Alloc region of memory"
+        );
+        // fill with known pattern and test
+        expect_true!(fill_and_test_user(ptr1, alloc_size));
+
+        // allocate region 2
+        let ptr2 = unwrap_ok!(
+            alloc_user(&aspace, c"test2", alloc_size),
+            "VmAspace::Alloc region of memory"
+        );
+        // fill with known pattern and test
+        expect_true!(fill_and_test_user(ptr2, alloc_size));
+
+        // SAFETY: It is sound to restore the previous address space.
+        unsafe { vmm::set_active_aspace(old_aspace) };
+
+        // free the address space all at once
+        let err = aspace.destroy();
+        expect_ok!(err, "VmAspace::Destroy");
+    }
+
     /// Checks that AllocContiguous fails when missing VMM_FLAG_COMMIT.
     #[test]
     fn vmm_alloc_contiguous_missing_flag_commit_fails() {
@@ -134,6 +184,98 @@ mod aspace_rs {
         let aspace = VmAspace::create(Type::User, c"test aspace").expect("VmAspace::create failed");
         let err = aspace.destroy();
         expect_ok!(err, "VmAspace::Destroy");
+    }
+
+    /// Verifies that creating an address space with out-of-range bounds fails.
+    #[test]
+    fn vmaspace_create_invalid_ranges() {
+        // These are defined in vm_aspace.cc.
+        const GUEST_PHYSICAL_ASPACE_BASE: usize = 0;
+        const GUEST_PHYSICAL_ASPACE_SIZE: usize = 1usize << crate::arch_rs::MMU_GUEST_SIZE_SHIFT;
+
+        // Test when base < valid base.
+        expect_true!(
+            VmAspace::create_with_opts(
+                USER_ASPACE_BASE - 1,
+                4096,
+                Type::User,
+                c"test",
+                ShareOpt::None
+            )
+            .is_none()
+        );
+        expect_true!(
+            VmAspace::create_with_opts(
+                KERNEL_ASPACE_BASE - 1,
+                4096,
+                Type::Kernel,
+                c"test",
+                ShareOpt::None
+            )
+            .is_none()
+        );
+        expect_true!(
+            VmAspace::create_with_opts(
+                GUEST_PHYSICAL_ASPACE_BASE.wrapping_sub(1),
+                4096,
+                Type::GuestPhysical,
+                c"test",
+                ShareOpt::None
+            )
+            .is_none()
+        );
+
+        // Test when base + size exceeds valid range.
+        expect_true!(
+            VmAspace::create_with_opts(
+                USER_ASPACE_BASE,
+                USER_ASPACE_SIZE + 1,
+                Type::User,
+                c"test",
+                ShareOpt::None
+            )
+            .is_none()
+        );
+        expect_true!(
+            VmAspace::create_with_opts(
+                KERNEL_ASPACE_BASE,
+                KERNEL_ASPACE_SIZE + 1,
+                Type::Kernel,
+                c"test",
+                ShareOpt::None
+            )
+            .is_none()
+        );
+        expect_true!(
+            VmAspace::create_with_opts(
+                GUEST_PHYSICAL_ASPACE_BASE,
+                GUEST_PHYSICAL_ASPACE_SIZE + 1,
+                Type::GuestPhysical,
+                c"test",
+                ShareOpt::None
+            )
+            .is_none()
+        );
+    }
+
+    /// Allocates a vm address space object directly, maps something on it, and drops it.
+    #[test]
+    fn vmaspace_alloc_smoke_test() {
+        // Allocates a vm address space object directly, maps something on it,
+        // allows it to go out of scope.
+        let mut aspace = VmAspace::create(Type::User, c"test aspace2");
+
+        let _ptr = unwrap_ok!(
+            alloc_user(aspace.as_ref().unwrap(), c"test", PAGE_SIZE_USIZE),
+            "allocating region\n"
+        );
+
+        // destroy the aspace, which should drop all the internal refs to it
+        let err = aspace.as_ref().unwrap().destroy();
+        expect_ok!(err, "VmAspace::Destroy");
+
+        // drop the ref held by this pointer
+        drop(aspace.take());
     }
 
     /// Tests sparse VM mappings with an empty backing VMO.

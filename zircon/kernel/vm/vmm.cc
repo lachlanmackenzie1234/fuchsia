@@ -28,6 +28,7 @@
 #include <vm/vm.h>
 #include <vm/vm_address_region.h>
 #include <vm/vm_aspace.h>
+#include <vm/vmm_ffi.h>
 
 #include "lib/fxt/serializer.h"
 #include "vm_priv.h"
@@ -254,6 +255,11 @@ STATIC_COMMAND("vmm", "virtual memory manager", &cmd_vmm)
 STATIC_COMMAND_END(vmm)
 
 extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vmm_set_active_aspace(VmAspace* aspace) {
+  vmm_set_active_aspace(aspace);
+}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_vmm_set_active_aspace_normal() {
