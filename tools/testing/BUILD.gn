@@ -9,7 +9,6 @@ group("tests") {
     "resultdb:tests",
     "runtests:tests",
     "tap:tap_tests",
-    "test_filterer:tests",
     "testparser:tests",
   ]
 }
