@@ -195,7 +195,9 @@ class WorktreeMetricsTracker:
         self._save(data)
         return emitted_snapshot
 
-    def _finalize_and_upload(self, data: dict[str, Any], now: float) -> None:
+    def _compute_averages(
+        self, data: dict[str, Any], now: float
+    ) -> tuple[float, dict[str, float]]:
         dt = max(0.0, now - data["last_change_ts"])
         total_accum = data["accumulated_total_seconds"] + (
             data["current_total"] * dt
@@ -210,34 +212,31 @@ class WorktreeMetricsTracker:
             "accumulated_not_built_recently_seconds"
         ] + (data["current_not_built_recently"] * dt)
         duration = max(1.0, now - data["period_start_ts"])
+        averages = {
+            "total": round(total_accum / duration, 2),
+            "leased": round(leased_accum / duration, 2),
+            "built_recently": round(built_recently_accum / duration, 2),
+            "not_built_recently": round(not_built_recently_accum / duration, 2),
+        }
+        return duration, averages
 
-        avg_total = round(total_accum / duration, 2)
-        avg_leased = round(leased_accum / duration, 2)
-        avg_built_recently = round(built_recently_accum / duration, 2)
-        avg_not_built_recently = round(not_built_recently_accum / duration, 2)
-        min_total = data["min_total"]
-        max_total = data["max_total"]
-        min_leased = data["min_leased"]
-        max_leased = data["max_leased"]
-        min_built_recently = data["min_built_recently"]
-        max_built_recently = data["max_built_recently"]
-        min_not_built_recently = data["min_not_built_recently"]
-        max_not_built_recently = data["max_not_built_recently"]
+    def _finalize_and_upload(self, data: dict[str, Any], now: float) -> None:
+        _, averages = self._compute_averages(data, now)
 
         label = json.dumps(
             {
-                "at": avg_total,
-                "mnt": min_total,
-                "mxt": max_total,
-                "al": avg_leased,
-                "mnl": min_leased,
-                "mxl": max_leased,
-                "abr": avg_built_recently,
-                "mnbr": min_built_recently,
-                "mxbr": max_built_recently,
-                "anbr": avg_not_built_recently,
-                "mnnbr": min_not_built_recently,
-                "mxnbr": max_not_built_recently,
+                "at": averages["total"],
+                "mnt": data["min_total"],
+                "mxt": data["max_total"],
+                "al": averages["leased"],
+                "mnl": data["min_leased"],
+                "mxl": data["max_leased"],
+                "abr": averages["built_recently"],
+                "mnbr": data["min_built_recently"],
+                "mxbr": data["max_built_recently"],
+                "anbr": averages["not_built_recently"],
+                "mnnbr": data["min_not_built_recently"],
+                "mxnbr": data["max_not_built_recently"],
             },
             separators=(",", ":"),
         )
@@ -270,6 +269,60 @@ class WorktreeMetricsTracker:
             ["bash", str(report_script), "worktree", action, label],
             **kwargs,
         )
+
+    def get_summary(
+        self,
+        current_total: int,
+        current_leased: int,
+        current_built_recently: int,
+        current_not_built_recently: int,
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        if now is None:
+            now = time.time()
+        data = self._load_or_init(
+            now,
+            current_total,
+            current_leased,
+            current_built_recently,
+            current_not_built_recently,
+        )
+        duration, averages = self._compute_averages(data, now)
+
+        return {
+            "period_start_ts": data["period_start_ts"],
+            "period_duration_sec": duration,
+            "current": {
+                "total": current_total,
+                "leased": current_leased,
+                "built_recently": current_built_recently,
+                "not_built_recently": current_not_built_recently,
+            },
+            "average": averages,
+            "min": {
+                "total": min(data["min_total"], current_total),
+                "leased": min(data["min_leased"], current_leased),
+                "built_recently": min(
+                    data["min_built_recently"], current_built_recently
+                ),
+                "not_built_recently": min(
+                    data["min_not_built_recently"], current_not_built_recently
+                ),
+            },
+            "max": {
+                "total": max(data["max_total"], current_total),
+                "leased": max(data["max_leased"], current_leased),
+                "built_recently": max(
+                    data["max_built_recently"], current_built_recently
+                ),
+                "not_built_recently": max(
+                    data["max_not_built_recently"], current_not_built_recently
+                ),
+            },
+            "seconds_until_next_snapshot": max(
+                0.0, self.snapshot_interval_sec - duration
+            ),
+        }
 
     def _save(self, data: dict[str, Any]) -> None:
         self.metrics_file.parent.mkdir(parents=True, exist_ok=True)

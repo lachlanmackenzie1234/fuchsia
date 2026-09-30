@@ -255,6 +255,43 @@ class TestWorktreeMetricsTracker(unittest.TestCase):
         os.utime(ninja_log, (mtime_old, mtime_old))
         self.assertFalse(wt.is_built_recently(max_age_days=7, now=now))
 
+    def test_get_summary(self) -> None:
+        tracker = WorktreeMetricsTracker(
+            self.jiri_root,
+            self.fuchsia_dir,
+            metrics_file_path=self.metrics_file,
+            snapshot_interval_sec=86400.0,
+        )
+        t0 = 1000.0
+        tracker.record_state(
+            current_total=2,
+            current_leased=1,
+            current_built_recently=1,
+            current_not_built_recently=1,
+            now=t0,
+        )
+
+        t1 = t0 + 3600.0  # 1 hour later
+        summary = tracker.get_summary(
+            current_total=4,
+            current_leased=2,
+            current_built_recently=3,
+            current_not_built_recently=1,
+            now=t1,
+        )
+
+        self.assertEqual(summary["current"]["total"], 4)
+        self.assertEqual(summary["current"]["leased"], 2)
+        self.assertEqual(summary["current"]["built_recently"], 3)
+        self.assertEqual(summary["current"]["not_built_recently"], 1)
+        self.assertEqual(summary["average"]["total"], 2.0)
+        self.assertEqual(summary["average"]["leased"], 1.0)
+        self.assertEqual(summary["min"]["total"], 2)
+        self.assertEqual(summary["max"]["total"], 4)
+        self.assertEqual(
+            summary["seconds_until_next_snapshot"], 86400.0 - 3600.0
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
