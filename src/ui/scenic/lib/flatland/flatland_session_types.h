@@ -78,6 +78,34 @@ class WaitFence {
   std::variant<std::monostate, zx::event, zx::counter> fence_;
 };
 
+// Session-side shape of fuchsia.ui.composition.SignalFence: a fence Scenic signals,
+// writing the timestamp into it first if it is a counter.
+class SignalFence {
+ public:
+  SignalFence() = default;
+  ~SignalFence() = default;
+  SignalFence(SignalFence&&) noexcept = default;
+  SignalFence& operator=(SignalFence&&) noexcept = default;
+  SignalFence(const SignalFence&) = delete;
+  SignalFence& operator=(const SignalFence&) = delete;
+
+  // As WaitFence::From(). The required rights differ per arm, matching what
+  // signaling does (`utils::SignalCounterFences()`: `write()`, then `signal()`):
+  //   `basic` (EVENT):        ZX_RIGHT_SIGNAL
+  //   `timestamp` (COUNTER):  ZX_RIGHT_WRITE | ZX_RIGHT_SIGNAL
+  [[nodiscard]] static fit::result<zx_status_t, SignalFence> From(
+      fuchsia_ui_composition::wire::SignalFence fence);
+
+  bool is_valid() const;
+
+  // Appends the fence to the classic release leg (`PresentArgs.release_fences` /
+  // `release_counters`), leaving this invalid.
+  void MoveInto(std::vector<zx::event>& events, std::vector<zx::counter>& counters);
+
+ private:
+  std::variant<std::monostate, zx::event, zx::counter> fence_;
+};
+
 // The session-side state of a single Flatland2 layer.
 //
 // Unlike the snapshot type (`UberStructLayer`), which carries only the active composition
@@ -123,6 +151,12 @@ struct LayerObject {
   // un-waited if the binding is replaced first (`SetLayerImage()`, `ResetLayer()`,
   // `UnbindLayerImage()`). Valid only while an image is bound.
   WaitFence pending_acquire_fence;
+
+  // The current binding's release fence.  No `Present()` consumes it (unlike
+  // `pending_acquire`): it stays with the binding for its entire displayed
+  // lifetime (possibly forever).  On supersession it joins the *next*
+  // `Present()`'s release fences and rides the classic leg from there.
+  SignalFence binding_release_fence;
 
   // The number of references to this layer: one for the client's LayerId binding
   // (Flatland2 sessions; the facade holds none) and one per layer-stack membership.

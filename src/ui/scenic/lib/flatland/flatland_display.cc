@@ -75,7 +75,7 @@ void FlatlandDisplay::Bind(fidl::ServerEnd<fuchsia_ui_composition::FlatlandDispl
 FlatlandDisplay::~FlatlandDisplay() {
   // Unlike Flatland, FlatlandDisplay doesn't manage any client images, therefore doesn't need to
   // pass a release fence to RemoveSession().
-  flatland_presenter_->RemoveSession(session_id_, std::nullopt);
+  flatland_presenter_->RemoveSession(session_id_, /*release_fences=*/{}, /*release_counters=*/{});
 
   FX_LOGS(INFO) << "FlatlandDisplay DESTROYED session_id=" << session_id_;
 }
