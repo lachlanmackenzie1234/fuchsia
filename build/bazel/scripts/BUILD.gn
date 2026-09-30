@@ -362,10 +362,22 @@ if (is_host) {
       "check_regenerator_inputs.py",
       "copy_assembled_system_outputs.py",
       "copy_bazel_build_group_outputs.py",
+      "copy_bazel_debug_symbols.py",
       "create_gn_targets_dir.py",
       "export_rules_fuchsia.py",
+      "generate-bazel-install.py",
+      "git-clone-then-apply-bundle.py",
+      "hardlink-directory.py",
       "merge_bazel_compdb.py",
       "parse-workspace-event-log.py",
+      "prepare-fuchsia-checkout.py",
+      "refresh-bazel-compdb-bin.py",
+      "symlink-directory.py",
+      "update_bazel_vendor_dir.py",
+    ]
+    library_deps = [
+      # For copy_bazel_debug_symbols.py.
+      "//build/api:debug_symbols",
     ]
   }
 }

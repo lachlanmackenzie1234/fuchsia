@@ -120,16 +120,21 @@ if (is_host) {
     ]
     source_root = "//build"
     sources = [
+      "bazel/assembly/size_checker/verify_verbose_size_report.py",
       "bazel/bazel_idk/prebuild_info.py",
       "bazel/bazel_sdk/compare_bazel_sdks.py",
       "bazel/bazel_sdk/idk_to_bazel_sdk.py",
       "bazel/debug_symbols/tests/check_debug_binaries.py",
+      "bazel/drivers/verify_driver_package.py",
       "bazel/examples/hello_python/bin.py",
+      "bazel/examples/hello_python/lib.py",
+      "bazel/examples/hello_python/test.py",
       "bazel/fuchsia_idk/generate_repository_validation.py",
       "bazel/rules/host_tests/tests/py/lib_for_test.py",
       "bazel/rules/host_tests/tests/py/list_unittests_test.py",
       "bazel/rules/host_tests/tests/py/simple_test.py",
       "bazel/rules/host_tests/tests/py/test_with_py_binary.py",
+      "bazel/rules/host_tests/tests/py/test_with_py_library.py",
       "bazel/rules/host_tests/tests/py/test_with_unittests.py",
       "bazel/update-rustc-third-party/remove_incorrect_aliases.py",
       "check_product_bundles_manifest.py",
@@ -185,23 +190,10 @@ if (is_host) {
     source_root = "//build"
     sources = [
       "assembly/scripts/bootfs_distribution_manifest.py",
-      "bazel/assembly/size_checker/verify_verbose_size_report.py",
 
       # Symlink to a .bzl file that's also imported as Python, so fixing it
       # requires keeping it valid Starlark.
       "bazel/bazel_sdk/generate_sdk_build_rules.py",
-      "bazel/drivers/verify_driver_package.py",
-      "bazel/examples/hello_python/lib.py",
-      "bazel/examples/hello_python/test.py",
-      "bazel/rules/host_tests/tests/py/test_with_py_library.py",
-      "bazel/scripts/copy_bazel_debug_symbols.py",
-      "bazel/scripts/generate-bazel-install.py",
-      "bazel/scripts/git-clone-then-apply-bundle.py",
-      "bazel/scripts/hardlink-directory.py",
-      "bazel/scripts/prepare-fuchsia-checkout.py",
-      "bazel/scripts/refresh-bazel-compdb-bin.py",
-      "bazel/scripts/symlink-directory.py",
-      "bazel/scripts/update_bazel_vendor_dir.py",
       "config/fuchsia/get_platform_version.py",
       "dart/gen_app_invocation.py",
       "dart/gen_dart_test_invocation.py",

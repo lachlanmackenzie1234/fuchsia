@@ -124,6 +124,8 @@ def main() -> int:
         shutil.rmtree(args.bazel_vendor_dir)
         shutil.move(temp_dir, args.bazel_vendor_dir)
 
+    return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
