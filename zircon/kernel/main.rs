@@ -171,4 +171,6 @@ use flow_id as _;
 use init as _;
 use relaxed_atomic as _;
 #[cfg(ktest)]
+use rust_libc_tests as _;
+#[cfg(ktest)]
 use trivial_tests as _;
