@@ -14,6 +14,8 @@ python_library("driver_lab") {
   source_root = "driver_lab"
   sources = [
     "__init__.py",
+    "api.py",
+    "consent.py",
     "evidence.py",
     "models.py",
     "permissions.py",
@@ -37,11 +39,23 @@ if (is_host) {
     main_source = "tests/evidence_test.py"
     libraries = [ ":driver_lab" ]
   }
+
+  python_host_test("driver_lab_api_test") {
+    main_source = "tests/api_test.py"
+    libraries = [ ":driver_lab" ]
+  }
+
+  python_host_test("driver_lab_consent_test") {
+    main_source = "tests/consent_test.py"
+    libraries = [ ":driver_lab" ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
+    ":driver_lab_api_test($host_toolchain)",
+    ":driver_lab_consent_test($host_toolchain)",
     ":driver_lab_evidence_test($host_toolchain)",
     ":driver_lab_permissions_test($host_toolchain)",
     ":driver_lab_plans_test($host_toolchain)",

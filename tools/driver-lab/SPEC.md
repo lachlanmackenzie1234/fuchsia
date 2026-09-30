@@ -34,7 +34,7 @@ commit.
       abstraction` -- hashed manifest-last evidence bundles (16) and
       the wire-contract-shaped transport seam with the fake proxy
       target (12, 20.3).
-- [ ] CS6 `[driver-lab] Consent resolution and the plan-run API` --
+- [x] CS6 `[driver-lab] Consent resolution and the plan-run API` --
       interactive consent with exact-rule persistence and fail-closed
       unattended behavior (10.2), and `DriverLab.run_plan` composing
       prepare/execute/finalize with mode and guarantee resolution
