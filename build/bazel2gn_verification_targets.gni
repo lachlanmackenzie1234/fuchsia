@@ -77,6 +77,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/lib/fho/macro:verify_bazel2gn",
   "//src/developer/ffx/lib/fho/metadata:verify_bazel2gn",
   "//src/developer/ffx/lib/fho:verify_bazel2gn",
+  "//src/developer/ffx/lib/isolate:verify_bazel2gn",
   "//src/developer/ffx/lib/logging:verify_bazel2gn",
   "//src/developer/ffx/lib/metrics:verify_bazel2gn",
   "//src/developer/ffx/lib/netext:verify_bazel2gn",

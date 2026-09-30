@@ -68,6 +68,7 @@ tests_migrated_ffx_libraries = [
   "buildid",
   "compat_info",
   "errors",
+  "isolate",
   "logging",
   "metrics",
   "netext",
