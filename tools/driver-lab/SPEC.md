@@ -1,0 +1,1394 @@
+<!-- Copyright 2026 The Fuchsia Authors. All rights reserved.
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file. -->
+
+# driver-lab host tooling specification
+
+This is the normative specification for the driver-lab host tooling at
+//tools/driver-lab. The companion proxy driver specification lives at
+//src/devices/driver-lab/SPEC.md.
+
+Phase 1 -- the unclaimed-node proxy workflow, which requires no Driver Manager
+changes -- is delivered first. Its plan, session, and evidence schemas are
+designed takeover-ready so that phase 2 (managed takeover of existing drivers)
+requires no major contract change.
+
+## Phase 1: unclaimed-node proxy workflow
+
+### Implementation status
+
+Changeset numbers (CS) are global across this specification and
+`//src/devices/driver-lab/SPEC.md`, whose changesets interleave with
+these; gaps in the numbering below are proxy driver changesets. Every
+changeset marks itself complete in this list when it lands, so at any
+commit this list shows which changes precede and which follow that
+commit.
+
+- [x] CS2 `[driver-lab] Host tooling specification` -- this
+      document.
+- [ ] CS4 `[driver-lab] Transport-neutral host tooling core` --
+      frozen data models (18), grant resolution with the TOML store
+      (10.3-10.5), and plan validation, canonicalization, and digests
+      carrying the reserved takeover keys (11).
+- [ ] CS5 `[driver-lab] Evidence recording + proxy transport
+      abstraction` -- hashed manifest-last evidence bundles (16) and
+      the wire-contract-shaped transport seam with the fake proxy
+      target (12, 20.3).
+- [ ] CS6 `[driver-lab] Consent resolution and the plan-run API` --
+      interactive consent with exact-rule persistence and fail-closed
+      unattended behavior (10.2), and `DriverLab.run_plan` composing
+      prepare/execute/finalize with mode and guarantee resolution
+      before any connection (6.2, 7.3, 14).
+- [ ] CS7 `[driver-lab] fuchsia-controller FIDL transport adapter`
+      -- `ProxyTransport` over the generated bindings, exercised
+      through real FIDL encoding on the build host (12, 20.3).
+- [ ] CS8 `[driver-lab] Add host CLI tools` -- `driver-lab.pyz`
+      with run, permissions list/explain/add/revoke, plan
+      digest/validate, and spec exit categories (10.5, 12, 13).
+- [ ] CS10 `[driver-lab] Add live-target conformance runbook` --
+      ephemeral registration and test-node activation exercising the
+      real driver end to end (14, 20.4), verified on the emulator.
+
+Remaining phase 1 work, not yet scheduled as changesets:
+
+- [ ] Typed node discovery and direct mode (7.1, 8, 15, 20.5;
+      milestones H0, H1).
+- [ ] Driver-shaped resource APIs: `connect`/`attach`,
+      `HardwareSession`, `MmioRegion`, and representative protocol
+      resources (6.1, 9; milestone H4).
+- [ ] Proxy activation lifecycle beyond the interim test-node path:
+      unclaimed-node verification and verified teardown (8.3, 14.2;
+      milestone H3 remainder).
+- [ ] ffx subtool packaging (12).
+- [ ] Serial capture and independent recovery integration (3, 14.1;
+      milestone H5).
+- [ ] Register-metadata-backed consent expansion (10.2; open
+      decision 8).
+
+Phase: 1 -- new-driver development. Covers direct mode and proxy access on
+unclaimed nodes. Managed takeover of existing drivers is specified in the
+Phase 2 section of this document and in //src/devices/driver-lab/SPEC.md,
+and requires no changes to this contract.
+
+Scope: host Python API, `ffx` integration, operator authorization, orchestration,
+and evidence
+
+Companion specifications: the proxy driver specification at
+//src/devices/driver-lab/SPEC.md, and the Phase 2 section of this document
+
+### 1. Purpose
+
+The host tooling provides a single, driver-shaped Python programming model for
+interactive hardware exploration and agent-assisted Fuchsia driver
+development. The same entry point supports two target access modes:
+
+1. direct use of protocols already published by a running driver; and
+2. private-resource access through an engineering-only proxy driver.
+
+In phase 1 the proxy binds directly to an otherwise unclaimed development
+node. Activating the proxy on a node that already has a normal driver
+(managed takeover) is phase 2; the contracts here reserve the fields that
+flow requires.
+
+The tooling also exposes an `ffx` interface, coordinates out-of-band recovery,
+enforces operator-consent policy, freezes executable plans, and preserves the
+raw evidence needed to reproduce and audit an experiment.
+
+This specification deliberately does not define how the proxy maps MMIO,
+handles interrupts, or enforces its target-side policy. Those requirements are
+owned by the proxy driver specification at //src/devices/driver-lab/SPEC.md.
+
+### 2. Normative language
+
+The terms **must**, **must not**, **should**, and **may** describe requirements,
+recommendations, and optional behavior respectively.
+
+The following terms have specific meanings:
+
+- **Direct mode:** The host connects to a FIDL protocol already published by
+  the running driver. The driver remains bound and active.
+- **Proxy mode:** The host connects to the isolated proxy driver for private,
+  policy-controlled target resources. In phase 1 the node is an unclaimed
+  development node.
+- **Managed takeover:** Replacing a node's bound normal driver with the proxy
+  and later restoring it. Defined in the Phase 2 section of this document and
+  in //src/devices/driver-lab/SPEC.md.
+- **Target ceiling:** Immutable target-side limits on resources and operations.
+  Host approval can narrow this ceiling but cannot widen it.
+- **Read grant:** Operator authorization for a particular class of register
+  reads.
+- **Plan:** Canonical, bounded experiment intent whose digest changes whenever
+  any executable field changes.
+- **Evidence:** Raw requests, responses, target identity, audit records,
+  transport events, recovery events, and serial output saved before
+  interpretation.
+
+### 3. Goals
+
+The host tooling must:
+
+1. Reach a target control plane served by Driver Manager in the bootstrap
+   realm, with no dependency on a component in the `core` realm for the
+   target-side endpoint.
+2. Be reachable through supported `ffx` target transports without precluding
+   a serial-capable transport; serial support itself is separate
+   `ffx`-team-owned work and does not gate phase 1.
+3. Present one typed asynchronous Python API across direct and proxy modes.
+4. Preserve the production-driver abstractions used for MMIO, GPIO, SPI, I2C,
+   serial, clock, reset, and interrupt access.
+5. Discover target nodes, bound drivers, and published protocols through the
+   existing `fuchsia.driver.development` surface rather than a parallel
+   discovery protocol.
+6. Make backend capabilities and safety guarantees visible to callers.
+7. Never silently replace a policy-controlled operation with a weaker direct
+   operation.
+8. Require operator authorization for previously unapproved register reads.
+9. Persist an exact read grant when the operator chooses "always allow."
+10. Fail closed in unattended operation when a required grant is absent.
+11. Require explicit approval for mutating plans.
+12. Remain forward-compatible with phase 2 managed takeover: plan, session,
+    and evidence schemas reserve the takeover fields so phase 2 requires no
+    major contract change.
+13. Produce complete, hashed evidence for every attempted hardware run.
+14. Integrate with Driver Agent without combining proposal, approval,
+    execution, and interpretation into one opaque step.
+15. Keep serial capture, reset, and power recovery independent of the in-band
+    experiment transport.
+
+### 4. Non-goals
+
+The host tooling must not:
+
+- expose arbitrary physical addresses;
+- claim that devfs or a published service reveals a driver's private MMIO,
+  interrupt handles, or incoming namespace;
+- infer that every offset in an MMIO region is safe to read;
+- interpret a persistent host grant as a target security capability;
+- silently authorize an offset because a nearby offset was approved;
+- silently downgrade a requested access mode or guarantee;
+- automatically retry a mutating plan after a disconnect, reboot, or uncertain
+  partial execution;
+- promise that stopping a production driver preserves its live hardware state;
+- execute arbitrary Python or shell expressions from a plan;
+- coordinate multiple device nodes in one plan or session (single-node only
+  in V1);
+- guarantee sub-millisecond target-local timing precision;
+- provide a universal translation from every Python convenience to Rust or
+  C++; or
+- require the embedded proxy library discussed in earlier designs.
+
+### 5. Architecture
+
+```text
+Driver Agent / Python script / human CLI
+                    |
+                    v
+Driver-shaped Python API and plan/evidence layer
+                    |
+                    v
+FFX transport adapter
+  network / USB / serial-capable target transport
+                    |
+                    v
+Driver Manager control plane
+  discovery: fuchsia.driver.development
+  (takeover protocol arrives in phase 2)
+          |                           |
+          | direct                    | proxy
+          v                           v
+Published driver protocol       Isolated proxy driver
+running driver remains bound    bound to an unclaimed node
+
+Paniolo or equivalent --- serial / liveness / reset / power recovery
+```
+
+The Driver Manager integration is a control plane. Hardware operations run in
+the production driver in direct mode or in the isolated proxy driver in proxy
+mode. Driver Manager must not become a generic MMIO executor.
+
+#### 5.1 Why there is no core broker
+
+The target endpoint must remain available on engineering systems whose normal
+component topology or networking is unavailable. Discovery and channel routing
+therefore belong at the Driver Framework/Driver Manager layer rather than at a
+stable moniker under `core`. This placement was suggested by driver-framework
+engineering during early design review.
+
+Two requirements are distinct here. The target-side control plane must not
+live under `core`; serving it from Driver Manager in the bootstrap realm
+satisfies that. End-to-end operation without `core` additionally requires a
+transport that terminates outside `core`; no such `ffx` transport exists
+today, so this design must not preclude one, and serial transport is tracked
+as separate work with the `ffx` team. The public Python API must not expose
+the transport choice.
+
+#### 5.2 Why there is no embedded proxy in the baseline
+
+The standalone proxy is the baseline mechanism for private hardware access.
+On a node that normally has a production driver, it is activated through
+managed takeover (phase 2). This avoids language-specific embedding, duplicate
+interrupt ownership, and concurrent MMIO access.
+
+An opt-in cooperative debug endpoint may be designed later if preserving the
+live, bound driver state is a demonstrated requirement. It is not part of this
+specification.
+
+### 6. Design invariants
+
+#### 6.1 Programming-model fidelity
+
+The public Python API must preserve, as closely as practical:
+
+- resource types;
+- production FIDL method boundaries;
+- MMIO access width and ordering;
+- asynchronous waits;
+- error propagation;
+- resource acquisition and lifetime;
+- explicit resets and state transitions; and
+- the distinction between semantic device protocols and raw registers.
+
+Discovery, transport, consent, target policy, batching, and evidence may be
+implemented underneath or alongside this API. They must not flatten every
+hardware resource into an unrelated generic remote-control interface.
+
+For protocol-backed resources, use generated Python FIDL types directly or a
+thin shape-preserving adapter. For MMIO, expose a remote `MmioRegion` object
+whose scalar operations resemble the MMIO operations used by an on-device
+driver. Target-local batches are an explicit timing and safety facility, not
+the only programming model.
+
+#### 6.2 Explicit capability degradation
+
+The host must report:
+
+- selected access mode;
+- resource-level capabilities;
+- target-policy enforcement;
+- target audit availability;
+- target-local timing availability;
+- fault-isolation level;
+- whether a production driver remains active; and
+- whether restoration will be required (always false until phase 2).
+
+Unsupported operations fail before hardware access. A direct-mode connection
+must not pretend that private MMIO, private interrupts, target audit, or
+target-local batch timing is available.
+
+#### 6.3 Evidence before interpretation
+
+Raw evidence is finalized before an agent may label an observation verified,
+contradicted, or inconclusive. Interpretation is a derived artifact and must
+refer back to exact operation results.
+
+#### 6.4 Independent recovery
+
+The experiment channel is not the recovery channel. Serial capture, target
+liveness, reset, and power control remain usable after loss of the FIDL or
+`ffx` path.
+
+### 7. Access modes
+
+#### 7.1 Direct published-protocol mode
+
+Direct mode connects to a protocol already published by the active driver.
+Discovery may use an aggregated service, devfs compatibility path, or another
+Driver Manager-provided route, but those details are hidden below the public
+API.
+
+Direct mode is appropriate for:
+
+- black-box driver testing;
+- normal device configuration;
+- querying state exposed by the driver;
+- standard GPIO, SPI, I2C, serial, clock, or reset protocols;
+- an existing `fuchsia.hardware.registers` endpoint; and
+- low-risk ad-hoc exploration that does not require private resources.
+
+Direct mode does not provide private-register reflection. It provides only
+what the running driver publishes.
+
+#### 7.2 Proxy mode
+
+Proxy mode is appropriate when the caller needs:
+
+- MMIO owned privately by the production driver;
+- target-local polling or timing;
+- proxy target policy and audit;
+- proxy interrupt observation;
+- exclusive experimental ownership; or
+- an initialization sequence that precedes the production driver.
+
+In phase 1 the node must be unclaimed: the proxy binds through engineering-only
+node metadata and existing registration and bind mechanisms. If a normal
+driver is bound, the node requires managed takeover, which is phase 2 and is
+reported as unsupported. Either way the proxy backend must be compatible with
+the resources offered by the parent.
+
+#### 7.3 Selection rules
+
+The caller may request `direct`, `proxy`, or `auto`. A proxy request may also
+require a specific activation policy: `bind-unclaimed` (phase 1) or `takeover`
+(reserved; rejected as unsupported until phase 2).
+
+`auto` may select direct mode only when every plan requirement is satisfied by
+direct mode. It must never:
+
+- unbind a driver (takeover authorization does not exist until phase 2);
+- fall back from a required target policy to host-only validation;
+- fall back from target-local timing to host round trips;
+- convert private-resource intent into a semantically different public
+  protocol call; or
+- downgrade a mutating plan.
+
+The selected mode and its guarantees are included in the canonical plan and
+evidence.
+
+### 8. Target control-plane contract
+
+Discovery reuses the existing `fuchsia.driver.development` and
+`fuchsia.driver.registrar` protocols; this specification adds no parallel
+discovery surface and phase 1 requires no Driver Manager changes. The
+engineering-only takeover protocol is defined in the Phase 2 section of this
+document and in //src/devices/driver-lab/SPEC.md.
+The exact FIDL syntax is revision-dependent, but the semantics below are
+normative.
+
+#### 8.1 Node discovery
+
+Discovery uses `fuchsia.driver.development` (`GetNodeInfo`, `GetDriverInfo`,
+and related methods). Work package 1 produces a gap matrix mapping each
+required field to that surface in the selected revision. Discovery must
+provide:
+
+- stable node identity criteria (moniker and node properties, not per-boot
+  numeric IDs);
+- bound driver URL and driver-host koid, if any; and
+- published protocol/service descriptors, composed from devfs or
+  component-framework queries where `fuchsia.driver.development` does not
+  report them directly.
+
+Boot identity, proxy generation, resource descriptions, and their digests are
+reported by the bound proxy's `Describe`, not by Driver Manager. Takeover
+eligibility, active proxy-access state, and pending restoration failure are
+reported by the phase 2 takeover protocol, not by node discovery.
+
+Physical addresses and raw handles are never returned.
+
+#### 8.2 Direct connection
+
+Direct mode connects only to a protocol that discovery reported. Phase 1 uses
+existing devfs or aggregated-service routing; the host tooling validates the
+typed protocol/service selector itself and never accepts an arbitrary path or
+component moniker from plan JSON. A typed Driver Manager route may be added
+later if selector validation proves insufficient.
+
+#### 8.3 Proxy activation on unclaimed nodes
+
+Phase 1 activates the proxy only on nodes with no bound driver:
+
+- the proxy is loaded through engineering assembly inclusion or ephemeral
+  registration (`fuchsia.driver.registrar`);
+- eligibility comes from explicit engineering-only node metadata or a
+  developer-created test node, never from broad bind rules;
+- before connecting, the host verifies the node identity criteria and that
+  the bound driver is the expected proxy at the expected generation;
+- the host connects to the proxy's published service through existing devfs
+  or aggregated-service routing, then correlates the endpoint back to stable
+  node identity; and
+- ending access stops or unbinds the proxy and verifies the node is again
+  unclaimed.
+
+The caller cannot select an arbitrary driver package. The managed-takeover
+activation path (`BeginProxyAccess`, `EndProxyAccess`, exclusive leases, and
+restoration) is specified in phase 2; phase 1 plans, sessions, and evidence
+reserve the fields those flows require.
+
+### 9. Public Python API
+
+The illustrative API below fixes responsibilities, not final spelling:
+
+```python
+class DriverLab:
+    @classmethod
+    async def connect(
+        cls,
+        target: str,
+        *,
+        transport: str = "auto",
+        timeout_s: float = 10.0,
+    ) -> "DriverLab": ...
+
+    async def list_nodes(self) -> list[NodeSummary]: ...
+    async def describe_node(self, node_id: str) -> NodeDescription: ...
+
+    async def attach(
+        self,
+        node_id: str,
+        *,
+        mode: Literal["auto", "direct", "proxy"],
+        requirements: AccessRequirements,
+        context: RunContext,
+    ) -> "HardwareSession": ...
+
+class HardwareSession:
+    @property
+    def capabilities(self) -> SessionCapabilities: ...
+
+    async def mmio(self, resource: str) -> "MmioRegion": ...
+    async def gpio(self, resource: str) -> "Gpio": ...
+    async def spi(self, resource: str) -> "Spi": ...
+    async def i2c(self, resource: str) -> "I2c": ...
+    async def serial(self, resource: str) -> "Serial": ...
+    async def clock(self, resource: str) -> "Clock": ...
+    async def reset(self, resource: str) -> "Reset": ...
+    async def interrupt(self, resource: str) -> "Interrupt": ...
+    async def sequence(self, operations: list[Operation]) -> ExecutionReport: ...
+
+class MmioRegion:
+    async def read32(self, offset: int) -> int: ...
+    async def write32(
+        self,
+        offset: int,
+        value: int,
+        *,
+        mask: int,
+        expected_before: int | None = None,
+        expected_mask: int | None = None,
+        require_readback: bool = True,
+    ) -> WriteResult: ...
+
+    async def poll32(
+        self,
+        offset: int,
+        *,
+        expected: int,
+        mask: int,
+        interval_s: float,
+        timeout_s: float,
+    ) -> PollResult: ...
+```
+
+`sequence` is available only when the selected backend can preserve the
+requested ordering and timing. Resource-specific methods remain the canonical
+programming model.
+
+#### 9.1 Translation metadata
+
+Each public hardware method should document:
+
+- its closest production C++ and Rust analogue;
+- whether it is directly translatable;
+- differences caused by remote execution;
+- whether it depends on target-local timing; and
+- whether it is an experiment-only convenience.
+
+A future translation checker may reject or flag scripts that use
+experiment-only facilities. Automatic translation is not required in the
+initial implementation.
+
+#### 9.2 Async behavior
+
+Use one asyncio event loop per process. All waits have host deadlines. Target
+deadlines must expire slightly before host deadlines so a normal target timeout
+can be distinguished from transport loss.
+
+Do not call blocking sleep from asynchronous code. Hold strong references to
+serial, health, evidence, and execution tasks until each has completed or been
+explicitly canceled and joined.
+
+### 10. Operator authorization
+
+#### 10.1 Two independent layers
+
+Authorization has two layers:
+
+1. The target ceiling determines what the target can ever access.
+2. Host consent determines what the current operator or agent may request
+   within that ceiling.
+
+A host grant never widens the target ceiling. A target accepting a
+session-specific allowlist does not prove who approved it; approval provenance
+is evidence, not cryptographic authorization.
+
+#### 10.2 Default read behavior
+
+An MMIO read that matches neither an active plan approval nor a persistent
+grant must pause for operator consent. In unattended operation it fails closed.
+For an unknown register, the active plan approval must itself contain an
+explicit human read decision; classifying a plan as read-only is not sufficient
+authorization.
+
+The interactive choices are:
+
+- **Allow once:** authorize the exact access rule for the current canonical
+  plan or interactive session.
+- **Always allow:** persist the exact read rule.
+- **Deny once:** reject the request without changing persistent policy.
+- **Always deny:** persist a matching denial.
+
+The UI must warn that reads may clear status, consume FIFO data, acknowledge
+events, or fault when hardware dependencies are disabled.
+
+"Read all registers" is not a primitive permission:
+
+- when register metadata exists, the host expands the request into the exact
+  declared readable offsets and resolves consent for each rule;
+- when only an MMIO byte range is known, the host must describe the action as a
+  raw range sweep rather than pretending every aligned word is a register;
+- a raw range sweep requires an explicit human-approved plan enumerating every
+  offset before execution; and
+- the initial implementation must not persist an "always allow this entire
+  MMIO region" grant.
+
+The UI may approve an exact displayed set in one interaction, but the stored
+and target-enforced result remains a set of exact access rules.
+
+Consent gates register-class access regardless of transport. A direct-mode
+read through a published raw-register endpoint such as
+`fuchsia.hardware.registers` resolves against the same plan approvals and
+persistent grants as a proxy MMIO read. Semantic protocol operations (GPIO,
+SPI, I2C, serial, clock, reset) are governed by plan approval and target
+policy, not per-offset read consent.
+
+Register metadata is a first-class deliverable, not an ambient assumption:
+its schema, provenance, and review process must be specified before consent
+expansion depends on it (see open decisions).
+
+In V1 the proxy session allowlist is fixed when the session opens. Consent
+granted mid-session takes effect by closing the session and reopening it with
+the expanded allowlist; a narrowing-only `ExtendAllowlist` operation is a
+deferred open decision.
+
+Permission-resolution evidence records the source of every decision --
+persistent rule, allow-once, always-allow, deny-once, always-deny, or
+fail-closed -- so a run's authorization basis is auditable. A persistent
+deny short-circuits prompting for the rest of the plan.
+
+#### 10.3 Grant identity
+
+A persistent read grant must include:
+
+- grant schema version;
+- stable target/product scope;
+- stable node identity criteria;
+- resource-description digest;
+- logical resource name or ID;
+- byte offset;
+- width;
+- access class;
+- optional poll limits;
+- decision;
+- approval timestamp;
+- approval source or identity when available; and
+- optional rationale/reference.
+
+It must not match solely by nodename, boot ID, devfs path, or dynamic service
+instance.
+
+The resource-description digest covers the resource kind, logical size,
+provider identity, and any stable metadata needed to prevent an old grant from
+matching a changed mapping. A boot change alone need not invalidate a
+persistent read grant; a resource-description change does.
+
+#### 10.4 Access classes
+
+At minimum distinguish:
+
+- one-shot read;
+- bounded snapshot;
+- bounded poll;
+- write;
+- protocol transaction; and
+- interrupt wait.
+
+A one-shot read grant does not implicitly authorize polling. Poll authorization
+includes maximum interval frequency and timeout. All target-local execution
+remains subject to proxy limits.
+
+#### 10.5 Persistent configuration
+
+The persistent store is a checked, human-readable TOML file. For example:
+
+```toml
+schema_version = 1
+
+[[read_grants]]
+target_scope = "example-engineering-target"
+node_id = "example-device"
+resource_digest = "sha256:..."
+resource = "control"
+offset = 0x3c
+width = 32
+access = "read_once"
+decision = "allow"
+approved_at = "2026-07-29T23:10:00Z"
+reason = "Reviewed against the device register specification"
+```
+
+Interactive persistence must:
+
+1. lock against concurrent writers;
+2. parse and validate the existing file;
+3. reject ambiguous or overlapping entries;
+4. write a temporary file;
+5. flush and atomically replace the original;
+6. preserve a revision/audit record; and
+7. print the exact rule that was added.
+
+The CLI provides list, explain, add, and revoke operations. Manual config edits
+are allowed but undergo the same validation on load.
+
+#### 10.6 Writes
+
+Persistent read permission never authorizes a write. A mutating plan requires:
+
+- an explicit target write policy;
+- exact value and mask;
+- target/device expectations;
+- a precondition when semantics permit;
+- readback semantics;
+- bounded cleanup or recovery;
+- canonical plan approval; and
+- active recovery monitoring.
+
+The first implementation should not offer "always allow arbitrary write."
+
+### 11. Probe plans
+
+Plans are data, not executable code. A representative plan is:
+
+```json
+{
+  "schema_version": 1,
+  "run_id": "2026-07-29T23-10-00Z-status-read",
+  "case_id": "device-status-observation",
+  "target": {
+    "selector": "lab-target",
+    "expected_boot_id": "..."
+  },
+  "node": {
+    "id": "example-device",
+    "expected_unclaimed": true,
+    "expected_resource_digest": "..."
+  },
+  "access": {
+    "mode": "proxy",
+    "activation": "bind-unclaimed",
+    "requires_target_policy": true,
+    "requires_target_audit": true,
+    "requires_target_local_timing": false
+  },
+  "operations": [
+    {
+      "kind": "mmio_read32",
+      "resource": "control",
+      "offset": "0x3c"
+    }
+  ]
+}
+```
+
+The plan schema reserves the managed-takeover fields (expected bound driver,
+expected topology generation, expected proxy identity, restoration policy)
+for phase 2. For mutation the canonical plan records target policy digest,
+proxy generation, exact operation fields, and recovery intent.
+
+Plans must not support:
+
+- Python expressions;
+- shell interpolation;
+- arbitrary driver URLs;
+- arbitrary component monikers or protocol paths;
+- includes outside approved workspace roots; or
+- unvalidated plugins.
+
+Canonicalization normalizes numeric representations, key order, and operation
+order before hashing.
+
+### 12. FFX tool and transport adapter
+
+The supported command surface should be available as an `ffx` subtool so that
+target discovery and transport selection remain in the Fuchsia tooling layer.
+Proposed commands:
+
+```text
+ffx driver-lab list
+ffx driver-lab describe --node <id>
+ffx driver-lab direct --node <id> --protocol <typed-selector>
+ffx driver-lab bind-proxy --node <id>
+ffx driver-lab end-proxy --node <id>
+ffx driver-lab run --plan <json> --evidence-dir <dir>
+ffx driver-lab permissions list
+ffx driver-lab permissions explain --plan <json>
+ffx driver-lab permissions revoke --grant <id>
+```
+
+`ffx driver-lab takeover` arrives in phase 2.
+
+The Python package links fuchsia-controller in process and uses the
+generated `fuchsia.driver.lab` bindings, behind a transport-neutral
+`ProxyTransport` interface so tests run against a wire-contract-faithful
+fake and future transports slot in without public API changes. Transport
+implementation must not leak into hardware scripts.
+
+Until the `ffx` subtool exists, the same operations ship as a standalone
+`driver-lab.pyz` host tool with JSON on stdout, diagnostics on stderr, and
+the exit categories below.
+
+A serial-capable path, once the separately tracked transport work lands, must
+be tested without the normal `core` topology before it is considered
+supported. It does not gate phase 1.
+
+### 13. CLI behavior
+
+Structured results go to stdout and diagnostics/prompts go to stderr or the
+dedicated interactive UI channel.
+
+Recommended exit categories:
+
+```text
+0  success
+2  local argument, plan, or permission error
+3  stale target/node/resource expectation
+4  operation failure or partial execution
+5  transport/channel failure
+6  target reboot or liveness failure
+7  evidence persistence failure
+8  proxy activation failure
+9  restoration failure (reserved; used by phase 2)
+10 unsupported capability or unsafe downgrade
+```
+
+Ctrl-C cancels bounded execution, finalizes available evidence, and ends
+proxy access when one is active. A second interrupt may request out-of-band
+escalation but must not abandon proxy-access state silently.
+
+### 14. Proxy-mode workflow
+
+The managed-takeover workflow is specified in phase 2. The phase 1
+unclaimed-node workflow is:
+
+#### 14.1 Prepare
+
+1. Discover the node and verify it is unclaimed.
+2. Capture boot, node, and resource identities.
+3. Confirm a compatible proxy is available.
+4. Resolve plan requirements.
+5. Resolve persistent read grants.
+6. Prompt for missing read consent.
+7. Require explicit mutation approval when applicable.
+8. Freeze and hash the canonical plan.
+9. Verify independent serial/recovery availability.
+
+Preparation performs no hardware operations.
+
+#### 14.2 Execute
+
+1. Create a non-reused evidence directory.
+2. Start serial and liveness capture.
+3. Activate the proxy on the unclaimed node with frozen expectations.
+4. Describe the bound proxy and verify its policy/resource digest.
+5. Open a session with an exact session allowlist.
+6. Execute the bounded plan, draining proxy audit after every mutating
+   operation so the host record never runs more than one write ahead of
+   drained target audit.
+7. Drain remaining proxy audit.
+8. Close the proxy session.
+9. End proxy access and verify the node is again unclaimed.
+10. Stop capture and finalize evidence.
+
+#### 14.3 Failure behavior
+
+- A stale expectation fails before activation.
+- Channel loss never causes automatic replay.
+- If a write may have completed, the result remains partial or unknown.
+- A reboot invalidates all boot-scoped expectations.
+- Recovery creates a new run context; it does not resume the old mutation.
+
+### 15. Direct-mode workflow
+
+1. Discover a typed published protocol.
+2. Record the running driver identity and generation.
+3. Confirm the plan requires no private resources or takeover guarantees.
+4. Resolve any applicable host consent.
+5. Connect through Driver Manager's typed route.
+6. Execute production FIDL methods through generated or shape-preserving
+   Python bindings.
+7. Save requests, responses, timing, and transport events.
+
+Target proxy policy and audit are absent unless the published protocol itself
+provides equivalent guarantees.
+
+### 16. Evidence
+
+Each run gets a new directory:
+
+```text
+evidence/<run_id>/
+    manifest.json
+    plan.requested.json
+    plan.canonical.json
+    approval.json
+    permission-resolution.json
+    target.description.json
+    node.before.json
+    access.capabilities.json
+    proxy-access.jsonl
+    execution.response.json
+    operations.jsonl
+    target-audit.jsonl
+    node.after.json
+    restoration.json
+    serial.log
+    host-events.jsonl
+    interpretation.json
+```
+
+Files that do not apply to a run are marked not applicable in the manifest
+rather than fabricated. `restoration.json` and the takeover entries of
+`proxy-access.jsonl` are reserved for phase 2 and marked not applicable in
+phase 1 runs.
+
+`manifest.json` contains:
+
+- evidence schema version;
+- run and case IDs;
+- canonical plan digest;
+- selected access mode and guarantees;
+- target boot/build/product identity;
+- node, driver, resource, proxy, and policy identities;
+- resolved grant IDs and approval source;
+- start and end wall-clock timestamps;
+- target monotonic range when available;
+- proxy-access outcome (takeover/restoration fields reserved for phase 2);
+- serial capture metadata;
+- terminal exit category;
+- audit-gap status; and
+- hash and byte length of every evidence file.
+
+Write each artifact to a unique temporary file, flush, close, atomically rename,
+and hash the final bytes. Write the manifest last. A run whose evidence cannot
+be finalized is not successful.
+
+### 17. Driver Agent integration
+
+The workflow remains:
+
+```text
+proposed
+    -> permissions-resolved
+    -> approved
+    -> running
+    -> observed
+    -> interpreted
+    -> verified | contradicted | inconclusive
+```
+
+Driver Agent:
+
+1. proposes the smallest plan needed to resolve a claim;
+2. requests missing consent rather than broadening the plan;
+3. freezes approved intent;
+4. invokes the host API;
+5. watches execution and recovery;
+6. preserves raw evidence;
+7. interprets only finalized evidence; and
+8. never converts a transport success into semantic verification.
+
+Agent interpretation cites the operation, resource, offset or protocol method,
+raw values, target timestamp, driver/proxy generation, and relevant source.
+
+### 18. Host data models
+
+Use frozen dataclasses or equivalent validated models for:
+
+- node summaries and descriptions;
+- access requirements and capabilities;
+- target and resource identity;
+- run context;
+- read grants and permission decisions;
+- plans and approvals;
+- operation requests/results;
+- proxy-access transitions (takeover/restoration variants reserved for
+  phase 2);
+- audit pages; and
+- evidence manifests.
+
+Conversion among JSON, internal models, generated FIDL, and subprocess messages
+occurs only in explicit functions. Do not pass unvalidated dictionaries through
+the system.
+
+### 19. Security and trust boundaries
+
+The host consent file protects the workflow from accidental or unapproved
+agent behavior. It is not a target security boundary: a malicious host with
+engineering access may bypass it.
+
+The target ceiling must remain safe enough for the intended engineering
+environment even if host approval is bypassed. The plan digest proves stable
+intent within the workflow; it is not bearer authorization.
+
+Permission files:
+
+- contain no secrets;
+- use least-specific filesystem permissions appropriate to the environment;
+- are never read from unapproved workspace paths;
+- have explicit schema and revision history;
+- reject duplicate or ambiguous matches; and
+- are included by digest in evidence.
+
+### 20. Testing
+
+#### 20.1 Permission tests
+
+Test:
+
+- exact grant match;
+- offset, width, resource, node, and digest mismatch;
+- boot change with stable resource description;
+- resource-description change;
+- one-shot grant rejected for poll;
+- poll limit enforcement;
+- persistent deny precedence;
+- unattended fail-closed behavior;
+- concurrent config writers;
+- malformed/ambiguous config;
+- atomic persistence; and
+- revoke/explain behavior.
+
+#### 20.2 Plan and evidence tests
+
+Test:
+
+- deterministic canonicalization and hashing;
+- every executable change invalidates approval;
+- selected access mode is frozen;
+- unsupported guarantee fails before connection;
+- arbitrary path/moniker/driver injection is rejected;
+- partial execution classification;
+- atomic artifact writes;
+- manifest hashes;
+- Ctrl-C finalization;
+- disk-full failure; and
+- no evidence-directory reuse.
+
+#### 20.3 Transport tests
+
+Use fake and physical transports to test:
+
+- normal network connection;
+- supported USB connection;
+- serial-capable connection without `core` (applicable once the serial
+  transport lands);
+- target discovery;
+- target reboot;
+- peer closure;
+- transport migration without public API change; and
+- identical structured output across transports.
+
+#### 20.4 Proxy-activation tests
+
+Test:
+
+- unclaimed-node verification before bind;
+- a node with a bound driver is rejected (takeover is phase 2);
+- incompatible proxy;
+- proxy bind failure;
+- host disconnect during activation and execution;
+- execution failure;
+- proxy stop failure; and
+- the node is verified unclaimed after end of access.
+
+Managed-takeover state-transition tests are specified in phase 2.
+
+#### 20.5 Direct-mode tests
+
+Test:
+
+- typed protocol discovery;
+- direct production FIDL call;
+- no private MMIO capability;
+- no target-audit claim;
+- direct-mode evidence;
+- refusal of a takeover-only plan; and
+- no fallback after direct connection failure.
+
+#### 20.6 Driver Agent tests
+
+Test:
+
+- prepare performs no access;
+- missing read grant pauses or fails closed;
+- "always allow" persists the exact rule;
+- plan mutation invalidates approval;
+- target drift fails before proxy activation;
+- interpretation cannot precede finalized evidence;
+- target loss causes no automatic mutation retry; and
+- a failed proxy teardown prevents a verified outcome.
+
+### 21. Build and repository placement
+
+The `ffx` subtool, target bindings, and transport integration belong in the
+Fuchsia tree. The Python package is built there, at `tools/driver-lab`,
+because it links fuchsia-controller and the generated bindings.
+
+Driver Agent adapters, workflow approval objects, and repository-specific
+orchestration remain in the external Driver Agent repository.
+
+Every run records exact revisions and dirty-state artifacts for both
+repositories. Directory layout is not part of the evidence identity.
+
+### 22. Milestones
+
+#### Milestone H0: transport and control-plane feasibility
+
+- prove the target control plane is reachable through a supported transport;
+- produce the serial-transport discovery report (FDomain byte-stream
+  connector status, bootstrap-realm host candidates, `ffx` team roadmap);
+- enumerate nodes and bound drivers via `fuchsia.driver.development` and
+  produce the discovery gap matrix;
+- validate unclaimed-node proxy binding via existing registration and bind
+  mechanisms; and
+- decide the stable Python-to-`ffx` adapter.
+
+Exit: no architecture-critical dependency is assumed rather than demonstrated.
+
+#### Milestone H1: direct mode
+
+- typed node/protocol discovery;
+- one direct published-protocol interaction;
+- capability reporting;
+- structured CLI output; and
+- evidence bundle.
+
+Exit: direct mode makes no claim to private resources or target audit.
+
+#### Milestone H2: permissions
+
+- read-grant model;
+- interactive allow-once/always-deny flows;
+- atomic persistent config;
+- unattended fail-closed behavior; and
+- plan permission resolution.
+
+Exit: an unapproved register read cannot reach the target.
+
+#### Milestone H3: proxy activation on unclaimed nodes
+
+- direct proxy bind for an unclaimed synthetic node;
+- prepare, activate, execute, and end-access workflow;
+- stale-state validation;
+- disconnect handling;
+- evidence of every transition; and
+- failure recovery.
+
+Exit: the proxy activates, executes, and deactivates on a synthetic unclaimed
+node without manual target intervention.
+
+#### Milestone H4: driver-shaped Python API
+
+- MMIO and representative protocol-backed resource objects;
+- capability-aware operation dispatch;
+- translation metadata;
+- target-local sequence support; and
+- async cancellation tests.
+
+Exit: the same overlapping Python operations work through direct and proxy
+backends without hiding semantic differences.
+
+#### Milestone H5: Driver Agent and recovery
+
+- proposal/permission/approval/run/interpret separation;
+- paniolo integration;
+- panic/reboot handling;
+- no automatic mutating retry; and
+- evidence-linked conclusions.
+
+Exit: an agent can complete an approved read-only investigation and safely
+stop for missing authority.
+
+### 23. Definition of done
+
+The phase 1 host tooling is ready when:
+
+- its target control plane has no `core` component dependency;
+- supported target transports pass end-to-end tests without precluding a
+  serial-capable path;
+- direct and proxy modes share one typed public API;
+- programming-model differences remain visible;
+- private resources are never claimed in direct mode;
+- unknown reads require exact operator consent;
+- persistent grants are stable, auditable, and revocable;
+- mutations require target policy and explicit plan approval;
+- proxy access on an unclaimed node activates, executes, and tears down
+  verifiably;
+- transport loss never triggers automatic mutation replay;
+- every run produces a complete hashed evidence bundle;
+- Driver Agent separates observation from interpretation;
+- no plan can inject arbitrary target paths, monikers, or driver URLs; and
+- plan, session, and evidence schemas carry the reserved takeover fields so
+  phase 2 requires no major contract change.
+
+### 24. Open decisions
+
+Before implementation, resolve:
+
+1. (deferred, `ffx`-team-owned) The serial-capable target transport; phase 1
+   must not preclude it.
+2. Resolved: the Python API links fuchsia-controller in process, with the
+   generated `fuchsia.driver.lab` bindings behind the transport-neutral
+   `ProxyTransport` seam.
+3. Which node/resource descriptors are stable enough for grant matching.
+4. The user-level versus workspace-level permission-file location and merge
+   precedence.
+5. Whether persistent read grants may be shared across equivalent physical
+   targets.
+6. The first standard FIDL resources used to validate programming-model
+   fidelity.
+7. Whether a narrowing-only `ExtendAllowlist` session operation replaces V1's
+   reopen-per-grant behavior.
+8. The register-metadata schema, provenance, and review process backing
+   consent expansion.
+
+Takeover-related decisions (force-bind, node persistence, restoration policy,
+takeover-protocol packaging) live in the Phase 2 section of this document and
+in //src/devices/driver-lab/SPEC.md.
+
+### 25. Primary references
+
+- [Fuchsia Controller remote scripting](https://fuchsia.dev/fuchsia-src/development/tools/fuchsia-controller/scripting-remote-actions)
+- [Driver communication and services](https://fuchsia.dev/fuchsia-src/concepts/drivers/driver_communication)
+- [Fuchsia registers driver](https://fuchsia.dev/fuchsia-src/development/drivers/driver_guides/registers/overview)
+- [Driver runner and driver hosts](https://fuchsia.dev/fuchsia-src/concepts/components/v2/driver_runner)
+- [FFX overview and target connections](https://fuchsia.dev/fuchsia-src/development/tools/ffx/getting-started)
+- [FDomain RFC](https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0228_fdomain)
+
+## Phase 2: managed takeover workflow
+
+### Implementation status
+
+No phase 2 changesets are scheduled: phase 2 is deferred pending
+phase 1 completion and driver-framework team review of the takeover
+mechanism (section 2 below). When changesets are scheduled they will
+be listed here with the same global numbering used in phase 1.
+
+Phase: 2 -- existing-driver exploration through managed takeover
+
+Extends: the Phase 1 section of this document. All phase 1 requirements apply
+unchanged; this section adds only the takeover-specific host behavior.
+
+Companion specification: the proxy driver specification at
+//src/devices/driver-lab/SPEC.md
+
+### 1. Purpose
+
+Phase 2 lets the host activate the proxy on a node that already has a normal
+driver: Driver Manager stops and unbinds the current driver, binds the proxy
+to the same persistent node, and later restores the original driver. This
+enables private-resource inspection of existing drivers, which phase 1
+deliberately excludes.
+
+Phase 1 contracts reserve every field this flow requires (plan `activation:
+"takeover"`, session takeover identity, evidence restoration artifacts), so
+phase 2 is additive: no major version change to the plan schema, wire
+contract, or evidence schema.
+
+### 2. Prerequisites
+
+Phase 2 implementation must not begin until:
+
+1. phase 1 is complete and in use;
+2. the driver-framework team has reviewed the node-scoped force-bind and
+   restoration design (the phase-2 gate in milestone P0/H0); and
+3. the open design areas in section 9 have accepted answers.
+
+### 3. Terminology
+
+- **Managed takeover:** Driver Manager stops and unbinds the current driver,
+  binds the proxy to the same persistent device node, and later restores the
+  original driver.
+- **Takeover lease:** The exclusive per-node authorization under which one
+  host connection may hold proxy access via takeover.
+- **Restoration:** Rebinding the recorded original driver after proxy access
+  ends, and verifying its identity and generation.
+
+### 4. Design invariants
+
+#### 4.1 No silent takeover
+
+Managed takeover changes target state and must be visible to the operator.
+The tool must identify:
+
+- the device node;
+- the currently bound driver;
+- the descendant nodes and drivers that unbinding will tear down;
+- the expected proxy;
+- the fact that driver stop may change hardware state; and
+- the restoration action.
+
+#### 4.2 Restoration is not rollback
+
+Automatic restoration is not the same as rollback of hardware writes. Managed
+takeover cannot promise observation of the exact state that existed before
+unbind: the normal driver's stop path may quiesce or reset hardware.
+
+#### 4.3 Subtree teardown is part of the contract
+
+Unbinding a non-leaf node tears down its descendant nodes and stops their
+drivers, including any power or thermal management they perform. Takeover
+eligibility, operator consent display, and restoration verification must
+account for the full affected subtree. The detailed design is an open area
+(section 9).
+
+### 5. Takeover protocol client contract
+
+The engineering-only takeover protocol is served by Driver Manager. Discovery
+remains `fuchsia.driver.development` (phase 1); this protocol adds only
+takeover. The exact FIDL syntax is revision-dependent, but the semantics
+below are normative.
+
+#### 5.1 Begin proxy access
+
+`BeginProxyAccess` must require:
+
+- stable node identity;
+- staleness expectations, validated via expected bound-driver URL and
+  driver-host koid unless Driver Manager provides an explicit topology
+  generation;
+- requested activation policy;
+- fixed proxy identity selected from target configuration;
+- run context and plan digest; and
+- an exclusive takeover lease.
+
+Driver Manager:
+
+1. rejects a stale expectation;
+2. records the original driver's identity;
+3. requests an orderly stop, unbinds it, and verifies that the node remains
+   present;
+4. binds the configured proxy;
+5. verifies the proxy instance and generation;
+6. returns a proxy-access token and proxy endpoint; and
+7. exposes progress events so the host can distinguish each stage.
+
+The caller cannot select an arbitrary driver package. The original driver URL
+is recorded by Driver Manager, never supplied by plan JSON.
+
+#### 5.2 End proxy access
+
+`EndProxyAccess`:
+
+1. stops new proxy sessions;
+2. waits for or cancels bounded in-flight work;
+3. stops and unbinds the proxy;
+4. binds the recorded original driver and verifies its identity and
+   generation;
+5. records the terminal restoration state; and
+6. invalidates the proxy-access token.
+
+Restoration failure is a first-class outcome. It must not be reported as a
+successful run even if the experiment itself completed.
+
+#### 5.3 Disconnect behavior
+
+Only one takeover lease exists per node. On host-channel loss, Driver Manager
+must stop accepting new work and attempt the configured bounded restoration
+policy. The next host connection can query the recorded outcome. If rebind
+cannot establish a known state, the host recovery workflow uses the
+out-of-band path.
+
+### 6. Managed-takeover workflow
+
+#### 6.1 Prepare
+
+The phase 1 prepare steps apply, plus:
+
+1. Discover the current bound driver and the affected descendant subtree.
+2. Capture driver identity and generation expectations.
+3. Confirm takeover eligibility and a compatible proxy.
+4. Display the takeover consequences (section 4.1) for operator approval.
+
+Preparation performs no hardware operations and does not unbind the driver.
+
+#### 6.2 Execute
+
+1. Create a non-reused evidence directory.
+2. Start serial and liveness capture.
+3. Begin takeover with frozen expectations.
+4. Record every takeover transition.
+5. Describe the bound proxy and verify its policy/resource digest.
+6. Open a session with an exact session allowlist.
+7. Execute the bounded plan, draining proxy audit after every mutating
+   operation.
+8. Drain remaining proxy audit.
+9. Close the proxy session.
+10. Restore the original driver.
+11. Verify restoration, including the rebuilt subtree.
+12. Stop capture and finalize evidence.
+
+#### 6.3 Failure behavior
+
+The phase 1 failure rules apply, plus:
+
+- A stale expectation fails before unbind.
+- A failure after unbind always proceeds to restoration or explicit
+  out-of-band recovery.
+- A reboot invalidates the proxy-access token and all boot-scoped
+  expectations.
+- A restoration failure is terminal even if all probe operations succeeded.
+
+### 7. Host surface additions
+
+- Plans populate the reserved takeover fields: expected bound driver,
+  staleness expectations, expected proxy identity, and restoration policy.
+- `attach` accepts activation policy `takeover`; `auto` never selects it
+  without explicit takeover authorization in the approved plan.
+- The CLI adds `ffx driver-lab takeover --node <id>`; exit category 8 covers
+  takeover failure and category 9 becomes an active outcome (restoration
+  failure).
+- Ctrl-C initiates restoration when a takeover is active; a second interrupt
+  may request out-of-band escalation but must not abandon restoration state
+  silently.
+- Evidence populates `restoration.json` and the takeover entries of
+  `proxy-access.jsonl`; the manifest records takeover and restoration
+  outcome.
+
+### 8. Testing
+
+Test every takeover state transition:
+
+- stale node or driver expectation;
+- no bound driver;
+- incompatible proxy;
+- driver stop failure;
+- node disappearance;
+- proxy bind failure;
+- host disconnect during each transition;
+- execution failure;
+- proxy stop failure;
+- original-driver rebind failure;
+- successful restoration with a new driver generation;
+- subtree teardown and rebuild verification; and
+- recovery state visible after reconnect.
+
+Driver Agent tests add: target drift fails before takeover, and restoration
+failure prevents a verified outcome.
+
+Milestone exit: a synthetic driver is replaced and restored without manual
+target intervention, and every injected transition failure is visible.
+
+### 9. Open design areas
+
+1. The node-scoped force-bind API (the existing `DisableDriver` is global by
+   URL and unsuitable).
+2. Which node classes remain persistent through unbind/rebind.
+3. Subtree teardown: descendant enumeration, eligibility rules, consent
+   display, restoration verification, and power-framework element handling.
+4. Takeover-protocol packaging (Driver Manager binary variant versus config
+   gating), with production verification owned by platform assembly.
+5. How restoration timeout and Driver Manager recovery state are persisted.
+6. Whether automatic driver-host restart is disabled during an active
+   takeover.
+7. Whether takeover-eligibility reporting needs additional descriptors beyond
+   the phase 1 discovery gap matrix.
