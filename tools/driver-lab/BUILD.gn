@@ -7,7 +7,7 @@ import("//build/python/python_library.gni")
 
 # Transport-neutral host tooling for the host-proxy driver workflow:
 # models, operator read grants, and plan canonicalization. The
-# fuchsia-controller transport adapter over //src/devices/host-proxy/fidl
+# fuchsia-controller transport adapter over //src/devices/driver-lab/fidl
 # layers on top of this library.
 python_library("driver_lab") {
   library_name = "driver_lab"
@@ -17,10 +17,16 @@ python_library("driver_lab") {
     "api.py",
     "consent.py",
     "evidence.py",
+    "fidl_transport.py",
     "models.py",
     "permissions.py",
     "plans.py",
     "transport.py",
+  ]
+  library_deps = [
+    "//src/developer/ffx/lib/fuchsia-controller:fidl_bindings",
+    "//src/developer/ffx/lib/fuchsia-controller:fuchsia_controller_py",
+    "//src/devices/driver-lab/fidl:fuchsia.driver.lab_python",
   ]
 }
 
@@ -49,6 +55,11 @@ if (is_host) {
     main_source = "tests/consent_test.py"
     libraries = [ ":driver_lab" ]
   }
+
+  python_host_test("driver_lab_fidl_transport_test") {
+    main_source = "tests/fidl_transport_test.py"
+    libraries = [ ":driver_lab" ]
+  }
 }
 
 group("tests") {
@@ -57,6 +68,7 @@ group("tests") {
     ":driver_lab_api_test($host_toolchain)",
     ":driver_lab_consent_test($host_toolchain)",
     ":driver_lab_evidence_test($host_toolchain)",
+    ":driver_lab_fidl_transport_test($host_toolchain)",
     ":driver_lab_permissions_test($host_toolchain)",
     ":driver_lab_plans_test($host_toolchain)",
   ]

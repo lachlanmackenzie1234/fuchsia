@@ -39,7 +39,7 @@ commit.
       unattended behavior (10.2), and `DriverLab.run_plan` composing
       prepare/execute/finalize with mode and guarantee resolution
       before any connection (6.2, 7.3, 14).
-- [ ] CS7 `[driver-lab] fuchsia-controller FIDL transport adapter`
+- [x] CS7 `[driver-lab] fuchsia-controller FIDL transport adapter`
       -- `ProxyTransport` over the generated bindings, exercised
       through real FIDL encoding on the build host (12, 20.3).
 - [ ] CS8 `[driver-lab] Add host CLI tools` -- `driver-lab.pyz`
