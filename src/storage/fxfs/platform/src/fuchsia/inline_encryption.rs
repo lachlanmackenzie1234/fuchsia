@@ -226,7 +226,8 @@ mod tests {
             Some(&fio::MutableNodeAttributes {
                 encryption_policy: Some(fio::FscryptPolicy {
                     key_identifier,
-                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                    flags: fio::FscryptPolicyFlags::PAD_16
+                        | fio::FscryptPolicyFlags::IV_INO_LBLK_32,
                 }),
                 ..Default::default()
             }),
@@ -329,7 +330,8 @@ mod tests {
             Some(&fio::MutableNodeAttributes {
                 encryption_policy: Some(fio::FscryptPolicy {
                     key_identifier,
-                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                    flags: fio::FscryptPolicyFlags::PAD_16
+                        | fio::FscryptPolicyFlags::IV_INO_LBLK_32,
                 }),
                 ..Default::default()
             }),
@@ -465,7 +467,8 @@ mod tests {
                 Some(&fio::MutableNodeAttributes {
                     encryption_policy: Some(fio::FscryptPolicy {
                         key_identifier,
-                        flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                        flags: fio::FscryptPolicyFlags::PAD_16
+                            | fio::FscryptPolicyFlags::IV_INO_LBLK_32,
                     }),
                     ..Default::default()
                 }),
@@ -570,7 +573,8 @@ mod tests {
             Some(&fio::MutableNodeAttributes {
                 encryption_policy: Some(fio::FscryptPolicy {
                     key_identifier,
-                    flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                    flags: fio::FscryptPolicyFlags::PAD_16
+                        | fio::FscryptPolicyFlags::IV_INO_LBLK_32,
                 }),
                 ..Default::default()
             }),

@@ -988,12 +988,7 @@ impl vfs::node::Node for FxDirectory {
                     .get_inline_selinux_context()
                     .await
                     .map_err(map_to_status)?,
-                encryption_policy: props.dir_type.wrapping_key_id().map(|key_identifier| {
-                    fio::FscryptPolicy {
-                        key_identifier,
-                        flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
-                    }
-                }),
+                encryption_policy: props.dir_type.fscrypt_policy(),
             },
             Immutable {
                 protocols: fio::NodeProtocolKinds::DIRECTORY,
@@ -4003,6 +3998,92 @@ mod tests {
             .expect("FIDL call failed")
             .expect_err("creating a symlink in a locked directory should fail");
 
+        new_fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_get_encryption_policy_on_locked_directory() {
+        let fixture = TestFixture::new().await;
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
+        let root = fixture.root();
+        let parent = open_dir_checked(
+            &root,
+            "foo",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
+        let expected_policy = fio::FscryptPolicy {
+            key_identifier: WRAPPING_KEY_ID,
+            flags: fio::FscryptPolicyFlags::PAD_16 | fio::FscryptPolicyFlags::IV_INO_LBLK_64,
+        };
+        parent
+            .update_attributes(&fio::MutableNodeAttributes {
+                encryption_policy: Some(expected_policy.clone()),
+                ..Default::default()
+            })
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::ok)
+            .expect("update_attributes failed");
+
+        let child = open_dir_checked(
+            &parent,
+            "child_dir",
+            fio::Flags::FLAG_MUST_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        close_dir_checked(child).await;
+        close_dir_checked(parent).await;
+
+        let device = fixture.close().await;
+        // Reopen the filesystem without adding the wrapping key so the directories are locked.
+        let new_fixture = TestFixture::new_with_device(device).await;
+        let root = new_fixture.root();
+        let locked_parent = open_dir_checked(
+            &root,
+            "foo",
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        let (mutable_attrs, _) = locked_parent
+            .get_attributes(fio::NodeAttributesQuery::ENCRYPTION_POLICY)
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::Status::err_from_raw)
+            .expect("get_attributes failed on locked parent directory");
+        assert_eq!(mutable_attrs.encryption_policy, Some(expected_policy.clone()));
+
+        let entries = fuchsia_fs::directory::readdir(&locked_parent).await.expect("readdir failed");
+        assert_eq!(entries.len(), 1);
+        let locked_child = open_dir_checked(
+            &locked_parent,
+            &entries[0].name,
+            fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
+            Default::default(),
+        )
+        .await;
+        let (child_mutable_attrs, _) = locked_child
+            .get_attributes(fio::NodeAttributesQuery::ENCRYPTION_POLICY)
+            .await
+            .expect("FIDL call failed")
+            .map_err(zx::Status::err_from_raw)
+            .expect("get_attributes failed on locked child directory");
+        assert_eq!(child_mutable_attrs.encryption_policy, Some(expected_policy));
+
+        close_dir_checked(locked_child).await;
+        close_dir_checked(locked_parent).await;
         new_fixture.close().await;
     }
 

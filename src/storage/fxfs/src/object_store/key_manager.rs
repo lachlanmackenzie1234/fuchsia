@@ -584,6 +584,7 @@ mod tests {
             _owner: u64,
             _wrapping_key_id: WrappingKeyId,
             _object_type: ObjectType,
+            _flags: fidl_fuchsia_io::FscryptPolicyFlags,
         ) -> Result<(fxfs_crypto::EncryptionKey, UnwrappedKey), zx::Status> {
             unimplemented!("Not used in tests");
         }

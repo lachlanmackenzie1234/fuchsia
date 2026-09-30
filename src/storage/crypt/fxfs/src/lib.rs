@@ -44,6 +44,7 @@ impl CryptService {
         owner: u64,
         wrapping_key_id: u128,
         object_type: FxfsFidlObjectType,
+        _flags: fidl_fuchsia_io::FscryptPolicyFlags,
     ) -> Result<(WrappedKey, Vec<u8>), i32> {
         let (encryption_key, unwrapped_key) = self
             .inner
@@ -106,8 +107,8 @@ impl CryptService {
                             owner,
                             wrapping_key_id,
                             object_type,
+                            flags,
                             responder,
-                            ..
                         } => {
                             responder
                                 .send(
@@ -116,6 +117,7 @@ impl CryptService {
                                             owner,
                                             u128::from_le_bytes(wrapping_key_id),
                                             object_type,
+                                            flags,
                                         )
                                         .await
                                     {
@@ -262,7 +264,12 @@ mod tests {
         service.add_wrapping_key(2, key.clone()).expect("add_key failed");
 
         let (wrapped_key, unwrapped_key) = service
-            .create_key_with_id(0, 2, ObjectType::File)
+            .create_key_with_id(
+                0,
+                2,
+                ObjectType::File,
+                fidl_fuchsia_io::FscryptPolicyFlags::empty(),
+            )
             .await
             .expect("create_key_with_id failed");
         let unwrap_result = service.unwrap_key(0, wrapped_key).await.expect("unwrap_key failed");
@@ -270,7 +277,12 @@ mod tests {
 
         // Do it twice to make sure the service can use the same key repeatedly.
         let (wrapped_key, unwrapped_key) = service
-            .create_key_with_id(1, 2, ObjectType::File)
+            .create_key_with_id(
+                1,
+                2,
+                ObjectType::File,
+                fidl_fuchsia_io::FscryptPolicyFlags::empty(),
+            )
             .await
             .expect("create_key_with_id failed");
         let unwrap_result = service.unwrap_key(1, wrapped_key).await.expect("unwrap_key failed");
@@ -281,7 +293,12 @@ mod tests {
     async fn create_key_with_wrapping_key_that_does_not_exist() {
         let service = CryptService::new();
         service
-            .create_key_with_id(0, 2, ObjectType::File)
+            .create_key_with_id(
+                0,
+                2,
+                ObjectType::File,
+                fidl_fuchsia_io::FscryptPolicyFlags::empty(),
+            )
             .await
             .expect_err("create_key_with_id should fail if the wrapping key does not exist");
 
@@ -289,7 +306,12 @@ mod tests {
         service.add_wrapping_key(2, wrapping_key.clone()).expect("add_key failed");
 
         let (wrapped_key, unwrapped_key) = service
-            .create_key_with_id(0, 2, ObjectType::File)
+            .create_key_with_id(
+                0,
+                2,
+                ObjectType::File,
+                fidl_fuchsia_io::FscryptPolicyFlags::empty(),
+            )
             .await
             .expect("create_key_with_id failed");
         let unwrap_result = service.unwrap_key(0, wrapped_key).await.expect("unwrap_key failed");

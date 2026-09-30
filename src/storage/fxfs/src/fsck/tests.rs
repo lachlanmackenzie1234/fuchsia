@@ -3154,7 +3154,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
             ..
         }) = &mut mutation
         {
-            *dir_type = DirType::Encrypted(CHILD_WRAPPING_KEY_ID);
+            *dir_type = DirType::Encrypted(CHILD_WRAPPING_KEY_ID.into());
         } else {
             unreachable!();
         }
@@ -4646,7 +4646,7 @@ async fn test_bad_casefold_hash() {
             &store,
             &mut transaction,
             HandleOptions::default(),
-            Some(WRAPPING_KEY_ID),
+            Some(WRAPPING_KEY_ID.into()),
         )
         .await
         .expect("create_object failed");

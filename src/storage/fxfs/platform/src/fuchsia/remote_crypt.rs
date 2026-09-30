@@ -89,10 +89,11 @@ impl Crypt for RemoteCrypt {
         owner: u64,
         wrapping_key_id: WrappingKeyId,
         object_type: ObjectType,
+        flags: fidl_fuchsia_io::FscryptPolicyFlags,
     ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
         let (key, unwrapped_key, key_token) = self
             .client
-            .create_key_with_id(owner, &wrapping_key_id, object_type)
+            .create_key_with_id(owner, &wrapping_key_id, object_type, flags)
             .await
             .map_err(|e| map_to_status(e.into()))?
             .map_err(zx::Status::err_from_raw)?;
@@ -234,8 +235,15 @@ mod tests {
         let device: Arc<dyn Device> = mock_device.clone();
         let remote_crypt = RemoteCrypt::new_with_device(crypt_client, device);
 
-        let (_wrapped, unwrapped) =
-            remote_crypt.create_key_with_id(1, [0xaa; 16], ObjectType::File).await.unwrap();
+        let (_wrapped, unwrapped) = remote_crypt
+            .create_key_with_id(
+                1,
+                [0xaa; 16],
+                ObjectType::File,
+                fidl_fuchsia_io::FscryptPolicyFlags::empty(),
+            )
+            .await
+            .unwrap();
         assert_eq!(unwrapped.slot(), Some(9));
         assert_eq!(&*unwrapped, &[0x11; 16]);
         assert_eq!(mock_device.register_key_calls.load(Ordering::Relaxed), 1);

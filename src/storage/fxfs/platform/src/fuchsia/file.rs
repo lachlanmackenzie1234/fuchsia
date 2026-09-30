@@ -317,14 +317,21 @@ impl FxFile {
                         }));
                     }
                     EncryptionKey::FscryptInoLblk32File { key_identifier } => {
-                        // TODO(https://fxbug.dev/527952709): Remove this fallback once policy flags
-                        // are recorded per-node or inherited directly from the directory record.
                         return Ok(Some(fio::FscryptPolicy {
                             key_identifier: *key_identifier,
-                            flags: fxfs::object_store::LEGACY_FSCRYPT_FLAGS,
+                            flags: fio::FscryptPolicyFlags::PAD_16
+                                | fio::FscryptPolicyFlags::IV_INO_LBLK_32,
                         }));
                     }
-                    EncryptionKey::FscryptInoLblk32Dir { .. } => {
+                    EncryptionKey::FscryptInoLblk64File { key_identifier } => {
+                        return Ok(Some(fio::FscryptPolicy {
+                            key_identifier: *key_identifier,
+                            flags: fio::FscryptPolicyFlags::PAD_16
+                                | fio::FscryptPolicyFlags::IV_INO_LBLK_64,
+                        }));
+                    }
+                    EncryptionKey::FscryptInoLblk32Dir { .. }
+                    | EncryptionKey::FscryptInoLblk64Dir { .. } => {
                         error!("Unexpected key type for file: {:?}", key);
                         return Ok(None);
                     }
