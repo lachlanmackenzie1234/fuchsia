@@ -13,6 +13,7 @@ tests rely on are here proven reachable through the wire contract.
 
 import asyncio
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -280,6 +281,8 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
         self.fake = FakeProxyTarget(make_description())
         self.fake.set_value(1, 0x3C, 0xDEAD_BEEF)
         self.tasks: list[asyncio.Task[None]] = []
+        self._orig_nodename = os.environ.pop("FUCHSIA_NODENAME", None)
+        self._orig_device_addr = os.environ.pop("FUCHSIA_DEVICE_ADDR", None)
 
     async def asyncTearDown(self) -> None:
         for task in self.tasks:
@@ -290,9 +293,13 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
 
                     traceback.print_exception(exception)
             task.cancel()
+        if self._orig_nodename is not None:
+            os.environ["FUCHSIA_NODENAME"] = self._orig_nodename
+        if self._orig_device_addr is not None:
+            os.environ["FUCHSIA_DEVICE_ADDR"] = self._orig_device_addr
 
     def make_lab(self) -> DriverLab:
-        context = Context()
+        context = Context(target="")
         (client_channel, server_channel) = context.channel_create()
         self._context = context
         proxy_server = _BridgeProxyServer(server_channel, self.fake, self.tasks)
@@ -311,7 +318,7 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_describe_round_trips(self) -> None:
-        context = Context()
+        context = Context(target="")
         (client_channel, server_channel) = context.channel_create()
         proxy_server = _BridgeProxyServer(server_channel, self.fake, self.tasks)
         self.tasks.append(

@@ -31,7 +31,7 @@ pub const PROVIDER: &str = "platform";
 /// (ceiling, then exact session allowlist, then bounds) is unchanged.
 /// TODO: replace with the reviewed policy manifest (spec section 9.6).
 fn engineering_ceiling() -> ResourceCeiling {
-    ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true }
+    ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false }
 }
 
 /// Volatile access to one locally mapped MMIO region.

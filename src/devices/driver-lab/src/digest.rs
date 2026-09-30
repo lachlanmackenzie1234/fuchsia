@@ -19,8 +19,12 @@ use std::fmt;
 /// A SHA-256 digest, displayed as `sha256:<lowercase hex>`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sha256Digest([u8; 32]);
-
 impl Sha256Digest {
+    /// Creates a digest from raw 32 bytes.
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     /// The raw digest bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
@@ -92,6 +96,7 @@ pub fn resource_digest(inputs: &DigestInputs<'_>) -> Sha256Digest {
         Some(ceiling) => {
             put_u64(&mut hasher, "ceiling", 1);
             put_u64(&mut hasher, "allow_unknown_reads", u64::from(ceiling.allow_unknown_reads));
+            put_u64(&mut hasher, "allow_poll", u64::from(ceiling.allow_poll));
             let mut denied: Vec<(u64, u64)> =
                 ceiling.hard_denied.iter().map(|range| (range.start, range.end)).collect();
             denied.sort_unstable();
@@ -150,6 +155,7 @@ pub fn policy_digest(ceiling: &BTreeMap<ResourceId, ResourceCeiling>) -> Sha256D
     for (id, entry) in ceiling {
         put_u64(&mut hasher, "id", u64::from(*id));
         put_u64(&mut hasher, "allow_unknown_reads", u64::from(entry.allow_unknown_reads));
+        put_u64(&mut hasher, "allow_poll", u64::from(entry.allow_poll));
         let mut denied: Vec<(u64, u64)> =
             entry.hard_denied.iter().map(|range| (range.start, range.end)).collect();
         denied.sort_unstable();
@@ -171,7 +177,11 @@ mod tests {
     }
 
     fn ceiling() -> ResourceCeiling {
-        ResourceCeiling { hard_denied: vec![0x40..0x44, 0x80..0x90], allow_unknown_reads: true }
+        ResourceCeiling {
+            hard_denied: vec![0x40..0x44, 0x80..0x90],
+            allow_unknown_reads: true,
+            allow_poll: false,
+        }
     }
 
     fn digest_of(resource: &MmioResource, ceiling: Option<&ResourceCeiling>) -> Sha256Digest {
@@ -262,6 +272,7 @@ mod tests {
         let reordered = ResourceCeiling {
             hard_denied: vec![0x80..0x90, 0x40..0x44],
             allow_unknown_reads: true,
+            allow_poll: false,
         };
         assert_eq!(
             digest_of(&resource(), Some(&reordered)),
@@ -329,8 +340,14 @@ mod tests {
             ResourceCeiling {
                 hard_denied: vec![0x80..0x90, 0x40..0x44],
                 allow_unknown_reads: true,
+                allow_poll: false,
             },
         )]);
         assert_eq!(policy_digest(&reordered_denies), policy_digest(&one));
+
+        let mut poll_allowed = ceiling();
+        poll_allowed.allow_poll = true;
+        let poll_changed = BTreeMap::from([(1, poll_allowed)]);
+        assert_ne!(policy_digest(&poll_changed), policy_digest(&one));
     }
 }

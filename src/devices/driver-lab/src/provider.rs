@@ -119,9 +119,10 @@ mod tests {
     fn bundle() -> ProvidedResources<FakeMmio> {
         let mut bundle = ProvidedResources::empty("fake", "node");
         bundle.resources.insert(1, resource(0x100, 0x1000));
-        bundle
-            .ceiling
-            .insert(1, ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true });
+        bundle.ceiling.insert(
+            1,
+            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
+        );
         bundle.backends.insert(1, FakeMmio::new());
         bundle
     }
@@ -145,9 +146,10 @@ mod tests {
     #[test]
     fn dangling_ceiling_is_rejected() {
         let mut bundle = bundle();
-        bundle
-            .ceiling
-            .insert(9, ResourceCeiling { hard_denied: vec![], allow_unknown_reads: false });
+        bundle.ceiling.insert(
+            9,
+            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: false, allow_poll: false },
+        );
         assert_eq!(
             bundle.validate(),
             Err(ProviderError::CeilingWithoutResource { missing: vec![9] })

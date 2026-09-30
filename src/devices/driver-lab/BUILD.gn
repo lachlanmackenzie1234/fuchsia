@@ -31,8 +31,13 @@ rustc_library("core") {
     "src/hardware_backend.rs",
     "src/provider.rs",
     "src/session.rs",
+    "src/target_policy.rs",
   ]
-  deps = [ "//third_party/rust_crates:sha2" ]
+  deps = [
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:sha2",
+  ]
 }
 
 fuchsia_rust_driver("driver") {

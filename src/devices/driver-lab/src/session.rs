@@ -75,6 +75,8 @@ pub enum OpenError {
     },
     /// Another mutating session already holds the mutation lease.
     MutationLeaseHeld,
+    /// Mutating sessions are not permitted by the target ceiling policy.
+    MutationNotPermitted,
     /// The request set a reserved (phase 2) expectation field. Fail
     /// closed rather than silently ignoring the field.
     UnsupportedExpectation,
@@ -99,6 +101,7 @@ pub struct SessionManager {
     identity: ProxyIdentity,
     resources: BTreeMap<ResourceId, MmioResource>,
     ceiling: BTreeMap<ResourceId, ResourceCeiling>,
+    allow_mutating_sessions: bool,
     next_id: u64,
     sessions: BTreeMap<u64, Session>,
     mutating: Option<u64>,
@@ -111,11 +114,13 @@ impl SessionManager {
         identity: ProxyIdentity,
         resources: BTreeMap<ResourceId, MmioResource>,
         ceiling: BTreeMap<ResourceId, ResourceCeiling>,
+        allow_mutating_sessions: bool,
     ) -> Self {
         Self {
             identity,
             resources,
             ceiling,
+            allow_mutating_sessions,
             next_id: 1,
             sessions: BTreeMap::new(),
             mutating: None,
@@ -158,8 +163,13 @@ impl SessionManager {
         if expectations.policy_digest != self.identity.policy_digest {
             return Err(OpenError::StalePolicyDigest);
         }
-        if mode == SessionMode::Mutating && self.mutating.is_some() {
-            return Err(OpenError::MutationLeaseHeld);
+        if mode == SessionMode::Mutating {
+            if !self.allow_mutating_sessions {
+                return Err(OpenError::MutationNotPermitted);
+            }
+            if self.mutating.is_some() {
+                return Err(OpenError::MutationLeaseHeld);
+            }
         }
         let policy = AccessPolicy::new(self.resources.clone(), self.ceiling.clone(), allowlist)
             .map_err(|(rule, denial)| OpenError::RejectedAllowlist { rule, denial })?;
@@ -222,9 +232,9 @@ mod tests {
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true },
+            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
         )]);
-        SessionManager::new(identity(), resources, ceiling)
+        SessionManager::new(identity(), resources, ceiling, true)
     }
 
     fn open(manager: &mut SessionManager, mode: SessionMode) -> Result<u64, OpenError> {
@@ -316,5 +326,21 @@ mod tests {
         let mut manager = manager();
         manager.reject_new_sessions();
         assert_eq!(open(&mut manager, SessionMode::ReadOnly), Err(OpenError::NotAccepting));
+    }
+
+    #[test]
+    fn mutating_session_rejected_when_not_permitted() {
+        let resources = BTreeMap::from([(
+            CTRL,
+            MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x100 },
+        )]);
+        let ceiling = BTreeMap::from([(
+            CTRL,
+            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
+        )]);
+        let mut manager = SessionManager::new(identity(), resources, ceiling, false);
+        assert_eq!(open(&mut manager, SessionMode::Mutating), Err(OpenError::MutationNotPermitted));
+        // Read-only sessions still work.
+        assert!(open(&mut manager, SessionMode::ReadOnly).is_ok());
     }
 }

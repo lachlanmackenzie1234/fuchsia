@@ -54,6 +54,9 @@ pub struct ResourceCeiling {
     /// Whether otherwise-unclassified reads may be enabled by an exact
     /// session allowlist rule.
     pub allow_unknown_reads: bool,
+    /// Whether repeated polling reads may be authorized by an exact
+    /// session allowlist rule.
+    pub allow_poll: bool,
 }
 
 /// One exact session allowlist rule. Wildcards do not exist: a rule matches
@@ -96,6 +99,8 @@ pub enum Denial {
     /// The ceiling does not permit operator-authorized unknown reads on
     /// this resource.
     UnknownReadsNotPermitted,
+    /// The ceiling does not permit polling on this resource.
+    PollNotPermitted,
     /// No exact session allowlist rule matches the access.
     NotInAllowlist,
     /// A bounded-execution limit (for example maximum snapshot items) was
@@ -172,10 +177,21 @@ impl AccessPolicy {
 
     /// Pre-session validation of one allowlist rule.
     fn validate_rule(&self, rule: &AccessRule) -> Result<(), Denial> {
-        if !matches!(rule.class, AccessClass::ReadOnce | AccessClass::Snapshot) {
-            return Err(Denial::UnsupportedAccessClass);
+        match rule.class {
+            AccessClass::ReadOnce | AccessClass::Snapshot => {
+                self.validate_read(rule.resource, rule.offset, rule.width)
+            }
+            AccessClass::Poll => {
+                self.validate_read(rule.resource, rule.offset, rule.width)?;
+                let ceiling =
+                    self.ceiling.get(&rule.resource).ok_or(Denial::NotPermittedByCeiling)?;
+                if !ceiling.allow_poll {
+                    return Err(Denial::PollNotPermitted);
+                }
+                Ok(())
+            }
+            AccessClass::Write => Err(Denial::UnsupportedAccessClass),
         }
-        self.validate_read(rule.resource, rule.offset, rule.width)
     }
 
     /// Structural and ceiling checks shared by rule prevalidation and
@@ -250,9 +266,30 @@ mod tests {
 
     fn ceiling() -> BTreeMap<ResourceId, ResourceCeiling> {
         BTreeMap::from([
-            (CTRL, ResourceCeiling { hard_denied: vec![0x40..0x44], allow_unknown_reads: true }),
-            (LOCKED, ResourceCeiling { hard_denied: vec![], allow_unknown_reads: false }),
-            (SHORT_MAP, ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true }),
+            (
+                CTRL,
+                ResourceCeiling {
+                    hard_denied: vec![0x40..0x44],
+                    allow_unknown_reads: true,
+                    allow_poll: true,
+                },
+            ),
+            (
+                LOCKED,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: false,
+                    allow_poll: false,
+                },
+            ),
+            (
+                SHORT_MAP,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: true,
+                    allow_poll: false,
+                },
+            ),
         ])
     }
 
@@ -374,9 +411,27 @@ mod tests {
     }
 
     #[test]
-    fn allowlist_prevalidation_rejects_unsupported_class() {
-        let rule =
+    fn allowlist_prevalidation_checks_poll_permission() {
+        // CTRL has allow_poll: true
+        let rule_poll_allowed =
             AccessRule { resource: CTRL, offset: 0x0, width: WIDTH32, class: AccessClass::Poll };
+        assert!(AccessPolicy::new(resources(), ceiling(), [rule_poll_allowed]).is_ok());
+
+        // SHORT_MAP has allow_poll: false
+        let rule_poll_denied = AccessRule {
+            resource: SHORT_MAP,
+            offset: 0x0,
+            width: WIDTH32,
+            class: AccessClass::Poll,
+        };
+        let denied = AccessPolicy::new(resources(), ceiling(), [rule_poll_denied]);
+        assert_eq!(denied.unwrap_err(), (rule_poll_denied, Denial::PollNotPermitted));
+    }
+
+    #[test]
+    fn allowlist_prevalidation_rejects_write_class() {
+        let rule =
+            AccessRule { resource: CTRL, offset: 0x0, width: WIDTH32, class: AccessClass::Write };
         let denied = AccessPolicy::new(resources(), ceiling(), [rule]);
         assert_eq!(denied.unwrap_err(), (rule, Denial::UnsupportedAccessClass));
     }

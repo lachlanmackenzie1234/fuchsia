@@ -325,7 +325,7 @@ mod tests {
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true },
+            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
         )]);
         let policy = AccessPolicy::new(resources, ceiling, rules.iter().copied()).unwrap();
         let mut mmio = FakeMmio::new();
@@ -481,7 +481,7 @@ mod tests {
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true },
+            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
         )]);
         let policy =
             AccessPolicy::new(resources, ceiling, [rule(0x3c, AccessClass::ReadOnce)]).unwrap();

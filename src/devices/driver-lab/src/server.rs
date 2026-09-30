@@ -64,6 +64,7 @@ fn denial_to_fidl(denial: Denial) -> flab::OperationError {
         Denial::NotPermittedByCeiling => flab::OperationError::NotPermittedByCeiling,
         Denial::HardDenied => flab::OperationError::HardDenied,
         Denial::UnknownReadsNotPermitted => flab::OperationError::UnknownReadsNotPermitted,
+        Denial::PollNotPermitted => flab::OperationError::NotPermittedByCeiling,
         Denial::NotInAllowlist => flab::OperationError::NotInAllowlist,
         Denial::LimitExceeded => flab::OperationError::LimitExceeded,
         Denial::StaleIdentity => flab::OperationError::StaleIdentity,
@@ -81,7 +82,9 @@ fn open_error_to_fidl(error: &OpenError) -> flab::OpenSessionError {
         OpenError::StaleResourceDigest => flab::OpenSessionError::StaleResourceDigest,
         OpenError::StalePolicyDigest => flab::OpenSessionError::StalePolicyDigest,
         OpenError::RejectedAllowlist { .. } => flab::OpenSessionError::RejectedAllowlist,
-        OpenError::MutationLeaseHeld => flab::OpenSessionError::MutationLeaseHeld,
+        OpenError::MutationLeaseHeld | OpenError::MutationNotPermitted => {
+            flab::OpenSessionError::MutationLeaseHeld
+        }
         OpenError::UnsupportedExpectation => flab::OpenSessionError::UnsupportedExpectation,
     }
 }
@@ -95,6 +98,7 @@ fn open_error_denial(error: &OpenError) -> Denial {
         | OpenError::StalePolicyDigest => Denial::StaleIdentity,
         OpenError::RejectedAllowlist { denial, .. } => *denial,
         OpenError::MutationLeaseHeld => Denial::MutationLeaseContention,
+        OpenError::MutationNotPermitted => Denial::NotPermittedByCeiling,
         OpenError::UnsupportedExpectation => Denial::UnsupportedExpectation,
     }
 }

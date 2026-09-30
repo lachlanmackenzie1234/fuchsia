@@ -56,11 +56,13 @@ commit.
       -- direct-mode capability validation, typed protocol discovery,
       protocol transactions, and target audit exclusion (7.1, 8.2, 15;
       milestone H1).
+- [x] CS13 `[driver-lab] Target ceiling policy manifests and verification`
+      -- immutable target ceiling manifests, canonical JSON and deterministic
+      SHA-256 digests, non-widening narrowing validation, and one-shot vs poll
+      enforcement (9.2, 9.6, 22, 23.1; milestone P1 remainder).
 
 Remaining phase 1 work:
 
-- [ ] CS13 `[driver-lab] Target ceiling policy manifests and verification`
-      (9.2, 9.6, 22; milestone P1 remainder).
 - [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
       (11.4, 11.5, 12.2-12.4, 13; milestone P3).
 - [ ] CS15 `[driver-lab] Host tooling support for mutation and sequences`

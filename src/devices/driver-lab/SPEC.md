@@ -47,11 +47,11 @@ list shows which changes precede and which follow that commit.
       (in //tools/driver-lab/SPEC.md).
 - [x] CS12 `[driver-lab] Direct mode client and published-protocol workflow`
       (in //tools/driver-lab/SPEC.md).
+- [x] CS13 `[driver-lab] Target ceiling policy manifests and verification`
+      (9.2, 9.6, 22, 23.1; milestone P1 remainder).
 
 Remaining phase 1 work:
 
-- [ ] CS13 `[driver-lab] Target ceiling policy manifests and verification`
-      (9.2, 9.6, 22; milestone P1 remainder).
 - [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
       (11.4, 11.5, 12.2-12.4, 13; milestone P3).
 - [ ] CS15 `[driver-lab] Host tooling support for mutation and sequences`

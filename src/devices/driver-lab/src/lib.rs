@@ -11,7 +11,6 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing};
-use lab_proxy_core::digest::policy_digest;
 use lab_proxy_core::executor::{ExecLimits, Executor};
 use lab_proxy_core::session::{ProxyIdentity, SessionManager};
 use log::{info, warn};
@@ -74,19 +73,25 @@ impl Driver for LabProxy {
         let boot_id: String = boot_id_bytes.iter().map(|byte| format!("{byte:02x}")).collect();
         let proxy_generation = zx::BootInstant::get().into_nanos() as u64;
 
+        let manifest = lab_proxy_core::target_policy::TargetPolicyManifest::engineering_default(
+            &bundle.resources,
+        );
+        let policy_digest = manifest.policy_digest().to_string();
         let digests = bundle.digests();
         let identity = ProxyIdentity {
             boot_id,
             proxy_generation,
             resource_digest: bundle.combined_digest().to_string(),
-            // TODO: digest the generated policy manifest once policy
-            // loading exists; until then this is the digest of the
-            // in-memory ceiling.
-            policy_digest: policy_digest(&bundle.ceiling).to_string(),
+            policy_digest,
         };
         let resource_digests: BTreeMap<u32, String> =
             digests.iter().map(|(id, digest)| (*id, digest.to_string())).collect();
-        let sessions = SessionManager::new(identity, bundle.resources, bundle.ceiling);
+        let sessions = SessionManager::new(
+            identity,
+            bundle.resources,
+            manifest.to_ceiling_map(),
+            manifest.allow_mutating_sessions,
+        );
         let executor = Executor::new(
             bundle.backends,
             ZxClock,
