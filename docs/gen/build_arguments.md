@@ -945,7 +945,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -953,7 +953,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -5314,10 +5314,11 @@ From //src/lib/llvm/llvm_library.gni:10
 Used to enable local benchmarking/fine-tuning when running benchmarks
 in `fx shell`. Pass `--args=local_bench='true'` to `fx set` in order to
 enable it.
+LINT.IfChange
 
 **Current value (from the default):** `false`
 
-From //src/developer/fuchsia-criterion/BUILD.gn:13
+From //src/developer/fuchsia-criterion/build/args.gni:10
 
 ### lock_name_tracing_enabled
 
@@ -8260,7 +8261,7 @@ Valid alternatives vary by machine, but include "linuxboot".
 
 **Current value (from the default):** `"linuxboot"`
 
-From //zircon/kernel/phys/qemu.gni:165
+From //zircon/kernel/phys/qemu.gni:167
 
 ### rbe_extra_reproxy_configs
 
@@ -9017,7 +9018,7 @@ lock in a deadlock cycle.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:29
+From //src/starnix/build/args.gni:32
 
 ### starnix_enable_trace_and_debug_logs_in_release
 
@@ -9029,10 +9030,11 @@ independent of Rust's tracing library.
 
 For more information, see
 https://fuchsia-review.googlesource.com/c/fuchsia/+/929995.
+LINT.IfChange(starnix_enable_trace_and_debug_logs_in_release)
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:24
+From //src/starnix/build/args.gni:25
 
 ### starnix_force_build_host_tests
 
@@ -9051,7 +9053,7 @@ $host_toolchain.
 
 **Current value (from the default):** `"//build/toolchain:linux_x64"`
 
-From //src/starnix/build/args.gni:33
+From //src/starnix/build/args.gni:36
 
 ### starnix_kgsl_debug
 
