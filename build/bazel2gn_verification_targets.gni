@@ -264,6 +264,7 @@ bazel2gn_verification_targets = [
   "//src/sys/pkg/testing/mock-crash-reporter:verify_bazel2gn",
   "//src/sys/pkg/testing/mock-paver:verify_bazel2gn",
   "//src/sys/pkg/testing/mock-reboot:verify_bazel2gn",
+  "//src/sys/pkg/testing/mock-resolver:verify_bazel2gn",
   "//src/sys/pkg/testing/mock-space:verify_bazel2gn",
   "//src/sys/pkg/testing/shell-process:verify_bazel2gn",
   "//src/sys/pkg/tests/pkg-resolver/template:verify_bazel2gn",
