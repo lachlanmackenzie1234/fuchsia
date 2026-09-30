@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import tempfile
-import typing as T
 import unittest
 
 import generate_sdk_package_content_checklist
@@ -111,10 +110,10 @@ class ConvertTest(unittest.TestCase):
     def test_run_main(
         self,
         exit_code: int,
-        manifest: dict[str, T.Any],
+        manifest: dict[str, object],
         expected_files_exact: list[str],
         expected_files_present: list[str],
-        reference: dict[str, T.Any],
+        reference: dict[str, object],
         warn: bool,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

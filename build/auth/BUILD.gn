@@ -20,6 +20,7 @@ if (is_host) {
 
   python_library("gcloud") {
     sources = [ "gcloud.py" ]
+    library_deps = [ ":apt" ]
   }
 
   python_build_time_tests("apt_test") {

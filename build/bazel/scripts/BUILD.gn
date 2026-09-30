@@ -333,6 +333,7 @@ group("tests") {
     ":build_utils_test($host_toolchain)",
     ":compute_content_hash_test($host_toolchain)",
     ":generate_host_test_wrapper_test($host_toolchain)",
+    ":generate_invocation_bazelrc_test($host_toolchain)",
     ":get_git_head_commit_test($host_toolchain)",
     ":minimal_workspace_test($host_toolchain)",
     ":remote_services_utils_test($host_toolchain)",
