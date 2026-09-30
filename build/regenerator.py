@@ -184,6 +184,24 @@ def update_prebuilt_build_ids_list(fuchsia_dir: Path, list_file: Path) -> None:
         list_file.write_text(list_content)
 
 
+def patch_build_ninja_d(
+    build_ninja_d_path: Path, extra_ninja_build_inputs: T.Sequence[str]
+) -> None:
+    """Append extra build inputs to a Ninja depfile, escaping spaces and backslashes.
+
+    Args:
+        build_ninja_d_path: Path to the build.ninja.d file.
+        extra_ninja_build_inputs: Sequence of input path strings relative to the build directory.
+    """
+    if not extra_ninja_build_inputs:
+        return
+
+    build_ninja_d = build_ninja_d_path.read_text().rstrip()
+    for extra_input in extra_ninja_build_inputs:
+        build_ninja_d += f" {compute_content_hash._depfile_quote(extra_input)}"
+    build_ninja_d_path.write_text(build_ninja_d)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -747,11 +765,9 @@ def main() -> int:
         # own source code, or any other extra implicit input, changes.
         time_profile.start("build.ninja.d")
         log2("- Patching build.ninja.d")
-        build_ninja_d_path = build_dir / "build.ninja.d"
-        build_ninja_d = build_ninja_d_path.read_text().rstrip()
-        for extra_input in sorted_extra_ninja_build_inputs:
-            build_ninja_d += f" {extra_input}"
-        build_ninja_d_path.write_text(build_ninja_d)
+        patch_build_ninja_d(
+            build_dir / "build.ninja.d", sorted_extra_ninja_build_inputs
+        )
 
         log2("- Updating build.ninja.stamp timestamp")
         build_ninja_stamp_path.touch()
