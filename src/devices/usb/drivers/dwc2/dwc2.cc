@@ -224,9 +224,6 @@ void Dwc2::HandleReset() {
 
     // Flush All other endpoint TX FIFOs.
     FlushTxFifo(0x10);
-
-    // Flush the learning queue
-    GRSTCTL::Get().FromValue(0).set_intknqflsh(1).WriteTo(mmio);
   }
 
   // Enable interrupts for only EPO IN and OUT
@@ -1050,8 +1047,6 @@ zx::result<> Dwc2::InitController() {
   // Flush all FIFOs
   FlushTxFifo(0x10);
   FlushRxFifo();
-
-  GRSTCTL::Get().FromValue(0).set_intknqflsh(1).WriteTo(mmio);
 
   // Clear all pending device interrupts
   DIEPMSK::Get().FromValue(0).WriteTo(mmio);

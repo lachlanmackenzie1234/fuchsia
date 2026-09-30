@@ -125,9 +125,6 @@ class Environment : public fdf_testing::Environment {
                                           .set_ahbidle(1)
                                           .set_txfflsh(1)
                                           .set_rxfflsh(1)
-                                          // Dwc2::InitController() flushes the learning queue
-                                          // during recovery (HandleEp0TimeoutRecovery).
-                                          .set_intknqflsh(1)
                                           .set_txfnum(0x1F)
                                           .reg_value();
       EXPECT_EQ(0u, val & disallow_mask);
