@@ -227,7 +227,11 @@ impl Indexer {
     // 2. Non-fallback base drivers
     // 3. Fallback boot drivers
     // 4. Fallback base drivers
-    fn list_drivers(&self) -> Vec<ResolvedDriver> {
+    //
+    // The list is passed to `f` by reference, rather than returned, so that callers do not need to
+    // clone every driver (including its decoded bind rules) on each call. This is called for every
+    // node that is matched, so the cost of copying the drivers adds up quickly during boot.
+    fn with_drivers<R>(&self, f: impl FnOnce(Vec<&ResolvedDriver>) -> R) -> R {
         let base_repo = self.base_repo.borrow();
         let base_repo_iter = match base_repo.deref() {
             BaseRepo::Resolved(drivers) => drivers.iter(),
@@ -245,7 +249,7 @@ impl Indexer {
 
         let ephemeral = self.ephemeral_drivers.borrow();
 
-        boot_repo
+        let drivers = boot_repo
             .iter()
             .filter(|&driver| !driver.fallback)
             .chain(base_repo_iter.filter(|&driver| !driver.fallback))
@@ -253,8 +257,8 @@ impl Indexer {
             .chain(fallback_boot_drivers)
             .chain(fallback_base_drivers)
             .filter(|&driver| !driver.disabled)
-            .map(|driver| driver.clone())
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        f(drivers)
     }
 
     pub fn load_base_repo(&self, base_drivers: Vec<ResolvedDriver>) {
@@ -281,47 +285,47 @@ impl Indexer {
             return Ok(spec);
         }
 
-        let driver_list = self.list_drivers();
-
-        let (mut fallback, mut non_fallback): (
-            Vec<(bool, fdi::MatchDriverResult)>,
-            Vec<(bool, fdi::MatchDriverResult)>,
-        ) = driver_list
-            .iter()
-            .filter_map(|driver| {
-                if let Ok(Some(matched)) = driver.matches(&properties) {
-                    if let Some(url_suffix) = &args.driver_url_suffix {
-                        if !driver.component_url.as_str().ends_with(url_suffix.as_str()) {
-                            return None;
+        self.with_drivers(|driver_list| {
+            let (mut fallback, mut non_fallback): (
+                Vec<(bool, fdi::MatchDriverResult)>,
+                Vec<(bool, fdi::MatchDriverResult)>,
+            ) = driver_list
+                .into_iter()
+                .filter_map(|driver| {
+                    if let Ok(Some(matched)) = driver.matches(&properties) {
+                        if let Some(url_suffix) = &args.driver_url_suffix {
+                            if !driver.component_url.as_str().ends_with(url_suffix.as_str()) {
+                                return None;
+                            }
                         }
+
+                        Some((driver.fallback, matched))
+                    } else {
+                        None
                     }
+                })
+                .partition(|(fallback, _)| *fallback);
 
-                    Some((driver.fallback, matched))
-                } else {
-                    None
+            match (non_fallback.len(), fallback.len()) {
+                (1, _) => Ok(non_fallback.pop().unwrap().1),
+                (0, 1) => Ok(fallback.pop().unwrap().1),
+                (0, 0) => Err(Status::NOT_FOUND.into_raw()),
+                (0, _) => {
+                    log::error!(
+                        "Failed to match driver: Encountered unsupported behavior: Zero non-fallback drivers and more than one fallback drivers were matched"
+                    );
+                    log::error!("Fallback drivers {:#?}", fallback);
+                    Err(Status::NOT_SUPPORTED.into_raw())
                 }
-            })
-            .partition(|(fallback, _)| *fallback);
-
-        match (non_fallback.len(), fallback.len()) {
-            (1, _) => Ok(non_fallback.pop().unwrap().1),
-            (0, 1) => Ok(fallback.pop().unwrap().1),
-            (0, 0) => Err(Status::NOT_FOUND.into_raw()),
-            (0, _) => {
-                log::error!(
-                    "Failed to match driver: Encountered unsupported behavior: Zero non-fallback drivers and more than one fallback drivers were matched"
-                );
-                log::error!("Fallback drivers {:#?}", fallback);
-                Err(Status::NOT_SUPPORTED.into_raw())
+                _ => {
+                    log::error!(
+                        "Failed to match driver: Encountered unsupported behavior: Multiple non-fallback drivers were matched"
+                    );
+                    log::error!("Drivers {:#?}", non_fallback);
+                    Err(Status::NOT_SUPPORTED.into_raw())
+                }
             }
-            _ => {
-                log::error!(
-                    "Failed to match driver: Encountered unsupported behavior: Multiple non-fallback drivers were matched"
-                );
-                log::error!("Drivers {:#?}", non_fallback);
-                Err(Status::NOT_SUPPORTED.into_raw())
-            }
-        }
+        })
     }
 
     pub fn match_pending_node(
@@ -330,59 +334,61 @@ impl Indexer {
     ) -> Result<fdi::MatchPendingNodeResult, i32> {
         let parents = dependencies;
 
-        let driver_list = self.list_drivers();
-        let composite_drivers = driver_list
-            .iter()
-            .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
-            .collect::<Vec<_>>();
+        self.with_drivers(|driver_list| {
+            let composite_drivers = driver_list
+                .into_iter()
+                .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
+                .collect::<Vec<_>>();
 
-        let mut fallback = vec![];
-        let mut non_fallback = vec![];
+            let mut fallback = vec![];
+            let mut non_fallback = vec![];
 
-        for driver in composite_drivers {
-            let matched_composite_result =
-                crate::composite_helper::match_composite_properties(driver, &parents);
-            if let Ok(Some(matched_composite)) = matched_composite_result {
-                if driver.fallback {
-                    fallback.push(matched_composite);
-                } else {
-                    non_fallback.push(matched_composite);
+            for driver in composite_drivers {
+                let matched_composite_result =
+                    crate::composite_helper::match_composite_properties(driver, &parents);
+                if let Ok(Some(matched_composite)) = matched_composite_result {
+                    if driver.fallback {
+                        fallback.push(matched_composite);
+                    } else {
+                        non_fallback.push(matched_composite);
+                    }
                 }
             }
-        }
 
-        let matched = match (non_fallback.len(), fallback.len()) {
-            (1, _) => Ok(non_fallback.pop().unwrap()),
-            (0, 1) => Ok(fallback.pop().unwrap()),
-            (0, 0) => Err(Status::NOT_FOUND.into_raw()),
-            (0, _) => {
-                log::error!(
-                    "Failed to match pending node: Encountered unsupported behavior: Zero non-fallback drivers and more than one fallback drivers were matched"
-                );
-                log::error!("Fallback drivers {:#?}", fallback);
-                Err(Status::NOT_SUPPORTED.into_raw())
-            }
-            _ => {
-                log::error!(
-                    "Failed to match pending node: Encountered unsupported behavior: Multiple non-fallback drivers were matched"
-                );
-                log::error!("Drivers {:#?}", non_fallback);
-                Err(Status::NOT_SUPPORTED.into_raw())
-            }
-        }?;
+            let matched = match (non_fallback.len(), fallback.len()) {
+                (1, _) => Ok(non_fallback.pop().unwrap()),
+                (0, 1) => Ok(fallback.pop().unwrap()),
+                (0, 0) => Err(Status::NOT_FOUND.into_raw()),
+                (0, _) => {
+                    log::error!(
+                        "Failed to match pending node: Encountered unsupported behavior: Zero non-fallback drivers and more than one fallback drivers were matched"
+                    );
+                    log::error!("Fallback drivers {:#?}", fallback);
+                    Err(Status::NOT_SUPPORTED.into_raw())
+                }
+                _ => {
+                    log::error!(
+                        "Failed to match pending node: Encountered unsupported behavior: Multiple non-fallback drivers were matched"
+                    );
+                    log::error!("Drivers {:#?}", non_fallback);
+                    Err(Status::NOT_SUPPORTED.into_raw())
+                }
+            }?;
 
-        Ok(fdi::MatchPendingNodeResult { driver: Some(matched), ..Default::default() })
+            Ok(fdi::MatchPendingNodeResult { driver: Some(matched), ..Default::default() })
+        })
     }
 
     pub fn add_composite_node_spec(&self, spec: fdf::CompositeNodeSpec) -> Result<(), i32> {
-        let driver_list = self.list_drivers();
-        let composite_drivers = driver_list
-            .iter()
-            .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
-            .collect::<Vec<_>>();
+        self.with_drivers(|driver_list| {
+            let composite_drivers = driver_list
+                .into_iter()
+                .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
+                .collect::<Vec<_>>();
 
-        let mut composite_node_spec_manager = self.composite_node_spec_manager.borrow_mut();
-        composite_node_spec_manager.add_composite_node_spec(spec, composite_drivers)
+            let mut composite_node_spec_manager = self.composite_node_spec_manager.borrow_mut();
+            composite_node_spec_manager.add_composite_node_spec(spec, composite_drivers)
+        })
     }
 
     pub fn rebind_composite(
@@ -390,30 +396,32 @@ impl Indexer {
         spec_name: String,
         driver_url_suffix: Option<String>,
     ) -> Result<(), i32> {
-        let driver_list = self.list_drivers();
-        let composite_drivers = driver_list
-            .iter()
-            .filter(|&driver| {
-                if let Some(url_suffix) = &driver_url_suffix {
-                    if !driver.component_url.as_str().ends_with(url_suffix.as_str()) {
-                        return false;
+        self.with_drivers(|driver_list| {
+            let composite_drivers = driver_list
+                .into_iter()
+                .filter(|&driver| {
+                    if let Some(url_suffix) = &driver_url_suffix {
+                        if !driver.component_url.as_str().ends_with(url_suffix.as_str()) {
+                            return false;
+                        }
                     }
-                }
-                matches!(driver.bind_rules, DecodedRules::Composite(_))
-            })
-            .collect::<Vec<_>>();
-        self.composite_node_spec_manager.borrow_mut().rebind(spec_name, composite_drivers)
+                    matches!(driver.bind_rules, DecodedRules::Composite(_))
+                })
+                .collect::<Vec<_>>();
+            self.composite_node_spec_manager.borrow_mut().rebind(spec_name, composite_drivers)
+        })
     }
 
     pub fn rebind_composites_with_driver(&self, driver: String) -> Result<(), i32> {
-        let driver_list = self.list_drivers();
-        let composite_drivers = driver_list
-            .iter()
-            .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
-            .collect::<Vec<_>>();
-        self.composite_node_spec_manager
-            .borrow_mut()
-            .rebind_composites_with_driver(driver, composite_drivers)
+        self.with_drivers(|driver_list| {
+            let composite_drivers = driver_list
+                .into_iter()
+                .filter(|&driver| matches!(driver.bind_rules, DecodedRules::Composite(_)))
+                .collect::<Vec<_>>();
+            self.composite_node_spec_manager
+                .borrow_mut()
+                .rebind_composites_with_driver(driver, composite_drivers)
+        })
     }
 
     pub fn get_driver_info(&self, driver_filter: Vec<String>) -> Vec<fdf::DriverInfo> {
