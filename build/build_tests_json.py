@@ -18,15 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent / "python/modules"))
 import bazel_tests_utils
 import build_utils
 from build_utils import CommandRunner
-from serialization import (
-    JSONValue,
-    instance_from_dict,
-    instance_to_dict,
-    serialize_dict,
-)
+from serialization import JSONValue, instance_from_dict
 
 
-@serialize_dict
 @dataclass(frozen=True)
 class Dimensions:
     """Swarming dimensions for a test environment or platform."""
@@ -64,16 +58,23 @@ class Dimensions:
     def is_subset_of(self, other: "Dimensions") -> bool:
         """Return True if all non-None dimensions in `self` are present with the same values in `other`.
 
-        `instance_to_dict()` omits fields whose value is `None`, returning a dict of
-        only the explicitly specified dimensions. Because `dict.items()` returns a
-        set-like `dict_items` view of `(key, value)` pairs, the `<=` operator performs
-        a set subset comparison, verifying that every dimension requirement in `self`
-        is satisfied by `other` (which may also specify additional dimensions).
+        Because `dict.items()` returns a set-like `dict_items` view of `(key,
+        value)` pairs, the `<=` operator performs a set subset comparison,
+        verifying that every dimension requirement in `self` is satisfied by
+        `other` (which may also specify additional dimensions).
         """
-        return instance_to_dict(self).items() <= instance_to_dict(other).items()
+        return self.to_dict().items() <= other.to_dict().items()
+
+    def to_dict(self) -> dict[str, str]:
+        """Return only the explicitly specified (non-None) dimensions.
+
+        This is called once per test/environment/platform combination, so it
+        deliberately avoids `instance_to_dict()`, whose per-call type-hint
+        reflection is far too slow for this hot path.
+        """
+        return {k: v for k, v in vars(self).items() if v is not None}
 
 
-@serialize_dict
 @dataclass(frozen=True)
 class EmulatorConfig:
     """Emulator-specific configuration for a test environment."""
@@ -97,8 +98,15 @@ class EmulatorConfig:
         if isinstance(self.kernel_args, list):
             object.__setattr__(self, "kernel_args", tuple(self.kernel_args))
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return only the explicitly specified (non-None) fields."""
+        return {
+            k: list(v) if isinstance(v, tuple) else v
+            for k, v in vars(self).items()
+            if v is not None
+        }
 
-@serialize_dict
+
 @dataclass(frozen=True)
 class Environment:
     """Full device environment specification in which a test should run."""
@@ -110,15 +118,33 @@ class Environment:
     tags: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
-        if not instance_to_dict(self.dimensions):
+        if not self.dimensions.to_dict():
             raise ValueError("each environment must specify dimensions")
         if isinstance(self.tags, list):
             object.__setattr__(self, "tags", tuple(self.tags))
 
     def __lt__(self, other: "Environment") -> bool:
-        return json.dumps(instance_to_dict(self), sort_keys=True) < json.dumps(
-            instance_to_dict(other), sort_keys=True
+        return json.dumps(self.to_dict(), sort_keys=True) < json.dumps(
+            other.to_dict(), sort_keys=True
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return only the explicitly specified (non-None) fields.
+
+        Like `Dimensions.to_dict()`, this avoids `instance_to_dict()` because it
+        is called for every resolved test environment and in `__lt__()`.
+        """
+        return {
+            k: (
+                v.to_dict()
+                if isinstance(v, (Dimensions, EmulatorConfig))
+                else list(v)
+                if isinstance(v, tuple)
+                else v
+            )
+            for k, v in vars(self).items()
+            if v is not None
+        }
 
 
 def partition_platforms(
@@ -147,7 +173,7 @@ def validate_known_platform(
         for p in (target_platforms | other_platforms)
     ):
         raise ValueError(
-            f"Could not match environment specifications: {instance_to_dict(env)}\n"
+            f"Could not match environment specifications: {env.to_dict()}\n"
             + "Consult //build/testing/platforms.gni for all allowable specifications"
         )
 
@@ -163,7 +189,7 @@ def matches_target_platform(
     if any(env.dimensions.is_subset_of(p) for p in other_platforms):
         return False
     raise ValueError(
-        f"Could not match environment specifications: {instance_to_dict(env)}\n"
+        f"Could not match environment specifications: {env.to_dict()}\n"
         + "Consult //build/testing/platforms.gni for all allowable specifications"
     )
 
@@ -258,7 +284,7 @@ def resolve_test_environments(
         test["build_only"] = True
         test["environments"] = []
     else:
-        test["environments"] = [instance_to_dict(e) for e in filtered_envs]
+        test["environments"] = [e.to_dict() for e in filtered_envs]
         if "build_only" in test:
             test["build_only"] = False
 

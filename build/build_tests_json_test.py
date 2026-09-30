@@ -580,10 +580,23 @@ class BuildTestsJsonTest(unittest.TestCase):
         self.assertEqual(d1.access_points, "1")
         self.assertEqual(d1.get("access_points"), "1")
         self.assertIsNone(d1.get("missing"))
+        self.assertEqual(d1.to_dict(), instance_to_dict(d1))
 
         sub = build_tests_json.Dimensions(device_type="QEMU")
         self.assertTrue(sub.is_subset_of(d1))
         self.assertFalse(d1.is_subset_of(sub))
+        self.assertTrue(d1.is_subset_of(d1))
+        self.assertTrue(build_tests_json.Dimensions().is_subset_of(sub))
+        self.assertFalse(
+            build_tests_json.Dimensions(device_type="AEMU").is_subset_of(d1)
+        )
+        self.assertFalse(
+            build_tests_json.Dimensions(
+                device_type="QEMU", cpu="arm64"
+            ).is_subset_of(d1)
+        )
+        # An empty string is still an explicitly specified dimension.
+        self.assertFalse(build_tests_json.Dimensions(cpu="").is_subset_of(sub))
 
         with self.assertRaisesRegex(ValueError, "tags are only valid"):
             instance_from_dict(
@@ -599,30 +612,21 @@ class BuildTestsJsonTest(unittest.TestCase):
             )
 
     def test_emulator_config_dataclass(self) -> None:
+        emu_dict = {
+            "name": "1cpu",
+            "device": "x64-emu-min",
+            "accel": "hyper",
+            "kernel_args": ["arg1", "arg2"],
+            "uefi": True,
+            "vbmeta_key": "path/to/key.pem",
+            "vbmeta_key_metadata": "path/to/meta.bin",
+        }
         emu = instance_from_dict(
             build_tests_json.EmulatorConfig,
-            {
-                "name": "1cpu",
-                "device": "x64-emu-min",
-                "accel": "hyper",
-                "kernel_args": ["arg1", "arg2"],
-                "uefi": True,
-                "vbmeta_key": "path/to/key.pem",
-                "vbmeta_key_metadata": "path/to/meta.bin",
-            },
+            emu_dict,
         )
-        self.assertEqual(
-            instance_to_dict(emu),
-            {
-                "name": "1cpu",
-                "device": "x64-emu-min",
-                "accel": "hyper",
-                "kernel_args": ["arg1", "arg2"],
-                "uefi": True,
-                "vbmeta_key": "path/to/key.pem",
-                "vbmeta_key_metadata": "path/to/meta.bin",
-            },
-        )
+        self.assertEqual(emu.to_dict(), emu_dict)
+        self.assertEqual(instance_to_dict(emu), emu_dict)
 
         with self.assertRaisesRegex(ValueError, "requires a unique `name`"):
             instance_from_dict(
@@ -658,6 +662,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         )
         self.assertEqual(env_a1, env_a2)
         self.assertEqual(hash(env_a1), hash(env_a2))
+        self.assertEqual(env_a1.to_dict(), instance_to_dict(env_a1))
         self.assertEqual(
             sorted({env_a1, env_b, env_a2}),
             [env_a1, env_b],
