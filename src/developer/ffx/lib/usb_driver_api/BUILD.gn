@@ -50,6 +50,7 @@ if (is_host) {
     crate_name = "usb_driver_api"
     edition = "2024"
     test_deps = [
+      "//src/developer/ffx/lib/metrics:lib",
       "//src/developer/ffx/lib/usb_vsock_host",
       "//src/developer/ffx/tools/usb_driver/impl:lib",
       "//src/developer/lib/usb_vsock",

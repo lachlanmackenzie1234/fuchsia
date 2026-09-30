@@ -17,6 +17,7 @@ rustc_library(
     edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
     test_deps = [
+        "//src/developer/ffx/lib/metrics:lib",
         "//src/developer/ffx/lib/usb_vsock_host",
         "//src/developer/ffx/tools/usb_driver/impl:lib",
         "//src/developer/lib/usb_vsock",

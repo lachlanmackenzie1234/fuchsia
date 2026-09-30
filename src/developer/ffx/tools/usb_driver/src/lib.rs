@@ -15,6 +15,9 @@ use usb_driver_impl::UnixListener;
 /// Number of log file rotations to keep.
 const LOG_ROTATIONS: usize = 5;
 
+/// Default SDK version reported to analytics when no SDK is configured.
+const UNKNOWN_SDK: &str = "Unknown SDK";
+
 // [START command_struct]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "usb-driver")]
@@ -52,11 +55,40 @@ pub enum Action {
 /// would be invalidated by a fork).
 pub unsafe fn run() {
     let mut env_context = None;
+    let mut analytics_config = None;
     let mut logging_enabled = false;
     let result = match ffx_command::init_cmd(ffx_config::environment::ExecutableKind::Subtool) {
         Ok(c) => {
+            let enabled = c.context.analytics_enabled();
+            let path = c.context.get_analytics_path();
+            let build_info = c.context.build_info();
+            let invoker = c.context.get("fuchsia.analytics.ffx_invoker").unwrap_or(None);
+            let sdk_version = if enabled {
+                c.context
+                    .get_sdk()
+                    .ok()
+                    .and_then(|sdk| sdk.get_version_string())
+                    .unwrap_or_else(|| UNKNOWN_SDK.to_string())
+            } else {
+                UNKNOWN_SDK.to_string()
+            };
+            analytics_config = Some((enabled, path, build_info, invoker, sdk_version));
             env_context = Some(c.context.clone());
-            // SAFETY: The caller of `run` guarantees it is safe to fork the process.
+            // SAFETY:
+            // Obligation: `implementation` requires that no background threads or
+            // async executors are running (because it may fork).
+            // Artifact facts:
+            // - A1: `run` is marked unsafe with the precondition that the caller
+            //   guarantees no background threads or async executors are running.
+            // Semantic premises:
+            // - S1: Operations yielding `analytics_config` (`analytics_enabled`,
+            //   `get_sdk`, etc.) are synchronous context lookups that do not spawn
+            //   threads.
+            // Derivation:
+            // - A1 establishes the invariant on entry.
+            // - S1 establishes the invariant is preserved until `implementation`.
+            // Result:
+            // - The process fulfills the safe-to-fork precondition of `implementation`.
             unsafe { implementation(c, &mut logging_enabled) }
         }
         Err(e) => Err(e),
@@ -83,6 +115,14 @@ pub unsafe fn run() {
             Ok(Action::ExitStatus(status)) => Ok(status),
             Ok(Action::MetadataCommand(cmd)) => cmd.run(UsbDriverCommand::COMMAND).await,
             Ok(Action::RunDriver(listener, log_path, serial)) => {
+                if let Some((enabled, path, build_info, invoker, sdk_version)) = analytics_config {
+                    ffx_metrics::init_metrics_svc(path, build_info, invoker, sdk_version).await;
+                    if !enabled {
+                        if let Err(e) = analytics::opt_out_for_this_invocation().await {
+                            log::warn!("Could not opt out of analytics for this invocation: {e}");
+                        }
+                    }
+                }
                 usb_driver_impl::HostDriver::run(listener, log_path, serial).await;
                 Ok(ExitStatus::from_raw(0))
             }
@@ -199,13 +239,6 @@ unsafe fn implementation(
         )
     };
 
-    struct Filter;
-    impl logging::Filter for Filter {
-        fn should_emit(&self, _record: &log::Metadata<'_>) -> bool {
-            true
-        }
-    }
-
     if ffx.global.machine.is_some() {
         return Err(ffx_command::Error::User(anyhow::anyhow!(
             "The machine flag is not supported for this subcommand"
@@ -274,4 +307,47 @@ unsafe fn implementation(
         log::info!("Only interacting with devices with serial {serial}");
     }
     Ok(Action::RunDriver(listener, log_path, command.serial))
+}
+
+struct Filter;
+impl logging::Filter for Filter {
+    fn should_emit(&self, record: &log::Metadata<'_>) -> bool {
+        // The logs from hyper are very noisy
+        !record.target().starts_with("hyper")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use logging::Filter as _;
+
+    #[test]
+    fn test_usb_driver_command_from_args() {
+        let cmd = UsbDriverCommand::from_args(
+            &["usb-driver"],
+            &["--background", "--log-dir", "/tmp/usb_logs", "--serial", "SER123"],
+        )
+        .unwrap();
+        assert!(cmd.background);
+        assert_eq!(cmd.log_dir.as_deref(), Some("/tmp/usb_logs"));
+        assert_eq!(cmd.serial.as_deref(), Some("SER123"));
+    }
+
+    #[test]
+    fn test_filter_suppresses_hyper_logs() {
+        let filter = Filter;
+        let hyper_meta =
+            log::Metadata::builder().level(log::Level::Debug).target("hyper::proto::h1").build();
+        let hyper_util_meta = log::Metadata::builder()
+            .level(log::Level::Debug)
+            .target("hyper_util::client::legacy")
+            .build();
+        let driver_meta =
+            log::Metadata::builder().level(log::Level::Debug).target("usb_driver_impl").build();
+
+        assert!(!filter.should_emit(&hyper_meta));
+        assert!(!filter.should_emit(&hyper_util_meta));
+        assert!(filter.should_emit(&driver_meta));
+    }
 }
