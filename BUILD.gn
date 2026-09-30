@@ -376,7 +376,7 @@ build_api_module("rules_fuchsia_info") {
 # An action to generate the final version of rules_fuchsia to be used OOT
 # This ensures that the content of @fuchsia_rules_common is stored under
 # @rules_fuchsia/fuchsia_rules_common, and changes all instances of
-# '@rules_fuchsia_common//' to '//fuchsia_rules_common/' in the final
+# '@fuchsia_rules_common//' to '//fuchsia_rules_common/' in the final
 # Bazel files, making the result self-contained.
 action("rules_fuchsia.export") {
   script = "//build/bazel/scripts/export_rules_fuchsia.py"
