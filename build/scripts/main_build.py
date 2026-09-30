@@ -207,7 +207,9 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
         log files, CAS upload candidates (.rrpl/.rpl), and serialized proto logs.
     """
     rbe_metadata: JSONObject = {}
+    # LINT.IfChange(reproxy_logs_dir)
     reproxy_log_dir = log_dir / "reproxy_logs"
+    # LINT.ThenChange(//build/scripts/top_build_wrap.sh:reproxy_logs_dir)
     if not reproxy_log_dir.exists():
         return rbe_metadata
 
@@ -250,17 +252,32 @@ def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
         log_dir: Path to the active build invocation's log directory.
 
     Returns:
-        A dictionary containing a "diagnostic_logs" key mapped to a
-        { filename -> filepath } dictionary of rsproxy diagnostic log
-        files, where filename can be one of `rsproxy.{INFO,WARNING,ERROR}`.
+        A dictionary containing paths to rsproxy diagnostic log files.
     """
     resultstore_metadata: JSONObject = {}
-    diagnostic_logs = {}
+    # LINT.IfChange(rsproxy_logs_dir)
+    rsproxy_log_dir = log_dir / "rsproxy_logs"
+    # LINT.ThenChange(//build/scripts/top_build_wrap.sh:rsproxy_logs_dir)
+    if not rsproxy_log_dir.exists():
+        return resultstore_metadata
 
-    for name in ["rsproxy.INFO", "rsproxy.WARNING", "rsproxy.ERROR"]:
-        candidate = log_dir / name
+    diagnostic_logs = {}
+    rsproxy_names = ["rsproxy.INFO", "rsproxy.WARNING", "rsproxy.ERROR"]
+
+    # 1. Collect direct logs under rsproxy_logs.
+    for name in rsproxy_names:
+        candidate = rsproxy_log_dir / name
         if candidate.exists():
             diagnostic_logs[name] = str(candidate.resolve())
+
+    # 2. Collect nested subbuild-specific logs under subdirectories.
+    for item in rsproxy_log_dir.iterdir():
+        if item.is_dir():
+            for name in rsproxy_names:
+                candidate = item / name
+                if candidate.exists():
+                    rel_path = candidate.relative_to(rsproxy_log_dir)
+                    diagnostic_logs[str(rel_path)] = str(candidate.resolve())
 
     if diagnostic_logs:
         resultstore_metadata["diagnostic_logs"] = diagnostic_logs

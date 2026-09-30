@@ -1792,9 +1792,13 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             main_build.write_text(reproxy_log_dir / "reproxy_run.rrpl", "rrpl")
 
             # Create mock rsproxy files
-            main_build.write_text(log_dir / "rsproxy.INFO", "rsproxy info")
+            rsproxy_log_dir = log_dir / "rsproxy_logs"
+            main_build.mkdir(rsproxy_log_dir)
             main_build.write_text(
-                log_dir / "rsproxy.WARNING", "rsproxy warning"
+                rsproxy_log_dir / "rsproxy.INFO", "rsproxy info"
+            )
+            main_build.write_text(
+                rsproxy_log_dir / "rsproxy.WARNING", "rsproxy warning"
             )
 
             # Create mock build_profile files
@@ -1878,11 +1882,11 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             # Verify resultstore diagnostic logs
             self.assertEqual(
                 data["resultstore"]["diagnostic_logs"]["rsproxy.INFO"],
-                str((log_dir / "rsproxy.INFO").resolve()),
+                str((rsproxy_log_dir / "rsproxy.INFO").resolve()),
             )
             self.assertEqual(
                 data["resultstore"]["diagnostic_logs"]["rsproxy.WARNING"],
-                str((log_dir / "rsproxy.WARNING").resolve()),
+                str((rsproxy_log_dir / "rsproxy.WARNING").resolve()),
             )
             self.assertNotIn(
                 "rsproxy.ERROR", data["resultstore"]["diagnostic_logs"]
@@ -2109,12 +2113,20 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
     def test_collect_resultstore_metadata_with_logs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = pathlib.Path(tmpdir)
+            rsproxy_log_dir = log_dir / "rsproxy_logs"
+            main_build.mkdir(rsproxy_log_dir)
 
-            # Create mock rsproxy files
-            rsproxy_info = log_dir / "rsproxy.INFO"
-            rsproxy_err = log_dir / "rsproxy.ERROR"
+            # Create mock direct rsproxy files
+            rsproxy_info = rsproxy_log_dir / "rsproxy.INFO"
+            rsproxy_err = rsproxy_log_dir / "rsproxy.ERROR"
             main_build.write_text(rsproxy_info, "info log")
             main_build.write_text(rsproxy_err, "error log")
+
+            # Create nested subbuild rsproxy files
+            subbuild_dir = rsproxy_log_dir / "my_subbuild"
+            main_build.mkdir(subbuild_dir)
+            subbuild_rsproxy_info = subbuild_dir / "rsproxy.INFO"
+            main_build.write_text(subbuild_rsproxy_info, "subbuild info")
 
             metadata = main_build._collect_resultstore_metadata(log_dir)
 
@@ -2130,6 +2142,12 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
                 str(rsproxy_err.resolve()),
             )
             self.assertNotIn("rsproxy.WARNING", diagnostic_logs)
+
+            # Verify subbuild nested logs are captured via path-joining and iterdir
+            self.assertEqual(
+                diagnostic_logs["my_subbuild/rsproxy.INFO"],
+                str(subbuild_rsproxy_info.resolve()),
+            )
 
 
 if __name__ == "__main__":
