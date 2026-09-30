@@ -172,14 +172,13 @@ pub async fn serve(
     req_stream: mpsc::Receiver<ManualRequest>,
     update_sender: ClientListenerMessageSender,
     saved_networks_manager: Arc<dyn SavedNetworksManagerApi>,
-    connect_selection: Option<types::ConnectSelection>,
+    connect_selection: types::ConnectSelection,
     telemetry_sender: TelemetrySender,
     defect_sender: mpsc::Sender<Defect>,
     roam_manager: RoamManager,
     status_publisher: StateMachineStatusPublisher<Status>,
 ) {
-    let next_network = connect_selection
-        .map(|selection| ConnectingOptions { connect_selection: selection, attempt_counter: 0 });
+    let next_network = Some(ConnectingOptions { connect_selection, attempt_counter: 0 });
     let disconnect_options = DisconnectingOptions {
         disconnect_responder: None,
         previous_network: None,
@@ -4134,7 +4133,7 @@ mod tests {
             client_req_stream,
             test_values.common_options.update_sender,
             test_values.common_options.saved_networks_manager,
-            Some(connect_selection),
+            connect_selection,
             test_values.common_options.telemetry_sender,
             test_values.common_options.defect_sender,
             test_values.common_options.roam_manager,
@@ -4184,7 +4183,7 @@ mod tests {
             client_req_stream,
             test_values.common_options.update_sender,
             test_values.common_options.saved_networks_manager,
-            Some(connect_selection),
+            connect_selection,
             test_values.common_options.telemetry_sender,
             test_values.common_options.defect_sender,
             test_values.common_options.roam_manager,
@@ -4240,7 +4239,7 @@ mod tests {
             client_req_stream,
             test_values.common_options.update_sender,
             test_values.common_options.saved_networks_manager,
-            Some(connect_selection),
+            connect_selection,
             test_values.common_options.telemetry_sender,
             test_values.common_options.defect_sender,
             test_values.common_options.roam_manager,
@@ -4331,7 +4330,7 @@ mod tests {
             client_req_stream,
             test_values.common_options.update_sender,
             test_values.common_options.saved_networks_manager,
-            Some(connect_selection),
+            connect_selection,
             test_values.common_options.telemetry_sender,
             test_values.common_options.defect_sender,
             test_values.common_options.roam_manager,

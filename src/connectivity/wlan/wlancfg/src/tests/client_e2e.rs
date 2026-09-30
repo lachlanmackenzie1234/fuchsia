@@ -485,29 +485,14 @@ fn prepare_client_interface(
         }
     );
 
-    let iface_sme_stream = sme_server.into_stream();
+    let mut iface_sme_stream = sme_server.into_stream();
 
-    // Expect to get an SME request for the state machine creation
+    // Configure new iface does an initial disconnect
     let sme_req = run_while(
         exec,
         &mut test_values.internal_objects.internal_futures,
-        test_values.external_interfaces.monitor_service_stream.next(),
+        iface_sme_stream.next(),
     );
-    let sme_server = assert_matches!(
-        sme_req,
-        Some(Ok(fidl_fuchsia_wlan_device_service::DeviceMonitorRequest::GetClientSme {
-            iface_id: TEST_CLIENT_IFACE_ID, sme_server, responder
-        })) => {
-            // Send back a positive acknowledgement.
-            assert!(responder.send(Ok(())).is_ok());
-            sme_server
-        }
-    );
-    let mut sme_stream = sme_server.into_stream();
-
-    // State machine does an initial disconnect
-    let sme_req =
-        run_while(exec, &mut test_values.internal_objects.internal_futures, sme_stream.next());
     assert_matches!(
         sme_req,
         Some(Ok(fidl_sme::ClientSmeRequest::Disconnect {
