@@ -285,6 +285,8 @@ bazel2gn_verification_targets = [
   "//tools/lib/logger:verify_bazel2gn",
   "//tools/lib/osmisc:verify_bazel2gn",
   "//tools/lib/productbundle:verify_bazel2gn",
+  "//tools/lib/reference_doc/macro:verify_bazel2gn",
+  "//tools/lib/reference_doc:verify_bazel2gn",
   "//tools/lib/retry:verify_bazel2gn",
   "//tools/lib/serial:verify_bazel2gn",
   "//tools/lib/streams:verify_bazel2gn",
