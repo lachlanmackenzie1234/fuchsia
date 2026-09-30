@@ -41,20 +41,31 @@ list shows which changes precede and which follow that commit.
       test fixture serving a fake platform device (23.3, and the
       live-activation path documented by CS10).
 
-Remaining phase 1 work, not yet scheduled as changesets:
+- [x] CS10 `[driver-lab] Add live-target conformance runbook` (in
+      //tools/driver-lab/SPEC.md).
+- [x] CS11 `[driver-lab] Host node discovery via fuchsia.driver.development`
+      (in //tools/driver-lab/SPEC.md).
 
-- [ ] Generated target policy: authored, reviewed ceiling manifests
-      replacing the engineering default ceiling (9.2, 9.6, 22).
+Remaining phase 1 work:
+
+- [ ] CS12 `[driver-lab] Direct mode client and published-protocol workflow`
+      (in //tools/driver-lab/SPEC.md).
+- [ ] CS13 `[driver-lab] Target ceiling policy manifests and verification`
+      (9.2, 9.6, 22; milestone P1 remainder).
+- [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
+      (11.4, 11.5, 12.2-12.4, 13; milestone P3).
+- [ ] CS15 `[driver-lab] Host tooling support for mutation and sequences`
+      (in //tools/driver-lab/SPEC.md).
+- [ ] CS16 `[driver-lab] Driver-shaped public Python API` (in
+      //tools/driver-lab/SPEC.md).
+- [ ] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
+- [ ] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
+      (in //tools/driver-lab/SPEC.md).
 - [ ] Engineering assembly inclusion and production-absence
       verification (7.1, 25).
-- [ ] Bounded sequences and masked mutation: `Write32`, `Poll32`,
-      delays, barriers, `ExecuteSequence`, and the mutating session
-      path (11.4, 11.5, 12.2-12.4, 13; milestone P3).
 - [ ] Protocol-resource adapters (8.1, 9.5, 11.6; milestone P4).
 - [ ] Interrupt observation (11.7, 17; milestone P5).
-- [ ] Stop-path hardening -- cancellation of in-flight work, epitaphs,
-      bounded deadlines (19) -- per-class rate and count limits (12.1),
-      and structured configuration (22).
+- [ ] Structured configuration (22) and per-class rate limits (12.1).
 
 Phase: 1 -- new-driver development. The proxy binds to unclaimed nodes through
 existing Driver Framework mechanisms. Managed takeover is specified in the

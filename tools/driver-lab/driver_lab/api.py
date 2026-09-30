@@ -26,6 +26,12 @@ from driver_lab.consent import (
     ConsentPrompt,
     grant_from_decision,
 )
+from driver_lab.discovery import (
+    DiscoveryError,
+    NodeDescription,
+    NodeDiscovery,
+    NodeSummary,
+)
 from driver_lab.evidence import EvidenceRecorder
 from driver_lab.models import AccessClass, AccessRequest
 from driver_lab.permissions import (
@@ -154,6 +160,7 @@ class DriverLab:
         target_scope: str,
         node_id: str,
         consent: ConsentPrompt | None = None,
+        discovery: NodeDiscovery | None = None,
     ) -> None:
         self._transport = transport
         self._grants_path = grants_path
@@ -161,6 +168,27 @@ class DriverLab:
         self._target_scope = target_scope
         self._node_id = node_id
         self._consent = consent
+        self._discovery = discovery
+
+    async def list_nodes(
+        self,
+        node_filter: list[str] | None = None,
+        exact_match: bool = False,
+    ) -> list[NodeSummary]:
+        """Discovers nodes on the target control plane."""
+        if self._discovery is None:
+            raise DriverLabError(
+                "node discovery is not configured for this DriverLab instance"
+            )
+        return await self._discovery.list_nodes(node_filter, exact_match)
+
+    async def describe_node(self, node_id: str) -> NodeDescription | None:
+        """Describes a node by moniker."""
+        if self._discovery is None:
+            raise DriverLabError(
+                "node discovery is not configured for this DriverLab instance"
+            )
+        return await self._discovery.describe_node(node_id)
 
     def _derive(
         self, canonical: Mapping[str, Any], description: ProxyDescription
@@ -269,12 +297,38 @@ class DriverLab:
                     f"plan requires {capability}, which phase 1 does not provide",
                 )
         if "expected_unclaimed" in canonical["node"]:
-            # Node discovery has not landed, so the assertion cannot be
-            # verified; fail closed rather than running unverified.
-            return finish(
-                EXIT_UNSUPPORTED,
-                "node.expected_unclaimed cannot be verified until node discovery lands",
-            )
+            if self._discovery is None:
+                # Node discovery is not configured, so the assertion cannot be
+                # verified; fail closed rather than running unverified.
+                return finish(
+                    EXIT_UNSUPPORTED,
+                    "node.expected_unclaimed cannot be verified without node discovery",
+                )
+            expected_unclaimed = canonical["node"]["expected_unclaimed"]
+            node_id = canonical["node"]["id"]
+            try:
+                node_desc = await self._discovery.describe_node(node_id)
+            except DiscoveryError as exc:
+                return finish(
+                    EXIT_ACTIVATION,
+                    f"node discovery failed for {node_id}: {exc}",
+                )
+            if node_desc is None:
+                return finish(
+                    EXIT_ACTIVATION,
+                    f"node {node_id} not found during discovery",
+                )
+            if expected_unclaimed and not node_desc.is_unclaimed:
+                return finish(
+                    EXIT_ACTIVATION,
+                    f"node {node_id} is bound to {node_desc.bound_driver_url}; "
+                    "managed takeover is phase 2",
+                )
+            if not expected_unclaimed and node_desc.is_unclaimed:
+                return finish(
+                    EXIT_ACTIVATION,
+                    f"node {node_id} is unclaimed, expected bound driver",
+                )
 
         # Prepare: describe, freeze expectations, resolve consent. No
         # hardware access happens in this phase.

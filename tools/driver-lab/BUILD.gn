@@ -18,6 +18,7 @@ python_library("driver_lab") {
     "api.py",
     "cli.py",
     "consent.py",
+    "discovery.py",
     "evidence.py",
     "fidl_transport.py",
     "models.py",
@@ -26,6 +27,7 @@ python_library("driver_lab") {
     "transport.py",
   ]
   library_deps = [
+    "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_python",
     "//src/developer/ffx/lib/fuchsia-controller:fidl_bindings",
     "//src/developer/ffx/lib/fuchsia-controller:fuchsia_controller_py",
     "//src/devices/driver-lab/fidl:fuchsia.driver.lab_python",
@@ -68,6 +70,11 @@ if (is_host) {
     libraries = [ ":driver_lab" ]
   }
 
+  python_host_test("driver_lab_discovery_test") {
+    main_source = "tests/discovery_test.py"
+    libraries = [ ":driver_lab" ]
+  }
+
   python_binary("driver_lab_cli") {
     main_source = "driver_lab/cli.py"
     main_callable = "main"
@@ -86,6 +93,7 @@ group("tests") {
     ":driver_lab_api_test($host_toolchain)",
     ":driver_lab_cli_test($host_toolchain)",
     ":driver_lab_consent_test($host_toolchain)",
+    ":driver_lab_discovery_test($host_toolchain)",
     ":driver_lab_evidence_test($host_toolchain)",
     ":driver_lab_fidl_transport_test($host_toolchain)",
     ":driver_lab_permissions_test($host_toolchain)",

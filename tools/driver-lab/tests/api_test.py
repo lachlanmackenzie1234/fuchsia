@@ -18,6 +18,7 @@ from driver_lab.api import (
     EXIT_UNSUPPORTED,
     DriverLab,
 )
+from driver_lab.discovery import FakeNodeDiscovery, NodeDescription
 from driver_lab.evidence import EvidenceError
 from driver_lab.models import AccessClass, Decision, ReadGrant
 from driver_lab.permissions import save_grants
@@ -310,6 +311,129 @@ class RunPlanTest(unittest.IsolatedAsyncioTestCase):
         result = await self.lab.run_plan(plan)
         self.assertEqual(result.exit_category, EXIT_UNSUPPORTED)
         self.assertEqual(self.fake.open_attempts, 0)
+
+    async def test_expected_unclaimed_verified_with_discovery(self) -> None:
+        save_grants(self.grants_path, [make_grant()])
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker=NODE_ID,
+                    bound_driver_url=None,
+                )
+            ]
+        )
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+        )
+        plan = make_plan()
+        plan["node"] = dict(plan["node"], expected_unclaimed=True)
+        result = await lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(self.fake.sessions_opened, 1)
+
+    async def test_expected_unclaimed_fails_when_bound(self) -> None:
+        save_grants(self.grants_path, [make_grant()])
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker=NODE_ID,
+                    bound_driver_url="fuchsia-boot:///driver#meta/driver.cm",
+                )
+            ]
+        )
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+        )
+        plan = make_plan()
+        plan["node"] = dict(plan["node"], expected_unclaimed=True)
+        result = await lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_ACTIVATION)
+        self.assertIsNotNone(result.failure)
+        assert result.failure is not None
+        self.assertIn("managed takeover is phase 2", result.failure)
+        self.assertEqual(self.fake.open_attempts, 0)
+
+    async def test_expected_bound_fails_when_unclaimed(self) -> None:
+        save_grants(self.grants_path, [make_grant()])
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker=NODE_ID,
+                    bound_driver_url=None,
+                )
+            ]
+        )
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+        )
+        plan = make_plan()
+        plan["node"] = dict(plan["node"], expected_unclaimed=False)
+        result = await lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_ACTIVATION)
+        self.assertIsNotNone(result.failure)
+        assert result.failure is not None
+        self.assertIn("is unclaimed, expected bound driver", result.failure)
+        self.assertEqual(self.fake.open_attempts, 0)
+
+    async def test_expected_unclaimed_fails_when_node_not_found(self) -> None:
+        save_grants(self.grants_path, [make_grant()])
+        discovery = FakeNodeDiscovery([])
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+        )
+        plan = make_plan()
+        plan["node"] = dict(plan["node"], expected_unclaimed=True)
+        result = await lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_ACTIVATION)
+        self.assertIsNotNone(result.failure)
+        assert result.failure is not None
+        self.assertIn("not found during discovery", result.failure)
+        self.assertEqual(self.fake.open_attempts, 0)
+
+    async def test_list_nodes_and_describe_node(self) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker=NODE_ID,
+                    bound_driver_url=None,
+                )
+            ]
+        )
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+        )
+        nodes = await lab.list_nodes()
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0].moniker, NODE_ID)
+        desc = await lab.describe_node(NODE_ID)
+        self.assertIsNotNone(desc)
+        assert desc is not None
+        self.assertEqual(desc.moniker, NODE_ID)
 
     async def test_expected_boot_id_is_enforced(self) -> None:
         save_grants(self.grants_path, [make_grant()])

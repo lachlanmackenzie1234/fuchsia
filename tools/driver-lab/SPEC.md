@@ -48,22 +48,33 @@ commit.
 - [x] CS10 `[driver-lab] Add live-target conformance runbook` --
       ephemeral registration and test-node activation exercising the
       real driver end to end (14, 20.4), verified on the emulator.
+- [x] CS11 `[driver-lab] Host node discovery via fuchsia.driver.development`
+      -- typed node enumeration, bound driver inspection, unclaimed-node
+      detection over FIDL, and expected_unclaimed plan verification (7.1,
+      8.3, 14.2, 15; milestones H0, H1).
 
-Remaining phase 1 work, not yet scheduled as changesets:
+Remaining phase 1 work:
 
-- [ ] Typed node discovery and direct mode (7.1, 8, 15, 20.5;
-      milestones H0, H1).
-- [ ] Driver-shaped resource APIs: `connect`/`attach`,
-      `HardwareSession`, `MmioRegion`, and representative protocol
-      resources (6.1, 9; milestone H4).
-- [ ] Proxy activation lifecycle beyond the interim test-node path:
-      unclaimed-node verification and verified teardown (8.3, 14.2;
-      milestone H3 remainder).
-- [ ] ffx subtool packaging (12).
-- [ ] Serial capture and independent recovery integration (3, 14.1;
-      milestone H5).
-- [ ] Register-metadata-backed consent expansion (10.2; open
-      decision 8).
+- [ ] CS12 `[driver-lab] Direct mode client and published-protocol workflow`
+      (7.1, 8.2, 15; milestone H1).
+- [ ] CS13 `[driver-lab] Target ceiling policy manifests and verification`
+      (9.2, 9.6, 22; milestone P1 remainder).
+- [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
+      (11.4, 11.5, 12.2-12.4, 13; milestone P3).
+- [ ] CS15 `[driver-lab] Host tooling support for mutation and sequences`
+      (11, 14; milestone P3 / H4).
+- [ ] CS16 `[driver-lab] Driver-shaped public Python API` -- `connect`/`attach`,
+      `HardwareSession`, `MmioRegion`, and representative protocol resources
+      (6.1, 9; milestone H4).
+- [ ] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
+- [ ] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
+      (8.3, 12, 14.2; milestone H3 remainder).
+- [ ] Engineering assembly inclusion and production-absence verification
+      (7.1, 25).
+- [ ] Protocol-resource adapters (8.1, 9.5, 11.6; milestone P4).
+- [ ] Interrupt observation (11.7, 17; milestone P5).
+- [ ] Serial capture and independent recovery integration (3, 14.1; milestone H5).
+- [ ] Register-metadata-backed consent expansion (10.2; open decision 8).
 
 Phase: 1 -- new-driver development. Covers direct mode and proxy access on
 unclaimed nodes. Managed takeover of existing drivers is specified in the
