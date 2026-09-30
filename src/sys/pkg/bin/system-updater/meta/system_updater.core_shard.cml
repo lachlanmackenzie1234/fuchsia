@@ -4,6 +4,12 @@
 {
     offer: [
         {
+            protocol: "fuchsia.feedback.CrashReporter",
+            from: "#feedback",
+            to: "#system-update",
+            dependency: "weak",
+        },
+        {
             protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
             from: "#cobalt",
             to: "#system-update",

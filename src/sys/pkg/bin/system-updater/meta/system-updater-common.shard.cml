@@ -31,6 +31,10 @@
             ],
         },
         {
+            protocol: "fuchsia.feedback.CrashReporter",
+            availability: "optional",
+        },
+        {
             directory: "system",
             rights: [ "r*" ],
             path: "/system",

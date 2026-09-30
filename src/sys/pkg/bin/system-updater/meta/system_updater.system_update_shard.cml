@@ -13,6 +13,12 @@
     ],
     offer: [
         {
+            protocol: "fuchsia.feedback.CrashReporter",
+            from: "parent",
+            to: "#system-updater",
+            dependency: "weak",
+        },
+        {
             protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
             from: "parent",
             to: "#system-updater",

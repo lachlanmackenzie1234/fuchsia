@@ -32,6 +32,7 @@ use std::time::Duration;
 use update_package::manifest::OtaManifest;
 
 mod config;
+mod crash_report;
 mod environment;
 mod genutil;
 mod history;
@@ -270,6 +271,7 @@ pub trait Updater {
 pub struct RealUpdater {
     history: Arc<Mutex<UpdateHistory>>,
     structured_config: system_updater_config::Config,
+    crash_reporter: crash_report::CrashReporter,
 }
 
 impl RealUpdater {
@@ -277,7 +279,7 @@ impl RealUpdater {
         history: Arc<Mutex<UpdateHistory>>,
         structured_config: system_updater_config::Config,
     ) -> Self {
-        Self { history, structured_config }
+        Self { history, structured_config, crash_reporter: crash_report::CrashReporter::new() }
     }
 }
 
@@ -317,6 +319,7 @@ impl Updater for RealUpdater {
             self.structured_config.verify_existing_blobs,
             manifest_public_keys,
             cancel_receiver,
+            self.crash_reporter.clone(),
         )
         .await;
         (attempt_id, Box::pin(attempt))
@@ -342,6 +345,7 @@ async fn update(
     verify_existing_blobs: bool,
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
     mut cancel_receiver: oneshot::Receiver<()>,
+    crash_reporter: crash_report::CrashReporter,
 ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>) {
     let attempt_fut = history.lock().start_update_attempt(
         fupdate_installer_ext::Options {
@@ -422,6 +426,7 @@ async fn update(
                     co.yield_(fupdate_installer_ext::State::Canceled).await;
                 }
                 error!("system update failed: {:#}", anyhow!(e));
+                crash_reporter.installation_error();
                 None
             }
         };

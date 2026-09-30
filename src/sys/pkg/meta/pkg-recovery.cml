@@ -185,6 +185,12 @@
             from: "parent",
             to: "#system-updater",
         },
+        {
+            protocol: "fuchsia.feedback.CrashReporter",
+            from: "void",
+            to: "#system-updater",
+            availability: "optional",
+        },
 
         // Routes between children
         {

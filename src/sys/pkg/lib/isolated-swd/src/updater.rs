@@ -425,6 +425,10 @@ pub(crate) mod for_tests {
                         .capability(Capability::configuration(
                             "fuchsia.system-updater.VerifyExistingBlobs",
                         ))
+                        .capability(
+                            Capability::protocol_by_name("fuchsia.feedback.CrashReporter")
+                                .optional(),
+                        )
                         .from(Ref::void())
                         .to(&system_updater),
                 )
