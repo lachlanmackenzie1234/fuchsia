@@ -45,7 +45,7 @@ commit.
 - [x] CS8 `[driver-lab] Add host CLI tools` -- `driver-lab.pyz`
       with run, permissions list/explain/add/revoke, plan
       digest/validate, and spec exit categories (10.5, 12, 13).
-- [ ] CS10 `[driver-lab] Add live-target conformance runbook` --
+- [x] CS10 `[driver-lab] Add live-target conformance runbook` --
       ephemeral registration and test-node activation exercising the
       real driver end to end (14, 20.4), verified on the emulator.
 
