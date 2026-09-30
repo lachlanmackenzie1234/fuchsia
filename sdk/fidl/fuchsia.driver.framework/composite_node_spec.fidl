@@ -11,20 +11,6 @@ type Condition = strict enum {
     REJECT = 2;
 };
 
-/// Represents a bind rule in a parent specification.
-type BindRule = struct {
-    /// Property key. Only string-based keys are supported.
-    key NodePropertyKey;
-
-    /// Condition for evaluating the property values in
-    /// the matching process. The values must be ACCEPT
-    /// or REJECT.
-    condition Condition;
-
-    /// A list of property values. Must not be empty. The property
-    /// values must be the same type.
-    values vector<NodePropertyValue>:MAX_PROPERTY_COUNT;
-};
 
 /// Represents a bind rule in a parent specification.
 type BindRule2 = struct {
@@ -41,16 +27,6 @@ type BindRule2 = struct {
     values vector<NodePropertyValue>:MAX_PROPERTY_COUNT;
 };
 
-/// Specification for a node that parents the composite node created from the
-/// composite node specification.
-type ParentSpec = struct {
-    /// Parent's bind rules. Property keys must be unique. Must not be empty.
-    bind_rules vector<BindRule>:MAX_PROPERTY_COUNT;
-
-    /// Properties for matching against a composite driver's bind rules.
-    /// Keys must be unique and string-based.
-    properties vector<NodeProperty>:MAX_PROPERTY_COUNT;
-};
 
 /// Specification for a node that parents the composite node created from the
 /// composite node specification.
@@ -67,10 +43,6 @@ type ParentSpec2 = struct {
 type CompositeNodeSpec = table {
     /// The composite node spec's name.
     1: name string:MAX;
-
-    /// The nodes in the composite node spec. Must not be empty. The first node is
-    /// the primary node.
-    2: parents vector<ParentSpec>:MAX;
 
     /// The nodes in the composite node spec. Must not be empty. The first node is
     /// the primary node.

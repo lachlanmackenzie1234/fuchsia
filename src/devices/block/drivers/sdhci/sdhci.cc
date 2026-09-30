@@ -1827,8 +1827,7 @@ zx::result<> Sdhci::Start(fdf::DriverContext context) {
   }
 
   const auto kChildNodeName = name();
-  zx::result result =
-      AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);
+  zx::result result = AddChild(kChildNodeName, {}, offers);
   if (result.is_error()) {
     fdf::error("Failed to add child: {}", result);
     return result.take_error();

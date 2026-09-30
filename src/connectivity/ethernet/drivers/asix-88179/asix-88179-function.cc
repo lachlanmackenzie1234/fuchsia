@@ -252,7 +252,7 @@ zx::result<> FakeUsbAx88179Function::Start(fdf::DriverContext context) {
   devfs_args.connector(std::move(*connector));
   devfs_args.class_name("test-asix-function");
 
-  std::vector<fuchsia_driver_framework::NodeProperty> props{};
+  std::vector<fuchsia_driver_framework::NodeProperty2> props{};
   std::vector offers{fdf::MakeOffer2<fuchsia_hardware_ax88179::Service>()};
 
   zx::result child = AddChild(name(), devfs_args, props, offers);

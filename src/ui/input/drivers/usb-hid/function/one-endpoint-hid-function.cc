@@ -216,10 +216,9 @@ zx::result<> FakeUsbHidFunction::Start(fdf::DriverContext context) {
   fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
 
   fuchsia_driver_framework::DevfsAddArgs devfs_args{};
-  std::vector<ffdf::NodeProperty> props{};
   std::vector<ffdf::Offer> offers{};
 
-  zx::result result = AddChild(name(), devfs_args, props, offers);
+  zx::result result = AddChild(name(), devfs_args, /*properties=*/{}, offers);
   if (result.is_error()) {
     fdf::error("AddChild(): {}", result);
     return result.take_error();

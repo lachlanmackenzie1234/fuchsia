@@ -9,6 +9,7 @@ use bind::interpreter::decode_bind_rules::DecodedRules;
 use bind::interpreter::match_bind::DeviceProperties;
 use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_driver_index as fdi;
+
 use std::collections::HashMap;
 use zx::Status;
 use zx::sys::zx_status_t;
@@ -72,52 +73,10 @@ impl CompositeNodeSpecManager {
             return Err(Status::INVALID_ARGS.into_raw());
         }
 
-        let parents = match (spec.parents.take(), spec.parents2.take()) {
-            (Some(parents), None) => parents
-                .into_iter()
-                .map(|parent| {
-                    Ok(fdf::ParentSpec2 {
-                        bind_rules: parent
-                            .bind_rules
-                            .into_iter()
-                            .map(|rule| {
-                                if let fdf::NodePropertyKey::StringValue(key) = rule.key {
-                                    Ok(fdf::BindRule2 {
-                                        key,
-                                        condition: rule.condition,
-                                        values: rule.values,
-                                    })
-                                } else {
-                                    Err(Status::NOT_SUPPORTED.into_raw())
-                                }
-                            })
-                            .collect::<Result<_, _>>()?,
-                        properties: parent
-                            .properties
-                            .into_iter()
-                            .map(|prop| {
-                                if let fdf::NodePropertyKey::StringValue(key) = prop.key {
-                                    Ok(fdf::NodeProperty2 { key, value: prop.value })
-                                } else {
-                                    Err(Status::NOT_SUPPORTED.into_raw())
-                                }
-                            })
-                            .collect::<Result<_, _>>()?,
-                    })
-                })
-                .collect::<Result<_, i32>>()?,
-            (None, Some(parents2)) => parents2,
-            (Some(_), Some(_)) => {
-                log::error!(
-                    "Both parents and parents2 were specified. Only one must be specified."
-                );
-                return Err(Status::INVALID_ARGS.into_raw());
-            }
-            (None, None) => {
-                log::error!("Neither parents and parents2 were specified, but one is required.");
-                return Err(Status::INVALID_ARGS.into_raw());
-            }
-        };
+        let parents = spec.parents2.take().ok_or_else(|| {
+            log::error!("parents2 was not specified, but it is required.");
+            Status::INVALID_ARGS.into_raw()
+        })?;
 
         if self.spec_list.contains_key(&name) {
             return Err(Status::ALREADY_EXISTS.into_raw());
@@ -322,12 +281,6 @@ impl CompositeNodeSpecManager {
 pub fn strip_parents_from_spec(spec: &Option<fdf::CompositeNodeSpec>) -> fdf::CompositeNodeSpec {
     // Strip the parents of the rules and properties since they are not needed by
     // the driver manager.
-    let parents_stripped = spec.as_ref().and_then(|spec| spec.parents.as_ref()).map(|parents| {
-        parents
-            .iter()
-            .map(|_parent| fdf::ParentSpec { bind_rules: vec![], properties: vec![] })
-            .collect::<Vec<_>>()
-    });
     let parents2_stripped = spec.as_ref().and_then(|spec| spec.parents2.as_ref()).map(|parents| {
         parents
             .iter()
@@ -337,7 +290,6 @@ pub fn strip_parents_from_spec(spec: &Option<fdf::CompositeNodeSpec>) -> fdf::Co
 
     fdf::CompositeNodeSpec {
         name: spec.as_ref().and_then(|spec| spec.name.clone()),
-        parents: parents_stripped,
         parents2: parents2_stripped,
         ..Default::default()
     }

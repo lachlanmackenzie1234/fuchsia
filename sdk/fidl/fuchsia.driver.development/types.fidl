@@ -31,8 +31,7 @@ type NodeInfo = table {
     7: moniker string:NODE_MONIKER_MAX;
 
     /// Properties of the node.
-    8: node_property_list
-            vector<fuchsia.driver.framework.NodeProperty>:fuchsia.driver.framework.MAX_PROPERTY_COUNT;
+    8: node_property_list fuchsia.driver.framework.NodeProperties;
 
     /// Component offers to the node.
     9: offer_list vector<fuchsia.component.decl.Offer>:MAX;
@@ -232,8 +231,8 @@ type TestNodeAddArgs = table {
     1: name string:NODE_MONIKER_MAX;
 
     /// Properties of the node.
-    2: properties
-            vector<fuchsia.driver.framework.NodeProperty>:fuchsia.driver.framework.MAX_PROPERTY_COUNT;
+    @available(added=HEAD)
+    2: properties fuchsia.driver.framework.NodeProperties;
 };
 
 /// These flags indicate when a |fuchsia.driver.index.DriverIndex::MatchDriver| call should be

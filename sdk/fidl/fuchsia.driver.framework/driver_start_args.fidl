@@ -14,19 +14,6 @@ using zx;
 const MAX_NAMESPACE_COUNT uint32 = fuchsia.component.runner.MAX_NAMESPACE_COUNT;
 
 /// Contains the node properties that belong to a node.
-type NodePropertyEntry = struct {
-    /// Name of the node that has |node_properties|.
-    name NodeName;
-
-    /// Node properties that belong to the node whose name is |node_name|. If
-    /// the node is a composite then |properties| is empty and does not contain
-    /// its parents' properties.
-    properties NodePropertyVector;
-};
-
-alias NodePropertyDictionary = vector<NodePropertyEntry>:MAX;
-
-/// Contains the node properties that belong to a node.
 type NodePropertyEntry2 = struct {
     /// Name of the node that has |node_properties|.
     name NodeName;
@@ -61,16 +48,6 @@ type DriverStartArgs = resource table {
     /// Provides a token representing this node which can be exchanged with the
     /// driver framework to discern additional information about this node.
     11: node_token zx.Handle:EVENT;
-
-    /// Node properties of the node the driver is bound to.
-    /// If the node is non-composite then the "default" entry will contain the
-    /// node's own properties.
-    /// If the node is a composite then there is an entry for each of its parents
-    /// and the "default" entry will reference the primary composite parent
-    /// node's properties. The composite parent node's properties are those that
-    /// were provided in the composite node specification and not the original
-    /// properties of the parent.
-    9: node_properties NodePropertyDictionary;
 
     12: node_properties_2 NodePropertyDictionary2;
 

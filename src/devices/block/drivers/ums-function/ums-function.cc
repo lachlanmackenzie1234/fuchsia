@@ -791,10 +791,9 @@ zx::result<> UmsFunction::Start(fdf::DriverContext context) {
   }
 
   ffdf::DevfsAddArgs devfs_args{};
-  std::vector<ffdf::NodeProperty> props{};
   std::vector<ffdf::Offer> offers{};
 
-  zx::result start = AddChild(name(), props, offers);
+  zx::result start = AddChild(name(), devfs_args, {}, offers);
   if (start.is_error()) {
     fdf::error("AddChild(): {}", start);
     return start.take_error();
