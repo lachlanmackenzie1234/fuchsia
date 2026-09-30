@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use futures::FutureExt as _;
-use log::{debug, error};
+use log::{debug, error, info};
 
 use crate::{SocketMarks, SocketProxy};
 
@@ -36,8 +36,11 @@ impl WatcherState {
 
     /// Clears the active watcher state and resets the default marks.
     async fn reset(&mut self, proxy: &SocketProxy) {
-        self.watcher = None;
+        let had_watcher = self.watcher.take().is_some();
         self.next_watch = None.into();
+        if had_watcher {
+            info!("No default network observed");
+        }
         proxy.set_marks(SocketMarks::default()).await;
     }
 }
@@ -63,6 +66,7 @@ async fn watch_properties_loop(
     proxy: &Arc<SocketProxy>,
     networks_proxy: &fnp_properties::NetworksProxy,
 ) {
+    info!("No default network observed");
     if let Err(e) = run_watch_properties_loop(proxy, networks_proxy).await {
         debug!("Networks property watcher loop ended: {e:?}");
     }
@@ -102,6 +106,7 @@ async fn run_watch_properties_loop(
                         // If `socket_marks` is omitted (as Netcfg does for Fuchsia networks)
                         // or specified with a `None` mark, this is an unmarked network.
                         let marks = updates.socket_marks.map(SocketMarks::from).unwrap_or_default();
+                        info!("New default network observed (mark={marks})");
                         proxy.set_marks(marks).await;
                         watcher_state.watch_again();
                     }
@@ -166,7 +171,8 @@ mod test {
     use super::*;
     use fidl::EventPair;
     use fidl_fuchsia_net as fnet;
-    use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
+    use fidl_fuchsia_posix_socket as fposix_socket;
+    use fidl_fuchsia_posix_socket::OptionalUint32;
     use fuchsia_async as fasync;
     use futures::StreamExt as _;
 

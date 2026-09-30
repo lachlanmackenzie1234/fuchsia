@@ -93,6 +93,15 @@ impl Unit for SocketMarks {
     }
 }
 
+impl std::fmt::Display for SocketMarks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.mark_1 {
+            fposix_socket::OptionalUint32::Value(v) => write!(f, "{v}"),
+            fposix_socket::OptionalUint32::Unset(fposix_socket::Empty) => write!(f, "None"),
+        }
+    }
+}
+
 #[derive(Inspect)]
 struct SocketProxy {
     marks: Arc<Mutex<IValue<SocketMarks>>>,

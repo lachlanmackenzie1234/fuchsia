@@ -249,8 +249,9 @@ impl NetworksClient {
 struct NetworkProperties {
     socket_marks: Option<fnet::Marks>,
     dns_servers: Vec<fnet_name::DnsServer_>,
-    // TODO(https://fxbug.dev/486892417): Use this field for snapshot metrics.
-    #[allow(dead_code)]
+    // TODO(https://fxbug.dev/567965129): Remove the following optional fields for shared
+    // Fuchsia/Starnix networks once all networks received from Starnix are required to
+    // have these fields.
     connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
     name: Option<String>,
     network_type: Option<fnp_socketproxy::NetworkType>,
@@ -261,6 +262,42 @@ impl NetworkProperties {
         self.socket_marks.as_ref()
     }
 }
+
+impl std::fmt::Display for NetworkProperties {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let NetworkProperties { name, network_type, connectivity_state, socket_marks, dns_servers } =
+            self;
+
+        if let Some(name) = name {
+            write!(f, "name={name}")?;
+        }
+        if let Some(network_type) = network_type {
+            write!(f, ", type={}", network_type.as_str())?;
+        }
+        if let Some(connectivity_state) = connectivity_state {
+            write!(f, ", state={}", connectivity_state.as_str())?;
+        }
+        if let Some(marks) = socket_marks {
+            write!(f, ", mark={:?}", marks.mark_1)?;
+        }
+        if socket_marks.is_some() || !dns_servers.is_empty() {
+            write!(f, ", dns=[")?;
+            let mut servers = dns_servers.iter().filter_map(|s| {
+                s.address.map(|a| fidl_fuchsia_net_ext::SocketAddress::from(a).0.ip().to_string())
+            });
+            if let Some(first) = servers.next() {
+                write!(f, "{first}")?;
+                for s in servers {
+                    write!(f, ", {s}")?;
+                }
+            }
+            write!(f, "]")?;
+        }
+        Ok(())
+    }
+}
+
+const NETWORK_REGISTRY_LOG_TAG: &str = "network_registry";
 
 /// The current state of all networks sent to the NetworkRegistry.
 #[derive(Default, Clone)]
@@ -274,7 +311,26 @@ struct RegisteredNetworks {
     dns_servers: Vec<fnet_name::DnsServer_>,
 }
 
+fn format_opt_network_id(id: Option<NetworkId>) -> String {
+    match id {
+        Some(id) => id.to_string(),
+        None => "None".to_string(),
+    }
+}
+
 impl RegisteredNetworks {
+    fn set_starnix_default(&mut self, next_starnix_default: Option<NetworkId>) {
+        if self.starnix_default != next_starnix_default {
+            info!(
+                tag = NETWORK_REGISTRY_LOG_TAG;
+                "SetStarnixDefault {} (prev={})",
+                format_opt_network_id(next_starnix_default),
+                format_opt_network_id(self.starnix_default),
+            );
+            self.starnix_default = next_starnix_default;
+        }
+    }
+
     // Determine the active default network based on the starnix_default and network registry.
     // When one or more Fuchsia networks are present, they should be prioritized over Starnix
     // networks. The 'most prioritized' Fuchsia network is the one with the lowest ID.
@@ -302,6 +358,12 @@ impl RegisteredNetworks {
         let next_default = self.calculate_active_default();
         if next_default != self.default_network {
             let old_default = self.default_network;
+            info!(
+                tag = NETWORK_REGISTRY_LOG_TAG;
+                "SetDefault {} (prev={})",
+                format_opt_network_id(next_default),
+                format_opt_network_id(old_default),
+            );
             self.default_network = next_default;
             Some(DefaultChangedEvent { previous_default: old_default })
         } else {
@@ -313,7 +375,7 @@ impl RegisteredNetworks {
         match update {
             NetworkRegistryUpdate::UnsetDefaultNetwork => {
                 // Handle Starnix unsetting its default network.
-                self.starnix_default = None;
+                self.set_starnix_default(None);
                 RegistryUpdateResult {
                     event: UpdateApplied::None,
                     default_changed: self.handle_default_network_update(),
@@ -332,7 +394,11 @@ impl RegisteredNetworks {
                                 event: UpdateApplied::None,
                                 default_changed: None,
                             }
-                        } else if self.networks.remove(&network_id).is_some() {
+                        } else if let Some(properties) = self.networks.remove(&network_id) {
+                            info!(
+                                tag = NETWORK_REGISTRY_LOG_TAG;
+                                "Remove {network_id} ({properties})"
+                            );
                             // Elect fallback default network internally.
                             RegistryUpdateResult {
                                 event: UpdateApplied::NetworkRemoved(network_id),
@@ -354,7 +420,7 @@ impl RegisteredNetworks {
                             // Fuchsia networks are always the default network when present. Netcfg
                             // does not use this API to set a Fuchsia network as the default.
                             NetworkId::Fuchsia(_) => {}
-                            NetworkId::Delegated(_) => self.starnix_default = Some(network_id),
+                            NetworkId::Delegated(_) => self.set_starnix_default(Some(network_id)),
                         }
                         let default_changed = self.handle_default_network_update();
                         RegistryUpdateResult { event: UpdateApplied::None, default_changed }
@@ -437,6 +503,19 @@ impl RegisteredNetworks {
                 properties.connectivity_state = connectivity_state;
                 properties.network_type = network_type;
                 properties.name = name.clone();
+                match &entry {
+                    Entry::Occupied(e) => {
+                        // Only log network updates when they have changed.
+                        if *e.get() != properties {
+                            info!(
+                                tag = NETWORK_REGISTRY_LOG_TAG; "Update {network_id} ({properties})"
+                            );
+                        }
+                    }
+                    Entry::Vacant(_) => {
+                        info!(tag = NETWORK_REGISTRY_LOG_TAG; "Add {network_id} ({properties})");
+                    }
+                }
                 let _ = entry.insert_entry(properties);
                 UpdateApplied::NetworkChanged {
                     network_id,
