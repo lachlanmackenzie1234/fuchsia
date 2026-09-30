@@ -6,6 +6,7 @@ use fdf_component::DriverError;
 use fidl_next::{Request, Responder};
 use fidl_next_fuchsia_hardware_clock as fclock;
 use fidl_next_fuchsia_hardware_gpio as fgpio;
+use fidl_next_fuchsia_hardware_pin as fpin;
 use fidl_next_fuchsia_hardware_powerdomain as fpowerdomain;
 use fidl_next_fuchsia_hardware_reset as freset;
 use fidl_next_fuchsia_hardware_sharedmemory as fsharedmemory;
@@ -38,6 +39,7 @@ pub struct DwSpiResources {
     pub clock_bus: fidl_next::Client<fclock::Clock>,
     pub clock_regs: fidl_next::Client<fclock::Clock>,
     pub reset: fidl_next::Client<freset::Reset>,
+    pub pin_states: Vec<fidl_next::Client<fpin::PinStates>>,
 }
 
 #[derive(Debug)]
@@ -70,6 +72,24 @@ impl DwSpiDevice {
             registered_vmos: HashMap::new(),
             loopback_registered_vmos: HashMap::new(),
         }
+    }
+
+    async fn select_pin_states(&self, state: &str) -> Result<(), DriverError> {
+        for pin_state in &self.resources.pin_states {
+            match pin_state.select_state(state).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(s)) => {
+                    let status = s.err().unwrap_or(Status::INTERNAL);
+                    error!("Failed to select pin state {state}: {status}");
+                    return Err(status.into());
+                }
+                // Pin states are optional, so ignore transport errors.
+                Err(e) => {
+                    debug!("Failed to select pin state {state}: {e}");
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn init(&mut self, timing: DwSpiTiming) -> Result<(), DriverError> {
@@ -107,6 +127,8 @@ impl DwSpiDevice {
         })?;
 
         self.init_registers(timing, parent_clock_hz)?;
+
+        self.select_pin_states("default").await?;
 
         Ok(())
     }

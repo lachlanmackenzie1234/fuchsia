@@ -12,6 +12,7 @@ use fidl::Serializable;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next::ServerEnd;
 use fidl_next::util::{Multiserver, multiserver};
+use fidl_next_fuchsia_hardware_pin as fpin;
 use fidl_next_fuchsia_hardware_platform_device as fpdev;
 use fidl_next_fuchsia_hardware_spiimpl as fspi_impl;
 use fspi_businfo::SpiBusMetadata;
@@ -58,6 +59,21 @@ impl DwSpiDriver {
             0
         }
     }
+
+    fn connect_to_pin_states(
+        context: &DriverContext,
+        instance: &str,
+    ) -> Option<fidl_next::Client<fpin::PinStates>> {
+        let service = context
+            .incoming
+            .service::<fdf_component::ServiceInstance<fpin::PinStatesService>>()
+            .instance(instance)
+            .connect_next()
+            .ok()?;
+        let (client, server) = fidl_next::fuchsia::create_channel();
+        service.device(server).ok()?;
+        Some(client.spawn())
+    }
 }
 
 impl Driver for DwSpiDriver {
@@ -68,6 +84,11 @@ impl Driver for DwSpiDriver {
         let clock_bus = context.connect_to_clock("bus")?;
         let clock_regs = context.connect_to_clock("registers")?;
         let reset = context.connect_to_reset("reset")?;
+
+        let pin_states = ["pin-states-0", "pin-states-1"]
+            .into_iter()
+            .filter_map(|instance| Self::connect_to_pin_states(&context, instance))
+            .collect();
 
         let cs_gpio = {
             let cs_gpio = context.connect_to_gpio("cs-0")?;
@@ -103,7 +124,7 @@ impl Driver for DwSpiDriver {
             pdev.map_mmio_by_id(0).await?,
             cs_gpio,
             interrupt,
-            DwSpiResources { powerdomain, clock_bus, clock_regs, reset },
+            DwSpiResources { powerdomain, clock_bus, clock_regs, reset, pin_states },
         );
 
         device
