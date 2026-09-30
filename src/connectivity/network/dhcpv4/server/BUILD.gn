@@ -52,7 +52,6 @@ fuchsia_test_package("dhcpv4-server-tests") {
 network_unified_binary_regular_and_gub_components("component") {
   component_name = "dhcpv4_server"
   manifest = "meta/dhcpv4_server.cml"
-  restricted_features = [ "delivery_type" ]
   gub_deps = [ ":bin" ]
 }
 
