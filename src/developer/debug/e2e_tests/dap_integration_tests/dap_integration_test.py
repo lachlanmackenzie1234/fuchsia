@@ -13,12 +13,15 @@ from dap_test_framework import (
     DapTestCase,
     get_dap_source_path,
 )
-from pydap.dap_types import Source, SourceBreakpoint
+from pydap.dap_types import DataBreakpoint, Source, SourceBreakpoint
 from pydap.models import (
+    ContinueArguments,
+    DataBreakpointInfoArguments,
     InitializeArguments,
     LaunchArguments,
     ScopesArguments,
     SetBreakpointsArguments,
+    SetDataBreakpointsArguments,
     VariablesArguments,
 )
 from zxdb_dap import ZxdbStackTraceArguments
@@ -448,6 +451,211 @@ class TestDapStackTrace(DapTestCase):
         self.assertEqual(
             startup_frame.get("source", {}).get("origin"), "Rust startup"
         )
+
+
+class TestDapDataBreakpoints(DapTestCase):
+    """End-to-end tests for DAP data breakpoint (write watchpoint) support."""
+
+    require_build_type = ["optimize=none"]
+
+    async def test_data_breakpoints(self) -> None:
+        """Tests setting and triggering write watchpoints across two distinct phases:
+
+        - Phase 1 (Global Variable): Resolves global variable `SomeGlobal` via
+          `dataBreakpointInfo` from `main`, sets a write watchpoint, and verifies
+          execution breaks in `LeafNoArgs()` when `SomeGlobal` is written to.
+        - Phase 2 (Local Variable): Resolves local stack variable `lhs` via
+          `dataBreakpointInfo` from `main`, sets a write watchpoint, and verifies
+          execution breaks in `SwapPointedToValues()` when `*lhs` is modified.
+        """
+        cpp_functions_path = get_dap_source_path(
+            "src/developer/debug/e2e_tests/inferiors/cpp_functions.cc"
+        )
+        # --- Phase 1: Global Variable Watchpoint (`SomeGlobal`) ---
+        # Stop at line 60 (`NestedTwiceNoArgs();` in `main`) to test watching global `SomeGlobal`
+        # (`SomeGlobal = i;` in `LeafNoArgs()` at line 16).
+        bp_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=cpp_functions_path),
+                breakpoints=[
+                    SourceBreakpoint(line=60),
+                ],
+            )
+        )
+        self.assertTrue(bp_resp["success"])
+        bp_line_60_id = bp_resp["body"]["breakpoints"][0]["id"]
+
+        self.launch(
+            LaunchArguments(
+                process="fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/cpp_functions.cm"
+            )
+        )
+        stopped_event = await self.on_event("stopped", timeout=120.0)
+        self.assertEqual(stopped_event["body"]["reason"], "breakpoint")
+        self.assertIn(bp_line_60_id, stopped_event["body"]["hitBreakpointIds"])
+
+        thread_id = stopped_event["body"]["threadId"]
+        stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+        frames = stack_resp["body"]["stackFrames"]
+        self.assertTrue(len(frames) > 0)
+        main_frame_id = frames[0]["id"]
+
+        # Query dataBreakpointInfo for global variable `SomeGlobal` and `::SomeGlobal` in `main`.
+        global_info_resp = await self.data_breakpoint_info(
+            DataBreakpointInfoArguments(
+                name="SomeGlobal", frame_id=main_frame_id
+            )
+        )
+        self.assertTrue(global_info_resp["success"])
+        global_data_id = global_info_resp["body"]["dataId"]
+        self.assertIsNotNone(global_data_id)
+
+        qualified_global_info_resp = await self.data_breakpoint_info(
+            DataBreakpointInfoArguments(
+                name="::SomeGlobal", frame_id=main_frame_id
+            )
+        )
+        self.assertTrue(qualified_global_info_resp["success"])
+        self.assertEqual(
+            qualified_global_info_resp["body"]["dataId"], global_data_id
+        )
+
+        # Install a write data breakpoint on `SomeGlobal`
+        set_global_dbp_resp = await self.set_data_breakpoints(
+            SetDataBreakpointsArguments(
+                breakpoints=[
+                    DataBreakpoint(data_id=global_data_id, access_type="write")
+                ]
+            )
+        )
+        self.assertTrue(set_global_dbp_resp["success"])
+        self.assertEqual(len(set_global_dbp_resp["body"]["breakpoints"]), 1)
+        self.assertTrue(
+            set_global_dbp_resp["body"]["breakpoints"][0]["verified"]
+        )
+        global_watch_bp_id = set_global_dbp_resp["body"]["breakpoints"][0]["id"]
+
+        # Resume execution; `SomeGlobal = i;` in `LeafNoArgs()` at line 16 must trigger the watchpoint.
+        cont_resp = await self.continue_execution(
+            ContinueArguments(thread_id=thread_id)
+        )
+        self.assertTrue(cont_resp["success"])
+
+        global_watch_stopped = await self.on_event("stopped", timeout=120.0)
+        self.assertEqual(
+            global_watch_stopped["body"]["reason"], "data breakpoint"
+        )
+        self.assertIn(
+            global_watch_bp_id, global_watch_stopped["body"]["hitBreakpointIds"]
+        )
+
+        global_watch_stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+        global_watch_frames = global_watch_stack_resp["body"]["stackFrames"]
+        self.assertTrue(len(global_watch_frames) > 0)
+        self.assertIn("LeafNoArgs", global_watch_frames[0]["name"])
+        self.assertEqual(global_watch_frames[0]["line"], 17)
+
+        # --- Phase 2: Local Variable Watchpoint (`lhs`) ---
+        # 1. Clear the global watchpoint.
+        clear_global_dbp_resp = await self.set_data_breakpoints(
+            SetDataBreakpointsArguments(breakpoints=[])
+        )
+        self.assertTrue(clear_global_dbp_resp["success"])
+        self.assertEqual(len(clear_global_dbp_resp["body"]["breakpoints"]), 0)
+
+        # 2. Advance to line 69 in `main` where local `lhs` is initialized.
+        set_bp_69_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=cpp_functions_path),
+                breakpoints=[SourceBreakpoint(line=69)],
+            )
+        )
+        self.assertTrue(set_bp_69_resp["success"])
+        bp_line_69_id = set_bp_69_resp["body"]["breakpoints"][0]["id"]
+
+        cont_to_69_resp = await self.continue_execution(
+            ContinueArguments(thread_id=thread_id)
+        )
+        self.assertTrue(cont_to_69_resp["success"])
+
+        line_69_stopped = await self.on_event("stopped", timeout=120.0)
+        self.assertEqual(line_69_stopped["body"]["reason"], "breakpoint")
+        self.assertIn(
+            bp_line_69_id, line_69_stopped["body"]["hitBreakpointIds"]
+        )
+
+        stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+        main_frame_id = stack_resp["body"]["stackFrames"][0]["id"]
+
+        # Remove the source breakpoints so the next stop is strictly from the local watchpoint.
+        clear_bp_resp = await self.set_breakpoints(
+            SetBreakpointsArguments(
+                source=Source(path=cpp_functions_path),
+                breakpoints=[],
+            )
+        )
+        self.assertTrue(clear_bp_resp["success"])
+
+        # Query dataBreakpointInfo for local variable `lhs` in `main` and verify its dataId is
+        # distinct from global `SomeGlobal`.
+        info_resp = await self.data_breakpoint_info(
+            DataBreakpointInfoArguments(name="lhs", frame_id=main_frame_id)
+        )
+        self.assertTrue(info_resp["success"])
+        data_id = info_resp["body"]["dataId"]
+        self.assertIsNotNone(data_id)
+        self.assertNotEqual(data_id, global_data_id)
+        self.assertIn("write", info_resp["body"]["accessTypes"])
+
+        # Install a write data breakpoint on `lhs`
+        set_dbp_resp = await self.set_data_breakpoints(
+            SetDataBreakpointsArguments(
+                breakpoints=[
+                    DataBreakpoint(data_id=data_id, access_type="write")
+                ]
+            )
+        )
+        self.assertTrue(set_dbp_resp["success"])
+        self.assertEqual(len(set_dbp_resp["body"]["breakpoints"]), 1)
+        self.assertTrue(set_dbp_resp["body"]["breakpoints"][0]["verified"])
+        watch_bp_id = set_dbp_resp["body"]["breakpoints"][0]["id"]
+
+        # Resume execution; reads in AddIntPointers() and `int tmp = *lhs;` must not stop,
+        # and the write `*lhs = *rhs;` at line 39 must trigger the data breakpoint.
+        cont_resp = await self.continue_execution(
+            ContinueArguments(thread_id=thread_id)
+        )
+        self.assertTrue(cont_resp["success"])
+
+        watch_stopped = await self.on_event("stopped", timeout=120.0)
+        self.assertEqual(watch_stopped["body"]["reason"], "data breakpoint")
+        self.assertIn(watch_bp_id, watch_stopped["body"]["hitBreakpointIds"])
+
+        # Verify we stopped in SwapPointedToValues at line 40 (right after `*lhs = *rhs;` at line 39)
+        watch_stack_resp = await self.zxdb_stack_trace(
+            ZxdbStackTraceArguments(thread_id=thread_id, remote_unwind=True)
+        )
+        watch_frames = watch_stack_resp["body"]["stackFrames"]
+        self.assertTrue(len(watch_frames) > 0)
+        self.assertIn("SwapPointedToValues", watch_frames[0]["name"])
+        self.assertEqual(watch_frames[0]["line"], 40)
+
+        # Clear data breakpoints and continue
+        clear_dbp_resp = await self.set_data_breakpoints(
+            SetDataBreakpointsArguments(breakpoints=[])
+        )
+        self.assertTrue(clear_dbp_resp["success"])
+        self.assertEqual(len(clear_dbp_resp["body"]["breakpoints"]), 0)
+        final_cont_resp = await self.continue_execution(
+            ContinueArguments(thread_id=thread_id)
+        )
+        self.assertTrue(final_cont_resp["success"])
 
 
 def main() -> None:

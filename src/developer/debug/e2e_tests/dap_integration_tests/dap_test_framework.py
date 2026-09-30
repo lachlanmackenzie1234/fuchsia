@@ -34,12 +34,15 @@ from portpicker import portpicker
 from pydap.client import READER_STOPPED_EVENT
 from pydap.dap_types import DapBaseModel
 from pydap.models import (
+    ContinueArguments,
+    DataBreakpointInfoArguments,
     DisconnectArguments,
     EvaluateArguments,
     InitializeArguments,
     LaunchArguments,
     ScopesArguments,
     SetBreakpointsArguments,
+    SetDataBreakpointsArguments,
     StackTraceArguments,
     VariablesArguments,
 )
@@ -602,6 +605,19 @@ class DapTestFramework:
     def set_breakpoints(self, args: SetBreakpointsArguments) -> RequestFuture:
         return self._send_wrapper("setBreakpoints", args)
 
+    def continue_execution(self, args: ContinueArguments) -> RequestFuture:
+        return self._send_wrapper("continue", args)
+
+    def data_breakpoint_info(
+        self, args: DataBreakpointInfoArguments
+    ) -> RequestFuture:
+        return self._send_wrapper("dataBreakpointInfo", args)
+
+    def set_data_breakpoints(
+        self, args: SetDataBreakpointsArguments
+    ) -> RequestFuture:
+        return self._send_wrapper("setDataBreakpoints", args)
+
     def scopes(self, args: ScopesArguments) -> RequestFuture:
         return self._send_wrapper("scopes", args)
 
@@ -1006,6 +1022,19 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
 
     def set_breakpoints(self, args: SetBreakpointsArguments) -> RequestFuture:
         return self.framework.set_breakpoints(args)
+
+    def continue_execution(self, args: ContinueArguments) -> RequestFuture:
+        return self.framework.continue_execution(args)
+
+    def data_breakpoint_info(
+        self, args: DataBreakpointInfoArguments
+    ) -> RequestFuture:
+        return self.framework.data_breakpoint_info(args)
+
+    def set_data_breakpoints(
+        self, args: SetDataBreakpointsArguments
+    ) -> RequestFuture:
+        return self.framework.set_data_breakpoints(args)
 
     def scopes(self, args: ScopesArguments) -> RequestFuture:
         return self.framework.scopes(args)
