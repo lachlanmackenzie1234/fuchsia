@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/python/python_host_test.gni")
+import("//build/python/python_library.gni")
+
+# Transport-neutral host tooling for the host-proxy driver workflow:
+# models, operator read grants, and plan canonicalization. The
+# fuchsia-controller transport adapter over //src/devices/host-proxy/fidl
+# layers on top of this library.
+python_library("driver_lab") {
+  library_name = "driver_lab"
+  source_root = "driver_lab"
+  sources = [
+    "__init__.py",
+    "models.py",
+    "permissions.py",
+    "plans.py",
+  ]
+}
+
+if (is_host) {
+  python_host_test("driver_lab_permissions_test") {
+    main_source = "tests/permissions_test.py"
+    libraries = [ ":driver_lab" ]
+  }
+
+  python_host_test("driver_lab_plans_test") {
+    main_source = "tests/plans_test.py"
+    libraries = [ ":driver_lab" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":driver_lab_permissions_test($host_toolchain)",
+    ":driver_lab_plans_test($host_toolchain)",
+  ]
+}

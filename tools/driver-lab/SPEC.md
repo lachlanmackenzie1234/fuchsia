@@ -26,7 +26,7 @@ commit.
 
 - [x] CS2 `[driver-lab] Host tooling specification` -- this
       document.
-- [ ] CS4 `[driver-lab] Transport-neutral host tooling core` --
+- [x] CS4 `[driver-lab] Transport-neutral host tooling core` --
       frozen data models (18), grant resolution with the TOML store
       (10.3-10.5), and plan validation, canonicalization, and digests
       carrying the reserved takeover keys (11).
