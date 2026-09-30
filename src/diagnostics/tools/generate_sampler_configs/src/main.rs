@@ -10,70 +10,16 @@ use fidl_fuchsia_diagnostics::Selector;
 use prost::Message;
 use sampler_config::assembly::{MergedSamplerConfig, MetricTemplate, ProjectTemplate};
 use sampler_config::runtime::{DataSetConfig, MetricConfig, ProjectConfig as SamplerProjectConfig};
-use sampler_config::{EventCode, MetricId, MetricType as SamplerMetricType, ProjectId};
+use sampler_config::{MetricId, MetricType as SamplerMetricType, input};
 use selectors::SelectorDisplayOptions;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 const FUCHSIA_CUSTOMER_ID: u32 = 1;
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct InputProjectConfig {
-    project_id: ProjectId,
-    data_sets: Vec<InputDataSetConfig>,
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct InputDataSetConfig {
-    #[serde(deserialize_with = "sampler_config::utils::greater_than_zero")]
-    poll_rate_sec: i64,
-    metrics: Vec<InputMetricConfig>,
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct InputMetricConfig {
-    #[serde(
-        rename = "selector",
-        deserialize_with = "sampler_config::utils::one_or_many_selectors"
-    )]
-    selectors: Vec<Selector>,
-    #[serde(default)]
-    metric_id: Option<MetricId>,
-    #[serde(default)]
-    metric_name: Option<String>,
-    metric_type: SamplerMetricType,
-    #[serde(default)]
-    event_codes: Vec<EventCode>,
-    #[serde(default)]
-    upload_once: bool,
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct InputProjectTemplate {
-    project_id: ProjectId,
-    #[serde(deserialize_with = "sampler_config::utils::greater_than_zero")]
-    poll_rate_sec: i64,
-    metrics: Vec<InputMetricTemplate>,
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct InputMetricTemplate {
-    #[serde(rename = "selector", deserialize_with = "sampler_config::utils::one_or_many_strings")]
-    selectors: Vec<String>,
-    #[serde(default)]
-    metric_id: Option<MetricId>,
-    #[serde(default)]
-    metric_name: Option<String>,
-    metric_type: SamplerMetricType,
-    #[serde(default)]
-    event_codes: Vec<EventCode>,
-    #[serde(default)]
-    upload_once: bool,
-}
 
 /// Diagnostics config command
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -150,8 +96,8 @@ fn format_errors(header: &str, errors: &[String]) -> anyhow::Error {
 }
 
 fn validate_metric_ids_or_names(
-    project_configs: &[(PathBuf, InputProjectConfig)],
-    fire_project_templates: &[(PathBuf, InputProjectTemplate)],
+    project_configs: &[(PathBuf, input::ProjectConfig)],
+    fire_project_templates: &[(PathBuf, input::ProjectTemplate)],
 ) -> Result<(), Error> {
     let mut errors = Vec::new();
 
@@ -252,8 +198,8 @@ fn parse_cobalt_projects(
 
 fn resolve_metric_names(
     registry_bytes: &[u8],
-    project_configs: Vec<(PathBuf, InputProjectConfig)>,
-    fire_project_templates: Vec<(PathBuf, InputProjectTemplate)>,
+    project_configs: Vec<(PathBuf, input::ProjectConfig)>,
+    fire_project_templates: Vec<(PathBuf, input::ProjectTemplate)>,
 ) -> Result<(Vec<(PathBuf, SamplerProjectConfig)>, Vec<(PathBuf, ProjectTemplate)>), Error> {
     let registry = CobaltRegistry::decode(registry_bytes)
         .context("Failed to decode CobaltRegistry protobuf")?;
@@ -615,6 +561,7 @@ mod tests {
     use cobalt_registry_proto::cobalt::{
         CustomerConfig, MetricDefinition, ProjectConfig as CobaltProjectConfig,
     };
+    use sampler_config::{EventCode, ProjectId};
 
     fn make_test_registry() -> CobaltRegistry {
         CobaltRegistry {
@@ -913,57 +860,17 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_input_configs_with_metric_name() {
-        let project_json = r#"{
-            "project_id": 10,
-            "data_sets": [{
-                "poll_rate_sec": 60,
-                "metrics": [{
-                    "selector": "core/foo:root:bar",
-                    "metric_name": "test_occurrence",
-                    "metric_type": "Occurrence",
-                    "event_codes": [1]
-                }]
-            }]
-        }"#;
-        let parsed_project: InputProjectConfig =
-            serde_json5::from_str(project_json).expect("deserialize project config");
-        assert_eq!(parsed_project.project_id, ProjectId(10));
-        assert_eq!(parsed_project.data_sets[0].metrics[0].metric_id, None);
-        assert_eq!(
-            parsed_project.data_sets[0].metrics[0].metric_name,
-            Some("test_occurrence".into())
-        );
-
-        let fire_json = r#"{
-            "project_id": 10,
-            "poll_rate_sec": 60,
-            "metrics": [{
-                "selector": "{MONIKER}:root:val",
-                "metric_name": "test_fire_histogram",
-                "metric_type": "IntHistogram",
-                "event_codes": [2]
-            }]
-        }"#;
-        let parsed_fire: InputProjectTemplate =
-            serde_json5::from_str(fire_json).expect("deserialize fire template");
-        assert_eq!(parsed_fire.project_id, ProjectId(10));
-        assert_eq!(parsed_fire.metrics[0].metric_id, None);
-        assert_eq!(parsed_fire.metrics[0].metric_name, Some("test_fire_histogram".into()));
-    }
-
-    #[test]
     fn test_valid_config_with_metric_name() {
         let registry = make_test_registry();
         let bytes = registry.encode_to_vec();
 
         let project_configs = vec![(
             PathBuf::from("test/project.json5"),
-            InputProjectConfig {
+            input::ProjectConfig {
                 project_id: ProjectId(10),
-                data_sets: vec![InputDataSetConfig {
+                data_sets: vec![input::DataSetConfig {
                     poll_rate_sec: 60,
-                    metrics: vec![InputMetricConfig {
+                    metrics: vec![input::MetricConfig {
                         metric_id: None,
                         metric_name: Some("test_occurrence".into()),
                         metric_type: SamplerMetricType::Occurrence,
@@ -976,10 +883,10 @@ mod tests {
         )];
         let fire_templates = vec![(
             PathBuf::from("test/fire.json5"),
-            InputProjectTemplate {
+            input::ProjectTemplate {
                 project_id: ProjectId(10),
                 poll_rate_sec: 60,
-                metrics: vec![InputMetricTemplate {
+                metrics: vec![input::MetricTemplate {
                     metric_id: None,
                     metric_name: Some("test_fire_histogram".into()),
                     metric_type: SamplerMetricType::IntHistogram,
@@ -1006,11 +913,11 @@ mod tests {
 
         let project_configs = vec![(
             PathBuf::from("test/bad_name.json5"),
-            InputProjectConfig {
+            input::ProjectConfig {
                 project_id: ProjectId(10),
-                data_sets: vec![InputDataSetConfig {
+                data_sets: vec![input::DataSetConfig {
                     poll_rate_sec: 60,
-                    metrics: vec![InputMetricConfig {
+                    metrics: vec![input::MetricConfig {
                         metric_id: None,
                         metric_name: Some("nonexistent_metric".into()),
                         metric_type: SamplerMetricType::Occurrence,
@@ -1023,10 +930,10 @@ mod tests {
         )];
         let fire_templates = vec![(
             PathBuf::from("test/bad_fire_name.json5"),
-            InputProjectTemplate {
+            input::ProjectTemplate {
                 project_id: ProjectId(10),
                 poll_rate_sec: 60,
-                metrics: vec![InputMetricTemplate {
+                metrics: vec![input::MetricTemplate {
                     metric_id: None,
                     metric_name: Some("nonexistent_fire_metric".into()),
                     metric_type: SamplerMetricType::IntHistogram,
@@ -1051,11 +958,11 @@ mod tests {
     fn test_missing_both_metric_id_and_name() {
         let project_configs = vec![(
             PathBuf::from("test/missing_both.json5"),
-            InputProjectConfig {
+            input::ProjectConfig {
                 project_id: ProjectId(10),
-                data_sets: vec![InputDataSetConfig {
+                data_sets: vec![input::DataSetConfig {
                     poll_rate_sec: 60,
-                    metrics: vec![InputMetricConfig {
+                    metrics: vec![input::MetricConfig {
                         metric_id: None,
                         metric_name: None,
                         metric_type: SamplerMetricType::Occurrence,
@@ -1068,10 +975,10 @@ mod tests {
         )];
         let fire_templates = vec![(
             PathBuf::from("test/missing_both_fire.json5"),
-            InputProjectTemplate {
+            input::ProjectTemplate {
                 project_id: ProjectId(10),
                 poll_rate_sec: 60,
-                metrics: vec![InputMetricTemplate {
+                metrics: vec![input::MetricTemplate {
                     metric_id: None,
                     metric_name: None,
                     metric_type: SamplerMetricType::IntHistogram,
@@ -1096,11 +1003,11 @@ mod tests {
     fn test_specifying_both_metric_id_and_name() {
         let project_configs = vec![(
             PathBuf::from("test/both.json5"),
-            InputProjectConfig {
+            input::ProjectConfig {
                 project_id: ProjectId(10),
-                data_sets: vec![InputDataSetConfig {
+                data_sets: vec![input::DataSetConfig {
                     poll_rate_sec: 60,
-                    metrics: vec![InputMetricConfig {
+                    metrics: vec![input::MetricConfig {
                         metric_id: Some(MetricId(100)),
                         metric_name: Some("test_occurrence".into()),
                         metric_type: SamplerMetricType::Occurrence,
@@ -1113,10 +1020,10 @@ mod tests {
         )];
         let fire_templates = vec![(
             PathBuf::from("test/both_fire.json5"),
-            InputProjectTemplate {
+            input::ProjectTemplate {
                 project_id: ProjectId(10),
                 poll_rate_sec: 60,
-                metrics: vec![InputMetricTemplate {
+                metrics: vec![input::MetricTemplate {
                     metric_id: Some(MetricId(101)),
                     metric_name: Some("test_fire_histogram".into()),
                     metric_type: SamplerMetricType::IntHistogram,
@@ -1144,11 +1051,11 @@ mod tests {
 
         let project_configs = vec![(
             PathBuf::from("test/bad_resolved_metric.json5"),
-            InputProjectConfig {
+            input::ProjectConfig {
                 project_id: ProjectId(10),
-                data_sets: vec![InputDataSetConfig {
+                data_sets: vec![input::DataSetConfig {
                     poll_rate_sec: 60,
-                    metrics: vec![InputMetricConfig {
+                    metrics: vec![input::MetricConfig {
                         metric_id: None,
                         metric_name: Some("test_occurrence".into()),
                         metric_type: SamplerMetricType::Integer, // mismatch: Cobalt defines Occurrence

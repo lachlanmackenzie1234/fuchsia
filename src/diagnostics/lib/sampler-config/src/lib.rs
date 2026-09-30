@@ -4,6 +4,7 @@
 
 pub mod assembly;
 mod common;
+pub mod input;
 pub mod runtime;
 pub mod utils;
 

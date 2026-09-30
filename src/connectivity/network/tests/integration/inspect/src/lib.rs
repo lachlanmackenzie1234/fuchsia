@@ -61,7 +61,7 @@ use packet_formats::ip::IpProto;
 use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 use regex::Regex;
-use sampler_config::runtime::ProjectConfig;
+use sampler_config::input::ProjectConfig;
 use test_case::test_case;
 
 enum TcpSocketState {
