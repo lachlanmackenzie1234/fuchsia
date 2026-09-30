@@ -1,5 +1,5 @@
 {
-    "audit_failure": [
+    "audit-failure": [
         // TODO: https://fxbug.dev/509488263 - Make (SE)Starnix match the (SE)Linux behavior
         // demonstrated in this test.
         "BpfMapCreateTestSuite/BpfMapCreateTest.Create/create",
@@ -28,6 +28,6 @@
         "TunTapTests/TunTapRelabelTest.Relabel/2",
         "TunTapTests/TunTapRelabelTest.Relabel/3",
         "TunTapTests/TunTapRelabelTest.Relabel/4",
-        "TunTapTests/TunTapRelabelTest.Relabel/5"
-    ]
+        "TunTapTests/TunTapRelabelTest.Relabel/5",
+    ],
 }
