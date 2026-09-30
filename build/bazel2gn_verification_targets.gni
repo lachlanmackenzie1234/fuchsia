@@ -238,6 +238,8 @@ bazel2gn_verification_targets = [
   "//src/sys/lib/moniker:verify_bazel2gn",
   "//src/sys/lib/notify-batch-watcher:verify_bazel2gn",
   "//src/sys/pkg/bin/system-updater/epoch:verify_bazel2gn",
+  "//src/sys/pkg/fidl/fuchsia.update.installer:verify_bazel2gn",
+  "//src/sys/pkg/fidl/fuchsia.update.verify:verify_bazel2gn",
   "//src/sys/pkg/lib/async-generator:verify_bazel2gn",
   "//src/sys/pkg/lib/bounded-node:verify_bazel2gn",
   "//src/sys/pkg/lib/channel-config:verify_bazel2gn",
