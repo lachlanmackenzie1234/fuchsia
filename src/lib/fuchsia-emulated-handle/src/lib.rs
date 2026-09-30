@@ -460,7 +460,7 @@ impl From<Handle> for Channel {
 }
 impl From<Channel> for Handle {
     fn from(mut hdl: Channel) -> Handle {
-        let out = unsafe { Handle::from_raw(hdl.0) };
+        let out = Handle(hdl.0);
         hdl.0 = INVALID_HANDLE;
         out
     }
@@ -820,7 +820,7 @@ impl From<Handle> for Socket {
 }
 impl From<Socket> for Handle {
     fn from(mut hdl: Socket) -> Handle {
-        let out = unsafe { Handle::from_raw(hdl.0) };
+        let out = Handle(hdl.0);
         hdl.0 = INVALID_HANDLE;
         out
     }
@@ -1086,7 +1086,7 @@ impl From<Handle> for EventPair {
 }
 impl From<EventPair> for Handle {
     fn from(mut hdl: EventPair) -> Handle {
-        let out = unsafe { Handle::from_raw(hdl.0) };
+        let out = Handle(hdl.0);
         hdl.0 = INVALID_HANDLE;
         out
     }
@@ -1167,7 +1167,7 @@ impl From<Handle> for Event {
 }
 impl From<Event> for Handle {
     fn from(mut hdl: Event) -> Handle {
-        let out = unsafe { Handle::from_raw(hdl.0) };
+        let out = Handle(hdl.0);
         hdl.0 = INVALID_HANDLE;
         out
     }
