@@ -78,6 +78,7 @@ tests_migrated_ffx_libraries = [
   "termio",
   "trace",
   "traceable_error",
+  "usb_fastboot_discovery",
   "version",
 
   # keep-sorted end
