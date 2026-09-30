@@ -108,10 +108,11 @@ def main() -> int:
     differences_count = 0
 
     report_text = ""
+    error_report_text = ""
 
-    for idx, result in enumerate(results):
+    for result in results:
         if result.error:
-            print(result.error)
+            print(result.error, file=sys.stderr)
             all_success = False
             continue
 
@@ -142,10 +143,12 @@ def main() -> int:
                 else flags_differences.categorize_clang_flag
             )
 
-            report_text += "\n\n" + differences.generate_summary(
+            summary = differences.generate_summary(
                 title=description, flag_categorizer=flag_categorizer
             )
+            report_text += "\n\n" + summary
             if not result.query.allow_differences:
+                error_report_text += "\n\n" + summary
                 all_success = False
         else:
             debug(f"Match for {description}")
@@ -155,6 +158,12 @@ def main() -> int:
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(report_text)
+
+    if error_report_text:
+        print(
+            f"ERROR: Unexpected build command differences found:{error_report_text}",
+            file=sys.stderr,
+        )
 
     if all_success and args.stamp:
         with open(args.stamp, "w") as f:
