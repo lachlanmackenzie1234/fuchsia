@@ -660,9 +660,18 @@ impl FunctionFsRootDir {
         if state.num_control_file_objects == 0 {
             // When all control endpoints are closed, the filesystem resets to its initial state.
             if let Some(device_proxy) = state.device_proxy.as_ref() {
-                let _ = device_proxy
-                    .stop_adb(zx::MonotonicInstant::INFINITE)
-                    .map_err(|_| errno!(EINVAL));
+                match device_proxy.stop_adb(zx::MonotonicInstant::INFINITE) {
+                    Ok(Ok(())) => {}
+                    Ok(Err(status)) => {
+                        log_warn!(
+                            "Failed to stop adb driver on control reset: {}",
+                            zx::Status::err_from_raw(status)
+                        );
+                    }
+                    Err(err) => {
+                        log_warn!("FIDL error calling StopAdb on control reset: {err}");
+                    }
+                }
             }
 
             state.has_input_output_endpoints = false;
@@ -715,10 +724,23 @@ impl FunctionFsRootDir {
         let guard = pending.event.begin_wait();
 
         if let Some(channel) = self.state.lock().adb_write_channel.as_ref() {
-            channel
-                .send_blocking(WriteCommand { data, pending: pending.clone() })
-                .map_err(|_| errno!(EINVAL))?;
+            channel.send_blocking(WriteCommand { data, pending: pending.clone() }).map_err(
+                |err| {
+                    log_warn!(
+                        "FunctionFsRootDir::write (ep2 bulk IN) failed to send command for task {} (pid {}): {err}",
+                        current_task.command(),
+                        current_task.get_pid()
+                    );
+                    errno!(EINVAL)
+                },
+            )?;
         } else {
+            log_warn!(
+                "FunctionFsRootDir::write (ep2 bulk IN) called by task {} (pid {}) with {} bytes, but adb_write_channel is None (ENODEV)",
+                current_task.command(),
+                current_task.get_pid(),
+                bytes.len()
+            );
             return error!(ENODEV);
         }
 
@@ -734,10 +756,20 @@ impl FunctionFsRootDir {
         let pending = Arc::<PendingResult<Vec<u8>>>::default();
         let guard = pending.event.begin_wait();
         if let Some(channel) = self.state.lock().adb_read_channel.as_ref() {
-            channel
-                .send_blocking(ReadCommand { pending: pending.clone() })
-                .map_err(|_| errno!(EINVAL))?;
+            channel.send_blocking(ReadCommand { pending: pending.clone() }).map_err(|err| {
+                log_warn!(
+                    "FunctionFsRootDir::read (ep1 bulk OUT) failed to send command for task {} (pid {}): {err}",
+                    current_task.command(),
+                    current_task.get_pid()
+                );
+                errno!(EINVAL)
+            })?;
         } else {
+            log_warn!(
+                "FunctionFsRootDir::read (ep1 bulk OUT) called by task {} (pid {}), but adb_read_channel is None (ENODEV)",
+                current_task.command(),
+                current_task.get_pid()
+            );
             return error!(ENODEV);
         }
 
@@ -949,7 +981,14 @@ impl FileOps for FunctionFsInputEndpoint {
         _offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        let bytes = data.read_all()?;
+        let bytes = data.read_all().map_err(|err| {
+            log_warn!(
+                "FunctionFsInputEndpoint (ep2 bulk IN) input buffer read failed for task {} (pid {}): {err}",
+                current_task.command(),
+                current_task.get_pid()
+            );
+            err
+        })?;
         let rootdir = FunctionFsRootDir::from_file(file);
         rootdir.write(current_task, file, &bytes)
     }
@@ -989,11 +1028,25 @@ impl FileOps for FunctionFsOutputFileObject {
         if payload.len() > data.available() {
             // This means the data will only be partially written, with the rest discarded.
             // Instead of attempting this, we'll instead return error to the client.
+            log_warn!(
+                "FunctionFsOutputFileObject (ep1 bulk OUT) buffer overflow for task {} (pid {}): payload len {} > buffer avail {}",
+                current_task.command(),
+                current_task.get_pid(),
+                payload.len(),
+                data.available()
+            );
             rootdir.stats.ep1_buffer_overflow_errors.fetch_add(1, Ordering::Relaxed);
             return error!(EINVAL);
         }
 
-        data.write(&payload)
+        data.write(&payload).map_err(|err| {
+            log_warn!(
+                "FunctionFsOutputFileObject (ep1 bulk OUT) output buffer write failed for task {} (pid {}): {err}",
+                current_task.command(),
+                current_task.get_pid()
+            );
+            err
+        })
     }
 
     fn write(
