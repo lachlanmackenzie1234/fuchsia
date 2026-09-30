@@ -101,4 +101,36 @@ mod tests {
         counter!("category", "name", 1, "a" => 10);
         counter!("category", "name", 1, "a" => 10, "b" => 20);
     }
+
+    #[cfg(not(feature = "tracing"))]
+    #[fuchsia::test]
+    fn test_id_random_and_noop_backend() {
+        use crate::__backend::ArgValue;
+
+        let id = Id::random();
+        let _raw: u64 = id.into();
+
+        __backend::use_duration_args("category", "name");
+        __backend::use_instant_args("category", "name", Scope::Process);
+        __backend::use_instant_args("category", "name", Scope::Global);
+        __backend::use_flow_args("category", "name", id);
+        __backend::use_counter_args("category", "name", 1);
+
+        let mut val = 42u64;
+        let s = "hello";
+        __backend::use_args(&[
+            <()>::of("unit", ()),
+            bool::of("bool", true),
+            i32::of("i32", -1),
+            u32::of("u32", 1),
+            i64::of("i64", -2),
+            u64::of("u64", 2),
+            isize::of("isize", -3),
+            usize::of("usize", 3),
+            f64::of("f64", 1.5),
+            <&str>::of("str", s),
+            <*const u64>::of("cptr", &val as *const u64),
+            <*mut u64>::of("mptr", &mut val as *mut u64),
+        ]);
+    }
 }
