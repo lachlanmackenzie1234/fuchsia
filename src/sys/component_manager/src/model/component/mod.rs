@@ -758,6 +758,12 @@ impl ComponentInstance {
                         .top_instance()
                         .await
                         .map_err(|_| StopActionError::GetTopInstanceFailed)?;
+                    {
+                        let mut state = self.lock_state().await;
+                        if let InstanceState::Resolved(resolved_state) = &mut *state {
+                            resolved_state.restarts_disabled = true;
+                        }
+                    }
                     top_instance.trigger_reboot();
                 }
                 Some((ret, started_timestamp, started_timestamp_monotonic))

@@ -457,6 +457,10 @@ pub struct ResolvedInstanceState {
 
     /// The declaration of the logger capability used by this component.
     pub logger_decl: Option<UseProtocolDecl>,
+
+    /// True if restarts are disabled for this instance (e.g. after an unclean exit with
+    /// `on_terminate: "reboot"`).
+    pub restarts_disabled: bool,
 }
 
 /// Abbreviated equivalent to [ComponentAddress] that omits the actual url string.
@@ -604,6 +608,7 @@ impl ResolvedInstanceState {
             storage_service_use_decls,
             offer_decls,
             logger_decl,
+            restarts_disabled: false,
         };
         state.add_static_children(component).await?;
 
