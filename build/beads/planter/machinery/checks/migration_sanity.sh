@@ -17,6 +17,14 @@ set -euo pipefail
 # 3. missing_verify_bazel2gn_registration (error): flags any dual-build package whose BUILD.gn
 #    defines `verify_bazel2gn("verify_bazel2gn")` without registering `//<pkg>:verify_bazel2gn`
 #    in `//build/bazel2gn_verification_targets.gni` (or `//sdk/fidl/bazel2gn_verification_targets.gni`).
+# 4. gn_test_package_not_migrated / duplicate_gn_test_package (error): when the checkout has
+#    `//build/bazel/rules/testing:fx_test.bzl`, flags a GN `fuchsia_unittest_package` /
+#    `fuchsia_test_package` that only packages C/C++ tests Bazel can build (a BUILD.bazel
+#    cc/fx_cc binary, or a GN test executable with only C/C++ sources whose deps all have a
+#    Bazel build) and uses nothing Bazel device tests cannot express yet (other test_specs than
+#    log_settings.max_severity, test_type, subpackages, data_deps, ...), or that duplicates a
+#    Bazel `fx_package`. Rust tests (Bazel cannot run them on device yet) and tests whose
+#    language is unknown never trigger it.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -92,6 +100,26 @@ EXCLUDED_GLOBAL_DIRS = (
     "build/config/rust/lints",
 )
 
+# With fx_test() in the checkout, GN device test packages migrate to Bazel unless they use
+# something Bazel device tests cannot express yet.
+FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/testing/fx_test.bzl"))
+GN_TEST_PACKAGE_TEMPLATES = ("fuchsia_unittest_package", "fuchsia_test_package")
+# Only C/C++ device tests migrate: Bazel cannot run Rust unit tests on Fuchsia devices yet.
+CC_TEST_BAZEL_RULES = {"fx_cc_binary", "cc_binary", "cc_test", "fx_cc_test"}
+GN_CC_TEST_TEMPLATES = {"executable", "test", "cc_test_executable"}
+CC_SOURCE_SUFFIXES = (".cc", ".cpp", ".cxx", ".c", ".h", ".hpp")
+GN_TEST_PACKAGE_BLOCKERS = (
+    "test_type",
+    "subpackages",
+    "renameable_subpackages",
+    "data_deps",
+    "required_offers",
+    "required_uses",
+    "restricted_features",
+    "deprecated_legacy_test_execution",
+    "manifest_deps",
+)
+
 
 def git_lines(args):
     try:
@@ -145,6 +173,7 @@ def parse_bazel_targets(bazel_path):
         tname = None
         binary_ref = None
         pkg_name = None
+        unit_tests = False
         for kw in call.keywords:
             if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 tname = kw.value.value
@@ -152,6 +181,8 @@ def parse_bazel_targets(bazel_path):
                 binary_ref = kw.value.value.lstrip(":")
             elif kw.arg == "package_name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 pkg_name = kw.value.value
+            elif kw.arg in ("with_unit_tests", "with_host_unit_tests") and isinstance(kw.value, ast.Constant):
+                unit_tests = unit_tests or kw.value.value is True
         if not tname:
             continue
         start_line = node.lineno
@@ -175,6 +206,7 @@ def parse_bazel_targets(bazel_path):
             "skip_line": skip_line,
             "binary_ref": binary_ref,
             "package_name": pkg_name or tname,
+            "unit_tests": unit_tests,
         })
     return targets
 
@@ -417,6 +449,142 @@ for pkg_dir in sorted(candidate_dirs):
                             f"verifies bazel2gn synchronization for `//{pkg_dir}`."
                         ),
                     })
+
+    if gn_info and FX_TEST_AVAILABLE:
+        bazel_test_pkg_names = {t["package_name"] for t in fx_pkgs}
+        bazel_rules = {t["name"]: t["rule"] for t in bazel_targets}
+        rust_unit_tests = {t["name"] + "_test" for t in bazel_targets if t["unit_tests"]}
+        third_party_gn_labels = {
+            "//third_party/googletest",
+            "//third_party/googletest:gtest",
+            "//third_party/googletest:gtest_main",
+            "//third_party/googletest:gtest_prod",
+            "//third_party/googletest:gmock",
+            "//third_party/googletest:gmock_main",
+        }
+        try:
+            with open(os.path.join(workdir, "build/tools/bazel2gn/third_party_target_map.json"), encoding="utf-8") as f:
+                third_party_gn_labels.update(json.load(f).values())
+        except Exception:
+            pass
+
+        def bazel_buildable(label):
+            """Whether a GN dep label names a target with a Bazel build (conservative)."""
+            if "(" in label or "$" in label:
+                return False
+            if label.startswith(":"):
+                return label[1:] in bazel_rules
+            if not label.startswith("//"):
+                return False
+            if label in third_party_gn_labels:
+                return True
+            path, _, name = label[2:].partition(":")
+            try:
+                with open(os.path.join(workdir, path, "BUILD.bazel"), encoding="utf-8") as f:
+                    text = f.read()
+            except OSError:
+                return False
+            return re.search(r'\bname\s*=\s*"' + re.escape(name or os.path.basename(path)) + '"', text) is not None
+
+        def test_language(label):
+            """Returns "rust", "cc" (a C/C++ test Bazel can build), or None if unknown/unbuildable."""
+            if not label.startswith(":") or "(" in label:
+                return None
+            name = label[1:]
+            if name in rust_unit_tests:
+                return "rust"
+            rule = bazel_rules.get(name)
+            if rule:
+                if rule.startswith(("rust", "rustc")):
+                    return "rust"
+                return "cc" if rule in CC_TEST_BAZEL_RULES else None
+            if name not in gn_info["pre_targets"]:
+                return None
+            ttmpl, _, tbody = gn_info["pre_targets"][name]
+            tbody = re.sub(r"#[^\n]*", "", tbody)
+            if ttmpl.startswith("rustc_"):
+                return "rust"
+            if ttmpl not in GN_CC_TEST_TEMPLATES or "$" in tbody or re.search(r"\b(?:if|foreach)\s*\(", tbody):
+                return None
+            srcs = []
+            for sm in re.finditer(r"\bsources\s*\+?=\s*\[([^\]]*)\]", tbody):
+                srcs += re.findall(r'"([^"]+)"', sm.group(1))
+            if any(f.endswith(".rs") for f in srcs):
+                return "rust"
+            if not srcs or not all(f.endswith(CC_SOURCE_SUFFIXES) for f in srcs):
+                return None
+            deps = []
+            for dm in re.finditer(r"\b(?:public_deps|deps)\s*\+?=\s*\[([^\]]*)\]", tbody):
+                deps += re.findall(r'"([^"]+)"', dm.group(1))
+            return "cc" if all(bazel_buildable(d) for d in deps) else None
+
+        for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
+            if gtmpl not in GN_TEST_PACKAGE_TEMPLATES:
+                continue
+            gbody = re.sub(r"#[^\n]*", "", gbody)
+            pn_m = re.search(r'\bpackage_name\s*=\s*"([^"]+)"', gbody)
+            gn_pkg_name = pn_m.group(1) if pn_m else gname
+            if gn_pkg_name in bazel_test_pkg_names:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "duplicate_gn_test_package",
+                    "severity": "error",
+                    "file": gn_rel,
+                    "line": gline,
+                    "message": (
+                        f"GN `{gtmpl}(\"{gname}\")` in '{gn_rel}' builds package `{gn_pkg_name}`, which "
+                        f"`fx_package` in '{bazel_rel}' also builds; both would publish the same test package."
+                    ),
+                    "remediation": (
+                        f"Delete `{gtmpl}(\"{gname}\")` (and test executables only it used) from '{gn_rel}' and "
+                        f"export the Bazel `fx_test` with `bazel_test_suite(\"{gname}\") {{ target_tests = [ ... ] }}` "
+                        "listed in `group(\"tests\")`."
+                    ),
+                })
+                continue
+            blockers = [k for k in GN_TEST_PACKAGE_BLOCKERS if re.search(r"\b" + k + r"\s*\+?=", gbody)]
+            if "$" in gbody or re.search(r"\b(?:if|foreach)\s*\(", gbody):
+                blockers.append("variables/conditionals")
+            if re.search(r"\b(?:deps|test_components)\s*\+?=\s*[A-Za-z_]", gbody):
+                blockers.append("deps from a variable")
+            ts_m = re.search(r"\btest_specs\s*=\s*\{", gbody)
+            if ts_m:
+                specs = gbody[ts_m.end() : find_closing_brace(gbody, ts_m.end() - 1)]
+                log_m = re.search(r"\blog_settings\s*=\s*\{([^{}]*)\}", specs)
+                flat = re.sub(r"\{[^{}]*\}", "{}", specs)
+                keys = set(re.findall(r"\b([A-Za-z_]\w*)\s*=", flat))
+                if keys - {"log_settings"} or (
+                    log_m and set(re.findall(r"\b([A-Za-z_]\w*)\s*=", log_m.group(1))) - {"max_severity"}
+                ):
+                    blockers.append("test_specs")
+            labels = []
+            for lm in re.finditer(r"\b(?:deps|test_components)\s*\+?=\s*\[([^\]]*)\]", gbody):
+                labels += re.findall(r'"([^"]+)"', lm.group(1))
+            # Rust tests stay in GN (Bazel cannot run them on device yet); unknown means no error.
+            if blockers or not labels or any(test_language(l) != "cc" for l in labels):
+                continue
+            findings.append({
+                "source": "migration_sanity",
+                "category": "gn_test_package_not_migrated",
+                "severity": "error",
+                "file": gn_rel,
+                "line": gline,
+                "message": (
+                    f"GN `{gtmpl}(\"{gname}\")` in '{gn_rel}' only packages C/C++ tests Bazel can build "
+                    f"({', '.join(labels)}) and uses nothing Bazel device tests cannot express, but it stays "
+                    "in GN although this checkout has `//build/bazel/rules/testing:fx_test.bzl`."
+                ),
+                "remediation": (
+                    f"Migrate it as in \"Migrating Tests\" of the coder instructions (like //src/developer/build_info): "
+                    f"in '{bazel_rel}' add `fx_cc_binary(testonly = True)` for the test executable, "
+                    "`fx_packaged_binary(testonly = True)`, `fx_component_manifest` with a new `meta/<component>.cml` "
+                    "(gtest runner shard + the syslog shard GN used), `fx_test_component`, "
+                    f"`fx_package(package_name = \"{gn_pkg_name}\", test_components = [...])` and `fx_test` (each with "
+                    "`# @bazel2gn:skip` in a dual-build package); then replace the GN package and executable with "
+                    f"`bazel_test_suite(\"{gname}\") {{ target_tests = [ \"//{pkg_dir}:<fx_test>\" ] }}` listed in "
+                    "`group(\"tests\")`. If a real blocker keeps it in GN, name it in the summary and dispute this finding."
+                ),
+            })
 
     if fx_pkgs:
         fx_pkg_name = fx_pkgs[0]["name"]

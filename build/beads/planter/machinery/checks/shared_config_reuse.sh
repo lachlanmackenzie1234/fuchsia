@@ -665,9 +665,10 @@ def gn_arg_remediation(aname, decl_rel, rhs, pkg):
     )
     return (
         move_note
-        + f"Wrap `{aname} = ...` in '{gni_rel}' with `# LINT.IfChange` and `# LINT.ThenChange(//build/bazel/BUILD.gn)`, "
+        + f"Wrap `{aname} = ...` in '{gni_rel}' with `# LINT.IfChange` and `# LINT.ThenChange(//build/bazel/BUILD.gn:{aname})` "
+        "(a scoped, named label: 'build/bazel/BUILD.gn' holds much unrelated content), "
         f"export `{aname}` in `generated_file(\"gn_build_variables_for_bazel\")` in 'build/bazel/BUILD.gn' "
-        f"(`# LINT.IfChange`, `declaration = \"//{gni_rel}\"`, `import(declaration)`, "
+        f"(`# LINT.IfChange({aname})`, `declaration = \"//{gni_rel}\"`, `import(declaration)`, "
         f"`contents += [ {{ name = \"{aname}\" value = {aname} type = \"{arg_type}\" location = declaration }} ]`, "
         f"`# LINT.ThenChange(//{gni_rel})`), delete any duplicate `.bzl` file or Starlark assignment, "
         f"and load `{aname}` in `{pkg}/BUILD.bazel` via `load(\"@fuchsia_build_info//:args.bzl\", \"{aname}\")` "
@@ -755,10 +756,37 @@ for rel in sorted(changed):
                                 "missing_gn_build_arg_lint_change", "error", decl_rel, decl_info[1],
                                 f"GN build argument `{sym}` in '{decl_rel}' is exported to Bazel in "
                                 "'build/bazel/BUILD.gn' but is missing `# LINT.IfChange` / "
-                                "`# LINT.ThenChange(//build/bazel/BUILD.gn)` inside `declare_args()`.",
+                                f"`# LINT.ThenChange(//build/bazel/BUILD.gn:{sym})` inside `declare_args()`.",
                                 f"Wrap `{sym} = ...` in '{decl_rel}' with `# LINT.IfChange` and "
-                                "`# LINT.ThenChange(//build/bazel/BUILD.gn)`.",
+                                f"`# LINT.ThenChange(//build/bazel/BUILD.gn:{sym})`, and name the export "
+                                f"block's marker in 'build/bazel/BUILD.gn' `# LINT.IfChange({sym})`.",
                             )
+                        elif decl_rel in touched:
+                            # 5c. A LINT pair added/edited by the change must scope its ThenChange into
+                            #     the large, shared //build/bazel/BUILD.gn with a named label.
+                            bb_all = read("build/bazel/BUILD.gn") or ""
+                            for tm in re.finditer(
+                                r"LINT\.ThenChange\(\s*//build/bazel/BUILD\.gn(?::([\w.-]+))?\s*\)",
+                                read(decl_rel) or "",
+                            ):
+                                lbl = tm.group(1)
+                                t_line = (read(decl_rel) or "").count("\n", 0, tm.start()) + 1
+                                if lbl and re.search(r"LINT\.IfChange\(\s*" + re.escape(lbl) + r"\s*\)", bb_all):
+                                    continue
+                                emit(
+                                    "unscoped_gn_build_arg_lint_change", "error", decl_rel, t_line,
+                                    f"`LINT.ThenChange(//build/bazel/BUILD.gn{':' + lbl if lbl else ''})` in "
+                                    f"'{decl_rel}' (exporting `{sym}`) "
+                                    + ("names a label with no matching `LINT.IfChange(" + lbl + ")` in "
+                                       "'build/bazel/BUILD.gn'." if lbl else
+                                       "is unscoped: 'build/bazel/BUILD.gn' holds much unrelated content, so "
+                                       "the pair must point at the specific export block via a named label."),
+                                    f"Change it to `# LINT.ThenChange(//build/bazel/BUILD.gn:{sym})` and change "
+                                    f"the export block's `# LINT.IfChange` (above `declaration = \"//{exp_decl}\"`) "
+                                    f"in 'build/bazel/BUILD.gn' to `# LINT.IfChange({sym})` (one label per export "
+                                    "block; its `# LINT.ThenChange(//" + exp_decl + ")` back to the small .gni "
+                                    "may stay unscoped).",
+                                )
                         if not bb_has_lint:
                             emit(
                                 "missing_gn_build_arg_lint_change", "error", "build/bazel/BUILD.gn", 1,

@@ -15,6 +15,18 @@ set -euo pipefail
 #    file so CQ builds it. Note that the bazel2gn list .gni files only ensure
 #    that the GN (and maybe Bazel) file is processed; they do not ensure that
 #    any of the targets can be built successfully.
+# 3. Every Bazel test that Fuchsia test runners can run (`fx_test`, `host_rustc_test`,
+#    `host_go_test`, `host_py_test`, `host_test`, `wrap_host_rust_test`, and the
+#    `<name>_test` host test of `rustc_*(with_host_unit_tests = True)`) must be listed,
+#    directly or through a Bazel `test_suite`, in a GN `bazel_test_suite` (`fx_test` in
+#    `target_tests`, host tests in `host_tests`) that the GN `group("tests")` of its
+#    directory (or the parent BUILD.gn) references. Otherwise it is missing from
+#    tests.json and neither `fx test` nor infra runs it. Tests that bazel2gn also
+#    generates in GN (`host_go_test`, `with_host_unit_tests`, and a `wrap_host_rust_test` of a
+#    `with_unit_tests` binary) are reached through GN as today when GN above the sentinel
+#    references them; exporting one GN already runs on host is `duplicate_host_test_export`.
+#    Only runs when the checkout has `build/bazel/rules/testing/fx_test.bzl` (older
+#    checkouts keep tests in GN).
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -25,6 +37,7 @@ import ast
 import json
 import os
 import re
+import subprocess
 import sys
 
 workdir = os.path.abspath(sys.argv[1])
@@ -42,6 +55,141 @@ TEST_RULES = {
 
 findings = []
 
+DEVICE_TEST_RULES = {"fx_test"}
+HOST_TEST_RULES = {"host_rustc_test", "host_go_test", "host_py_test", "host_test", "wrap_host_rust_test"}
+# Host test rules that bazel2gn converts to a GN test (so GN may run them instead).
+GN_CONVERTED_HOST_TEST_RULES = {"host_go_test"}
+RUST_TEST_OWNERS = {"rustc_library", "rustc_binary", "rustc_proc_macro"}
+# Checkouts without fx_test keep tests in GN (the old path): skip the export check there.
+FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/testing/fx_test.bzl"))
+SENTINEL_RE = re.compile(r"^##\s*BAZEL2GN SENTINEL|#LOCAL_BAZEL_BUILD_SENTINEL", re.M)
+SUITE_RE = re.compile(r'\bbazel_test_suite\(\s*"([^"]+)"\s*\)\s*\{')
+SUITE_LIST_RE = re.compile(r"\b(host_tests|target_tests)\s*\+?=\s*\[([^\]]*)\]")
+
+
+def bazel_strings(node):
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+    return []
+
+
+def is_true(node):
+    return isinstance(node, ast.Constant) and node.value is True
+
+
+def split_label(label, pkg):
+    """(package, name) of a Bazel label written in package pkg; None for other repositories."""
+    label = re.sub(r"^@@?//", "//", label.strip())
+    if label.startswith("@"):
+        return None
+    if label.startswith("//"):
+        path, _, name = label[2:].partition(":")
+        path = path.strip("/")
+        return path, name or os.path.basename(path)
+    return pkg, label.lstrip(":")
+
+
+def local_name(label, pkg):
+    parts = split_label(label, pkg)
+    return parts[1] if parts and parts[0] == pkg else None
+
+
+def label_target(label, pkg):
+    """Name of the target in pkg that an (absolute) bazel_test_suite label designates."""
+    if not re.match(r"^@{0,2}//", label.strip()):
+        return None  # Relative labels do not resolve: bazel_test_suite labels must be absolute.
+    return local_name(label, pkg)
+
+
+def gn_code(text):
+    """Blanks out GN comments (outside strings) without moving offsets."""
+    return re.sub(r'("(?:\\.|[^"\\])*")|#[^\n]*', lambda m: m.group(1) or " " * len(m.group(0)), text)
+
+
+def closing(code, i):
+    depth, in_str = 0, False
+    while i < len(code):
+        c = code[i]
+        if in_str:
+            if c == "\\":
+                i += 2
+                continue
+            in_str = c != '"'
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return len(code)
+
+
+_gn_cache = {}
+
+
+def read_gn(rel):
+    if rel not in _gn_cache:
+        try:
+            with open(os.path.join(workdir, rel), "r", encoding="utf-8") as f:
+                _gn_cache[rel] = gn_code(f.read())
+        except Exception:
+            _gn_cache[rel] = ""
+    return _gn_cache[rel]
+
+
+def gn_block(code, template, name):
+    m = re.search(r"\b" + re.escape(template) + r'\(\s*"' + re.escape(name) + r'"\s*\)\s*\{', code)
+    return code[m.end() : closing(code, m.end() - 1)] if m else ""
+
+
+def bazel_test_suites_for(pkg):
+    """[(gn_rel, suite, line, param, labels)] for GN bazel_test_suite targets that may list tests
+    of pkg: in pkg's BUILD.gn, its ancestors' BUILD.gn, and any BUILD.gn mentioning //pkg."""
+    rels = []
+    d = pkg
+    while True:
+        rels.append(os.path.join(d, "BUILD.gn") if d else "BUILD.gn")
+        if not d:
+            break
+        d = os.path.dirname(d)
+    try:
+        out = subprocess.run(
+            ["git", "-C", workdir, "grep", "-l", "--fixed-strings", "-e", f"//{pkg}:", "-e", f'//{pkg}"',
+             "--", "BUILD.gn", "*/BUILD.gn"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=300,
+        ).stdout
+        rels += [l.strip() for l in out.splitlines() if l.strip()]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    result = []
+    for rel in dict.fromkeys(rels):
+        code = read_gn(rel)
+        for m in SUITE_RE.finditer(code):
+            body = code[m.end() : closing(code, m.end() - 1)]
+            line = code.count("\n", 0, m.start()) + 1
+            for lm in SUITE_LIST_RE.finditer(body):
+                result.append((rel, m.group(1), line, lm.group(1), re.findall(r'"([^"]+)"', lm.group(2))))
+    return result
+
+
+def suite_is_wired(gn_rel, suite):
+    """Whether `group("tests")` next to the suite, or the parent BUILD.gn, references it."""
+    if suite == "tests":
+        return True
+    d = os.path.dirname(gn_rel)
+    refs = (f'":{suite}"', f'"//{d}:{suite}"')
+    if any(r in gn_block(read_gn(gn_rel), "group", "tests") for r in refs):
+        return True
+    parent = os.path.join(os.path.dirname(d), "BUILD.gn") if d else ""
+    return bool(parent) and any(
+        r in read_gn(parent) for r in (f'"//{d}:{suite}"', f'"{os.path.basename(d)}:{suite}"')
+    )
+
+
+unwired_reported = set()  # (gn_rel, suite) already reported as unwired
 for td in target_dirs:
     bazel_rel = os.path.join(td, "BUILD.bazel")
     bazel_full = os.path.join(workdir, bazel_rel)
@@ -122,6 +270,193 @@ for td in target_dirs:
                 "remediation": (
                     f"Wire ':{t_name}' into `group(\"tests\")` (or its enclosing `fuchsia_unittest_package` / "
                     "parent `BUILD.gn` `tests` group) so CQ continues to build and run this test."
+                ),
+            })
+
+    # 3. Bazel tests visible to Fuchsia test runners only via a GN bazel_test_suite.
+    exportable = []  # (name, kind, rule, lineno, GN twin: the bazel2gn-generated GN test it runs, or None)
+    suites = {}  # test_suite name -> list of member names, or None for "every test"
+    all_tests = []  # names of non-manual test targets of the package (for empty test_suite)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        rule_name = node.func.id if isinstance(node.func, ast.Name) else (
+            node.func.attr if isinstance(node.func, ast.Attribute) else ""
+        )
+        kws = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+        name_v = kws.get("name")
+        if not (isinstance(name_v, ast.Constant) and isinstance(name_v.value, str)):
+            continue
+        t_name, lineno = name_v.value, getattr(node, "lineno", 1)
+        manual = "manual" in bazel_strings(kws.get("tags"))
+        if rule_name in DEVICE_TEST_RULES:
+            exportable.append((t_name, "target", rule_name, lineno, None))
+        elif rule_name in HOST_TEST_RULES:
+            twin = t_name if rule_name in GN_CONVERTED_HOST_TEST_RULES else None
+            bn = kws.get("binary_name")
+            if rule_name == "wrap_host_rust_test" and isinstance(bn, ast.Constant) and isinstance(bn.value, str):
+                twin = bn.value  # e.g. the with_unit_tests `<lib>_test`, which bazel2gn also emits in GN
+            exportable.append((t_name, "host", rule_name, lineno, twin))
+        elif rule_name in RUST_TEST_OWNERS and is_true(kws.get("with_host_unit_tests")):
+            exportable.append((t_name + "_test", "host", f"{rule_name}(with_host_unit_tests)", lineno, t_name + "_test"))
+        elif rule_name == "test_suite":
+            tests_v = kws.get("tests")
+            suites[t_name] = None if tests_v is None else [
+                local_name(s, td) for s in bazel_strings(tests_v)
+            ]
+        if not manual and (rule_name in DEVICE_TEST_RULES | HOST_TEST_RULES or rule_name.endswith("_test")):
+            all_tests.append(t_name)
+        if rule_name in RUST_TEST_OWNERS and is_true(kws.get("with_host_unit_tests")):
+            all_tests.append(t_name + "_test")
+    if not exportable or not FX_TEST_AVAILABLE:
+        continue
+
+    def members(suite, seen):
+        """Local test names a Bazel test_suite of this package runs (recursively)."""
+        if suite in seen:
+            return set()
+        seen.add(suite)
+        listed = suites[suite] if suites[suite] is not None else all_tests
+        out = set()
+        for m in listed:
+            if m is None:
+                continue
+            if m in suites:
+                out |= members(m, seen)
+            else:
+                out.add(m)
+        return out
+
+    listed_in = {}  # local test name -> [(gn_rel, suite, param, line)]
+    for s_rel, s_name, s_line, param, labels in bazel_test_suites_for(td):
+        for label in labels:
+            m = label_target(label, td)
+            if m is None:
+                continue
+            names = members(m, set()) if m in suites else {m}
+            for n in names:
+                listed_in.setdefault(n, []).append((s_rel, s_name, param, s_line))
+
+    base_ref = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+    base_gn_src = ""
+    for ref in ([base_ref, "HEAD~1"] if base_ref == "HEAD" else [base_ref]):
+        try:
+            out = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{ref}:{gn_rel}"], stderr=subprocess.DEVNULL, text=True
+            )
+            if "## BAZEL2GN SENTINEL" not in out:
+                base_gn_src = gn_code(out)
+                break
+            if not base_gn_src:
+                base_gn_src = gn_code(out)
+        except Exception:
+            pass
+
+    gn_pre = gn_src[: SENTINEL_RE.search(gn_src).start()] if SENTINEL_RE.search(gn_src) else gn_src
+    for t_name, kind, rule_name, lineno, twin in exportable:
+        param = "target_tests" if kind == "target" else "host_tests"
+        entries = listed_in.get(t_name, [])
+        if twin and SENTINEL_RE.search(gn_src):
+            # GN already builds this test (bazel2gn output): it is reached through GN as today.
+            # Exporting it too would run the same test twice when GN runs it on host.
+            gn_host = re.search(r'":' + re.escape(twin) + r'\(', gn_pre) or f"//{td}:{twin}(" in parent_gn_src
+            if entries and gn_host:
+                s_rel, s_name, _, s_line = entries[0]
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "duplicate_host_test_export",
+                    "severity": "error",
+                    "file": s_rel,
+                    "line": s_line,
+                    "message": (
+                        f"`bazel_test_suite(\"{s_name}\")` in '{s_rel}' exports {rule_name} ':{t_name}', but GN "
+                        f"already runs the bazel2gn-generated `:{twin}` on host (referenced with a toolchain in "
+                        f"'{gn_rel}'), so the same test would run twice."
+                    ),
+                    "remediation": (
+                        f"Remove `//{td}:{t_name}` from the suite (and a `wrap_host_rust_test` added only for it); "
+                        f"keep `\":{twin}($host_toolchain)\"` in `group(\"tests\")`."
+                    ),
+                })
+                continue
+            was_wired_in_base_gn = bool(
+                base_gn_src and re.search(r'":' + re.escape(twin) + r'(?:\(|")', base_gn_src)
+            )
+            had_with_unit_tests_in_base_gn = bool(
+                base_gn_src and re.search(r"\bwith_unit_tests\s*=\s*true\b", base_gn_src)
+            )
+            if (
+                gn_host
+                or (
+                    twin == t_name
+                    and (re.search(r'":' + re.escape(twin) + r'"', gn_pre) or f"//{td}:{twin}\"" in parent_gn_src)
+                )
+                or (
+                    twin == t_name
+                    and not entries
+                    and had_with_unit_tests_in_base_gn
+                    and not was_wired_in_base_gn
+                    and f"//{td}:{twin}" not in parent_gn_src
+                    and f'"{os.path.basename(td)}:tests"' not in parent_gn_src
+                )
+            ):
+                continue
+        if not entries:
+            findings.append({
+                "source": "cq_reachability",
+                "category": "unexported_bazel_test",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": lineno,
+                "message": (
+                    f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is not listed in any GN "
+                    f"`bazel_test_suite({param} = [...])`, so it is missing from tests.json: neither "
+                    "`fx test` nor infra runs it, and defining it (or running it with `fx bazel test`) "
+                    "does not change that."
+                ),
+                "remediation": (
+                    f"In '{gn_rel}' (above any BAZEL2GN SENTINEL), add "
+                    "`import(\"//build/bazel/bazel_test_suite.gni\")` and "
+                    f"`bazel_test_suite(\"<name>\") {{ {param} = [ \"//{td}:{t_name}\" ] }}` (absolute Bazel "
+                    "labels; a Bazel `test_suite` label also works), named after the GN test package it "
+                    "replaces, and list `\":<name>\"` in `group(\"tests\")`."
+                ),
+            })
+            continue
+        for s_rel, s_name, s_param, s_line in entries:
+            if s_param != param:
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "bazel_test_suite_kind_mismatch",
+                    "severity": "error",
+                    "file": s_rel,
+                    "line": s_line,
+                    "message": (
+                        f"`bazel_test_suite(\"{s_name}\")` in '{s_rel}' lists {rule_name} ':{t_name}' in "
+                        f"`{s_param}`, but {'device tests (`fx_test`)' if kind == 'target' else 'host tests'} "
+                        f"belong in `{param}` (they are built in a different Bazel configuration)."
+                    ),
+                    "remediation": f"Move `//{td}:{t_name}` (or its `test_suite`) from `{s_param}` to `{param}`.",
+                })
+        if not any(suite_is_wired(s_rel, s_name) for s_rel, s_name, _, _ in entries):
+            s_rel, s_name, _, s_line = entries[0]
+            if (s_rel, s_name) in unwired_reported:
+                continue
+            unwired_reported.add((s_rel, s_name))
+            findings.append({
+                "source": "cq_reachability",
+                "category": "unwired_bazel_test_suite",
+                "severity": "error",
+                "file": s_rel,
+                "line": s_line,
+                "message": (
+                    f"Bazel test ':{t_name}' ({rule_name}) is listed in `bazel_test_suite(\"{s_name}\")` in "
+                    f"'{s_rel}', but no `group(\"tests\")` references that suite, so it is not reachable from "
+                    "the test roots and stays out of tests.json."
+                ),
+                "remediation": (
+                    f"Add `\":{s_name}\"` to `group(\"tests\")` in '{s_rel}' (or reference "
+                    f"`//{os.path.dirname(s_rel)}:{s_name}` from the parent directory's `tests` group)."
                 ),
             })
 

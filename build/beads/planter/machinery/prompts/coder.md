@@ -21,9 +21,9 @@ report.
    reference and benchmark binaries) in BUILD.bazel without `# @bazel2gn:skip`, delete its
    manual definition above `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` in BUILD.gn,
    and regenerate BUILD.gn with `fx bazel2gn -d <dir>`. Only GN-only constructs (imports,
-   `config()`, test packages `fuchsia_unittest_package`/`fuchsia_test_package`/`bootfs_test` and
-   their `testonly` C++ test `executable` targets, `group("tests")`, and forwarding groups below)
-   stay above the sentinel. Register `//<dir>:verify_bazel2gn`.
+   `config()`, `bazel_test_suite`, `group("tests")`, forwarding groups below, and test packages
+   that must stay in GN per "Migrating Tests") stay above the sentinel. Register
+   `//<dir>:verify_bazel2gn`.
 
 ## Workflow
 1. Read the package's BUILD.gn and list every target and its dependencies
@@ -36,10 +36,10 @@ report.
 5. Report with the CoderReport JSON.
 
 The change is a pure build-graph refactor: edit only build-definition files (`BUILD.gn`,
-`BUILD.bazel`, `*.gni`, `*.bzl`) and never source files, even to silence a new warning. A new
-lint or compile failure under Bazel means the Bazel attributes differ from GN (see "Lint Parity");
-fix the attributes. If parity is impossible without a source change, stop and report the
-blocker in the `summary`.
+`BUILD.bazel`, `*.gni`, `*.bzl`, plus a new test `.cml` per "Migrating Tests") and never source
+files, even to silence a new warning. A new lint or compile failure under Bazel means the Bazel
+attributes differ from GN (see "Lint Parity"); fix the attributes. If parity is impossible
+without a source change, stop and report the blocker in the `summary`.
 
 ## Migrating Fuchsia Packages & Components (`fx_package`)
 Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_component`,
@@ -76,17 +76,82 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      dedicated binary/resource not used by remaining GN test targets) from `BUILD.gn`, and
      remove any reference to the deleted GN package target from a parent `BUILD.gn` group.
    - If nothing remains in `BUILD.gn`, delete `BUILD.gn` (`git rm <dir>/BUILD.gn`, Case 1). If
-     `BUILD.gn` retains only GN-only targets (`fuchsia_unittest_package`, `fuchsia_test_package`,
-     `bootfs_test`, their `testonly` test `executable`, `group("tests")`, or an unmigratable
-     library) and `BUILD.bazel` defines only `fx_package` targets, do NOT add
-     `## BAZEL2GN SENTINEL`, do NOT run `fx bazel2gn`, and do NOT register `verify_bazel2gn`.
-     (If `BUILD.bazel` also dual-builds a library via `bazel2gn`, annotate the `fx_package`
-     targets and packaged binary with `# @bazel2gn:skip`).
+     `BUILD.gn` retains only GN-only targets (`bazel_test_suite`, `group("tests")`, a test package
+     that must stay in GN, or an unmigratable library) and `BUILD.bazel` defines only `fx_*`
+     package/test targets, do NOT add `## BAZEL2GN SENTINEL`, do NOT run `fx bazel2gn`, and do
+     NOT register `verify_bazel2gn`. (If `BUILD.bazel` also dual-builds a library via `bazel2gn`,
+     annotate every `fx_*` target and packaged binary with `# @bazel2gn:skip`).
    - When `//bundles/assembly/bazel_inputs/<dir>/BUILD.gn` bridges the package: (a) replace
      `"//bundles/assembly/bazel_inputs/<dir>..."` with `"//<dir>:<pkg>"` in
      `//bundles/assembly/BUILD.bazel`, (b) remove the entry from
      `//bundles/assembly/bazel_inputs/BUILD.gn`, (c) `git rm -f bundles/assembly/bazel_inputs/<dir>/BUILD.*`,
      and (d) set `visibility = ["//bundles/assembly:__subpackages__"]` on `fx_package`.
+
+## Migrating Tests (`fx_test`, `host_*_test`, `bazel_test_suite`)
+A Bazel test reaches `tests.json` (`fx test`, CQ) only when a GN `bazel_test_suite()` wired into
+`group("tests")` lists it; a `cc_test`, `rustc_test` or `with_*unit_tests` target alone is
+invisible to `fx test` and infra.
+- **Rust tests stay as today** (Bazel cannot run Rust unit tests on Fuchsia devices yet, so do not
+  add `fx_test`, `fx_test_component`, a rust-runner `.cml` or rust shard `exports_files`): set
+  `with_host_unit_tests = True` on the `rustc_*` target (as for `thermal`; bazel2gn emits GN
+  `with_unit_tests = true`, so GN still builds `:<name>_test` for device and host) and keep the GN
+  `fuchsia_unittest_package`/`fuchsia_test_package` wrapping `:<name>_test` above the sentinel,
+  with `":<name>_test($host_toolchain)"` in `group("tests")` if GN ran it on host. A Rust package
+  with device unit tests therefore stays dual-build. Export a Rust host test through
+  `bazel_test_suite(host_tests)` only when GN does not already build it (bazel2gn converts
+  `with_*unit_tests`, `rustc_test` and `host_go_test`, so those run in GN).
+- **Checkout without `build/bazel/rules/testing/fx_test.bzl`**: all device test packages
+  (`fuchsia_unittest_package`, `fuchsia_test_package`, `bootfs_test`) and their `testonly` test
+  `executable` stay above the sentinel in GN.
+- **Checkout with it**: migrate each C++ device test package and its test binary to BUILD.bazel
+  and delete them from BUILD.gn, as in `//src/developer/build_info`:
+  1. Binary: `fx_cc_binary(testonly = True, tags = ["manual"])` (gtest main in `deps`), wrapped
+     in `fx_packaged_binary(testonly = True)`.
+  2. Manifest: add `meta/<component>.cml` (the only non-build file a migration may add; a
+     package that already had one keeps it) including `//src/sys/test_runners/gtest/default.shard.cml`
+     and the syslog shard GN used, with `program.binary` = `bin/<binary_name>`; list every shard
+     as a label in `includes`. If `src/sys/test_runners/gtest/BUILD.bazel` does not export
+     `default.shard.cml` to your package, add `"//<dir>:__pkg__"` to its visibility.
+  3. Same test URL: `package_name` and `component_name` equal GN's (`fuchsia_unittest_package("X")`
+     is package `X`, component `X`). GN `test_specs.log_settings.max_severity` becomes
+     `fx_test(max_log_severity = ...)`.
+  4. Non-Rust host tests GN ran on host: `host_test(binary = ":<cc_test>")`, `host_py_test` or
+     `host_go_test` from `//build/bazel/rules/host_tests:<rule>.bzl`.
+  5. Export: in BUILD.gn (above the sentinel), `import("//build/bazel/bazel_test_suite.gni")` and
+     `bazel_test_suite("X")` named after the deleted GN package, with absolute Bazel labels:
+     `target_tests` only `fx_test`s, `host_tests` only host tests (or `test_suite`s of them);
+     list it in `group("tests")`.
+  6. Dual-build: mark every `fx_*`, `fx_test`, `test_suite`, and host test wrapper other than
+     `host_go_test` with `# @bazel2gn:skip` (bazel2gn cannot convert them).
+- Keep a C++ test package in GN only for what Bazel cannot express yet: `test_specs` other than
+  `log_settings` (environments, timeouts), `test_type` or custom realms, subpackages,
+  `bootfs_test`, Ninja-generated inputs, or deps that cannot get a Bazel build. Name the reason
+  in the `summary` and the commit message.
+
+C++ device test (GN had `fuchsia_unittest_package("foo-unittest") { deps = [ ":foo_unittest" ] }`):
+```python
+fx_cc_binary(name = "foo_unittest_bin", testonly = True, srcs = [...], tags = ["manual"], deps = [":lib", "//src/lib/fxl/test:gtest_main"])
+fx_packaged_binary(name = "foo_unittest_packaged_bin", testonly = True, binary = ":foo_unittest_bin", binary_name = "foo_unittest")
+fx_component_manifest(
+    name = "foo-unittest-manifest",
+    testonly = True,
+    component_name = "foo-unittest",
+    includes = ["//sdk/lib/syslog:client.shard.cml", "//sdk/lib/syslog:offer.shard.cml", "//sdk/lib/syslog:use.shard.cml", "//src/sys/test_runners/gtest:default.shard.cml"],
+    manifest = "meta/foo_unittest.cml",  # gtest shard + syslog/client.shard.cml; program: { binary: "bin/foo_unittest" }
+)
+fx_test_component(name = "foo-unittest-component", compiled_manifest = ":foo-unittest-manifest", component_name = "foo-unittest", deps = [":foo_unittest_packaged_bin"])
+fx_package(name = "foo-unittest-package", package_name = "foo-unittest", test_components = [":foo-unittest-component"])
+fx_test(name = "foo-unittest", package = ":foo-unittest-package")
+```
+```gn
+bazel_test_suite("foo-unittest") {
+  target_tests = [ "//src/foo:foo-unittest" ]
+}
+group("tests") {
+  testonly = true
+  deps = [ ":foo-unittest" ]
+}
+```
 
 ## Dependencies Without a Bazel Build (Migrate Them, Don't Stop)
 When a target you are migrating depends on something with no Bazel build yet, migrate that
@@ -132,9 +197,9 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 - **`rustc_binary` attributes**: bazel2gn maps Bazel `crate_name` to GN `output_name`,
    `crate_root` to `source_root`, and `lint_config` to GN lint `configs`.
 - **GN `declare_args()` build arguments**: keep `declare_args()` in a `.gni` file imported above
-   the sentinel with `# LINT.IfChange` / `# LINT.ThenChange(//build/bazel/BUILD.gn)`, export it
-   from `generated_file("gn_build_variables_for_bazel")` in `//build/bazel/BUILD.gn` (precedent:
-   `fuchsia_sync_detect_lock_cycles`), and `load("@fuchsia_build_info//:args.bzl", "<arg>")` in
+   the sentinel with `# LINT.IfChange` / `# LINT.ThenChange(//build/bazel/BUILD.gn:<arg>)`, export it
+   from `generated_file("gn_build_variables_for_bazel")` in `//build/bazel/BUILD.gn` inside a
+   named `# LINT.IfChange(<arg>)` block (precedent: `fuchsia_sync_detect_lock_cycles`), and `load("@fuchsia_build_info//:args.bzl", "<arg>")` in
    BUILD.bazel.
 - **Shared settings**: load shared dicts/lists from the owner's `.bzl` instead of copying them;
    never add an `alias()` or wrapper whose only job is to re-export another target.
@@ -166,6 +231,9 @@ and host). Do NOT run full product builds by hand as well. From `$PLANTER_WORKDI
    `fx bazel build --config=fuchsia_platform //<dir>:all` (for `fidl_library`/`validate_json`
    packages pass `-- //<dir>:all -//<dir>:<name>_validate_ir_json`). Fix BUILD files, never sources.
 2. Run runnable host/unit tests of touched directories (`fx bazel test --config=host //<dir>:<test>`).
+   Never `fx bazel test` an `fx_test` (its executable is a stub that always fails): it is built by
+   `fx bazel build --config=fuchsia_platform //<dir>:all` and runs with `fx test <package_name>`
+   only when a device or emulator is available. `build_verification` runs the exported host tests.
 3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit
    0. Planter reuses that passing result when the working tree is unchanged, so do not edit
    anything after it.

@@ -141,7 +141,10 @@ if fx is None:
     sys.exit(0)
 
 bazel_dirs = [d for d in dirs if os.path.isfile(os.path.join(workdir, d, "BUILD.bazel"))]
-host_markers = re.compile(r"HOST_CONSTRAINTS|HOST_OS_CONSTRAINTS|_host_tool\b|host_go_test|with_host_unit_tests")
+host_markers = re.compile(
+    r"HOST_CONSTRAINTS|HOST_OS_CONSTRAINTS|_host_tool\b|with_host_unit_tests|"
+    r"\bhost_(?:go|rustc|py)_test\b|\bhost_test\(|\bwrap_host_rust_test\("
+)
 host_dirs = []
 for d in bazel_dirs:
     try:
@@ -150,6 +153,28 @@ for d in bazel_dirs:
                 host_dirs.append(d)
     except OSError:
         pass
+
+# Bazel tests exported to tests.json by GN `bazel_test_suite()` targets in the changed directories:
+# {"host_tests": [labels], "target_tests": [labels]}. Host tests are run with `fx bazel test`;
+# device tests (`fx_test`) cannot run under `bazel test` and are only built (bazel_build_fuchsia).
+exported_tests = {"host_tests": [], "target_tests": []}
+for d in dirs:
+    try:
+        with open(os.path.join(workdir, d, "BUILD.gn"), encoding="utf-8", errors="replace") as f:
+            gn_text = re.sub(r"#[^\n]*", "", f.read())
+    except OSError:
+        continue
+    for sm in re.finditer(r'\bbazel_test_suite\(\s*"[^"]+"\s*\)\s*\{', gn_text):
+        depth, j = 0, sm.end() - 1
+        while j < len(gn_text):
+            depth += {"{": 1, "}": -1}.get(gn_text[j], 0)
+            if depth == 0:
+                break
+            j += 1
+        for lm in re.finditer(r"\b(host_tests|target_tests)\s*\+?=\s*\[([^\]]*)\]", gn_text[sm.end() : j]):
+            for label in re.findall(r'"(//[^"]+)"', lm.group(2)):
+                if label not in exported_tests[lm.group(1)]:
+                    exported_tests[lm.group(1)].append(label)
 
 LINKED_TEMPLATES = {"executable", "test", "rustc_binary", "rustc_test", "loadable_module", "shared_library", "rustc_cdylib", "fuchsia_driver"}
 LIBRARY_TEMPLATES = {"rustc_library", "rustc_macro", "rustc_staticlib", "static_library", "source_set"}
@@ -264,7 +289,9 @@ def load_toolchains():
         return None, str(e)
     toolchains = {}
     for key in sorted(known):
-        toolchains.setdefault(key.split("(", 1)[0], []).append(key)
+        outs = known[key]
+        if isinstance(outs, list) and any(isinstance(o, str) and o.strip() for o in outs):
+            toolchains.setdefault(key.split("(", 1)[0], []).append(key)
     return toolchains, None
 
 
@@ -338,6 +365,41 @@ def dependent_labels():
     return labels, notes
 
 
+def bazel_tests_export_notes():
+    """INFO notes on Bazel tests listed by the changed directories' bazel_test_suite targets but
+    missing from <build dir>/tests.json. Whether a suite reaches tests.json also depends on the
+    configured test roots (product, --with-test), so a missing test is a hint, not a failure."""
+    build_dir = (read(".fx-build-dir") or "").strip()
+    try:
+        with open(os.path.join(workdir, build_dir, "tests.json")) as f:
+            entries = json.load(f)
+    except (OSError, ValueError) as e:
+        return [f"Cannot read <build dir>/tests.json ({e}); the export of Bazel tests was not verified."]
+
+    def norm(label):
+        return re.sub(r"^@@?//", "//", label or "")
+
+    bazel_entries = set()
+    for e in entries if isinstance(entries, list) else []:
+        t = e.get("test", {}) if isinstance(e, dict) else {}
+        label = norm(t.get("source_label") or t.get("label"))
+        if label and "(" not in label:
+            bazel_entries.add(label)
+    missing = []
+    for label in exported_tests["target_tests"] + exported_tests["host_tests"]:
+        pkg = label.split(":", 1)[0]
+        if label not in bazel_entries and not any(b.startswith(pkg + ":") for b in bazel_entries):
+            missing.append(label)
+    if not missing:
+        return []
+    return [
+        "Not in <build dir>/tests.json after `fx build`: " + " ".join(missing) + ". Either their "
+        "`bazel_test_suite` is not reachable from the configured test roots (check with "
+        "`fx set ... --with-test //<dir>:tests`), or it is not wired into `group(\"tests\")`. "
+        "Do not record `fx test` commands for these tests in `tests_run` unless they ran."
+    ]
+
+
 FIDL_MACROS = {"fidl_library", "_fidl_library", "fidl_ir"}
 VALIDATE_JSON_MACROS = {"validate_json", "validate_json5", "_validate_json_action"}
 
@@ -407,6 +469,10 @@ if bazel_dirs:
     steps.append(("bazel_build_fuchsia", [fx, "bazel", "build", "--config=fuchsia_platform"] + bazel_target_args(bazel_dirs)))
 if host_dirs:
     steps.append(("bazel_build_host", [fx, "bazel", "build", "--config=host"] + bazel_target_args(host_dirs)))
+if exported_tests["host_tests"]:
+    steps.append(("bazel_test_host", [fx, "bazel", "test", "--config=host"] + exported_tests["host_tests"]))
+if exported_tests["host_tests"] or exported_tests["target_tests"]:
+    steps.append(("bazel_tests_exported", None))  # Checks <build dir>/tests.json after gn_build.
 
 ERROR_LINE = re.compile(
     r"(^ERROR:|^FAILED:|\berror(\[E\d+\])?:|^error\b|: error\b|\bundefined reference\b|"
@@ -456,6 +522,11 @@ REMEDIATION = {
                            "Bazel target yet, migrate that dependency's directory in this change (see the coder instructions).",
     "bazel_build_host": "Fix BUILD.bazel so the `bazel_build_host` command passes. If a dependency has no Bazel target "
                         "yet, migrate that dependency's directory in this change (see the coder instructions).",
+    "bazel_test_host": "A Bazel host test exported by a GN `bazel_test_suite(host_tests = ...)` fails, so it would fail "
+                       "on infra too. Fix its BUILD.bazel attributes (deps, data/test_data, test_args, "
+                       "lint/rustc flags) to match what GN ran on host. If GN never ran it on host, do not export "
+                       "it as a host test (a C++ device-only test becomes an `fx_test` package; a Rust test stays "
+                       "in its GN test package, since Bazel cannot run Rust tests on device yet).",
 }
 
 findings = []
@@ -713,6 +784,23 @@ for name, cmd in steps:
         if not labels:
             continue
         cmd = [fx, "build"] + labels
+    if name == "bazel_tests_exported":
+        if dry_run:
+            findings.append({
+                "source": "build_verification",
+                "category": "build_dry_run",
+                "severity": "INFO",
+                "message": "PLANTER_BUILD_DRY_RUN: bazel_tests_exported would check <build dir>/tests.json for "
+                           + " ".join(exported_tests["target_tests"] + exported_tests["host_tests"]),
+            })
+            continue
+        if "gn_build" in failed:
+            continue
+        findings.extend(
+            {"source": "build_verification", "category": "bazel_tests_note", "severity": "INFO", "message": n}
+            for n in bazel_tests_export_notes()
+        )
+        continue
     if dry_run:
         findings.append({
             "source": "build_verification",

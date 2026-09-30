@@ -17,6 +17,10 @@ set -euo pipefail
 #   - BUILD.gn, BUILD.bazel, BUILD (any directory)
 #   - *.gni, *.bzl (build registration lists / macros, e.g. verification lists)
 #   - MODULE.bazel, WORKSPACE*, *.bazelrc
+#   - a newly added (not modified) test component manifest `.cml` that an
+#     `fx_component_manifest` of the nearest BUILD.bazel uses as `manifest` next to an
+#     `fx_test_component` (it replaces the manifest GN's fuchsia_unittest_package generated
+#     for a C++ test; not a Rust one, since Rust device tests stay in GN)
 #   - OWNERS / README.md are NOT allowed implicitly; they are not needed for migration.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
@@ -66,9 +70,45 @@ def is_build_file(path: str) -> bool:
     return False
 
 
+# Newly added files (not modifications of existing ones).
+added = set(git_lines(["diff", "--name-only", "--diff-filter=A", change_base]))
+added.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+
+
+def is_new_test_manifest(path: str) -> bool:
+    """A new `.cml` that an `fx_component_manifest` in the nearest BUILD.bazel uses as `manifest`
+    while that BUILD.bazel defines an `fx_test_component`: it replaces the manifest that GN's
+    `fuchsia_unittest_package` generated when a C++ test package migrates to `fx_test`. A Rust
+    test manifest (rust runner shard) is not allowed: Rust device tests stay in GN."""
+    if path not in added or not path.endswith(".cml") or path.endswith(".shard.cml"):
+        return False
+    try:
+        with open(os.path.join(workdir, path), encoding="utf-8") as f:
+            if "test_runners/rust/" in f.read():
+                return False  # Rust tests stay in GN: Bazel cannot run them on device yet.
+    except OSError:
+        return False
+    pkg = os.path.dirname(path)
+    for _ in range(4):
+        bazel = os.path.join(workdir, pkg, "BUILD.bazel")
+        if os.path.isfile(bazel):
+            try:
+                text = open(bazel, encoding="utf-8").read()
+            except OSError:
+                return False
+            rel = os.path.relpath(path, pkg) if pkg else path
+            return "fx_test_component(" in text and bool(
+                re.search(r'\bmanifest\s*=\s*":?' + re.escape(rel) + r'"', text)
+            )
+        if not pkg:
+            break
+        pkg = os.path.dirname(pkg)
+    return False
+
+
 findings = []
 for path in sorted(changed):
-    if is_build_file(path):
+    if is_build_file(path) or is_new_test_manifest(path):
         continue
     findings.append({
         "source": "build_only_scope",

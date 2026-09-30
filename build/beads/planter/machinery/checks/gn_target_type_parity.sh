@@ -24,6 +24,10 @@ set -euo pipefail
 #   3. gn_target_type_changed (error): any other type change (e.g. an
 #      sdk_source_set, or a GN-only wrapper template replaced by the rules it
 #      generates). Dispute it in the CoderReport if the new type is equivalent.
+#      Exception: with `build/bazel/rules/testing/fx_test.bzl` in the checkout, a
+#      GN test package (or host test) may become a `bazel_test_suite` of the same
+#      name exporting its migrated Bazel tests, unless it packaged Rust tests
+#      (Bazel cannot run Rust tests on device yet, so those stay in GN).
 # - If the GN target is gone (BUILD.gn deleted in a full removal, or the target
 #   removed) and BUILD.bazel defines a cc_library or fx_cc_library of the same
 #   name, its `alwayslink` must match the GN type:
@@ -51,6 +55,10 @@ NOT_TARGETS = {"template", "declare_args", "foreach", "forward_variables_from", 
 CC_RULE = re.compile(r'(?<![\w.])(cc_library|fx_cc_library)\s*\(')
 BAZEL_NAME = re.compile(r'\bname\s*=\s*"([^"]+)"')
 ALWAYSLINK = re.compile(r'\balwayslink\s*=\s*(True|False)\b')
+# With fx_test in the checkout, a GN test package migrated to Bazel is replaced by a GN
+# bazel_test_suite of the same name that exports the Bazel tests to tests.json.
+FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/testing/fx_test.bzl"))
+GN_TEST_TEMPLATES = {"fuchsia_unittest_package", "fuchsia_test_package", "fuchsia_test", "python_host_test", "host_test"}
 
 
 def git_lines(args):
@@ -156,6 +164,24 @@ def bazel_cc_libraries(text):
         al = ALWAYSLINK.search(body)
         out[name.group(1)] = (m.group(1), bool(al) and al.group(1) == "True", line_of(code, m.start()))
     return out
+
+
+def packages_rust_tests(gn_text, name, bazel_text):
+    """Whether GN target `name` (a test package) in gn_text packages a Rust test: a GN rustc_* target,
+    or the `<lib>_test` of a GN/Bazel rustc_* target with unit tests. Rust tests stay in GN."""
+    code = blank_comments(gn_text)
+    m = re.search(r'\b[A-Za-z_]\w*\(\s*"' + re.escape(name) + r'"\s*\)\s*\{', code)
+    if not m:
+        return False
+    body = code[m.end() : call_end(code, m.end() - 1)]
+    rust = {n for t, n in GN_TARGET.findall(code) if t.startswith("rustc_")}
+    rust |= {n + "_test" for n in rust}
+    bazel = blank_comments(bazel_text)
+    for bm in re.finditer(r'(?<![\w.])(rustc_\w+|rust_\w+)\s*\(', bazel):
+        bn = BAZEL_NAME.search(bazel[bm.end() - 1 : call_end(bazel, bm.end() - 1)])
+        if bn:
+            rust |= {bn.group(1), bn.group(1) + "_test"}
+    return any(l.split("(")[0] in rust for l in re.findall(r'"(?://[^":]*)?:([^"]+)"', body))
 
 
 def type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types):
@@ -271,7 +297,12 @@ for pkg in sorted(candidate_dirs):
         label = f"//{pkg}:{name}"
         if name in new:
             new_types, line = new[name]
-            if new_types != old_types:
+            if new_types != old_types and not (
+                FX_TEST_AVAILABLE
+                and new_types == {"bazel_test_suite"}
+                and old_types <= GN_TEST_TEMPLATES
+                and not packages_rust_tests(before, name, bazel_text or "")
+            ):
                 findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))
         elif name in cc_libs:
             rule, alwayslink, line = cc_libs[name]
