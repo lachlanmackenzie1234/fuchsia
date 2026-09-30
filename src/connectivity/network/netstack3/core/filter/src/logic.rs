@@ -152,9 +152,10 @@ pub struct ProofOfEgressCheck {
 impl ProofOfEgressCheck {
     /// Clones this proof of egress check.
     ///
-    /// May only be used in case of fragmentation after going through the egress
-    /// hook.
-    pub fn clone_for_fragmentation(&self) -> Self {
+    /// May only be used when a packet that went through the egress hook is
+    /// sent as multiple frames (e.g. due to IP fragmentation or GSO
+    /// segmentation).
+    pub fn clone_for_multiple_frames(&self) -> Self {
         Self { _private_field_to_prevent_construction_outside_of_module: () }
     }
 }

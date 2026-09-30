@@ -207,6 +207,13 @@ pub struct DeviceIpLayerMetadata<BT: TxMetadataBindingsTypes> {
     marks: Marks,
 }
 
+/// The result of splitting metadata for a packet sent as multiple frames via
+/// [`DeviceIpLayerMetadata::split_for_multiple_frames`].
+pub(crate) struct SplitDeviceIpLayerMetadata<BT: TxMetadataBindingsTypes> {
+    pub(crate) primary: DeviceIpLayerMetadata<BT>,
+    pub(crate) secondary: DeviceIpLayerMetadata<BT>,
+}
+
 impl<BT: TxMetadataBindingsTypes> DeviceIpLayerMetadata<BT> {
     /// Creates a new instance with the specified `tx_metadata` and `marks`.
     pub fn from_tx_metadata_and_marks(tx_metadata: BT::TxMetadata, marks: Marks) -> Self {
@@ -228,6 +235,26 @@ impl<BT: TxMetadataBindingsTypes> DeviceIpLayerMetadata<BT> {
     #[cfg(any(test, feature = "testutils"))]
     pub fn empty() -> Self {
         Self { conntrack_entry: None, tx_metadata: Default::default(), marks: Default::default() }
+    }
+
+    /// Splits metadata for a packet that is sent as multiple frames (e.g. due
+    /// to IP fragmentation or GSO segmentation) into
+    /// [`SplitDeviceIpLayerMetadata`].
+    ///
+    /// The `primary` instance retains unique resources (`tx_metadata`), while
+    /// the `secondary` instance receives a copy of shareable metadata
+    /// (`conntrack_entry` and `marks`) with default unique resources.
+    pub(crate) fn split_for_multiple_frames(self) -> SplitDeviceIpLayerMetadata<BT> {
+        let secondary = Self {
+            conntrack_entry: self.conntrack_entry.clone(),
+            // TODO(https://fxbug.dev/391953082): We should penalize sockets via
+            // the tx metadata when a packet is sent as multiple frames instead
+            // of just attaching the ownership to one of them. For now, only the
+            // `primary` instance retains the tx metadata.
+            tx_metadata: Default::default(),
+            marks: self.marks,
+        };
+        SplitDeviceIpLayerMetadata { primary: self, secondary }
     }
 
     /// Creates new IP layer metadata with the marks.
@@ -3351,51 +3378,48 @@ where
     // it out.
     core_ctx.increment_both(device, |c| &c.fragmentation.fragmentation_required);
 
-    // Taken on the last frame.
-    let mut device_ip_layer_metadata = Some(device_ip_layer_metadata);
     let body = body.into_inner();
     let result = match IpFragmenter::new(bindings_ctx, &body, mtu) {
-        Ok(mut fragmenter) => loop {
-            let (fragment, has_more) = match fragmenter.next() {
-                None => break Ok(()),
-                Some(f) => f,
-            };
+        Ok(mut fragmenter) => {
+            let mut device_ip_layer_metadata = device_ip_layer_metadata;
+            loop {
+                let Some((fragment, has_more)) = fragmenter.next() else {
+                    break Ok(());
+                };
 
-            // TODO(https://fxbug.dev/391953082): We should penalize sockets
-            // via the tx metadata when we incur IP fragmentation instead of
-            // just attaching the ownership to the last fragment. For now, we
-            // attach the tx metadata to the last frame only.
-            let device_ip_layer_metadata = if has_more {
-                // Unwrap here because only the last frame can take it.
-                let device_ip_layer_metadata = device_ip_layer_metadata.as_ref().unwrap();
-                DeviceIpLayerMetadata {
-                    conntrack_entry: device_ip_layer_metadata.conntrack_entry.clone(),
-                    tx_metadata: Default::default(),
-                    marks: device_ip_layer_metadata.marks,
-                }
-            } else {
-                // Unwrap here because the last frame can only happen once.
-                device_ip_layer_metadata.take().unwrap()
-            };
+                let (fragment_metadata, remaining_metadata) = if has_more {
+                    let SplitDeviceIpLayerMetadata { primary, secondary } =
+                        device_ip_layer_metadata.split_for_multiple_frames();
+                    (secondary, Some(primary))
+                } else {
+                    (device_ip_layer_metadata, None)
+                };
 
-            match core_ctx.send_ip_frame(
-                bindings_ctx,
-                device,
-                destination.clone(),
-                device_ip_layer_metadata,
-                fragment,
-                proof.clone_for_fragmentation(),
-            ) {
-                Ok(()) => {
-                    core_ctx.increment_both(device, |c| &c.fragmentation.fragments);
+                match core_ctx.send_ip_frame(
+                    bindings_ctx,
+                    device,
+                    destination.clone(),
+                    fragment_metadata,
+                    fragment,
+                    proof.clone_for_multiple_frames(),
+                ) {
+                    Ok(()) => {
+                        core_ctx.increment_both(device, |c| &c.fragmentation.fragments);
+                    }
+                    Err(ErrorAndSerializer { serializer: _, error }) => {
+                        core_ctx.increment_both(device, |c| {
+                            &c.fragmentation.error_fragmented_serializer
+                        });
+                        break Err(error);
+                    }
                 }
-                Err(ErrorAndSerializer { serializer: _, error }) => {
-                    core_ctx
-                        .increment_both(device, |c| &c.fragmentation.error_fragmented_serializer);
-                    break Err(error);
+
+                match remaining_metadata {
+                    Some(m) => device_ip_layer_metadata = m,
+                    None => break Ok(()),
                 }
             }
-        },
+        }
         Err(e) => {
             core_ctx.increment_both(device, |c| &c.fragmentation.error_counter(&e));
             Err(SendFrameErrorReason::SizeConstraintsViolation)
