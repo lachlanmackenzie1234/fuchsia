@@ -3791,10 +3791,6 @@ zx_status_t SimFirmware::BusSuspend() { return suspend_hook_ ? suspend_hook_() :
 
 zx_status_t SimFirmware::BusResume() { return resume_hook_ ? resume_hook_() : ZX_OK; }
 
-void SimFirmware::BusRecovery() {
-  if (recovery_hook_) {
-    recovery_hook_();
-  }
-}
+zx_status_t SimFirmware::BusRecovery() { return recovery_hook_ ? recovery_hook_() : ZX_OK; }
 
 }  // namespace wlan::brcmfmac

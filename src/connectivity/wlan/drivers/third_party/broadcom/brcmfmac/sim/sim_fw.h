@@ -337,7 +337,7 @@ class SimFirmware {
   void SetResumeHook(fit::function<zx_status_t()> resume_hook) {
     resume_hook_ = std::move(resume_hook);
   }
-  void SetRecoveryHook(fit::function<void()> recovery_hook) {
+  void SetRecoveryHook(fit::function<zx_status_t()> recovery_hook) {
     recovery_hook_ = std::move(recovery_hook);
   }
   void SetCommandHook(fit::function<void(uint32_t cmd)> command_hook) {
@@ -380,7 +380,7 @@ class SimFirmware {
 
   zx_status_t BusSuspend();
   zx_status_t BusResume();
-  void BusRecovery();
+  zx_status_t BusRecovery();
 
   std::optional<drivers::components::Frame> GetRxFrame();
   void SetHighWmeRxErrorRate() { wme_high_rx_fail_ = true; }
@@ -759,7 +759,7 @@ class SimFirmware {
 
   fit::function<zx_status_t()> suspend_hook_;
   fit::function<zx_status_t()> resume_hook_;
-  fit::function<void()> recovery_hook_;
+  fit::function<zx_status_t()> recovery_hook_;
   fit::function<void(uint32_t cmd)> command_hook_;
 };
 
