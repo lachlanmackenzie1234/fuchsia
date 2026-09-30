@@ -265,36 +265,11 @@ CRATE_ANNOTATIONS = {
             ),
         ),
     ],
-    "num-bigint": [
-        crate.annotation(
-            version = "0.4.6",
-            rustc_flags = crate.select(
-                common = [
-                    "--cfg=u64_digit",
-                    "--cfg=has_try_from",
-                ],
-                selects = {
-                    "@platforms//cpu:x86_64": [
-                        "--cfg=use_addcarry",
-                    ],
-                },
-            ),
-        ),
-    ],
     "num-bigint-dig": [
         crate.annotation(
             version = "0.8.6",
             rustc_flags = [
                 "--cfg=has_i128",
-            ],
-        ),
-    ],
-    "num-complex": [
-        crate.annotation(
-            version = "0.4.6",
-            rustc_flags = [
-                "--cfg=has_i128",
-                "--cfg=has_const_fn",
             ],
         ),
     ],

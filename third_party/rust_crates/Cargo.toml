@@ -166,8 +166,10 @@ nix = { version = "0.31.3", features = ["feature", "fs", "hostname", "net", "pro
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
 nom-language = "0.1.0"
 nom_locate = "5.0.0"
-num = { version = "0.4.3", features = ["rand"] }
+num-bigint = "0.5.1"
 num-derive = "0.5.1"
+num-integer = "0.1.46"
+num-rational = { version = "0.4.2", default-features = false }
 num-traits = "0.2.19"
 omaha_client = "0.4.1"
 once_cell = "1.21.4"
@@ -902,21 +904,8 @@ rustflags = [
   "--cfg=macos",
 ]
 
-[gn.package.num-bigint."0.4.6"]
-rustflags = [
-  "--cfg=u64_digit",
-  "--cfg=has_try_from",
-]
-env_vars = ["OUT_DIR=../../../../compat/num-bigint"]
-
-[gn.package.num-bigint."0.4.6".platform."cfg(target_arch = \"x86_64\")"]
-rustflags = ["--cfg=use_addcarry"]
-
 [gn.package.num-bigint-dig."0.8.6"]
 rustflags = ["--cfg=has_i128"]
-
-[gn.package.num-complex."0.4.6"]
-rustflags = ["--cfg=has_i128", "--cfg=has_const_fn"]
 
 [gn.package.num_cpus."1.17.0"]
 # We need to explicitly depend on num_cpus for tokio, but we're not exposing it

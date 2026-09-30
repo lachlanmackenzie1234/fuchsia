@@ -1747,14 +1747,14 @@ alias(
 )
 
 alias(
-    name = "num-0.4.3",
-    actual = "//third_party/rust_crates/vendor/num-0.4.3:num",
+    name = "num-bigint-0.5.1",
+    actual = "//third_party/rust_crates/vendor/num-bigint-0.5.1:num_bigint",
     tags = ["manual"],
 )
 
 alias(
-    name = "num",
-    actual = "//third_party/rust_crates/vendor/num-0.4.3:num",
+    name = "num-bigint",
+    actual = "//third_party/rust_crates/vendor/num-bigint-0.5.1:num_bigint",
     tags = ["manual"],
 )
 
@@ -1767,6 +1767,30 @@ alias(
 alias(
     name = "num-derive",
     actual = "//third_party/rust_crates/vendor/num-derive-0.5.1:num_derive",
+    tags = ["manual"],
+)
+
+alias(
+    name = "num-integer-0.1.46",
+    actual = "//third_party/rust_crates/vendor/num-integer-0.1.46:num_integer",
+    tags = ["manual"],
+)
+
+alias(
+    name = "num-integer",
+    actual = "//third_party/rust_crates/vendor/num-integer-0.1.46:num_integer",
+    tags = ["manual"],
+)
+
+alias(
+    name = "num-rational-0.4.2",
+    actual = "//third_party/rust_crates/vendor/num-rational-0.4.2:num_rational",
+    tags = ["manual"],
+)
+
+alias(
+    name = "num-rational",
+    actual = "//third_party/rust_crates/vendor/num-rational-0.4.2:num_rational",
     tags = ["manual"],
 )
 
