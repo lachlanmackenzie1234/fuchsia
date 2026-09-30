@@ -275,6 +275,8 @@ bazel2gn_verification_targets = [
   "//tools/integration/testsharder:verify_bazel2gn",
   "//tools/lib/cache:verify_bazel2gn",
   "//tools/lib/clock:verify_bazel2gn",
+  "//tools/lib/cml/macro:verify_bazel2gn",
+  "//tools/lib/cml:verify_bazel2gn",
   "//tools/lib/color:verify_bazel2gn",
   "//tools/lib/config_value_file:verify_bazel2gn",
   "//tools/lib/environment:verify_bazel2gn",
