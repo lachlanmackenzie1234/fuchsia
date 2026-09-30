@@ -155,6 +155,7 @@ class Dwc3 : public fdf::DriverBase2,
  private:
   const std::string_view kScheduleProfileRole = "fuchsia.devices.usb.drivers.dwc3.interrupt";
   static inline const uint32_t kEp0BufferSize = UINT16_MAX + 1;
+  static inline constexpr uint32_t kAlignmentLog2 = 12;
 
   // physical endpoint numbers.  We use 0 and 1 for EP0, and let the device-mode
   // driver use the rest.
