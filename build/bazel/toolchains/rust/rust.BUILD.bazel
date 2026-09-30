@@ -156,6 +156,17 @@ _EXTRA_TARGET_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
     # the flag has to be routed with -Wl,.
     "-Clink-arg=-Wl,-z,stack-size=0x200000",
 
+    # No GN equivalent, as GN links Rust with lld directly.
+    #
+    # rustc passes -pie to the linker for Fuchsia executables, but clang's
+    # Fuchsia driver always adds -pie itself and never claims the one it is
+    # given, so every link prints "argument unused during compilation: '-pie'"
+    # through rustc's linker_messages lint. The output is PIE either way.
+    #
+    # TODO(https://fxbug.dev/567308599): Remove once the clang Fuchsia driver
+    # claims -pie, or GN and Bazel converge on how Rust is linked.
+    "-Clink-arg=-Wno-unused-command-line-argument",
+
     # GN: //build/config/rust:v0_symbol_mangling
     #
     # TODO(https://fxbug.dev/421888626): GN gates this on the
