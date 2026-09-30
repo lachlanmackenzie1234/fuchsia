@@ -417,7 +417,7 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
     }
   }
 
-  std::vector<zx::event> acquire_fences;
+  std::vector<zx::handle> acquire_fences;
   if (args.has_acquire_fences()) {
     acquire_fences.reserve(args.acquire_fences().size());
     for (auto& fence : args.acquire_fences()) {
@@ -540,7 +540,7 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
             // copied, and only the mode-specific properties which match the composition mode
             // are copied.
             auto& us_layer = us_layer_it->second;
-            const auto& layer_obj = layer_obj_it->second;
+            auto& layer_obj = layer_obj_it->second;
 
             if (!IsLayerSampleRectValidForPresent(layer_obj)) {
               CloseConnection(FlatlandError::kBadOperation);
@@ -554,6 +554,9 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
                 break;
               case LayerObject::Mode::kImage:
                 us_layer.content = layer_obj.image_mode;
+                if (layer_obj.pending_acquire_fence.is_valid()) {
+                  acquire_fences.push_back(layer_obj.pending_acquire_fence.TakeHandle());
+                }
                 break;
               case LayerObject::Mode::kSolidColor:
                 us_layer.content = layer_obj.solid_color_mode;
@@ -668,8 +671,7 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
   }
 
   // TODO(https://fxbug.dev/474444799): If |config_.pass_acquire_fences| is true, these fences
-  // can be directly queued on the render task rather than waiting on cpu. This will be possible
-  // in the new Flatland API where we define per-layer fences.
+  // can be directly queued on the render task rather than waiting on cpu.
   fence_queue_->QueueTask(std::move(task), std::move(acquire_fences));
 
   pending_link_operations_.clear();
@@ -3011,14 +3013,33 @@ void Flatland::SetLayerImage(
     return;
   }
 
-  // TODO(https://fxbug.dev/540952629): Add support for acquire and release fences.
-  if (acquire_fence.has_value() || release_fence.has_value()) {
-    error_reporter_->ERROR() << "SetLayerImage: fences not yet implemented";
+  // TODO(https://fxbug.dev/540952629): Add support for release fences.
+  if (release_fence.has_value()) {
+    error_reporter_->ERROR() << "SetLayerImage: release fences not yet implemented";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
 
+  WaitFence wait_fence;
+  if (acquire_fence.has_value()) {
+    auto result = WaitFence::From(std::move(acquire_fence.value()));
+    if (result.is_error()) {
+      error_reporter_->ERROR() << "SetLayerImage: invalid acquire fence: "
+                               << zx_status_get_string(result.error_value());
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+    wait_fence = std::move(result.value());
+  }
+
   BindLayerImage(layer_object, image_it->second);
+
+  // Store the acquire fence on the layer.
+  // Overwriting `pending_acquire_fence` drops any previous acquire fence *unwaited*, via
+  // its destructor. A client might never signal an abandoned fence for a superseded image
+  // that is never shown, so Scenic must not accumulate nor wait on it (prevents DoS and
+  // matches `fuchsia.hardware.display` SetLayerImage semantics).
+  layer_object.pending_acquire_fence = std::move(wait_fence);
 }
 
 void Flatland::SetLayerProperties(SetLayerPropertiesRequestView request,
@@ -3396,6 +3417,7 @@ void Flatland::ReleaseImageObject(allocation::GlobalImageId id) {
 // TODO(https://fxbug.dev/540952629): When release fences are implemented, UnbindLayerImage will
 // also stage the binding's release fence.
 void Flatland::UnbindLayerImage(LayerObject& layer) {
+  layer.pending_acquire_fence = WaitFence{};
   auto& image_mode = layer.image_mode;
   if (image_mode.image_id == allocation::kInvalidImageId) {
     return;
@@ -3514,6 +3536,12 @@ void Flatland::SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageI
   // Tests bind ids that were never imported; give them an ImageObject.
   image_objects_.try_emplace(image, ImageObject{.ref_count = 0});
   BindLayerImage(it->second, image);
+}
+
+void Flatland::UnbindLayerImageForTest(LayerHandle handle) {
+  auto it = layer_objects_.find(handle);
+  FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << handle;
+  UnbindLayerImage(it->second);
 }
 
 void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {

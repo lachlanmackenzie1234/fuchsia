@@ -598,6 +598,7 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   std::vector<allocation::GlobalImageId> CleanupFlatland2StateForTest(
       const std::vector<TransformHandle>& dead_handles);
   void SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageId image);
+  void UnbindLayerImageForTest(LayerHandle handle);
   void SetLayerSolidColorForTest(LayerHandle handle);
   LayerObject* GetLayerObjectForTest(LayerHandle handle);
   const ImageObject* GetImageObjectForTest(allocation::GlobalImageId global_id) const;
