@@ -122,6 +122,14 @@ CRATE_ANNOTATIONS = {
             },
         ),
     ],
+    "hickory-resolver": [
+        crate.annotation(
+            version = "0.26.3",
+            rustc_env = {
+                "CARGO_PKG_VERSION": "0.26.3",
+            },
+        ),
+    ],
     "httparse": [
         crate.annotation(
             version = "1.10.1",

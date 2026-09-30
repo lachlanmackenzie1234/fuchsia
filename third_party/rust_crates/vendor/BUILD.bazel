@@ -1231,6 +1231,18 @@ alias(
 )
 
 alias(
+    name = "hickory-resolver-0.26.3",
+    actual = "//third_party/rust_crates/vendor/hickory-resolver-0.26.3:hickory_resolver",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hickory-resolver",
+    actual = "//third_party/rust_crates/vendor/hickory-resolver-0.26.3:hickory_resolver",
+    tags = ["manual"],
+)
+
+alias(
     name = "hkdf-0.12.4",
     actual = "//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf",
     tags = ["manual"],

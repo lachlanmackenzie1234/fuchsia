@@ -307,9 +307,10 @@ der-0_7_10 = { package = "der", version = "0.7.10", features = ["alloc", "derive
 euclid = { version = "0.22.14", features = [ "serde" ] }
 flagset = "0.4.7"
 getopts = "0.2"
-# TODO(https://fxbug.dev/42084779): Remove empty/critical-section and once_cell remove_features when upgrading to >= 0.26.4.
 hickory-net = { version = "0.26.3", default-features = false }
+# TODO(https://fxbug.dev/42084779): Remove empty/critical-section and once_cell remove_features when upgrading to >= 0.26.4.
 hickory-proto = { version = "0.26.3", default-features = false }
+hickory-resolver = { version = "0.26.3", default-features = false, features = ["dnssec-ring", "metrics"] }
 hyper-rustls = { version = "0.27.9", default-features = false, features = ["ring", "http1", "tls12"] }
 mock-omaha-server = "0.5.0"
 openat = "0.1.21"
@@ -754,6 +755,9 @@ group_name = "heck-0_3"
 visibility = [
   "//third_party/rust_crates/compat/icu:*", "//src/sys/test_runners/starnix:*", "//third_party/rust_crates:*" ]
 
+[gn.package.hickory-resolver."0.26.3"]
+env_vars = [ "CARGO_PKG_VERSION=0.26.3" ]
+
 [gn.package.hkdf."0.12.4"]
 groups = [ { name = "hkdf-0.12", visibility = [ ":*", "//src/microfuchsia/tee/runtime/api_impl:*", "//vendor/*" ] } ]
 
@@ -1051,6 +1055,11 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 # Thank you!
 visibility = [
   "//third_party/rust_crates/compat/icu:*",
+  ":hickory-net-v0_26_3.actual",
+  ":hickory-net-v0_26_3.rustdoc",
+  ":hickory-net-v0_26_3.aux.deps.deps",
+  ":hickory-net-v0_26_3.aux.deps.transdeps",
+  ":hickory-net-v0_26_3.actual.rust_compilation_deps",
   ":hickory-proto-v0_26_3.actual",
   ":hickory-proto-v0_26_3.rustdoc",
   ":hickory-proto-v0_26_3.aux.deps.deps",
