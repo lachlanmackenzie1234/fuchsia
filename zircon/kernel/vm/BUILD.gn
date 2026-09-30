@@ -676,28 +676,119 @@ kernel_bindgen_crate("vm-fault-bindings") {
 
 kernel_bindgen_crate("vm-aspace-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/vm_aspace.h" ]
+  headers = [ "include/vm/vm_aspace_ffi.h" ]
   non_rust_deps = [ ":vm" ]
   output_name = "vm_aspace_bindings.rs"
   cpp = true
 
   notice_year = 2026
-  var_allowlist = [ "VmAspace_VMM_FLAG_.*" ]
-  type_allowlist = [
-    "VmAspace",
-    "uint",
+  var_allowlist = [
+    "ARCH_ASPACE_FLAG_.*",
+    "ARCH_MMU_FLAG_.*",
+    "VmAspace_VMM_FLAG_.*",
   ]
-  opaque_types = [ "VmAspace" ]
-  type_blocklist = [ "VmAspace_.*" ]
+  type_allowlist = [
+    "uint",
+    "vm::FractionalBytes",
+    "VmAspace_ShareOpt",
+    "VmAspace_Type",
+    "VmAspace",
+    "ArchVmAspace",
+    "ArchVmAspaceInterface_ArchUnmapOptions",
+    "ArchVmAspaceInterface_ExistingEntryAction",
+    "ArchVmAspaceInterface_NonTerminalAction",
+    "ArchVmAspaceInterface_TerminalAction",
+    "ArchVmAspaceInterface_page_alloc_fn_t",
+    "VmAspace_ShareOpt",
+    "VmAspace_Type",
+    "arch_mmu_flags_t",
+  ]
+  opaque_types = [
+    "VmAspace",
+    "ArchVmAspace",
+    "vm::FractionalBytes",
+  ]
+  type_blocklist = [ "Thread" ]
   function_blocklist = [ "VmAspace_.*" ]
+  function_allowlist = [
+    "cpp_arch_vm_aspace_accessed_since_last_check",
+    "cpp_kernel_physical_address_of",
+    "cpp_vaddr_to_paddr",
+    "cpp_vm_aspace_accessed_fault",
+    "cpp_vm_aspace_alloc_contiguous",
+    "cpp_vm_aspace_alloc_physical",
+    "cpp_vm_aspace_arch_aspace",
+    "cpp_vm_aspace_attach_to_thread",
+    "cpp_vm_aspace_base",
+    "cpp_vm_aspace_create",
+    "cpp_vm_aspace_create_unified",
+    "cpp_vm_aspace_create_with_opts",
+    "cpp_vm_aspace_destroy",
+    "cpp_vm_aspace_drop_all_user_page_tables",
+    "cpp_vm_aspace_drop_user_page_tables",
+    "cpp_vm_aspace_dump",
+    "cpp_vm_aspace_dump_all_aspaces",
+    "cpp_vm_aspace_find_mapping",
+    "cpp_vm_aspace_free",
+    "cpp_vm_aspace_free_region",
+    "cpp_vm_aspace_get_ref_counted",
+    "cpp_vm_aspace_harvest_all_user_accessed_bits",
+    "cpp_vm_aspace_is_aslr_enabled",
+    "cpp_vm_aspace_is_destroyed",
+    "cpp_vm_aspace_is_high_memory_priority",
+    "cpp_vm_aspace_is_user",
+    "cpp_vm_aspace_kernel_aspace",
+    "cpp_vm_aspace_lock",
+    "cpp_vm_aspace_map_object_internal",
+    "cpp_vm_aspace_name",
+    "cpp_vm_aspace_page_fault",
+    "cpp_vm_aspace_region_lock",
+    "cpp_vm_aspace_rename",
+    "cpp_vm_aspace_root_vmar",
+    "cpp_vm_aspace_size",
+    "cpp_vm_aspace_soft_fault",
+    "cpp_vm_aspace_soft_fault_in_range",
+    "cpp_vm_aspace_vdso_base_address",
+    "cpp_vm_aspace_vdso_code_address",
+    "cpp_vmm_page_fault_handler",
+    "cpp_vmm_set_active_aspace",
+    "cpp_vmm_set_active_aspace_normal",
+    "cpp_vmm_set_active_aspace_restricted",
+  ]
 
-  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  additional_bindgen_flags = [
+    "--no-recursive-allowlist",
+    "--newtype-enum=ArchVmAspaceInterface_ExistingEntryAction",
+    "--constified-enum-module=ArchVmAspaceInterface_NonTerminalAction",
+    "--constified-enum-module=ArchVmAspaceInterface_TerminalAction",
+    "--newtype-enum=VmAspace_ShareOpt",
+    "--newtype-enum=VmAspace_Type",
+  ]
+
+  deps = [
+    ":page-bindings",
+    ":vm-address-region-bindings",
+    ":vm-object-bindings",
+    "//sdk/rust/zx-types",
+  ]
 
   edition = "2024"
-  raw_lines = [ "#![no_std]" ]
+  raw_lines = [
+    "#![no_std]",
+
+    "use zx_types::zx_status_t;",
+    "use vm_address_region_bindings::{VmAddressRegion, VmMapping};",
+    "use vm_object_bindings::VmObject;",
+    "use zx_types::zx_paddr_t as paddr_t;",
+    "use zx_types::zx_vaddr_t as zx_vaddr_t;",
+    "use zx_types::zx_vaddr_t as vaddr_t;",
+    "use page_bindings::vm_page_t as vm_page;",
+    "pub type Thread = core::ffi::c_void;",
+  ]
   expect_lints = [
     "non_camel_case_types",
     "non_upper_case_globals",
+    "non_snake_case",
   ]
 }
 
