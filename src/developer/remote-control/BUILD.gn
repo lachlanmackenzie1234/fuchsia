@@ -21,6 +21,7 @@ group("tests") {
   testonly = true
 
   deps = [
+    ":remote-control-bin-tests",
     ":remote-control-lib-tests",
     "usb:tests",
     "//src/developer/remote-control/identify-host:tests",
@@ -113,6 +114,8 @@ rustc_binary("bin") {
     "src/main.rs",
     "src/vsock.rs",
   ]
+
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 fuchsia_test_component("lib_test-test-driver") {
@@ -132,6 +135,15 @@ fuchsia_test_package("remote-control-lib-tests") {
     ":lib_test-test-driver",
     "//src/connectivity/network/netstack:component",
   ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+fuchsia_unittest_package("remote-control-bin-tests") {
+  deps = [ ":bin_test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
