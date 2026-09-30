@@ -2,13 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-visibility(["//build/bazel/rules/idk/private"])
-
 """Lists of FIDL libraries in each category.
 
 For information on categories, see
 https://fuchsia.dev/fuchsia-src/contribute/sdk/categories.
 """
+
+visibility(["//build/bazel/rules/idk/private"])
 
 # Stable FIDL libraries in the partner category.
 # All are included in the IDK.
@@ -326,5 +326,6 @@ COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_idk",
     "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance_idk",
     "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_idk",
+    "//src/sys/pkg/tests/pkgdir/test_realm_proxy/fidl:fuchsia.pkg.test_idk",
 ]
 # LINT.ThenChange(BUILD.gn:compat_test_libraries)

@@ -275,6 +275,7 @@ bazel2gn_verification_targets = [
   "//src/sys/pkg/testing/mock-space:verify_bazel2gn",
   "//src/sys/pkg/testing/shell-process:verify_bazel2gn",
   "//src/sys/pkg/tests/pkg-resolver/template:verify_bazel2gn",
+  "//src/sys/pkg/tests/pkgdir/test_realm_proxy/fidl:verify_bazel2gn",
   "//src/testing/fidl:verify_bazel2gn",
   "//third_party/rust_crates/compat/ring-0.17.14:verify_bazel2gn",
   "//tools/botanist:verify_bazel2gn",
