@@ -11,6 +11,7 @@ Key decisions:
 * Use the `fuchsia.hardware.display/Coordinator` FIDL interface directly.
 * Use the testing client priority, so the tool takes over the display from any
   active product session.
+* Support every configuration that includes the display drivers stack.
 
 ## Build configuration
 
@@ -120,6 +121,8 @@ background.
 * Smooth animation. No screen tearing, jitter, or display corruption.
 * The terminal outputs continuous FPS updates matching the display refresh rate.
   Example: `Display 60.00 fps (16.66667 ms)`.
+* No `Timed out while waiting` output. See `--vsync-timeout-ms <ms>` for tuning
+  the timeout value.
 
 ### Step 5: Display compositing (multiple layers)
 
@@ -171,3 +174,28 @@ Cell color:
   Example:  `Expected frame rate: 60.000 fps`.
 * The moving cell advances smoothly by exactly one position per frame. No
   skipped cells. No stuttering.
+
+### Step 7: Power cycling while submitting frames
+
+Test that the display driver handles submitted configurations while the display
+hardware is powered on and off.
+
+```posix-terminal
+ffx target ssh -- display-tool squares --power-cycle-frame-count 300 \
+    --power-cycle-off-frame-count 60
+```
+
+#### Expected visuals
+
+See the swapchain section above for a description of the `squares` visual
+output. Additionally, the display powers off and back on every few seconds.
+
+#### Verification
+
+See the swapchain section above for verifying `squares`. The conditions
+described there must continue to hold after power cycling.
+
+Additional checks:
+
+* Every `SetDisplayPowerMode` line reports `-> Ok(Ok(()))`.
+* After each power on, a `first vsync after power on` line appears.
