@@ -96,6 +96,11 @@ fuchsia_driver_package("package") {
 fuchsia_unittest_package("dw-spi-test") {
   package_name = "dw_spi_test"
   deps = [ ":dw-spi-driver_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tests") {
