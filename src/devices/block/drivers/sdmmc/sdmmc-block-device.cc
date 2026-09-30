@@ -587,6 +587,18 @@ zx_status_t SdmmcBlockDevice::ReadWriteWithRetries(std::vector<block_server::Req
   if (st != ZX_OK) {
     fdf::error("do_txn error: {}", zx_status_get_string(st));
     properties_.io_errors_.Add(1);
+
+    if (!is_sd_) {
+      std::array<uint8_t, MMC_EXT_CSD_SIZE> ext_csd;
+      zx_status_t ext_csd_st = sdmmc_->MmcSendExtCsd(ext_csd);
+      if (ext_csd_st == ZX_OK) {
+        memset(&ext_csd[MMC_EXT_CSD_VENDOR_SPECIFIC_FIELD_START], 0,
+               MMC_EXT_CSD_VENDOR_SPECIFIC_FIELD_SIZE);
+        properties_.ext_csd_.Set({ext_csd.begin(), ext_csd.end()});
+        properties_.ext_csd_timestamp_.Set(zx::clock::get_monotonic().get());
+      }
+      properties_.ext_csd_status_.Set(zx_status_get_string(ext_csd_st));
+    }
   }
 
   fdf::debug("do_txn complete");
