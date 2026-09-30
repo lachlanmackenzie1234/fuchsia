@@ -42,7 +42,7 @@ commit.
 - [x] CS7 `[driver-lab] fuchsia-controller FIDL transport adapter`
       -- `ProxyTransport` over the generated bindings, exercised
       through real FIDL encoding on the build host (12, 20.3).
-- [ ] CS8 `[driver-lab] Add host CLI tools` -- `driver-lab.pyz`
+- [x] CS8 `[driver-lab] Add host CLI tools` -- `driver-lab.pyz`
       with run, permissions list/explain/add/revoke, plan
       digest/validate, and spec exit categories (10.5, 12, 13).
 - [ ] CS10 `[driver-lab] Add live-target conformance runbook` --

@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/python/python_binary.gni")
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 
-# Transport-neutral host tooling for the host-proxy driver workflow:
+# Transport-neutral host tooling for the driver-lab driver workflow:
 # models, operator read grants, and plan canonicalization. The
 # fuchsia-controller transport adapter over //src/devices/driver-lab/fidl
 # layers on top of this library.
@@ -15,6 +16,7 @@ python_library("driver_lab") {
   sources = [
     "__init__.py",
     "api.py",
+    "cli.py",
     "consent.py",
     "evidence.py",
     "fidl_transport.py",
@@ -51,21 +53,38 @@ if (is_host) {
     libraries = [ ":driver_lab" ]
   }
 
+  python_host_test("driver_lab_fidl_transport_test") {
+    main_source = "tests/fidl_transport_test.py"
+    libraries = [ ":driver_lab" ]
+  }
+
   python_host_test("driver_lab_consent_test") {
     main_source = "tests/consent_test.py"
     libraries = [ ":driver_lab" ]
   }
 
-  python_host_test("driver_lab_fidl_transport_test") {
-    main_source = "tests/fidl_transport_test.py"
+  python_host_test("driver_lab_cli_test") {
+    main_source = "tests/cli_test.py"
     libraries = [ ":driver_lab" ]
   }
+
+  python_binary("driver_lab_cli") {
+    main_source = "driver_lab/cli.py"
+    main_callable = "main"
+    output_name = "driver-lab.pyz"
+    deps = [ ":driver_lab" ]
+  }
+}
+
+group("host") {
+  deps = [ ":driver_lab_cli($host_toolchain)" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":driver_lab_api_test($host_toolchain)",
+    ":driver_lab_cli_test($host_toolchain)",
     ":driver_lab_consent_test($host_toolchain)",
     ":driver_lab_evidence_test($host_toolchain)",
     ":driver_lab_fidl_transport_test($host_toolchain)",
