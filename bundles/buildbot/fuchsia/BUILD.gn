@@ -93,12 +93,14 @@ minimal_target_tests = [
 if (target_cpu == "arm64") {
   product_bundle_test_group("minimal.arm64") {
     product_bundle_name = "minimal.arm64"
-    if (is_postsubmit) {
-      environments = [ c4a_env ]
-      override_test_environments = false
-    } else {
-      build_only = true
-    }
+
+    # TODO(https://fxbug.dev/407825733): Re-enable running these tests on
+    # `c4a_env` in postsubmit (`is_postsubmit`). The host tests pulled in by
+    # `minimal_target_tests` inherit `c4a_env` and get scheduled onto arm64 C4A
+    # bots, where the x64 host binaries fail with "exec format error". Keep
+    # this group build-only until host tests are excluded from this group or
+    # given a Linux x64 host environment.
+    build_only = true
 
     target_tests = minimal_target_tests + [ "//src/ui:tests" ]
   }
