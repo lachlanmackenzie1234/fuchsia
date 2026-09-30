@@ -168,3 +168,25 @@ versioned_types! {
 static_assertions::const_assert!(
     <EncryptedTransaction as HasVersion>::VERSION <= <Mutation as HasVersion>::VERSION
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fuchsia::test]
+    fn test_get_type_fingerprints() {
+        let latest = get_type_fingerprints(LATEST_VERSION);
+        assert!(!latest.is_empty());
+        assert!(latest.contains_key("JournalRecord"));
+        assert!(latest.contains_key("Mutation"));
+        assert!(latest.contains_key("ObjectKey"));
+
+        let earliest = get_type_fingerprints(EARLIEST_SUPPORTED_VERSION);
+        assert!(!earliest.is_empty());
+        assert!(earliest.contains_key("JournalRecord"));
+        assert!(!earliest.contains_key("EncryptedTransaction"));
+
+        let too_old = get_type_fingerprints(Version { major: 1, minor: 0 });
+        assert!(too_old.is_empty());
+    }
+}

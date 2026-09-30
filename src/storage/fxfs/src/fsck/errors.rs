@@ -859,3 +859,169 @@ impl FsckFatal {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lsm_tree::types::Item;
+    use crate::object_store::ObjectDescriptor;
+
+    #[fuchsia::test]
+    fn test_type_conversions() {
+        let alloc_item = Item::new(
+            AllocatorKey { device_range: (0..4096).into() },
+            AllocatorValue::Abs { count: 1, owner_object_id: 2 },
+        );
+        let alloc = Allocation::from(alloc_item.as_item_ref());
+        assert_eq!(alloc.range, 0..4096);
+        assert_eq!(alloc.value, AllocatorValue::Abs { count: 1, owner_object_id: 2 });
+
+        let key_from_item = Key::from(alloc_item.as_item_ref());
+        let key_from_ref = Key::from(&alloc_item.key);
+        assert_eq!(key_from_item, key_from_ref);
+
+        let val_from_item = Value::from(alloc_item.as_item_ref());
+        let val_from_ref = Value::from(&alloc_item.value);
+        assert_eq!(val_from_item, val_from_ref);
+
+        let val_from_desc = Value::from(ObjectDescriptor::File);
+        assert_eq!(val_from_desc, Value::from(&ObjectDescriptor::File));
+    }
+
+    #[fuchsia::test]
+    fn test_fsck_issue() {
+        let warning = FsckIssue::Warning(FsckWarning::OrphanedObject(1, 2));
+        assert!(!warning.is_error());
+        assert!(warning.to_string().starts_with("WARNING: "));
+        warning.log();
+
+        let err = FsckIssue::Error(FsckError::UnexpectedObjectInGraveyard(3));
+        assert!(err.is_error());
+        assert!(err.to_string().starts_with("ERROR: "));
+        err.log();
+
+        let fatal = FsckIssue::Fatal(FsckFatal::MalformedGraveyard);
+        assert!(fatal.is_error());
+        assert!(fatal.to_string().starts_with("FATAL: "));
+        fatal.log();
+    }
+
+    #[fuchsia::test]
+    fn test_fsck_warnings() {
+        let k = Key::from(&1u64);
+        let v = Value::from(&2u64);
+        let attr_id = AttributeId(3);
+        let proj_id = ProjectId::new(2).unwrap();
+        let warnings = vec![
+            FsckWarning::ExtentForMissingAttribute(1, 2, attr_id),
+            FsckWarning::ExtentForNonexistentObject(1, 2),
+            FsckWarning::GraveyardRecordForAbsentObject(1, 2),
+            FsckWarning::InvalidObjectIdInStore(1, k, v),
+            FsckWarning::LimitForNonExistentStore(1, 100),
+            FsckWarning::OrphanedAttribute(1, 2, attr_id),
+            FsckWarning::OrphanedObject(1, 2),
+            FsckWarning::OrphanedKeys(1, 2),
+            FsckWarning::OrphanedExtendedAttribute(1, 2, attr_id),
+            FsckWarning::OrphanedExtendedAttributeRecord(1, 2),
+            FsckWarning::ProjectUsageInconsistent(1, proj_id, (10, 1), (20, 2)),
+        ];
+        for warning in warnings {
+            assert!(!warning.to_string().is_empty());
+            warning.log();
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_fsck_errors() {
+        let alloc = Allocation {
+            range: 0..4096,
+            value: AllocatorValue::Abs { count: 1, owner_object_id: 2 },
+        };
+        let k = Key::from(&1u64);
+        let v = Value::from(&2u64);
+        let attr_id = AttributeId(3);
+        let proj_id = ProjectId::new(2).unwrap();
+        let wk1: WrappingKeyId = u128::to_le_bytes(1);
+        let wk2: WrappingKeyId = u128::to_le_bytes(2);
+        let errors = vec![
+            FsckError::AllocatedBytesMismatch(vec![(1, 100)], vec![(1, 200)]),
+            FsckError::AllocatedSizeMismatch(1, 2, 100, 200),
+            FsckError::AllocationForNonexistentOwner(alloc.clone()),
+            FsckError::AllocationMismatch(alloc.clone(), alloc.clone()),
+            FsckError::BadCasefoldHash(1, 2, 3, 4, 5),
+            FsckError::BadGraveyardValue(1, 2),
+            FsckError::BadLastObjectId(10, 5),
+            FsckError::CasefoldInconsistency(1, 2, 3),
+            FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(1, 2, 3, wk1, wk2),
+            FsckError::ConflictingTypeForLink(1, 2, v.clone(), v.clone()),
+            FsckError::DuplicateKey(1, 2, 3),
+            FsckError::EncryptedChildDirectoryNoWrappingKey(1, 2),
+            FsckError::EncryptedDirectoryHasUnencryptedChild(1, 2, 3),
+            FsckError::ExtentExceedsLength(1, 2, attr_id, 100, v.clone()),
+            FsckError::ExtraAllocations(vec![alloc.clone()]),
+            FsckError::IllegalKeyInRootStore(1, 2),
+            FsckError::IncorrectMerkleTreeSize(1, 2, 100, 200),
+            FsckError::LinkCycle(1, 2),
+            FsckError::MalformedAllocation(alloc.clone()),
+            FsckError::MalformedExtent(1, 2, 0..4096, 8192),
+            FsckError::MalformedObjectRecord(1, k.clone(), v.clone()),
+            FsckError::MisalignedAllocation(alloc.clone()),
+            FsckError::MisalignedExtent(1, 2, 0..4096, 8192),
+            FsckError::MissingAllocation(alloc),
+            FsckError::InvalidExtendedAttributeId(1, 2, attr_id),
+            FsckError::MissingAttributeForExtendedAttribute(1, 2, attr_id),
+            FsckError::MissingDataAttribute(1, 2),
+            FsckError::MissingEncryptionKeys(1, 2),
+            FsckError::MissingKey(1, 2, 3),
+            FsckError::MissingObjectInfo(1, 2),
+            FsckError::MissingOverwriteExtents(1, 2, attr_id),
+            FsckError::MultipleLinksToDirectory(1, 2),
+            FsckError::NextObjectIdInUse(1, 2),
+            FsckError::NonFileMarkedAsVerified(1, 2),
+            FsckError::NonRootProjectIdMetadata(1, 2, proj_id),
+            FsckError::ObjectCountMismatch(1, 2, 3),
+            FsckError::ObjectHasChildren(1, 2),
+            FsckError::OverwriteExtentFlagUnset(1, 2, attr_id),
+            FsckError::ProjectOnGraveyard(1, proj_id, 3),
+            FsckError::ProjectUsedWithNoUsageTracking(1, proj_id, 3),
+            FsckError::RefCountMismatch(1, 2, 3),
+            FsckError::RootObjectHasParent(1, 2, 3),
+            FsckError::SubDirCountMismatch(1, 2, 3, 4),
+            FsckError::TombstonedAttributeDoesNotExist(1, 2, attr_id),
+            FsckError::TombstonedObjectHasRecords(1, 2),
+            FsckError::TrimValueForGraveyardAttributeEntry(1, 2, attr_id),
+            FsckError::UnencryptedDirectoryHasEncryptedChild(1, 2, 3),
+            FsckError::UnexpectedJournalFileOffset(1),
+            FsckError::UnexpectedObjectInGraveyard(1),
+            FsckError::UnexpectedRecordInObjectStore(1, k, v),
+            FsckError::VerifiedFileDoesNotHaveAMerkleAttribute(1, 2),
+            FsckError::VolumeInChildStore(1, 2),
+            FsckError::ZombieDir(1, 2, 3),
+            FsckError::ZombieFile(1, 2, vec![3]),
+            FsckError::ZombieSymlink(1, 2, vec![3]),
+            FsckError::InvalidInoLblk32KeyUsage(1, 2),
+        ];
+        for err in errors {
+            assert!(!err.to_string().is_empty());
+            err.log();
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_fsck_fatals() {
+        let k = Key::from(&1u64);
+        let fatals = vec![
+            FsckFatal::MalformedGraveyard,
+            FsckFatal::MalformedLayerFile(1, 2),
+            FsckFatal::MalformedStore(1),
+            FsckFatal::MisOrderedLayerFile(1, 2),
+            FsckFatal::MisOrderedObjectStore(1),
+            FsckFatal::OverlappingKeysInLayerFile(1, 2, k.clone(), k.clone()),
+            FsckFatal::InvalidBloomFilter(1, 2, k),
+        ];
+        for fatal in fatals {
+            assert!(!fatal.to_string().is_empty());
+            fatal.log();
+        }
+    }
+}
