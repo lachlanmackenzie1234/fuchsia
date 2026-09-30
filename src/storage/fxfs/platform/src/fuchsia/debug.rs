@@ -418,10 +418,8 @@ impl Node for ObjectDirectory {
             Immutable {
                 protocols: fio::NodeProtocolKinds::DIRECTORY,
                 abilities: fio::Operations::GET_ATTRIBUTES
-                    | fio::Operations::UPDATE_ATTRIBUTES
                     | fio::Operations::ENUMERATE
-                    | fio::Operations::TRAVERSE
-                    | fio::Operations::MODIFY_DIRECTORY,
+                    | fio::Operations::TRAVERSE,
                 id: id
             }
         ))
@@ -438,10 +436,15 @@ impl Directory for ObjectDirectory {
     ) {
         flags.to_object_request(server_end).handle(|object_request| {
             match path.next_with_ref() {
-                (_, Some(name)) => {
+                (remaining_path, Some(name)) => {
+                    if !remaining_path.is_empty() {
+                        return Err(Status::NOT_DIR);
+                    }
                     // Lookup an object by id and return it.
-                    let name = name.to_owned();
-                    let object_id = name.parse().unwrap_or(INVALID_OBJECT_ID);
+                    let object_id = name.parse().map_err(|_| Status::NOT_FOUND)?;
+                    if object_id == INVALID_OBJECT_ID {
+                        return Err(Status::NOT_FOUND);
+                    }
                     vfs::file::serve(
                         InternalFile::new(object_id, self.store.clone()),
                         scope,
@@ -467,10 +470,15 @@ impl Directory for ObjectDirectory {
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
         match path.next_with_ref() {
-            (_, Some(name)) => {
+            (remaining_path, Some(name)) => {
+                if !remaining_path.is_empty() {
+                    return Err(Status::NOT_DIR);
+                }
                 // Lookup an object by id and return it.
-                let name = name.to_owned();
-                let object_id = name.parse().unwrap_or(INVALID_OBJECT_ID);
+                let object_id = name.parse().map_err(|_| Status::NOT_FOUND)?;
+                if object_id == INVALID_OBJECT_ID {
+                    return Err(Status::NOT_FOUND);
+                }
                 vfs::file::serve(
                     InternalFile::new(object_id, self.store.clone()),
                     scope,
@@ -1135,11 +1143,44 @@ mod tests {
             assert!(entries.iter().any(|e| e.name == journal_oid_str));
 
             let (_, attrs) = objects_dir
-                .get_attributes(fio::NodeAttributesQuery::ID | fio::NodeAttributesQuery::PROTOCOLS)
+                .get_attributes(
+                    fio::NodeAttributesQuery::ID
+                        | fio::NodeAttributesQuery::PROTOCOLS
+                        | fio::NodeAttributesQuery::ABILITIES,
+                )
                 .await
                 .unwrap()
                 .unwrap();
             assert_eq!(attrs.id, Some(fixture.fs().root_parent_store().store_object_id()));
+            assert_eq!(
+                attrs.abilities,
+                Some(
+                    fio::Operations::GET_ATTRIBUTES
+                        | fio::Operations::ENUMERATE
+                        | fio::Operations::TRAVERSE
+                )
+            );
+
+            // Opening non-numeric or INVALID_OBJECT_ID ("0") names should fail at open time.
+            assert!(
+                fuchsia_fs::directory::open_file(&objects_dir, "not_a_number", fio::PERM_READABLE)
+                    .await
+                    .is_err()
+            );
+            assert!(
+                fuchsia_fs::directory::open_file(&objects_dir, "0", fio::PERM_READABLE)
+                    .await
+                    .is_err()
+            );
+            assert!(
+                fuchsia_fs::directory::open_file(
+                    &objects_dir,
+                    &format!("{journal_oid_str}/subpath"),
+                    fio::PERM_READABLE
+                )
+                .await
+                .is_err()
+            );
 
             // Open the journal object directly via the objects directory.
             let (file_proxy, server_end) = create_proxy::<fio::FileMarker>();
