@@ -257,6 +257,7 @@ unsafe impl Recyclable for VmCowPages {
 
 impl VmCowPages {
     /// Domain-specific conversion: returns raw pointer for `VmCowPages`.
+    #[inline]
     pub fn as_raw(&self) -> *mut bindings::VmCowPages {
         self.raw.get()
     }
@@ -304,18 +305,21 @@ impl VmCowPages {
     }
 
     /// Returns true if the `VmCowPages` is capable of borrowing pages.
+    #[inline]
     pub fn can_borrow(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
         unsafe { bindings::cpp_vm_cow_pages_can_borrow(self.as_raw()) }
     }
 
     /// Returns true if the `VmCowPages` can evict pages (i.e. is user-pager backed).
+    #[inline]
     pub fn can_evict(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
         unsafe { bindings::cpp_vm_cow_pages_can_evict(self.as_raw()) }
     }
 
     /// Returns true if the `VmCowPages` is discardable.
+    #[inline]
     pub fn is_discardable(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
         unsafe { bindings::cpp_vm_cow_pages_is_discardable(self.as_raw()) }
@@ -374,9 +378,8 @@ impl VmCowPages {
 
         // SAFETY: `out_page` must be non-null if `status == OK`, in which case the
         // conversion from FFI will succeed.
-        Status::ok(status).map(|()| unsafe {
-            VmPagePtr::from_ffi(out_page).expect("page pointer is non-null")
-        })
+        Status::ok(status)
+            .map(|()| unsafe { VmPagePtr::from_ffi(out_page).expect("page pointer is non-null") })
     }
 
     /// Returns whether this `VmCowPages`'s lock is held by the current thread.
