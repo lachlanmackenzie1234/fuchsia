@@ -200,7 +200,7 @@ range-alloc = "0.1.5"
 # NOTE: Use caution when updating to a new major version of `rapidhash` as this may cause hash
 # values to change. We rely on this crate for stable hashes.
 rapidhash = { version = "1.4.0", features = ["unsafe"] }
-rayon = "1.10.0"
+rayon = "1.12.0"
 ref-cast = "1.0.26"
 regex = "1.13.1"
 regex-lite = "0.1.9"
@@ -1031,7 +1031,7 @@ features = [
 [gn.package.rand_core."0.6.4"]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.rayon-core."1.12.1"]
+[gn.package.rayon-core."1.13.0"]
 # Has build script but no config needed.
 
 [gn.package.ref-cast."1.0.26"]

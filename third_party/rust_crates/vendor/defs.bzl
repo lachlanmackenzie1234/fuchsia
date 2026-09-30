@@ -438,7 +438,7 @@ _NORMAL_DEPENDENCIES = {
             "rand_xorshift": Label("//third_party/rust_crates/vendor/rand_xorshift-0.5.0:rand_xorshift"),
             "range-alloc": Label("//third_party/rust_crates/vendor/range-alloc-0.1.5:range_alloc"),
             "rapidhash": Label("//third_party/rust_crates/vendor/rapidhash-1.4.0:rapidhash"),
-            "rayon": Label("//third_party/rust_crates/vendor/rayon-1.10.0:rayon"),
+            "rayon": Label("//third_party/rust_crates/vendor/rayon-1.12.0:rayon"),
             "ref-cast": Label("//third_party/rust_crates/vendor/ref-cast-1.0.26:ref_cast"),
             "regex": Label("//third_party/rust_crates/vendor/regex-1.13.1:regex"),
             "regex-lite": Label("//third_party/rust_crates/vendor/regex-lite-0.1.9:regex_lite"),

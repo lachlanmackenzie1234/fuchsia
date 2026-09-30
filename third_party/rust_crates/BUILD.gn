@@ -1722,11 +1722,11 @@ group("rapidhash-1.4.0") {
 }
 
 group("rayon") {
-  public_deps = [ ":rayon-v1_10_0" ]
+  public_deps = [ ":rayon-v1_12_0" ]
 }
 
-group("rayon-1.10.0") {
-  public_deps = [ ":rayon-v1_10_0" ]
+group("rayon-1.12.0") {
+  public_deps = [ ":rayon-v1_12_0" ]
 }
 
 group("ref-cast") {
@@ -14365,7 +14365,7 @@ rustc_library("moka-v0_12_15") {
 
   deps = []
   deps += [ ":portable-atomic-v1_14_0" ]
-  deps += [ ":crossbeam-channel-v0_5_15" ]
+  deps += [ ":crossbeam-channel-v0_5_17" ]
   deps += [ ":crossbeam-epoch-v0_9_18" ]
   deps += [ ":crossbeam-utils-v0_8_23" ]
   deps += [ ":equivalent-v1_0_2" ]
@@ -18868,18 +18868,18 @@ rustc_library("rapidhash-v4_5_1") {
   applicable_licenses = [ ":rapidhash-v4_5_1.license" ]
 }
 
-license("rayon-v1_10_0.license") {
+license("rayon-v1_12_0.license") {
   public_package_name = "rayon"
   license_files = [
-    "//third_party/rust_crates/vendor/rayon-1.10.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rayon-1.10.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rayon-1.12.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rayon-1.12.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("rayon-v1_10_0") {
+rustc_library("rayon-v1_12_0") {
   crate_name = "rayon"
-  source_root = "//third_party/rust_crates/vendor/rayon-1.10.0/src/lib.rs"
-  output_name = "rayon-2c5f2bd3edf049a3"
+  source_root = "//third_party/rust_crates/vendor/rayon-1.12.0/src/lib.rs"
+  output_name = "rayon-f87ffbaf7a3c6166"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18887,33 +18887,33 @@ rustc_library("rayon-v1_10_0") {
 
   deps = []
   deps += [ ":either-v1_18_0" ]
-  deps += [ ":rayon-core-v1_12_1" ]
+  deps += [ ":rayon-core-v1_13_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2c5f2bd3edf049a3",
-    "-Cextra-filename=-2c5f2bd3edf049a3",
+    "-Cmetadata=f87ffbaf7a3c6166",
+    "-Cextra-filename=-f87ffbaf7a3c6166",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rayon-v1_10_0.license" ]
+  applicable_licenses = [ ":rayon-v1_12_0.license" ]
 }
 
-license("rayon-core-v1_12_1.license") {
+license("rayon-core-v1_13_0.license") {
   public_package_name = "rayon_core"
   license_files = [
-    "//third_party/rust_crates/vendor/rayon-core-1.12.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rayon-core-1.12.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rayon-core-1.13.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rayon-core-1.13.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("rayon-core-v1_12_1") {
+rustc_library("rayon-core-v1_13_0") {
   crate_name = "rayon_core"
-  source_root = "//third_party/rust_crates/vendor/rayon-core-1.12.1/src/lib.rs"
-  output_name = "rayon_core-f03304964cc74a48"
+  source_root = "//third_party/rust_crates/vendor/rayon-core-1.13.0/src/lib.rs"
+  output_name = "rayon_core-5bcbd54a7e5d8e1d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18927,13 +18927,13 @@ rustc_library("rayon-core-v1_12_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f03304964cc74a48",
-    "-Cextra-filename=-f03304964cc74a48",
+    "-Cmetadata=5bcbd54a7e5d8e1d",
+    "-Cextra-filename=-5bcbd54a7e5d8e1d",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rayon-core-v1_12_1.license" ]
+  applicable_licenses = [ ":rayon-core-v1_13_0.license" ]
 }
 
 license("ref-cast-v1_0_26.license") {

@@ -2281,14 +2281,14 @@ alias(
 )
 
 alias(
-    name = "rayon-1.10.0",
-    actual = "//third_party/rust_crates/vendor/rayon-1.10.0:rayon",
+    name = "rayon-1.12.0",
+    actual = "//third_party/rust_crates/vendor/rayon-1.12.0:rayon",
     tags = ["manual"],
 )
 
 alias(
     name = "rayon",
-    actual = "//third_party/rust_crates/vendor/rayon-1.10.0:rayon",
+    actual = "//third_party/rust_crates/vendor/rayon-1.12.0:rayon",
     tags = ["manual"],
 )
 
