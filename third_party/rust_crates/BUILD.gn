@@ -2639,13 +2639,13 @@ group("unicase-2.9.0") {
 
 if (current_os == "fuchsia") {
   group("unicode-normalization") {
-    public_deps = [ ":unicode-normalization-v0_1_24" ]
+    public_deps = [ ":unicode-normalization-v0_1_25" ]
   }
 }
 
 if (current_os == "fuchsia") {
-  group("unicode-normalization-0.1.24") {
-    public_deps = [ ":unicode-normalization-v0_1_24" ]
+  group("unicode-normalization-0.1.25") {
+    public_deps = [ ":unicode-normalization-v0_1_25" ]
   }
 }
 
@@ -12460,7 +12460,7 @@ rustc_library("idna-v0_2_3") {
   deps = []
   deps += [ ":matches-v0_1_10" ]
   deps += [ ":unicode-bidi-v0_3_18" ]
-  deps += [ ":unicode-normalization-v0_1_24" ]
+  deps += [ ":unicode-normalization-v0_1_25" ]
 
   rustenv = []
 
@@ -25807,16 +25807,16 @@ rustc_library("unicode-ident-v1_0_19") {
   applicable_licenses = [ ":unicode-ident-v1_0_19.license" ]
 }
 
-license("unicode-normalization-v0_1_24.license") {
+license("unicode-normalization-v0_1_25.license") {
   public_package_name = "unicode_normalization"
-  license_files = [ "//third_party/rust_crates/vendor/unicode-normalization-0.1.24/LICENSE-APACHE" ]
+  license_files = [ "//third_party/rust_crates/vendor/unicode-normalization-0.1.25/LICENSE-APACHE" ]
 }
 
-rustc_library("unicode-normalization-v0_1_24") {
+rustc_library("unicode-normalization-v0_1_25") {
   crate_name = "unicode_normalization"
   source_root =
-      "//third_party/rust_crates/vendor/unicode-normalization-0.1.24/src/lib.rs"
-  output_name = "unicode_normalization-d1728aecffd438d7"
+      "//third_party/rust_crates/vendor/unicode-normalization-0.1.25/src/lib.rs"
+  output_name = "unicode_normalization-c55d279753f65e32"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -25829,15 +25829,15 @@ rustc_library("unicode-normalization-v0_1_24") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d1728aecffd438d7",
-    "-Cextra-filename=-d1728aecffd438d7",
+    "-Cmetadata=c55d279753f65e32",
+    "-Cextra-filename=-c55d279753f65e32",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unicode-normalization-v0_1_24.license" ]
+  applicable_licenses = [ ":unicode-normalization-v0_1_25.license" ]
 }
 
 license("unicode-segmentation-v1_13_2.license") {
