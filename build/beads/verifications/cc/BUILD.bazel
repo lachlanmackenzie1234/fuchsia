@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
@@ -20,7 +19,6 @@ fx_cc_library(
     srcs = ["src/c_lib.c"],
     hdrs = ["src/c_lib.h"],
     build_flags = [":beads_example_flags"],
-    target_compatible_with = HOST_CONSTRAINTS,
 )
 
 fx_cc_library(
@@ -28,21 +26,18 @@ fx_cc_library(
     srcs = ["src/cc_lib.cc"],
     hdrs = ["src/cc_lib.h"],
     build_flags = [":beads_example_flags"],
-    target_compatible_with = HOST_CONSTRAINTS,
 )
 
 fx_cc_library(
     name = "beads_asm_example_lib",
     srcs = ["src/asm_func.S"],
     build_flags = [":beads_example_flags"],
-    target_compatible_with = HOST_CONSTRAINTS,
 )
 
 fx_cc_binary(
     name = "beads_cc_example_bin",
     srcs = ["src/main.cc"],
     build_flags = [":beads_example_flags"],
-    target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         ":beads_asm_example_lib",
         ":beads_c_example_lib",
