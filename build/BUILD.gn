@@ -25,8 +25,8 @@ group("tests") {
     ":build_tests_json_tests($host_toolchain)",
     ":regenerator_tests($host_toolchain)",
     ":target_metadata_test($host_toolchain)",
-    ":type_check_opt_out_scripts($host_toolchain)",
     ":type_checked_scripts($host_toolchain)",
+    ":type_checked_toolchain_copy($host_toolchain)",
     "api:tests",
     "assembly:host_tests($host_toolchain)",
     "auth:tests",
@@ -34,6 +34,7 @@ group("tests") {
     "bazel/scripts:type_checked_scripts($host_toolchain)",
     "bazel_sdk:type_checked_scripts($host_toolchain)",
     "beads:tests",
+    "dist:tests",
     "fidl:tests",
     "go:tests",
     "licenses:tests",
@@ -121,6 +122,7 @@ if (is_host) {
     ]
     source_root = "//build"
     sources = [
+      "assembly/scripts/bootfs_distribution_manifest.py",
       "bazel/assembly/size_checker/verify_verbose_size_report.py",
       "bazel/bazel_idk/prebuild_info.py",
       "bazel/bazel_sdk/compare_bazel_sdks.py",
@@ -140,69 +142,20 @@ if (is_host) {
       "bazel/update-rustc-third-party/remove_incorrect_aliases.py",
       "check_product_bundles_manifest.py",
       "config/clang/generate_config_json.py",
+      "config/fuchsia/get_platform_version.py",
       "copy_tree.py",
       "cpp/binaries.py",
       "cpp/verify_pragma_once.py",
       "cpp/verify_public_headers.py",
-      "depfile_path_to_relative.py",
-      "dist/convert_fini_to_manifest.py",
-      "dist/distribution-manifest-copy.py",
-      "git/resolve_git_paths.py",
-      "git/resolve_git_revisions.py",
-      "images/updates/create-universe-package-manifests-list.py",
-      "images/updates/merge_package_manifests_list.py",
-      "images/updates/package_names_list.py",
-      "ninja_implicit_inputs/check_tool.py",
-      "ninja_implicit_inputs/ninja_implicit_inputs.py",
-      "packages/generate_package_debug_symbols_manifest.py",
-      "python/add_proto_copyright.py",
-      "python/create_c_extension_import_hook.py",
-      "python/modules/distribution_manifest/expand_and_find_conflicting_dist_entries.py",
-      "python/mypy_checker.py",
-      "python/package_python_binary.py",
-      "python/pyright_config.py",
-      "python/python_action_runner.py",
-      "rust/clippy_wrapper.py",
-      "rust/discover_rust_project.py",
-      "scripts/compare_gn.py",
-      "scripts/count_critical_actions.py",
-      "scripts/generate_target_metadata.py",
-      "sdk/compute_atom_api.py",
-      "sdk/generate_prebuild_idk/generate_prebuild_idk_validation.py",
-      "sdk/verify_final_manifest.py",
-      "subbuild.py",
-      "toolchain/get_concurrent_jobs.py",
-      "tools/json_validator/test/json_validator_valico_test_runner.py",
-      "weights/generate_weights.py",
-      "weights/merge_weights_files.py",
-      "weights/ninjalog_to_weights.py",
-    ]
-  }
-
-  # Like type_checked_scripts, but for scripts that don't type check yet. Once a
-  # script is fixed, move it to type_checked_scripts. New scripts should not be
-  # added here.
-  #
-  # TODO(b/567540542): Fix the remaining scripts and delete this target.
-  python_library("type_check_opt_out_scripts") {
-    testonly = true
-    visibility = [ ":*" ]
-    enable_mypy = false
-    source_root = "//build"
-    sources = [
-      "assembly/scripts/bootfs_distribution_manifest.py",
-
-      # Symlink to a .bzl file that's also imported as Python, so fixing it
-      # requires keeping it valid Starlark.
-      "bazel/bazel_sdk/generate_sdk_build_rules.py",
-      "config/fuchsia/get_platform_version.py",
       "dart/gen_app_invocation.py",
       "dart/gen_dart_test_invocation.py",
       "dart/group_tests.py",
       "dart/merge_deps_sources.py",
       "dart/verify_sources.py",
+      "depfile_path_to_relative.py",
+      "dist/convert_fini_to_manifest.py",
       "dist/convert_manifest_to_fini.py",
-      "dist/distribution_manifest_unittests.py",
+      "dist/distribution-manifest-copy.py",
       "drivers/assert_driver_components.py",
       "drivers/check_included_drivers.py",
       "drivers/create_driver_doc.py",
@@ -210,23 +163,44 @@ if (is_host) {
       "fidl/gen_ir_root_out.py",
       "fidl/gen_response_file.py",
       "force_clean/force_clean_if_needed.py",
+      "git/resolve_git_paths.py",
+      "git/resolve_git_revisions.py",
       "go/build.py",
       "go/gen_hermetic_inputs.py",
       "go/gen_library_metadata.py",
+      "images/updates/create-universe-package-manifests-list.py",
+      "images/updates/merge_package_manifests_list.py",
+      "images/updates/package_names_list.py",
       "info/gen_latest_commit_date.py",
-      "mac/find_sdk.py",
+      "ninja_implicit_inputs/check_tool.py",
+      "ninja_implicit_inputs/ninja_implicit_inputs.py",
       "packages/generate_package_archive_metadata.py",
+      "packages/generate_package_debug_symbols_manifest.py",
       "packages/generate_package_metadata.py",
       "packages/publish_archive.py",
+      "python/add_proto_copyright.py",
+      "python/create_c_extension_import_hook.py",
+      "python/modules/distribution_manifest/expand_and_find_conflicting_dist_entries.py",
+      "python/mypy_checker.py",
+      "python/package_python_binary.py",
+      "python/pyright_config.py",
+      "python/python_action_runner.py",
       "rust/bindgen.py",
+      "rust/clippy_wrapper.py",
+      "rust/discover_rust_project.py",
       "rust/generate_cargo.py",
       "rust/new-bindgen.py",
       "rust/rustdoc_wrapper.py",
       "rust/tests/create_rustdoc_tests.py",
+      "scripts/compare_gn.py",
       "scripts/count_build_targets.py",
+      "scripts/count_critical_actions.py",
+      "scripts/generate_target_metadata.py",
+      "sdk/compute_atom_api.py",
       "sdk/filter_host_tools_from_sdk_api.py",
-      "secondary/third_party/protobuf/gen.py",
-      "secondary/third_party/protobuf/protoc_wrapper.py",
+      "sdk/generate_prebuild_idk/generate_prebuild_idk_validation.py",
+      "sdk/verify_final_manifest.py",
+      "subbuild.py",
       "testing/boot_tests/create_efi_partition_config.py",
       "testing/boot_tests/rebase_metadata_paths.py",
       "testing/copy_unstripped_binaries.py",
@@ -234,14 +208,27 @@ if (is_host) {
       "testing/run_target_test_and_host_script.py",
       "testing/verify_files_match.py",
       "testing/verify_golden_files.py",
-      "toolchain/copy.py",
+      "toolchain/get_concurrent_jobs.py",
       "toolchain/verify-undefined-symbols.py",
       "toolchain/verify_depfile.py",
+      "tools/json_validator/test/json_validator_valico_test_runner.py",
       "tracer/hermetic_inputs_action.py",
+      "weights/generate_weights.py",
+      "weights/merge_weights_files.py",
+      "weights/ninjalog_to_weights.py",
       "zbi/run_zbi.py",
       "zircon/read_zircon_binaries.py",
       "zircon/sdk_build_id.py",
     ]
+  }
+
+  # Staged separately from type_checked_scripts because it would otherwise
+  # shadow the standard library's `copy` module for the other scripts there.
+  python_library("type_checked_toolchain_copy") {
+    testonly = true
+    visibility = [ ":*" ]
+    source_root = "//build"
+    sources = [ "toolchain/copy.py" ]
   }
 }
 

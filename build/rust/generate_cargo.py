@@ -82,8 +82,8 @@ class Project(object):
             crates.io dependencies, or None if no patches are applied.
     """
 
-    def __init__(self, project_json):
-        self.targets = project_json["targets"]
+    def __init__(self, project_json: dict[str, T.Any]) -> None:
+        self.targets: dict[str, dict[str, T.Any]] = project_json["targets"]
         self.patches_toml_block_str: str | None = None
 
     @functools.cached_property
@@ -126,6 +126,7 @@ class Project(object):
         meta: dict[str, T.Any] = self.targets[target]
         if meta["type"] in ("source_set", "group"):
             return meta["deps"]
+        return None
 
     def find_test_targets(self, source_root: str) -> list[str]:
         overlapping_targets = self.rust_targets_by_source_root.get(
@@ -139,7 +140,9 @@ class Project(object):
 
 
 def strip_toolchain(target: str) -> str:
-    return re.search("[^(]*", target)[0]
+    match = re.search("[^(]*", target)
+    assert match is not None
+    return match[0]
 
 
 def extract_toolchain(target: str) -> str | None:
@@ -269,7 +272,7 @@ def write_toml_file(
     version: str,
     api_level_cfgs: list[str],
     for_workspace: bool,
-):
+) -> None:
     editions: list[str] = [
         flag.split("=")[1]
         for flag in metadata["rustflags"]
@@ -353,7 +356,7 @@ def write_toml_file(
                     template.format(target=target, body=body, env_vars=env_vars)
                 )
 
-        extra_test_deps: set[str] = set()
+        extra_test_deps: list[str] = []
         if target_type in {"[lib]", "[[bin]]"}:
             test_targets = project.find_test_targets(metadata["crate_root"])
             # hack to filter to just matching toolchains:
@@ -421,7 +424,7 @@ def write_toml_file(
 
         dep_crate_names = set()
 
-        def write_deps(deps, dep_type):
+        def write_deps(deps: list[str], dep_type: str) -> None:
             while deps:
                 dep = deps.pop()
 
@@ -442,6 +445,7 @@ def write_toml_file(
                 # TODO remove this when all things use GN. temporary hack?
                 if "third_party/rust_crates:" in dep:
                     match = RUST_CRATES_PAT.search(dep)
+                    assert match is not None
                     crate_name, version = str(match.group(1)).rsplit("-v", 1)
                     if crate_name in dep_crate_names:
                         # Don't add the same crate twice. Can happen with many
@@ -559,7 +563,7 @@ def patches_entries_toml_block(
     )
 
 
-def main():
+def main() -> int:
     # TODO(tmandry): Remove all hardcoded paths and replace with args.
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -615,8 +619,8 @@ def main():
     for_workspace_dir.mkdir()
 
     # this will be removed eventually?
-    with open(args.cargo_toml, "rb") as f:
-        patches_toml = tomllib.load(f)
+    with open(args.cargo_toml, "rb") as cargo_toml_file:
+        patches_toml = tomllib.load(cargo_toml_file)
 
     # Create a list of patch entries:
     #  - name

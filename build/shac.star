@@ -120,9 +120,10 @@ def _build_python_type_check_coverage(ctx):
     `library_infos` and generated sources) on Python files listed in GN Python
     targets, so a script that's only referenced as an action's `script` never
     gets type checked.
-    Targets with `enable_mypy = false` also count so that the opt-out list
-    stays explicit in GN. This can't be a build-time test because discovering
-    unlisted files requires reading the source tree, which isn't hermetic.
+    Targets with `enable_mypy = false` also count so that opting out stays
+    explicit and reviewable in GN. This can't be a build-time test because
+    discovering unlisted files requires reading the source tree, which isn't
+    hermetic.
 
     Every Python file is checked, not just affected ones, because removing a
     script from a BUILD.gn file uncovers it without touching the script.
@@ -162,9 +163,9 @@ def _build_python_type_check_coverage(ctx):
                 "Python files under //build must be type checked. " +
                 "Add this file to the `sources` of a GN Python target such " +
                 "as a python_library(), python_binary(), python_host_test() " +
-                "or python_build_time_tests(). If it doesn't type check yet, " +
-                "add it to //build:type_check_opt_out_scripts instead. Sources " +
-                "must be listed as string literals in the " +
+                "or python_build_time_tests(), or to " +
+                "//build:type_checked_scripts if it isn't part of any other " +
+                "target. Sources must be listed as string literals in the " +
                 "target itself for this check to see them."
             ),
             filepath = f,

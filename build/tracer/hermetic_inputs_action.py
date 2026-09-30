@@ -40,7 +40,7 @@ def depfile_list(paths: Sequence[str]) -> str:
     return " ".join(depfile_quote(p) for p in paths)
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--hermetic-inputs-file",
