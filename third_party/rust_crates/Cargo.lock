@@ -1038,6 +1038,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "critical-section"
+version = "1.2.0"
+
+[[package]]
 name = "crossbeam"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1948,6 +1952,7 @@ dependencies = [
  "heck 0.3.1",
  "heck 0.5.0",
  "hex",
+ "hickory-proto",
  "hkdf 0.12.4",
  "hkdf 0.13.0",
  "hmac 0.12.1",
@@ -2511,6 +2516,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "hickory-proto"
+version = "0.26.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12b92608f679a6fa515dd1d15c1ff89443026e391200a2c840c7afcba482893d"
+dependencies = [
+ "data-encoding",
+ "idna 1.1.0",
+ "ipnet",
+ "jni",
+ "once_cell",
+ "rand 0.10.2",
+ "thiserror 2.0.20",
+ "tinyvec",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2927,6 +2950,10 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jni"
+version = "0.22.4"
 
 [[package]]
 name = "js-sys"
@@ -3517,6 +3544,10 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+dependencies = [
+ "critical-section",
+ "portable-atomic",
+]
 
 [[package]]
 name = "oorandom"
@@ -3975,7 +4006,7 @@ dependencies = [
 
 [[package]]
 name = "portable-atomic"
-version = "1.0.0"
+version = "1.14.0"
 
 [[package]]
 name = "portable-atomic-util"
@@ -4309,6 +4340,7 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
 dependencies = [
+ "chacha20",
  "rand_core 0.10.1",
 ]
 

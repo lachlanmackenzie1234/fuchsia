@@ -556,6 +556,7 @@ _NORMAL_DEPENDENCIES = {
             "euclid": Label("//third_party/rust_crates/vendor/euclid-0.22.14:euclid"),
             "flagset": Label("//third_party/rust_crates/vendor/flagset-0.4.7:flagset"),
             "getopts": Label("//third_party/rust_crates/vendor/getopts-0.2.24:getopts"),
+            "hickory-proto": Label("//third_party/rust_crates/vendor/hickory-proto-0.26.3:hickory_proto"),
             "hyper-rustls": Label("//third_party/rust_crates/vendor/hyper-rustls-0.27.9:hyper_rustls"),
             "mock-omaha-server": Label("//third_party/rust_crates/vendor/mock-omaha-server-0.5.0:mock_omaha_server"),
             "openat": Label("//third_party/rust_crates/vendor/openat-0.1.21:openat"),

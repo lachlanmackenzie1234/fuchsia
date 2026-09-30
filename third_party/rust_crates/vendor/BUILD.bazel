@@ -1207,6 +1207,18 @@ alias(
 )
 
 alias(
+    name = "hickory-proto-0.26.3",
+    actual = "//third_party/rust_crates/vendor/hickory-proto-0.26.3:hickory_proto",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hickory-proto",
+    actual = "//third_party/rust_crates/vendor/hickory-proto-0.26.3:hickory_proto",
+    tags = ["manual"],
+)
+
+alias(
     name = "hkdf-0.12.4",
     actual = "//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf",
     tags = ["manual"],

@@ -307,6 +307,8 @@ der-0_7_10 = { package = "der", version = "0.7.10", features = ["alloc", "derive
 euclid = { version = "0.22.14", features = [ "serde" ] }
 flagset = "0.4.7"
 getopts = "0.2"
+# TODO(https://fxbug.dev/42084779): Remove empty/critical-section and once_cell remove_features when upgrading to >= 0.26.4.
+hickory-proto = { version = "0.26.3", default-features = false }
 hyper-rustls = { version = "0.27.9", default-features = false, features = ["ring", "http1", "tls12"] }
 mock-omaha-server = "0.5.0"
 openat = "0.1.21"
@@ -423,10 +425,13 @@ cc = { path = "empty/cc" }
 cfg_aliases = { path = "empty/cfg_aliases"}
 clipboard-win = { path = "empty/clipboard-win" }
 core-foundation-sys = { path = "empty/core-foundation-sys" }
+# TODO(https://fxbug.dev/42084779): Remove when hickory-proto is upgraded to >= 0.26.4.
+critical-section = { path = "empty/critical-section" }
 crossterm_winapi = { path = "empty/crossterm_winapi" }
 dirs-next = { path = "empty/dirs-next-2.0.0" }
 hermit-abi = { path = "empty/hermit-abi" }
 iana-time-zone-haiku = { path = "empty/iana-time-zone-haiku" }
+jni = { path = "empty/jni" }
 js-sys-102 = { package = "js-sys", path = "empty/js-sys-102" }
 kqueue = { path = "empty/kqueue" }
 miow = { path = "empty/miow" }
@@ -938,6 +943,8 @@ rustflags = [
 
 [gn.package.once_cell."1.21.4"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "once_cell_visibility" }
+# TODO(https://fxbug.dev/42084779): Remove when hickory-proto is upgraded to >= 0.26.4.
+remove_features = [ "critical-section", "portable-atomic" ]
 
 [gn.package.openssl."0.10.81"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "openssl_visibility" }

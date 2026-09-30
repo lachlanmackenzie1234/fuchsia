@@ -839,6 +839,18 @@ group("hex-0.4.3") {
   public_deps = [ ":hex-v0_4_3" ]
 }
 
+if (current_os == "fuchsia") {
+  group("hickory-proto") {
+    public_deps = [ ":hickory-proto-v0_26_3" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("hickory-proto-0.26.3") {
+    public_deps = [ ":hickory-proto-v0_26_3" ]
+  }
+}
+
 group("hkdf-0.12") {
   public_deps = [ ":hkdf-v0_12_4" ]
 
@@ -6822,6 +6834,30 @@ rustc_library("criterion-plot-v0_8_2") {
   applicable_licenses = [ ":criterion-plot-v0_8_2.license" ]
 }
 
+rustc_library("critical-section-v1_2_0") {
+  crate_name = "critical_section"
+  source_root = "//third_party/rust_crates/empty/critical-section/src/lib.rs"
+  output_name = "critical_section-843d04fac961c6b6"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=843d04fac961c6b6",
+    "-Cextra-filename=-843d04fac961c6b6",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 license("crossbeam-v0_8_5.license") {
   public_package_name = "crossbeam"
   license_files = [
@@ -11245,6 +11281,51 @@ rustc_library("hex-v0_4_3") {
   applicable_licenses = [ ":hex-v0_4_3.license" ]
 }
 
+license("hickory-proto-v0_26_3.license") {
+  public_package_name = "hickory_proto"
+  license_files = [
+    "//third_party/rust_crates/vendor/hickory-proto-0.26.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hickory-proto-0.26.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("hickory-proto-v0_26_3") {
+  crate_name = "hickory_proto"
+  source_root =
+      "//third_party/rust_crates/vendor/hickory-proto-0.26.3/src/lib.rs"
+  output_name = "hickory_proto-d6d2b031d4840b65"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":data-encoding-v2_11_1" ]
+  deps += [ ":idna-v1_1_0" ]
+  deps += [ ":ipnet-v2_11_0" ]
+  deps += [ ":once_cell-v1_21_4" ]
+  deps += [ ":rand-v0_10_2" ]
+  deps += [ ":thiserror-v2_0_20" ]
+  deps += [ ":tinyvec-v1_11_0" ]
+  deps += [ ":tracing-v0_1_44" ]
+  deps += [ ":url-v2_5_8" ]
+  if (false) {
+    deps += [ ":jni-v0_22_4" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d6d2b031d4840b65",
+    "-Cextra-filename=-d6d2b031d4840b65",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":hickory-proto-v0_26_3.license" ]
+}
+
 license("hkdf-v0_12_4.license") {
   public_package_name = "hkdf"
   license_files = [
@@ -12695,6 +12776,30 @@ rustc_library("itoa-v1_0_18") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":itoa-v1_0_18.license" ]
+}
+
+rustc_library("jni-v0_22_4") {
+  crate_name = "jni"
+  source_root = "//third_party/rust_crates/empty/jni/src/lib.rs"
+  output_name = "jni-d0f73798abd606da"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d0f73798abd606da",
+    "-Cextra-filename=-d0f73798abd606da",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 rustc_library("js-sys-v0_3_102") {
@@ -15115,6 +15220,8 @@ rustc_library("once_cell-v1_21_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":critical-section-v1_2_0" ]
+  deps += [ ":portable-atomic-v1_14_0" ]
 
   rustenv = []
 
@@ -15123,9 +15230,15 @@ rustc_library("once_cell-v1_21_4") {
     "-Cmetadata=19d6320f74c3d4e8",
     "-Cextra-filename=-19d6320f74c3d4e8",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"critical-section\"",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"portable-atomic\"",
     "--cfg=feature=\"race\"",
     "--cfg=feature=\"std\"",
+  ]
+  rustflags -= [
+    "--cfg=feature=\"critical-section\"",
+    "--cfg=feature=\"portable-atomic\"",
   ]
 
   visibility = [ ":*" ]
@@ -16784,10 +16897,10 @@ rustc_library("polyval-v0_7_2") {
   applicable_licenses = [ ":polyval-v0_7_2.license" ]
 }
 
-rustc_library("portable-atomic-v1_0_0") {
+rustc_library("portable-atomic-v1_14_0") {
   crate_name = "portable_atomic"
   source_root = "//third_party/rust_crates/empty/portable-atomic/src/lib.rs"
-  output_name = "portable_atomic-80850b03723a1c03"
+  output_name = "portable_atomic-20058ae5458c444c"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -16799,8 +16912,8 @@ rustc_library("portable-atomic-v1_0_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=80850b03723a1c03",
-    "-Cextra-filename=-80850b03723a1c03",
+    "-Cmetadata=20058ae5458c444c",
+    "-Cextra-filename=-20058ae5458c444c",
     "--cfg=feature=\"std\"",
   ]
 
@@ -18957,7 +19070,7 @@ rustc_library("ringbuf-v0_5_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":portable-atomic-v1_0_0" ]
+  deps += [ ":portable-atomic-v1_14_0" ]
   deps += [ ":portable-atomic-util-v0_2_0" ]
   deps += [ ":crossbeam-utils-v0_8_23" ]
 
