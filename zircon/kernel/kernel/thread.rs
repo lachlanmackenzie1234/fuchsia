@@ -74,6 +74,10 @@ unsafe extern "C" {
     fn cpp_thread_current_is_signaled() -> bool;
     fn cpp_thread_current_check_for_restricted_kick() -> bool;
     fn cpp_thread_current_memory_allocation_state_is_enabled() -> bool;
+    fn cpp_thread_current_signal_policy_exception(
+        policy_exception_code: u32,
+        policy_exception_data: u32,
+    );
 }
 
 pub const THREAD_SIGNAL_KILL: u32 = 1 << 0;
@@ -377,10 +381,18 @@ pub struct AutoExpiringPreemptDisabler {
 }
 
 impl AutoExpiringPreemptDisabler {
+    /// Default timeslice extension duration (150us), matching C++ `AutoExpiringPreemptDisabler::kDefaultSliceExtension`.
+    pub const DEFAULT_TIMESLICE_EXTENSION: DurationMono = DurationMono::from_micros(150);
+
     /// Creates a new guard and attempts to set a timeslice extension for `duration`.
     pub fn new(duration: DurationMono) -> Self {
         let should_clear = preempt_set_timeslice_extension(duration);
         Self { should_clear, _marker: PhantomData }
+    }
+
+    /// Creates a new guard with the default timeslice extension duration.
+    pub fn with_default_timeslice_extension() -> Self {
+        Self::new(Self::DEFAULT_TIMESLICE_EXTENSION)
     }
 }
 
@@ -584,4 +596,12 @@ pub fn current_check_for_restricted_kick() -> bool {
 pub fn current_memory_allocation_state_is_enabled() -> bool {
     // SAFETY: Foreign function wrapper for Thread::Current::memory_allocation_state().IsEnabled().
     unsafe { cpp_thread_current_memory_allocation_state_is_enabled() }
+}
+
+/// Signals a policy exception on the current thread.
+pub fn signal_policy_exception(policy_exception_code: u32, policy_exception_data: u32) {
+    // SAFETY: Foreign function wrapper for Thread::Current::SignalPolicyException.
+    unsafe {
+        cpp_thread_current_signal_policy_exception(policy_exception_code, policy_exception_data)
+    }
 }
