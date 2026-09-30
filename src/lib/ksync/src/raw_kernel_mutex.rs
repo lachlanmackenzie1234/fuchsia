@@ -6,9 +6,9 @@ use crate::raw_lock::RawLock;
 use core::ffi::c_void;
 use pin_init::{PinInit, pin_data, pin_init_from_closure};
 
-#[cfg(feature = "lock_name_tracing")]
+#[cfg(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"))]
 const RAW_MUTEX_SIZE: usize = 32;
-#[cfg(not(feature = "lock_name_tracing"))]
+#[cfg(not(any(feature = "lock_name_tracing", feature = "spin_lock_tracing")))]
 const RAW_MUTEX_SIZE: usize = 24;
 
 unsafe extern "C" {
@@ -30,9 +30,9 @@ const INVALID_CPU: u32 = u32::MAX;
 
 const fn make_mutex_storage() -> [u8; RAW_MUTEX_SIZE] {
     let mut bytes = [0u8; RAW_MUTEX_SIZE];
-    #[cfg(feature = "lock_name_tracing")]
+    #[cfg(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"))]
     let offset = 8;
-    #[cfg(not(feature = "lock_name_tracing"))]
+    #[cfg(not(any(feature = "lock_name_tracing", feature = "spin_lock_tracing")))]
     let offset = 0;
 
     let magic_bytes = MUTEX_MAGIC.to_ne_bytes();
@@ -62,7 +62,7 @@ pub struct LockEntryStorage(zr::OpaqueBytes<40>);
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct RawMutex {
-    #[cfg(feature = "lock_dep")]
+    #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
     class_id: *const c_void,
     storage: RawMutexStorage,
 }
@@ -73,7 +73,7 @@ impl RawMutex {
     /// Statically initializes a RawMutex in constant context.
     pub const fn const_init(_class_id: *const c_void) -> Self {
         Self {
-            #[cfg(feature = "lock_dep")]
+            #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
             class_id: _class_id,
             storage: RawMutexStorage(zr::OpaqueBytes::new(make_mutex_storage())),
         }
@@ -163,7 +163,7 @@ impl crate::RawLock for RawMutex {
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct RawCriticalMutex {
-    #[cfg(feature = "lock_dep")]
+    #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
     class_id: *const c_void,
     storage: RawMutexStorage,
 }
@@ -174,7 +174,7 @@ impl RawCriticalMutex {
     /// Statically initializes a RawCriticalMutex in constant context.
     pub const fn const_init(_class_id: *const c_void) -> Self {
         Self {
-            #[cfg(feature = "lock_dep")]
+            #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
             class_id: _class_id,
             storage: RawMutexStorage(zr::OpaqueBytes::new(make_mutex_storage())),
         }
@@ -263,10 +263,12 @@ impl crate::RawLock for RawCriticalMutex {
 }
 
 const _: () = {
-    #[cfg(feature = "lock_dep")]
-    const EXPECTED_SIZE: usize = if cfg!(feature = "lock_name_tracing") { 40 } else { 32 };
-    #[cfg(not(feature = "lock_dep"))]
-    const EXPECTED_SIZE: usize = if cfg!(feature = "lock_name_tracing") { 32 } else { 24 };
+    const HAS_NAME_STORAGE: bool =
+        cfg!(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"));
+    #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
+    const EXPECTED_SIZE: usize = if HAS_NAME_STORAGE { 40 } else { 32 };
+    #[cfg(not(any(feature = "lock_dep", feature = "lock_metadata_only")))]
+    const EXPECTED_SIZE: usize = if HAS_NAME_STORAGE { 32 } else { 24 };
 
     assert!(core::mem::size_of::<RawMutex>() == EXPECTED_SIZE);
     assert!(core::mem::align_of::<RawMutex>() == 8);

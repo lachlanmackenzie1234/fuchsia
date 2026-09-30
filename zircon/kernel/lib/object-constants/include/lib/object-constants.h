@@ -14,8 +14,15 @@
 // These values must match the exact size and alignment of their corresponding Rust structs,
 // which is enforced by static_asserts in both Rust and C++.
 
+#if defined(WITH_LOCK_DEP) || \
+    (defined(LOCK_DEP_ENABLED_FEATURE_LEVEL) && LOCK_DEP_ENABLED_FEATURE_LEVEL >= 1)
+constexpr size_t kLockClassIdSize = 8;
+#else
+constexpr size_t kLockClassIdSize = 0;
+#endif
+
 // Size, alignment, and offset for BusTransactionInitiatorDispatcherState.
-constexpr size_t kBusTransactionInitiatorDispatcherStateSize = 56;
+constexpr size_t kBusTransactionInitiatorDispatcherStateSize = 56 + kLockClassIdSize;
 constexpr size_t kBusTransactionInitiatorDispatcherStateAlign = 8;
 constexpr size_t kBusTransactionInitiatorDispatcherStateOffset = 48;
 
@@ -64,7 +71,7 @@ constexpr size_t kIoBufferSharedRegionDispatcherStateAlign = 8;
 constexpr size_t kIoBufferSharedRegionDispatcherStateOffset = 48;
 
 // Size, alignment, and offset for IommuDispatcherState.
-constexpr size_t kIommuDispatcherStateSize = 48;
+constexpr size_t kIommuDispatcherStateSize = 48 + kLockClassIdSize;
 constexpr size_t kIommuDispatcherStateAlign = 8;
 constexpr size_t kIommuDispatcherStateOffset = 48;
 
@@ -83,12 +90,12 @@ constexpr size_t kDlogReaderStorageSize = 48;
 constexpr size_t kDlogReaderStorageAlign = 8;
 
 // Size, alignment, and offset for PinnedMemoryTokenDispatcherState.
-constexpr size_t kPinnedMemoryTokenDispatcherStateSize = 56;
+constexpr size_t kPinnedMemoryTokenDispatcherStateSize = 56 + kLockClassIdSize;
 constexpr size_t kPinnedMemoryTokenDispatcherStateAlign = 8;
 constexpr size_t kPinnedMemoryTokenDispatcherStateOffset = 48;
 
 // Size, alignment, and offset for ProfileDispatcherState.
-constexpr size_t kProfileDispatcherStateSize = 96;
+constexpr size_t kProfileDispatcherStateSize = 96 + kLockClassIdSize;
 constexpr size_t kProfileDispatcherStateAlign = 8;
 constexpr size_t kProfileDispatcherStateOffset = 48;
 
@@ -166,7 +173,7 @@ constexpr size_t kOwnedWaitQueueSize = 88;
 constexpr size_t kOwnedWaitQueueAlign = 8;
 
 // Size, alignment, and offset for ResourceDispatcherState.
-constexpr size_t kResourceDispatcherStateSize = 128;
+constexpr size_t kResourceDispatcherStateSize = 128 + kLockClassIdSize;
 constexpr size_t kResourceDispatcherStateAlign = 8;
 constexpr size_t kResourceDispatcherStateOffset = 48;
 

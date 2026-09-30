@@ -136,7 +136,11 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
     }
 
     const fn class_id() -> *const core::ffi::c_void {
-        if cfg!(feature = "lock_dep") { Class::ID } else { core::ptr::null() }
+        if cfg!(any(feature = "lock_dep", feature = "lock_metadata_only")) {
+            Class::ID
+        } else {
+            core::ptr::null()
+        }
     }
 }
 
