@@ -1022,25 +1022,41 @@ impl FileOps for MagmaFile {
                     {
                         match self.get_semaphore(starnix_items[i].semaphore_or_handle) {
                             Ok(semaphore) => {
-                                magma_items[i].condition = 0; // magma_poll must ignore this item
-
-                                // Store the number of expanded semaphores to be signaled
                                 let handles_ref = &semaphore.handles;
-                                let child_count = handles_ref.len() as u32;
-                                magma_items[i].unused = child_count;
+                                if handles_ref.len() == 1 {
+                                    // Fast path: replace item in-place when we only have a
+                                    // single handle to notify.
+                                    // Hits `magma_poll`'s `WaitNoReset` (`zx_object_wait_one`)
+                                    // fast path without creating a Zircon port or allocating
+                                    // `child_semaphore_items`.
+                                    magma_items[i] = StarnixPollItem {
+                                        semaphore_or_handle: handles_ref[0],
+                                        type_: MAGMA_POLL_TYPE_SEMAPHORE,
+                                        condition: MAGMA_POLL_CONDITION_SIGNALED,
+                                        result: 0,
+                                        unused: 0,
+                                    }
+                                    .as_poll_item();
+                                } else {
+                                    magma_items[i].condition = 0; // magma_poll must ignore this item
 
-                                for handle in handles_ref {
-                                    child_semaphore_items.push(
-                                        StarnixPollItem {
-                                            semaphore_or_handle: *handle,
-                                            type_: MAGMA_POLL_TYPE_SEMAPHORE,
-                                            condition: MAGMA_POLL_CONDITION_SIGNALED,
-                                            result: 0,
-                                            // Points back to the parent item
-                                            unused: i as u32,
-                                        }
-                                        .as_poll_item(),
-                                    );
+                                    // Store the number of expanded semaphores to be signaled
+                                    let child_count = handles_ref.len() as u32;
+                                    magma_items[i].unused = child_count;
+
+                                    for handle in handles_ref {
+                                        child_semaphore_items.push(
+                                            StarnixPollItem {
+                                                semaphore_or_handle: *handle,
+                                                type_: MAGMA_POLL_TYPE_SEMAPHORE,
+                                                condition: MAGMA_POLL_CONDITION_SIGNALED,
+                                                result: 0,
+                                                // Points back to the parent item
+                                                unused: i as u32,
+                                            }
+                                            .as_poll_item(),
+                                        );
+                                    }
                                 }
                             }
                             Err(s) => status = s,
@@ -1092,10 +1108,22 @@ impl FileOps for MagmaFile {
                         let capped_rel_timeout_ns = std::cmp::min(rel_timeout_ns, 1_000_000_000);
 
                         status = {
-                            #[allow(clippy::undocumented_unsafe_blocks)]
+                            // SAFETY:
+                            // Obligation: `magma_poll` requires `items` to be a valid pointer to an array of
+                            // `count` `magma_poll_item` structures, which must remain exclusively accessible
+                            // and not otherwise aliased across the FFI call.
+                            // Artifact facts & Semantic premises:
+                            // - `magma_items` is a local `Vec<magma_poll_item_t>` pinned to this scope,
+                            //    containing at least `magma_items.len()` initialized elements.
+                            // - `as_mut_ptr()` provides a raw mutable pointer with provenance over the
+                            //    entire contiguous initialized allocation.
+                            // Derivation:
+                            // - The pointer `magma_items.as_mut_ptr()` and count `magma_items.len() as u32`
+                            //   exactly span the initialized elements.
+                            // Result: The pointer meets all FFI validity and bounds requirements.
                             unsafe {
                                 magma_poll(
-                                    &mut magma_items[0] as *mut magma_poll_item,
+                                    magma_items.as_mut_ptr() as *mut magma_poll_item,
                                     magma_items.len() as u32,
                                     capped_rel_timeout_ns,
                                 )
@@ -1133,9 +1161,16 @@ impl FileOps for MagmaFile {
                 magma_items.truncate(num_items);
 
                 // Convert the poll items back to a serializable version after the `magma_poll`
-                // call.
-                let starnix_items: Vec<StarnixPollItem> =
-                    magma_items.iter().map(StarnixPollItem::new).collect();
+                // call, restoring the Starnix semaphore IDs for any in-place expanded items.
+                let starnix_items: Vec<StarnixPollItem> = magma_items
+                    .iter()
+                    .zip(starnix_items.iter())
+                    .map(|(item, orig)| {
+                        let mut poll_item = StarnixPollItem::new(item);
+                        poll_item.semaphore_or_handle = orig.semaphore_or_handle;
+                        poll_item
+                    })
+                    .collect();
                 current_task.write_objects(items_ref, &starnix_items)?;
 
                 response.result_return = status as u64;
