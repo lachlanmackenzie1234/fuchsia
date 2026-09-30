@@ -156,6 +156,20 @@ generated_file("gn_build_variables_for_bazel") {
 
   # LINT.ThenChange(//src/starnix/lib/starnix_sync/build/args.gni)
 
+  # LINT.IfChange(starnix_enable_trace_and_debug_logs_in_release)
+  declaration = "//src/starnix/build/args.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "starnix_enable_trace_and_debug_logs_in_release"
+      value = starnix_enable_trace_and_debug_logs_in_release
+      type = "bool"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//src/starnix/build/args.gni:starnix_enable_trace_and_debug_logs_in_release)
+
   # LINT.IfChange
   declaration = "//src/developer/fuchsia-criterion/build/args.gni"
   import(declaration)
