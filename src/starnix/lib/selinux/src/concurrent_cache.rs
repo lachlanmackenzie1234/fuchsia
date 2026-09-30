@@ -57,7 +57,8 @@ pub struct LockFreeQueryCache<
 /// responsible for encoding and decoding these.
 ///
 /// The data will be protected by seqlock: hence, relaxed loads and stores are sufficient. However,
-/// the implementation must be safe in the presence of arbitrary torn reads.
+/// the implementation must be safe in the presence of arbitrary torn reads (`check_key` and
+/// `read_value` must handle any bit pattern, including zeros, without panicking).
 pub trait StorageStrategy<
     const INLINE_U64S: usize,
     const INLINE_U32S: usize,
