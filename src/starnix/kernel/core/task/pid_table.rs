@@ -212,16 +212,18 @@ impl<'a> PidTableGuard<'a> {
         assert_eq!(entry.task.strong_count(&scope), 0);
         if task.is_leader() {
             assert!(entry.process.is_none(&scope));
-        }
-        entry.task.update(Arc::downgrade(&task));
-
-        // If not cloning a thread, add its thread group.
-        if task.is_leader() {
             self.table.last_pid.store(task.tid.id, Ordering::Relaxed);
+            // Publish process before task so lock-free RCU readers that look up a task
+            // first (e.g. /proc/<pid> lookups) always observe its process entry populated
+            // for a leader. Readers that check process first and fall back to task (such as
+            // new_pidfd) rely on task.is_leader() to handle concurrent initialization/reaping.
             entry
                 .process
                 .update(Some(ProcessEntry::ThreadGroup(Arc::downgrade(task.thread_group()))));
+        }
+        entry.task.update(Arc::downgrade(&task));
 
+        if task.is_leader() {
             // Notify thread group changes.
             if let Some(notifier) = self.table.thread_group_notifier.as_ref(&scope) {
                 let mut tg_state = task.thread_group.write();
