@@ -15,7 +15,7 @@ pub mod graveyard;
 mod install;
 pub mod journal;
 mod key_manager;
-pub(crate) mod merge;
+pub mod merge;
 pub mod object_manager;
 pub mod object_record;
 pub mod project_id;
