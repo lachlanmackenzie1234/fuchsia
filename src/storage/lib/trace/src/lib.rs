@@ -102,13 +102,30 @@ mod tests {
         counter!("category", "name", 1, "a" => 10, "b" => 20);
     }
 
+    #[fuchsia::test]
+    fn test_id_traits() {
+        use std::collections::HashSet;
+
+        let id1 = Id::new();
+        let id2 = Id::from(42u64);
+        let id3 = id2;
+        assert_eq!(id2, id3);
+        assert!(id1 <= id2 || id2 <= id1);
+        assert!(!format!("{id1:?}").is_empty());
+
+        let mut set = HashSet::new();
+        set.insert(id2);
+        assert!(set.contains(&id3));
+    }
+
     #[cfg(not(feature = "tracing"))]
     #[fuchsia::test]
-    fn test_id_random_and_noop_backend() {
+    fn test_noop_backend() {
         use crate::__backend::ArgValue;
 
-        let id = Id::random();
-        let _raw: u64 = id.into();
+        let id = Id::new();
+        let raw: u64 = id.into();
+        assert_eq!(raw, 0);
 
         __backend::use_duration_args("category", "name");
         __backend::use_instant_args("category", "name", Scope::Process);
