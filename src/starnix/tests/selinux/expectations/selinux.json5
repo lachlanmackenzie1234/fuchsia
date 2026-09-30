@@ -47,7 +47,7 @@
                 "filesystem/069",
                 "filesystem/079",
 
-                // TODO: https://fxbug.dev/398696732
+                // See https://fxbug.dev/398696732: Starnix doesn't support the new mount API.
                 "fs_filesystem/003",
                 "fs_filesystem/004",
                 "fs_filesystem/005",
@@ -191,7 +191,7 @@
                 "mmap/036",
                 "mmap/038",
 
-                // TODO: https://fxbug.dev/319480589 - Starnix does not support dynamic kernel module loading.
+                // See https://fxbug.dev/319480589: Starnix does not support dynamic kernel module loading.
                 "module_load/*",
 
                 // TODO: https://fxbug.dev/398663319
