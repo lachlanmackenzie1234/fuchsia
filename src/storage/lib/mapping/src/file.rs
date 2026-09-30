@@ -529,6 +529,16 @@ impl<S: BlockService + ?Sized, D: DeliveryHandler> Files<S, D> {
         matches!(self.map.lock().get(&key), Some(FileEntry::Loading(_)))
     }
 
+    /// Returns `true` if `key` is currently in the loading state with at least one queued page
+    /// request.
+    #[cfg(test)]
+    pub fn has_queued_page_requests(&self, key: u64) -> bool {
+        matches!(
+            self.map.lock().get(&key),
+            Some(FileEntry::Loading(slot)) if !slot.requests.is_empty()
+        )
+    }
+
     /// Returns `true` if `key` is currently in the loaded state.
     #[cfg(test)]
     pub fn is_loaded(&self, key: u64) -> bool {
@@ -1769,6 +1779,12 @@ mod tests {
                 let _ = vmo_blob_clone.read(&mut b, 0);
             });
 
+            // Wait until the page request arrives and is queued in the loading entry before
+            // completing the metadata read.
+            while !files.has_queued_page_requests(42) {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+
             // Complete metadata block read; this will insert the file and immediately
             // drain queued page requests.
             service.wait_and_trigger_sync();
@@ -1778,7 +1794,10 @@ mod tests {
         service.wait_and_trigger_sync();
 
         // Check if page request made during metadata read was serviced!
-        assert!(!rx.commits().is_empty(), "Page request made during metadata read was dropped!");
+        assert!(
+            !rx.wait_for_commits(1).is_empty(),
+            "Page request made during metadata read was dropped!"
+        );
     }
 
     #[fuchsia::test]
@@ -1854,8 +1873,10 @@ mod tests {
             let _ = vmo_blob_clone.read(&mut b, 0);
         });
 
-        // Wait briefly to ensure page request arrives and is queued as pending mapping in `files`.
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Wait until the page request arrives and is queued as pending mapping in `files`.
+        while !files.has_queued_page_requests(42) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
 
         std::thread::scope(|s| {
             let msg = receiver.peek().unwrap();
@@ -1872,7 +1893,10 @@ mod tests {
         service.wait_and_trigger_sync();
 
         // Check if page request made before mapping command was serviced!
-        assert!(!rx.commits().is_empty(), "Page request made before mapping command was dropped!");
+        assert!(
+            !rx.wait_for_commits(1).is_empty(),
+            "Page request made before mapping command was dropped!"
+        );
     }
 
     #[fuchsia::test]
@@ -2348,7 +2372,7 @@ mod tests {
 
         // Verify that the 128 KiB readahead was split into two 64 KiB block reads (matching the
         // 64 KiB pool capacity) and both chunks were committed to the pager.
-        assert_eq!(rx.commits(), vec![(0, 65536), (65536, 65536)]);
+        assert_eq!(rx.wait_for_commits(2), vec![(0, 65536), (65536, 65536)]);
         // Verify that the full 128 KiB of blob data was copied into the page request's buffer.
         assert_eq!(rx.output(), vec![0xabu8; data_size]);
     }
