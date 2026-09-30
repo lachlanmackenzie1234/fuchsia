@@ -5,6 +5,7 @@
 """Unit and round-trip FIDL tests for driver node discovery."""
 
 import asyncio
+import os
 import unittest
 from typing import Any
 
@@ -172,13 +173,19 @@ class FidlDiscoveryTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         GlobalHandleWaker()._reset_for_testing()
         self.tasks: list[asyncio.Task[None]] = []
+        self._orig_nodename = os.environ.pop("FUCHSIA_NODENAME", None)
+        self._orig_device_addr = os.environ.pop("FUCHSIA_DEVICE_ADDR", None)
 
     async def asyncTearDown(self) -> None:
         for task in self.tasks:
             task.cancel()
+        if self._orig_nodename is not None:
+            os.environ["FUCHSIA_NODENAME"] = self._orig_nodename
+        if self._orig_device_addr is not None:
+            os.environ["FUCHSIA_DEVICE_ADDR"] = self._orig_device_addr
 
     async def test_fidl_round_trip_discovery(self) -> None:
-        context = Context()
+        context = Context(target="")
         client_chan, server_chan = context.channel_create()
 
         test_nodes = [

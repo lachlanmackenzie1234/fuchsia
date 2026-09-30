@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-from collections.abc import Sequence
-from typing import Protocol
+from collections.abc import Callable, Mapping, Sequence
+from typing import Protocol, runtime_checkable
 
 from driver_lab.models import AccessClass
 
@@ -231,6 +231,7 @@ class AuditPage:
     next_cursor: int
 
 
+@runtime_checkable
 class ProxySession(Protocol):
     """One open experiment session."""
 
@@ -251,6 +252,7 @@ class ProxySession(Protocol):
         ...
 
 
+@runtime_checkable
 class ProxyTransport(Protocol):
     """A connection to one proxy target."""
 
@@ -520,3 +522,126 @@ class _FakeSession:
                 "timestamp_ns": target._tick(),
             }
         )
+
+
+@dataclasses.dataclass(frozen=True)
+class DirectDescription:
+    """Description of a direct published-protocol target."""
+
+    node_id: str
+    protocol_name: str
+    boot_id: str
+    bound_driver_url: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class FidlCallOutcome:
+    """Outcome of a single published FIDL method call."""
+
+    method: str
+    response: Mapping[str, object]
+    timestamp_ns: int = 0
+
+
+@runtime_checkable
+class DirectSession(Protocol):
+    """An open session interacting directly with a published FIDL protocol."""
+
+    async def call_fidl(
+        self, method: str, args: Mapping[str, object] | None = None
+    ) -> FidlCallOutcome:
+        """Invokes a method on the published protocol."""
+        ...
+
+    async def close(self) -> None:
+        """Closes the direct session."""
+        ...
+
+
+@runtime_checkable
+class DirectTransport(Protocol):
+    """Transport connecting to a published protocol without the proxy driver."""
+
+    is_direct: bool = True
+
+    async def describe(self) -> DirectDescription:
+        """Describes the published target."""
+        ...
+
+    async def open_direct_session(
+        self, context: SessionContext
+    ) -> DirectSession:
+        """Opens a direct session against the published protocol."""
+        ...
+
+
+class FakeDirectTarget:
+    """In-memory direct target for testing published-protocol interactions."""
+
+    is_direct = True
+
+    def __init__(
+        self,
+        node_id: str = "example-device",
+        protocol_name: str = "fuchsia.hardware.example/Device",
+        boot_id: str = "boot-1",
+        bound_driver_url: str | None = "fuchsia-boot:///example#meta/driver.cm",
+    ) -> None:
+        self.node_id = node_id
+        self.protocol_name = protocol_name
+        self.boot_id = boot_id
+        self.bound_driver_url = bound_driver_url
+        self.handlers: dict[
+            str, Callable[[Mapping[str, object]], Mapping[str, object]]
+        ] = {}
+        self.sessions_opened = 0
+        self.fail_open = False
+        self.calls: list[tuple[str, Mapping[str, object]]] = []
+        self._clock = 1_000_000
+
+    def register_method(
+        self,
+        method: str,
+        handler: Callable[[Mapping[str, object]], Mapping[str, object]],
+    ) -> None:
+        self.handlers[method] = handler
+
+    async def describe(self) -> DirectDescription:
+        return DirectDescription(
+            node_id=self.node_id,
+            protocol_name=self.protocol_name,
+            boot_id=self.boot_id,
+            bound_driver_url=self.bound_driver_url,
+        )
+
+    async def open_direct_session(
+        self, context: SessionContext
+    ) -> DirectSession:
+        if self.fail_open:
+            raise TransportError("failed to connect to published protocol")
+        self.sessions_opened += 1
+        return _FakeDirectSession(self)
+
+
+class _FakeDirectSession:
+    def __init__(self, target: FakeDirectTarget) -> None:
+        self._target = target
+
+    async def call_fidl(
+        self, method: str, args: Mapping[str, object] | None = None
+    ) -> FidlCallOutcome:
+        args_clean = dict(args or {})
+        self._target.calls.append((method, args_clean))
+        handler = self._target.handlers.get(method)
+        if handler is None:
+            raise OperationDenied(Denial.UNKNOWN_RESOURCE)
+        res = handler(args_clean)
+        self._target._clock += 1_000
+        return FidlCallOutcome(
+            method=method,
+            response=res,
+            timestamp_ns=self._target._clock,
+        )
+
+    async def close(self) -> None:
+        pass

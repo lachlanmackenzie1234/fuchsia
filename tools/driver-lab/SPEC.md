@@ -52,11 +52,13 @@ commit.
       -- typed node enumeration, bound driver inspection, unclaimed-node
       detection over FIDL, and expected_unclaimed plan verification (7.1,
       8.3, 14.2, 15; milestones H0, H1).
+- [x] CS12 `[driver-lab] Direct mode client and published-protocol workflow`
+      -- direct-mode capability validation, typed protocol discovery,
+      protocol transactions, and target audit exclusion (7.1, 8.2, 15;
+      milestone H1).
 
 Remaining phase 1 work:
 
-- [ ] CS12 `[driver-lab] Direct mode client and published-protocol workflow`
-      (7.1, 8.2, 15; milestone H1).
 - [ ] CS13 `[driver-lab] Target ceiling policy manifests and verification`
       (9.2, 9.6, 22; milestone P1 remainder).
 - [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`

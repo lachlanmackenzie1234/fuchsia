@@ -15,6 +15,7 @@ from driver_lab.api import (
     EXIT_OPERATION,
     EXIT_PERMISSION,
     EXIT_STALE,
+    EXIT_TRANSPORT,
     EXIT_UNSUPPORTED,
     DriverLab,
 )
@@ -22,7 +23,9 @@ from driver_lab.discovery import FakeNodeDiscovery, NodeDescription
 from driver_lab.evidence import EvidenceError
 from driver_lab.models import AccessClass, Decision, ReadGrant
 from driver_lab.permissions import save_grants
+from driver_lab.plans import PlanError, validate_plan
 from driver_lab.transport import (
+    FakeDirectTarget,
     FakeProxyTarget,
     OpenRejection,
     ProxyDescription,
@@ -288,6 +291,198 @@ class RunPlanTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.exit_category, EXIT_UNSUPPORTED)
         # A direct-mode plan must never silently execute over the proxy.
         self.assertEqual(self.fake.open_attempts, 0)
+
+    async def test_direct_mode_happy_path(self) -> None:
+        fake_direct = FakeDirectTarget(
+            node_id=NODE_ID,
+            protocol_name="fuchsia.hardware.example/Device",
+            boot_id="boot-1",
+        )
+        fake_direct.register_method(
+            "GetStatus", lambda args: {"status": "ok", "code": 0}
+        )
+        direct_lab = DriverLab(
+            fake_direct,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+        )
+        plan = {
+            "schema_version": 1,
+            "run_id": "direct-run-1",
+            "case_id": "direct-status-case",
+            "target": {"selector": "lab-target", "expected_boot_id": "boot-1"},
+            "node": {"id": NODE_ID},
+            "access": {"mode": "direct"},
+            "operations": [
+                {"kind": "fidl_call", "method": "GetStatus", "args": {}}
+            ],
+        }
+        result = await direct_lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(len(result.calls), 1)
+        self.assertEqual(result.calls[0]["method"], "GetStatus")
+        self.assertEqual(
+            result.calls[0]["response"], {"status": "ok", "code": 0}
+        )
+        self.assertEqual(fake_direct.sessions_opened, 1)
+
+        manifest = self.read_manifest(result.evidence_dir)
+        self.assertEqual(
+            manifest["files"]["target-audit.jsonl"], "not_applicable"
+        )
+        self.assertEqual(
+            manifest["files"]["permission-resolution.json"], "not_applicable"
+        )
+
+        capabilities = json.loads(
+            (result.evidence_dir / "access.capabilities.json").read_text()
+        )
+        self.assertEqual(capabilities["mode"], "direct")
+        self.assertFalse(capabilities["target_policy"])
+        self.assertFalse(capabilities["target_audit"])
+
+        target_desc = json.loads(
+            (result.evidence_dir / "target.description.json").read_text()
+        )
+        self.assertEqual(target_desc["node_id"], NODE_ID)
+        self.assertEqual(
+            target_desc["protocol_name"], "fuchsia.hardware.example/Device"
+        )
+
+        ops_lines = (
+            (result.evidence_dir / "operations.jsonl").read_text().splitlines()
+        )
+        self.assertEqual(len(ops_lines), 1)
+        row = json.loads(ops_lines[0])
+        self.assertEqual(row["method"], "GetStatus")
+        self.assertEqual(row["response"], {"status": "ok", "code": 0})
+
+    async def test_direct_mode_rejects_private_mmio(self) -> None:
+        fake_direct = FakeDirectTarget()
+        direct_lab = DriverLab(
+            fake_direct,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+        )
+        plan = {
+            "schema_version": 1,
+            "run_id": "direct-run-mmio",
+            "case_id": "case-mmio",
+            "target": {"selector": "lab-target"},
+            "node": {"id": NODE_ID},
+            "access": {"mode": "direct"},
+            "operations": [
+                {"kind": "mmio_read32", "resource": "control", "offset": 0x3C}
+            ],
+        }
+        result = await direct_lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_UNSUPPORTED)
+        self.assertEqual(
+            result.failure, "direct mode does not provide private MMIO access"
+        )
+        self.assertEqual(fake_direct.sessions_opened, 0)
+
+    async def test_direct_mode_rejects_target_audit_requirement(self) -> None:
+        fake_direct = FakeDirectTarget()
+        direct_lab = DriverLab(
+            fake_direct,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+        )
+        plan = {
+            "schema_version": 1,
+            "run_id": "direct-run-audit",
+            "case_id": "case-audit",
+            "target": {"selector": "lab-target"},
+            "node": {"id": NODE_ID},
+            "access": {"mode": "direct", "requires_target_audit": True},
+            "operations": [{"kind": "fidl_call", "method": "GetStatus"}],
+        }
+        result = await direct_lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_UNSUPPORTED)
+        self.assertIn("target_audit", str(result.failure))
+        self.assertEqual(fake_direct.sessions_opened, 0)
+
+    async def test_proxy_mode_rejects_direct_transport(self) -> None:
+        fake_direct = FakeDirectTarget()
+        direct_lab = DriverLab(
+            fake_direct,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+        )
+        plan = make_plan()
+        result = await direct_lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_UNSUPPORTED)
+        self.assertEqual(
+            result.failure, "transport does not support proxy mode"
+        )
+
+    async def test_direct_mode_no_fallback_on_connection_failure(self) -> None:
+        fake_direct = FakeDirectTarget()
+        fake_direct.fail_open = True
+        direct_lab = DriverLab(
+            fake_direct,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+        )
+        plan = {
+            "schema_version": 1,
+            "run_id": "direct-fail-open",
+            "case_id": "case-fail",
+            "target": {"selector": "lab-target"},
+            "node": {"id": NODE_ID},
+            "access": {"mode": "direct"},
+            "operations": [{"kind": "fidl_call", "method": "GetStatus"}],
+        }
+        result = await direct_lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_TRANSPORT)
+        self.assertIn("direct connection failed", str(result.failure))
+        self.assertEqual(fake_direct.sessions_opened, 0)
+
+    def test_direct_mode_refuses_takeover_activation(self) -> None:
+        plan = {
+            "schema_version": 1,
+            "run_id": "direct-takeover",
+            "case_id": "case-takeover",
+            "target": {"selector": "lab-target"},
+            "node": {"id": NODE_ID},
+            "access": {"mode": "direct", "activation": "takeover"},
+            "operations": [{"kind": "fidl_call", "method": "GetStatus"}],
+        }
+        with self.assertRaises(PlanError):
+            validate_plan(plan)
+
+    async def test_typed_protocol_discovery(self) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="node-1",
+                    offers=("fuchsia.hardware.gpio/Device",),
+                ),
+                NodeDescription(
+                    moniker="node-2",
+                    offers=("fuchsia.hardware.i2c/Device",),
+                ),
+            ]
+        )
+        gpio_nodes = await discovery.find_nodes_offering(
+            "fuchsia.hardware.gpio/Device"
+        )
+        self.assertEqual(len(gpio_nodes), 1)
+        self.assertEqual(gpio_nodes[0].moniker, "node-1")
+        self.assertEqual(
+            gpio_nodes[0].offers, ("fuchsia.hardware.gpio/Device",)
+        )
 
     async def test_required_guarantee_fails_before_connection(self) -> None:
         save_grants(self.grants_path, [make_grant()])

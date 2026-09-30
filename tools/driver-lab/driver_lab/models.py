@@ -23,6 +23,7 @@ class AccessClass(enum.Enum):
     SNAPSHOT = "snapshot"
     POLL = "poll"
     WRITE = "write"
+    PROTOCOL_TRANSACTION = "protocol_transaction"
 
 
 class Decision(enum.Enum):

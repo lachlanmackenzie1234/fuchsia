@@ -37,6 +37,7 @@ class NodeSummary:
     bound_driver_url: str | None = None
     driver_host_koid: int | None = None
     properties: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+    offers: tuple[str, ...] = ()
     quarantined: bool = False
     topological_path: str | None = None
 
@@ -126,6 +127,10 @@ class NodeDiscovery(Protocol):
         """Returns all currently unclaimed nodes."""
         ...
 
+    async def find_nodes_offering(self, protocol: str) -> list[NodeSummary]:
+        """Returns all nodes offering the specified protocol or service."""
+        ...
+
 
 class FakeNodeDiscovery:
     """In-memory node discovery provider for unit tests."""
@@ -163,6 +168,7 @@ class FakeNodeDiscovery:
                         bound_driver_url=desc.bound_driver_url,
                         driver_host_koid=desc.driver_host_koid,
                         properties=desc.properties,
+                        offers=desc.offers,
                         quarantined=desc.quarantined,
                         topological_path=desc.topological_path,
                     )
@@ -175,6 +181,10 @@ class FakeNodeDiscovery:
     async def find_unclaimed(self) -> list[NodeSummary]:
         nodes = await self.list_nodes()
         return [n for n in nodes if n.is_unclaimed]
+
+    async def find_nodes_offering(self, protocol: str) -> list[NodeSummary]:
+        nodes = await self.list_nodes()
+        return [n for n in nodes if protocol in n.offers]
 
 
 class FidlNodeDiscovery:
@@ -238,6 +248,7 @@ class FidlNodeDiscovery:
                                 item, "driver_host_koid", None
                             ),
                             properties=_extract_properties(item),
+                            offers=_extract_offers(item),
                             quarantined=getattr(item, "quarantined", False)
                             or False,
                             topological_path=getattr(
@@ -317,6 +328,10 @@ class FidlNodeDiscovery:
     async def find_unclaimed(self) -> list[NodeSummary]:
         nodes = await self.list_nodes()
         return [n for n in nodes if n.is_unclaimed]
+
+    async def find_nodes_offering(self, protocol: str) -> list[NodeSummary]:
+        nodes = await self.list_nodes()
+        return [n for n in nodes if protocol in n.offers]
 
 
 def connect_discovery(

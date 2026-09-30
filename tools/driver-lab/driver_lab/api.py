@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,7 @@ from driver_lab.plans import plan_digest, validate_plan
 from driver_lab.transport import (
     STALE_REJECTIONS,
     AllowRule,
+    DirectTransport,
     OpenSessionRejected,
     OperationDenied,
     ProxyDescription,
@@ -72,6 +73,15 @@ PROXY_CAPABILITIES = {
     "mode": "proxy",
     "target_policy": True,
     "target_audit": True,
+    "target_local_timing": False,
+}
+
+# Direct mode connects to a published protocol without proxy mediation.
+# It makes no claim to private MMIO, target policy, or target audit.
+DIRECT_CAPABILITIES = {
+    "mode": "direct",
+    "target_policy": False,
+    "target_audit": False,
     "target_local_timing": False,
 }
 
@@ -123,6 +133,7 @@ class RunResult:
     evidence_dir: Path
     plan_digest: str
     reads: tuple[ReadRecord, ...] = ()
+    calls: tuple[Mapping[str, Any], ...] = ()
     failure: str | None = None
 
     @property
@@ -149,11 +160,11 @@ class _StaleResource(Exception):
 
 
 class DriverLab:
-    """Facade over one proxy target for plan-driven runs."""
+    """Facade over one target for plan-driven runs."""
 
     def __init__(
         self,
-        transport: ProxyTransport,
+        transport: ProxyTransport | DirectTransport,
         *,
         grants_path: Path,
         evidence_root: Path,
@@ -237,6 +248,87 @@ class DriverLab:
                 )
         return operations, requests
 
+    async def _run_direct(
+        self,
+        canonical: Mapping[str, Any],
+        digest: str,
+        recorder: EvidenceRecorder,
+        finish: Callable[[int, str | None], RunResult],
+        calls: list[Mapping[str, Any]],
+    ) -> RunResult:
+        recorder.mark_not_applicable("permission-resolution.json")
+        recorder.mark_not_applicable("target-audit.jsonl")
+
+        context = SessionContext(
+            run_id=canonical["run_id"],
+            case_id=canonical["case_id"],
+            plan_digest=digest,
+        )
+        try:
+            assert isinstance(self._transport, DirectTransport)
+            direct_session = await self._transport.open_direct_session(context)
+        except TransportError as error:
+            return finish(EXIT_TRANSPORT, f"direct connection failed: {error}")
+
+        exit_category = EXIT_SUCCESS
+        failure: str | None = None
+        operation_rows: list[dict[str, object]] = []
+
+        for index, op in enumerate(canonical["operations"]):
+            method = op["method"]
+            args = op.get("args", {})
+            try:
+                outcome = await direct_session.call_fidl(method, args)
+                row = {
+                    "operation": index,
+                    "kind": "fidl_call",
+                    "method": method,
+                    "args": args,
+                    "response": outcome.response,
+                    "timestamp_ns": outcome.timestamp_ns,
+                }
+                operation_rows.append(row)
+                calls.append(row)
+            except OperationDenied as error:
+                operation_rows.append(
+                    {
+                        "operation": index,
+                        "kind": "fidl_call",
+                        "method": method,
+                        "error": error.denial.value,
+                    }
+                )
+                exit_category = EXIT_OPERATION
+                failure = error.denial.value
+                break
+            except TransportError as error:
+                operation_rows.append(
+                    {
+                        "operation": index,
+                        "kind": "fidl_call",
+                        "method": method,
+                        "error": str(error),
+                    }
+                )
+                exit_category = EXIT_TRANSPORT
+                failure = f"direct FIDL call failed: {error}"
+                break
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                exit_category = EXIT_OPERATION
+                failure = "cancelled by operator"
+                break
+
+        recorder.write_jsonl("operations.jsonl", operation_rows)
+
+        try:
+            await direct_session.close()
+        except TransportError as error:
+            if failure is None:
+                exit_category = EXIT_TRANSPORT
+                failure = f"session close failed: {error}"
+
+        return finish(exit_category, failure)
+
     async def run_plan(self, plan: Mapping[str, object]) -> RunResult:
         """Runs one validated plan to a finalized evidence bundle.
 
@@ -254,6 +346,7 @@ class DriverLab:
         )
 
         reads: list[ReadRecord] = []
+        calls: list[Mapping[str, Any]] = []
 
         def finish(exit_category: int, failure: str | None) -> RunResult:
             for name in _DEFERRED_ARTIFACTS + _NOT_APPLICABLE_ARTIFACTS:
@@ -273,6 +366,7 @@ class DriverLab:
                 evidence_dir=recorder.directory,
                 plan_digest=digest,
                 reads=tuple(reads),
+                calls=tuple(calls),
                 failure=failure,
             )
 
@@ -280,22 +374,58 @@ class DriverLab:
         # connection: an unsupported mode or guarantee fails here, never
         # by silently substituting a different backend.
         access = canonical["access"]
-        recorder.write_json("access.capabilities.json", PROXY_CAPABILITIES)
-        if access["mode"] != PROXY_CAPABILITIES["mode"]:
+        requested_mode = access["mode"]
+        is_direct_transport = getattr(self._transport, "is_direct", False)
+
+        if requested_mode == "direct":
+            if not is_direct_transport:
+                return finish(
+                    EXIT_UNSUPPORTED,
+                    "transport does not support direct mode; a direct-mode plan must never silently execute over the proxy",
+                )
+            capabilities = DIRECT_CAPABILITIES
+        elif requested_mode == "proxy":
+            if is_direct_transport:
+                return finish(
+                    EXIT_UNSUPPORTED,
+                    "transport does not support proxy mode",
+                )
+            capabilities = PROXY_CAPABILITIES
+        else:
             return finish(
                 EXIT_UNSUPPORTED,
-                f"access.mode {access['mode']!r} is not implemented; only proxy mode runs",
+                f"access.mode {requested_mode!r} is not implemented",
             )
+
+        recorder.write_json("access.capabilities.json", capabilities)
+
         for flag, capability in (
             ("requires_target_policy", "target_policy"),
             ("requires_target_audit", "target_audit"),
             ("requires_target_local_timing", "target_local_timing"),
         ):
-            if access[flag] and not PROXY_CAPABILITIES[capability]:
+            if access[flag] and not capabilities[capability]:
                 return finish(
                     EXIT_UNSUPPORTED,
-                    f"plan requires {capability}, which phase 1 does not provide",
+                    f"plan requires {capability}, which {requested_mode} mode does not provide",
                 )
+
+        if requested_mode == "direct":
+            if any(
+                op["kind"] in ("mmio_read32", "mmio_snapshot32")
+                for op in canonical["operations"]
+            ):
+                return finish(
+                    EXIT_UNSUPPORTED,
+                    "direct mode does not provide private MMIO access",
+                )
+        elif requested_mode == "proxy":
+            if any(op["kind"] == "fidl_call" for op in canonical["operations"]):
+                return finish(
+                    EXIT_UNSUPPORTED,
+                    "proxy mode in phase 1 does not support fidl_call",
+                )
+
         if "expected_unclaimed" in canonical["node"]:
             if self._discovery is None:
                 # Node discovery is not configured, so the assertion cannot be
@@ -348,14 +478,25 @@ class DriverLab:
             return finish(EXIT_STALE, "expected_boot_id does not match target")
 
         expected_digest = canonical["node"].get("expected_resource_digest")
-        if (
-            expected_digest is not None
-            and expected_digest != description.resource_digest
-        ):
-            return finish(
-                EXIT_STALE, "expected_resource_digest does not match target"
+        if expected_digest is not None:
+            if requested_mode == "direct":
+                return finish(
+                    EXIT_STALE,
+                    "direct mode target has no proxy resource digest",
+                )
+            assert isinstance(description, ProxyDescription)
+            if expected_digest != description.resource_digest:
+                return finish(
+                    EXIT_STALE, "expected_resource_digest does not match target"
+                )
+
+        if requested_mode == "direct":
+            return await self._run_direct(
+                canonical, digest, recorder, finish, calls
             )
 
+        assert isinstance(description, ProxyDescription)
+        assert isinstance(self._transport, ProxyTransport)
         try:
             operations, requests = self._derive(canonical, description)
         except _StaleResource as error:

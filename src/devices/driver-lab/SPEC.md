@@ -45,11 +45,11 @@ list shows which changes precede and which follow that commit.
       //tools/driver-lab/SPEC.md).
 - [x] CS11 `[driver-lab] Host node discovery via fuchsia.driver.development`
       (in //tools/driver-lab/SPEC.md).
+- [x] CS12 `[driver-lab] Direct mode client and published-protocol workflow`
+      (in //tools/driver-lab/SPEC.md).
 
 Remaining phase 1 work:
 
-- [ ] CS12 `[driver-lab] Direct mode client and published-protocol workflow`
-      (in //tools/driver-lab/SPEC.md).
 - [ ] CS13 `[driver-lab] Target ceiling policy manifests and verification`
       (9.2, 9.6, 22; milestone P1 remainder).
 - [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`

@@ -149,6 +149,23 @@ def _validate_operation(operation: object, index: int) -> dict[str, Any]:
                 }
             )
         return {"kind": "mmio_snapshot32", "items": canonical_items}
+    if kind == "fidl_call":
+        _require_keys(operation, {"kind", "method", "args"}, what)
+        method = _require_str(operation.get("method"), f"{what}.method")
+        args = operation.get("args")
+        if args is not None and not isinstance(args, Mapping):
+            raise PlanError(f"{what}.args must be an object")
+        canonical_args: dict[str, Any] = {}
+        if isinstance(args, Mapping):
+            for k, v in args.items():
+                if not isinstance(k, str):
+                    raise PlanError(f"{what}.args keys must be strings")
+                canonical_args[k] = v
+        return {
+            "kind": "fidl_call",
+            "method": method,
+            "args": canonical_args,
+        }
     raise PlanError(f"{what}.kind is unsupported: {kind!r}")
 
 

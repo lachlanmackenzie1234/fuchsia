@@ -219,6 +219,34 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(PlanError):
             validate_plan(bad)
 
+    def test_fidl_call_operation_validates(self) -> None:
+        good = make_plan(
+            access={"mode": "direct"},
+            operations=[
+                {
+                    "kind": "fidl_call",
+                    "method": "GetStatus",
+                    "args": {"flags": 1},
+                }
+            ],
+        )
+        validated = validate_plan(good)
+        self.assertEqual(validated["operations"][0]["kind"], "fidl_call")
+        self.assertEqual(validated["operations"][0]["method"], "GetStatus")
+        self.assertEqual(validated["operations"][0]["args"], {"flags": 1})
+
+        bad_method = make_plan(operations=[{"kind": "fidl_call", "method": ""}])
+        with self.assertRaises(PlanError):
+            validate_plan(bad_method)
+
+        bad_args = make_plan(
+            operations=[
+                {"kind": "fidl_call", "method": "Foo", "args": "not-a-map"}
+            ]
+        )
+        with self.assertRaises(PlanError):
+            validate_plan(bad_args)
+
 
 if __name__ == "__main__":
     unittest.main()
