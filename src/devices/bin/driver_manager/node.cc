@@ -175,8 +175,7 @@ namespace {
 bool ShouldExcludeService(std::string_view service_name) {
   if (service_name == "fuchsia.driver.compat.Service" ||
       service_name == "fuchsia.hardware.power.PowerTokenService" ||
-      service_name == "fuchsia.hardware.interrupt.ControllerRegistryService" ||
-      service_name == "fuchsia.hardware.goldfish.ControlService") {
+      service_name == "fuchsia.hardware.interrupt.ControllerRegistryService") {
     return true;
   }
   if (service_name.find("Metadata") != std::string_view::npos) {
