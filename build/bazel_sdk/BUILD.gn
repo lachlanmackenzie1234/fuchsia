@@ -31,7 +31,17 @@ if (is_host) {
       "//build:*",
     ]
     sources = [
+      "bazel_rules_fuchsia/fuchsia/tools/licenses/classification_types.py",
+      "bazel_rules_fuchsia/fuchsia/tools/licenses/generate_licenses_classification.py",
+      "bazel_rules_fuchsia/fuchsia/tools/licenses/generate_licenses_notice.py",
+      "bazel_rules_fuchsia/fuchsia/tools/licenses/generate_licenses_review.py",
+      "bazel_rules_fuchsia/fuchsia/tools/licenses/generate_licenses_spdx.py",
+      "bazel_rules_fuchsia/fuchsia/tools/licenses/remove_license_segment.py",
+      "bazel_rules_fuchsia/fuchsia/tools/licenses/verify_licenses_collection.py",
+      "tests/fuchsia/licenses/review/review_test.py",
       "tests/scripts/bazel_test.py",
+      "tests/tools/licenses/classification_types_test.py",
+      "tests/tools/licenses/spdx_types_test.py",
       "tests/tools/package_checker.py",
     ]
   }
