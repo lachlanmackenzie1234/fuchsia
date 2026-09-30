@@ -16,7 +16,7 @@ mod vmo_rs {
         ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
         ARCH_MMU_FLAG_UNCACHED, ARCH_MMU_FLAG_UNCACHED_DEVICE,
     };
-    use crate::vm::attribution::{self, AttributionCounts};
+    use crate::vm::attribution::{AttributionCounts, FractionalBytes};
     use crate::vm::compressor::VmCompressor;
     use crate::vm::discardable_vmo_tracker::{DiscardablePageCounts, DiscardableVmoTracker};
     use crate::vm::fault;
@@ -239,7 +239,7 @@ mod vmo_rs {
         expect_true!(verify_continuous_attribution_bytes(&vmo, alloc_size));
 
         expect_true!(
-            attribution::zero() == vmo_reference.get_attributed_memory(),
+            AttributionCounts::zero() == vmo_reference.get_attributed_memory(),
             "vmo_reference attribution\n"
         );
         expect_true!(verify_continuous_attribution_bytes(&vmo_reference, alloc_size));
@@ -1390,7 +1390,7 @@ mod vmo_rs {
         // Fake user id to keep the cloning code happy.
         vmo.set_user_id(0xff);
 
-        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(vmo.get_attributed_memory() == AttributionCounts::zero());
         expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
 
         // Commit the first two pages.
@@ -1416,11 +1416,9 @@ mod vmo_rs {
                 == AttributionCounts {
                     uncompressed_bytes: 2 * PAGE_SIZE_USIZE,
                     private_uncompressed_bytes: PAGE_SIZE_USIZE,
-                    scaled_uncompressed_bytes: attribution::fractional_bytes_add(
-                        attribution::fractional_bytes_from_fraction(PAGE_SIZE, 2),
-                        attribution::fractional_bytes_from_whole(PAGE_SIZE),
-                    ),
-                    ..attribution::zero()
+                    scaled_uncompressed_bytes: FractionalBytes::from_fraction(PAGE_SIZE, 2)
+                        + FractionalBytes::from_whole(PAGE_SIZE),
+                    ..AttributionCounts::zero()
                 }
         );
         expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
@@ -1429,10 +1427,8 @@ mod vmo_rs {
             clone.get_attributed_memory()
                 == AttributionCounts {
                     uncompressed_bytes: PAGE_SIZE_USIZE,
-                    scaled_uncompressed_bytes: attribution::fractional_bytes_from_fraction(
-                        PAGE_SIZE, 2
-                    ),
-                    ..attribution::zero()
+                    scaled_uncompressed_bytes: FractionalBytes::from_fraction(PAGE_SIZE, 2),
+                    ..AttributionCounts::zero()
                 }
         );
         expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
@@ -1469,7 +1465,7 @@ mod vmo_rs {
         );
         expect_true!(verify_continuous_attribution_bytes(&vmo, 3 * PAGE_SIZE));
         expect_true!(verify_continuous_attribution_bytes(&clone, 2 * PAGE_SIZE));
-        expect_true!(slice.get_attributed_memory() == attribution::zero());
+        expect_true!(slice.get_attributed_memory() == AttributionCounts::zero());
 
         // Committing the slice's last page is a no-op (as the page is already committed).
         let status = slice.commit_range(3 * PAGE_SIZE, PAGE_SIZE);
@@ -1490,14 +1486,14 @@ mod vmo_rs {
         );
         expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
         expect_true!(verify_continuous_attribution_bytes(&clone, 2 * PAGE_SIZE));
-        expect_true!(slice.get_attributed_memory() == attribution::zero());
+        expect_true!(slice.get_attributed_memory() == AttributionCounts::zero());
 
         drop(clone);
         expect_true!(
             vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
         );
         expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
-        expect_true!(slice.get_attributed_memory() == attribution::zero());
+        expect_true!(slice.get_attributed_memory() == AttributionCounts::zero());
 
         drop(slice);
         expect_true!(
@@ -1525,7 +1521,7 @@ mod vmo_rs {
                 4 * PAGE_SIZE,
             ));
 
-            let mut expected_attribution_counts = attribution::zero();
+            let mut expected_attribution_counts = AttributionCounts::zero();
             expected_attribution_counts.uncompressed_bytes = 0;
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
@@ -1619,7 +1615,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             let status = vmo.commit_range(0, 4 * PAGE_SIZE);
@@ -1627,7 +1623,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             // Committing the same range again will be a no-op.
@@ -1636,7 +1632,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             let status = vmo.decommit_range(0, 4 * PAGE_SIZE);
@@ -1654,7 +1650,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             let status = vmo.commit_range(0, 4 * PAGE_SIZE);
@@ -1671,7 +1667,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             let status = vmo.decommit_range(0, 4 * PAGE_SIZE);
@@ -1690,7 +1686,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             let mut buf = Vector::<MaybeUninit<u8>>::new();
@@ -1711,7 +1707,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             // Write the last two pages, committing them.
@@ -1729,7 +1725,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             // Zero'ing the range will decommit pages. In the case of contiguous VMOs, we don't
@@ -1740,7 +1736,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             let status = vmo.decommit_range(0, 2 * PAGE_SIZE);
@@ -1758,7 +1754,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
 
             // Zero'ing a decommitted range (if is_ppb_enabled is true) should not commit any new
@@ -1770,7 +1766,7 @@ mod vmo_rs {
             expect_true!(vmo.get_attributed_memory() == expected_attribution_counts);
             expect_true!(verify_continuous_attribution_bytes(
                 &vmo,
-                attribution::total_bytes(&expected_attribution_counts)
+                expected_attribution_counts.total_bytes() as u64
             ));
         }
     }
@@ -1790,7 +1786,7 @@ mod vmo_rs {
         // Fake user id to keep the cloning code happy.
         vmo.set_user_id(0xff);
 
-        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(vmo.get_attributed_memory() == AttributionCounts::zero());
         expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
 
         // Create an aux VMO to transfer pages into the pager-backed vmo.
@@ -1800,7 +1796,7 @@ mod vmo_rs {
             alloc_size
         ));
 
-        expect_true!(aux_vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(aux_vmo.get_attributed_memory() == AttributionCounts::zero());
         expect_true!(verify_continuous_attribution_bytes(&aux_vmo, 0));
 
         let status = aux_vmo.commit_range(0, alloc_size);
@@ -1817,7 +1813,7 @@ mod vmo_rs {
             aux_vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0)
         );
         expect_true!(verify_continuous_attribution_bytes(&aux_vmo, PAGE_SIZE));
-        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(vmo.get_attributed_memory() == AttributionCounts::zero());
         expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
 
         let status = vmo.supply_pages(0, PAGE_SIZE, page_list.as_mut(), SupplyOptions::PagerSupply);
@@ -1843,7 +1839,7 @@ mod vmo_rs {
 
         expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
         expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
-        expect_true!(clone.get_attributed_memory() == attribution::zero());
+        expect_true!(clone.get_attributed_memory() == AttributionCounts::zero());
         expect_true!(verify_continuous_attribution_bytes(&clone, 0));
 
         let status = clone.commit_range(0, PAGE_SIZE);
@@ -1869,7 +1865,7 @@ mod vmo_rs {
 
         let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
 
-        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(vmo.get_attributed_memory() == AttributionCounts::zero());
         expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
 
         assert_ok!(vmo.commit_range(0, 2 * PAGE_SIZE));
@@ -1889,7 +1885,7 @@ mod vmo_rs {
         // Dedupe the second page.
         let (page, _pa) = unwrap_ok!(vmo.get_page_blocking(PAGE_SIZE, 0));
         assert_true!(cow.dedup_zero_page(page, PAGE_SIZE));
-        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(vmo.get_attributed_memory() == AttributionCounts::zero());
         expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
 
         // Commit the range again.
@@ -2339,7 +2335,7 @@ mod vmo_rs {
         // Eviction should succeed if we ignore the hint.
         // SAFETY: It is sound to reclaim `page` at offset 0.
         assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::IgnoreHint) }, 1);
-        expect_true!(attribution::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
 
         // Reset the vmo and retry some of the same actions as before, this time dirtying
         // the page *after* hinting.
@@ -2705,7 +2701,7 @@ mod vmo_rs {
         // We should now be able to evict the page.
         // SAFETY: It is sound to reclaim `page` at offset 0.
         assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 1);
-        expect_true!(attribution::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
     }
 
     /// Tests that decommitting from a contiguous VMO fails when loaning is disabled.
@@ -2909,7 +2905,7 @@ mod vmo_rs {
         // We should be able to evict first page when told to override the hint.
         // SAFETY: `pages[0]` is attached to `vmo` at offset 0.
         assert_ge!(unsafe { reclaim(&vmo, pages[0], 0, EvictionAction::IgnoreHint) }, 1);
-        expect_true!(attribution::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
 
         // Re-supply pages.
         let mut pages = unwrap_ok!(supply_pager_vmo_pages::<2>(&vmo, 0, 2));
@@ -3210,7 +3206,7 @@ mod vmo_rs {
         expect_true!(verify_continuous_attribution_bytes(&vmo2, PAGE_SIZE));
         // SAFETY: `page2` is associated with `vmo2`.
         assert_true!(unsafe { evict_loaned_page(&vmo2, page2, 0) });
-        expect_true!(attribution::zero() == vmo2.get_attributed_memory());
+        expect_true!(AttributionCounts::zero() == vmo2.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&vmo2, 0));
 
         // Pinned pages should not be evictable.
@@ -3327,7 +3323,7 @@ mod vmo_rs {
         expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
         // SAFETY: It is sound to reclaim `page` at offset 0.
         assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 1);
-        expect_true!(attribution::zero() == vmo.get_attributed_memory());
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
         expect_gt!(vmo.reclamation_event_count(), 0);
 
@@ -3525,7 +3521,7 @@ mod vmo_rs {
         expect_true!(vmo.debug_get_cow_pages().unwrap().dedup_zero_page(page, 0));
 
         // No committed pages remaining.
-        expect_true!(attribution::zero() == vmo.get_attributed_memory());
+        expect_true!(AttributionCounts::zero() == vmo.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
 
         // Write to the page making it dirty.
@@ -3587,9 +3583,9 @@ mod vmo_rs {
         // not a hidden node.
         expect_true!(make_private_attribution_counts(alloc_size, 0) == vmo.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&vmo, alloc_size));
-        expect_true!(attribution::zero() == clone.get_attributed_memory());
+        expect_true!(AttributionCounts::zero() == clone.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&clone, 0));
-        expect_true!(attribution::zero() == clone2.get_attributed_memory());
+        expect_true!(AttributionCounts::zero() == clone2.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&clone2, 0));
 
         // COW page into clone & check that it is attributed.
@@ -3619,21 +3615,17 @@ mod vmo_rs {
 
         // Pages in hidden parent will be attributed to both children.
         expect_true!(
-            (attribution::AttributionCounts {
+            (AttributionCounts {
                 uncompressed_bytes: PAGE_SIZE as usize,
-                scaled_uncompressed_bytes: attribution::fractional_bytes_from_fraction(
-                    PAGE_SIZE, 2
-                ),
-                ..attribution::zero()
+                scaled_uncompressed_bytes: FractionalBytes::from_fraction(PAGE_SIZE, 2),
+                ..AttributionCounts::zero()
             }) == clone.get_attributed_memory()
         );
         expect_true!(
-            (attribution::AttributionCounts {
+            (AttributionCounts {
                 uncompressed_bytes: PAGE_SIZE as usize,
-                scaled_uncompressed_bytes: attribution::fractional_bytes_from_fraction(
-                    PAGE_SIZE, 2
-                ),
-                ..attribution::zero()
+                scaled_uncompressed_bytes: FractionalBytes::from_fraction(PAGE_SIZE, 2),
+                ..AttributionCounts::zero()
             }) == snapshot.get_attributed_memory()
         );
 
@@ -4099,17 +4091,17 @@ mod vmo_rs {
         clone2.set_user_id(0x44);
 
         // Private attribution counts 0 because pages were moved into hidden node.
-        expect_true!(attribution::total_private_bytes(&clone.get_attributed_memory()) == 0);
-        expect_true!(attribution::total_private_bytes(&clone2.get_attributed_memory()) == 0);
+        expect_true!(clone.get_attributed_memory().total_private_bytes() == 0);
+        expect_true!(clone2.get_attributed_memory().total_private_bytes() == 0);
 
         // Each clone has 2 pages of scaled bytes, as they share 4 pages.
         expect_true!(
-            attribution::total_scaled_bytes(&clone.get_attributed_memory())
-                == attribution::fractional_bytes_from_whole(2 * PAGE_SIZE)
+            clone.get_attributed_memory().total_scaled_bytes()
+                == FractionalBytes::from_whole(2 * PAGE_SIZE)
         );
         expect_true!(
-            attribution::total_scaled_bytes(&clone2.get_attributed_memory())
-                == attribution::fractional_bytes_from_whole(2 * PAGE_SIZE)
+            clone2.get_attributed_memory().total_scaled_bytes()
+                == FractionalBytes::from_whole(2 * PAGE_SIZE)
         );
 
         // Change data in aux VMO.
@@ -4125,18 +4117,16 @@ mod vmo_rs {
         debug_assert!(sl5.is_processed());
 
         // Clone2 should have the two private pages and 3 scaled pages.
+        expect_true!(clone2.get_attributed_memory().total_private_bytes() == 2 * PAGE_SIZE_USIZE);
         expect_true!(
-            attribution::total_private_bytes(&clone2.get_attributed_memory()) == 2 * PAGE_SIZE
-        );
-        expect_true!(
-            attribution::total_scaled_bytes(&clone2.get_attributed_memory())
-                == attribution::fractional_bytes_from_whole(3 * PAGE_SIZE)
+            clone2.get_attributed_memory().total_scaled_bytes()
+                == FractionalBytes::from_whole(3 * PAGE_SIZE)
         );
 
         // Clone should now have 3 scaled pages as two are no longer seen by clone2.
         expect_true!(
-            attribution::total_scaled_bytes(&clone.get_attributed_memory())
-                == attribution::fractional_bytes_from_whole(3 * PAGE_SIZE)
+            clone.get_attributed_memory().total_scaled_bytes()
+                == FractionalBytes::from_whole(3 * PAGE_SIZE)
         );
     }
 

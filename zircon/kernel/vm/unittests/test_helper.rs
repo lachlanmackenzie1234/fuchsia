@@ -8,7 +8,7 @@ use crate::user_copy::UserInOutPtr;
 use crate::vm::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
 };
-use crate::vm::attribution::AttributionCounts;
+use crate::vm::attribution::{AttributionCounts, FractionalBytes};
 use crate::vm::page::VmPagePtr;
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
@@ -147,19 +147,17 @@ pub fn verify_continuous_attribution_bytes(vmo: &VmObject, expected_bytes: u64) 
     unsafe { bindings::cpp_verify_continuous_attribution_bytes(vmo.as_raw(), expected_bytes) }
 }
 
-/// Helper function that produces a filled out AttributionCounts for testing.
+/// Helper function that produces a filled out AttributionCounts for testing simple VMOs that just
+/// have private and no shared content.
 pub fn make_private_attribution_counts(uncompressed: u64, compressed: u64) -> AttributionCounts {
-    let mut counts = core::mem::MaybeUninit::uninit();
-    // SAFETY: `counts.as_mut_ptr()` is valid for writing AttributionCounts.
-    unsafe {
-        bindings::cpp_make_private_attribution_counts(
-            uncompressed,
-            compressed,
-            counts.as_mut_ptr(),
-        );
+    AttributionCounts {
+        uncompressed_bytes: uncompressed as usize,
+        compressed_bytes: compressed as usize,
+        private_uncompressed_bytes: uncompressed as usize,
+        private_compressed_bytes: compressed as usize,
+        scaled_uncompressed_bytes: FractionalBytes::from_whole(uncompressed),
+        scaled_compressed_bytes: FractionalBytes::from_whole(compressed),
     }
-    // SAFETY: `cpp_make_private_attribution_counts` certainly wrote out the attribution counts.
-    unsafe { counts.assume_init() }
 }
 
 /// Changes `vmo`'s high priority count by `delta`, taking care of the prepare and locking steps

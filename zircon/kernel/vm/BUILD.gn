@@ -18,7 +18,6 @@ source_set("vm") {
     "anonymous_page_request.cc",
     "anonymous_page_request_ffi.cc",
     "arch_vm_aspace_ffi.cc",
-    "attribution_ffi.cc",
     "compression.cc",
     "compression_ffi.cc",
     "compressor.cc",
@@ -760,31 +759,29 @@ kernel_bindgen_crate("vm-address-region-bindings") {
 
 kernel_bindgen_crate("attribution-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/attribution_ffi.h" ]
+  headers = [ "include/vm/attribution.h" ]
   non_rust_deps = [ ":vm" ]
   output_name = "attribution_bindings.rs"
   cpp = true
 
   edition = "2024"
   notice_year = 2026
-  function_allowlist = [
-    "cpp_attribution_counts_zero",
-    "cpp_fractional_bytes_add",
-    "cpp_fractional_bytes_from_fraction",
-    "cpp_fractional_bytes_from_whole",
-  ]
   type_allowlist = [
     "vm::AttributionCounts",
     "vm::FractionalBytes",
   ]
+  opaque_types = [ "vm::FractionalBytes" ]
   additional_bindgen_flags = [
-    "--opaque-type=vm::FractionalBytes",
     "--with-derive-partialeq",
     "--with-derive-eq",
     "--no-recursive-allowlist",
   ]
+  var_allowlist = [ "vm::FractionalBytes_kOneByteValue" ]
   raw_lines = [ "#![no_std]" ]
-  expect_lints = [ "non_camel_case_types" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
 }
 
 kernel_bindgen_crate("anonymous-page-request-bindings") {
@@ -1451,14 +1448,12 @@ kernel_bindgen_crate("test-helper-bindings") {
 
   raw_lines = [
     "#![no_std]",
-    "use attribution_bindings::vm_AttributionCounts;",
     "use page_bindings::vm_page_t;",
     "use vm_object_bindings::VmObject;",
     "use vm_object_paged_bindings::VmObjectPaged;",
     "use zx_types::zx_status_t;",
   ]
   deps = [
-    ":attribution-bindings",
     ":page-bindings",
     ":vm-object-bindings",
     ":vm-object-paged-bindings",
