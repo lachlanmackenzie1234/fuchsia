@@ -908,8 +908,15 @@ void Dwc2::SoftDisconnect() {
 // being, the recovery logic involves a soft port disconnect and controller reset. This appears to
 // the host as a unplug-replug event.
 void Dwc2::HandleEp0TimeoutRecovery() {
-  std::lock_guard<std::mutex> _(lock_);
+  // SetConnected(false) must be called without holding lock_.
+  // The lock hierarchy (dwc2.h) requires that endpoint locks are acquired before lock_.
+  // SetConnected(false) notifies the DCI interface (which causes function drivers like
+  // usb-cdc-function to cancel endpoints, acquiring ep->lock then lock_) and completes
+  // pending endpoint requests under ep->lock. Calling SetConnected(false) outside lock_
+  // prevents an AB-BA deadlock.
   SetConnected(false);
+
+  std::lock_guard<std::mutex> _(lock_);
   SoftDisconnect();
   ep0_state_ = Ep0State::DISCONNECTED;
   zx::nanosleep(zx::deadline_after(zx::msec(50)));
@@ -1079,7 +1086,7 @@ zx::result<> Dwc2::InitController() {
 }
 
 void Dwc2::SetConnected(bool connected) {
-  if (connected == connected_) {
+  if (connected_.exchange(connected) == connected) {
     return;
   }
 
@@ -1128,8 +1135,6 @@ void Dwc2::SetConnected(bool connected) {
       }
     }
   }
-
-  connected_ = connected;
 }
 
 zx_status_t Dwc2::Init(fdf::DriverContext& context, const dwc2_config::Config& config) {
@@ -1454,8 +1459,10 @@ void Dwc2::StartController(StartControllerCompleter::Sync& completer) {
 }
 
 void Dwc2::StopController(StopControllerCompleter::Sync& completer) {
-  std::lock_guard<std::mutex> _(lock_);
+  // SetConnected(false) must be called outside lock_ to preserve the endpoint lock hierarchy.
   SetConnected(false);
+
+  std::lock_guard<std::mutex> _(lock_);
   SoftDisconnect();
   ep0_state_ = Ep0State::DISCONNECTED;
   zx::nanosleep(zx::deadline_after(zx::msec(50)));

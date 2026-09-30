@@ -23,6 +23,7 @@
 #include <lib/zx/result.h>
 #include <threads.h>
 
+#include <atomic>
 #include <memory>
 #include <queue>
 #include <utility>
@@ -257,7 +258,7 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
   zx::interrupt irq_;
 
   fuchsia_hardware_usb_dwc2::Metadata metadata_;
-  bool connected_ = false;
+  std::atomic<bool> connected_ = false;
   bool configured_ = false;
   // The length of the last IN-data sent to the host.
   uint32_t last_transmission_len_;
