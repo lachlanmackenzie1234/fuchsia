@@ -5,14 +5,17 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher_ffi::{
-    cpp_dispatcher_add_observer, cpp_dispatcher_clear_signals, cpp_dispatcher_current_handle_count,
-    cpp_dispatcher_get_name, cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid,
-    cpp_dispatcher_get_type, cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle,
-    cpp_dispatcher_remove_observer, cpp_dispatcher_set_name, cpp_dispatcher_signals_state_locked,
-    cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
+    cpp_dispatcher_add_observer, cpp_dispatcher_cancel, cpp_dispatcher_clear_signals,
+    cpp_dispatcher_current_handle_count, cpp_dispatcher_get_name, cpp_dispatcher_get_ref_counted,
+    cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type, cpp_dispatcher_is_waitable,
+    cpp_dispatcher_notify_observers_locked, cpp_dispatcher_on_zero_handles,
+    cpp_dispatcher_raise_signals_locked, cpp_dispatcher_recycle, cpp_dispatcher_remove_observer,
+    cpp_dispatcher_set_name, cpp_dispatcher_signals_state_locked, cpp_dispatcher_update_state,
+    cpp_dispatcher_update_state_locked,
 };
-use super::handle::HandleValue;
+use super::handle::{HandleRef, HandleValue};
 use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
+use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use fbl::{Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
@@ -85,6 +88,32 @@ pub trait DispatcherOps {
                 set_mask,
                 strobe_mask,
             );
+        }
+    }
+
+    #[inline]
+    fn raise_signals_locked(
+        &self,
+        _token: &LockToken<'_, Self::LockClass>,
+        signals: zx_types::zx_signals_t,
+    ) -> zx_types::zx_signals_t {
+        // SAFETY: self.dispatcher() is valid, and the proof token guarantees the state lock is
+        // held.
+        unsafe { cpp_dispatcher_raise_signals_locked(self.dispatcher(), signals) }
+    }
+
+    #[inline]
+    fn notify_observers_locked_with_queue(
+        &self,
+        _token: &LockToken<'_, Self::LockClass>,
+        signals: zx_types::zx_signals_t,
+        queue_to_own: Option<&OwnedWaitQueue>,
+    ) {
+        let queue_ptr = queue_to_own.map_or(core::ptr::null_mut(), OwnedWaitQueue::as_ptr);
+        // SAFETY: self.dispatcher() is valid, queue_ptr is null or a valid OwnedWaitQueue, and
+        // the proof token guarantees the state lock is held.
+        unsafe {
+            cpp_dispatcher_notify_observers_locked(self.dispatcher(), signals, queue_ptr);
         }
     }
 
@@ -526,6 +555,22 @@ impl Dispatcher {
     pub fn current_handle_count(&self) -> u32 {
         // SAFETY: self is a valid Dispatcher reference.
         unsafe { cpp_dispatcher_current_handle_count(self) }
+    }
+
+    /// Returns whether this dispatcher supports waiting on signals.
+    #[inline]
+    pub fn is_waitable(&self) -> bool {
+        // SAFETY: self is a valid Dispatcher reference.
+        unsafe { cpp_dispatcher_is_waitable(self) }
+    }
+
+    /// Cancels observers waiting on `handle` for this dispatcher.
+    ///
+    /// May only be called when `self.is_waitable()` is true.
+    #[inline]
+    pub fn cancel(&self, handle: HandleRef<'_>) {
+        // SAFETY: self is a valid Dispatcher reference and handle is a valid HandleRef.
+        unsafe { cpp_dispatcher_cancel(self, handle.as_ptr()) }
     }
 
     /// Returns the basic handle information for this dispatcher.
