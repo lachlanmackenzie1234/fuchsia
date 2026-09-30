@@ -45,10 +45,13 @@ impl PidEntry {
         let process = self.process.read()?;
         match &*process {
             ProcessEntry::ThreadGroup(thread_group) => {
-                let thread_group = thread_group
-                    .upgrade()
-                    .expect("ThreadGroup was released, but not removed from PidTable");
-                Some(ProcessEntryRef::Process(thread_group))
+                // Because `self.process` is read lock-free under RCU, the process may concurrently
+                // transition to a zombie in `ThreadGroup::remove()` and drop its last strong
+                // `Arc<ThreadGroup>` reference before `upgrade()` is called here.
+                Some(match thread_group.upgrade() {
+                    Some(thread_group) => ProcessEntryRef::Process(thread_group),
+                    None => ProcessEntryRef::Zombie,
+                })
             }
             ProcessEntry::Zombie => Some(ProcessEntryRef::Zombie),
         }
@@ -453,6 +456,18 @@ mod tests {
         // Capped at PID_MAX_LIMIT.
         assert_eq!(actual_pid_limit_with_cpus(PID_MAX_LIMIT + 1000, 1), PID_MAX_LIMIT);
         assert_eq!(actual_pid_limit_with_cpus(PID_MAX_DEFAULT, 10_000), PID_MAX_LIMIT);
+    }
+
+    #[test]
+    fn test_get_process_after_thread_group_release() {
+        // `get_process()` reads `process` lock-free under RCU, so it can observe a
+        // `ThreadGroup` entry that `kill_process()` is concurrently replacing with `Zombie`
+        // and upgrade the `Weak` only after `CurrentTask::exit()` has dropped the last
+        // strong reference. `Weak::new()` never upgrades, modelling that released state.
+        let pid = PidEntry::new_for_test(1);
+        pid.process.update(Some(ProcessEntry::ThreadGroup(Weak::new())));
+
+        assert!(matches!(pid.get_process(), Some(ProcessEntryRef::Zombie)));
     }
 
     #[::fuchsia::test]
