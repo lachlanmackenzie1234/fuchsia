@@ -467,6 +467,11 @@ bool PipelineManager::CreateFGNode(const StreamCreationData& info, const std::ve
   Dump();
 #endif
 
+  // If we just created an input node, synchronize its state with streaming_enabled_.
+  if (icself.type == NodeType::kInputStream) {
+    UpdateInputNodeStreamingState();
+  }
+
   // Return true if the configured node was an output. This indicates that the `request` channel was
   // consumed and the pipeline is complete.
   return icself.type == kOutputStream;
