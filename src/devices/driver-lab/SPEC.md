@@ -34,7 +34,7 @@ list shows which changes precede and which follow that commit.
       digests (8.3, 10.2), bounded reads and snapshots (12.1, 12.5),
       session lifecycle and leases (16), and the audit ring (18). Bind
       rules are `false` and no resources are offered.
-- [ ] CS9 `[driver-lab] Platform resource provider, bind rules,
+- [x] CS9 `[driver-lab] Platform resource provider, bind rules,
       realm tests` -- resource acquisition and local MMIO mapping
       (8.4, 15), the `PROXY_TARGET` bind library and property-gated
       binding (7.2, 7.3), driver realm tests (23.3), and the lab_root

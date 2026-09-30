@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/components.gni")
+import("//build/drivers.gni")
+
+driver_bind_rules("bind") {
+  rules = "meta/lab_root.bind"
+  bind_output = "lab_root.bindbc"
+  deps = [
+    "//src/devices/bind/fuchsia.test",
+    "//src/devices/driver-lab/bind:fuchsia.driver.lab",
+  ]
+}
+
+fuchsia_rust_driver("driver") {
+  edition = "2024"
+  output_name = "lab_root"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/fake-platform-device/rust",
+    "//sdk/rust/zx",
+    "//src/devices/driver-lab/bind:fuchsia.driver.lab_rust",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/mapped-vmo",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_driver_component("component") {
+  component_name = "lab_root"
+  manifest = "meta/lab_root.cml"
+  deps = [
+    ":bind",
+    ":driver",
+  ]
+  info = "meta/lab_root_info.json"
+}
+
+# Standalone package so the conformance workflow can register lab_root
+# ephemerally on a running engineering target.
+fuchsia_driver_package("pkg") {
+  package_name = "lab_root"
+  driver_components = [ ":component" ]
+}

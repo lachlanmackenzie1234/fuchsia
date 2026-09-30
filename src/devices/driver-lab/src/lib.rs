@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod platform_provider;
 mod server;
 
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
@@ -10,10 +11,10 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing};
-use lab_proxy_core::digest::{combined_digest, per_resource_digests, policy_digest};
+use lab_proxy_core::digest::policy_digest;
 use lab_proxy_core::executor::{ExecLimits, Executor};
 use lab_proxy_core::session::{ProxyIdentity, SessionManager};
-use log::info;
+use log::{info, warn};
 use server::{ProxyState, SharedState, ZxClock};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -42,12 +43,25 @@ impl Driver for LabProxy {
 
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
+        let node_identity = context
+            .start_args
+            .node_name
+            .clone()
+            .unwrap_or_else(|| "driver-lab.unnamed".to_string());
 
-        // No resource provider exists yet: the proxy offers no resources,
-        // so only an empty session allowlist validates and no hardware is
-        // reachable.
-        let resources = BTreeMap::new();
-        let ceiling = BTreeMap::new();
+        // Acquire whatever the bound node offers. A node without a
+        // platform device yields zero resources; a node whose MMIOs
+        // cannot all be mapped fails start rather than serving a
+        // partially acquired identity.
+        let bundle =
+            platform_provider::acquire(&context, &node_identity).await.map_err(|error| {
+                warn!("resource acquisition failed: {error}");
+                DriverError::Status(zx::Status::INTERNAL)
+            })?;
+        if let Err(error) = bundle.validate() {
+            warn!("provider bundle is inconsistent: {error:?}");
+            return Err(DriverError::Status(zx::Status::INTERNAL));
+        }
 
         // Kernel randomness is the per-boot identity source: there is no
         // kernel boot UUID, and this is the same mechanism RCS uses for
@@ -60,24 +74,21 @@ impl Driver for LabProxy {
         let boot_id: String = boot_id_bytes.iter().map(|byte| format!("{byte:02x}")).collect();
         let proxy_generation = zx::BootInstant::get().into_nanos() as u64;
 
-        // No node moniker is available until the proxy binds to a real
-        // node; the placeholder participates in digests only when
-        // resources exist, which requires the resource provider.
-        let digests = per_resource_digests("driver-lab.unbound", "none", &resources, &ceiling);
+        let digests = bundle.digests();
         let identity = ProxyIdentity {
             boot_id,
             proxy_generation,
-            resource_digest: combined_digest(digests.values().copied()).to_string(),
+            resource_digest: bundle.combined_digest().to_string(),
             // TODO: digest the generated policy manifest once policy
             // loading exists; until then this is the digest of the
-            // (empty) in-memory ceiling.
-            policy_digest: policy_digest(&ceiling).to_string(),
+            // in-memory ceiling.
+            policy_digest: policy_digest(&bundle.ceiling).to_string(),
         };
         let resource_digests: BTreeMap<u32, String> =
             digests.iter().map(|(id, digest)| (*id, digest.to_string())).collect();
-        let sessions = SessionManager::new(identity, resources, ceiling);
+        let sessions = SessionManager::new(identity, bundle.resources, bundle.ceiling);
         let executor = Executor::new(
-            BTreeMap::new(),
+            bundle.backends,
             ZxClock,
             ExecLimits { max_snapshot_items: MAX_SNAPSHOT_ITEMS },
         );

@@ -6,10 +6,12 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/rust/rustc_library.gni")
+import("//build/rust/rustc_test.gni")
 
 driver_bind_rules("bind") {
   rules = "meta/lab_proxy.bind"
   bind_output = "lab_proxy.bindbc"
+  deps = [ "bind:fuchsia.driver.lab" ]
 }
 
 # Pure-logic policy and audit code, kept free of Fuchsia dependencies so its
@@ -27,6 +29,7 @@ rustc_library("core") {
     "src/digest.rs",
     "src/executor.rs",
     "src/hardware_backend.rs",
+    "src/provider.rs",
     "src/session.rs",
   ]
   deps = [ "//third_party/rust_crates:sha2" ]
@@ -39,16 +42,21 @@ fuchsia_rust_driver("driver") {
   output_name = "lab_proxy"
   sources = [
     "src/lib.rs",
+    "src/platform_provider.rs",
     "src/server.rs",
   ]
   deps = [
     ":core",
     "fidl:fuchsia.driver.lab_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/mmio/rust:mmio",
+    "//sdk/lib/driver/platform-device/rust:pdev",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:futures",
@@ -78,10 +86,46 @@ fuchsia_unittest_package("lab_proxy-unit-test-pkg") {
   deps = [ ":driver_test" ]
 }
 
+rustc_test("realm_test") {
+  output_name = "lab_proxy_realm_test"
+  edition = "2024"
+  testonly = true
+  source_root = "tests/realm_test.rs"
+  sources = [ "tests/realm_test.rs" ]
+  deps = [
+    "fidl:fuchsia.driver.lab_rust",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-component-test",
+    "//third_party/rust_crates:anyhow",
+  ]
+}
+
+fuchsia_unittest_package("lab_proxy-realm-test-pkg") {
+  package_name = "lab_proxy-realm-test"
+  deps = [
+    ":component",
+    ":realm_test",
+    "testing:component",
+    "//src/devices/misc/drivers/test-parent",
+  ]
+
+  # Driver enumeration races can log transient errors.
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
 group("tests") {
   testonly = true
   deps = [
     ":core_test($host_toolchain)",
+    ":lab_proxy-realm-test-pkg",
     ":lab_proxy-unit-test-pkg",
   ]
 }

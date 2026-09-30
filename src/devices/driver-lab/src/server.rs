@@ -5,13 +5,14 @@
 //! FIDL server for the `fuchsia.driver.lab` wire contract, bridging the
 //! host-facing protocol to the host-testable core logic.
 
+use crate::platform_provider::MappedMmio;
 use fidl_fuchsia_driver_lab as flab;
 use fuchsia_async::ScopeHandle;
 use futures::TryStreamExt;
 use lab_proxy_core::access_policy::{AccessClass, AccessRule, Denial};
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
 use lab_proxy_core::executor::{Executor, ReadError, SnapshotError, SnapshotItem};
-use lab_proxy_core::hardware_backend::{BackendError, Clock, MmioBackend};
+use lab_proxy_core::hardware_backend::Clock;
 use lab_proxy_core::session::{OpenError, ProxyIdentity, RunContext, SessionManager, SessionMode};
 use std::sync::{Arc, Mutex};
 
@@ -30,24 +31,13 @@ impl Clock for ZxClock {
     }
 }
 
-/// Backend placeholder until the resource provider exists. No resources
-/// are offered, so no backend value can ever be constructed or invoked.
-#[derive(Debug)]
-pub enum NoBackend {}
-
-impl MmioBackend for NoBackend {
-    fn read32(&mut self, _offset: u64) -> Result<u32, BackendError> {
-        match *self {}
-    }
-}
-
 /// Shared proxy state behind one lock.
 #[derive(Debug)]
 pub struct ProxyState {
     /// Session lifecycle and per-session policy.
     pub sessions: SessionManager,
-    /// The shared read-path executor.
-    pub executor: Executor<NoBackend, ZxClock>,
+    /// The shared read-path executor over the acquired MMIO mappings.
+    pub executor: Executor<MappedMmio, ZxClock>,
     /// The instance audit ring.
     pub audit: AuditRing,
     /// Per-resource description digests, reported by `Describe` for

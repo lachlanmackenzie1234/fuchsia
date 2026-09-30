@@ -14,10 +14,10 @@ level of human code review.
 Engineering-only DFv2 driver (`lab_proxy`) providing policy-checked,
 audited hardware access for host-driven driver development. Phase 1
 offers read-only access and serves the `fuchsia.driver.lab` wire
-contract consumed by the host tooling at `//tools/driver-lab`. Bind
-rules are `false` until the resource provider and property-gated
-activation land, so the proxy never binds; no resources are offered,
-so no hardware is reachable by construction.
+contract consumed by the host tooling at `//tools/driver-lab`. The
+proxy binds only to nodes explicitly marked with the
+`fuchsia.driver.lab.PROXY_TARGET` property -- no production node carries
+it, so the proxy never binds opportunistically.
 
 Every operation is validated against the immutable target ceiling and
 the session's exact allowlist immediately before access, and every
@@ -35,8 +35,8 @@ Host-side unit tests for the policy/audit/executor core:
 $ fx test --host lab_proxy_core_lib_test
 ```
 
-Target unit tests:
+Target unit tests and driver realm tests:
 
 ```
-$ fx test lab_proxy-unit-test
+$ fx test lab_proxy-unit-test lab_proxy-realm-test
 ```
