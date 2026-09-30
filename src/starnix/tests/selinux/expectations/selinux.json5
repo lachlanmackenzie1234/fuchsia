@@ -16,9 +16,6 @@
                 "binder/001",
                 "binder/008",
 
-                // TODO: https://fxbug.dev/398652723
-                "capable_file/008",
-
                 // TODO: https://fxbug.dev/398662840
                 "cgroupfs_label/001",
                 "cgroupfs_label/002",

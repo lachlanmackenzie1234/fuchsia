@@ -1782,7 +1782,7 @@ impl FsNode {
             }
         }
 
-        if !mode.is_dir() {
+        if !mode.is_dir() && mode.contains(FileMode::ISGID | FileMode::IXGRP) {
             // https://man7.org/linux/man-pages/man7/inode.7.html says:
             //
             //   For an executable file, the set-group-ID bit causes the
@@ -1791,11 +1791,7 @@ impl FsNode {
             //
             // We need to check whether the current task has permission to create such a file.
             // See a similar check in `FsNode::chmod`.
-            let current_creds = current_task.current_creds();
-            if owner.gid != current_creds.fsgid
-                && !current_creds.is_in_group(owner.gid)
-                && !security::is_task_capable_noaudit(current_task, CAP_FOWNER)
-            {
+            if !can_retain_sgid(current_task, owner.gid) {
                 *mode &= !FileMode::ISGID;
             }
         }
@@ -1997,14 +1993,10 @@ impl FsNode {
     ) -> Result<(), Errno> {
         mount.check_readonly_filesystem()?;
         self.update_attributes(current_task, |info| {
-            let current_creds = current_task.current_creds();
-            if info.uid != current_creds.euid {
+            if info.uid != current_task.current_creds().fsuid {
                 security::check_task_capable(current_task, CAP_FOWNER)?;
-            } else if info.gid != current_creds.egid
-                && !current_creds.is_in_group(info.gid)
-                && mode.intersects(FileMode::ISGID)
-                && !security::is_task_capable_noaudit(current_task, CAP_FOWNER)
-            {
+            }
+            if mode.intersects(FileMode::ISGID) && !can_retain_sgid(current_task, info.gid) {
                 mode &= !FileMode::ISGID;
             }
             info.chmod(mode);
@@ -2548,6 +2540,18 @@ impl Releasable for FsNode {
             log_error!("Error on FsNodeOps::forget: {err:?}");
         }
     }
+}
+
+/// Returns whether the `current_task` may set (or keep) the setgid bit on a file with group `gid`.
+///
+/// This is the case if `gid` is the task's fsgid or one of its supplementary groups, or if the
+/// task has `CAP_FSETID`. Note that the egid is intentionally not considered.
+fn can_retain_sgid(current_task: &CurrentTask, gid: gid_t) -> bool {
+    let in_group = {
+        let current_creds = current_task.current_creds();
+        gid == current_creds.fsgid || current_creds.groups.contains(&gid)
+    };
+    in_group || security::check_task_capable(current_task, CAP_FSETID).is_ok()
 }
 
 fn check_access(

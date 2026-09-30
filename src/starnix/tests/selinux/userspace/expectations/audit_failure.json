@@ -4,6 +4,11 @@
         // demonstrated in this test.
         "BpfMapCreateTestSuite/BpfMapCreateTest.Create/create",
 
+        // The permission is checked correctly, but Linux adds multiple logs for the same denial.
+        "CapabilitiesTest.ChmodSgidChecksFsgid",
+        "CapabilitiesTest.ChmodSgidDifferentOwnerAndGroup",
+        "CapabilitiesTest.ChmodSgidSameOwnerDifferentGroup",
+
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
