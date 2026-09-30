@@ -143,6 +143,7 @@ if fx is None:
 bazel_dirs = [d for d in dirs if os.path.isfile(os.path.join(workdir, d, "BUILD.bazel"))]
 host_markers = re.compile(
     r"HOST_CONSTRAINTS|HOST_OS_CONSTRAINTS|_host_tool\b|with_host_unit_tests|"
+    r"\bwith_unit_tests\s*=\s*\"(?:host|both)\"|"
     r"\bhost_(?:go|rustc|py)_test\b|\bhost_test\(|\bwrap_host_rust_test\("
 )
 host_dirs = []
@@ -525,8 +526,8 @@ REMEDIATION = {
     "bazel_test_host": "A Bazel host test exported by a GN `bazel_test_suite(host_tests = ...)` fails, so it would fail "
                        "on infra too. Fix its BUILD.bazel attributes (deps, data/test_data, test_args, "
                        "lint/rustc flags) to match what GN ran on host. If GN never ran it on host, do not export "
-                       "it as a host test (a C++ device-only test becomes an `fx_test` package; a Rust test stays "
-                       "in its GN test package, since Bazel cannot run Rust tests on device yet).",
+                       "it as a host test (a device-only test, C++ or Rust, becomes an `fx_test` package; for Rust "
+                       "unit tests use `with_unit_tests = \"fuchsia\"`).",
 }
 
 findings = []

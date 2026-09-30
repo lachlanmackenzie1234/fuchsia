@@ -23,8 +23,14 @@ set -euo pipefail
 #    cc/fx_cc binary, or a GN test executable with only C/C++ sources whose deps all have a
 #    Bazel build) and uses nothing Bazel device tests cannot express yet (other test_specs than
 #    log_settings.max_severity, test_type, subpackages, data_deps, ...), or that duplicates a
-#    Bazel `fx_package`. Rust tests (Bazel cannot run them on device yet) and tests whose
-#    language is unknown never trigger it.
+#    Bazel `fx_package`. Rust device tests migrate the same way (explicit `.cml` with the Rust
+#    test runner shard, `fx_packaged_binary` of the `rustc_*` `:<name>_test` or a `rustc_test`).
+#    Tests whose language is unknown never trigger it.
+# 5. test_generated_by_bazel2gn (error): tests move to Bazel and bazel2gn does not translate
+#    them. In a dual-build package, flags a BUILD.bazel test target (`rustc_test`, `go_test`,
+#    `host_go_test`, `test_suite`, ...) or a `with_unit_tests`/`with_host_unit_tests`/`test_deps`
+#    attribute of a `rustc_*` target without `# @bazel2gn:skip`, and a generated section of
+#    BUILD.gn that contains `with_unit_tests`, `test_deps`, `rustc_test(` or `go_test(`.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -60,10 +66,8 @@ CONVERTIBLE_BAZEL_RULES = {
     "rust_binary",
     "rustc_proc_macro",
     "rust_proc_macro",
-    "rustc_test",
     "go_library",
     "go_binary",
-    "go_test",
     "py_library",
     "py_binary",
     "fidl_library",
@@ -100,11 +104,18 @@ EXCLUDED_GLOBAL_DIRS = (
     "build/config/rust/lints",
 )
 
+# Tests move to Bazel and bazel2gn does not translate them: these rules must carry
+# `# @bazel2gn:skip` in a dual-build BUILD.bazel (fx_* test rules are not convertible at all).
+BAZEL2GN_TEST_RULES = {"rustc_test", "rust_test", "go_test", "host_go_test", "fidlgentest_go_test", "test_suite"}
+RUST_UNIT_TEST_OWNERS = {"rustc_library", "rustc_binary", "rustc_proc_macro", "rust_library", "rust_binary", "rust_proc_macro"}
+UNIT_TEST_ATTRS = ("with_unit_tests", "with_host_unit_tests", "test_deps", "test_compile_data", "test_rustc_flags")
+
 # With fx_test() in the checkout, GN device test packages migrate to Bazel unless they use
 # something Bazel device tests cannot express yet.
 FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/testing/fx_test.bzl"))
 GN_TEST_PACKAGE_TEMPLATES = ("fuchsia_unittest_package", "fuchsia_test_package")
-# Only C/C++ device tests migrate: Bazel cannot run Rust unit tests on Fuchsia devices yet.
+# C/C++ and Rust device tests migrate (Rust via fx_packaged_binary of a rust_test).
+MIGRATABLE_TEST_LANGUAGES = ("cc", "rust")
 CC_TEST_BAZEL_RULES = {"fx_cc_binary", "cc_binary", "cc_test", "fx_cc_test"}
 GN_CC_TEST_TEMPLATES = {"executable", "test", "cc_test_executable"}
 CC_SOURCE_SUFFIXES = (".cc", ".cpp", ".cxx", ".c", ".h", ".hpp")
@@ -174,7 +185,15 @@ def parse_bazel_targets(bazel_path):
         binary_ref = None
         pkg_name = None
         unit_tests = False
+        unskipped_test_attrs = []
         for kw in call.keywords:
+            if kw.arg in UNIT_TEST_ATTRS and not has_skip_comment(lines, kw.lineno):
+                val = kw.value
+                empty = (isinstance(val, ast.Constant) and val.value in (None, False, "none")) or (
+                    isinstance(val, ast.List) and not val.elts
+                )
+                if not empty:
+                    unskipped_test_attrs.append((kw.arg, kw.lineno))
             if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 tname = kw.value.value
             elif kw.arg == "binary" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
@@ -182,7 +201,7 @@ def parse_bazel_targets(bazel_path):
             elif kw.arg == "package_name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                 pkg_name = kw.value.value
             elif kw.arg in ("with_unit_tests", "with_host_unit_tests") and isinstance(kw.value, ast.Constant):
-                unit_tests = unit_tests or kw.value.value is True
+                unit_tests = unit_tests or kw.value.value is True or kw.value.value in ("fuchsia", "host", "both")
         if not tname:
             continue
         start_line = node.lineno
@@ -207,8 +226,17 @@ def parse_bazel_targets(bazel_path):
             "binary_ref": binary_ref,
             "package_name": pkg_name or tname,
             "unit_tests": unit_tests,
+            "unskipped_test_attrs": unskipped_test_attrs,
         })
     return targets
+
+
+def has_skip_comment(lines, lineno):
+    """Whether the 1-based line has a trailing `# @bazel2gn:skip` or the line above is one."""
+    if 0 < lineno <= len(lines) and "#" in lines[lineno - 1]:
+        if lines[lineno - 1].split("#", 1)[1].strip() == "@bazel2gn:skip":
+            return True
+    return lineno >= 2 and lines[lineno - 2].strip() == "# @bazel2gn:skip"
 
 
 def find_closing_brace(text, open_idx):
@@ -450,6 +478,72 @@ for pkg_dir in sorted(candidate_dirs):
                         ),
                     })
 
+    if gn_info and gn_info["has_sentinel"]:
+        # Tests move to Bazel; bazel2gn must not generate any test into BUILD.gn.
+        for t in bazel_targets:
+            if t["rule"] in BAZEL2GN_TEST_RULES and t["skip_line"] is None:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "test_generated_by_bazel2gn",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": t["line"],
+                    "message": (
+                        f"Test target `{t['rule']}(name = \"{t['name']}\")` in '{bazel_rel}' has no `# @bazel2gn:skip`, "
+                        "so bazel2gn generates it into BUILD.gn. Tests move to Bazel and are not translated to GN."
+                    ),
+                    "remediation": (
+                        f"Put `# @bazel2gn:skip` directly above `{t['rule']}(name = \"{t['name']}\")`, export the test "
+                        "through a hand-written `bazel_test_suite` above the sentinel (package it with `fx_test` if it "
+                        f"runs on a device), and re-run `fx bazel2gn -d {pkg_dir}`."
+                    ),
+                })
+            if t["rule"] in RUST_UNIT_TEST_OWNERS:
+                for attr, lineno in t["unskipped_test_attrs"]:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "test_generated_by_bazel2gn",
+                        "severity": "error",
+                        "file": bazel_rel,
+                        "line": lineno,
+                        "message": (
+                            f"`{attr}` on `{t['rule']}(name = \"{t['name']}\")` in '{bazel_rel}' has no "
+                            "`# @bazel2gn:skip`, so bazel2gn generates GN unit tests. Tests move to Bazel and are "
+                            "not translated to GN."
+                        ),
+                        "remediation": (
+                            f"Put `# @bazel2gn:skip` on the line directly above `{attr} = ...` (and above every other "
+                            "test-only attribute of the target), package `:" + t["name"] + "_test` with `fx_test` "
+                            "(device) or export it as a host test, list it in a `bazel_test_suite` above the sentinel, "
+                            f"and re-run `fx bazel2gn -d {pkg_dir}`."
+                        ),
+                    })
+        post = re.sub(r"#[^\n]*", "", gn_info["post_text"])
+        for pat, what in (
+            (r"\bwith_unit_tests\s*=", "with_unit_tests"),
+            (r"\btest_deps\s*=", "test_deps"),
+            (r"^\s*rustc_test\(", "rustc_test("),
+            (r"^\s*go_test\(", "go_test("),
+        ):
+            m = re.search(pat, post, re.M)
+            if not m:
+                continue
+            findings.append({
+                "source": "migration_sanity",
+                "category": "test_generated_by_bazel2gn",
+                "severity": "error",
+                "file": gn_rel,
+                "line": gn_info["pre_text"].count("\n") + post.count("\n", 0, m.start()) + 1,
+                "message": (
+                    f"The bazel2gn-generated section of '{gn_rel}' contains `{what}`: tests move to Bazel and "
+                    "bazel2gn must not translate them."
+                ),
+                "remediation": (
+                    f"Mark the test targets and test attributes in '{bazel_rel}' with `# @bazel2gn:skip`, re-run "
+                    f"`fx bazel2gn -d {pkg_dir}`, and export the Bazel tests through `bazel_test_suite`."
+                ),
+            })
+
     if gn_info and FX_TEST_AVAILABLE:
         bazel_test_pkg_names = {t["package_name"] for t in fx_pkgs}
         bazel_rules = {t["name"]: t["rule"] for t in bazel_targets}
@@ -492,6 +586,8 @@ for pkg_dir in sorted(candidate_dirs):
                 return None
             name = label[1:]
             if name in rust_unit_tests:
+                return "rust"
+            if name.endswith("_test") and bazel_rules.get(name[: -len("_test")], "") in RUST_UNIT_TEST_OWNERS:
                 return "rust"
             rule = bazel_rules.get(name)
             if rule:
@@ -560,9 +656,11 @@ for pkg_dir in sorted(candidate_dirs):
             labels = []
             for lm in re.finditer(r"\b(?:deps|test_components)\s*\+?=\s*\[([^\]]*)\]", gbody):
                 labels += re.findall(r'"([^"]+)"', lm.group(1))
-            # Rust tests stay in GN (Bazel cannot run them on device yet); unknown means no error.
-            if blockers or not labels or any(test_language(l) != "cc" for l in labels):
+            # Unknown or unbuildable tests never trigger it.
+            langs = {test_language(l) for l in labels}
+            if blockers or not labels or not langs <= set(MIGRATABLE_TEST_LANGUAGES):
                 continue
+            is_rust = "rust" in langs
             findings.append({
                 "source": "migration_sanity",
                 "category": "gn_test_package_not_migrated",
@@ -570,15 +668,25 @@ for pkg_dir in sorted(candidate_dirs):
                 "file": gn_rel,
                 "line": gline,
                 "message": (
-                    f"GN `{gtmpl}(\"{gname}\")` in '{gn_rel}' only packages C/C++ tests Bazel can build "
+                    f"GN `{gtmpl}(\"{gname}\")` in '{gn_rel}' only packages tests Bazel can build "
                     f"({', '.join(labels)}) and uses nothing Bazel device tests cannot express, but it stays "
                     "in GN although this checkout has `//build/bazel/rules/testing:fx_test.bzl`."
                 ),
                 "remediation": (
                     f"Migrate it as in \"Migrating Tests\" of the coder instructions (like //src/developer/build_info): "
-                    f"in '{bazel_rel}' add `fx_cc_binary(testonly = True)` for the test executable, "
-                    "`fx_packaged_binary(testonly = True)`, `fx_component_manifest` with a new `meta/<component>.cml` "
-                    "(gtest runner shard + the syslog shard GN used), `fx_test_component`, "
+                    f"in '{bazel_rel}' add "
+                    + (
+                        "`with_unit_tests = \"fuchsia\"` (with `# @bazel2gn:skip`) on the `rustc_*` target or a `rustc_test`, "
+                        if is_rust
+                        else "`fx_cc_binary(testonly = True)` for the test executable, "
+                    )
+                    + "`fx_packaged_binary(testonly = True)`, `fx_component_manifest` with a new `meta/<component>.cml` "
+                    + (
+                        "(`//src/sys/test_runners/rust/default.shard.cml` + `syslog/use.shard.cml`, as GN generated), "
+                        if is_rust
+                        else "(gtest/zxtest/ELF runner shard + the syslog shard GN generated), "
+                    )
+                    + "`fx_test_component`, "
                     f"`fx_package(package_name = \"{gn_pkg_name}\", test_components = [...])` and `fx_test` (each with "
                     "`# @bazel2gn:skip` in a dual-build package); then replace the GN package and executable with "
                     f"`bazel_test_suite(\"{gname}\") {{ target_tests = [ \"//{pkg_dir}:<fx_test>\" ] }}` listed in "

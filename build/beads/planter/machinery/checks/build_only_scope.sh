@@ -19,8 +19,8 @@ set -euo pipefail
 #   - MODULE.bazel, WORKSPACE*, *.bazelrc
 #   - a newly added (not modified) test component manifest `.cml` that an
 #     `fx_component_manifest` of the nearest BUILD.bazel uses as `manifest` next to an
-#     `fx_test_component` (it replaces the manifest GN's fuchsia_unittest_package generated
-#     for a C++ test; not a Rust one, since Rust device tests stay in GN)
+#     `fx_test_component` (it replaces the manifest GN's fuchsia_unittest_package generated;
+#     Bazel does not generate test manifests, for C++ or Rust tests)
 #   - OWNERS / README.md are NOT allowed implicitly; they are not needed for migration.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
@@ -78,15 +78,10 @@ added.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 def is_new_test_manifest(path: str) -> bool:
     """A new `.cml` that an `fx_component_manifest` in the nearest BUILD.bazel uses as `manifest`
     while that BUILD.bazel defines an `fx_test_component`: it replaces the manifest that GN's
-    `fuchsia_unittest_package` generated when a C++ test package migrates to `fx_test`. A Rust
-    test manifest (rust runner shard) is not allowed: Rust device tests stay in GN."""
+    `fuchsia_unittest_package` generated when a (C++ or Rust) test package migrates to `fx_test`."""
     if path not in added or not path.endswith(".cml") or path.endswith(".shard.cml"):
         return False
-    try:
-        with open(os.path.join(workdir, path), encoding="utf-8") as f:
-            if "test_runners/rust/" in f.read():
-                return False  # Rust tests stay in GN: Bazel cannot run them on device yet.
-    except OSError:
+    if not os.path.isfile(os.path.join(workdir, path)):
         return False
     pkg = os.path.dirname(path)
     for _ in range(4):

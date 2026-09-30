@@ -17,14 +17,17 @@ set -euo pipefail
 #    any of the targets can be built successfully.
 # 3. Every Bazel test that Fuchsia test runners can run (`fx_test`, `host_rustc_test`,
 #    `host_go_test`, `host_py_test`, `host_test`, `wrap_host_rust_test`, and the
-#    `<name>_test` host test of `rustc_*(with_host_unit_tests = True)`) must be listed,
+#    `<name>_test` host test of `rustc_*(with_unit_tests = "host"|"both")` or
+#    `with_host_unit_tests = True`) must be listed,
 #    directly or through a Bazel `test_suite`, in a GN `bazel_test_suite` (`fx_test` in
 #    `target_tests`, host tests in `host_tests`) that the GN `group("tests")` of its
 #    directory (or the parent BUILD.gn) references. Otherwise it is missing from
-#    tests.json and neither `fx test` nor infra runs it. Tests that bazel2gn also
-#    generates in GN (`host_go_test`, `with_host_unit_tests`, and a `wrap_host_rust_test` of a
-#    `with_unit_tests` binary) are reached through GN as today when GN above the sentinel
-#    references them; exporting one GN already runs on host is `duplicate_host_test_export`.
+#    tests.json and neither `fx test` nor infra runs it. Tests move to Bazel and bazel2gn
+#    does not translate them, so no Bazel test is reached through a GN twin.
+# 4. Every Rust device test binary (`rustc_test`, or the `<name>_test` of
+#    `rustc_*(with_unit_tests = "fuchsia"|"both")`) must be packaged by an
+#    `fx_packaged_binary` in the same BUILD.bazel (for an `fx_test`), otherwise nothing runs
+#    it (`unpackaged_rust_device_test`).
 #    Only runs when the checkout has `build/bazel/rules/testing/fx_test.bzl` (older
 #    checkouts keep tests in GN).
 
@@ -57,8 +60,9 @@ findings = []
 
 DEVICE_TEST_RULES = {"fx_test"}
 HOST_TEST_RULES = {"host_rustc_test", "host_go_test", "host_py_test", "host_test", "wrap_host_rust_test"}
-# Host test rules that bazel2gn converts to a GN test (so GN may run them instead).
-GN_CONVERTED_HOST_TEST_RULES = {"host_go_test"}
+# Tests move to Bazel and bazel2gn does not translate them (migration_sanity enforces the
+# `# @bazel2gn:skip`), so no Bazel host test has a GN twin that runs it instead.
+GN_CONVERTED_HOST_TEST_RULES = set()
 RUST_TEST_OWNERS = {"rustc_library", "rustc_binary", "rustc_proc_macro"}
 # Checkouts without fx_test keep tests in GN (the old path): skip the export check there.
 FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/testing/fx_test.bzl"))
@@ -75,6 +79,16 @@ def bazel_strings(node):
 
 def is_true(node):
     return isinstance(node, ast.Constant) and node.value is True
+
+
+def unit_test_envs(kws):
+    """Environments (subset of {"fuchsia", "host"}) of the unit tests of a rustc_* target."""
+    if is_true(kws.get("with_host_unit_tests")):
+        return {"host"}
+    v = kws.get("with_unit_tests")
+    if isinstance(v, ast.Constant):
+        return {"fuchsia": {"fuchsia"}, "host": {"host"}, "both": {"fuchsia", "host"}}.get(v.value, set())
+    return set()
 
 
 def split_label(label, pkg):
@@ -293,12 +307,9 @@ for td in target_dirs:
             exportable.append((t_name, "target", rule_name, lineno, None))
         elif rule_name in HOST_TEST_RULES:
             twin = t_name if rule_name in GN_CONVERTED_HOST_TEST_RULES else None
-            bn = kws.get("binary_name")
-            if rule_name == "wrap_host_rust_test" and isinstance(bn, ast.Constant) and isinstance(bn.value, str):
-                twin = bn.value  # e.g. the with_unit_tests `<lib>_test`, which bazel2gn also emits in GN
             exportable.append((t_name, "host", rule_name, lineno, twin))
-        elif rule_name in RUST_TEST_OWNERS and is_true(kws.get("with_host_unit_tests")):
-            exportable.append((t_name + "_test", "host", f"{rule_name}(with_host_unit_tests)", lineno, t_name + "_test"))
+        elif rule_name in RUST_TEST_OWNERS and "host" in unit_test_envs(kws):
+            exportable.append((t_name + "_test", "host", f"{rule_name}(with_unit_tests)", lineno, None))
         elif rule_name == "test_suite":
             tests_v = kws.get("tests")
             suites[t_name] = None if tests_v is None else [
@@ -306,8 +317,33 @@ for td in target_dirs:
             ]
         if not manual and (rule_name in DEVICE_TEST_RULES | HOST_TEST_RULES or rule_name.endswith("_test")):
             all_tests.append(t_name)
-        if rule_name in RUST_TEST_OWNERS and is_true(kws.get("with_host_unit_tests")):
+        if rule_name in RUST_TEST_OWNERS and "host" in unit_test_envs(kws):
             all_tests.append(t_name + "_test")
+        if rule_name == "rustc_test" or (rule_name in RUST_TEST_OWNERS and "fuchsia" in unit_test_envs(kws)):
+            device_bin = t_name if rule_name == "rustc_test" else t_name + "_test"
+            if FX_TEST_AVAILABLE and not re.search(
+                r'\bbinary\s*=\s*"(?://' + re.escape(td) + r')?:' + re.escape(device_bin) + r'"', bazel_src
+            ):
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "unpackaged_rust_device_test",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": lineno,
+                    "message": (
+                        f"Rust device test binary ':{device_bin}' ({rule_name}) in '{bazel_rel}' is not packaged by any "
+                        "`fx_packaged_binary`, so no `fx_test` runs it and it is missing from tests.json."
+                    ),
+                    "remediation": (
+                        f"Add `fx_packaged_binary(testonly = True, binary = \":{device_bin}\", binary_name = ...)` "
+                        "(GN's output name, e.g. `<crate>_lib_test`), a `meta/<component>.cml` including "
+                        "`//src/sys/test_runners/rust/default.shard.cml` and `syslog/use.shard.cml` with "
+                        "`program.binary` = `bin/<binary_name>`, `fx_component_manifest`, `fx_test_component`, "
+                        "`fx_package(test_components = ...)` and `fx_test`, exported by a GN `bazel_test_suite` "
+                        "(see \"Migrating Tests\" in the coder instructions). If the tests only ran on host in GN, "
+                        "use `with_unit_tests = \"host\"` instead."
+                    ),
+                })
     if not exportable or not FX_TEST_AVAILABLE:
         continue
 

@@ -17,12 +17,13 @@ report.
    callers (`//bundles/assembly/BUILD.bazel`, `//build/bazel/bazel_idk/tests:build_only_tests`,
    or a verification `.gni`).
 2. **Case 2 (Dual-Build with bazel2gn)**: BUILD.bazel is the source of truth. Author every
-   `bazel2gn`-convertible target (libraries, standalone binaries, unit tests, FIDL, including
+   `bazel2gn`-convertible non-test target (libraries, standalone binaries, FIDL, including
    reference and benchmark binaries) in BUILD.bazel without `# @bazel2gn:skip`, delete its
    manual definition above `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` in BUILD.gn,
-   and regenerate BUILD.gn with `fx bazel2gn -d <dir>`. Only GN-only constructs (imports,
-   `config()`, `bazel_test_suite`, `group("tests")`, forwarding groups below, and test packages
-   that must stay in GN per "Migrating Tests") stay above the sentinel. Register
+   and regenerate BUILD.gn with `fx bazel2gn -d <dir>`. Tests are the exception: they live only
+   in Bazel and bazel2gn never translates them (see "Migrating Tests"). Only GN-only constructs
+   (imports, `config()`, `bazel_test_suite`, `group("tests")`, forwarding groups below, and a
+   test that Bazel cannot express yet per "Migrating Tests") stay above the sentinel. Register
    `//<dir>:verify_bazel2gn`.
 
 ## Workflow
@@ -88,68 +89,97 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      and (d) set `visibility = ["//bundles/assembly:__subpackages__"]` on `fx_package`.
 
 ## Migrating Tests (`fx_test`, `host_*_test`, `bazel_test_suite`)
-A Bazel test reaches `tests.json` (`fx test`, CQ) only when a GN `bazel_test_suite()` wired into
-`group("tests")` lists it; a `cc_test`, `rustc_test` or `with_*unit_tests` target alone is
-invisible to `fx test` and infra.
-- **Rust tests stay as today** (Bazel cannot run Rust unit tests on Fuchsia devices yet, so do not
-  add `fx_test`, `fx_test_component`, a rust-runner `.cml` or rust shard `exports_files`): set
-  `with_host_unit_tests = True` on the `rustc_*` target (as for `thermal`; bazel2gn emits GN
-  `with_unit_tests = true`, so GN still builds `:<name>_test` for device and host) and keep the GN
-  `fuchsia_unittest_package`/`fuchsia_test_package` wrapping `:<name>_test` above the sentinel,
-  with `":<name>_test($host_toolchain)"` in `group("tests")` if GN ran it on host. A Rust package
-  with device unit tests therefore stays dual-build. Export a Rust host test through
-  `bazel_test_suite(host_tests)` only when GN does not already build it (bazel2gn converts
-  `with_*unit_tests`, `rustc_test` and `host_go_test`, so those run in GN).
-- **Checkout without `build/bazel/rules/testing/fx_test.bzl`**: all device test packages
-  (`fuchsia_unittest_package`, `fuchsia_test_package`, `bootfs_test`) and their `testonly` test
-  `executable` stay above the sentinel in GN.
-- **Checkout with it**: migrate each C++ device test package and its test binary to BUILD.bazel
-  and delete them from BUILD.gn, as in `//src/developer/build_info`:
-  1. Binary: `fx_cc_binary(testonly = True, tags = ["manual"])` (gtest main in `deps`), wrapped
-     in `fx_packaged_binary(testonly = True)`.
-  2. Manifest: add `meta/<component>.cml` (the only non-build file a migration may add; a
-     package that already had one keeps it) including `//src/sys/test_runners/gtest/default.shard.cml`
-     and the syslog shard GN used, with `program.binary` = `bin/<binary_name>`; list every shard
-     as a label in `includes`. If `src/sys/test_runners/gtest/BUILD.bazel` does not export
-     `default.shard.cml` to your package, add `"//<dir>:__pkg__"` to its visibility.
-  3. Same test URL: `package_name` and `component_name` equal GN's (`fuchsia_unittest_package("X")`
-     is package `X`, component `X`). GN `test_specs.log_settings.max_severity` becomes
-     `fx_test(max_log_severity = ...)`.
-  4. Non-Rust host tests GN ran on host: `host_test(binary = ":<cc_test>")`, `host_py_test` or
-     `host_go_test` from `//build/bazel/rules/host_tests:<rule>.bzl`.
-  5. Export: in BUILD.gn (above the sentinel), `import("//build/bazel/bazel_test_suite.gni")` and
-     `bazel_test_suite("X")` named after the deleted GN package, with absolute Bazel labels:
-     `target_tests` only `fx_test`s, `host_tests` only host tests (or `test_suite`s of them);
-     list it in `group("tests")`.
-  6. Dual-build: mark every `fx_*`, `fx_test`, `test_suite`, and host test wrapper other than
-     `host_go_test` with `# @bazel2gn:skip` (bazel2gn cannot convert them).
-- Keep a C++ test package in GN only for what Bazel cannot express yet: `test_specs` other than
-  `log_settings` (environments, timeouts), `test_type` or custom realms, subpackages,
-  `bootfs_test`, Ninja-generated inputs, or deps that cannot get a Bazel build. Name the reason
-  in the `summary` and the commit message.
+Every test moves to Bazel: C++ and Rust device tests, and host tests. bazel2gn does NOT
+translate tests, and a Bazel test reaches `tests.json` (`fx test`, CQ) only through a GN
+`bazel_test_suite()` wired into `group("tests")`.
+- **Nothing test-related is generated into BUILD.gn.** In a dual-build BUILD.bazel, put
+  `# @bazel2gn:skip` on every test target (`fx_cc_binary(testonly)`, `rustc_test`,
+  `fx_packaged_binary`, `fx_component_manifest`, `fx_test_component`, `fx_package`, `fx_test`,
+  `test_suite`, `host_*_test`, `go_test`) and on the `with_unit_tests`, `test_deps` (and any other
+  test-only) attributes of a `rustc_library`/`rustc_binary`/`rustc_proc_macro`, so the generated
+  GN target has no `with_unit_tests`. Delete the GN test targets (`fuchsia_unittest_package`,
+  `fuchsia_test_package`, `fuchsia_*_component` for tests, test `executable`/`test`, `rustc_test`).
+- **Unwrap the magic manifest.** `fuchsia_unittest_package`/`fuchsia_unittest_component` without
+  `manifest` generate the `.cml` from deps metadata; Bazel does not. Add `meta/<component>.cml`
+  (the only non-build file a migration may add; keep an existing one) that reproduces GN's
+  generated manifest (`find $(fx get-build-dir)/obj/<dir> -name '*generated_manifest.cml'`):
+  the runner shard, `"syslog/use.shard.cml"` (what GN injects), every capability shard GN added,
+  and `program: { binary: "bin/<binary_name>" }`. Runner shards by framework:
+  - Rust `rustc_test`/`with_unit_tests`: `//src/sys/test_runners/rust/default.shard.cml`
+  - gtest (`//src/lib/fxl/test:gtest_main`, `//third_party/googletest:gtest`): `//src/sys/test_runners/gtest/default.shard.cml`
+  - zxtest: `//src/sys/test_runners/gtest/zxtest.shard.cml`
+  - plain ELF / `deprecated_legacy_test_execution`: `//sdk/lib/sys/testing/elf_test_runner.shard.cml`
+  - dep `//src/sys/test_runners/gtest:death_test` adds `gtest/death_test.shard.cml`;
+    `//src/sys/test_runners:tmp_storage` adds `//src/sys/test_runners/tmp_storage.shard.cml`.
+- **Export the shards.** Bazel `cmc` is sandboxed: list every shard (and each shard it includes)
+  as a label in `fx_component_manifest(includes)`. If the shard's directory has no BUILD.bazel
+  exporting it to your package (e.g. `src/sys/test_runners/rust/`), add or extend one with only
+  `package(default_applicable_licenses = ["//:license"])` and `exports_files([...], visibility = [...])`
+  naming your package.
+- **Construct the package explicitly**, keeping GN's test URL
+  `fuchsia-pkg://fuchsia.com/<package_name>#meta/<component_name>.cm`
+  (`fuchsia_unittest_package("X")`: package `X`, component `X` unless `component_name`/`package_name`
+  is set; `fuchsia_test_package("P") { test_components = [":C"] }`: package `P`, component `C`):
+  1. Test binary: C++ `fx_cc_binary(testonly = True, tags = ["manual"])` with the test main in
+     `deps`; Rust inline tests `with_unit_tests = "fuchsia"` (`"both"` if GN also ran them on host),
+     giving `:<name>_test`; standalone Rust `rustc_test` from `//build/bazel/rules/rust:defs.bzl`.
+  2. `fx_packaged_binary(testonly = True, binary = ..., binary_name = ...)` (bundles Rust `libstd`
+     and symbols). `binary_name` matches GN's output name: `<crate>_lib_test` for a
+     `rustc_library`, `<output_name>_bin_test` for a `rustc_binary`, the executable's
+     `output_name` for C++.
+  3. `fx_component_manifest` + `fx_test_component` + `fx_package(test_components)` + `fx_test`.
+     GN `test_specs.log_settings.max_severity` becomes `fx_test(max_log_severity = ...)`.
+- **Host tests** GN ran on host: Rust `with_unit_tests = "host"`/`"both"` or `host_rustc_test`;
+  C++ `host_test(binary = ":<cc_test>")`; `host_py_test`, `host_go_test`
+  (`//build/bazel/rules/host_tests:<rule>.bzl`).
+- **Export**: in BUILD.gn (above the sentinel if there is one), `import("//build/bazel/bazel_test_suite.gni")`
+  and `bazel_test_suite("X")` named after the deleted GN test target, with absolute Bazel labels:
+  `target_tests` only `fx_test`s, `host_tests` only host tests (`:<name>_test` of
+  `with_unit_tests = "host"`/`"both"`, never `($host_toolchain)`); list it in `group("tests")`.
+  A package whose remaining GN content is only `bazel_test_suite`/`group("tests")` gets no
+  sentinel, no bazel2gn run and no `verify_bazel2gn`.
+- Only when Bazel cannot express the test yet (`test_specs` environments or timeouts, `test_type`
+  or custom realms, subpackages, `bootfs_test`, Ninja-generated inputs) keep that one test
+  hand-written in GN, above the sentinel, depending on the generated library; name the reason in
+  the `summary` and commit message.
 
-C++ device test (GN had `fuchsia_unittest_package("foo-unittest") { deps = [ ":foo_unittest" ] }`):
+Rust device test (GN: `rustc_library("foo") { with_unit_tests = true }` plus
+`fuchsia_unittest_package("foo-tests") { deps = [ ":foo_test" ] }`):
 ```python
-fx_cc_binary(name = "foo_unittest_bin", testonly = True, srcs = [...], tags = ["manual"], deps = [":lib", "//src/lib/fxl/test:gtest_main"])
-fx_packaged_binary(name = "foo_unittest_packaged_bin", testonly = True, binary = ":foo_unittest_bin", binary_name = "foo_unittest")
-fx_component_manifest(
-    name = "foo-unittest-manifest",
-    testonly = True,
-    component_name = "foo-unittest",
-    includes = ["//sdk/lib/syslog:client.shard.cml", "//sdk/lib/syslog:offer.shard.cml", "//sdk/lib/syslog:use.shard.cml", "//src/sys/test_runners/gtest:default.shard.cml"],
-    manifest = "meta/foo_unittest.cml",  # gtest shard + syslog/client.shard.cml; program: { binary: "bin/foo_unittest" }
+rustc_library(
+    name = "foo",
+    ...,
+    # @bazel2gn:skip
+    with_unit_tests = "fuchsia",
+    # @bazel2gn:skip
+    test_deps = ["//src/lib/fuchsia"],
 )
-fx_test_component(name = "foo-unittest-component", compiled_manifest = ":foo-unittest-manifest", component_name = "foo-unittest", deps = [":foo_unittest_packaged_bin"])
-fx_package(name = "foo-unittest-package", package_name = "foo-unittest", test_components = [":foo-unittest-component"])
-fx_test(name = "foo-unittest", package = ":foo-unittest-package")
+# @bazel2gn:skip
+fx_packaged_binary(name = "foo_test_packaged_bin", testonly = True, binary = ":foo_test", binary_name = "foo_lib_test")
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "foo-tests-manifest",
+    testonly = True,
+    component_name = "foo-tests",
+    includes = ["//sdk/lib/syslog:use.shard.cml", "//src/sys/test_runners/rust:default.shard.cml"],
+    manifest = "meta/foo_tests.cml",  # include rust/default.shard.cml + syslog/use.shard.cml; program: { binary: "bin/foo_lib_test" }
+)
+# @bazel2gn:skip
+fx_test_component(name = "foo-tests-component", compiled_manifest = ":foo-tests-manifest", component_name = "foo-tests", deps = [":foo_test_packaged_bin"])
+# @bazel2gn:skip
+fx_package(name = "foo-tests-package", package_name = "foo-tests", test_components = [":foo-tests-component"])
+# @bazel2gn:skip
+fx_test(name = "foo-tests", package = ":foo-tests-package")
 ```
+A C++ test is the same with `fx_cc_binary(name = "foo_unittest_bin", testonly = True, tags = ["manual"], deps = [..., "//src/lib/fxl/test:gtest_main"])`
+as `binary` and the gtest shard (see `//src/developer/build_info/BUILD.bazel`). BUILD.gn:
 ```gn
-bazel_test_suite("foo-unittest") {
-  target_tests = [ "//src/foo:foo-unittest" ]
+bazel_test_suite("foo-tests") {
+  target_tests = [ "//src/foo:foo-tests" ]
 }
 group("tests") {
   testonly = true
-  deps = [ ":foo-unittest" ]
+  deps = [ ":foo-tests" ]
 }
 ```
 
