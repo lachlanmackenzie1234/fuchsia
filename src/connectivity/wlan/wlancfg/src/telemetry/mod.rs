@@ -1578,15 +1578,18 @@ impl Telemetry {
             }
             TelemetryEvent::OnSignalReport { ind } => {
                 if let ConnectionState::Connected(state) = &mut self.connection_state {
-                    state.ap_state.tracked.signal.rssi_dbm = ind.rssi_dbm.unwrap_or(0);
-                    state.ap_state.tracked.signal.snr_db = ind.snr_db.unwrap_or(0);
-                    state.last_signal_report = now;
-                    self.stats_logger
-                        .log_signal_report_metrics(
-                            ind.rssi_dbm.unwrap_or(0),
-                            ind.tx_rate_500kbps.unwrap_or(0),
-                        )
-                        .await;
+                    if let Some(rssi) = ind.rssi_dbm {
+                        state.ap_state.tracked.signal.rssi_dbm = rssi;
+                        self.stats_logger
+                            .log_signal_report_metrics(rssi, ind.tx_rate_500kbps)
+                            .await;
+                    }
+                    if let Some(snr) = ind.snr_db {
+                        state.ap_state.tracked.signal.snr_db = snr;
+                    }
+                    if ind.rssi_dbm.is_some() || ind.snr_db.is_some() {
+                        state.last_signal_report = now;
+                    }
                 }
             }
             TelemetryEvent::OnSignalVelocityUpdate { rssi_velocity } => {
@@ -3201,7 +3204,7 @@ impl StatsLogger {
         ));
     }
 
-    async fn log_signal_report_metrics(&mut self, rssi: i8, _tx_rate_500kbps: u32) {
+    async fn log_signal_report_metrics(&mut self, rssi: i8, _tx_rate_500kbps: Option<u32>) {
         // The range of the RSSI histogram is -128 to 0 with bucket size 1. The buckets are:
         //     bucket 0: reserved for underflow, although not possible with i8
         //     bucket 1: -128

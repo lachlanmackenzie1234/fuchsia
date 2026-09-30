@@ -2726,7 +2726,6 @@ static void cfg80211_signal_ind(net_device* ndev) {
       } else {
         BRCMF_INFO("Failed to get rate: %s, fw err %s", zx_status_get_string(status),
                    brcmf_fil_get_errstr(fw_err));
-        builder.tx_rate_500kbps(0);
       }
 
       // Store the value in ndev (dumped out when link goes down)

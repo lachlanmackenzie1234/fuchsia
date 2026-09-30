@@ -1370,9 +1370,15 @@ impl ClientState {
                             .connect_txn_sink
                             .send(ConnectTransactionEvent::OnSignalReport { ind: ind.clone() });
                     }
-                    state.latest_ap_state.rssi_dbm = ind.rssi_dbm.unwrap_or(0);
-                    state.latest_ap_state.snr_db = ind.snr_db.unwrap_or(0);
-                    state.last_signal_report_time = now();
+                    if let Some(rssi) = ind.rssi_dbm {
+                        state.latest_ap_state.rssi_dbm = rssi;
+                    }
+                    if let Some(snr) = ind.snr_db {
+                        state.latest_ap_state.snr_db = snr;
+                    }
+                    if ind.rssi_dbm.is_some() || ind.snr_db.is_some() {
+                        state.last_signal_report_time = now();
+                    }
                     state.into()
                 }
                 MlmeEvent::EapolInd { ind } => {
@@ -5678,6 +5684,24 @@ mod tests {
                                                  ClientSmeStatus::Connected(serving_ap_info) =>
                                                  serving_ap_info.signal_report_time);
         assert!(signal_report_time < time_c);
+
+        // Verify that absent fields (None) retain the previous values (-24, 10).
+        let input_ind_none = fidl_internal::SignalReportIndication {
+            rssi_dbm: None,
+            snr_db: None,
+            tx_rate_500kbps: Some(54),
+            ..Default::default()
+        };
+        let state = state
+            .on_mlme_event(MlmeEvent::SignalReport { ind: input_ind_none.clone() }, &mut h.context);
+        let serving_ap_info = assert_matches!(state.status(),
+                                                     ClientSmeStatus::Connected(serving_ap_info) =>
+                                                     serving_ap_info);
+        assert_eq!(serving_ap_info.rssi_dbm, -24);
+        assert_eq!(serving_ap_info.snr_db, 10);
+        assert_matches!(connect_txn_stream.try_recv(), Ok(ConnectTransactionEvent::OnSignalReport { ind }) => {
+            assert_eq!(input_ind_none, ind);
+        });
     }
 
     fn test_sae_frame_rx_tx(

@@ -83,16 +83,18 @@ impl StationaryMonitor {
         &mut self,
         stats: fidl_internal::SignalReportIndication,
     ) -> Result<RoamTriggerDataOutcome, anyhow::Error> {
-        self.connection_data
-            .signal_data
-            .update_with_new_measurement(stats.rssi_dbm.unwrap_or(0), stats.snr_db.unwrap_or(0));
+        if let (Some(rssi), Some(snr)) = (stats.rssi_dbm, stats.snr_db) {
+            self.connection_data.signal_data.update_with_new_measurement(rssi, snr);
 
-        // Update velocity with EWMA signal, to smooth out noise.
-        self.connection_data.rssi_velocity.update(self.connection_data.signal_data.ewma_rssi.get());
+            // Update velocity with EWMA signal, to smooth out noise.
+            self.connection_data
+                .rssi_velocity
+                .update(self.connection_data.signal_data.ewma_rssi.get());
 
-        self.telemetry_sender.send(TelemetryEvent::OnSignalVelocityUpdate {
-            rssi_velocity: self.connection_data.rssi_velocity.get(),
-        });
+            self.telemetry_sender.send(TelemetryEvent::OnSignalVelocityUpdate {
+                rssi_velocity: self.connection_data.rssi_velocity.get(),
+            });
+        }
 
         // If the network likely has 1 BSS, don't scan for another BSS to roam to.
         match self
@@ -844,5 +846,36 @@ mod test {
         let should_roam_scan_result =
             run_handle_roam_trigger_data(&mut exec, &mut test_values.monitor, trigger_data.clone());
         assert_matches!(should_roam_scan_result, RoamTriggerDataOutcome::RoamSearch { .. });
+    }
+
+    #[fuchsia::test]
+    fn test_stationary_monitor_ignores_missing_signal_fields() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::now());
+
+        let initial_rssi = -60.0;
+        let initial_snr = 25.0;
+        let connection_data = RoamingConnectionData {
+            signal_data: EwmaSignalData::new(initial_rssi, initial_snr, 1),
+            ..generate_random_roaming_connection_data()
+        };
+        let mut test_values = setup_test_with_data(connection_data);
+
+        // Send a signal report with None for rssi and snr.
+        let trigger_data =
+            RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
+                rssi_dbm: None,
+                snr_db: None,
+                tx_rate_500kbps: Some(54),
+                ..Default::default()
+            });
+
+        let result =
+            run_handle_roam_trigger_data(&mut exec, &mut test_values.monitor, trigger_data);
+        assert_eq!(result, RoamTriggerDataOutcome::Noop);
+
+        // Verify EWMA values are unchanged (not overwritten with 0).
+        assert_eq!(test_values.monitor.connection_data.signal_data.ewma_rssi.get(), initial_rssi);
+        assert_eq!(test_values.monitor.connection_data.signal_data.ewma_snr.get(), initial_snr);
     }
 }

@@ -1238,8 +1238,12 @@ async fn handle_client_connect_transactions<C: ClientIface + 'static, P: PowerMa
                 }
             }
             Ok(fidl_sme::ConnectTransactionEvent::OnSignalReport { ind }) => {
-                ctx.current_rssi_dbm = ind.rssi_dbm.unwrap_or(0);
-                ctx.current_snr_db = ind.snr_db.unwrap_or(0);
+                if let Some(rssi) = ind.rssi_dbm {
+                    ctx.current_rssi_dbm = rssi;
+                }
+                if let Some(snr) = ind.snr_db {
+                    ctx.current_snr_db = snr;
+                }
                 iface.on_signal_report(ind);
             }
             Ok(fidl_sme::ConnectTransactionEvent::OnChannelSwitched { info }) => {

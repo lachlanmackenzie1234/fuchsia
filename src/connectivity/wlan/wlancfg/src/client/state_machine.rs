@@ -692,15 +692,19 @@ async fn connected_state(
                             }
                         }
                         fidl_sme::ConnectTransactionEvent::OnSignalReport { ind } => {
-                            // Update connection data
-                            let signal: types::Signal = ind.clone().into();
-                            options.ap_state.tracked.signal = signal;
-
-                            // Update list of signals
-                            options.tracked_signals.add(types::TimestampedSignal {
-                                time: fasync::MonotonicInstant::now(),
-                                signal,
-                            });
+                            if let Some(rssi) = ind.rssi_dbm {
+                                options.ap_state.tracked.signal.rssi_dbm = rssi;
+                            }
+                            if let Some(snr) = ind.snr_db {
+                                options.ap_state.tracked.signal.snr_db = snr;
+                            }
+                            // Update list of signals only if RSSI or SNR was present.
+                            if ind.rssi_dbm.is_some() || ind.snr_db.is_some() {
+                                options.tracked_signals.add(types::TimestampedSignal {
+                                    time: fasync::MonotonicInstant::now(),
+                                    signal: options.ap_state.tracked.signal,
+                                });
+                            }
 
                             notify_on_signal_report(
                                 &common_options,
