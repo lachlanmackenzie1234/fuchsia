@@ -252,20 +252,6 @@ impl IfaceManagerService {
         self.setup_client_container(iface_id).await
     }
 
-    // Retrieves a client iface container where the config has been set to Configured for a given
-    // network id.
-    fn get_configured_client(
-        &mut self,
-        network_id: client_types::NetworkIdentifier,
-    ) -> Result<ClientIfaceContainer, Error> {
-        if let Some(removal_index) = self.clients.iter().position(|client_container| {
-            client_container.config == ClientIfaceContainerConfig::Configured(network_id.clone())
-        }) {
-            return Ok(self.clients.remove(removal_index));
-        }
-        Err(format_err!("No configured client iface container found for network id"))
-    }
-
     /// Remove the client iface from the list of configured ifaces if it is there, and create a
     /// ClientIfaceContainer for it if it is needed.
     async fn setup_client_container(
@@ -415,9 +401,31 @@ impl IfaceManagerService {
     ) -> LocalBoxFuture<'static, Result<(), Error>> {
         // Cancel any ongoing connection selections for the given network id and any autoconnect
         // selections. Any targeted connection selections for different networks are unaffected.
-        self.connection_selection_manager
+        let cancelled_connect_request = self
+            .connection_selection_manager
             .cancel(&SelectionIdentifier::ConnectRequest(network_id.clone()));
-        self.connection_selection_manager.cancel(&SelectionIdentifier::Automatic);
+        let _ = self.connection_selection_manager.cancel(&SelectionIdentifier::Automatic);
+
+        if cancelled_connect_request {
+            // If a ConnectRequest selection was still ongoing for this network, there is a
+            // lingering `Connecting` client state update that must be closed with `Disconnected`.
+            let networks = vec![listener::ClientNetworkState {
+                id: network_id.clone(),
+                state: client_types::ConnectionState::Disconnected,
+                status: Some(client_types::DisconnectStatus::ConnectionStopped),
+            }];
+            let update = listener::ClientStateUpdate {
+                state: client_types::ClientState::ConnectionsEnabled,
+                networks,
+            };
+            if let Err(e) = self
+                .client_update_sender
+                .clone()
+                .unbounded_send(listener::Message::NotifyListeners(update))
+            {
+                error!("failed to send state update: {:?}", e);
+            }
+        }
 
         // Find the client interface associated with the given network config and disconnect from
         // the network.
@@ -432,9 +440,9 @@ impl IfaceManagerService {
                 // loop discovers the completed future and attempts to reconnect the interface.
                 ClientIfaceContainerConfig::Configured(id) if id == &network_id => {
                     client.config = ClientIfaceContainerConfig::Unconfigured;
-                    let (responder, receiver) = oneshot::channel();
-                    match client.client_state_machine.as_mut() {
-                        Some(state_machine) => match state_machine.disconnect(reason, responder) {
+                    if let Some(state_machine) = client.client_state_machine.as_mut() {
+                        let (responder, receiver) = oneshot::channel();
+                        match state_machine.disconnect(reason, responder) {
                             Ok(()) => {}
                             Err(e) => {
                                 client.client_state_machine = None;
@@ -444,39 +452,11 @@ impl IfaceManagerService {
                                 )))
                                 .boxed();
                             }
-                        },
-                        None => {
-                            // If there is a Configured client for this network with no client state
-                            // machine, it means this disconnect came before a state machine could
-                            // be set up fully (e.g. if connection selection was still ongoing). In
-                            // this case, there will be a lingering `connecting` client state update
-                            // for the given network that we must handle here, rather than in a
-                            // client state machine. Note that automatic connection selections do
-                            // _not_ send an initial 'Connecting' state update, and thus aren't
-                            // handled here.
-                            let networks = vec![listener::ClientNetworkState {
-                                id: network_id,
-                                state: client_types::ConnectionState::Disconnected,
-                                status: Some(client_types::DisconnectStatus::ConnectionStopped),
-                            }];
-                            let update = listener::ClientStateUpdate {
-                                state: client_types::ClientState::ConnectionsEnabled,
-                                networks,
-                            };
-                            match self
-                                .client_update_sender
-                                .clone()
-                                .unbounded_send(listener::Message::NotifyListeners(update))
-                            {
-                                Ok(_) => (),
-                                Err(e) => error!("failed to send state update: {:?}", e),
-                            };
-                            return ready(Ok(())).boxed();
                         }
+                        fsm_ack_receiver = Some(receiver);
+                        iface_id = Some(client.iface_id);
                     }
                     client.client_state_machine = None;
-                    fsm_ack_receiver = Some(receiver);
-                    iface_id = Some(client.iface_id);
                     break;
                 }
                 _ => {}
@@ -515,13 +495,6 @@ impl IfaceManagerService {
             }
         }
 
-        // Cancel any ongoing connection attempts for OTHER networks.
-        for id in self.connection_selection_manager.active_selections() {
-            if id != SelectionIdentifier::ConnectRequest(connect_request.network.clone()) {
-                self.connection_selection_manager.cancel(&id);
-            }
-        }
-
         // Check if we are already connecting to THIS network.
         let selection_id = SelectionIdentifier::ConnectRequest(connect_request.network.clone());
         if self.connection_selection_manager.active_selections().contains(&selection_id) {
@@ -542,30 +515,26 @@ impl IfaceManagerService {
             }
         }
 
+        // Ensure a client interface is available before starting connection selection.
+        let client_iface = self.get_client(None).await?;
+        self.clients.push(client_iface);
+
         let mut networks = vec![];
 
-        // Any clients that had been configured but don't have state machines are pending connect
-        // requests that we just cancelled. We have to add a "Disconnected" listener update for
-        // them and mark as Unconfigured.
-        for client in self.clients.iter_mut() {
-            if let ClientIfaceContainerConfig::Configured(id) = &client.config
-                && client.client_state_machine.as_mut().is_none()
+        // Cancel any ongoing connection attempts for OTHER networks, and emit a "Disconnected"
+        // listener update for any cancelled ConnectRequest.
+        for id in self.connection_selection_manager.active_selections() {
+            if id != selection_id
+                && self.connection_selection_manager.cancel(&id)
+                && let SelectionIdentifier::ConnectRequest(cancelled_id) = id
             {
                 networks.push(listener::ClientNetworkState {
-                    id: id.clone(),
+                    id: cancelled_id,
                     state: client_types::ConnectionState::Disconnected,
                     status: Some(client_types::DisconnectStatus::ConnectionStopped),
                 });
-                client.config = ClientIfaceContainerConfig::Unconfigured;
             }
         }
-
-        // Get a client, and mark its config as Configured, reserving it for this connect
-        // attempt
-        let mut client_iface = self.get_client(None).await?;
-        client_iface.config =
-            ClientIfaceContainerConfig::Configured(connect_request.network.clone());
-        self.clients.push(client_iface);
 
         self.telemetry_sender
             .send(TelemetryEvent::StartEstablishConnection { reset_start_time: true });
@@ -590,17 +559,9 @@ impl IfaceManagerService {
     }
 
     async fn connect(&mut self, selection: client_types::ConnectSelection) -> Result<(), Error> {
-        // Get a client iface, preferring one that was reserved for this connect attempt, if
-        // applicable.
-        let mut client_iface = match self.get_configured_client(selection.target.network.clone()) {
-            Ok(container) => container,
-            Err(_) => {
-                let mut client = self.get_client(None).await?;
-                client.config =
-                    ClientIfaceContainerConfig::Configured(selection.target.network.clone());
-                client
-            }
-        };
+        let mut client_iface = self.get_client(None).await?;
+        client_iface.config =
+            ClientIfaceContainerConfig::Configured(selection.target.network.clone());
 
         // Check if there's an existing state machine we can use
         match client_iface.client_state_machine.as_mut() {
@@ -868,11 +829,20 @@ impl IfaceManagerService {
         self.telemetry_sender.send(TelemetryEvent::ClearEstablishConnectionStartTime);
 
         // Cancel any ongoing network selection, since a disconnect makes it invalid.
+        let mut cancelled_connection_networks = vec![];
         if !self.connection_selection_manager.active_selections().is_empty() {
             info!(
                 "Client connections stopping, ignoring results from ongoing connection selections."
             );
-            self.connection_selection_manager.cancel_all();
+            for id in self.connection_selection_manager.cancel_all() {
+                if let SelectionIdentifier::ConnectRequest(network_id) = id {
+                    cancelled_connection_networks.push(listener::ClientNetworkState {
+                        id: network_id,
+                        state: client_types::ConnectionState::Disconnected,
+                        status: Some(client_types::DisconnectStatus::ConnectionStopped),
+                    });
+                }
+            }
         }
 
         let client_ifaces: Vec<ClientIfaceContainer> = std::mem::take(&mut self.clients);
@@ -881,30 +851,18 @@ impl IfaceManagerService {
 
         let fut = async move {
             // Disconnect and discard all of the configured client ifaces.
-            let mut cancelled_connection_networks = vec![];
             for mut client_iface in client_ifaces {
-                if let ClientIfaceContainerConfig::Configured(network_id) = client_iface.config {
+                if let ClientIfaceContainerConfig::Configured(_) = client_iface.config {
                     client_iface.config = ClientIfaceContainerConfig::Unconfigured;
-                    match client_iface.client_state_machine.as_mut() {
-                        Some(state_machine) => {
-                            let (responder, receiver) = oneshot::channel();
-                            match state_machine.disconnect(reason, responder) {
-                                Ok(()) => {}
-                                Err(e) => error!("failed to issue disconnect: {:?}", e),
-                            }
-                            match receiver.await {
-                                Ok(()) => {}
-                                Err(e) => error!("failed to disconnect: {:?}", e),
-                            }
+                    if let Some(state_machine) = client_iface.client_state_machine.as_mut() {
+                        let (responder, receiver) = oneshot::channel();
+                        match state_machine.disconnect(reason, responder) {
+                            Ok(()) => {}
+                            Err(e) => error!("failed to issue disconnect: {:?}", e),
                         }
-                        None => {
-                            // Any pending connections have been cancelled. Send a listener update
-                            // to marked them as Disconnected.
-                            cancelled_connection_networks.push(listener::ClientNetworkState {
-                                id: network_id,
-                                state: client_types::ConnectionState::Disconnected,
-                                status: Some(client_types::DisconnectStatus::ConnectionStopped),
-                            });
+                        match receiver.await {
+                            Ok(()) => {}
+                            Err(e) => error!("failed to disconnect: {:?}", e),
                         }
                     }
                 }
@@ -6061,6 +6019,62 @@ mod tests {
         }
 
         // Expect a "Disconnected" update to be sent, with status "ConnectionStopped".
+        let disconnected_state_update = listener::ClientStateUpdate {
+            state: fidl_fuchsia_wlan_policy::WlanClientState::ConnectionsEnabled,
+            networks: vec![listener::ClientNetworkState {
+                id: connect_selection.target.network.clone(),
+                state: client_types::ConnectionState::Disconnected,
+                status: Some(client_types::DisconnectStatus::ConnectionStopped),
+            }],
+        };
+        assert_matches!(
+            test_values.client_update_receiver.try_recv(),
+            Ok(listener::Message::NotifyListeners(updates)) => {
+            assert_eq!(updates, disconnected_state_update);
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_disconnect_update_on_stopped_connection_after_record_idle_client() {
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let mut test_values = test_setup(&mut exec);
+
+        // Set up iface manager with an unconfigured client.
+        let (mut iface_manager, _stream) = create_iface_manager_with_client(&test_values, false);
+
+        let connect_selection = generate_connect_selection();
+        let connect_req = ConnectAttemptRequest::new(
+            connect_selection.target.network.clone(),
+            connect_selection.target.credential,
+            client_types::ConnectReason::FidlConnectRequest,
+        );
+        {
+            let connect_fut = iface_manager.handle_connect_request(connect_req);
+            let mut connect_fut = pin!(connect_fut);
+            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(())));
+        }
+
+        // Consume the initial "Connecting" update.
+        assert_matches!(
+            test_values.client_update_receiver.try_recv(),
+            Ok(listener::Message::NotifyListeners(_))
+        );
+
+        // Simulate a prior/startup state machine terminating while ConnectRequest selection is
+        // still in flight.
+        iface_manager.record_idle_client(TEST_CLIENT_IFACE_ID);
+
+        // Disconnect the network while selection is still ongoing.
+        {
+            let disconnect_fut = iface_manager.disconnect(
+                connect_selection.target.network.clone(),
+                client_types::DisconnectReason::NetworkUnsaved,
+            );
+            let mut disconnect_fut = pin!(disconnect_fut);
+            assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+        }
+
+        // Expect a "Disconnected" update with status "ConnectionStopped".
         let disconnected_state_update = listener::ClientStateUpdate {
             state: fidl_fuchsia_wlan_policy::WlanClientState::ConnectionsEnabled,
             networks: vec![listener::ClientNetworkState {
