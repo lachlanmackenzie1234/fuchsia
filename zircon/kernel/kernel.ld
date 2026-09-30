@@ -179,7 +179,11 @@ SECTIONS {
     PROVIDE_HIDDEN(__stop_lk_init = .);
 
     PROVIDE_HIDDEN(__start_unittest_testcases = .);
-    *(.data.rel.ro.unittest_testcases)
+    /*
+     * TODO(https://fxbug.dev/567366633): Remove KEEP() once Rust #[link_section]
+     * statics support SHF_GNU_RETAIN and special-section semantics.
+     */
+    KEEP(*(.data.rel.ro.unittest_testcases))
     PROVIDE_HIDDEN(__stop_unittest_testcases = .);
 
     PROVIDE_HIDDEN(__start_asan_globals = .);
