@@ -116,7 +116,6 @@ pub async fn discover_single_default_target(
     let (query_s, source) = get_target_specifier_with_source(ctx)?;
     let query = TargetInfoQuery::try_from(query_s)?;
 
-    // Note: this will use the target cache if it exists
     let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
     let res = expect_single_target(&query, handles, source)
         .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
