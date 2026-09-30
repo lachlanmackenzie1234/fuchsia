@@ -1952,6 +1952,7 @@ dependencies = [
  "heck 0.3.1",
  "heck 0.5.0",
  "hex",
+ "hickory-net",
  "hickory-proto",
  "hkdf 0.12.4",
  "hkdf 0.13.0",
@@ -2516,6 +2517,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "hickory-net"
+version = "0.26.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c480823ed7c2c5d0f09c41020cb6b7c28029ce60ec42dc942158dcf22f8e0a4d"
+dependencies = [
+ "async-trait",
+ "cfg-if",
+ "data-encoding",
+ "futures-channel",
+ "futures-io",
+ "futures-util",
+ "hickory-proto",
+ "idna 1.1.0",
+ "ipnet",
+ "jni",
+ "rand 0.10.2",
+ "thiserror 2.0.20",
+ "tinyvec",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "hickory-proto"
 version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2527,6 +2551,7 @@ dependencies = [
  "jni",
  "once_cell",
  "rand 0.10.2",
+ "ring",
  "thiserror 2.0.20",
  "tinyvec",
  "tracing",
@@ -4341,6 +4366,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
 dependencies = [
  "chacha20",
+ "getrandom 0.4.3",
  "rand_core 0.10.1",
 ]
 

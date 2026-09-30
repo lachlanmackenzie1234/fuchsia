@@ -840,6 +840,18 @@ group("hex-0.4.3") {
 }
 
 if (current_os == "fuchsia") {
+  group("hickory-net") {
+    public_deps = [ ":hickory-net-v0_26_3" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("hickory-net-0.26.3") {
+    public_deps = [ ":hickory-net-v0_26_3" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("hickory-proto") {
     public_deps = [ ":hickory-proto-v0_26_3" ]
   }
@@ -10685,6 +10697,7 @@ rustc_library("getrandom-v0_4_3") {
     "--cap-lints=allow",
     "-Cmetadata=ff0545eacb93ce03",
     "-Cextra-filename=-ff0545eacb93ce03",
+    "--cfg=feature=\"std\"",
     "--cfg=feature=\"sys_rng\"",
   ]
 
@@ -11281,6 +11294,55 @@ rustc_library("hex-v0_4_3") {
   applicable_licenses = [ ":hex-v0_4_3.license" ]
 }
 
+license("hickory-net-v0_26_3.license") {
+  public_package_name = "hickory_net"
+  license_files = [
+    "//third_party/rust_crates/vendor/hickory-net-0.26.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hickory-net-0.26.3/LICENSE-MIT",
+  ]
+}
+
+rustc_library("hickory-net-v0_26_3") {
+  crate_name = "hickory_net"
+  source_root = "//third_party/rust_crates/vendor/hickory-net-0.26.3/src/lib.rs"
+  output_name = "hickory_net-cd35f94d5a8cbfbb"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":async-trait-v0_1_92($host_toolchain)" ]
+  deps += [ ":cfg-if-v1_0_4" ]
+  deps += [ ":data-encoding-v2_11_1" ]
+  deps += [ ":futures-channel-v0_3_34" ]
+  deps += [ ":futures-io-v0_3_34" ]
+  deps += [ ":futures-util-v0_3_34" ]
+  deps += [ ":hickory-proto-v0_26_3" ]
+  deps += [ ":idna-v1_1_0" ]
+  deps += [ ":ipnet-v2_11_0" ]
+  deps += [ ":rand-v0_10_2" ]
+  deps += [ ":thiserror-v2_0_20" ]
+  deps += [ ":tinyvec-v1_11_0" ]
+  deps += [ ":tracing-v0_1_44" ]
+  deps += [ ":url-v2_5_8" ]
+  if (false) {
+    deps += [ ":jni-v0_22_4" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=cd35f94d5a8cbfbb",
+    "-Cextra-filename=-cd35f94d5a8cbfbb",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":hickory-net-v0_26_3.license" ]
+}
+
 license("hickory-proto-v0_26_3.license") {
   public_package_name = "hickory_proto"
   license_files = [
@@ -11305,6 +11367,7 @@ rustc_library("hickory-proto-v0_26_3") {
   deps += [ ":ipnet-v2_11_0" ]
   deps += [ ":once_cell-v1_21_4" ]
   deps += [ ":rand-v0_10_2" ]
+  deps += [ ":ring-v0_17_14" ]
   deps += [ ":thiserror-v2_0_20" ]
   deps += [ ":tinyvec-v1_11_0" ]
   deps += [ ":tracing-v0_1_44" ]
@@ -11319,6 +11382,7 @@ rustc_library("hickory-proto-v0_26_3") {
     "--cap-lints=allow",
     "-Cmetadata=d6d2b031d4840b65",
     "-Cextra-filename=-d6d2b031d4840b65",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -19003,10 +19067,16 @@ rustc_library("ring-v0_17_14") {
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"dev_urandom_fallback\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = []
   visibility += [ "//third_party/rust_crates/compat/icu:*" ]
+  visibility += [ ":hickory-proto-v0_26_3.actual" ]
+  visibility += [ ":hickory-proto-v0_26_3.rustdoc" ]
+  visibility += [ ":hickory-proto-v0_26_3.aux.deps.deps" ]
+  visibility += [ ":hickory-proto-v0_26_3.aux.deps.transdeps" ]
+  visibility += [ ":hickory-proto-v0_26_3.actual.rust_compilation_deps" ]
   visibility += [ ":ring" ]
   visibility += [ ":ring-0.17.14" ]
   visibility += [ ":rustls-v0_23_42.actual" ]

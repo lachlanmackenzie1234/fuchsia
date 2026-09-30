@@ -308,6 +308,7 @@ euclid = { version = "0.22.14", features = [ "serde" ] }
 flagset = "0.4.7"
 getopts = "0.2"
 # TODO(https://fxbug.dev/42084779): Remove empty/critical-section and once_cell remove_features when upgrading to >= 0.26.4.
+hickory-net = { version = "0.26.3", default-features = false }
 hickory-proto = { version = "0.26.3", default-features = false }
 hyper-rustls = { version = "0.27.9", default-features = false, features = ["ring", "http1", "tls12"] }
 mock-omaha-server = "0.5.0"
@@ -1050,6 +1051,11 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 # Thank you!
 visibility = [
   "//third_party/rust_crates/compat/icu:*",
+  ":hickory-proto-v0_26_3.actual",
+  ":hickory-proto-v0_26_3.rustdoc",
+  ":hickory-proto-v0_26_3.aux.deps.deps",
+  ":hickory-proto-v0_26_3.aux.deps.transdeps",
+  ":hickory-proto-v0_26_3.actual.rust_compilation_deps",
   ":ring",
   ":ring-0.17.14",
   ":rustls-v0_23_42.actual",
