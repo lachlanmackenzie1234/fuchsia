@@ -20,6 +20,7 @@ mod reachability;
 mod token_registry;
 
 use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
@@ -473,6 +474,37 @@ impl RegisteredNetworks {
         }
     }
 
+    fn dns_servers_for_network<'a>(
+        &'a self,
+        network_id: NetworkId,
+        properties: &'a NetworkProperties,
+    ) -> Vec<&'a fnet_name::DnsServer_> {
+        match network_id {
+            NetworkId::Delegated(_) => properties.dns_servers.iter().collect(),
+            NetworkId::Fuchsia(InterfaceId(if_id)) => {
+                if !properties.dns_servers.is_empty() {
+                    properties.dns_servers.iter().collect()
+                } else {
+                    self.dns_servers
+                        .iter()
+                        .filter(|s| match &s.source {
+                            Some(fnet_name::DnsServerSource::Dhcp(d)) => {
+                                d.source_interface == Some(if_id.get())
+                            }
+                            Some(fnet_name::DnsServerSource::Dhcpv6(d)) => {
+                                d.source_interface == Some(if_id.get())
+                            }
+                            Some(fnet_name::DnsServerSource::Ndp(d)) => {
+                                d.source_interface == Some(if_id.get())
+                            }
+                            _ => false,
+                        })
+                        .collect()
+                }
+            }
+        }
+    }
+
     fn update_inspect(&self, node: &fuchsia_inspect::Node) {
         node.clear_recorded();
 
@@ -482,6 +514,16 @@ impl RegisteredNetworks {
 
         if let Some(starnix_default) = &self.starnix_default {
             node.record_string("starnix_default", starnix_default.to_string());
+        }
+
+        // The cross-source set handed to the resolver, including static servers no network
+        // owns. Not `Self::consolidated_dns_servers`, the registry's SocketProxy contribution.
+        if !self.dns_servers.is_empty() {
+            node.record_child("system_dns_servers", |system_node| {
+                for (i, server) in self.dns_servers.iter().enumerate() {
+                    server.record_inspect(system_node, &i.to_string());
+                }
+            });
         }
 
         let mut sorted_networks: Vec<_> = self.networks.iter().collect();
@@ -505,8 +547,40 @@ impl RegisteredNetworks {
                 if let Some(connectivity_state) = &properties.connectivity_state {
                     net_node.record_string("connectivity_state", connectivity_state.as_str());
                 }
+
+                let network_dns_servers = self.dns_servers_for_network(*network_id, properties);
+
+                if !network_dns_servers.is_empty() {
+                    net_node.record_child("dns_servers", |dns_node| {
+                        for (i, server) in network_dns_servers.iter().enumerate() {
+                            server.record_inspect(dns_node, &i.to_string());
+                        }
+                    });
+                }
             });
         }
+    }
+}
+
+trait DnsServerInspectExt {
+    fn record_inspect(&self, node: &fuchsia_inspect::Node, name: &str);
+}
+
+impl DnsServerInspectExt for fnet_name::DnsServer_ {
+    fn record_inspect(&self, node: &fuchsia_inspect::Node, name: &str) {
+        let Some(address) = &self.address else {
+            return;
+        };
+        let server_str = fnet_ext::SocketAddress::from(*address).to_string();
+        let (source_type, iface_id) = dns_source_info(&self.source);
+
+        node.record_child(name, |entry_node| {
+            entry_node.record_string("server", server_str);
+            entry_node.record_string("type", source_type);
+            if let Some(iface_id) = iface_id {
+                entry_node.record_uint("interface_id", iface_id);
+            }
+        });
     }
 }
 
@@ -540,6 +614,17 @@ impl ConnectivityStateInspectExt for fnp_socketproxy::ConnectivityState {
             fnp_socketproxy::ConnectivityState::FullConnectivity => "FullConnectivity",
             fnp_socketproxy::ConnectivityState::__SourceBreaking { .. } => "Unknown",
         }
+    }
+}
+
+fn dns_source_info(source: &Option<fnet_name::DnsServerSource>) -> (&'static str, Option<u64>) {
+    match source {
+        Some(fnet_name::DnsServerSource::StaticSource(_)) => ("Static", None),
+        Some(fnet_name::DnsServerSource::Dhcp(dhcp)) => ("Dhcpv4", dhcp.source_interface),
+        Some(fnet_name::DnsServerSource::Dhcpv6(dhcpv6)) => ("Dhcpv6", dhcpv6.source_interface),
+        Some(fnet_name::DnsServerSource::Ndp(ndp)) => ("Ndp", ndp.source_interface),
+        Some(fnet_name::DnsServerSource::SocketProxy(_)) => ("SocketProxy", None),
+        Some(fnet_name::DnsServerSource::__SourceBreaking { .. }) | None => ("Unknown", None),
     }
 }
 
@@ -1097,7 +1182,7 @@ pub struct NetpolNetworksService {
 
     // Inspect metrics for operations
     metrics: OperationsMetrics,
-    // Inspect node for network topology & properties
+    // Inspect node for network topology & DNS servers
     networks_inspect_node: Option<fuchsia_inspect::Node>,
 }
 
@@ -3829,6 +3914,225 @@ mod tests {
             )
             .await,
             Ok(())
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_networks_and_dns_inspect() {
+        const FUCHSIA_ID_2: NetworkId = NetworkId::Fuchsia(ID_2);
+        const DELEGATED_ID_100: NetworkId =
+            NetworkId::Delegated(InterfaceId(NonZeroU64::new(100).unwrap()));
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let telemetry_node = inspector.root().create_child("telemetry");
+        let mut service = NetpolNetworksService::default()
+            .with_inspect(&telemetry_node, "operations", &telemetry_node, "network_registry")
+            .expect("failed to initialize inspect");
+        inspector.root().record(telemetry_node);
+
+        // Initial check: empty network_registry node
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: {}
+                }
+            }
+        );
+
+        // Update DNS with static and dynamic (DHCPv4, NDP, DHCPv6) servers.
+        let static_server_1 = fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("8.8.8.8:53")),
+            source: Some(fnet_name::DnsServerSource::StaticSource(
+                fnet_name::StaticDnsServerSource::default(),
+            )),
+            ..Default::default()
+        };
+        let static_server_2 = fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("8.8.4.4:53")),
+            source: Some(fnet_name::DnsServerSource::StaticSource(
+                fnet_name::StaticDnsServerSource::default(),
+            )),
+            ..Default::default()
+        };
+        let dhcp_server = fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("192.168.1.1:53")),
+            source: Some(fnet_name::DnsServerSource::Dhcp(fnet_name::DhcpDnsServerSource {
+                source_interface: Some(ID_2.get()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let ndp_server = fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("[fe80::1%1]:53")),
+            source: Some(fnet_name::DnsServerSource::Ndp(fnet_name::NdpDnsServerSource {
+                source_interface: Some(ID_2.get()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let dhcpv6_server = fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("[2001:4860:4860::8888]:53")),
+            source: Some(fnet_name::DnsServerSource::Dhcpv6(fnet_name::Dhcpv6DnsServerSource {
+                source_interface: Some(ID_2.get()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        service
+            .update(NetworkRegistryUpdate::UpdateDns(vec![
+                dhcp_server.clone(),
+                ndp_server.clone(),
+                dhcpv6_server.clone(),
+                static_server_1.clone(),
+                static_server_2.clone(),
+            ]))
+            .await;
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: contains {
+                        system_dns_servers: {
+                            "0": {
+                                server: "192.168.1.1:53",
+                                type: "Dhcpv4",
+                                interface_id: 2u64,
+                            },
+                            "1": {
+                                server: "[fe80::1%1]:53",
+                                type: "Ndp",
+                                interface_id: 2u64,
+                            },
+                            "2": {
+                                server: "[2001:4860:4860::8888]:53",
+                                type: "Dhcpv6",
+                                interface_id: 2u64,
+                            },
+                            "3": {
+                                server: "8.8.8.8:53",
+                                type: "Static",
+                            },
+                            "4": {
+                                server: "8.8.4.4:53",
+                                type: "Static",
+                            },
+                        },
+                    }
+                }
+            }
+        );
+
+        // Add a Fuchsia network (ID_2)
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                FUCHSIA_ID_2,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added: true,
+                    name: Some("wlan0".to_string()),
+                    network_type: Some(fnp_socketproxy::NetworkType::Wifi),
+                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                    ..Default::default()
+                }),
+            ))
+            .await;
+
+        // Add a Delegated network (ID 100) with SocketProxy DNS.
+        let socketproxy_dns = fnet_name::DnsServer_ {
+            address: Some(net_declare::fidl_socket_addr!("192.168.1.2:53")),
+            source: Some(fnet_name::DnsServerSource::SocketProxy(
+                fnet_name::SocketProxyDnsServerSource::default(),
+            )),
+            ..Default::default()
+        };
+        let mut marks = fnet::Marks::default();
+        marks.mark_1 = Some(100);
+        service
+            .update(NetworkRegistryUpdate::ChangeNetwork(
+                DELEGATED_ID_100,
+                NetworkUpdate::Properties(NetworkPropertiesChange {
+                    added: true,
+                    marks: Some(marks),
+                    dns_servers: Some(vec![socketproxy_dns]),
+                    name: Some("wlan0".to_string()),
+                    network_type: Some(fnp_socketproxy::NetworkType::Wifi),
+                    connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+                }),
+            ))
+            .await;
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    network_registry: {
+                        default_network: "fuchsia:2",
+                        system_dns_servers: {
+                            "0": {
+                                server: "192.168.1.1:53",
+                                type: "Dhcpv4",
+                                interface_id: 2u64,
+                            },
+                            "1": {
+                                server: "[fe80::1%1]:53",
+                                type: "Ndp",
+                                interface_id: 2u64,
+                            },
+                            "2": {
+                                server: "[2001:4860:4860::8888]:53",
+                                type: "Dhcpv6",
+                                interface_id: 2u64,
+                            },
+                            "3": {
+                                server: "8.8.8.8:53",
+                                type: "Static",
+                            },
+                            "4": {
+                                server: "8.8.4.4:53",
+                                type: "Static",
+                            },
+                        },
+                        fuchsia_2: {
+                            name: "wlan0",
+                            network_type: "Wifi",
+                            connectivity_state: "FullConnectivity",
+                            dns_servers: {
+                                "0": {
+                                    server: "192.168.1.1:53",
+                                    type: "Dhcpv4",
+                                    interface_id: 2u64,
+                                },
+                                "1": {
+                                    server: "[fe80::1%1]:53",
+                                    type: "Ndp",
+                                    interface_id: 2u64,
+                                },
+                                "2": {
+                                    server: "[2001:4860:4860::8888]:53",
+                                    type: "Dhcpv6",
+                                    interface_id: 2u64,
+                                },
+                            },
+                        },
+                        delegated_100: {
+                            name: "wlan0",
+                            network_type: "Wifi",
+                            connectivity_state: "FullConnectivity",
+                            dns_servers: {
+                                "0": {
+                                    server: "192.168.1.2:53",
+                                    type: "SocketProxy",
+                                },
+                            },
+                        },
+                    }
+                }
+            }
         );
     }
 }
