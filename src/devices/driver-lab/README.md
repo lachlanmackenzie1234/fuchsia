@@ -8,3 +8,35 @@ See the [specification](./SPEC.md) for more details.
 
 **Note:** This code is experimental and has not been subject to the standard
 level of human code review.
+
+---
+
+Engineering-only DFv2 driver (`lab_proxy`) providing policy-checked,
+audited hardware access for host-driven driver development. Phase 1
+offers read-only access and serves the `fuchsia.driver.lab` wire
+contract consumed by the host tooling at `//tools/driver-lab`. Bind
+rules are `false` until the resource provider and property-gated
+activation land, so the proxy never binds; no resources are offered,
+so no hardware is reachable by construction.
+
+Every operation is validated against the immutable target ceiling and
+the session's exact allowlist immediately before access, and every
+attempt -- including rejections -- is recorded in a bounded audit ring.
+The proxy must never be offered by production images.
+
+The normative specification is [SPEC.md](SPEC.md); the companion host
+tooling specification is at `//tools/driver-lab/SPEC.md`.
+
+## Testing
+
+Host-side unit tests for the policy/audit/executor core:
+
+```
+$ fx test --host lab_proxy_core_lib_test
+```
+
+Target unit tests:
+
+```
+$ fx test lab_proxy-unit-test
+```

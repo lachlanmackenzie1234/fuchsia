@@ -1,0 +1,138 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+mod server;
+
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
+use fidl_fuchsia_driver_lab as flab;
+use fuchsia_async as fasync;
+use fuchsia_component::server::ServiceFs;
+use futures::StreamExt;
+use lab_proxy_core::audit_ring::{AuditRecord, AuditRing};
+use lab_proxy_core::digest::{combined_digest, per_resource_digests, policy_digest};
+use lab_proxy_core::executor::{ExecLimits, Executor};
+use lab_proxy_core::session::{ProxyIdentity, SessionManager};
+use log::info;
+use server::{ProxyState, SharedState, ZxClock};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
+/// Number of audit entries retained before the ring wraps. This moves into
+/// the immutable target ceiling once policy loading exists.
+const AUDIT_CAPACITY: usize = 1024;
+
+/// Maximum snapshot items accepted, within the wire-contract bound.
+const MAX_SNAPSHOT_ITEMS: usize = 64;
+
+struct LabProxy {
+    _node: Node,
+    _scope: fasync::Scope,
+    state: SharedState,
+}
+
+driver_register!(LabProxy);
+
+fn now_ns() -> i64 {
+    zx::MonotonicInstant::get().into_nanos()
+}
+
+impl Driver for LabProxy {
+    const NAME: &str = "lab_proxy";
+
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
+        let node = context.take_node()?;
+
+        // No resource provider exists yet: the proxy offers no resources,
+        // so only an empty session allowlist validates and no hardware is
+        // reachable.
+        let resources = BTreeMap::new();
+        let ceiling = BTreeMap::new();
+
+        // Kernel randomness is the per-boot identity source: there is no
+        // kernel boot UUID, and this is the same mechanism RCS uses for
+        // ffx's reboot detection. A driver-host restart also regenerates
+        // it, which is conservatively correct for staleness -- the
+        // boot-timeline generation below distinguishes restart from
+        // reboot (it keeps increasing across restarts within one boot).
+        let mut boot_id_bytes = [0u8; 16];
+        zx::cprng_draw(&mut boot_id_bytes);
+        let boot_id: String = boot_id_bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+        let proxy_generation = zx::BootInstant::get().into_nanos() as u64;
+
+        // No node moniker is available until the proxy binds to a real
+        // node; the placeholder participates in digests only when
+        // resources exist, which requires the resource provider.
+        let digests = per_resource_digests("driver-lab.unbound", "none", &resources, &ceiling);
+        let identity = ProxyIdentity {
+            boot_id,
+            proxy_generation,
+            resource_digest: combined_digest(digests.values().copied()).to_string(),
+            // TODO: digest the generated policy manifest once policy
+            // loading exists; until then this is the digest of the
+            // (empty) in-memory ceiling.
+            policy_digest: policy_digest(&ceiling).to_string(),
+        };
+        let resource_digests: BTreeMap<u32, String> =
+            digests.iter().map(|(id, digest)| (*id, digest.to_string())).collect();
+        let sessions = SessionManager::new(identity, resources, ceiling);
+        let executor = Executor::new(
+            BTreeMap::new(),
+            ZxClock,
+            ExecLimits { max_snapshot_items: MAX_SNAPSHOT_ITEMS },
+        );
+        let mut audit = AuditRing::new(AUDIT_CAPACITY);
+        audit.append(AuditRecord::lifecycle("driver_start", now_ns()));
+        let state: SharedState =
+            Arc::new(Mutex::new(ProxyState { sessions, executor, audit, resource_digests }));
+
+        let scope = fasync::Scope::new_with_name(Self::NAME);
+        let mut outgoing = ServiceFs::new();
+        outgoing.dir("svc").add_fidl_service_instance(
+            "default",
+            |request: flab::ServiceRequest| {
+                let flab::ServiceRequest::Proxy(stream) = request;
+                stream
+            },
+        );
+        context.serve_outgoing(&mut outgoing)?;
+
+        {
+            let state = state.clone();
+            let handle = scope.to_handle();
+            scope.spawn(async move {
+                let mut outgoing = outgoing;
+                while let Some(stream) = outgoing.next().await {
+                    handle.spawn(server::serve_proxy(state.clone(), handle.clone(), stream));
+                }
+            });
+        }
+
+        info!("LabProxy started; serving fuchsia.driver.lab");
+        Ok(Self { _node: node, _scope: scope, state })
+    }
+
+    async fn stop(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.sessions.reject_new_sessions();
+        let seq = state.audit.append(AuditRecord::lifecycle("driver_stop", now_ns()));
+        info!("LabProxy::stop() audit seq {seq}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf_component::testing::harness::TestHarness;
+
+    #[fuchsia::test]
+    async fn test_driver_start() {
+        let mut harness = TestHarness::<LabProxy>::new();
+        let started_driver = harness.start_driver().await.unwrap();
+
+        // Verify driver started successfully
+        assert!(true);
+
+        started_driver.stop_driver().await;
+    }
+}

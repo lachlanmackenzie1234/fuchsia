@@ -27,7 +27,7 @@ list shows which changes precede and which follow that commit.
 
 - [x] CS1 `[driver-lab] Proxy driver specification` -- this
       document.
-- [ ] CS3 `[driver-lab] Phase 1 proxy driver core` -- the
+- [x] CS3 `[driver-lab] Phase 1 proxy driver core` -- the
       takeover-ready `fuchsia.driver.lab` wire contract (sections 7.4,
       11) and the host-testable policy core: ceiling and exact
       allowlist enforcement (9, 10), per-boot identity and description
