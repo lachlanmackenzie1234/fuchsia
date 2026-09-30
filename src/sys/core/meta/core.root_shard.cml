@@ -63,6 +63,7 @@
                 "fuchsia.bluetooth.SourceType",
                 "fuchsia.bluetooth.VendorId",
                 "fuchsia.bluetooth.Version",
+                "fuchsia.diagnostics.persist.EnableShutdownSnapshot",
                 "fuchsia.diagnostics.persist.LowBatteryThresholdPercent",
                 "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
                 "fuchsia.diagnostics.persist.SkipUpdateCheck",
