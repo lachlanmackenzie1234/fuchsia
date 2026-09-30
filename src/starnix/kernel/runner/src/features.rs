@@ -142,6 +142,9 @@ pub struct Features {
 
     /// Whether to initialize Android-compatible USB monitoring sysfs logic.
     pub android_usb: bool,
+
+    /// Whether to initialize unified tracing with a Fuchsia trace observer.
+    pub unified_tracing: bool,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -209,9 +212,11 @@ impl Features {
                 wakeup_test,
                 mmcblk_stub,
                 android_usb,
+                unified_tracing,
                 initial_view_id_annotation,
             } => {
                 inspect_node.record_bool("selinux", selinux.enabled);
+                inspect_node.record_bool("unified_tracing", *unified_tracing);
                 inspect_node.record_bool("ashmem", *ashmem);
                 inspect_node.record_bool("boot_notifier", *boot_notifier);
                 inspect_node.record_string(
@@ -409,6 +414,7 @@ pub fn parse_features(
             }
             (Feature::Nanohub, _) => features.nanohub = true,
             (Feature::Fastrpc, _) => features.fastrpc = true,
+            (Feature::UnifiedTracing, _) => features.unified_tracing = true,
             (Feature::NetworkManager, _) => features.network_manager = true,
             (Feature::Gfxstream, _) => features.gfxstream = true,
             (Feature::Bpf, Some(version)) => features.kernel.bpf_v2 = version == "v2",
@@ -625,6 +631,9 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
     if let Some(socket_path) = features.perfetto.clone() {
         start_perfetto_consumer_thread(kernel, socket_path)
             .context("Failed to start perfetto consumer thread")?;
+    }
+    if features.unified_tracing {
+        kernel.trace_event_manager.init_trace_observer(kernel);
     }
     if features.ashmem {
         ashmem_device_init(kernel);
