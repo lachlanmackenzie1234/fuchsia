@@ -13,6 +13,8 @@ from subcommands import pool_add as pool_add_cmd
 from subcommands import pool_list as pool_list_cmd
 from subcommands import pool_remove as pool_remove_cmd
 from subcommands import remove as remove_cmd
+from worktree import WorktreeState
+from worktree_metrics import WorktreeMetricsTracker
 from worktree_pool import WorktreePool
 
 
@@ -159,6 +161,33 @@ def main() -> None:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        _record_metrics_safely(pool)
+
+
+def _record_metrics_safely(pool: WorktreePool) -> None:
+    try:
+        worktrees = pool.get_worktrees()
+        total_count = len(worktrees)
+        leased_count = sum(
+            1 for wt in worktrees if wt.get_state() == WorktreeState.LEASED
+        )
+        built_recently_count = sum(
+            1 for wt in worktrees if wt.is_built_recently(max_age_days=7)
+        )
+        not_built_recently_count = total_count - built_recently_count
+        tracker = WorktreeMetricsTracker(pool.jiri_root, pool.fuchsia_dir)
+        tracker.record_state(
+            current_total=total_count,
+            current_leased=leased_count,
+            current_built_recently=built_recently_count,
+            current_not_built_recently=not_built_recently_count,
+        )
+    except Exception as e:
+        print(
+            f"Warning: Failed to record worktree metrics: {e}",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

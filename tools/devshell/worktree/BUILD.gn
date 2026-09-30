@@ -26,9 +26,11 @@ if (is_host) {
     "main.py",
     "tests/run_all.py",
     "tests/test_build_dir.py",
+    "tests/test_metrics.py",
     "tests/test_pool.py",
     "utils.py",
     "worktree.py",
+    "worktree_metrics.py",
     "worktree_pool.py",
     "worktree_printer.py",
   ]
