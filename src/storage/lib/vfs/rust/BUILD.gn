@@ -140,7 +140,7 @@ if (is_fuchsia) {
       "//src/testing/fidl:placeholders_rust",
     ]
     configs += [ "//build/config/rust:bootfs" ]
-    with_unit_tests = true
+    with_unit_tests = "fuchsia"
   }
 
   # Statically linked version of the vfs.

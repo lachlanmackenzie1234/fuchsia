@@ -54,6 +54,8 @@ import("//build/rust/rustc_test.gni")
 #     Builds unit tests associated with the binary. This will create a
 #     `<name>_lib_test` test file in the output directory. Equivalent
 #     to adding a `rustc_test` target with that name and the same source_root.
+#     Accepts a boolean or "fuchsia" (equivalent to `true`). Since Rust dylibs
+#     are Fuchsia-only, "host" and "both" are not allowed.
 #
 #   test_environments (optional)
 #     What environments unit tests, if provided, should target. Only used here
@@ -109,9 +111,20 @@ template("rustc_dylib") {
     _original_target_name = target_name
   }
 
-  # if "with_unit_tests" is set to true, generate an additional rust test target
-  # TODO(https://fxbug.dev/42152447): accept a string.
-  if (defined(invoker.with_unit_tests) && invoker.with_unit_tests == true) {
+  # Resolve `with_unit_tests`. Rust dylibs are Fuchsia-only, so the only
+  # accepted string value is "fuchsia". See https://fxbug.dev/515405864.
+  _generate_unit_tests = false
+  if (defined(invoker.with_unit_tests)) {
+    _with_unit_tests_value = invoker.with_unit_tests
+    assert(_with_unit_tests_value == true || _with_unit_tests_value == false ||
+               _with_unit_tests_value == "fuchsia",
+           "rustc_dylib only supports Fuchsia, with_unit_tests must be a " +
+               "boolean or \"fuchsia\", got: ${_with_unit_tests_value}")
+    _generate_unit_tests = _with_unit_tests_value != false
+  }
+
+  # If requested, generate an additional rust test target.
+  if (_generate_unit_tests) {
     rustc_test_internal("${target_name}_test") {
       name = invoker.target_name + "_dylib_test"
       if (defined(invoker.name)) {
