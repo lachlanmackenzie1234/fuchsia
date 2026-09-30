@@ -205,11 +205,11 @@ void NodeManager::CacheNatEntry(nid_t nid, RawNatEntry &raw_entry) {
       if (entry = GrabNatEntry(nid); !entry) {
         continue;
       }
+      entry->SetBlockAddress(LeToCpu(raw_entry.block_addr));
+      entry->SetIno(LeToCpu(raw_entry.ino));
+      entry->SetVersion(raw_entry.version);
+      entry->SetCheckpointed();
     }
-    entry->SetBlockAddress(LeToCpu(raw_entry.block_addr));
-    entry->SetIno(LeToCpu(raw_entry.ino));
-    entry->SetVersion(raw_entry.version);
-    entry->SetCheckpointed();
     break;
   }
 }

@@ -253,6 +253,44 @@ TEST_F(NodeManagerTest, NatCache) {
   }
 }
 
+TEST_F(NodeManagerTest, CacheNatEntryDoesNotOverwriteExistingEntry) {
+  NodeManager &node_manager = fs_->GetNodeManager();
+
+  std::vector<fbl::RefPtr<VnodeF2fs>> vnodes;
+  std::vector<uint32_t> inos;
+  FileTester::CreateChildren(fs_.get(), vnodes, inos, root_dir_, "CacheNatRace_", 1);
+  ASSERT_EQ(inos.size(), 1u);
+  const nid_t ino = inos[0];
+
+  NodeInfo before_ni;
+  ASSERT_EQ(node_manager.GetNodeInfo(ino, before_ni), ZX_OK);
+  ASSERT_EQ(before_ni.blk_addr, kNewAddr);
+  ASSERT_FALSE(node_manager.IsCheckpointedNode(ino));
+
+  // Simulate a concurrent GetNodeInfo() cache miss attempting to cache a stale on-disk RawNatEntry
+  // after SetNodeAddr() has already inserted a dirty entry in nat_cache_.
+  RawNatEntry stale_raw_entry = {
+      .version = static_cast<uint8_t>(before_ni.version + 1),
+      .ino = CpuToLe(ino),
+      .block_addr = CpuToLe(kNullAddr),
+  };
+  MapTester::CacheNatEntry(node_manager, ino, stale_raw_entry);
+
+  NodeInfo after_ni;
+  ASSERT_EQ(node_manager.GetNodeInfo(ino, after_ni), ZX_OK);
+  EXPECT_EQ(after_ni.blk_addr, before_ni.blk_addr);
+  EXPECT_EQ(after_ni.version, before_ni.version);
+  EXPECT_FALSE(node_manager.IsCheckpointedNode(ino));
+
+  ASSERT_EQ(fs_->SyncFs(), ZX_OK);
+  EXPECT_TRUE(node_manager.IsCheckpointedNode(ino));
+
+  for (auto &vnode_refptr : vnodes) {
+    ASSERT_EQ(vnode_refptr->Close(), ZX_OK);
+    vnode_refptr.reset();
+  }
+}
+
 TEST_F(NodeManagerTest, FreeNid) {
   NodeManager &node_manager = fs_->GetNodeManager();
   auto init_fcnt = node_manager.GetFreeNidCount();
