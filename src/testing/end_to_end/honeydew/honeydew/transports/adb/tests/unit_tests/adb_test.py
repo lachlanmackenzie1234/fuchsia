@@ -942,7 +942,11 @@ class AdbTests(unittest.TestCase):
 
         self.adb_obj.wait_for_boot_complete()
 
-        mock_getprop.assert_called_once_with(self.adb_obj, "sys.boot_completed")
+        mock_getprop.assert_called_once_with(
+            self.adb_obj,
+            "sys.boot_completed",
+            timeout=adb._BOOT_COMPLETED_GETPROP_TIMEOUT_SECS,
+        )
 
     @mock.patch("time.sleep", autospec=True)
     @mock.patch.object(adb.Adb, "getprop", autospec=True)
@@ -975,6 +979,31 @@ class AdbTests(unittest.TestCase):
         mock_sleep.assert_has_calls([mock.call(0.5), mock.call(0.5)])
 
     @mock.patch("time.sleep", autospec=True)
+    @mock.patch.object(adb.Adb, "getprop", autospec=True)
+    def test_wait_for_boot_complete_retries_after_getprop_timeout(
+        self, mock_getprop: mock.Mock, mock_sleep: mock.Mock
+    ) -> None:
+        """Test a timed-out getprop poll is treated as not booted and polling continues."""
+        mock_getprop.side_effect = [
+            adb_errors.AdbTimeoutError("getprop timed out"),
+            "1",
+        ]
+
+        self.adb_obj.wait_for_boot_complete(poll_interval=0.5)
+
+        mock_getprop.assert_has_calls(
+            [
+                mock.call(
+                    self.adb_obj,
+                    "sys.boot_completed",
+                    timeout=adb._BOOT_COMPLETED_GETPROP_TIMEOUT_SECS,
+                )
+            ]
+            * 2
+        )
+        mock_sleep.assert_called_once_with(0.5)
+
+    @mock.patch("time.sleep", autospec=True)
     @mock.patch("time.time", autospec=True)
     @mock.patch.object(adb.Adb, "getprop", autospec=True)
     def test_wait_for_boot_complete_timeout(
@@ -990,7 +1019,11 @@ class AdbTests(unittest.TestCase):
         with self.assertRaises(adb_errors.AdbTimeoutError):
             self.adb_obj.wait_for_boot_complete(timeout=5.0)
 
-        mock_getprop.assert_called_once_with(self.adb_obj, "sys.boot_completed")
+        mock_getprop.assert_called_once_with(
+            self.adb_obj,
+            "sys.boot_completed",
+            timeout=adb._BOOT_COMPLETED_GETPROP_TIMEOUT_SECS,
+        )
         mock_sleep.assert_called_once_with(1.0)
 
 

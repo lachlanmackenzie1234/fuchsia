@@ -32,6 +32,8 @@ _ADB_PATH_ENV_VAR = "HONEYDEW_ADB_OVERRIDE"
 # multiple minutes.
 _DEFAULT_CHECK_CONNECTION_TIMEOUT_SECS: float = 300.0
 
+_BOOT_COMPLETED_GETPROP_TIMEOUT_SECS: float = 10.0
+
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -816,7 +818,13 @@ class Adb:
 
         def _is_boot_completed() -> bool:
             try:
-                return self.getprop("sys.boot_completed") == "1"
+                return (
+                    self.getprop(
+                        "sys.boot_completed",
+                        timeout=_BOOT_COMPLETED_GETPROP_TIMEOUT_SECS,
+                    )
+                    == "1"
+                )
             except adb_errors.AdbError as err:
                 _LOGGER.debug(
                     "Error querying sys.boot_completed on %s during boot: %s",
