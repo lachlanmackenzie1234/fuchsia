@@ -156,30 +156,6 @@ FFI_ALWAYS_INLINE Handle* cpp_process_dispatcher_handle_table_get_handle_locked(
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_handle_t cpp_process_dispatcher_handle_table_map_handle_to_value(
-    const ProcessDispatcher* process, const Handle* handle) {
-  return process->handle_table().MapHandleToValue(handle);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_process_dispatcher_handle_table_add_handle_locked(
-    ProcessDispatcher* process, Handle* handle) TA_NO_THREAD_SAFETY_ANALYSIS {
-  process->handle_table().AddHandleLocked(HandleOwner(handle));
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE Handle* cpp_process_dispatcher_handle_table_remove_handle_locked(
-    ProcessDispatcher* process, zx_handle_t handle_value) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return process->handle_table().RemoveHandleLocked(*process, handle_value).release();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE Handle* cpp_process_dispatcher_handle_table_remove_handle_ptr_locked(
-    ProcessDispatcher* process, Handle* handle) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return process->handle_table().RemoveHandleLocked(handle).release();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_koid_t
 cpp_process_dispatcher_handle_table_koid(const ProcessDispatcher* process) {
   return process->handle_table().get_koid();
