@@ -42,7 +42,11 @@ zx_status_t Dwc3::Ep0Init() {
 
 void Dwc3::Ep0Start() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Start");
-  CmdStartNewConfig(ep0_.out, 0);
+  if (!CmdStartNewConfig(ep0_.out, 0)) {
+    fdf::error("CmdStartNewConfig failed");
+    ResetEndpoints();
+    return;
+  }
   EpSetConfig(ep0_.out, true);
   EpSetConfig(ep0_.in, true);
 
@@ -51,6 +55,13 @@ void Dwc3::Ep0Start() {
 
 void Dwc3::Ep0QueueSetup() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0QueueSetup");
+  if (is_active()) {
+    for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
+      if (ep->transfer_state == Endpoint::TransferState::kStartingSingle) {
+        ep->stale_starts_to_end++;
+      }
+    }
+  }
   ep0_.in.transfer_state = Endpoint::TransferState::kIdle;
   ep0_.out.transfer_state = Endpoint::TransferState::kIdle;
   if (auto status = ep0_.buffer->CacheFlushInvalidate(0, sizeof(fdescriptor::wire::UsbSetup));
@@ -81,6 +92,10 @@ void Dwc3::Ep0StartEndpoints() {
 void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
   TRACE_DURATION("dwc3", "Dwc3::HandleEp0TransferCompleteEvent", "ep_num", ep_num);
   ZX_ASSERT(is_ep0_num(ep_num));
+  auto& ep = (ep_num == kEp0Out) ? ep0_.out : ep0_.in;
+  ep.transfer_state = Endpoint::TransferState::kIdle;
+  ep.rsrc_id = Endpoint::kInvalidResourceId;
+  ep.stale_starts_to_end = 0;
 
   // Only DataOut and DataIn states need TRB read.
   dwc3_trb_t trb{};
@@ -301,9 +316,13 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
 
 void Dwc3::Ep0EndAndStall(Endpoint& ep) {
   ep0_.shared_fifo.Clear();
-  if (ep.rsrc_id != Endpoint::kInvalidResourceId) {
-    CmdEpEndTransfer(ep);
+  if (is_active() && ep.transfer_state == Endpoint::TransferState::kStartingSingle) {
+    ep.stale_starts_to_end++;
+  } else if (ep.rsrc_id != Endpoint::kInvalidResourceId) {
+    CmdEpEndTransfer(ep, /*cmd_ioc=*/false);
   }
+  ep.rsrc_id = Endpoint::kInvalidResourceId;
+  ep.transfer_state = Endpoint::TransferState::kIdle;
   EpSetStall(ep, true);
 }
 
@@ -321,14 +340,25 @@ void Dwc3::HandleEp0Setup(size_t length) {
         return;
       case fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration):
         ResetConfiguration();
-        Ep0StartEndpoints();
-        break;
+        WaitForAllUserEndpointsIdle([this, setup, length](bool idle) {
+          if (!idle || !power_on_ ||
+              (ep0_.state != Ep0::State::TwoStage && ep0_.state != Ep0::State::WaitFidl)) {
+            return;
+          }
+          Ep0StartEndpoints();
+          DoControlCall(setup, length);
+        });
+        return;
       default:
         // fall through to the common DoControlCall
         break;
     }
   }
 
+  DoControlCall(setup, length);
+}
+
+void Dwc3::DoControlCall(fdescriptor::wire::UsbSetup setup, size_t length) {
   auto fail = [this]() {
     ep0_.shared_fifo.Clear();
     EpSetStall(ep0_.out, true);

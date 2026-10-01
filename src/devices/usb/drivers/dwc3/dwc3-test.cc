@@ -1609,4 +1609,115 @@ TEST_F(UnmanagedTestFixture, IrisExtensionDynamicSpeedBandwidthVotes) {
   EXPECT_OK(dut_.StopDriver().status_value());
 }
 
+class UnmanagedWakeLeaseTestFixture : public UnmanagedTestFixture {
+ protected:
+  void VerifyDisconnectHoldsWakeLease(bool bypass_platform_extension, bool serve_platform_mocks) {
+    dut_.RunInEnvironmentTypeContext([serve_platform_mocks](Environment& env) {
+      env.set_serve_platform_mocks(serve_platform_mocks);
+    });
+
+    zx::result start = dut_.StartDriverWithCustomStartArgs(
+        [bypass_platform_extension](fdf::DriverStartArgs& args) {
+          dwc3_config::Config cfg;
+          cfg.enable_suspend() = false;
+          cfg.bypass_platform_extension() = bypass_platform_extension;
+          args.config(cfg.ToVmo());
+        });
+    ASSERT_OK(start);
+    dut_.runtime().RunUntilIdle();
+    ASSERT_OK(WaitForPhy());
+
+    dut_.RunInDriverContext([this, bypass_platform_extension, serve_platform_mocks](Dwc3& drv) {
+      PlatformExtension* ext = this->GetPlatformExtension(drv);
+      if (bypass_platform_extension) {
+        EXPECT_EQ(ext, nullptr);
+      } else {
+        ASSERT_NE(ext, nullptr);
+        EXPECT_EQ(ext->PowersDownCoreOnDisconnect(), serve_platform_mocks);
+      }
+    });
+
+    FakeUsbDciInterface fake_dci;
+    fake_dci.SetDeferSetConnectedFalse(true);
+    libsync::Completion set_connected_false_received;
+    fake_dci.SetSetConnectedCallback([&](bool connected) {
+      if (!connected) {
+        set_connected_false_received.Signal();
+      }
+    });
+    auto binding = BindDciInterface(&fake_dci);
+
+    // Connect and supply a wake lease via the PHY connection watcher.
+    zx::eventpair lease_client, lease_peer;
+    ASSERT_OK(zx::eventpair::create(0, &lease_client, &lease_peer));
+
+    dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+    dut_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { env.usb_phy().TriggerConnection(true, std::move(lease_client)); });
+    dut_.runtime().RunUntilIdle();
+    ASSERT_OK(WaitForPhy());
+
+    dut_.RunInDriverContext(
+        [](Dwc3& drv) { EXPECT_TRUE(Dwc3TestHelper::HasConnectionLease(drv)); });
+    zx_signals_t observed = 0;
+    EXPECT_EQ(lease_peer.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &observed),
+              ZX_ERR_TIMED_OUT);
+
+    // Trigger disconnect while fake_dci holds the SetConnected(false) completer.
+    dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+    dut_.RunInEnvironmentTypeContext(
+        [](Environment& env) { env.usb_phy().TriggerConnection(false); });
+    dut_.runtime().RunUntilIdle();
+    ASSERT_OK(WaitForPhy());
+    set_connected_false_received.Wait();
+
+    ASSERT_TRUE(fake_dci.has_deferred_set_connected());
+
+    if (!bypass_platform_extension) {
+      dut_.RunInEnvironmentTypeContext([serve_platform_mocks](Environment& env) {
+        if (serve_platform_mocks) {
+          EXPECT_FALSE(env.vreg().enabled());
+          EXPECT_FALSE(env.clock_core().enabled());
+        } else {
+          EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u);
+        }
+      });
+    }
+
+    // While SetConnected(false) is still in flight, the connection wake lease must remain held so
+    // the system does not suspend before usb-peripheral and bound functions finish unconfiguring.
+    dut_.RunInDriverContext(
+        [](Dwc3& drv) { EXPECT_TRUE(Dwc3TestHelper::HasConnectionLease(drv)); });
+    observed = 0;
+    EXPECT_EQ(lease_peer.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &observed),
+              ZX_ERR_TIMED_OUT);
+
+    // Once SetConnected(false) completes, the connection wake lease must be released.
+    dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.CompleteDeferredSetConnected(ZX_OK); });
+    observed = 0;
+    EXPECT_OK(lease_peer.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite(), &observed));
+    EXPECT_NE(observed & ZX_EVENTPAIR_PEER_CLOSED, 0u);
+
+    dut_.RunInDriverContext(
+        [](Dwc3& drv) { EXPECT_FALSE(Dwc3TestHelper::HasConnectionLease(drv)); });
+
+    EXPECT_OK(dut_.StopDriver().status_value());
+  }
+};
+
+TEST_F(UnmanagedWakeLeaseTestFixture, DisconnectHoldsWakeLeaseNoPlatformExtension) {
+  VerifyDisconnectHoldsWakeLease(/*bypass_platform_extension=*/true,
+                                 /*serve_platform_mocks=*/true);
+}
+
+TEST_F(UnmanagedWakeLeaseTestFixture, DisconnectHoldsWakeLeaseQualcommPlatformExtension) {
+  VerifyDisconnectHoldsWakeLease(/*bypass_platform_extension=*/false,
+                                 /*serve_platform_mocks=*/true);
+}
+
+TEST_F(UnmanagedWakeLeaseTestFixture, DisconnectHoldsWakeLeaseIrisPlatformExtension) {
+  VerifyDisconnectHoldsWakeLease(/*bypass_platform_extension=*/false,
+                                 /*serve_platform_mocks=*/false);
+}
+
 }  // namespace dwc3

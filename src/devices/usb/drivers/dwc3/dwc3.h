@@ -176,7 +176,7 @@ class Dwc3 : public fdf::DriverBase2,
           dwc3_{dwc3},
           uep_{uep} {}
 
-    void CancelAll(zx_status_t reason);
+    void CancelAll(zx_status_t reason, bool force = false);
 
     std::queue<usb::RequestVariant> queued_reqs;  // requests waiting to be processed
     struct RequestState {
@@ -263,6 +263,8 @@ class Dwc3 : public fdf::DriverBase2,
     uint64_t total_transfers{0};
     uint64_t total_bytes{0};
     uint64_t command_failures{0};
+    uint32_t stale_starts_to_end{0};
+    uint32_t stale_cancels_to_ignore{0};
     uint8_t usb_endpoint_address{0};
 
     bool TransferStateIsActive() const {
@@ -290,6 +292,8 @@ class Dwc3 : public fdf::DriverBase2,
     TrbFifo fifo;
     Endpoint ep;
     std::optional<EpServer> server;
+    std::vector<fit::callback<void(bool)>> on_idle_callbacks;
+    uint64_t configure_generation{0};
   };
 
   // A small helper class which basically allows us to have a collection of user
@@ -470,6 +474,7 @@ class Dwc3 : public fdf::DriverBase2,
   void Ep0QueueSetup();
   void Ep0StartEndpoints();
   void HandleEp0Setup(size_t length);
+  void DoControlCall(fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, size_t length);
   void HandleEp0TransferCompleteEvent(uint8_t ep_num);
   void HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage);
   // This method clears the fifo, ends any ongoing transfers, and stalls the endpoint.
@@ -487,22 +492,31 @@ class Dwc3 : public fdf::DriverBase2,
 
   // Methods specific to user endpoints
   // This method is safe to call with the core powered down.
-  void UserEpReset(UserEndpoint& uep);
+  // When `force` is false (default, used when the event FIFO remains active such as USB bus reset),
+  // active transfers enter `kCanceling` (`CMDIOC=1`) and defer `DALEPENA` clearing until
+  // `DEPEVT_CMD_CMPL` arrives. When `force` is true (used prior to `StopEvents()` / power-off),
+  // active transfers are ended synchronously (`CMDIOC=0`) so `DALEPENA` is cleared immediately.
+  void UserEpReset(UserEndpoint& uep, bool force = false);
   void UserEpQueueNext(UserEndpoint& uep);
   void UserEpQueueNextSingle(UserEndpoint& uep);
   void UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer);
+  bool IsEndpointIdle(const UserEndpoint& uep) const;
+  void WaitForEndpointIdle(UserEndpoint& uep, fit::callback<void(bool)> callback);
+  void WaitForAllUserEndpointsIdle(fit::callback<void(bool)> callback);
+  void NotifyEndpointIdle(UserEndpoint& uep);
+  void CancelAllEndpointIdleCallbacks();
 
   // This method is safe to call with the core powered down.
-  void ResetEndpoints();
+  void ResetEndpoints(bool force = false);
 
   // Commands
-  void CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id_base);
+  bool CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id_base);
   void CmdEpSetConfig(const Endpoint& ep, bool modify);
   void CmdEpTransferConfig(const Endpoint& ep);
   void CmdEpStartTransfer(const Endpoint& ep, zx_paddr_t trb_phys);
   void CmdEpUpdateTransfer(const Endpoint& ep);
   // This method is safe to call with the core powered down.
-  void CmdEpEndTransfer(const Endpoint& ep);
+  bool CmdEpEndTransfer(const Endpoint& ep, bool cmd_ioc = true);
   void CmdEpSetStall(const Endpoint& ep);
   void CmdEpClearStall(const Endpoint& ep);
 
@@ -556,6 +570,7 @@ class Dwc3 : public fdf::DriverBase2,
   fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
   fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher> connection_watcher_;
   zx::eventpair connection_lease_;
+  uint64_t connect_status_generation_{0};
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> dci_bindings_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;
@@ -602,7 +617,7 @@ class Dwc3 : public fdf::DriverBase2,
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state);
   void SetDeviceState(fuchsia_hardware_usb_policy::DeviceState state, uint8_t address);
 
-  void WaitForCmdAct(const char* caller_name, const uint8_t ep_num);
+  bool WaitForCmdAct(const char* caller_name, const uint8_t ep_num);
 };
 
 }  // namespace dwc3

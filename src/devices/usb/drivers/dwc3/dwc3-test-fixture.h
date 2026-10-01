@@ -70,6 +70,7 @@ class Dwc3TestHelper {
     return drv.device_state_;
   }
   static void SetPowerOn(Dwc3& drv, bool power_on) { drv.power_on_ = power_on; }
+  static bool HasConnectionLease(const Dwc3& drv) { return drv.connection_lease_.is_valid(); }
   static fuchsia_hardware_usb_descriptor::UsbSpeed GetConnectionSpeed(const Dwc3& drv) {
     return drv.connection_speed_;
   }
@@ -154,7 +155,9 @@ class Dwc3TestHelper {
     return drv.EpSetStall(ep, stall);
   }
   static void UserEpQueueNext(Dwc3& drv, Dwc3::UserEndpoint& uep) { drv.UserEpQueueNext(uep); }
-  static void UserEpReset(Dwc3& drv, Dwc3::UserEndpoint& uep) { drv.UserEpReset(uep); }
+  static void UserEpReset(Dwc3& drv, Dwc3::UserEndpoint& uep, bool force = false) {
+    drv.UserEpReset(uep, force);
+  }
   static void SetDeviceAddress(Dwc3& drv, uint32_t address) { drv.SetDeviceAddress(address); }
   static bool IsFifoEmpty(Dwc3& drv) { return drv.ep0_.shared_fifo.IsEmpty(); }
   static void SetEpTransferState(Dwc3& drv, uint8_t ep_num, TransferState state) {
@@ -166,6 +169,13 @@ class Dwc3TestHelper {
         uep->ep.transfer_state = state;
       }
     }
+  }
+  static TransferState GetEpTransferState(Dwc3& drv, uint8_t ep_num) {
+    if (ep_num < 2) {
+      return ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).transfer_state;
+    }
+    auto* uep = drv.get_user_endpoint(ep_num);
+    return uep ? uep->ep.transfer_state : TransferState::kIdle;
   }
   static void SetEpRsrcId(Dwc3& drv, uint8_t ep_num, uint32_t rsrc_id) {
     if (ep_num < 2) {
@@ -212,6 +222,14 @@ class Dwc3TestHelper {
     }
     auto* uep = drv.get_user_endpoint(ep_num);
     return uep ? uep->ep.transfer_state == dwc3::Dwc3::Endpoint::TransferState::kIdle : true;
+  }
+
+  static bool IsEpEnabled(Dwc3& drv, uint8_t ep_num) {
+    if (ep_num < 2) {
+      return ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).enabled;
+    }
+    auto* uep = drv.get_user_endpoint(ep_num);
+    return uep ? uep->ep.enabled : false;
   }
 
   static Dwc3::UserEndpoint* GetUserEndpoint(Dwc3& drv, uint8_t ep_num) {
@@ -357,11 +375,11 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
   }
   bool has_completer() const { return completer_.has_value(); }
 
-  void TriggerConnection(bool connected) {
+  void TriggerConnection(bool connected, zx::eventpair wake_lease = {}) {
     ZX_ASSERT(completer_.has_value());
     fuchsia_hardware_usb_phy::ConnectionWatcherWatchConnectStatusChangedResponse response{{
         .connected = connected,
-        .wake_lease = {},
+        .wake_lease = std::move(wake_lease),
     }};
     completer_->Reply(zx::ok(std::move(response)));
     completer_.reset();
@@ -998,6 +1016,18 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
   void SetReadData(std::vector<uint8_t> data) { read_data_ = std::move(data); }
   void SetSetConnectedCallback(SetConnectedCallback cb) { set_connected_cb_ = std::move(cb); }
   void SetSetSpeedCallback(SetSpeedCallback cb) { set_speed_cb_ = std::move(cb); }
+  void SetDeferSetConnectedFalse(bool defer) { defer_set_connected_false_ = defer; }
+  bool has_deferred_set_connected() const { return deferred_set_connected_.has_value(); }
+  void CompleteDeferredSetConnected(zx_status_t status = ZX_OK) {
+    ASSERT_TRUE(deferred_set_connected_.has_value());
+    auto completer = std::move(*deferred_set_connected_);
+    deferred_set_connected_.reset();
+    if (status == ZX_OK) {
+      completer.Reply(zx::ok());
+    } else {
+      completer.Reply(zx::error(status));
+    }
+  }
 
   void Control(ControlRequestView request, ControlCompleter::Sync& completer) override {
     control_called_.store(true);
@@ -1023,6 +1053,13 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
   void SetConnected(SetConnectedRequestView request,
                     SetConnectedCompleter::Sync& completer) override {
     set_connected_called_.store(true);
+    if (defer_set_connected_false_ && !request->is_connected) {
+      deferred_set_connected_.emplace(completer.ToAsync());
+      if (set_connected_cb_) {
+        set_connected_cb_(request->is_connected);
+      }
+      return;
+    }
     if (set_connected_cb_) {
       set_connected_cb_(request->is_connected);
     }
@@ -1049,6 +1086,8 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
   std::atomic<bool> control_called_{false};
   std::atomic<bool> set_connected_called_{false};
   std::atomic<bool> set_speed_called_{false};
+  bool defer_set_connected_false_ = false;
+  std::optional<SetConnectedCompleter::Async> deferred_set_connected_;
   ControlCallback control_cb_;
   SetConnectedCallback set_connected_cb_;
   SetSpeedCallback set_speed_cb_;

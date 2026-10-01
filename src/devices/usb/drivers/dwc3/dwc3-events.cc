@@ -242,6 +242,12 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
 
 void Dwc3::StartEvents() {
   TRACE_DURATION("dwc3", "Dwc3::StartEvents");
+  ep0_.out.stale_starts_to_end = 0;
+  ep0_.in.stale_starts_to_end = 0;
+  for (UserEndpoint& uep : user_endpoints_) {
+    uep.ep.stale_starts_to_end = 0;
+    uep.ep.stale_cancels_to_ignore = 0;
+  }
   zx::result result = event_fifo_.Init(bti_, /*cached=*/true);
   if (result.is_error()) {
     fdf::error("Failed to init event fifo {}", result);
@@ -280,16 +286,41 @@ void Dwc3::StopEvents() {
   // Mask the event interrupt to prevent further interrupts.
   GEVNTSIZ::Get(0).ReadFrom(mmio).set_EVNTINTRPTMASK(1).WriteTo(mmio);
 
-  // Clear GEVNTCOUNT to release any pending level-triggered interrupts.
+  // Clear GEVNTCOUNT to release any pending level-triggered interrupts, ending any
+  // in-flight DEPSTRTXFER resources that completed before the event ring was stopped.
   uint32_t event_bytes;
   while ((event_bytes = GEVNTCOUNT::Get(0).ReadFrom(mmio).EVNTCOUNT()) > 0) {
     uint32_t event_count = event_bytes / sizeof(uint32_t);
+    for (uint32_t event : event_fifo_.Read(event_count)) {
+      if (!(event & DEPEVT_NON_EP) && DEPEVT_TYPE(event) == DEPEVT_CMD_CMPLT &&
+          DEPEVT_CMD_CMPLT_CMD_TYPE(event) == DEPCMD::DEPSTRTXFER && DEPEVT_STATUS(event) == 0) {
+        Endpoint stale_ep(DEPEVT_PHYS_EP(event));
+        stale_ep.rsrc_id = DEPEVT_CMD_CMPLT_RSRC_ID(event);
+        CmdEpEndTransfer(stale_ep, /*cmd_ioc=*/false);
+      }
+    }
     event_fifo_.Advance(event_count);
     GEVNTCOUNT::Get(0)
         .FromValue(0)
         .set_EVNT_HANDLER_BUSY(1)
         .set_EVNTCOUNT(event_bytes)
         .WriteTo(mmio);
+  }
+
+  for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
+    const bool had_stale = ep->stale_starts_to_end > 0;
+    ep->stale_starts_to_end = 0;
+    if (had_stale && !ep->enabled) {
+      EpEnable(*ep, false);
+    }
+  }
+  for (UserEndpoint& uep : user_endpoints_) {
+    const bool had_stale = uep.ep.stale_starts_to_end > 0 || uep.ep.stale_cancels_to_ignore > 0;
+    uep.ep.stale_starts_to_end = 0;
+    uep.ep.stale_cancels_to_ignore = 0;
+    if (had_stale && !uep.ep.enabled) {
+      EpEnable(uep.ep, false);
+    }
   }
 }
 
