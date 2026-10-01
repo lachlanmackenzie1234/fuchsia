@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "polyval",
     package_url = "https://github.com/RustCrypto/universal-hashes",
-    package_version = "0.7.2",
+    package_version = "0.7.3",
 )
 
 license(
@@ -75,7 +75,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.7.2",
+    version = "0.7.3",
     deps = [
         "//third_party/rust_crates/vendor/cpubits-0.1.1:cpubits",
         "//third_party/rust_crates/vendor/universal-hash-0.6.1:universal_hash",

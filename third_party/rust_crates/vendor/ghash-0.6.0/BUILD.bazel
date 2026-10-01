@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "0.6.0",
     deps = [
-        "//third_party/rust_crates/vendor/polyval-0.7.2:polyval",
+        "//third_party/rust_crates/vendor/polyval-0.7.3:polyval",
     ],
 )
