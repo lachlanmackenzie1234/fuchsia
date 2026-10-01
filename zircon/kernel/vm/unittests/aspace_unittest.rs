@@ -18,8 +18,11 @@ mod aspace_rs {
     use crate::arch_rs::{
         KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, USER_ASPACE_BASE, USER_ASPACE_SIZE,
     };
+    use crate::kernel::deadline::Deadline;
+    use crate::kernel::event::AutounsignalEvent;
     use crate::kernel::thread;
     use crate::kernel::types::VAddr;
+    use crate::platform_rs::timer::InstantMono;
     use crate::user_memory::UserMemory;
     use crate::vm::arch_vm_aspace::{
         ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ArchMmuFlags, NonTerminalAction,
@@ -36,14 +39,17 @@ mod aspace_rs {
         ARCH_RW_FLAGS, ARCH_RW_USER_FLAGS, alloc_user, fill_and_test, fill_and_test_user,
         make_committed_pager_vmo,
     };
+    use core::ffi::c_void;
     use core::mem::{MaybeUninit, size_of, size_of_val};
-    use core::sync::atomic::Ordering;
+    use core::ptr::from_ref;
+    use core::sync::atomic::{AtomicBool, Ordering};
     use fbl::RefPtr;
     use kprint::kprintln;
     use page::SIZE as PAGE_SIZE_USIZE;
+    use pin_init::stack_pin_init;
     use unittest::{
-        assert_eq, assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_false,
-        expect_ne, expect_ok, expect_true, subtest, unwrap_ok, unwrap_some,
+        assert_eq, assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_err,
+        expect_false, expect_ne, expect_ok, expect_true, subtest, unwrap_ok, unwrap_some,
     };
     use zx_status::Status;
 
@@ -439,6 +445,167 @@ mod aspace_rs {
             vmo.read_user(mem.user_out::<u8>(), 0, size_of::<u8>(), VmObjectReadWriteOptions::NONE);
         assert_ok!(res);
         assert_eq!(read_actual, size_of::<u8>());
+    }
+
+    /// Test that page tables that do not get accessed can be successfully unmapped and freed.
+    #[test]
+    fn vmaspace_free_unaccessed_page_tables_test() {
+        // Test that page tables that do not get accessed can be successfully unmapped and freed.
+
+        // Disable for RISC-V for now, since the `ArchMmmu` code for this architecture currently
+        // does not track accessed bits in intermediate page tables, and thus has no reasonable
+        // way to honor `NonTerminalAction::FreeUnaccessed` on harvest calls.
+        if cfg!(target_arch = "riscv64") {
+            kprintln!("Skipping on RISC-V");
+            return true;
+        }
+
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let num_pages: usize = 512 * 3;
+        let middle_page: usize = num_pages / 2;
+        let middle_offset: usize = middle_page * PAGE_SIZE_USIZE;
+        let vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY,
+            0,
+            PAGE_SIZE * (num_pages as u64)
+        ));
+
+        // Construct an additional aspace to use for mappings and touching pages. This allows us to
+        // control whether the aspace is considered active, which can effect reclamation and
+        // scanning.
+        let aspace = unwrap_some!(VmAspace::create(Type::User, c"test-aspace"));
+
+        let _cleanup_aspace = zr::defer(|| {
+            let _ = aspace.destroy();
+        });
+
+        let mem = unwrap_some!(
+            UserMemory::create_in_aspace(VmObjectPaged::into_vm_object(vmo), &aspace, 0, 0),
+            "UserMemory::create_in_aspace"
+        );
+
+        // Put the state we need to share in a struct so we can easily share it with the thread.
+        struct State<'a> {
+            mem: &'a UserMemory,
+            touch_event: &'a AutounsignalEvent,
+            complete_event: &'a AutounsignalEvent,
+            running: AtomicBool,
+            middle_offset: usize,
+        }
+
+        stack_pin_init!(let touch_event = AutounsignalEvent::init_unsignaled());
+        stack_pin_init!(let complete_event = AutounsignalEvent::init_unsignaled());
+
+        let state = State {
+            mem: &mem,
+            touch_event: &touch_event,
+            complete_event: &complete_event,
+            running: AtomicBool::new(true),
+            middle_offset,
+        };
+
+        // Spin up a kernel thread in the aspace we made. This thread will just continuously wait on
+        // an event, touching the mapping whenever it is signaled.
+        extern "C" fn thread_body(arg: *mut c_void) -> i32 {
+            // SAFETY: `arg` points to a live `State` valid for the thread duration.
+            let state = unsafe { arg.cast::<State<'_>>().as_ref_unchecked() };
+
+            while state.running.load(Ordering::SeqCst) {
+                let _ = state.touch_event.wait(&Deadline::infinite());
+                // Check running again so we do not try and touch mem if attempting to shutdown
+                // suddenly.
+                if state.running.load(Ordering::SeqCst) {
+                    state
+                        .mem
+                        .put::<u8>(42, state.middle_offset)
+                        .expect("failed to put byte to UserMemory");
+                    // Signal the event back
+                    state.complete_event.signal();
+                }
+            }
+            0
+        }
+
+        let arg = from_ref(&state).cast_mut().cast::<c_void>();
+        // SAFETY: `thread_body` and `arg` are safe to execute on a new thread.
+        let thread =
+            unwrap_ok!(unsafe { thread::create(c"test-thread".as_ptr(), thread_body, arg) });
+        aspace.attach_to_thread(thread);
+        // SAFETY: `thread` is valid and not yet joined.
+        unsafe { thread.resume() };
+
+        let _cleanup_thread = zr::defer(|| {
+            state.running.store(false, Ordering::SeqCst);
+            state.touch_event.signal();
+            // SAFETY: `thread` is valid and joined once.
+            let _ = unsafe { thread.join(InstantMono::INFINITE) };
+        });
+
+        // Helper to synchronously wait for the thread to perform a touch.
+        let touch = || {
+            state.touch_event.signal();
+            let _ = state.complete_event.wait(&Deadline::infinite());
+        };
+
+        expect_ok!(mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE));
+
+        // Touch the mapping to ensure its accessed.
+        touch();
+
+        // Attempting to map should fail, as it's already mapped.
+        expect_err!(
+            mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE),
+            Status::ALREADY_EXISTS
+        );
+
+        touch();
+        // Harvest the accessed information, this should not actually unmap it, even if we ask it
+        // to.
+        harvest_access_bits(NonTerminalAction::FreeUnaccessed, TerminalAction::UpdateAgeAndHarvest);
+        expect_err!(
+            mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE),
+            Status::ALREADY_EXISTS
+        );
+
+        touch();
+        // Harvest the accessed information, then attempt to do it again so that it gets unmapped.
+        harvest_access_bits(NonTerminalAction::FreeUnaccessed, TerminalAction::UpdateAgeAndHarvest);
+        harvest_access_bits(NonTerminalAction::FreeUnaccessed, TerminalAction::UpdateAgeAndHarvest);
+        expect_ok!(mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE));
+
+        // Touch the mapping to ensure its accessed.
+        touch();
+
+        // Harvest the page accessed information, but retain the non-terminals.
+        harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+        // We can do this a few times.
+        harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+        harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+        // Now if we attempt to free unaccessed the non-terminal should still be accessed and so
+        // nothing should get unmapped.
+        harvest_access_bits(NonTerminalAction::FreeUnaccessed, TerminalAction::UpdateAgeAndHarvest);
+        expect_err!(
+            mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE),
+            Status::ALREADY_EXISTS
+        );
+
+        // If we are not requesting a free, then we should be able to harvest repeatedly.
+        expect_err!(
+            mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE),
+            Status::ALREADY_EXISTS
+        );
+        harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+        expect_err!(
+            mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE),
+            Status::ALREADY_EXISTS
+        );
+        harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+        expect_err!(
+            mem.commit_and_map(middle_offset..middle_offset + PAGE_SIZE_USIZE),
+            Status::ALREADY_EXISTS
+        );
+        harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
     }
 
     /// Tests sparse VM mappings with an empty backing VMO.
