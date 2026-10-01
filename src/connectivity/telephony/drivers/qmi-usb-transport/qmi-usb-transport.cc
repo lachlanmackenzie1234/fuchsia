@@ -468,24 +468,28 @@ void Device::QmiInterruptHandler(usb_request_t* request) {
 
 void Device::UsbCdcIntHander(uint16_t packet_size) {
   zx_status_t status;
-  uint8_t buffer[packet_size];
+  std::vector<uint8_t> buffer(packet_size);
+  size_t actual = 0;
 
   status = usb_control_in(&usb_, kClassInterfaceIn,
                           fidl::ToUnderlying(fdescriptor::CdcRequest::kGetEncapsulatedResponse), 0,
-                          QMI_INTERFACE_NUM, ZX_TIME_INFINITE, buffer, packet_size, nullptr);
-  if (!qmi_channel_) {
-    zxlogf(WARNING, "qmi-usb-transport: receiving USB CDC frames without a channel");
-    return;
+                          QMI_INTERFACE_NUM, ZX_TIME_INFINITE, buffer.data(), packet_size, &actual);
+  if (status == ZX_OK && actual > 0) {
+    if (!qmi_channel_) {
+      zxlogf(WARNING, "qmi-usb-transport: receiving USB CDC frames without a channel");
+      return;
+    }
+    status =
+        zx_channel_write(qmi_channel_, 0, buffer.data(), static_cast<uint32_t>(actual), nullptr, 0);
+    if (status < 0) {
+      zxlogf(ERROR, "qmi-usb-transport: failed to write message to channel: %s",
+             zx_status_get_string(status));
+    }
+    if (snoop_client_end_) {
+      SnoopQmiMsgSend(buffer.data(), static_cast<uint32_t>(actual),
+                      telephony_snoop::wire::Direction::kFromModem);
+    }
   }
-  status = zx_channel_write(qmi_channel_, 0, buffer, sizeof(buffer), nullptr, 0);
-  if (status < 0) {
-    zxlogf(ERROR, "qmi-usb-transport: failed to write message to channel: %s",
-           zx_status_get_string(status));
-  }
-  if (snoop_client_end_) {
-    SnoopQmiMsgSend(buffer, sizeof(buffer), telephony_snoop::wire::Direction::kFromModem);
-  }
-  return;
 }
 
 zx_handle_t Device::GetQmiChannelPort() { return qmi_channel_port_; }
