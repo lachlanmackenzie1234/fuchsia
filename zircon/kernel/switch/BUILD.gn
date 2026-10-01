@@ -644,7 +644,6 @@ clippy_lints = [
   "crate-in-macro-def",
   "doc-lazy-continuation",
   "let-unit-value",
-  "manual-non-exhaustive",
   "new-without-default",
   "non-canonical-clone-impl",
   "suspicious-arithmetic-impl",
