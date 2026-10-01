@@ -972,9 +972,12 @@ Exact paths may follow repository conventions:
 
 ```text
 src/devices/driver-lab/
+    BUILD.bazel
     BUILD.gn
     meta/
     fidl/
+        BUILD.bazel
+        BUILD.gn
         driver_lab.fidl          fuchsia.driver.lab wire contract; moves to
                                  an internal-category SDK library once the
                                  contract stabilizes
@@ -1294,6 +1297,11 @@ Changesets continue the global numbering from Phase 1:
       (in //tools/driver-lab/SPEC.md).
 - [x] CS30 `[driver-lab] In-situ live-target conformance test suite`
       (in //tools/driver-lab/SPEC.md).
+- [x] CS34 `[driver-lab] Expose FIDL and debug shard to Bazel`
+- [ ] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
+- [ ] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
+- [ ] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
+- [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
 
 Phase: 2 -- existing-driver in-situ inspection and live debugging via embedded library.
 Extends: Phase 1 of this document. The wire contract (`fuchsia.driver.lab`), policy
@@ -1376,8 +1384,9 @@ The embedded debug library must never be active in production (`user`) builds:
    In release builds, library types compile to zero-sized no-ops and outgoing
    service handlers are omitted.
 2. **Component manifest sharding**: Driver manifests import a common shard
-   `//src/devices/driver-lab/meta/debug.shard.cml` that exposes
-   `fuchsia.driver.lab.Service`.
+   `//src/devices/driver-lab/meta/debug.shard.cml` (exported to both GN and
+   Bazel targets as `//src/devices/driver-lab:meta/debug.shard.cml`) that
+   exposes `fuchsia.driver.lab.Service`.
 3. **Product assembly verification**: Platform assembly golden checks verify that
    no production package or bootfs driver exposes `fuchsia.driver.lab.Service`.
 

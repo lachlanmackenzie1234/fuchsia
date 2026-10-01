@@ -9,6 +9,11 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+exports_files(
+    ["meta/debug.shard.cml"],
+    visibility = ["//visibility:public"],
+)
+
 fuchsia_prebuilt_package(
     name = "lab_proxy",
     archive = "@gn_targets//src/devices/driver-lab:pkg",

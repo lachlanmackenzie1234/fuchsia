@@ -1203,6 +1203,16 @@ Changesets continue the global numbering:
 - [x] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
 - [x] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
 - [x] CS30 `[driver-lab] In-situ live-target conformance test suite`
+- [x] CS34 `[driver-lab] Expose FIDL and debug shard to Bazel`
+      (in //src/devices/driver-lab/SPEC.md).
+- [ ] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
+      (in //src/devices/driver-lab/SPEC.md).
+- [ ] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
+      (in //src/devices/driver-lab/SPEC.md).
+- [ ] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
+      (in //src/devices/driver-lab/SPEC.md).
+- [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
+      (in //src/devices/driver-lab/SPEC.md).
 
 Phase: 2 -- in-situ driver debugging workflow.
 Extends: the Phase 1 section of this document. The wire client, transport adapters,
