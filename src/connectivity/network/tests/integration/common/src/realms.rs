@@ -142,19 +142,6 @@ impl NetstackVersion {
     }
 }
 
-/// An extension trait for [`Netstack`].
-pub trait NetstackExt {
-    /// Whether to use the out of stack DHCP client for the given Netstack.
-    const USE_OUT_OF_STACK_DHCP_CLIENT: bool;
-}
-
-impl<N: Netstack> NetstackExt for N {
-    const USE_OUT_OF_STACK_DHCP_CLIENT: bool = match Self::VERSION {
-        NetstackVersion::Netstack3 | NetstackVersion::ProdNetstack3 => true,
-        NetstackVersion::Netstack2 { .. } | NetstackVersion::ProdNetstack2 => false,
-    };
-}
-
 /// The NetCfg version.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NetCfgVersion {
@@ -289,7 +276,6 @@ pub enum KnownServiceProvider {
         agent: ManagementAgent,
         config: ManagerConfig,
         use_dhcp_server: bool,
-        use_out_of_stack_dhcp_client: bool,
         socket_proxy_type: SocketProxyType,
     },
     SecureStash,
@@ -460,7 +446,6 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                 agent,
                 use_dhcp_server,
                 config,
-                use_out_of_stack_dhcp_client,
                 socket_proxy_type: _,
             } => {
                 let enable_dhcpv6 = match config {
@@ -507,15 +492,14 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                 enable_dhcpv6,
                             ),
                         )))
-                        .chain(std::iter::once(fnetemul::Capability::ChildDep(
-                            or_void_protocol_dep::<fnet_dhcp::ClientProviderMarker>(
-                                constants::dhcp_client::COMPONENT_NAME,
-                                *use_out_of_stack_dhcp_client,
-                            ),
-                        )))
                         .chain(
                             [
                                 fnetemul::Capability::LogSink(fnetemul::Empty {}),
+                                fnetemul::Capability::ChildDep(protocol_dep::<
+                                    fnet_dhcp::ClientProviderMarker,
+                                >(
+                                    constants::dhcp_client::COMPONENT_NAME,
+                                )),
                                 fnetemul::Capability::ChildDep(protocol_dep::<
                                     fnet_filter::ControlMarker,
                                 >(

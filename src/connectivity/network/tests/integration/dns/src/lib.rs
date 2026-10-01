@@ -34,8 +34,8 @@ use netemul::{RealmTcpListener as _, RealmUdpSocket as _};
 use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::ndp::send_ra_with_router_lifetime;
 use netstack_testing_common::realms::{
-    KnownServiceProvider, Manager, ManagerConfig, Netstack3, NetstackExt, SocketProxyType,
-    TestSandboxExt as _, constants,
+    KnownServiceProvider, Manager, ManagerConfig, Netstack3, SocketProxyType, TestSandboxExt as _,
+    constants,
 };
 use netstack_testing_common::{
     ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, Result, pause_fake_clock, wait_for_component_stopped,
@@ -283,7 +283,6 @@ async fn discovered_ndp_dns<M: Manager>(name: &str, check_type: DnsCheckType) {
         &name.clone(),
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
-            use_out_of_stack_dhcp_client: Netstack3::USE_OUT_OF_STACK_DHCP_CLIENT,
             socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![],
         },
@@ -348,7 +347,6 @@ async fn discovered_dhcpv4_dns<M: Manager>(name: &str, check_type: DnsCheckType)
         &name.clone(),
         ManagerConfig::Empty,
         NetcfgOwnedDeviceArgs {
-            use_out_of_stack_dhcp_client: Netstack3::USE_OUT_OF_STACK_DHCP_CLIENT,
             socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![],
         },
@@ -483,7 +481,6 @@ async fn discovered_dhcpv6_dns<M: Manager>(name: &str, check_type: DnsCheckType)
         &name.clone(),
         ManagerConfig::Dhcpv6,
         NetcfgOwnedDeviceArgs {
-            use_out_of_stack_dhcp_client: Netstack3::USE_OUT_OF_STACK_DHCP_CLIENT,
             socket_proxy_type: SocketProxyType::None,
             extra_known_service_providers: vec![KnownServiceProvider::Dhcpv6Client],
         },
@@ -650,19 +647,13 @@ async fn discovered_starnix_networks_dns<M: Manager>(name: &str, check_type: Dns
                     agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::EnableSocketProxy,
                     use_dhcp_server: false,
-                    use_out_of_stack_dhcp_client: Netstack3::USE_OUT_OF_STACK_DHCP_CLIENT,
                     socket_proxy_type: SocketProxyType::Real,
                 },
+                KnownServiceProvider::DhcpClient,
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
                 KnownServiceProvider::SocketProxy,
-            ]
-            .into_iter()
-            .chain(
-                Netstack3::USE_OUT_OF_STACK_DHCP_CLIENT
-                    .then_some(KnownServiceProvider::DhcpClient)
-                    .into_iter(),
-            ),
+            ],
         )
         .expect("create netstack realm");
 
@@ -766,19 +757,13 @@ async fn discovered_starnix_fuchsia_networks_dns<M: Manager>(name: &str, check_t
                     agent: M::MANAGEMENT_AGENT,
                     config: ManagerConfig::EnableSocketProxy,
                     use_dhcp_server: false,
-                    use_out_of_stack_dhcp_client: Netstack3::USE_OUT_OF_STACK_DHCP_CLIENT,
                     socket_proxy_type: SocketProxyType::Real,
                 },
+                KnownServiceProvider::DhcpClient,
                 KnownServiceProvider::DnsResolver,
                 KnownServiceProvider::FakeClock,
                 KnownServiceProvider::SocketProxy,
-            ]
-            .into_iter()
-            .chain(
-                Netstack3::USE_OUT_OF_STACK_DHCP_CLIENT
-                    .then_some(KnownServiceProvider::DhcpClient)
-                    .into_iter(),
-            ),
+            ],
         )
         .expect("create netstack realm");
     let network_registry = realm

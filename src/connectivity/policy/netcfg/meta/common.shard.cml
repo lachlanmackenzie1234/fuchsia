@@ -32,6 +32,7 @@
     use: [
         {
             protocol: [
+                "fuchsia.net.dhcp.ClientProvider",
                 "fuchsia.net.filter.Control",
                 "fuchsia.net.interfaces.admin.Installer",
                 "fuchsia.net.interfaces.State",
@@ -53,13 +54,6 @@
         },
         {
             protocol: "fuchsia.net.dhcpv6.ClientProvider",
-            availability: "optional",
-        },
-        {
-            protocol: "fuchsia.net.dhcp.ClientProvider",
-
-            // TODO(https://fxbug.dev/42076541): Mark this as "required" once all
-            // products are using the out-of-stack DHCP client component.
             availability: "optional",
         },
         {
