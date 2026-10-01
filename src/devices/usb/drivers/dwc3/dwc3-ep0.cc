@@ -174,7 +174,16 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
         break;
       }
 
-      zx_off_t received = ep0_.cur_transfer_len - TRB_BUFSIZ(trb.status);
+      const size_t expected = ep0_.cur_transfer_len;
+      const size_t remaining = TRB_BUFSIZ(trb.status);
+      zx_off_t received = 0;
+      if (remaining > expected) {
+        fdf::error(
+            "Underflow detected on Ep0 OUT: expected {}, remaining {}. Clamping received to 0",
+            expected, remaining);
+      } else {
+        received = expected - remaining;
+      }
       ep0_.out.total_transfers++;
       ep0_.out.total_bytes += received;
       ep0_.state = Ep0::State::WaitNrdyIn;
@@ -200,7 +209,16 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
         Ep0QueueSetup();
         break;
       }
-      zx_off_t transferred = ep0_.cur_transfer_len - TRB_BUFSIZ(trb.status);
+      const size_t expected = ep0_.cur_transfer_len;
+      const size_t remaining = TRB_BUFSIZ(trb.status);
+      zx_off_t transferred = 0;
+      if (remaining > expected) {
+        fdf::error(
+            "Underflow detected on Ep0 IN: expected {}, remaining {}. Clamping transferred to 0",
+            expected, remaining);
+      } else {
+        transferred = expected - remaining;
+      }
       ep0_.in.total_transfers++;
       ep0_.in.total_bytes += transferred;
 

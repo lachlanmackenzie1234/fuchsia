@@ -285,6 +285,9 @@ class Dwc3TestHelper {
   static bool IsEp0InStalled(Dwc3& drv) { return drv.ep0_.in.stalled; }
   static void SetEp0OutEnabled(Dwc3& drv, bool enabled) { drv.ep0_.out.enabled = enabled; }
   static void SetEp0InEnabled(Dwc3& drv, bool enabled) { drv.ep0_.in.enabled = enabled; }
+  static void SetEp0CurTransferLen(Dwc3& drv, size_t len) { drv.ep0_.cur_transfer_len = len; }
+  static uint64_t GetEp0OutTotalBytes(const Dwc3& drv) { return drv.ep0_.out.total_bytes; }
+  static uint64_t GetEp0InTotalBytes(const Dwc3& drv) { return drv.ep0_.in.total_bytes; }
   static void PushTrbToSharedFifo(Dwc3& drv, const dwc3_trb_t& trb) {
     dwc3_trb_t* ptr = drv.ep0_.shared_fifo.AdvanceWrite();
     *ptr = trb;
@@ -670,14 +673,14 @@ class TestFixture : public gtest_base {
     uep->server->SendCompletions();
   }
 
-  static void TriggerEpTransferInProgress(Dwc3& drv, uint8_t ep_num) {
+  static void TriggerEpTransferInProgress(Dwc3& drv, uint8_t ep_num, uint32_t residual = 0) {
     auto* uep = drv.get_user_endpoint(ep_num);
     ZX_ASSERT(uep != nullptr);
 
     if (uep->fifo.GetActiveCount() > 0) {
       dwc3_trb_t* trb = uep->fifo.read_;
       trb->control &= ~TRB_HWO;
-      trb->status = 0;
+      trb->status = TRB_BUFSIZ(residual);
       uep->fifo.Write(trb, 1);
     }
 

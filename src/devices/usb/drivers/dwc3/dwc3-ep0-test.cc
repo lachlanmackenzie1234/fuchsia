@@ -1930,4 +1930,50 @@ TEST_F(UnmanagedTestFixture, Ep0QueueSetupWithDirtyCacheDoesNotClobberIncomingDm
   TearDownAndPowerOffDriver();
 }
 
+TEST_F(UnmanagedTestFixture, Ep0OutBabbleUnderflow) {
+  SetUpAndPowerOnDriver();
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataOut);
+    Dwc3TestHelper::SetEp0CurTransferLen(drv, 16);
+
+    const uint64_t initial_bytes = Dwc3TestHelper::GetEp0OutTotalBytes(drv);
+
+    dwc3_trb_t trb{};
+    trb.status = TRB_BUFSIZ(32);
+    Dwc3TestHelper::PushTrbToSharedFifo(drv, trb);
+
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
+
+    EXPECT_EQ(Dwc3TestHelper::GetEp0OutTotalBytes(drv), initial_bytes);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+  });
+
+  TearDownAndPowerOffDriver();
+}
+
+TEST_F(UnmanagedTestFixture, Ep0InBabbleUnderflow) {
+  SetUpAndPowerOnDriver();
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SetEp0CurTransferLen(drv, 16);
+
+    const uint64_t initial_bytes = Dwc3TestHelper::GetEp0InTotalBytes(drv);
+
+    dwc3_trb_t trb{};
+    trb.status = TRB_BUFSIZ(32);
+    Dwc3TestHelper::PushTrbToSharedFifo(drv, trb);
+
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 1);
+
+    EXPECT_EQ(Dwc3TestHelper::GetEp0InTotalBytes(drv), initial_bytes);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitNrdyOut);
+  });
+
+  TearDownAndPowerOffDriver();
+}
+
 }  // namespace dwc3

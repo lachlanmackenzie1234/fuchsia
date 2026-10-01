@@ -3913,6 +3913,50 @@ TEST_F(Dwc3EndpointsTestBase, Ep0ResetWhileStartingSingleEndsStaleStartAndActiva
   EXPECT_EQ(ep0_end_xfer_count->load(), 1u);
 }
 
+TEST_P(Dwc3EndpointsTest, InputEndpointBabbleUnderflow) {
+  const bool enqueue_many = GetParam();
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x82;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  TransferState expected_starting_state =
+      enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
+  WaitForState(ep_num, expected_starting_state);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  TransferState expected_state =
+      enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
+  WaitForState(ep_num, expected_state);
+
+  // Complete the TRB with residual (600) > expected (512) to simulate a babble/underflow condition.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    if (enqueue_many) {
+      TriggerEpTransferInProgress(drv, ep_num, 600);
+    } else {
+      TriggerEpTransferComplete(drv, ep_num, 600);
+    }
+  });
+
+  if (enqueue_many) {
+    WaitForActiveCount(ep_num, 0u);
+  } else {
+    WaitForState(ep_num, TransferState::kIdle);
+  }
+
+  std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions.size(), 1UL);
+  EXPECT_OK(completions[0].status);
+  EXPECT_EQ(completions[0].transfer_size, 0UL);
+}
+
 namespace {
 INSTANTIATE_TEST_SUITE_P(Dwc3EndpointsTestCases, Dwc3EndpointsTest, testing::Bool());
 }  // namespace

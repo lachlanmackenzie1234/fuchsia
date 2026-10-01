@@ -492,12 +492,19 @@ void Dwc3::UserEpCompleteTransfers(UserEndpoint& uep) {
 
     auto& current_req = uep.server->active_reqs.front();
     auto& req = std::get<usb::FidlRequest>(current_req.request);
-    size_t actual =
-        req->data()->size() > current_req.completed_trbs
-            ? req->data()->at(current_req.completed_trbs).size().value() - TRB_BUFSIZ(trb.status)
-            // If we have more completed TRBs than data regions, it means we
-            // have completed a ZLP.
-            : 0;
+    // Default to 0; if we have more completed TRBs than data regions, we have
+    // completed a ZLP.
+    size_t actual = 0;
+    if (req->data()->size() > current_req.completed_trbs) {
+      const size_t expected = req->data()->at(current_req.completed_trbs).size().value();
+      const size_t remaining = TRB_BUFSIZ(trb.status);
+      if (remaining > expected) {
+        fdf::error("Underflow on endpoint {}: expected {}, remaining {}. Clamping actual to 0",
+                   uep.ep.ep_num, expected, remaining);
+      } else {
+        actual = expected - remaining;
+      }
+    }
     current_req.completed_trbs++;
     current_req.completed_bytes += actual;
     uep.fifo.AdvanceRead();
