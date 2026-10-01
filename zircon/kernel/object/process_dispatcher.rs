@@ -37,6 +37,7 @@ use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
 use crate::arch_rs::UserEntryState;
 use crate::kernel::thread::{AutoExpiringPreemptDisabler, ThreadPtr};
+use crate::vm::vm_aspace::VmAspace;
 use core::mem::MaybeUninit;
 use pin_init::{PinInit, pin_data, pin_init};
 use zx_status::Status;
@@ -412,11 +413,57 @@ impl ProcessDispatcher {
     }
 
     /// Returns a reference to this process's address space at the given virtual address.
-    pub fn aspace_at(&self, va: usize) -> Option<&crate::vm::vm_aspace::VmAspace> {
+    pub fn aspace_at(&self, va: usize) -> Option<&VmAspace> {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
         let aspace_ptr = unsafe { cpp_process_dispatcher_aspace_at(self.as_ffi_mut(), va) };
         // SAFETY: `aspace_ptr` is either null or points to a valid `VmAspace` managed by the process.
         unsafe { aspace_ptr.as_ref() }
+    }
+
+    /// Returns the normal address space for this process.
+    ///
+    /// All processes have a normal address space.  The normal aspace is the
+    /// address space that's active when a thread is in normal mode.
+    ///
+    /// For "shared processes", on architectures that support unified aspaces, the normal aspace
+    /// is a unified aspace. A unified aspace is an aspace that spans both the shared and restricted
+    /// aspace, and is used by threads in normal mode to avoid having to switch between the shared
+    /// and restricted aspaces.
+    ///
+    /// On architectures that don't yet support unified aspaces, the normal
+    /// aspace is a shared aspace (`ShareableProcessState::aspace()`).
+    ///
+    /// For non-shared processes (regular ones), the normal aspace is the one and only aspace
+    /// belonging to the process (`ShareableProcessState::aspace()`).
+    ///
+    /// TODO(https://fxbug.dev/42083004): Update this comment once all architectures support unified
+    /// aspaces.
+    pub fn normal_aspace(&self) -> &VmAspace {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        let raw: *mut process_dispatcher_bindings::VmAspace = unsafe {
+            process_dispatcher_bindings::cpp_process_dispatcher_normal_aspace(
+                self.as_ffi_mut().cast(),
+            )
+        };
+        // SAFETY: The normal address space is valid for the lifetime of `self`.
+        unsafe { raw.cast::<VmAspace>().as_ref_unchecked() }
+    }
+
+    /// Returns the "restricted" address space for a process, or nullptr if it does not have a
+    /// restricted address space.
+    ///
+    /// The restricted address space spans the bottom half of the process' total address space, and
+    /// is private to the process. Threads executing in restricted mode are restricted to this
+    /// address space.
+    pub fn restricted_aspace(&self) -> Option<&VmAspace> {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        let raw: *mut process_dispatcher_bindings::VmAspace = unsafe {
+            process_dispatcher_bindings::cpp_process_dispatcher_restricted_aspace(
+                self.as_ffi_mut().cast(),
+            )
+        };
+        // SAFETY: The restricted address space is valid for the lifetime of `self`.
+        unsafe { raw.cast::<VmAspace>().as_ref() }
     }
 
     /// Returns the job associated with this process.

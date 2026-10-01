@@ -15,7 +15,9 @@ use zx_types::{
 use crate::arch_rs::{Iframe, SyscallRegs};
 use crate::kernel::restricted_state::RestrictedState;
 use crate::ktrace_rs;
+use crate::object::ProcessDispatcher;
 use crate::user_copy::UserOutPtr;
+use crate::vm::vmm;
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -53,7 +55,9 @@ pub fn restricted_leave<T>(
         rs.context()
     );
 
-    crate::vm::vmm::set_active_aspace_normal();
+    let up = ProcessDispatcher::get_current();
+    // SAFETY: The process normal aspace remains valid for the current thread.
+    unsafe { vmm::set_active_aspace(Some(up.normal_aspace())) };
 
     ktrace_rs::duration_end!("kernel:restricted", "restricted mode", "reason" => reason);
 
@@ -131,7 +135,13 @@ pub fn restricted_enter(vector_table_ptr: usize, context: usize) -> Result<(), S
         );
     }
 
-    crate::vm::vmm::set_active_aspace_restricted();
+    let up = ProcessDispatcher::get_current();
+    // This check can be removed once the restricted mode tests can and do run with a restricted
+    // aspace.
+    if let Some(restricted_aspace) = up.restricted_aspace() {
+        // SAFETY: The restricted aspace remains valid while active.
+        unsafe { vmm::set_active_aspace(Some(restricted_aspace)) };
+    }
     rs.set_in_restricted(true);
     crate::arch_rs::set_restricted_flag(true);
 
@@ -166,7 +176,9 @@ pub fn redirect_restricted_exception_to_normal_mode(
     rs.set_in_restricted(false);
     crate::arch_rs::set_restricted_flag(false);
 
-    crate::vm::vmm::set_active_aspace_normal();
+    let up = ProcessDispatcher::get_current();
+    // SAFETY: The process normal aspace remains valid for the current thread.
+    unsafe { vmm::set_active_aspace(Some(up.normal_aspace())) };
 
     let mut reason = zx_types::ZX_RESTRICTED_REASON_EXCEPTION;
     let exception_report_ptr = rs.exception_report_ptr();

@@ -8,6 +8,7 @@
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
+#include <object/process_dispatcher_ffi.h>
 #include <object/thread_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
@@ -241,6 +242,16 @@ FFI_ALWAYS_INLINE JobDispatcher* cpp_process_dispatcher_job(ProcessDispatcher* p
 FFI_ALWAYS_INLINE VmAspace* cpp_process_dispatcher_aspace_at(ProcessDispatcher* process,
                                                              zx_vaddr_t va) {
   return process->aspace_at(va);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmAspace* cpp_process_dispatcher_normal_aspace(ProcessDispatcher* process) {
+  return process->normal_aspace();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmAspace* cpp_process_dispatcher_restricted_aspace(ProcessDispatcher* process) {
+  return process->restricted_aspace();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
