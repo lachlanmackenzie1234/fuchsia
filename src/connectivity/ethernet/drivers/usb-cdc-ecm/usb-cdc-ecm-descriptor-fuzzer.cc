@@ -30,7 +30,10 @@ static size_t UsbGetDescriptorsLength(void* ctx) {
 static zx_status_t UsbControlIn(void* ctx, uint8_t request_type, uint8_t request, uint16_t value,
                                 uint16_t index, int64_t timeout, uint8_t* out_read_buffer,
                                 size_t read_size, size_t* out_read_actual) {
-  if (!(request_type & USB_DIR_IN && request == USB_REQ_GET_DESCRIPTOR)) {
+  if ((request_type &
+       fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::EndpointDirection::kIn)) == 0 ||
+      request !=
+          fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::StandardRequest::kGetDescriptor)) {
     return ZX_ERR_INTERNAL;
   }
   const size_t expected_str_size = sizeof(usb_string_descriptor_t) + ETH_MAC_SIZE * 4;
@@ -40,7 +43,8 @@ static zx_status_t UsbControlIn(void* ctx, uint8_t request_type, uint8_t request
   *out_read_actual = expected_str_size;
   usb_string_descriptor_t usb_str;
   usb_str.b_length = expected_str_size;
-  usb_str.b_descriptor_type = USB_DT_STRING;
+  usb_str.b_descriptor_type =
+      fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::DescriptorType::kString);
   memcpy(out_read_buffer, &usb_str, sizeof(usb_string_descriptor_t));
   uint8_t* ptr = reinterpret_cast<uint8_t*>(out_read_buffer) + sizeof(usb_string_descriptor_t);
   for (size_t i = 0; i < ETH_MAC_SIZE; i++) {

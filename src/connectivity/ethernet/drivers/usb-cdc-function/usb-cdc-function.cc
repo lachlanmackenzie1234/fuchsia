@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <usb-endpoint/usb-endpoint-client.h>
+#include <usb/descriptors.h>
 #include <usb/request-fidl.h>
 
 namespace usb_cdc_function {
@@ -211,8 +212,8 @@ void UsbCdcFunction::CdcSendNotifications() {
     return;
   }
   usb_cdc_notification_t network_notification = {
-      .bmRequestType = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-      .bNotification = USB_CDC_NC_NETWORK_CONNECTION,
+      .bmRequestType = kClassInterfaceIn,
+      .bNotification = fidl::ToUnderlying(fdescriptor::CdcNotification::kNetworkConnection),
       .wValue = online_,
       .wIndex = descriptors_.cdc_intf_0.b_interface_number,
       .wLength = 0,
@@ -221,8 +222,9 @@ void UsbCdcFunction::CdcSendNotifications() {
   usb_cdc_speed_change_notification_t speed_notification = {
       .notification =
           {
-              .bmRequestType = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-              .bNotification = USB_CDC_NC_CONNECTION_SPEED_CHANGE,
+              .bmRequestType = kClassInterfaceIn,
+              .bNotification =
+                  fidl::ToUnderlying(fdescriptor::CdcNotification::kConnectionSpeedChange),
               .wValue = 0,
               .wIndex = descriptors_.cdc_intf_0.b_interface_number,
               .wLength = 2 * sizeof(uint32_t),
@@ -495,15 +497,16 @@ void UsbCdcFunction::Control(ControlRequest &request, ControlCompleter::Sync &co
       w_length);
   TRACE_DURATION("cdc_eth", __func__);
 
-  if (setup.bm_request_type() == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
-      setup.b_request() == USB_CDC_SET_ETHERNET_PACKET_FILTER) {
+  if (setup.bm_request_type() == kClassInterfaceOut &&
+      setup.b_request() == fdescriptor::CdcRequest::kSetEthernetPacketFilter) {
     fdf::debug("setting packet filter not supported");
     completer.Reply(zx::ok(std::vector<uint8_t>{}));
     return;
   }
 
-  if (setup.bm_request_type() == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
-      setup.b_request() == USB_REQ_CLEAR_FEATURE && setup.w_value() == USB_ENDPOINT_HALT) {
+  if (setup.bm_request_type() == kStandardEndpointOut &&
+      setup.b_request() == fdescriptor::StandardRequest::kClearFeature &&
+      setup.w_value() == fidl::ToUnderlying(fdescriptor::FeatureSelector::kEndpointHalt)) {
     fdf::debug("clearing endpoint-halt not supported");
     completer.Reply(zx::ok(std::vector<uint8_t>{}));
     return;

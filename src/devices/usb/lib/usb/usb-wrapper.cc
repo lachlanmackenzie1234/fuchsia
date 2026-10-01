@@ -10,6 +10,8 @@
 
 #include <usb/usb.h>
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace usb {
 
 zx_status_t InterfaceList::Create(const ddk::UsbProtocolClient& client, bool skip_alt,
@@ -103,7 +105,7 @@ Endpoint EndpointList::iterator::ReadEp(usb_desc_iter_t* iter) {
 
   // A SuperSpeed companion descriptor may optionally follow.
   const usb_descriptor_header_t* header = usb_desc_iter_peek(iter);
-  if (header && header->b_descriptor_type == USB_DT_SS_EP_COMPANION) {
+  if (header && header->b_descriptor_type == fdescriptor::DescriptorType::kSsEpCompanion) {
     ss_companion = usb_desc_iter_next_ss_ep_comp(iter);
   }
   return Endpoint(descriptor, ss_companion);
@@ -140,7 +142,7 @@ void DescriptorList::iterator::ReadHeader(usb_desc_iter_t* iter,
                                           const usb_descriptor_header_t** out) {
   const usb_descriptor_header_t* ptr = usb_desc_iter_peek(iter);
   usb_desc_iter_advance(iter);
-  if (ptr && ptr->b_descriptor_type != USB_DT_INTERFACE) {
+  if (ptr && ptr->b_descriptor_type != fdescriptor::DescriptorType::kInterface) {
     *out = ptr;
   } else {
     *out = nullptr;

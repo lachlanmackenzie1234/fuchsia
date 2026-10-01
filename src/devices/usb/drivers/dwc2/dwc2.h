@@ -32,6 +32,8 @@
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 #include "src/devices/usb/lib/usb-endpoint/include/usb-endpoint/sdk/usb-endpoint-server.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace dwc2 {
 
 // DWC2 FIFO sizes are specified in 32-bit words (4 bytes per word).
@@ -244,7 +246,7 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
   // DMA buffer for endpoint zero requests
   std::unique_ptr<dma_buffer::ContiguousBuffer> ep0_buffer_;
   // Current endpoint zero request
-  fuchsia_hardware_usb_descriptor::wire::UsbSetup cur_setup_ = {};
+  fdescriptor::wire::UsbSetup cur_setup_ = {};
   Ep0State ep0_state_ = Ep0State::DISCONNECTED;
 
   fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDciInterface> dci_intf_;

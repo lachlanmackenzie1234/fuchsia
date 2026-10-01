@@ -29,6 +29,8 @@
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
 #include "src/devices/usb/drivers/dwc2/usb_dwc_regs.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace dwc2 {
 
 namespace fpdev = fuchsia_hardware_platform_device;
@@ -229,10 +231,10 @@ TEST_F(Dwc2Test, GetHardwareInfo) {
   EXPECT_EQ(info.endpoints()->at(0).supported_types()->size(), 2u);
   EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(0).max_packet_size_limit(), 4096u);
   EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(0).endpoint_type(),
-            fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+            fdescriptor::EndpointType::kBulk);
   EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(1).max_packet_size_limit(), 4096u);
   EXPECT_EQ(info.endpoints()->at(0).supported_types()->at(1).endpoint_type(),
-            fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+            fdescriptor::EndpointType::kInterrupt);
 
   // EP1 OUT (after 5 IN endpoints):
   EXPECT_EQ(info.endpoints()->at(5).ep_address(), 0x01);
@@ -242,10 +244,10 @@ TEST_F(Dwc2Test, GetHardwareInfo) {
   EXPECT_EQ(info.endpoints()->at(5).supported_types()->size(), 2u);
   EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(0).max_packet_size_limit(), 1024u);
   EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(0).endpoint_type(),
-            fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+            fdescriptor::EndpointType::kBulk);
   EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(1).max_packet_size_limit(), 1024u);
   EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(1).endpoint_type(),
-            fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+            fdescriptor::EndpointType::kInterrupt);
 }
 
 TEST_F(Dwc2Test, PendingZlp_SetOnInShortTransfer) {

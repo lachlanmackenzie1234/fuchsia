@@ -8,18 +8,12 @@ use fidl::endpoints::{RequestStream, create_endpoints};
 const TEST_EP_IN_ADDR: u8 = 0x81;
 const TEST_EP_OUT_ADDR: u8 = 0x01;
 
-const USB_DIR_OUT: u8 = 0x00;
-const USB_DIR_IN: u8 = 0x80;
-const USB_RECIP_DEVICE: u8 = 0x00;
-
-const USB_TYPE_VENDOR_OUT: u8 = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
-const USB_TYPE_VENDOR_IN: u8 = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
-
-const USB_REQ_STANDARD_DEVICE_OUT: u8 = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
-const USB_REQ_STANDARD_DEVICE_IN: u8 = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
-const USB_REQ_STANDARD_INTERFACE_IN: u8 = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE;
-const USB_REQ_STANDARD_ENDPOINT_IN: u8 = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT;
-const USB_REQ_STANDARD_ENDPOINT_OUT: u8 = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT;
+const USB_TYPE_VENDOR_OUT: u8 = fusb_descriptor::EndpointDirection::Out.into_primitive()
+    | fusb_descriptor::RequestType::Vendor.into_primitive()
+    | fusb_descriptor::RequestRecipient::Device.into_primitive();
+const USB_TYPE_VENDOR_IN: u8 = fusb_descriptor::EndpointDirection::In.into_primitive()
+    | fusb_descriptor::RequestType::Vendor.into_primitive()
+    | fusb_descriptor::RequestRecipient::Device.into_primitive();
 
 use futures::channel::mpsc;
 use std::collections::HashMap;
@@ -641,7 +635,7 @@ async fn test_set_and_get_interface() {
     let proxy = iface_c.into_proxy();
     let setup = fusb_descriptor::UsbSetup {
         bm_request_type: 0x81,
-        b_request: USB_SETUP_REQ_GET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::GetInterface.into_primitive(),
         w_value: 0,
         w_index: 0,
         w_length: 1,
@@ -756,64 +750,99 @@ async fn test_standard_endpoint_halt() {
 
     let get_status = |bm, idx| fusb_descriptor::UsbSetup {
         bm_request_type: bm,
-        b_request: USB_SETUP_REQ_GET_STATUS,
+        b_request: fusb_descriptor::StandardRequest::GetStatus.into_primitive(),
         w_value: 0,
         w_index: idx,
         w_length: 2,
     };
     let set_halt = |bm, val, idx| fusb_descriptor::UsbSetup {
         bm_request_type: bm,
-        b_request: USB_SETUP_REQ_SET_FEATURE,
+        b_request: fusb_descriptor::StandardRequest::SetFeature.into_primitive(),
         w_value: val,
         w_index: idx,
         w_length: 0,
     };
     let clear_halt = |bm, val, idx| fusb_descriptor::UsbSetup {
         bm_request_type: bm,
-        b_request: USB_SETUP_REQ_CLEAR_FEATURE,
+        b_request: fusb_descriptor::StandardRequest::ClearFeature.into_primitive(),
         w_value: val,
         w_index: idx,
         w_length: 0,
     };
 
     // GET_STATUS on device (0), interface (0), and unhalted endpoint (0)
-    assert_eq!(control!(get_status(USB_REQ_STANDARD_DEVICE_IN, 0)), Ok(vec![0, 0]));
-    assert_eq!(control!(get_status(USB_REQ_STANDARD_INTERFACE_IN, 0)), Ok(vec![0, 0]));
     assert_eq!(
-        control!(get_status(USB_REQ_STANDARD_INTERFACE_IN, 1)),
+        control!(get_status(fusb_descriptor::STANDARD_DEVICE_REQUEST_IN, 0)),
+        Ok(vec![0, 0])
+    );
+    assert_eq!(
+        control!(get_status(fusb_descriptor::STANDARD_INTERFACE_REQUEST_IN, 0)),
+        Ok(vec![0, 0])
+    );
+    assert_eq!(
+        control!(get_status(fusb_descriptor::STANDARD_INTERFACE_REQUEST_IN, 1)),
         Err(Status::NOT_SUPPORTED.into_raw())
     );
-    assert_eq!(control!(get_status(USB_REQ_STANDARD_ENDPOINT_IN, in_ep)), Ok(vec![0, 0]));
+    assert_eq!(
+        control!(get_status(fusb_descriptor::STANDARD_ENDPOINT_REQUEST_IN, in_ep)),
+        Ok(vec![0, 0])
+    );
 
     // SET_FEATURE(ENDPOINT_HALT) -> GET_STATUS (1)
     assert_eq!(
-        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_OUT, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        control!(set_halt(
+            fusb_descriptor::STANDARD_ENDPOINT_REQUEST_OUT,
+            fusb_descriptor::FeatureSelector::EndpointHalt.into_primitive() as u16,
+            in_ep
+        )),
         Ok(vec![])
     );
-    assert_eq!(control!(get_status(USB_REQ_STANDARD_ENDPOINT_IN, in_ep)), Ok(vec![1, 0]));
+    assert_eq!(
+        control!(get_status(fusb_descriptor::STANDARD_ENDPOINT_REQUEST_IN, in_ep)),
+        Ok(vec![1, 0])
+    );
 
     // CLEAR_FEATURE(ENDPOINT_HALT) -> GET_STATUS (0)
     assert_eq!(
-        control!(clear_halt(USB_REQ_STANDARD_ENDPOINT_OUT, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        control!(clear_halt(
+            fusb_descriptor::STANDARD_ENDPOINT_REQUEST_OUT,
+            fusb_descriptor::FeatureSelector::EndpointHalt.into_primitive() as u16,
+            in_ep
+        )),
         Ok(vec![])
     );
-    assert_eq!(control!(get_status(USB_REQ_STANDARD_ENDPOINT_IN, in_ep)), Ok(vec![0, 0]));
+    assert_eq!(
+        control!(get_status(fusb_descriptor::STANDARD_ENDPOINT_REQUEST_IN, in_ep)),
+        Ok(vec![0, 0])
+    );
 
     // Negative validations: invalid feature, recipient, endpoint address, direction
     assert_eq!(
-        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_OUT, 1, in_ep)),
+        control!(set_halt(fusb_descriptor::STANDARD_ENDPOINT_REQUEST_OUT, 1, in_ep)),
         Err(Status::NOT_SUPPORTED.into_raw())
     );
     assert_eq!(
-        control!(set_halt(USB_REQ_STANDARD_DEVICE_OUT, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        control!(set_halt(
+            fusb_descriptor::STANDARD_DEVICE_REQUEST_OUT,
+            fusb_descriptor::FeatureSelector::EndpointHalt.into_primitive() as u16,
+            in_ep
+        )),
         Err(Status::NOT_SUPPORTED.into_raw())
     );
     assert_eq!(
-        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_OUT, USB_FEATURE_ENDPOINT_HALT, 99)),
+        control!(set_halt(
+            fusb_descriptor::STANDARD_ENDPOINT_REQUEST_OUT,
+            fusb_descriptor::FeatureSelector::EndpointHalt.into_primitive() as u16,
+            99
+        )),
         Err(Status::NOT_SUPPORTED.into_raw())
     );
     assert_eq!(
-        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_IN, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        control!(set_halt(
+            fusb_descriptor::STANDARD_ENDPOINT_REQUEST_IN,
+            fusb_descriptor::FeatureSelector::EndpointHalt.into_primitive() as u16,
+            in_ep
+        )),
         Err(Status::NOT_SUPPORTED.into_raw())
     );
 }
@@ -892,7 +921,7 @@ async fn test_loopback_mode_and_set_interface() {
     let proxy = iface_c.into_proxy();
     let setup = fusb_descriptor::UsbSetup {
         bm_request_type: 0x81,
-        b_request: USB_SETUP_REQ_GET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::GetInterface.into_primitive(),
         w_value: 0,
         w_index: 0,
         w_length: 1,
@@ -922,7 +951,7 @@ async fn test_loopback_mode_and_set_interface() {
     // Test Chapter 9 SET_INTERFACE control request (alt 0 succeeds)
     let setup_set_interface_0 = fusb_descriptor::UsbSetup {
         bm_request_type: 0x01,
-        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::SetInterface.into_primitive(),
         w_value: 0,
         w_index: 0,
         w_length: 0,
@@ -933,14 +962,14 @@ async fn test_loopback_mode_and_set_interface() {
     // USB 2.0 §9.4.10: SET_INTERFACE resets halt state on all interface endpoints
     let set_halt = |ep_addr: u8| fusb_descriptor::UsbSetup {
         bm_request_type: 0x02, // OUT, Standard, Endpoint
-        b_request: USB_SETUP_REQ_SET_FEATURE,
-        w_value: USB_FEATURE_ENDPOINT_HALT,
+        b_request: fusb_descriptor::StandardRequest::SetFeature.into_primitive(),
+        w_value: fusb_descriptor::FeatureSelector::EndpointHalt.into_primitive() as u16,
         w_index: ep_addr as u16,
         w_length: 0,
     };
     let get_ep_status = |ep_addr: u8| fusb_descriptor::UsbSetup {
         bm_request_type: 0x82, // IN, Standard, Endpoint
-        b_request: USB_SETUP_REQ_GET_STATUS,
+        b_request: fusb_descriptor::StandardRequest::GetStatus.into_primitive(),
         w_value: 0,
         w_index: ep_addr as u16,
         w_length: 2,
@@ -985,7 +1014,7 @@ async fn test_loopback_mode_and_set_interface() {
     // Test Chapter 9 SET_INTERFACE control request (alt 1 fails)
     let setup_set_interface_1 = fusb_descriptor::UsbSetup {
         bm_request_type: 0x01,
-        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::SetInterface.into_primitive(),
         w_value: 1,
         w_index: 0,
         w_length: 0,
@@ -998,7 +1027,7 @@ async fn test_loopback_mode_and_set_interface() {
     // Verify integer truncation protection (> 255 does not truncate to 0)
     let setup_trunc_val = fusb_descriptor::UsbSetup {
         bm_request_type: 0x01,
-        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::SetInterface.into_primitive(),
         w_value: 0x0100, // 256
         w_index: 0,
         w_length: 0,
@@ -1010,7 +1039,7 @@ async fn test_loopback_mode_and_set_interface() {
 
     let setup_trunc_idx = fusb_descriptor::UsbSetup {
         bm_request_type: 0x01,
-        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::SetInterface.into_primitive(),
         w_value: 0,
         w_index: 0x0100, // 256
         w_length: 0,
@@ -1491,59 +1520,64 @@ fn test_test_mode_try_from() {
 
 #[fuchsia::test]
 fn test_control_request_parsing_and_types() {
+    let type_standard = fusb_descriptor::RequestType::Standard.into_primitive();
+    let type_vendor = fusb_descriptor::RequestType::Vendor.into_primitive();
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_STANDARD, USB_SETUP_REQ_GET_STATUS),
-        Ok(ControlRequest::Standard(USB_SETUP_REQ_GET_STATUS))
+        ControlRequest::parse(
+            type_standard,
+            fusb_descriptor::StandardRequest::GetStatus.into_primitive()
+        ),
+        Ok(ControlRequest::Standard(fusb_descriptor::StandardRequest::GetStatus))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::SetStall as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::SetStall as u8),
         Ok(ControlRequest::Vendor(VendorRequest::SetStall))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ClearStall as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::ClearStall as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ClearStall))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ConfigureEndpoint as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::ConfigureEndpoint as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ConfigureEndpoint))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::DisableEndpoint as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::DisableEndpoint as u8),
         Ok(ControlRequest::Vendor(VendorRequest::DisableEndpoint))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ConnectEndpoint as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::ConnectEndpoint as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ConnectEndpoint))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::Deconfigure as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::Deconfigure as u8),
         Ok(ControlRequest::Vendor(VendorRequest::Deconfigure))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::WritePayload as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::WritePayload as u8),
         Ok(ControlRequest::Vendor(VendorRequest::WritePayload))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ReadPayload as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::ReadPayload as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ReadPayload))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::SetTestMode as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::SetTestMode as u8),
         Ok(ControlRequest::Vendor(VendorRequest::SetTestMode))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::GetTestMode as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::GetTestMode as u8),
         Ok(ControlRequest::Vendor(VendorRequest::GetTestMode))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ControlLoopbackOut as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::ControlLoopbackOut as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ControlLoopbackOut))
     );
     assert_eq!(
-        ControlRequest::parse(USB_TYPE_VENDOR, VendorRequest::ControlLoopbackIn as u8),
+        ControlRequest::parse(type_vendor, VendorRequest::ControlLoopbackIn as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ControlLoopbackIn))
     );
-    assert_eq!(ControlRequest::parse(USB_TYPE_VENDOR, 0x99), Err(Status::NOT_SUPPORTED));
+    assert_eq!(ControlRequest::parse(type_vendor, 0x99), Err(Status::NOT_SUPPORTED));
     assert_eq!(ControlRequest::parse(0x20, 0), Err(Status::NOT_SUPPORTED));
     assert_eq!(ControlRequest::parse(0x60, 0), Err(Status::NOT_SUPPORTED));
 }
@@ -1866,11 +1900,11 @@ async fn test_vendor_and_standard_control_request_edge_cases() {
         Err(Status::INVALID_ARGS.into_raw())
     );
 
-    // 8. Standard USB_SETUP_REQ_GET_STATUS invalid conditions
+    // 8. Standard GetStatus invalid conditions
     // Out request instead of In
     let setup_status_out = fusb_descriptor::UsbSetup {
         bm_request_type: 0x00,
-        b_request: USB_SETUP_REQ_GET_STATUS,
+        b_request: fusb_descriptor::StandardRequest::GetStatus.into_primitive(),
         w_value: 0,
         w_index: 0,
         w_length: 2,
@@ -1883,7 +1917,7 @@ async fn test_vendor_and_standard_control_request_edge_cases() {
     // Length != 2
     let setup_status_len = fusb_descriptor::UsbSetup {
         bm_request_type: 0x80,
-        b_request: USB_SETUP_REQ_GET_STATUS,
+        b_request: fusb_descriptor::StandardRequest::GetStatus.into_primitive(),
         w_value: 0,
         w_index: 0,
         w_length: 1,
@@ -1896,7 +1930,7 @@ async fn test_vendor_and_standard_control_request_edge_cases() {
     // Unknown endpoint status
     let setup_status_bad_ep = fusb_descriptor::UsbSetup {
         bm_request_type: 0x82, // IN | ENDPOINT
-        b_request: USB_SETUP_REQ_GET_STATUS,
+        b_request: fusb_descriptor::StandardRequest::GetStatus.into_primitive(),
         w_value: 0,
         w_index: 0x05, // Unknown endpoint
         w_length: 2,
@@ -1906,10 +1940,10 @@ async fn test_vendor_and_standard_control_request_edge_cases() {
         Err(Status::NOT_SUPPORTED.into_raw())
     );
 
-    // 9. Standard USB_SETUP_REQ_GET_INTERFACE invalid conditions
+    // 9. Standard GetInterface invalid conditions
     let setup_get_iface_bad_idx = fusb_descriptor::UsbSetup {
         bm_request_type: 0x81,
-        b_request: USB_SETUP_REQ_GET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::GetInterface.into_primitive(),
         w_value: 0,
         w_index: 99, // Wrong interface number
         w_length: 1,
@@ -1919,10 +1953,10 @@ async fn test_vendor_and_standard_control_request_edge_cases() {
         Err(Status::NOT_SUPPORTED.into_raw())
     );
 
-    // 10. Standard USB_SETUP_REQ_SET_INTERFACE invalid conditions
+    // 10. Standard SetInterface invalid conditions
     let setup_set_iface_bad_idx = fusb_descriptor::UsbSetup {
         bm_request_type: 0x01,
-        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        b_request: fusb_descriptor::StandardRequest::SetInterface.into_primitive(),
         w_value: 0,
         w_index: 99, // Wrong interface number
         w_length: 0,

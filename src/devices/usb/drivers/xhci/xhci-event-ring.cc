@@ -17,6 +17,8 @@
 #include "src/devices/usb/drivers/xhci/usb-xhci.h"
 #include "src/devices/usb/drivers/xhci/xhci-enumeration.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace usb_xhci {
 
 // The minimum required number of event ring segment table entries.
@@ -421,8 +423,11 @@ bool EventRing::StallWorkaroundForDefectiveHubs(std::unique_ptr<TRBContext>& con
   ZX_ASSERT(std::holds_alternative<Request>(*context->request));
   // Workaround for full-speed hub issue in Gateway keyboard
   auto request = std::get<Request>(*context->request).request();
-  if ((request->header.ep_address == 0) && (request->setup.b_request == USB_REQ_GET_DESCRIPTOR) &&
-      (request->setup.w_index == 0) && (request->setup.w_value == (USB_DT_DEVICE_QUALIFIER << 8))) {
+  if ((request->header.ep_address == 0) &&
+      (request->setup.b_request == fdescriptor::StandardRequest::kGetDescriptor) &&
+      (request->setup.w_index == 0) &&
+      (request->setup.w_value ==
+       usb_descriptor_w_value(fdescriptor::DescriptorType::kDeviceQualifier))) {
     usb_device_qualifier_descriptor_t* desc;
     if ((std::get<Request>(*context->request).Mmap(reinterpret_cast<void**>(&desc)) == ZX_OK) &&
         (request->header.length >= sizeof(desc))) {

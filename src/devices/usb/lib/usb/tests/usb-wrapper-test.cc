@@ -57,54 +57,29 @@ struct assoc_config {
 };
 
 static void EXPECT_INTERFACE_EQ(usb_interface_descriptor_t a, usb_interface_descriptor_t b) {
-  EXPECT_EQ(a.b_length, b.b_length);
-  EXPECT_EQ(a.b_descriptor_type, b.b_descriptor_type);
-  EXPECT_EQ(a.b_interface_number, b.b_interface_number);
-  EXPECT_EQ(a.b_alternate_setting, b.b_alternate_setting);
-  EXPECT_EQ(a.b_num_endpoints, b.b_num_endpoints);
-  EXPECT_EQ(a.b_interface_class, b.b_interface_class);
-  EXPECT_EQ(a.b_interface_sub_class, b.b_interface_sub_class);
-  EXPECT_EQ(a.b_interface_protocol, b.b_interface_protocol);
-  EXPECT_EQ(a.i_interface, b.i_interface);
+  EXPECT_BYTES_EQ(&a, &b, sizeof(a));
 }
 
 static void EXPECT_INTERFACE_ASSOCIATION_EQ(usb_interface_assoc_descriptor_t a,
                                             usb_interface_assoc_descriptor_t b) {
-  EXPECT_EQ(a.b_length, b.b_length);
-  EXPECT_EQ(a.b_descriptor_type, b.b_descriptor_type);
-  EXPECT_EQ(a.b_first_interface, b.b_first_interface);
-  EXPECT_EQ(a.b_interface_count, b.b_interface_count);
-  EXPECT_EQ(a.b_function_class, b.b_function_class);
-  EXPECT_EQ(a.b_function_sub_class, b.b_function_sub_class);
-  EXPECT_EQ(a.b_function_protocol, b.b_function_protocol);
-  EXPECT_EQ(a.i_function, b.i_function);
+  EXPECT_BYTES_EQ(&a, &b, sizeof(a));
 }
 
 static void EXPECT_ENDPOINT_EQ(const usb_endpoint_descriptor_t a,
                                const usb_endpoint_descriptor_t b) {
-  EXPECT_EQ(a.b_length, b.b_length);
-  EXPECT_EQ(a.b_descriptor_type, b.b_descriptor_type);
-  EXPECT_EQ(a.b_endpoint_address, b.b_endpoint_address);
-  EXPECT_EQ(a.bm_attributes, b.bm_attributes);
-  EXPECT_EQ(a.w_max_packet_size, b.w_max_packet_size);
-  EXPECT_EQ(a.b_interval, b.b_interval);
+  EXPECT_BYTES_EQ(&a, &b, sizeof(a));
 }
 
 static void EXPECT_SS_EP_COMP_EQ(const usb_ss_ep_comp_descriptor_t a,
                                  const usb_ss_ep_comp_descriptor_t b) {
-  EXPECT_EQ(a.b_length, b.b_length);
-  EXPECT_EQ(a.b_descriptor_type, b.b_descriptor_type);
-  EXPECT_EQ(a.b_max_burst, b.b_max_burst);
-  EXPECT_EQ(a.bm_attributes, b.bm_attributes);
-  EXPECT_EQ(a.w_bytes_per_interval, b.w_bytes_per_interval);
+  EXPECT_BYTES_EQ(&a, &b, sizeof(a));
 }
 
 static void EXPECT_DESCRIPTOR_EQ(const usb_descriptor_header_t* a,
                                  const usb_descriptor_header_t* b) {
   ASSERT_NOT_NULL(a);
   ASSERT_NOT_NULL(b);
-  EXPECT_EQ(a->b_descriptor_type, b->b_descriptor_type);
-  EXPECT_EQ(a->b_length, b->b_length);
+  EXPECT_BYTES_EQ(a, b, sizeof(*a));
 }
 
 // WrapperTest is templated on the descriptor data used for the test, WrapperTest<&kDescriptors>
@@ -136,7 +111,7 @@ constexpr alt_hs_config kTestHSInterface = {
     .interface =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 0,
             .b_alternate_setting = 0,
             .b_num_endpoints = 2,
@@ -148,7 +123,7 @@ constexpr alt_hs_config kTestHSInterface = {
     .ep1 =
         {
             .b_length = sizeof(usb_endpoint_descriptor_t),
-            .b_descriptor_type = USB_DT_ENDPOINT,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
             .b_endpoint_address = 0x81,
             .bm_attributes = 2,
             .w_max_packet_size = 1024,
@@ -157,7 +132,7 @@ constexpr alt_hs_config kTestHSInterface = {
     .ep2 =
         {
             .b_length = sizeof(usb_endpoint_descriptor_t),
-            .b_descriptor_type = USB_DT_ENDPOINT,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
             .b_endpoint_address = 2,
             .bm_attributes = 2,
             .w_max_packet_size = 1024,
@@ -166,7 +141,7 @@ constexpr alt_hs_config kTestHSInterface = {
     .hid_descriptor =
         {
             .bLength = sizeof(usb_hid_descriptor_for_test_t),
-            .bDescriptorType = USB_DT_HID,
+            .bDescriptorType = fidl::ToUnderlying(fdescriptor::DescriptorType::kHid),
             .bcdHID = 0,
             .bCountryCode = 0,
             .bNumDescriptors = 0,
@@ -174,7 +149,7 @@ constexpr alt_hs_config kTestHSInterface = {
     .alt_interface =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 0,
             .b_alternate_setting = 1,
             .b_num_endpoints = 2,
@@ -190,7 +165,7 @@ constexpr alt_ss_config kTestSSInterface = {
     .interface =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 0,
             .b_alternate_setting = 0,
             .b_num_endpoints = 2,
@@ -202,7 +177,7 @@ constexpr alt_ss_config kTestSSInterface = {
     .ep1 =
         {
             .b_length = sizeof(usb_endpoint_descriptor_t),
-            .b_descriptor_type = USB_DT_ENDPOINT,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
             .b_endpoint_address = 0x81,
             .bm_attributes = 2,
             .w_max_packet_size = 1024,
@@ -211,7 +186,7 @@ constexpr alt_ss_config kTestSSInterface = {
     .ss_companion1 =
         {
             .b_length = sizeof(usb_ss_ep_comp_descriptor_t),
-            .b_descriptor_type = USB_DT_SS_EP_COMPANION,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kSsEpCompanion),
             .b_max_burst = 3,
             .bm_attributes = 0,
             .w_bytes_per_interval = 0,
@@ -219,7 +194,7 @@ constexpr alt_ss_config kTestSSInterface = {
     .ep2 =
         {
             .b_length = sizeof(usb_endpoint_descriptor_t),
-            .b_descriptor_type = USB_DT_ENDPOINT,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
             .b_endpoint_address = 2,
             .bm_attributes = 2,
             .w_max_packet_size = 1024,
@@ -228,7 +203,7 @@ constexpr alt_ss_config kTestSSInterface = {
     .ss_companion2 =
         {
             .b_length = sizeof(usb_ss_ep_comp_descriptor_t),
-            .b_descriptor_type = USB_DT_SS_EP_COMPANION,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kSsEpCompanion),
             .b_max_burst = 3,
             .bm_attributes = 0,
             .w_bytes_per_interval = 0,
@@ -236,7 +211,7 @@ constexpr alt_ss_config kTestSSInterface = {
     .alt_interface =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 0,
             .b_alternate_setting = 1,
             .b_num_endpoints = 2,
@@ -564,7 +539,7 @@ TEST_F(SuperSpeedWrapperTest, TestEndpointConstIteration) {
 
 constexpr usb_endpoint_descriptor_t kInvalidEnpdoint = {
     .b_length = sizeof(usb_endpoint_descriptor_t),
-    .b_descriptor_type = USB_DT_ENDPOINT,
+    .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
 };
 
 constexpr alt_hs_config kTestInvalidInterface = []() -> alt_hs_config {
@@ -621,14 +596,17 @@ TEST_F(BinaryHidDescriptorTest, TestBinaryHidDescriptor) {
     count++;
 
     for (auto& descriptor : interface.GetDescriptorList()) {
-      EXPECT_TRUE(descriptor.b_descriptor_type == USB_DT_HID ||
-                  descriptor.b_descriptor_type == USB_DT_ENDPOINT);
+      EXPECT_TRUE(descriptor.b_descriptor_type ==
+                      fidl::ToUnderlying(fdescriptor::DescriptorType::kHid) ||
+                  descriptor.b_descriptor_type ==
+                      fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint));
 
-      if (descriptor.b_descriptor_type == USB_DT_HID) {
+      if (descriptor.b_descriptor_type == fidl::ToUnderlying(fdescriptor::DescriptorType::kHid)) {
         hid_desc = reinterpret_cast<const usb_hid_descriptor_t*>(&descriptor);
-      } else if (descriptor.b_descriptor_type == USB_DT_ENDPOINT) {
+      } else if (descriptor.b_descriptor_type ==
+                 fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint)) {
         endpoint_desc = reinterpret_cast<const usb_endpoint_descriptor_t*>(&descriptor);
-        EXPECT_EQ(usb_ep_direction(endpoint_desc), USB_ENDPOINT_IN);
+        EXPECT_EQ(usb_ep_direction(endpoint_desc), fdescriptor::EndpointDirection::kIn);
         EXPECT_EQ(usb_ep_type(endpoint_desc), fdescriptor::EndpointType::kInterrupt);
       }
     }
@@ -642,7 +620,8 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .association =
         {
             .b_length = sizeof(usb_interface_assoc_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE_ASSOCIATION,
+            .b_descriptor_type =
+                fidl::ToUnderlying(fdescriptor::DescriptorType::kInterfaceAssociation),
             .b_first_interface = 0,
             .b_interface_count = 2,
             .b_function_class = 1,
@@ -653,7 +632,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .interface1 =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 0,
             .b_alternate_setting = 0,
             .b_num_endpoints = 2,
@@ -665,7 +644,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .ep1 =
         {
             .b_length = sizeof(usb_endpoint_descriptor_t),
-            .b_descriptor_type = USB_DT_ENDPOINT,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
             .b_endpoint_address = 0x81,
             .bm_attributes = 2,
             .w_max_packet_size = 1024,
@@ -674,7 +653,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .ep2 =
         {
             .b_length = sizeof(usb_endpoint_descriptor_t),
-            .b_descriptor_type = USB_DT_ENDPOINT,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
             .b_endpoint_address = 2,
             .bm_attributes = 2,
             .w_max_packet_size = 1024,
@@ -683,7 +662,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .hid_descriptor =
         {
             .bLength = sizeof(usb_hid_descriptor_for_test_t),
-            .bDescriptorType = USB_DT_HID,
+            .bDescriptorType = fidl::ToUnderlying(fdescriptor::DescriptorType::kHid),
             .bcdHID = 0,
             .bCountryCode = 0,
             .bNumDescriptors = 0,
@@ -691,7 +670,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .alt_interface1 =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 0,
             .b_alternate_setting = 1,
             .b_num_endpoints = 2,
@@ -703,7 +682,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .interface2 =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 1,
             .b_alternate_setting = 0,
             .b_num_endpoints = 1,
@@ -715,7 +694,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .ep3 =
         {
             .b_length = sizeof(usb_endpoint_descriptor_t),
-            .b_descriptor_type = USB_DT_ENDPOINT,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
             .b_endpoint_address = 0x81,
             .bm_attributes = 2,
             .w_max_packet_size = 1024,
@@ -724,7 +703,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .alt_interface2 =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 2,
             .b_alternate_setting = 1,
             .b_num_endpoints = 0,
@@ -736,7 +715,7 @@ constexpr assoc_config kTestInterfaceAssociation = {
     .interface3 =
         {
             .b_length = sizeof(usb_interface_descriptor_t),
-            .b_descriptor_type = USB_DT_INTERFACE,
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
             .b_interface_number = 2,
             .b_alternate_setting = 0,
             .b_num_endpoints = 0,

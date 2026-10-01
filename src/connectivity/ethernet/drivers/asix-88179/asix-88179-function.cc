@@ -131,36 +131,36 @@ zx::result<> FakeUsbAx88179Function::Start(fdf::DriverContext context) {
   descriptor_size_ = sizeof(descriptor_);
   descriptor_.interface = {
       .b_length = sizeof(usb_interface_descriptor_t),
-      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
       .b_interface_number = 0,
       .b_alternate_setting = 0,
       .b_num_endpoints = 3,
-      .b_interface_class = USB_CLASS_COMM,
-      .b_interface_sub_class = USB_CDC_SUBCLASS_ETHERNET,
+      .b_interface_class = fidl::ToUnderlying(fdescriptor::UsbClass::kComm),
+      .b_interface_sub_class = fidl::ToUnderlying(fdescriptor::CdcSubclass::kEthernet),
       .b_interface_protocol = 1,
       .i_interface = 0,
   };
   descriptor_.bulk_in = {
       .b_length = sizeof(usb_endpoint_descriptor_t),
-      .b_descriptor_type = USB_DT_ENDPOINT,
-      .b_endpoint_address = USB_ENDPOINT_IN,  // set later
-      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+      .b_endpoint_address = fidl::ToUnderlying(fdescriptor::EndpointDirection::kIn),  // set later
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = htole16(BULK_MAX_PACKET),
       .b_interval = 0,
   };
   descriptor_.bulk_out = {
       .b_length = sizeof(usb_endpoint_descriptor_t),
-      .b_descriptor_type = USB_DT_ENDPOINT,
-      .b_endpoint_address = USB_ENDPOINT_OUT,  // set later
-      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+      .b_endpoint_address = fidl::ToUnderlying(fdescriptor::EndpointDirection::kOut),  // set later
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = htole16(BULK_MAX_PACKET),
       .b_interval = 0,
   };
   descriptor_.intr_ep = {
       .b_length = sizeof(usb_endpoint_descriptor_t),
-      .b_descriptor_type = USB_DT_ENDPOINT,
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
       .b_endpoint_address = 0,  // set later
-      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kInterrupt),
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kInterrupt),
       .w_max_packet_size = htole16(INTR_MAX_PACKET),
       .b_interval = 8,
   };

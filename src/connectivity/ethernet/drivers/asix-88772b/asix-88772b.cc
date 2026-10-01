@@ -89,13 +89,12 @@ static void ax88772b_interrupt_complete(void* ctx, usb_request_t* request);
 static void ax88772b_write_complete(void* ctx, usb_request_t* request);
 
 static zx_status_t ax88772b_set_value(ax88772b_t* eth, uint8_t request, uint16_t value) {
-  return usb_control_out(&eth->usb, USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, request,
-                         value, 0, ZX_TIME_INFINITE, NULL, 0);
+  return usb_control_out(&eth->usb, kVendorDeviceOut, request, value, 0, ZX_TIME_INFINITE, NULL, 0);
 }
 
 static zx_status_t ax88772b_get_value(ax88772b_t* eth, uint8_t request, uint16_t* value_addr) {
-  return usb_control_in(&eth->usb, USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, request, 0, 0,
-                        ZX_TIME_INFINITE, (uint8_t*)value_addr, sizeof(uint16_t), NULL);
+  return usb_control_in(&eth->usb, kVendorDeviceIn, request, 0, 0, ZX_TIME_INFINITE,
+                        (uint8_t*)value_addr, sizeof(uint16_t), NULL);
 }
 
 static zx_status_t ax88772b_mdio_read(ax88772b_t* eth, uint8_t offset, uint16_t* value) {
@@ -104,9 +103,8 @@ static zx_status_t ax88772b_mdio_read(ax88772b_t* eth, uint8_t offset, uint16_t*
     zxlogf(ERROR, "ax88772b: ASIX_REQ_SW_SERIAL_MGMT_CTRL failed: %d", status);
     return status;
   }
-  status =
-      usb_control_in(&eth->usb, USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, ASIX_REQ_PHY_READ,
-                     eth->phy_id, offset, ZX_TIME_INFINITE, (uint8_t*)value, sizeof(*value), NULL);
+  status = usb_control_in(&eth->usb, kVendorDeviceIn, ASIX_REQ_PHY_READ, eth->phy_id, offset,
+                          ZX_TIME_INFINITE, (uint8_t*)value, sizeof(*value), NULL);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_PHY_READ failed: %d", status);
     return status;
@@ -521,9 +519,8 @@ static int ax88772b_start_thread(void* arg) {
 
   // select the PHY
   uint8_t phy_addr[2];
-  status =
-      usb_control_in(&eth->usb, USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, ASIX_REQ_PHY_ADDR,
-                     0, 0, ZX_TIME_INFINITE, (uint8_t*)&phy_addr, sizeof(phy_addr), NULL);
+  status = usb_control_in(&eth->usb, kVendorDeviceIn, ASIX_REQ_PHY_ADDR, 0, 0, ZX_TIME_INFINITE,
+                          (uint8_t*)&phy_addr, sizeof(phy_addr), NULL);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_READ_PHY_ADDR failed: %d", status);
     goto fail;
@@ -572,9 +569,9 @@ static int ax88772b_start_thread(void* arg) {
     goto fail;
   }
 
-  status = usb_control_out(&eth->usb, USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-                           ASIX_REQ_IPG_WRITE, ASIX_IPG_DEFAULT | (ASIX_IPG1_DEFAULT << 8),
-                           ASIX_IPG2_DEFAULT, ZX_TIME_INFINITE, NULL, 0);
+  status = usb_control_out(&eth->usb, kVendorDeviceOut, ASIX_REQ_IPG_WRITE,
+                           ASIX_IPG_DEFAULT | (ASIX_IPG1_DEFAULT << 8), ASIX_IPG2_DEFAULT,
+                           ZX_TIME_INFINITE, NULL, 0);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_IPG_WRITE failed: %d", status);
     goto fail;
@@ -587,9 +584,8 @@ static int ax88772b_start_thread(void* arg) {
     goto fail;
   }
 
-  status = usb_control_in(&eth->usb, USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-                          ASIX_REQ_NODE_ID_READ, 0, 0, ZX_TIME_INFINITE, eth->mac_addr,
-                          sizeof(eth->mac_addr), NULL);
+  status = usb_control_in(&eth->usb, kVendorDeviceIn, ASIX_REQ_NODE_ID_READ, 0, 0, ZX_TIME_INFINITE,
+                          eth->mac_addr, sizeof(eth->mac_addr), NULL);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_NODE_ID_READ failed: %d", status);
     goto fail;
@@ -647,7 +643,7 @@ static zx_status_t ax88772b_bind(void* ctx, zx_device_t* device) {
 
   usb_endpoint_descriptor_t* endp = usb_desc_iter_next_endpoint(&iter);
   while (endp) {
-    if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
+    if (usb_ep_direction(endp) == fdescriptor::EndpointDirection::kOut) {
       if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_out_addr = endp->b_endpoint_address;
       }

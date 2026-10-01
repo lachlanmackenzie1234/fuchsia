@@ -23,6 +23,8 @@
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace usb_adb_function {
 
 class UsbAdbTestHelper {
@@ -494,7 +496,7 @@ class UsbAdbTest : public testing::Test {
     ASSERT_TRUE(iface_client_.is_valid());
     fidl::Result result = iface_client_->SetConfigured({{
         .configured = true,
-        .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kFull,
+        .speed = fdescriptor::UsbSpeed::kFull,
     }});
     EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
 

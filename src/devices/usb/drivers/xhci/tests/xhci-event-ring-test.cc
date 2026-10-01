@@ -14,6 +14,8 @@
 
 #include "src/devices/usb/drivers/xhci/tests/test-env.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace usb_xhci {
 
 constexpr size_t kErstMax = 42;
@@ -151,11 +153,12 @@ class EventRingHarness : public ::testing::Test {
 
   Request Borrow(TestRequest request) {
     static const usb_protocol_ops_t ops = {
-        .request_queue = [](void* ctx, usb_request_t* usb_request,
-                             const usb_request_complete_callback_t* complete_cb) {
-          auto* harness = static_cast<EventRingHarness*>(ctx);
-          harness->RequestQueue(usb_request, complete_cb);
-        },
+        .request_queue =
+            [](void* ctx, usb_request_t* usb_request,
+               const usb_request_complete_callback_t* complete_cb) {
+              auto* harness = static_cast<EventRingHarness*>(ctx);
+              harness->RequestQueue(usb_request, complete_cb);
+            },
     };
     usb_protocol_t proto = {
         .ops = &ops,
@@ -459,9 +462,11 @@ TEST_F(EventRingHarness, BadHubStallOnDtDeviceQualifier) {
                     request.Mmap(reinterpret_cast<void**>(&result));
                     memcpy(&descriptor, result, sizeof(usb_device_qualifier_descriptor_t));
                   });
-  request->request()->setup.b_request = USB_REQ_GET_DESCRIPTOR;
+  request->request()->setup.b_request =
+      fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor);
   request->request()->setup.w_index = 0;
-  request->request()->setup.w_value = USB_DT_DEVICE_QUALIFIER << 8;
+  request->request()->setup.w_value =
+      usb_descriptor_w_value(fdescriptor::DescriptorType::kDeviceQualifier);
   request->request()->header.length = sizeof(usb_device_qualifier_descriptor_t);
 
   ctx->request = Borrow(std::move(*request));

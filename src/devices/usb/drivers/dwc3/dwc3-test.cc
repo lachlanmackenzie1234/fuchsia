@@ -514,17 +514,17 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
       << "Failed to connect to UsbDciService: " << dci_service.status_string();
   fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
 
-  fuchsia_hardware_usb_descriptor::wire::UsbEndpointDescriptor ep_desc{
-      .b_length = sizeof(fuchsia_hardware_usb_descriptor::wire::UsbEndpointDescriptor),
-      .b_descriptor_type = USB_DT_ENDPOINT,
+  fdescriptor::wire::UsbEndpointDescriptor ep_desc{
+      .b_length = sizeof(fdescriptor::wire::UsbEndpointDescriptor),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
       .b_endpoint_address = 0x02,  // EP 2 OUT
-      .bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk),
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
       .w_max_packet_size = 1024,
       .b_interval = 0,
   };
-  fuchsia_hardware_usb_descriptor::wire::UsbSsEpCompDescriptor ss_comp_desc{
-      .b_length = sizeof(fuchsia_hardware_usb_descriptor::wire::UsbSsEpCompDescriptor),
-      .b_descriptor_type = USB_DT_SS_EP_COMPANION,
+  fdescriptor::wire::UsbSsEpCompDescriptor ss_comp_desc{
+      .b_length = sizeof(fdescriptor::wire::UsbSsEpCompDescriptor),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kSsEpCompanion),
       .b_max_burst = 0,
       .bm_attributes = 0,
       .w_bytes_per_interval = 0,
@@ -668,7 +668,8 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
 
   const auto* type = ep2_out->node().get_property<inspect::UintPropertyValue>("type");
   ASSERT_NE(type, nullptr) << "Endpoint 'type' property was not found!";
-  EXPECT_EQ(type->value(), static_cast<uint64_t>(fdescriptor::EndpointType::kBulk));
+  EXPECT_EQ(type->value(),
+            static_cast<uint64_t>(fidl::ToUnderlying(fdescriptor::EndpointType::kBulk)));
 
   const auto* enabled = ep2_out->node().get_property<inspect::BoolPropertyValue>("enabled");
   ASSERT_NE(enabled, nullptr) << "Endpoint 'enabled' property was not found!";
@@ -775,7 +776,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoTooSmall) {
   // Configure EP1 IN (0x81) with max packet size 512 (which is > 128)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x81;
-  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
+  ep_desc.bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -810,7 +811,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoSufficient) {
   // Configure EP1 IN (0x81) with max packet size 512 (which is == 512)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x81;
-  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
+  ep_desc.bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -841,7 +842,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoIndexOob) {
   // Since DWC_USB31_NUM_IN_EPS is 4, fifo_num 5 is OOB.
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x8A;
-  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
+  ep_desc.bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -876,7 +877,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoTooSmall) {
   // Configure EP1 OUT (0x01) with max packet size 512 (which is > 128)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x01;
-  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
+  ep_desc.bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 
@@ -911,7 +912,7 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoSufficient) {
   // Configure EP1 OUT (0x01) with max packet size 512 (which is == 512)
   fdescriptor::wire::UsbEndpointDescriptor ep_desc;
   ep_desc.b_endpoint_address = 0x01;
-  ep_desc.bm_attributes = static_cast<uint8_t>(fdescriptor::EndpointType::kBulk);
+  ep_desc.bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk);
   ep_desc.w_max_packet_size = 512;
   ep_desc.b_interval = 0;
 

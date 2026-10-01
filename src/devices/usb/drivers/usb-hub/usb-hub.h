@@ -32,9 +32,12 @@
 #include <fbl/hard_int.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/null_lock.h>
+#include <usb/descriptors.h>
 #include <usb/request-cpp.h>
 #include <usb/usb-request.h>
 #include <usb/usb.h>
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace usb_hub {
 
@@ -109,8 +112,9 @@ class UsbHubDevice : public UsbHub, public ddk::UsbHubInterfaceProtocol<UsbHubDe
 
   zx::result<usb_hub_descriptor_t> GetUsbHubDescriptor(uint16_t type) {
     size_t length = sizeof(usb_hub_descriptor_t);
-    auto result = ControlIn(USB_TYPE_CLASS | USB_RECIP_DEVICE | USB_DIR_IN, USB_REQ_GET_DESCRIPTOR,
-                            static_cast<uint16_t>(type << 8), 0, length);
+    auto result =
+        ControlIn(kClassDeviceIn, fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+                  usb_descriptor_w_value(type), 0, length);
     if (result.is_error()) {
       return zx::error(result.error_value());
     }

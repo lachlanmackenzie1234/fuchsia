@@ -27,6 +27,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <usb-inspect/usb-inspect-test-helper.h>
+#include <usb/descriptors.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 #include "src/lib/testing/predicates/status.h"
@@ -321,8 +322,8 @@ class RndisFunctionTest : public ::testing::Test {
     const uint8_t* data_u8 = reinterpret_cast<const uint8_t*>(data);
     fidl::Result result = function_interface_client_->Control({{
         .setup = fdescriptor::UsbSetup{{
-            .bm_request_type = USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-            .b_request = USB_CDC_SEND_ENCAPSULATED_COMMAND,
+            .bm_request_type = kClassInterfaceOut,
+            .b_request = fidl::ToUnderlying(fdescriptor::CdcRequest::kSendEncapsulatedCommand),
             .w_value = 0,
             .w_index = 0,
             .w_length = 0,
@@ -336,8 +337,8 @@ class RndisFunctionTest : public ::testing::Test {
   void ReadResponse(void* data, size_t length) {
     fidl::Result result = function_interface_client_->Control({{
         .setup = fdescriptor::UsbSetup{{
-            .bm_request_type = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-            .b_request = USB_CDC_GET_ENCAPSULATED_RESPONSE,
+            .bm_request_type = kClassInterfaceIn,
+            .b_request = fidl::ToUnderlying(fdescriptor::CdcRequest::kGetEncapsulatedResponse),
             .w_value = 0,
             .w_index = 0,
             .w_length = static_cast<uint16_t>(length),

@@ -71,7 +71,7 @@ void Dwc3::CmdEpSetConfig(const Endpoint& ep, bool modify) {
       .FromValue(0)
       .set_FIFO_NUM(fifo_num)
       .set_MAX_PACKET_SIZE(ep.max_packet_size)
-      .set_EP_TYPE(static_cast<uint32_t>(ep.type))
+      .set_EP_TYPE(fidl::ToUnderlying(ep.type))
       .set_ACTION(action)
       .WriteTo(mmio);
   DEPCFG_DEPCMDPAR1::Get(ep_num)

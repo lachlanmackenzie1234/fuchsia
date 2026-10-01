@@ -7,6 +7,8 @@
 
 #include "lib/fit/defer.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace {
 
 constexpr usb_descriptor_header_t kTestDescriptorHeader = {
@@ -16,7 +18,7 @@ constexpr usb_descriptor_header_t kTestDescriptorHeader = {
 
 constexpr usb_interface_descriptor_t kTestUsbInterfaceDescriptor = {
     .b_length = sizeof(usb_interface_descriptor_t),
-    .b_descriptor_type = USB_DT_INTERFACE,
+    .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
     .b_interface_number = 0,
     .b_alternate_setting = 0,
     .b_num_endpoints = 2,
@@ -28,7 +30,7 @@ constexpr usb_interface_descriptor_t kTestUsbInterfaceDescriptor = {
 
 constexpr usb_endpoint_descriptor_t kTestUsbEndpointDescriptor = {
     .b_length = sizeof(usb_endpoint_descriptor_t),
-    .b_descriptor_type = USB_DT_ENDPOINT,
+    .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
     .b_endpoint_address = 0x81,
     .bm_attributes = 2,
     .w_max_packet_size = 1024,
@@ -37,7 +39,7 @@ constexpr usb_endpoint_descriptor_t kTestUsbEndpointDescriptor = {
 
 constexpr usb_ss_ep_comp_descriptor_t kTestUsbSsEpCompDescriptor = {
     .b_length = sizeof(usb_ss_ep_comp_descriptor_t),
-    .b_descriptor_type = USB_DT_SS_EP_COMPANION,
+    .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kSsEpCompanion),
     .b_max_burst = 3,
     .bm_attributes = 0,
     .w_bytes_per_interval = 0,
@@ -259,6 +261,111 @@ TEST_F(UsbLibTest, TestUsbDescIterNextSsEpComp) {
     ASSERT_EQ(memcmp(ss_ep, &kTestUsbSsEpCompDescriptor, sizeof(kTestUsbSsEpCompDescriptor)), 0);
   }
   ASSERT_EQ(nullptr, usb_desc_iter_next_ss_ep_comp(&iter));
+}
+
+TEST(UsbDescriptorsTest, WValueHelpers) {
+  constexpr uint16_t kDeviceWValue = usb_descriptor_w_value(fdescriptor::DescriptorType::kDevice);
+  EXPECT_EQ(kDeviceWValue, 0x0100u);
+  EXPECT_EQ(usb_descriptor_type_from_w_value(kDeviceWValue), fdescriptor::DescriptorType::kDevice);
+  EXPECT_EQ(usb_descriptor_index_from_w_value(kDeviceWValue), 0u);
+
+  constexpr uint16_t kStringWValue =
+      usb_descriptor_w_value(fdescriptor::DescriptorType::kString, 5);
+  EXPECT_EQ(kStringWValue, 0x0305u);
+  EXPECT_EQ(usb_descriptor_type_from_w_value(kStringWValue), fdescriptor::DescriptorType::kString);
+  EXPECT_EQ(usb_descriptor_index_from_w_value(kStringWValue), 5u);
+
+  constexpr uint16_t kRawTypeWValue = usb_descriptor_w_value(static_cast<uint8_t>(0x21), 2);
+  EXPECT_EQ(kRawTypeWValue, 0x2102u);
+  EXPECT_EQ(usb_descriptor_type_from_w_value(kRawTypeWValue), fdescriptor::DescriptorType::kHid);
+  EXPECT_EQ(usb_descriptor_index_from_w_value(kRawTypeWValue), 2u);
+}
+
+TEST(UsbDescriptorsTest, BmRequestTypeHelpersAndOperators) {
+  // Bitwise OR (enum | enum, enum | integral, integral | enum).
+  constexpr uint8_t kStdDevIn = fdescriptor::EndpointDirection::kIn |
+                                fdescriptor::RequestType::kStandard |
+                                fdescriptor::RequestRecipient::kDevice;
+  EXPECT_EQ(kStdDevIn, kStandardDeviceIn);
+  EXPECT_EQ(kStdDevIn, fdescriptor::kStandardDeviceRequestIn);
+  EXPECT_TRUE(usb_request_is_in(kStdDevIn));
+  EXPECT_FALSE(usb_request_is_out(kStdDevIn));
+  EXPECT_EQ(usb_request_type(kStdDevIn), fdescriptor::RequestType::kStandard);
+
+  constexpr uint8_t kClsIfOut =
+      static_cast<uint8_t>(0) |
+      (fdescriptor::EndpointDirection::kOut | fdescriptor::RequestType::kClass) |
+      fdescriptor::RequestRecipient::kInterface;
+  EXPECT_EQ(kClsIfOut, kClassInterfaceOut);
+  EXPECT_FALSE(usb_request_is_in(kClsIfOut));
+  EXPECT_TRUE(usb_request_is_out(kClsIfOut));
+  EXPECT_EQ(usb_request_type(kClsIfOut), fdescriptor::RequestType::kClass);
+
+  constexpr uint8_t kVendorDevIn = fdescriptor::EndpointDirection::kIn |
+                                   fdescriptor::RequestType::kVendor |
+                                   fdescriptor::RequestRecipient::kDevice;
+  EXPECT_EQ(kVendorDevIn, kVendorDeviceIn);
+  EXPECT_TRUE(usb_request_is_in(kVendorDevIn));
+  EXPECT_EQ(usb_request_type(kVendorDevIn), fdescriptor::RequestType::kVendor);
+
+  // Bitwise AND (enum & enum, enum & integral, integral & enum).
+  EXPECT_EQ(fdescriptor::EndpointDirection::kIn & fdescriptor::EndpointDirection::kOut, 0u);
+  EXPECT_EQ(fdescriptor::EndpointDirection::kIn & fdescriptor::kEndpointDirectionMask, 0x80u);
+  EXPECT_EQ(kClsIfOut & fdescriptor::RequestType::kClass, 0x20u);
+  EXPECT_EQ(kClsIfOut & fdescriptor::RequestRecipient::kInterface, 0x01u);
+
+  // Equality operators (integral == enum, enum == integral).
+  EXPECT_TRUE(0x01u == fdescriptor::DescriptorType::kDevice);
+  EXPECT_TRUE(fdescriptor::DescriptorType::kDevice == 0x01u);
+  EXPECT_FALSE(0x02u == fdescriptor::DescriptorType::kDevice);
+  EXPECT_TRUE(0x80u == fdescriptor::EndpointDirection::kIn);
+  EXPECT_TRUE(fdescriptor::RequestType::kClass == 0x20);
+  EXPECT_TRUE(fdescriptor::UsbClass::kHid == 0x03u);
+  EXPECT_TRUE(0x06u == fdescriptor::StandardRequest::kGetDescriptor);
+}
+
+TEST(UsbDescriptorsTest, EndpointNumberMaskAndHelpers) {
+  // USB 2.0 section 9.6.6 defines bits 3:0 of bEndpointAddress as the endpoint number and
+  // bits 6:4 as reserved (reset to zero). Verify usb_ep_num masks out bits 4-6 as well as bit 7.
+  EXPECT_EQ(usb_ep_num(0x15u), 5u);
+  EXPECT_EQ(usb_ep_num(0x9fu), 15u);
+  EXPECT_EQ(usb_ep_num(0x7fu), 15u);
+  EXPECT_EQ(usb_ep_num(0x80u), 0u);
+
+  usb_endpoint_descriptor_t c_ep = {
+      .b_length = sizeof(usb_endpoint_descriptor_t),
+      .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+      .b_endpoint_address = 0x95,  // IN + reserved bit 4 set + EP 5
+      .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kIsochronous) |
+                       (fidl::ToUnderlying(fdescriptor::SynchronizationType::kAdaptive) << 2),
+      .w_max_packet_size = htole16(0x1400),  // 1024 bytes + bits 12:11 set
+      .b_interval = 1,
+  };
+  EXPECT_EQ(usb_ep_num(c_ep), 5u);
+  EXPECT_EQ(usb_ep_num(&c_ep), 5u);
+  EXPECT_EQ(usb_ep_direction(c_ep), fdescriptor::EndpointDirection::kIn);
+  EXPECT_TRUE(usb_ep_is_in(c_ep));
+  EXPECT_FALSE(usb_ep_is_out(&c_ep));
+  EXPECT_EQ(usb_ep_type(c_ep), fdescriptor::EndpointType::kIsochronous);
+  EXPECT_TRUE(usb_ep_is_isoch(&c_ep));
+  EXPECT_FALSE(usb_ep_is_bulk(c_ep));
+  EXPECT_EQ(usb_ep_sync_type(c_ep), fdescriptor::SynchronizationType::kAdaptive);
+  EXPECT_EQ(usb_ep_max_packet(c_ep), 1024u);
+  EXPECT_EQ(usb_ep_max_packet(&c_ep), 1024u);
+
+  fdescriptor::UsbEndpointDescriptor fidl_ep(
+      sizeof(usb_endpoint_descriptor_t), fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+      0x15, fidl::ToUnderlying(fdescriptor::EndpointType::kBulk), 512, 0);
+  EXPECT_EQ(usb_ep_num(fidl_ep), 5u);
+  EXPECT_TRUE(usb_ep_is_out(fidl_ep));
+  EXPECT_TRUE(usb_ep_is_bulk(fidl_ep));
+  EXPECT_EQ(usb_ep_max_packet(fidl_ep), 512u);
+
+  struct UnsupportedType {};
+  static_assert(!fuchsia_hardware_usb_descriptor_internal::HasEpAddress<UnsupportedType>);
+  static_assert(!fuchsia_hardware_usb_descriptor_internal::HasEpAttributes<UnsupportedType>);
+  static_assert(!fuchsia_hardware_usb_descriptor_internal::HasEpMaxPacketSize<UnsupportedType>);
+  static_assert(!fuchsia_hardware_usb_descriptor_internal::HasEpMaxPacketSize<uint8_t>);
 }
 
 }  // namespace

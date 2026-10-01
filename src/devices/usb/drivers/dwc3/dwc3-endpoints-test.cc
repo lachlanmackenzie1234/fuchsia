@@ -94,7 +94,7 @@ class Dwc3EndpointsTestBase : public TestFixture<true> {
                      uint16_t max_packet_size) {
     fdescriptor::wire::UsbEndpointDescriptor ep_desc{
         .b_length = sizeof(fdescriptor::wire::UsbEndpointDescriptor),
-        .b_descriptor_type = USB_DT_ENDPOINT,
+        .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
         .b_endpoint_address = ep_address,
         .bm_attributes = static_cast<uint8_t>(ep_type),
         .w_max_packet_size = max_packet_size,
@@ -102,7 +102,7 @@ class Dwc3EndpointsTestBase : public TestFixture<true> {
     };
     fdescriptor::wire::UsbSsEpCompDescriptor ss_comp_desc{
         .b_length = sizeof(fdescriptor::wire::UsbSsEpCompDescriptor),
-        .b_descriptor_type = USB_DT_SS_EP_COMPANION,
+        .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kSsEpCompanion),
         .b_max_burst = 0,
         .bm_attributes = 0,
         .w_bytes_per_interval = 0,
@@ -1000,7 +1000,7 @@ TEST_F(Dwc3EndpointsTestBase, EndpointStallAndClear) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
-    uep->ep.type = fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+    uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
 
     // Enable the endpoint
@@ -1052,7 +1052,7 @@ TEST_F(Dwc3EndpointsTestBase, EndpointConfiguration) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
-    uep->ep.type = fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+    uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
   });
 
@@ -1099,7 +1099,7 @@ TEST_F(Dwc3EndpointsTestBase, EndpointReset) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
-    uep->ep.type = fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+    uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
 
     // Enable it first
@@ -1436,7 +1436,7 @@ TEST_P(Dwc3EndpointsTest, ShortPacketTransfer) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
-    uep->ep.type = fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+    uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
     uep->ep.enabled = true;
     uep->ep.got_not_ready = true;
@@ -1485,7 +1485,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransfer) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 3);  // Use IN endpoint 3
     ASSERT_NE(uep, nullptr);
-    uep->ep.type = fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+    uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
     uep->ep.enabled = true;
     uep->ep.got_not_ready = true;
@@ -1539,7 +1539,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
-    uep->ep.type = fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+    uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
 
     // Explicitly disabled!
@@ -1640,7 +1640,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_DeferredCancelDisableAccountingLeak) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 7);
     ASSERT_NE(uep, nullptr);
-    uep->ep.type = fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+    uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
     uep->ep.enabled = true;
     uep->ep.got_not_ready = true;

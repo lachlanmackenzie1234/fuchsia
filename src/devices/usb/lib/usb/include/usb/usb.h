@@ -15,8 +15,6 @@
 
 #include <usb/descriptors.h>
 
-__BEGIN_CDECLS
-
 // helper function for claiming additional interfaces that satisfy the want_interface predicate,
 // want_interface will be passed the supplied arg
 // clang-format off
@@ -78,30 +76,43 @@ usb_ss_ep_comp_descriptor_t* usb_desc_iter_next_ss_ep_comp(usb_desc_iter_t* iter
 
 static inline zx_status_t usb_get_descriptor(const usb_protocol_t* usb, uint8_t request_type,
                                              uint16_t type, uint16_t index, uint8_t* data,
-                                             size_t length, zx_time_t timeout, size_t* out_length) {
-  return usb_control_in(usb, request_type | USB_DIR_IN, USB_REQ_GET_DESCRIPTOR,
-                        (uint16_t)(type << 8 | index), 0, timeout, data, length, out_length);
+                                             size_t length, zx_duration_t timeout,
+                                             size_t* out_length) {
+  if (index > 0xFF) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return usb_control_in(
+      usb, request_type | fuchsia_hardware_usb_descriptor::EndpointDirection::kIn,
+      fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::StandardRequest::kGetDescriptor),
+      usb_descriptor_w_value(type, static_cast<uint8_t>(index)), 0, timeout, data, length,
+      out_length);
 }
 
 static inline zx_status_t usb_get_status(const usb_protocol_t* usb, uint8_t request_type,
                                          uint16_t index, void* data, size_t length,
-                                         zx_time_t timeout, size_t* out_length) {
-  return usb_control_in(usb, request_type | USB_DIR_IN, USB_REQ_GET_STATUS, 0, index, timeout,
-                        (uint8_t*)data, length, out_length);
+                                         zx_duration_t timeout, size_t* out_length) {
+  return usb_control_in(
+      usb, request_type | fuchsia_hardware_usb_descriptor::EndpointDirection::kIn,
+      fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::StandardRequest::kGetStatus), 0, index,
+      timeout, (uint8_t*)data, length, out_length);
 }
 
 static inline zx_status_t usb_set_feature(const usb_protocol_t* usb, uint8_t request_type,
-                                          uint16_t feature, uint16_t index, zx_time_t timeout) {
-  return usb_control_out(usb, request_type, USB_REQ_SET_FEATURE, feature, index, timeout, NULL, 0);
+                                          uint16_t feature, uint16_t index, zx_duration_t timeout) {
+  return usb_control_out(
+      usb, request_type,
+      fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::StandardRequest::kSetFeature), feature,
+      index, timeout, NULL, 0);
 }
 
 static inline zx_status_t usb_clear_feature(const usb_protocol_t* usb, uint8_t request_type,
-                                            uint16_t feature, uint16_t index, zx_time_t timeout) {
-  return usb_control_out(usb, request_type, USB_REQ_CLEAR_FEATURE, feature, index, timeout, NULL,
-                         0);
+                                            uint16_t feature, uint16_t index,
+                                            zx_duration_t timeout) {
+  return usb_control_out(
+      usb, request_type,
+      fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::StandardRequest::kClearFeature), feature,
+      index, timeout, NULL, 0);
 }
-
-__END_CDECLS
 
 namespace usb {
 
@@ -112,28 +123,48 @@ class UsbDevice : public ddk::UsbProtocolClient {
 
   UsbDevice(zx_device_t* parent) : UsbProtocolClient(parent) {}
   zx_status_t ClearFeature(uint8_t request_type, uint16_t feature, uint16_t index,
-                           zx_time_t timeout) {
+                           zx_duration_t timeout) {
     usb_protocol_t proto;
     GetProto(&proto);
     return usb_clear_feature(&proto, request_type, feature, index, timeout);
   }
+  zx_status_t ClearFeature(uint8_t request_type,
+                           fuchsia_hardware_usb_descriptor::FeatureSelector feature, uint16_t index,
+                           zx_duration_t timeout) {
+    return ClearFeature(request_type, static_cast<uint16_t>(fidl::ToUnderlying(feature)), index,
+                        timeout);
+  }
   zx_status_t GetDescriptor(uint8_t request_type, uint16_t type, uint16_t index, void* data,
-                            size_t length, zx_time_t timeout, size_t* out_length) {
+                            size_t length, zx_duration_t timeout, size_t* out_length) {
     usb_protocol_t proto;
     GetProto(&proto);
     return usb_get_descriptor(&proto, request_type, type, index, reinterpret_cast<uint8_t*>(data),
                               length, timeout, out_length);
   }
+  zx_status_t GetDescriptor(uint8_t request_type,
+                            fuchsia_hardware_usb_descriptor::DescriptorType desc_type,
+                            uint16_t index, void* data, size_t length, zx_duration_t timeout,
+                            size_t* out_length) {
+    return GetDescriptor(request_type, static_cast<uint16_t>(fidl::ToUnderlying(desc_type)), index,
+                         data, length, timeout, out_length);
+  }
   zx_status_t GetStatus(uint8_t request_type, uint16_t index, void* data, size_t length,
-                        zx_time_t timeout, size_t* out_length) {
+                        zx_duration_t timeout, size_t* out_length) {
     usb_protocol_t proto;
     GetProto(&proto);
     return usb_get_status(&proto, request_type, index, data, length, timeout, out_length);
   }
-  zx_status_t SetFeature(int8_t request_type, uint16_t feature, uint16_t index, zx_time_t timeout) {
+  zx_status_t SetFeature(uint8_t request_type, uint16_t feature, uint16_t index,
+                         zx_duration_t timeout) {
     usb_protocol_t proto;
     GetProto(&proto);
     return usb_set_feature(&proto, request_type, feature, index, timeout);
+  }
+  zx_status_t SetFeature(uint8_t request_type,
+                         fuchsia_hardware_usb_descriptor::FeatureSelector feature, uint16_t index,
+                         zx_duration_t timeout) {
+    return SetFeature(request_type, static_cast<uint16_t>(fidl::ToUnderlying(feature)), index,
+                      timeout);
   }
 };
 
@@ -251,9 +282,9 @@ class Endpoint {
 //   // Find the first interrupt endpoint and copy it for use by the driver.
 //   for (const auto& interface : *interfaces) {
 //     for (auto& endpoint : interface.GetEndpointList()) {
-//       if (usb_ep_direction(endpoint.descriptor()) == USB_ENDPOINT_IN &&
+//       if (usb_ep_direction(endpoint.descriptor()) == EndpointDirection::kIn &&
 //           usb_ep_type(endpoint.descriptor()) ==
-//           static_cast<uint8_t>(fdescriptor::EndpointType::kInterrupt)) {
+//           EndpointType::kInterrupt) {
 //         return std::make_optional<usb_endpoint_descriptor_t>(*endpoint.descriptor());
 //       }
 //     }

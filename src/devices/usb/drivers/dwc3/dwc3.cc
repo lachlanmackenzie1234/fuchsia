@@ -1497,9 +1497,8 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
     return;
   }
 
-  auto ep_type = usb_ep_type2(request.ep_descriptor());
-
-  if (ep_type == fdescriptor::EndpointType::kIsochronous) {
+  auto ep_type = usb_ep_type(request.ep_descriptor());
+  if (usb_ep_is_isoch(request.ep_descriptor())) {
     fdf::error("isochronous endpoints are not supported");
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
@@ -1512,15 +1511,14 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
     return;
   }
 
-  uint16_t max_packet_size = usb_ep_max_packet2(request.ep_descriptor());
+  uint16_t max_packet_size = usb_ep_max_packet(request.ep_descriptor());
 
   auto* const mmio = get_mmio();
   const uint32_t mdwidth = GHWPARAMS0::Get().ReadFrom(mmio).DWC_USB31_MDWIDTH();
   const uint32_t ram_width_bytes = 4 << mdwidth;
   uint32_t depth = 0;
 
-  const bool is_in =
-      usb_ep_direction2(request.ep_descriptor().b_endpoint_address()) == USB_ENDPOINT_IN;
+  const bool is_in = usb_ep_is_in(request.ep_descriptor());
   if (is_in) {
     // IN endpoint.
     const uint8_t fifo_num = ep_num >> 1;
@@ -1765,7 +1763,7 @@ void Dwc3::Ep0Reset() {
   EpReset(ep0_.out);
   EpReset(ep0_.in);
   ep0_.cur_setup = {};
-  ep0_.cur_speed = fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined;
+  ep0_.cur_speed = fdescriptor::wire::UsbSpeed::kUndefined;
   ep0_.state = Ep0::State::None;
   ep0_.shared_fifo.Clear();
 }

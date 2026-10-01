@@ -4,6 +4,7 @@
 
 #include <fuchsia/hardware/usb/cpp/banjo-mock.h>
 #include <lib/zx/channel.h>
+#include <lib/zx/time.h>
 #include <lib/zx/vmo.h>
 
 #include <cstring>
@@ -12,6 +13,8 @@
 
 #include "src/camera/drivers/usb_video/usb_video_stream.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 bool operator==(const usb_endpoint_descriptor_t& lhs, const usb_endpoint_descriptor_t& rhs) {
   return lhs.b_length == rhs.b_length && lhs.b_descriptor_type == rhs.b_descriptor_type &&
@@ -97,7 +100,7 @@ class UsbVideoTest : public zxtest::Test {
   void SetupSuccessfulSetFormat() {
     usb_video_vc_probe_and_commit_controls proposal;
     memset(&proposal, 0, sizeof(proposal));
-    proposal.bmHint = USB_VIDEO_BM_HINT_FRAME_INTERVAL;
+    proposal.bmHint = fdescriptor::kVideoBmHintFrameInterval;
     proposal.bFormatIndex = 1;
     proposal.bFrameIndex = 1;
     proposal.dwFrameInterval = 333333;
@@ -105,13 +108,14 @@ class UsbVideoTest : public zxtest::Test {
     std::vector<uint8_t> proposal_bytes(reinterpret_cast<uint8_t*>(&proposal),
                                         reinterpret_cast<uint8_t*>(&proposal) + sizeof(proposal));
 
-    usb_.ExpectControlOut(ZX_OK, USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-                          USB_VIDEO_SET_CUR, USB_VIDEO_VS_PROBE_CONTROL << 8, 1, ZX_TIME_INFINITE,
-                          proposal_bytes);
+    usb_.ExpectControlOut(
+        ZX_OK, kClassInterfaceOut, fidl::ToUnderlying(fdescriptor::VideoRequest::kSetCur),
+        usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kProbeControl), 1,
+        ZX_TIME_INFINITE, proposal_bytes);
 
     usb_video_vc_probe_and_commit_controls response;
     memset(&response, 0, sizeof(response));
-    response.bmHint = USB_VIDEO_BM_HINT_FRAME_INTERVAL;
+    response.bmHint = fdescriptor::kVideoBmHintFrameInterval;
     response.bFormatIndex = 1;
     response.bFrameIndex = 1;
     response.dwFrameInterval = 333333;
@@ -121,13 +125,15 @@ class UsbVideoTest : public zxtest::Test {
     std::vector<uint8_t> response_bytes(reinterpret_cast<uint8_t*>(&response),
                                         reinterpret_cast<uint8_t*>(&response) + sizeof(response));
 
-    usb_.ExpectControlIn(ZX_OK, USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-                         USB_VIDEO_GET_CUR, USB_VIDEO_VS_PROBE_CONTROL << 8, 1, ZX_TIME_INFINITE,
-                         response_bytes);
+    usb_.ExpectControlIn(ZX_OK, kClassInterfaceIn,
+                         fidl::ToUnderlying(fdescriptor::VideoRequest::kGetCur),
+                         usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kProbeControl),
+                         1, ZX_TIME_INFINITE, response_bytes);
 
-    usb_.ExpectControlOut(ZX_OK, USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-                          USB_VIDEO_SET_CUR, USB_VIDEO_VS_COMMIT_CONTROL << 8, 1, ZX_TIME_INFINITE,
-                          response_bytes);
+    usb_.ExpectControlOut(
+        ZX_OK, kClassInterfaceOut, fidl::ToUnderlying(fdescriptor::VideoRequest::kSetCur),
+        usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kCommitControl), 1,
+        ZX_TIME_INFINITE, response_bytes);
 
     for (int i = 0; i < 8; ++i) {
       usb_.ExpectGetRequestSize(sizeof(usb_request_t));
@@ -179,7 +185,7 @@ class UsbVideoTest : public zxtest::Test {
         .address = 0x81,
         .alt_setting = 1,
         .isoc_bandwidth = 1024,
-        .ep_type = USB_ENDPOINT_ISOCHRONOUS,
+        .ep_type = fdescriptor::EndpointType::kIsochronous,
     };
     settings.endpoint_settings.push_back(ep_setting);
 

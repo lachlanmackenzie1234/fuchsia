@@ -20,6 +20,7 @@
 #include <variant>
 
 #include <fbl/auto_lock.h>
+#include <usb/descriptors.h>
 #include <usb/request-cpp.h>
 
 #include "fidl/fuchsia.hardware.vsockbridge/cpp/wire_types.h"
@@ -185,8 +186,9 @@ void VsockUsb::Control(ControlRequest& request, ControlCompleter::Sync& complete
       setup.bm_request_type(), setup.b_request(), w_value, w_value, w_index, w_index, w_length,
       w_length);
 
-  if (setup.bm_request_type() == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
-      setup.b_request() == USB_REQ_CLEAR_FEATURE && setup.w_value() == USB_ENDPOINT_HALT) {
+  if (setup.bm_request_type() == kStandardEndpointOut &&
+      setup.b_request() == fdescriptor::StandardRequest::kClearFeature &&
+      setup.w_value() == fidl::ToUnderlying(fdescriptor::FeatureSelector::kEndpointHalt)) {
     FDF_LOG(INFO, "clearing endpoint-halt");
     completer.Reply(zx::ok(std::vector<uint8_t>{}));
     return;
@@ -330,7 +332,7 @@ void VsockUsb::SetConfigured(SetConfiguredRequest& request,
     return;
   }
 
-  fuchsia_hardware_usb_descriptor::UsbSpeed speed = request.speed();
+  fdescriptor::UsbSpeed speed = request.speed();
   FDF_LOG(TRACE, "SetConfigured(%d, %d)", configured, static_cast<uint32_t>(speed));
   zx_status_t status = configured ? ConfigureEndpoints() : UnconfigureEndpoints();
   completer.Reply(zx::make_result(status));

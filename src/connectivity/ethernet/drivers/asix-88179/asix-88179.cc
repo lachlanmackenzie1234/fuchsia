@@ -28,6 +28,8 @@
 
 #include "asix-88179-regs.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 struct PhysrModeConfig {
   uint16_t media_mode;
   uint8_t link_speed;
@@ -126,10 +128,9 @@ zx_status_t Asix88179Ethernet::ReadMac(uint8_t register_address, T* data) {
   size_t out_length = 0;
   uint8_t register_length = sizeof(T);
 
-  zx_status_t status =
-      usb_.ControlIn(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, AX88179_REQ_MAC,
-                     register_address, register_length, ZX_TIME_INFINITE,
-                     reinterpret_cast<uint8_t*>(data), register_length, &out_length);
+  zx_status_t status = usb_.ControlIn(
+      kVendorDeviceIn, AX88179_REQ_MAC, register_address, register_length, ZX_TIME_INFINITE,
+      reinterpret_cast<uint8_t*>(data), register_length, &out_length);
 
   return status;
 }
@@ -138,17 +139,16 @@ template <typename T>
 zx_status_t Asix88179Ethernet::WriteMac(uint8_t register_address, const T& data) {
   uint8_t register_length = sizeof(T);
 
-  return usb_.ControlOut(USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, AX88179_REQ_MAC,
-                         register_address, register_length, ZX_TIME_INFINITE,
-                         reinterpret_cast<const uint8_t*>(&data), register_length);
+  return usb_.ControlOut(kVendorDeviceOut, AX88179_REQ_MAC, register_address, register_length,
+                         ZX_TIME_INFINITE, reinterpret_cast<const uint8_t*>(&data),
+                         register_length);
 }
 
 zx_status_t Asix88179Ethernet::ReadPhy(uint8_t register_address, uint16_t* data) {
   size_t out_length;
-  zx_status_t status =
-      usb_.ControlIn(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, AX88179_REQ_PHY,
-                     AX88179_PHY_ID, register_address, ZX_TIME_INFINITE,
-                     reinterpret_cast<uint8_t*>(data), sizeof(*data), &out_length);
+  zx_status_t status = usb_.ControlIn(kVendorDeviceIn, AX88179_REQ_PHY, AX88179_PHY_ID,
+                                      register_address, ZX_TIME_INFINITE,
+                                      reinterpret_cast<uint8_t*>(data), sizeof(*data), &out_length);
   if (out_length == sizeof(*data)) {
     zxlogf(TRACE, "ax88179: read phy %#x: %#x", register_address, *data);
   }
@@ -157,9 +157,8 @@ zx_status_t Asix88179Ethernet::ReadPhy(uint8_t register_address, uint16_t* data)
 
 zx_status_t Asix88179Ethernet::WritePhy(uint8_t register_address, uint16_t data) {
   zxlogf(TRACE, "ax88179: write phy %#x: %#x", register_address, data);
-  return usb_.ControlOut(USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, AX88179_REQ_PHY,
-                         AX88179_PHY_ID, register_address, ZX_TIME_INFINITE,
-                         reinterpret_cast<uint8_t*>(&data), sizeof(data));
+  return usb_.ControlOut(kVendorDeviceOut, AX88179_REQ_PHY, AX88179_PHY_ID, register_address,
+                         ZX_TIME_INFINITE, reinterpret_cast<uint8_t*>(&data), sizeof(data));
 }
 
 zx_status_t Asix88179Ethernet::ConfigureBulkIn(uint8_t usb_mode, uint8_t link_speed) {
@@ -930,7 +929,7 @@ zx_status_t Asix88179Ethernet::Initialize() {
 
   for (auto endpoint : interface->GetEndpointList()) {
     const usb_endpoint_descriptor_t* endp = endpoint.descriptor();
-    if (usb_ep_direction(endp) == USB_ENDPOINT_OUT) {
+    if (usb_ep_direction(endp) == fdescriptor::EndpointDirection::kOut) {
       if (usb_ep_type(endp) == fdescriptor::EndpointType::kBulk) {
         bulk_out_address = endp->b_endpoint_address;
       }

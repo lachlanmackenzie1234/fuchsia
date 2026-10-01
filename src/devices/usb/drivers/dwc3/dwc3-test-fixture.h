@@ -26,6 +26,7 @@
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
 #include <gtest/gtest.h>
+#include <usb/descriptors.h>
 
 #include "lib/driver/fake-platform-device/cpp/fake-pdev.h"
 #include "lib/driver/testing/cpp/driver_test.h"
@@ -36,6 +37,7 @@
 namespace dwc3 {
 
 namespace fclock = fuchsia_hardware_clock;
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 namespace fhi = fuchsia_hardware_interconnect;
 namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
@@ -239,7 +241,7 @@ class Dwc3TestHelper {
                         zx_status_t status, const zx_packet_interrupt_t* interrupt) {
     drv.HandleIrq(dispatcher, irq, status, interrupt);
   }
-  static void SetCurSetup(Dwc3& drv, const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup) {
+  static void SetCurSetup(Dwc3& drv, const fdescriptor::wire::UsbSetup& setup) {
     drv.ep0_.cur_setup = setup;
   }
   static void* GetEp0BufferVirt(Dwc3& drv) { return drv.ep0_.buffer->virt(); }
@@ -281,8 +283,7 @@ class Dwc3TestHelper {
   }
 
   // Simulation constructs for EP0
-  static void SimulateSetupReceived(Dwc3& drv,
-                                    const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup) {
+  static void SimulateSetupReceived(Dwc3& drv, const fdescriptor::wire::UsbSetup& setup) {
     WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     ZX_ASSERT_MSG(!drv.ep0_.shared_fifo.IsEmpty(), "SimulateSetupReceived called on empty FIFO!");
@@ -686,7 +687,7 @@ class TestFixture : public gtest_base {
   PlatformExtension* GetPlatformExtension(Dwc3& drv) { return drv.platform_extension_.get(); }
 
  public:
-  void TriggerConnectionPlugIn(fuchsia_hardware_usb_descriptor::UsbSpeed speed) {
+  void TriggerConnectionPlugIn(::fuchsia_hardware_usb_descriptor::wire::UsbSpeed speed) {
     namespace fdescriptor = fuchsia_hardware_usb_descriptor;
     // Wait for the mock PHY to establish connection observer registration.
     // Relies on the test runtime's overarching test timeout to prevent flakiness under CI load.
@@ -987,11 +988,10 @@ class TestEndpointEventHandler
 
 class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::UsbDciInterface> {
  public:
-  using ControlCallback = std::function<void(fuchsia_hardware_usb_descriptor::wire::UsbSetup,
-                                             cpp20::span<const uint8_t>)>;
+  using ControlCallback =
+      std::function<void(fdescriptor::wire::UsbSetup, cpp20::span<const uint8_t>)>;
   using SetConnectedCallback = std::function<void(bool connected)>;
-  using SetSpeedCallback =
-      std::function<void(fuchsia_hardware_usb_descriptor::wire::UsbSpeed speed)>;
+  using SetSpeedCallback = std::function<void(fdescriptor::wire::UsbSpeed speed)>;
 
   void SetControlCallback(ControlCallback cb) { control_cb_ = std::move(cb); }
   void SetControlStatus(zx_status_t status) { control_status_ = status; }
@@ -1012,7 +1012,7 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
       return;
     }
 
-    if ((request->setup.bm_request_type & USB_DIR_MASK) == USB_DIR_IN) {
+    if (usb_request_is_in(request->setup.bm_request_type)) {
       uint8_t* data = read_data_.data();
       size_t size = read_data_.size();
       response_.read = fidl::VectorView<uint8_t>::FromExternal(data, size);
@@ -1153,12 +1153,10 @@ class UnmanagedTestFixture : public TestFixture<false> {
     return binding;
   }
 
-  static fuchsia_hardware_usb_descriptor::wire::UsbSetup MakeSetupPacket(uint8_t bm_request_type,
-                                                                         uint8_t b_request,
-                                                                         uint16_t w_value,
-                                                                         uint16_t w_index,
-                                                                         uint16_t w_length) {
-    fuchsia_hardware_usb_descriptor::wire::UsbSetup setup;
+  static fdescriptor::wire::UsbSetup MakeSetupPacket(uint8_t bm_request_type, uint8_t b_request,
+                                                     uint16_t w_value, uint16_t w_index,
+                                                     uint16_t w_length) {
+    fdescriptor::wire::UsbSetup setup;
     setup.bm_request_type = bm_request_type;
     setup.b_request = b_request;
     setup.w_value = w_value;
@@ -1167,12 +1165,11 @@ class UnmanagedTestFixture : public TestFixture<false> {
     return setup;
   }
 
-  static fuchsia_hardware_usb_descriptor::wire::UsbSetup MakeGetDescriptorSetup(
-      uint16_t length = 18) {
-    fuchsia_hardware_usb_descriptor::wire::UsbSetup setup;
-    setup.bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
-    setup.b_request = USB_REQ_GET_DESCRIPTOR;
-    setup.w_value = static_cast<uint16_t>(USB_DT_DEVICE << 8);
+  static fdescriptor::wire::UsbSetup MakeGetDescriptorSetup(uint16_t length = 18) {
+    fdescriptor::wire::UsbSetup setup;
+    setup.bm_request_type = kStandardDeviceIn;
+    setup.b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor);
+    setup.w_value = usb_descriptor_w_value(fdescriptor::DescriptorType::kDevice);
     setup.w_index = 0;
     setup.w_length = length;
     return setup;

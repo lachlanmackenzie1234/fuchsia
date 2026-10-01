@@ -60,8 +60,9 @@ class UsbAx88179Test : public zxtest::Test, loop_fixture::RealLoop {
     device_desc.b_num_configurations = 1;
 
     usb_peripheral::wire::FunctionDescriptor usb_ax88179_desc = {
-        .interface_class = USB_CLASS_COMM,
-        .interface_subclass = USB_CDC_SUBCLASS_ETHERNET,
+        .interface_class = fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::UsbClass::kComm),
+        .interface_subclass =
+            fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::CdcSubclass::kEthernet),
         .interface_protocol = 0,
     };
 

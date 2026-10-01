@@ -26,11 +26,14 @@
 
 #include <fbl/condition_variable.h>
 #include <fbl/ref_ptr.h>
+#include <usb/descriptors.h>
 #include <zxtest/zxtest.h>
 
 #include "lib/fpromise/promise.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/devices/usb/drivers/usb-hub/fake-device.h"
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace {
 template <EmulationMode mode>
@@ -396,28 +399,36 @@ TEST_F(UnbrandedHarness, UnbindHubDisconnects) {
 TEST_F(SyntheticHarness, SetFeature) {
   auto dev = device();
   bool ran = false;
+  constexpr uint8_t kRequestType = fdescriptor::EndpointDirection::kOut |
+                                   fdescriptor::RequestType::kStandard |
+                                   fdescriptor::RequestRecipient::kOther;
   SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
-    ASSERT_EQ(request->setup.bm_request_type, 3);
-    ASSERT_EQ(request->setup.b_request, USB_REQ_SET_FEATURE);
+    ASSERT_EQ(request->setup.bm_request_type, kRequestType);
+    ASSERT_EQ(request->setup.b_request,
+              fidl::ToUnderlying(fdescriptor::StandardRequest::kSetFeature));
     ASSERT_EQ(request->setup.w_index, 2);
     ran = true;
     usb_request_complete(request, ZX_OK, 0, &completion);
   });
-  ASSERT_OK(dev->SetFeature(3, 7, 2));
+  ASSERT_OK(dev->SetFeature(kRequestType, 7, 2));
   ASSERT_TRUE(ran);
 }
 
 TEST_F(SyntheticHarness, ClearFeature) {
   auto dev = device();
   bool ran = false;
+  constexpr uint8_t kRequestType = fdescriptor::EndpointDirection::kOut |
+                                   fdescriptor::RequestType::kStandard |
+                                   fdescriptor::RequestRecipient::kOther;
   SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
-    ASSERT_EQ(request->setup.bm_request_type, 3);
-    ASSERT_EQ(request->setup.b_request, USB_REQ_CLEAR_FEATURE);
+    ASSERT_EQ(request->setup.bm_request_type, kRequestType);
+    ASSERT_EQ(request->setup.b_request,
+              fidl::ToUnderlying(fdescriptor::StandardRequest::kClearFeature));
     ASSERT_EQ(request->setup.w_index, 2);
     ran = true;
     usb_request_complete(request, ZX_OK, 0, &completion);
   });
-  ASSERT_OK(dev->ClearFeature(3, 7, 2));
+  ASSERT_OK(dev->ClearFeature(kRequestType, 7, 2));
   ASSERT_TRUE(ran);
 }
 
@@ -429,14 +440,14 @@ TEST_F(SyntheticHarness, GetPortStatus) {
     uint16_t features_cleared = 0;
     SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
       switch (request->setup.bm_request_type) {
-        case USB_RECIP_PORT | USB_DIR_IN: {
+        case kClassPortIn: {
           usb_port_status_t* stat;
           usb_request_mmap(request, reinterpret_cast<void**>(&stat));
           stat->w_port_change = i;
           usb_request_complete(request, ZX_OK, sizeof(usb_port_status_t), &completion);
           return;
         } break;
-        case USB_RECIP_PORT | USB_DIR_OUT: {
+        case kClassPortOut: {
           switch (request->setup.w_value) {
             case USB_FEATURE_C_PORT_CONNECTION:
               features_cleared |= USB_C_PORT_CONNECTION;
@@ -494,7 +505,8 @@ TEST_F(SyntheticHarness, BadDescriptorTest) {
     devdesc->b_length = sizeof(usb_device_descriptor_t);
     usb_request_complete(request, ZX_OK, sizeof(usb_device_descriptor_t), &completion);
   });
-  result = dev->GetUsbHubDescriptor(USB_HUB_DESC_TYPE_SS);
+  result =
+      dev->GetUsbHubDescriptor(fidl::ToUnderlying(fdescriptor::DescriptorType::kHubSuperSpeed));
   ASSERT_EQ(result.error_value(), ZX_ERR_NO_MEMORY);
 }
 
@@ -506,7 +518,8 @@ TEST_F(SyntheticHarness, GoodDescriptorTest) {
     devdesc->b_length = sizeof(usb_descriptor_header_t);
     usb_request_complete(request, ZX_OK, sizeof(usb_descriptor_header_t), &completion);
   });
-  auto result = dev->GetUsbHubDescriptor(USB_HUB_DESC_TYPE_SS);
+  auto result =
+      dev->GetUsbHubDescriptor(fidl::ToUnderlying(fdescriptor::DescriptorType::kHubSuperSpeed));
   ASSERT_OK(result);
 }
 

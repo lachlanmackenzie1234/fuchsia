@@ -33,6 +33,8 @@
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 #include "src/lib/testing/predicates/status.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace usb_cdc_function {
 
 // UsbCdcTestHelper exposes hooks to inspect private endpoint state for tests.
@@ -611,7 +613,7 @@ class UsbCdcTest : public ::testing::Test {
     {
       fidl::Result result = function_client_->SetConfigured({{
           .configured = true,
-          .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+          .speed = fdescriptor::UsbSpeed::kHigh,
       }});
       ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
     }
@@ -1351,8 +1353,9 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
   // 1. Send Class-Interface request to set ethernet packet filter (acknowledged/ZX_OK)
   {
     fuchsia_hardware_usb_descriptor::UsbSetup setup{{
-        .bm_request_type = USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-        .b_request = USB_CDC_SET_ETHERNET_PACKET_FILTER,
+        .bm_request_type = fdescriptor::EndpointDirection::kOut | fdescriptor::RequestType::kClass |
+                           fdescriptor::RequestRecipient::kInterface,
+        .b_request = fidl::ToUnderlying(fdescriptor::CdcRequest::kSetEthernetPacketFilter),
         .w_value = 0,
         .w_index = 0,
         .w_length = 0,
@@ -1364,9 +1367,11 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
   // 2. Send Standard-Endpoint request to clear halt feature (acknowledged/ZX_OK)
   {
     fuchsia_hardware_usb_descriptor::UsbSetup setup{{
-        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT,
-        .b_request = USB_REQ_CLEAR_FEATURE,
-        .w_value = USB_ENDPOINT_HALT,
+        .bm_request_type = fdescriptor::EndpointDirection::kOut |
+                           fdescriptor::RequestType::kStandard |
+                           fdescriptor::RequestRecipient::kEndpoint,
+        .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kClearFeature),
+        .w_value = fidl::ToUnderlying(fdescriptor::FeatureSelector::kEndpointHalt),
         .w_index = 0,
         .w_length = 0,
     }};
@@ -1377,8 +1382,10 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
   // 3. Send unsupported/invalid request (fails with ZX_ERR_NOT_SUPPORTED)
   {
     fuchsia_hardware_usb_descriptor::UsbSetup setup{{
-        .bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
-        .b_request = USB_REQ_SET_ADDRESS,
+        .bm_request_type = fdescriptor::EndpointDirection::kOut |
+                           fdescriptor::RequestType::kStandard |
+                           fdescriptor::RequestRecipient::kDevice,
+        .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetAddress),
         .w_value = 5,
         .w_index = 0,
         .w_length = 0,
@@ -1412,8 +1419,10 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
       ASSERT_GE(data_res->size(), sizeof(usb_cdc_notification_t));
       usb_cdc_notification_t notif;
       std::memcpy(&notif, data_res->data(), sizeof(notif));
-      EXPECT_EQ(notif.bmRequestType, USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE);
-      EXPECT_EQ(notif.bNotification, USB_CDC_NC_NETWORK_CONNECTION);
+      EXPECT_EQ(notif.bmRequestType, fdescriptor::EndpointDirection::kIn |
+                                         fdescriptor::RequestType::kClass |
+                                         fdescriptor::RequestRecipient::kInterface);
+      EXPECT_EQ(notif.bNotification, fdescriptor::CdcNotification::kNetworkConnection);
       EXPECT_EQ(le16toh(notif.wValue), 0);  // Offline
       EXPECT_EQ(le16toh(notif.wLength), 0);
       fake_ep.RequestComplete(ZX_OK, sizeof(usb_cdc_notification_t));
@@ -1426,9 +1435,11 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
       ASSERT_GE(data_res->size(), sizeof(usb_cdc_speed_change_notification_t));
       usb_cdc_speed_change_notification_t notif;
       std::memcpy(&notif, data_res->data(), sizeof(notif));
-      EXPECT_EQ(notif.notification.bmRequestType,
-                USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE);
-      EXPECT_EQ(notif.notification.bNotification, USB_CDC_NC_CONNECTION_SPEED_CHANGE);
+      EXPECT_EQ(notif.notification.bmRequestType, fdescriptor::EndpointDirection::kIn |
+                                                      fdescriptor::RequestType::kClass |
+                                                      fdescriptor::RequestRecipient::kInterface);
+      EXPECT_EQ(notif.notification.bNotification,
+                fdescriptor::CdcNotification::kConnectionSpeedChange);
       EXPECT_EQ(le16toh(notif.notification.wLength), 2 * sizeof(uint32_t));
       EXPECT_EQ(le32toh(notif.downlink_br), 0u);
       EXPECT_EQ(le32toh(notif.uplink_br), 0u);
@@ -1457,8 +1468,10 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
       ASSERT_GE(data_res->size(), sizeof(usb_cdc_notification_t));
       usb_cdc_notification_t notif;
       std::memcpy(&notif, data_res->data(), sizeof(notif));
-      EXPECT_EQ(notif.bmRequestType, USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE);
-      EXPECT_EQ(notif.bNotification, USB_CDC_NC_NETWORK_CONNECTION);
+      EXPECT_EQ(notif.bmRequestType, fdescriptor::EndpointDirection::kIn |
+                                         fdescriptor::RequestType::kClass |
+                                         fdescriptor::RequestRecipient::kInterface);
+      EXPECT_EQ(notif.bNotification, fdescriptor::CdcNotification::kNetworkConnection);
       EXPECT_EQ(le16toh(notif.wValue), 1);  // Online
       EXPECT_EQ(le16toh(notif.wLength), 0);
       fake_ep.RequestComplete(ZX_OK, sizeof(usb_cdc_notification_t));
@@ -1471,9 +1484,11 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
       ASSERT_GE(data_res->size(), sizeof(usb_cdc_speed_change_notification_t));
       usb_cdc_speed_change_notification_t notif;
       std::memcpy(&notif, data_res->data(), sizeof(notif));
-      EXPECT_EQ(notif.notification.bmRequestType,
-                USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE);
-      EXPECT_EQ(notif.notification.bNotification, USB_CDC_NC_CONNECTION_SPEED_CHANGE);
+      EXPECT_EQ(notif.notification.bmRequestType, fdescriptor::EndpointDirection::kIn |
+                                                      fdescriptor::RequestType::kClass |
+                                                      fdescriptor::RequestRecipient::kInterface);
+      EXPECT_EQ(notif.notification.bNotification,
+                fdescriptor::CdcNotification::kConnectionSpeedChange);
       EXPECT_EQ(le16toh(notif.notification.wLength), 2 * sizeof(uint32_t));
       EXPECT_EQ(le32toh(notif.downlink_br), 100 * 1000 * 1000u);
       EXPECT_EQ(le32toh(notif.uplink_br), 100 * 1000 * 1000u);
@@ -2147,7 +2162,7 @@ TEST_F(UsbCdcTest, PendingNotificationDispatchedOnCompletion) {
     ASSERT_TRUE(data.is_ok());
     ASSERT_GE(data->size(), sizeof(usb_cdc_notification_t));
     const auto* notif = reinterpret_cast<const usb_cdc_notification_t*>(data->data());
-    EXPECT_EQ(notif->bNotification, USB_CDC_NC_NETWORK_CONNECTION);
+    EXPECT_EQ(notif->bNotification, fdescriptor::CdcNotification::kNetworkConnection);
     EXPECT_EQ(notif->wValue, 0u);
   });
 
@@ -2224,7 +2239,7 @@ TEST_F(UsbCdcTest, PendingNotificationDispatchedOnCompletion) {
     ASSERT_TRUE(data.is_ok());
     ASSERT_GE(data->size(), sizeof(usb_cdc_notification_t));
     const auto* notif = reinterpret_cast<const usb_cdc_notification_t*>(data->data());
-    EXPECT_EQ(notif->bNotification, USB_CDC_NC_NETWORK_CONNECTION);
+    EXPECT_EQ(notif->bNotification, fdescriptor::CdcNotification::kNetworkConnection);
     EXPECT_EQ(notif->wValue, 1u);
   });
 }

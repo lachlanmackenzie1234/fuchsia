@@ -17,8 +17,9 @@ zx::result<MacAddress> UsbCdcDescriptorParser::ParseMacAddress(
   // Read string descriptor for MAC address (string index is in iMACAddress field)
   size_t out_length;
   uint8_t str_desc_buf[kExpectedStringSize];
-  zx_status_t status = usb.GetDescriptor(0, USB_DT_STRING, desc->iMACAddress, str_desc_buf,
-                                         sizeof(str_desc_buf), ZX_TIME_INFINITE, &out_length);
+  zx_status_t status = usb.GetDescriptor(
+      0, fidl::ToUnderlying(fdescriptor::DescriptorType::kString), desc->iMACAddress, str_desc_buf,
+      sizeof(str_desc_buf), ZX_TIME_INFINITE, &out_length);
   if (status != ZX_OK) {
     fdf::error("Error reading MAC address");
     return zx::error(status);
@@ -79,7 +80,7 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
   // Find default interface.
   for (const usb::Interface& interface : *interfaces) {
     const usb_interface_descriptor_t* desc = interface.descriptor();
-    if (desc->b_interface_class != USB_CLASS_CDC) {
+    if (desc->b_interface_class != fidl::ToUnderlying(fdescriptor::UsbClass::kCdc)) {
       continue;
     }
     if (desc->b_num_endpoints != 0) {
@@ -95,7 +96,7 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
   // Find data interface.
   for (const usb::Interface& interface : *interfaces) {
     const usb_interface_descriptor_t* desc = interface.descriptor();
-    if (desc->b_interface_class != USB_CLASS_CDC) {
+    if (desc->b_interface_class != fidl::ToUnderlying(fdescriptor::UsbClass::kCdc)) {
       continue;
     }
     if (desc->b_num_endpoints != 2) {
@@ -109,14 +110,14 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
 
     for (const auto& endpoint : interface.GetEndpointList()) {
       const usb_endpoint_descriptor_t* endpoint_desc = endpoint.descriptor();
-      if (usb_ep_direction(endpoint_desc) == USB_ENDPOINT_OUT &&
+      if (usb_ep_direction(endpoint_desc) == fdescriptor::EndpointDirection::kOut &&
           usb_ep_type(endpoint_desc) == fdescriptor::EndpointType::kBulk) {
         if (tx_ep.has_value()) {
           fdf::error("Multiple tx endpoint descriptors");
           return zx::error(ZX_ERR_NOT_SUPPORTED);
         }
         tx_ep = EcmEndpoint(endpoint_desc);
-      } else if (usb_ep_direction(endpoint_desc) == USB_ENDPOINT_IN &&
+      } else if (usb_ep_direction(endpoint_desc) == fdescriptor::EndpointDirection::kIn &&
                  usb_ep_type(endpoint_desc) == fdescriptor::EndpointType::kBulk) {
         if (rx_ep.has_value()) {
           fdf::error("Multiple rx endpoint descriptors");
@@ -134,12 +135,14 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
   const usb_cs_header_interface_descriptor_t* cdc_header_desc = nullptr;
   const usb_cs_ethernet_interface_descriptor_t* cdc_eth_desc = nullptr;
   for (const usb::Interface& interface : *interfaces) {
-    if (interface.descriptor()->b_interface_class != USB_CLASS_COMM) {
+    if (interface.descriptor()->b_interface_class !=
+        fidl::ToUnderlying(fdescriptor::UsbClass::kComm)) {
       continue;
     }
 
     for (auto& descriptor : interface.GetDescriptorList()) {
-      if (descriptor.b_descriptor_type != USB_DT_CS_INTERFACE) {
+      if (descriptor.b_descriptor_type !=
+          fidl::ToUnderlying(fdescriptor::DescriptorType::kCsInterface)) {
         continue;
       }
       if (descriptor.b_length < sizeof(usb_cs_interface_descriptor_t)) {
@@ -150,7 +153,8 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
       const usb_cs_interface_descriptor_t* cs_ifc_desc =
           reinterpret_cast<const usb_cs_interface_descriptor_t*>(&descriptor);
 
-      if (cs_ifc_desc->b_descriptor_sub_type == USB_CDC_DST_HEADER) {
+      if (cs_ifc_desc->b_descriptor_sub_type ==
+          fidl::ToUnderlying(fdescriptor::CdcDescriptorSubtype::kHeader)) {
         if (cdc_header_desc != nullptr) {
           fdf::error("Multiple CDC headers");
           return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -161,7 +165,8 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
         }
         cdc_header_desc =
             reinterpret_cast<const usb_cs_header_interface_descriptor_t*>(&descriptor);
-      } else if (cs_ifc_desc->b_descriptor_sub_type == USB_CDC_DST_ETHERNET) {
+      } else if (cs_ifc_desc->b_descriptor_sub_type ==
+                 fidl::ToUnderlying(fdescriptor::CdcDescriptorSubtype::kEthernet)) {
         if (cdc_eth_desc != nullptr) {
           fdf::error("Multiple CDC ethernet descriptors");
           return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -176,7 +181,7 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
 
     for (const auto& endpoint : interface.GetEndpointList()) {
       const usb_endpoint_descriptor_t* endpoint_desc = endpoint.descriptor();
-      if (usb_ep_direction(endpoint_desc) == USB_ENDPOINT_IN &&
+      if (usb_ep_direction(endpoint_desc) == fdescriptor::EndpointDirection::kIn &&
           usb_ep_type(endpoint_desc) == fdescriptor::EndpointType::kInterrupt) {
         if (int_ep.has_value()) {
           fdf::error("Multiple interrupt endpoint descriptors");

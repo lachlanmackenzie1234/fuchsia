@@ -382,7 +382,7 @@ zx_status_t AdbClientImpl::FindAdbInterface(const uint8_t* data, size_t len) {
       usb_endpoint_descriptor_t* ep = nullptr;
       while ((ep = usb_desc_iter_next_endpoint(&iter)) != nullptr) {
         if (usb_ep_type(ep) == fdescriptor::EndpointType::kBulk) {
-          if (usb_ep_direction(ep) == USB_ENDPOINT_IN) {
+          if (usb_ep_direction(ep) == fdescriptor::EndpointDirection::kIn) {
             bulk_in_addr_ = ep->b_endpoint_address;
           } else {
             bulk_out_addr_ = ep->b_endpoint_address;

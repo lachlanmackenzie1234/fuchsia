@@ -39,6 +39,8 @@
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 // NOLINTBEGIN(misc-use-anonymous-namespace)
 // NOLINTBEGIN(readability-convert-member-functions-to-static)
 // NOLINTBEGIN(readability-container-data-pointer)
@@ -758,7 +760,7 @@ class VsockUsbTest : public ::testing::Test {
     ExpectConfigureEndpoints();
     fidl::Result result = function_client_->SetConfigured({{
         .configured = true,
-        .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+        .speed = fdescriptor::UsbSpeed::kHigh,
     }});
     ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
   }

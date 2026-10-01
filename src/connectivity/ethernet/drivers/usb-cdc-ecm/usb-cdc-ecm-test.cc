@@ -268,8 +268,9 @@ class UsbCdcEcmTest : public ::testing::Test {
     device_desc.id_product = htole16(0x8152);
 
     usb_peripheral::wire::FunctionDescriptor usb_cdc_ecm_function_desc = {
-        .interface_class = USB_CLASS_COMM,
-        .interface_subclass = USB_CDC_SUBCLASS_ETHERNET,
+        .interface_class = fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::UsbClass::kComm),
+        .interface_subclass =
+            fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::CdcSubclass::kEthernet),
         .interface_protocol = 0,
     };
 

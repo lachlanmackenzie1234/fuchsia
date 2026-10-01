@@ -48,6 +48,8 @@
 #include "src/devices/usb/drivers/dwc3/dwc3-trb-fifo.h"
 #include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace dwc3 {
 
 // An extension class to extend the driver with SoC specific behavior for things such as power
@@ -140,9 +142,8 @@ class Dwc3 : public fdf::DriverBase2,
 
   // Gating flag to enable enqueueing multiple TRBs at once for a given endpoint
   // type.
-  bool AllowEnqueueManyTRBs(fuchsia_hardware_usb_descriptor::EndpointType ep_type) const {
-    return enable_enqueue_many_trbs_ &&
-           ep_type == fuchsia_hardware_usb_descriptor::EndpointType::kBulk;
+  bool AllowEnqueueManyTRBs(fdescriptor::EndpointType ep_type) const {
+    return enable_enqueue_many_trbs_ && ep_type == fdescriptor::EndpointType::kBulk;
   }
 
   // For testing.
@@ -227,8 +228,7 @@ class Dwc3 : public fdf::DriverBase2,
     uint32_t rsrc_id{kInvalidResourceId};  // resource ID for current_req
 
     const uint8_t ep_num{0};
-    fuchsia_hardware_usb_descriptor::EndpointType type{
-        fuchsia_hardware_usb_descriptor::EndpointType::kControl};
+    fdescriptor::EndpointType type{fdescriptor::EndpointType::kControl};
     uint8_t interval{0};
     uint16_t max_packet_size{0};
     bool enabled{false};
@@ -402,9 +402,8 @@ class Dwc3 : public fdf::DriverBase2,
     size_t cur_transfer_len = 0;
     Endpoint out;
     Endpoint in;
-    fuchsia_hardware_usb_descriptor::wire::UsbSetup cur_setup;
-    fuchsia_hardware_usb_descriptor::wire::UsbSpeed cur_speed{
-        fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined};
+    fdescriptor::wire::UsbSetup cur_setup;
+    fdescriptor::wire::UsbSpeed cur_speed{fdescriptor::wire::UsbSpeed::kUndefined};
   };
 
   friend struct std::formatter<Ep0::State>;
@@ -426,7 +425,7 @@ class Dwc3 : public fdf::DriverBase2,
 
   fdf::MmioBuffer* get_mmio() { return &*mmio_; }
   static uint8_t UsbAddressToEpNum(uint8_t addr) {
-    return static_cast<uint8_t>(((addr & 0xF) << 1) | !!(addr & USB_DIR_IN));
+    return static_cast<uint8_t>((usb_ep_num(addr) << 1) | usb_ep_is_in(addr));
   }
 
   bool power_on() const { return power_on_; }

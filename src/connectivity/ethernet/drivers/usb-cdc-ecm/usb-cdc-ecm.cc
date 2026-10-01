@@ -19,10 +19,13 @@
 #include <cinttypes>
 
 #include <usb/cdc.h>
+#include <usb/descriptors.h>
 #include <usb/request-cpp.h>
 #include <usb/usb-request.h>
 
 #include "src/connectivity/ethernet/drivers/usb-cdc-ecm/usb-cdc-ecm-lib.h"
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace {
 
@@ -36,14 +39,15 @@ constexpr uint64_t kEthernetRecvDelay = 10;
 constexpr uint64_t kEthernetInitialTransmitDelay = 0;
 constexpr uint64_t kEthernetInitialRecvDelay = 0;
 constexpr uint16_t kEthernetInitialPacketFilter =
-    (USB_CDC_PACKET_TYPE_DIRECTED | USB_CDC_PACKET_TYPE_BROADCAST | USB_CDC_PACKET_TYPE_MULTICAST);
+    (fdescriptor::kCdcPacketTypeDirected | fdescriptor::kCdcPacketTypeBroadcast |
+     fdescriptor::kCdcPacketTypeMulticast);
 
 }  // namespace
 
 namespace usb_cdc_ecm {
 
 static bool WantInterface(usb_interface_descriptor_t* intf, void* arg) {
-  return intf->b_interface_class == USB_CLASS_CDC;
+  return intf->b_interface_class == fidl::ToUnderlying(fdescriptor::UsbClass::kCdc);
 }
 
 void UsbCdcEcm::Stop(fdf::StopCompleter completer) {
@@ -174,7 +178,8 @@ zx_status_t UsbCdcEcm::EthernetImplSetParam(uint32_t param, int32_t value, const
 
   switch (param) {
     case ETHERNET_SETPARAM_PROMISC:
-      status = SetPacketFilterMode(USB_CDC_PACKET_TYPE_PROMISCUOUS, static_cast<bool>(value));
+      status =
+          SetPacketFilterMode(fdescriptor::kCdcPacketTypePromiscuous, static_cast<bool>(value));
       break;
     default:
       status = ZX_ERR_NOT_SUPPORTED;
@@ -193,9 +198,9 @@ zx_status_t UsbCdcEcm::SetPacketFilterMode(uint16_t mode, bool on) {
     bits &= ~mode;
   }
 
-  status =
-      usb_.ControlOut(USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-                      USB_CDC_SET_ETHERNET_PACKET_FILTER, bits, 0, ZX_TIME_INFINITE, nullptr, 0);
+  status = usb_.ControlOut(kClassInterfaceOut,
+                           fidl::ToUnderlying(fdescriptor::CdcRequest::kSetEthernetPacketFilter),
+                           bits, 0, ZX_TIME_INFINITE, nullptr, 0);
 
   if (status != ZX_OK) {
     fdf::error("Set packet filter failed: {}", status);
@@ -218,11 +223,11 @@ void UsbCdcEcm::HandleInterrupt(usb::Request<void>& request) {
     return;
   }
 
-  if (usb_req.bmRequestType == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
-      usb_req.bNotification == USB_CDC_NC_NETWORK_CONNECTION) {
+  if (usb_req.bmRequestType == kClassInterfaceIn &&
+      usb_req.bNotification == fdescriptor::CdcNotification::kNetworkConnection) {
     UpdateOnlineStatus(usb_req.wValue != 0);
-  } else if (usb_req.bmRequestType == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
-             usb_req.bNotification == USB_CDC_NC_CONNECTION_SPEED_CHANGE) {
+  } else if (usb_req.bmRequestType == kClassInterfaceIn &&
+             usb_req.bNotification == fdescriptor::CdcNotification::kConnectionSpeedChange) {
     // The ethermac driver doesn't care about speed changes, so even though we track this
     // information, it's currently unused.
     if (usb_req.wLength != 8) {
@@ -300,7 +305,7 @@ zx_status_t UsbCdcEcm::Init() {
 
   // Initialize context
   zx_status_t status = usb_.ControlOut(
-      USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE, USB_CDC_SET_ETHERNET_PACKET_FILTER,
+      kClassInterfaceOut, fidl::ToUnderlying(fdescriptor::CdcRequest::kSetEthernetPacketFilter),
       kEthernetInitialPacketFilter, 0, ZX_TIME_INFINITE, nullptr, 0);
   if (status != ZX_OK) {
     fdf::error("Failed to set initial packet filter: {}", zx_status_get_string(status));

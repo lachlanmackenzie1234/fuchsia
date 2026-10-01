@@ -12,6 +12,8 @@
 
 #include <mutex>
 
+#include <usb/descriptors.h>
+
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
 
 namespace dwc3 {
@@ -117,7 +119,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
                  ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
 
       const bool is_two_stage = ep0_.cur_setup.w_length == 0;
-      const bool is_out = ((ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT);
+      const bool is_out = usb_request_is_out(ep0_.cur_setup.bm_request_type);
 
       if (is_two_stage) {
         ep0_.state = Ep0::State::TwoStage;
@@ -310,14 +312,14 @@ void Dwc3::HandleEp0Setup(size_t length) {
   // Copy the setup packet to ensure it is correctly captured in the Then closure.
   fdescriptor::wire::UsbSetup setup = ep0_.cur_setup;
 
-  if (setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
+  if (setup.bm_request_type == kStandardDeviceOut) {
     // handle some special setup requests in this driver
     switch (setup.b_request) {
-      case USB_REQ_SET_ADDRESS:
+      case fidl::ToUnderlying(fdescriptor::StandardRequest::kSetAddress):
         SetDeviceAddress(setup.w_value);
         ep0_.state = Ep0::State::WaitHost;
         return;
-      case USB_REQ_SET_CONFIGURATION:
+      case fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration):
         ResetConfiguration();
         Ep0StartEndpoints();
         break;
@@ -337,7 +339,7 @@ void Dwc3::HandleEp0Setup(size_t length) {
     return;
   }
 
-  const bool is_out = (setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
+  const bool is_out = usb_request_is_out(setup.bm_request_type);
 
   // We can't fit this in FIDL so we can't dispatch. Log loudly and fail.
   if (is_out && length > fuchsia_hardware_usb_dci::kMaxControlRequestLen) {
@@ -449,8 +451,8 @@ void Dwc3::HandleEp0Setup(size_t length) {
             }
         }
 
-        if (setup.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE) &&
-            setup.b_request == USB_REQ_SET_CONFIGURATION) {
+        if (setup.bm_request_type == kStandardDeviceOut &&
+            setup.b_request == fdescriptor::StandardRequest::kSetConfiguration) {
           SetDeviceState(fpolicy::DeviceState::kConfigured);
         }
       });

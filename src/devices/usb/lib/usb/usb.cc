@@ -8,6 +8,8 @@
 
 #include <usb/usb.h>
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 // initializes a usb_desc_iter_t for iterating on descriptors past the
 // interface's existing descriptors.
 static zx_status_t usb_desc_iter_additional_init(usb_composite_protocol_t* comp,
@@ -183,7 +185,7 @@ __EXPORT usb_interface_descriptor_t* usb_desc_iter_next_interface_with_assoc(
     usb_desc_iter_t* iter, bool skip_alt, usb_interface_assoc_descriptor_t** assoc) {
   usb_descriptor_header_t* header;
   while ((header = usb_desc_iter_peek(iter)) != NULL) {
-    if (assoc && header->b_descriptor_type == USB_DT_INTERFACE_ASSOCIATION) {
+    if (assoc && header->b_descriptor_type == fdescriptor::DescriptorType::kInterfaceAssociation) {
       usb_interface_assoc_descriptor_t* desc =
           usb_desc_iter_get_structure_internal<usb_interface_assoc_descriptor_t>(iter);
       if (!desc) {
@@ -192,7 +194,7 @@ __EXPORT usb_interface_descriptor_t* usb_desc_iter_next_interface_with_assoc(
       *assoc = desc;
     }
 
-    if (header->b_descriptor_type == USB_DT_INTERFACE) {
+    if (header->b_descriptor_type == fdescriptor::DescriptorType::kInterface) {
       usb_interface_descriptor_t* desc =
           usb_desc_iter_get_structure_internal<usb_interface_descriptor_t>(iter);
       if (desc == NULL) {
@@ -218,11 +220,11 @@ __EXPORT usb_interface_descriptor_t* usb_desc_iter_next_interface(usb_desc_iter_
 __EXPORT usb_endpoint_descriptor_t* usb_desc_iter_next_endpoint(usb_desc_iter_t* iter) {
   usb_descriptor_header_t* header;
   while ((header = usb_desc_iter_peek(iter)) != NULL) {
-    if (header->b_descriptor_type == USB_DT_INTERFACE) {
+    if (header->b_descriptor_type == fdescriptor::DescriptorType::kInterface) {
       // we are at end of previous interface
       return NULL;
     }
-    if (header->b_descriptor_type == USB_DT_ENDPOINT) {
+    if (header->b_descriptor_type == fdescriptor::DescriptorType::kEndpoint) {
       usb_endpoint_descriptor_t* desc =
           usb_desc_iter_get_structure_internal<usb_endpoint_descriptor_t>(iter);
       if (desc == NULL) {
@@ -244,11 +246,12 @@ __EXPORT usb_ss_ep_comp_descriptor_t* usb_desc_iter_next_ss_ep_comp(usb_desc_ite
   usb_descriptor_header_t* header;
   while ((header = usb_desc_iter_peek(iter)) != NULL) {
     uint8_t desc_type = header->b_descriptor_type;
-    if (desc_type == USB_DT_ENDPOINT || desc_type == USB_DT_INTERFACE) {
+    if (desc_type == fdescriptor::DescriptorType::kEndpoint ||
+        desc_type == fdescriptor::DescriptorType::kInterface) {
       // we are either at next endpoint or end of previous interface
       return NULL;
     }
-    if (header->b_descriptor_type == USB_DT_SS_EP_COMPANION) {
+    if (header->b_descriptor_type == fdescriptor::DescriptorType::kSsEpCompanion) {
       usb_ss_ep_comp_descriptor_t* desc =
           usb_desc_iter_get_structure_internal<usb_ss_ep_comp_descriptor_t>(iter);
       if (desc == NULL) {
