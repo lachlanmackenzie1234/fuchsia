@@ -5,12 +5,14 @@
 // https://opensource.org/licenses/MIT
 
 pub mod arch;
+pub mod asid_allocator;
 pub mod cache;
 pub mod crashlog;
 pub mod debugger;
 pub mod exceptions;
 pub mod feature;
 pub mod fpu;
+pub mod mmu;
 pub mod mp;
 pub mod restricted;
 pub mod sbi;
