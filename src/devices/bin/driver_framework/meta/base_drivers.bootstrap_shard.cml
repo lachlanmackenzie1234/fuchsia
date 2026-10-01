@@ -173,9 +173,9 @@
             config: [
                 "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.UseHardwareIommu",
+                "fuchsia.power.PowerFrameworkEnabledForWlanDriver",
                 "fuchsia.power.StoragePowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
-                "fuchsia.power.WlanPowerManagementEnabled",
                 "fuchsia.usb.PeripheralConfig.Functions",
             ],
             from: "parent",

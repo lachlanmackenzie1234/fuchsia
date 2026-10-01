@@ -203,11 +203,13 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         )?;
 
         builder.set_config_capability(
-            "fuchsia.power.WlanPowerManagementEnabled",
+            "fuchsia.power.PowerFrameworkEnabledForWlanDriver",
             Config::new(
                 ConfigValueType::Bool,
                 serde_json::Value::Bool(
-                    context.board_config.provides_feature(BoardFeature::WlanPowerManagement),
+                    context
+                        .board_config
+                        .provides_feature(BoardFeature::PowerFrameworkEnabledForWlanDriver),
                 ),
             ),
         )?;
