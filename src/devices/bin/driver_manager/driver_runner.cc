@@ -753,6 +753,9 @@ void DriverRunner::Bind(Resource& resource, std::shared_ptr<BindResultTracker> r
 }
 
 void DriverRunner::TryResolvePendingNodes() {
+  if (!pending_node_manager_.HasPendingNodes()) {
+    return;
+  }
   pending_node_manager_.TryResolvePendingNodes(
       bind_manager_.bind_resource_set().CurrentMultibindResources());
 }
