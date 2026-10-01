@@ -98,6 +98,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/tools/efi:verify_bazel2gn",
   "//src/developer/fuchsia-criterion:verify_bazel2gn",
   "//src/developer/lib/writer:verify_bazel2gn",
+  "//src/devices/lib/io-buffer:verify_bazel2gn",
   "//src/devices/lib/parsed_board_dump:verify_bazel2gn",
   "//src/devices/lib/thermal/rust:verify_bazel2gn",
   "//src/lib/agents:verify_bazel2gn",
