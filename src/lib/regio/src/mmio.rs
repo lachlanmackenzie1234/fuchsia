@@ -153,7 +153,7 @@ impl<T, Access: Accessible> MmioPtr<T, Access> {
 
 impl<T, Access: Accessible> Clone for MmioPtr<T, Access> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), PhantomData)
+        Self(self.0, PhantomData)
     }
 }
 
