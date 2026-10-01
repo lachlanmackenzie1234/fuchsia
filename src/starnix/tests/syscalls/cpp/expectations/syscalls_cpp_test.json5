@@ -6,10 +6,6 @@
         {
             type: "skip",
             matchers: [
-                // TODO(https://fxbug.dev/398654361): Hangs waiting for
-                // BR_TRANSACTION_COMPLETE of two-way transactions.
-                "BinderWithoutSEStarnix/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
-
                 // TODO(https://fxbug.dev/42080092): This test causes the test suite to fail on NUC.
                 "RestartRead.ReadFromPipeRestarts",
 

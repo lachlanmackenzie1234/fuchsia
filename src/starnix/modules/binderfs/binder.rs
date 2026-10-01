@@ -1156,9 +1156,12 @@ impl BinderDriver {
                     };
 
                     // Make the sender thread part of the transaction so it doesn't get scheduled to handle
-                    // any other transactions.
+                    // any other transactions. `TwoWayTransactionComplete` is enqueued before the
+                    // transaction is dispatched to the target, so that it is always read before
+                    // the reply (or failure) for this transaction.
                     let expected_len = {
                         let mut thread_state = context.binder_thread.lock();
+                        thread_state.enqueue_command(Command::TwoWayTransactionComplete.into());
                         thread_state.transactions.push(TransactionRole::Sender(transaction_sender));
                         thread_state.transactions.len()
                     };
@@ -1353,21 +1356,31 @@ impl BinderDriver {
     }
 
     /// Dequeues a command from the thread's commands' queue, or blocks until commands are available.
+    ///
+    /// For a two-way transaction, `TwoWayTransactionComplete` is not returned on its own: the
+    /// thread keeps waiting for the next command (usually the reply) and both are returned
+    /// together, so that a single write/read of a two-way transaction observes both the
+    /// BR_TRANSACTION_COMPLETE and the outcome of the transaction. The BR_TRANSACTION_COMPLETE of
+    /// a reply or of a oneway transaction is returned without waiting.
     pub fn handle_thread_read(
         &self,
         context: &OperationContext<'_>,
         read_buffer: &UserBuffer,
     ) -> Result<usize, Errno> {
         fuchsia_trace::duration!(CATEGORY_STARNIX_BINDER, NAME_HANDLE_THREAD_READ);
+        // The part of `read_buffer` that has not been written yet, and the number of bytes
+        // already written to `read_buffer`.
+        let mut remaining_buffer = *read_buffer;
+        let mut bytes_read = 0;
         loop {
             {
                 let mut binder_proc_state = context.binder_proc.lock();
 
                 if binder_proc_state.should_request_thread(context.binder_thread) {
                     let bytes_written = Command::SpawnLooper
-                        .write_to_memory(context.memory_accessor, read_buffer)?;
+                        .write_to_memory(context.memory_accessor, &remaining_buffer)?;
                     binder_proc_state.did_request_thread();
-                    return Ok(bytes_written);
+                    return Ok(bytes_read + bytes_written);
                 }
             }
 
@@ -1375,7 +1388,7 @@ impl BinderDriver {
 
             if thread_state.request_kick {
                 thread_state.request_kick = false;
-                return Ok(0);
+                return Ok(bytes_read);
             }
 
             let command_with_trace = Self::get_active_command(
@@ -1423,24 +1436,44 @@ impl BinderDriver {
                 if matches!(&command, Command::AcquireRef(_) | Command::IncRef(_)) {
                     // Drop thread_state before locking the BinderObject to avoid lock order inversion.
                     drop(thread_state);
-                    match Self::try_cancel_transient_refcount(&mut proc_state, &command) {
-                        RefcountDisposition::Cancel(unblocked_cmd) => {
-                            drop(proc_state);
-                            if let Some(cmd) = unblocked_cmd {
-                                return cmd.write_to_memory(context.memory_accessor, read_buffer);
+                    let command =
+                        match Self::try_cancel_transient_refcount(&mut proc_state, &command) {
+                            RefcountDisposition::Cancel(None) => {
+                                drop(proc_state);
+                                continue;
                             }
-                            continue;
-                        }
-                        RefcountDisposition::Retain => {
-                            drop(proc_state);
-                            return command.write_to_memory(context.memory_accessor, read_buffer);
-                        }
-                    }
+                            RefcountDisposition::Cancel(Some(unblocked_command)) => {
+                                unblocked_command
+                            }
+                            RefcountDisposition::Retain => command,
+                        };
+                    drop(proc_state);
+                    // The refcount command is written after the commands already written by this
+                    // read, if any, and ends the read. Note that the `AcquireRef` of an object sent
+                    // for the first time is queued before the `TwoWayTransactionComplete` of the
+                    // transaction that sends it, so the latter is only returned by the next read
+                    // (see https://fxbug.dev/441451502).
+                    let bytes_written =
+                        command.write_to_memory(context.memory_accessor, &remaining_buffer)?;
+                    return Ok(bytes_read + bytes_written);
                 }
 
                 // Attempt to write the command to the thread's buffer.
                 let bytes_written =
-                    command.write_to_memory(context.memory_accessor, read_buffer)?;
+                    command.write_to_memory(context.memory_accessor, &remaining_buffer)?;
+                // After the BR_TRANSACTION_COMPLETE of a two-way transaction, also wait for and
+                // return the next command, as long as one is expected (a reply is still pending or
+                // a command is already queued) and the buffer has room for any command. This does
+                // not apply to the BR_TRANSACTION_COMPLETE of a reply: when replying to a nested
+                // transaction, the thread's own transaction is still pending, and its reply must
+                // not be waited for here.
+                let wait_for_next_command = matches!(command, Command::TwoWayTransactionComplete)
+                    && remaining_buffer.length - bytes_written >= Command::MAX_SIZE
+                    && (!thread_state.command_queue.is_empty()
+                        || matches!(
+                            thread_state.transactions.last(),
+                            Some(TransactionRole::Sender(_))
+                        ));
                 let has_pending_proc_commands = match command {
                     Command::Transaction { sender, .. } => {
                         // The transaction is synchronous and we're expected to give a reply, so
@@ -1470,6 +1503,7 @@ impl BinderDriver {
                         false
                     }
                     Command::TransactionComplete
+                    | Command::TwoWayTransactionComplete
                     | Command::OnewayTransaction(..)
                     | Command::OnewayTransactionComplete
                     | Command::ReleaseRef(..)
@@ -1495,7 +1529,12 @@ impl BinderDriver {
                     context.binder_proc.wake_process_and_available_thread();
                 }
 
-                return Ok(bytes_written);
+                bytes_read += bytes_written;
+                remaining_buffer.advance(bytes_written)?;
+                if !wait_for_next_command {
+                    return Ok(bytes_read);
+                }
+                continue;
             }
 
             // No commands readily available to read. Wait for work. The thread will wait on both
@@ -1511,14 +1550,17 @@ impl BinderDriver {
             thread_state.command_queue.wait_async_simple(&mut waiter);
 
             // Ensure the file descriptor has not been closed or interrupted, after registering
-            // for the waiters but before waiting.
+            // for the waiters but before waiting. If some commands have already been written
+            // (e.g. the BR_TRANSACTION_COMPLETE of a two-way transaction whose reply is being
+            // waited for), return them rather than an error: they have already been dequeued, and
+            // on error `read_consumed` is not updated, so userspace would never see them.
             if proc_state.closed {
-                return error!(EBADF);
+                return if bytes_read > 0 { Ok(bytes_read) } else { error!(EBADF) };
             }
 
             if proc_state.interrupted {
                 proc_state.interrupted = false;
-                return error!(EINTR);
+                return if bytes_read > 0 { Ok(bytes_read) } else { error!(EINTR) };
             }
 
             // Drop locks before sleeping. Order matters: thread_state first, then proc_state
@@ -1530,12 +1572,15 @@ impl BinderDriver {
             drop(proc_state);
 
             // Put this thread to sleep. If we know the thread we are sending to, use that to
-            // inherit priority.
-            context.current_task.block_with_optional_owner_until(
+            // inherit priority. As above, if the wait fails after some commands have been written,
+            // return them rather than the error.
+            if let Err(err) = context.current_task.block_with_optional_owner_until(
                 guard,
                 target_thread.as_deref(),
                 zx::MonotonicInstant::INFINITE,
-            )?;
+            ) {
+                return if bytes_read > 0 { Ok(bytes_read) } else { Err(err) };
+            }
         }
     }
 

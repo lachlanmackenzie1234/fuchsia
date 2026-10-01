@@ -12,10 +12,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO: https://fxbug.dev/398654361
-                "binder/001",
-                "binder/008",
-
                 // TODO: https://fxbug.dev/398662840
                 "cgroupfs_label/001",
                 "cgroupfs_label/002",

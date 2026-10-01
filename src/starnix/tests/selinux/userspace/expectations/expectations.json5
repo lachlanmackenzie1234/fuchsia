@@ -100,10 +100,6 @@
         {
             type: "skip",
             matchers: [
-                // TODO(https://fxbug.dev/398654361): Hangs waiting for
-                // BR_TRANSACTION_COMPLETE of two-way transactions.
-                "BinderTest/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
-
                 // TODO: https://fxbug.dev/451606455 - Wait on `PTRACE_ATTACH` to finish.
                 "PtraceTest.PtraceAttachAllowed",
                 "PtraceTest.PtraceAttachThenExecDenied",
