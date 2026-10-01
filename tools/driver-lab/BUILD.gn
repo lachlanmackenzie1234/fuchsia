@@ -25,6 +25,7 @@ python_library("driver_lab") {
     "permissions.py",
     "plans.py",
     "policy.py",
+    "session.py",
     "transport.py",
   ]
   library_deps = [
@@ -81,6 +82,11 @@ if (is_host) {
     libraries = [ ":driver_lab" ]
   }
 
+  python_host_test("driver_lab_session_test") {
+    main_source = "tests/session_test.py"
+    libraries = [ ":driver_lab" ]
+  }
+
   python_binary("driver_lab_cli") {
     main_source = "driver_lab/cli.py"
     main_callable = "main"
@@ -105,5 +111,6 @@ group("tests") {
     ":driver_lab_permissions_test($host_toolchain)",
     ":driver_lab_plans_test($host_toolchain)",
     ":driver_lab_policy_test($host_toolchain)",
+    ":driver_lab_session_test($host_toolchain)",
   ]
 }

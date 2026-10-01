@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from driver_lab.consent import (
     READ_WARNING,
@@ -44,10 +44,16 @@ from driver_lab.permissions import (
     resolve,
 )
 from driver_lab.plans import is_mutating_plan, plan_digest, validate_plan
+from driver_lab.session import (
+    AccessRequirements,
+    HardwareSession,
+    SessionCapabilities,
+)
 from driver_lab.transport import (
     STALE_REJECTIONS,
     AllowRule,
     DirectTransport,
+    Expectations,
     OpenSessionRejected,
     OperationDenied,
     ProxyDescription,
@@ -286,6 +292,267 @@ class DriverLab:
                 "node discovery is not configured for this DriverLab instance"
             )
         return await self._discovery.describe_node(node_id)
+
+    @classmethod
+    async def connect(
+        cls,
+        target: str = "default",
+        *,
+        transport: str = "auto",
+        timeout_s: float = 10.0,
+        grants_path: Path | None = None,
+        evidence_root: Path | None = None,
+        target_scope: str | None = None,
+        node_id: str | None = None,
+        consent: ConsentPrompt | None = None,
+        discovery: NodeDiscovery | None = None,
+        proxy_transport: ProxyTransport | None = None,
+        direct_transport: DirectTransport | None = None,
+    ) -> "DriverLab":
+        """Connects to a target device, establishing transports according to mode."""
+        active_transport: ProxyTransport | DirectTransport
+        if proxy_transport is not None:
+            active_transport = proxy_transport
+        elif direct_transport is not None:
+            active_transport = direct_transport
+        elif transport in ("proxy", "auto"):
+            from driver_lab.fidl_transport import connect_transport
+
+            active_transport = connect_transport(
+                node_id or target, target=target
+            )
+        else:
+            raise DriverLabError(
+                "Direct transport must be explicitly provided via direct_transport"
+            )
+
+        return cls(
+            transport=active_transport,
+            grants_path=grants_path or Path("grants.toml"),
+            evidence_root=evidence_root or Path("evidence"),
+            target_scope=target_scope or target,
+            node_id=node_id or target,
+            consent=consent,
+            discovery=discovery,
+        )
+
+    async def attach(
+        self,
+        node_id: str,
+        *,
+        mode: Literal["auto", "direct", "proxy"] = "auto",
+        requirements: AccessRequirements | None = None,
+        session_mode: SessionMode = SessionMode.READ_ONLY,
+        allowlist: Sequence[AllowRule] | None = None,
+        expectations: Expectations | Mapping[str, Any] | None = None,
+        context: SessionContext | None = None,
+        consent: ConsentPrompt | None = None,
+    ) -> HardwareSession:
+        """Attaches to a node, returning a driver-shaped HardwareSession (Spec Sections 6.1, 7.3, 9)."""
+        if mode not in ("auto", "direct", "proxy"):
+            raise ValueError(
+                f"Invalid mode '{mode}': must be 'auto', 'direct', or 'proxy'"
+            )
+
+        if mode == "auto":
+            if requirements and (
+                requirements.needs_mmio
+                or requirements.needs_sequence
+                or requirements.needs_target_timing
+                or requirements.needs_target_policy
+                or requirements.needs_target_audit
+                or requirements.is_mutating
+            ):
+                selected_mode = "proxy"
+            elif isinstance(self._transport, DirectTransport) or (
+                requirements and requirements.protocol
+            ):
+                selected_mode = "direct"
+            else:
+                selected_mode = "proxy"
+        elif mode == "direct":
+            if requirements and (
+                requirements.needs_mmio
+                or requirements.needs_sequence
+                or requirements.needs_target_timing
+                or requirements.needs_target_policy
+                or requirements.needs_target_audit
+                or requirements.is_mutating
+            ):
+                raise DriverLabError(
+                    "Direct mode cannot satisfy requested requirements (requires proxy mode)"
+                )
+            selected_mode = "direct"
+        else:
+            selected_mode = "proxy"
+
+        if selected_mode == "direct":
+            if not isinstance(self._transport, DirectTransport):
+                raise DriverLabError(
+                    "Direct transport is not configured for this DriverLab instance"
+                )
+            direct_desc = await self._transport.describe()
+            direct_ctx = context or SessionContext(
+                run_id=f"direct-{node_id}",
+                case_id="interactive",
+                plan_digest="direct-session",
+                host_tool_version="0.1.0",
+            )
+            direct_session = await self._transport.open_direct_session(
+                direct_ctx
+            )
+            caps = SessionCapabilities(
+                mode="direct",
+                target_policy=False,
+                target_audit=False,
+                target_local_timing=False,
+                fault_isolation="driver_host",
+                production_driver_active=bool(direct_desc.bound_driver_url),
+                restoration_required=False,
+                resources=(),
+                protocols=(direct_desc.protocol_name,),
+            )
+            return HardwareSession(
+                capabilities=caps,
+                direct_session=direct_session,
+                direct_description=direct_desc,
+            )
+
+        # Proxy mode
+        if not isinstance(self._transport, ProxyTransport):
+            raise DriverLabError(
+                "Proxy transport is not configured for this DriverLab instance"
+            )
+        proxy_desc = await self._transport.describe()
+
+        if session_mode == SessionMode.MUTATING:
+            active_consent = consent or self._consent
+            if active_consent is None:
+                raise DriverLabError(
+                    "Mutating session requires operator consent, but no consent prompt is configured"
+                )
+            req = AccessRequest(
+                target_scope=self._target_scope,
+                node_id=node_id,
+                resource_digest=proxy_desc.resource_digest,
+                resource="*",
+                offset=0,
+                width=4,
+                access=AccessClass.WRITE,
+            )
+            decision = await active_consent.request_consent(req, WRITE_WARNING)
+            if decision != ConsentDecision.ALLOW_ONCE:
+                raise DriverLabError(
+                    f"Mutating session was not authorized by operator (decision: {decision})"
+                )
+
+        rules: list[AllowRule] = []
+        if allowlist is not None:
+            rules = list(allowlist)
+        else:
+            for res in proxy_desc.resources:
+                for off in range(0, min(res.logical_size, 256), 4):
+                    rules.append(
+                        AllowRule(
+                            resource=res.id,
+                            offset=off,
+                            width=4,
+                            access=AccessClass.READ_ONCE,
+                        )
+                    )
+                    rules.append(
+                        AllowRule(
+                            resource=res.id,
+                            offset=off,
+                            width=4,
+                            access=AccessClass.SNAPSHOT,
+                        )
+                    )
+                    rules.append(
+                        AllowRule(
+                            resource=res.id,
+                            offset=off,
+                            width=4,
+                            access=AccessClass.POLL,
+                        )
+                    )
+                    rules.append(
+                        AllowRule(
+                            resource=res.id,
+                            offset=off,
+                            width=4,
+                            access=AccessClass.SEQUENCE,
+                        )
+                    )
+                    if session_mode == SessionMode.MUTATING:
+                        rules.append(
+                            AllowRule(
+                                resource=res.id,
+                                offset=off,
+                                width=4,
+                                access=AccessClass.WRITE,
+                            )
+                        )
+                    if len(rules) >= 250:
+                        break
+                if len(rules) >= 250:
+                    break
+
+        proxy_ctx = context or SessionContext(
+            run_id=f"proxy-{node_id}",
+            case_id="interactive",
+            plan_digest="proxy-session",
+            host_tool_version="0.1.0",
+        )
+        exp: Expectations
+        if expectations is not None:
+            if isinstance(expectations, Expectations):
+                exp = expectations
+            else:
+                exp = Expectations(
+                    boot_id=str(expectations["boot_id"]),
+                    proxy_generation=int(expectations["proxy_generation"]),
+                    resource_digest=str(expectations["resource_digest"]),
+                    policy_digest=str(expectations["policy_digest"]),
+                )
+        else:
+            exp = Expectations(
+                boot_id=proxy_desc.boot_id,
+                proxy_generation=proxy_desc.proxy_generation,
+                resource_digest=proxy_desc.resource_digest,
+                policy_digest=proxy_desc.policy_digest,
+            )
+        proxy_session = await self._transport.open_session(
+            context=proxy_ctx,
+            mode=session_mode,
+            expectations=exp,
+            allowlist=rules,
+        )
+        caps = SessionCapabilities(
+            mode="proxy",
+            target_policy=True,
+            target_audit=True,
+            target_local_timing=True,
+            fault_isolation="driver_host",
+            production_driver_active=False,
+            restoration_required=False,
+            resources=tuple(r.name for r in proxy_desc.resources),
+            protocols=(),
+        )
+
+        cursor = 0
+
+        async def _drain_audit() -> None:
+            nonlocal cursor
+            page = await proxy_session.read_audit(cursor=cursor, limit=64)
+            cursor = page.next_cursor
+
+        return HardwareSession(
+            capabilities=caps,
+            proxy_session=proxy_session,
+            proxy_description=proxy_desc,
+            audit_drainer=_drain_audit,
+        )
 
     def _derive(
         self, canonical: Mapping[str, Any], description: ProxyDescription
@@ -1141,3 +1408,16 @@ class DriverLab:
         recorder.write_jsonl("target-audit.jsonl", audit_rows)
 
         return finish(exit_category, failure)
+
+
+async def connect(
+    target: str = "default",
+    *,
+    transport: str = "auto",
+    timeout_s: float = 10.0,
+    **kwargs: Any,
+) -> DriverLab:
+    """Connects to a target, returning a configured DriverLab instance (Spec Section 9)."""
+    return await DriverLab.connect(
+        target=target, transport=transport, timeout_s=timeout_s, **kwargs
+    )

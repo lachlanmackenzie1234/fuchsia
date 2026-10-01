@@ -1,0 +1,644 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Driver-shaped public Python programming model (Spec Sections 6.1, 9; Milestone H4).
+
+Provides ergonomic, capability-aware access to hardware resources on Fuchsia targets.
+Preserves production FIDL method boundaries, MMIO access width and ordering,
+asynchronous waits, and the distinction between semantic device protocols and
+raw registers.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import dataclasses
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from typing import Any
+
+from driver_lab.transport import (
+    Denial,
+    DirectDescription,
+    DirectSession,
+    FidlCallOutcome,
+    OperationDenied,
+    PollOutcome,
+    ProxyDescription,
+    ProxySession,
+    ResourceInfo,
+    SequenceItem,
+    SequenceOutcome,
+    SnapshotItem,
+    WriteOutcome,
+)
+
+# Aliases matching both spec and transport terminology
+WriteResult = WriteOutcome
+PollResult = PollOutcome
+
+
+class UnsupportedCapabilityError(Exception):
+    """Raised when an operation requires capabilities not supported by the session mode."""
+
+
+@dataclasses.dataclass(frozen=True)
+class TranslationMetadata:
+    """Documents C++ and Rust driver analogues for host Python operations (Spec Section 9.1)."""
+
+    cpp_analogue: str
+    rust_analogue: str
+    directly_translatable: bool
+    differences: str
+    target_local_timing: bool
+    experiment_only: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class SessionCapabilities:
+    """Explicitly reported session capabilities and degradation guarantees (Spec Section 6.2)."""
+
+    mode: str  # "proxy" or "direct"
+    target_policy: bool
+    target_audit: bool
+    target_local_timing: bool
+    fault_isolation: str  # "driver_host" | "none" | "process"
+    production_driver_active: bool
+    restoration_required: bool = False
+    resources: tuple[str, ...] = ()
+    protocols: tuple[str, ...] = ()
+
+    def check_support(self, feature: str) -> None:
+        """Fails closed if the requested feature is not supported by the current session mode."""
+        if feature == "mmio" and self.mode != "proxy":
+            raise UnsupportedCapabilityError(
+                "MMIO register operations are only supported in proxy mode (current mode: direct)"
+            )
+        if feature == "sequence" and not self.target_local_timing:
+            raise UnsupportedCapabilityError(
+                "Target-local sequence execution is not supported in direct mode"
+            )
+        if feature == "target_audit" and not self.target_audit:
+            raise UnsupportedCapabilityError(
+                "Target audit logging is not supported in direct mode"
+            )
+        if feature == "target_policy" and not self.target_policy:
+            raise UnsupportedCapabilityError(
+                "Target policy enforcement is not supported in direct mode"
+            )
+
+
+@dataclasses.dataclass(frozen=True)
+class AccessRequirements:
+    """Declared requirements for connecting or attaching to a hardware node (Spec Section 7.3)."""
+
+    needs_mmio: bool = False
+    needs_sequence: bool = False
+    needs_target_timing: bool = False
+    needs_target_policy: bool = False
+    needs_target_audit: bool = False
+    is_mutating: bool = False
+    protocol: str | None = None
+
+
+class MmioRegion:
+    """Driver-shaped interface to a memory-mapped I/O register block (Spec Sections 6.1, 9).
+
+    Provides typed 32-bit register reads, masked writes with preconditions and readback,
+    polling, and bounded snapshots.
+    """
+
+    read32_metadata = TranslationMetadata(
+        cpp_analogue="mmio.Read32(offset) / fdf::MmioBuffer::Read32(offset)",
+        rust_analogue="mmio.read32(offset)",
+        directly_translatable=True,
+        differences="Executed over FIDL proxy channel with host round-trip latency and target audit logging.",
+        target_local_timing=False,
+        experiment_only=False,
+    )
+
+    write32_metadata = TranslationMetadata(
+        cpp_analogue="mmio.Write32(value, offset) / mmio.ModifyBits32(value, mask, offset)",
+        rust_analogue="mmio.write32(offset, value) / mmio.modify32(offset, ...)",
+        directly_translatable=True,
+        differences="Executed over FIDL proxy channel with host round trip, optional precondition check, and automatic readback.",
+        target_local_timing=False,
+        experiment_only=False,
+    )
+
+    poll32_metadata = TranslationMetadata(
+        cpp_analogue="hwreg::RegisterAddr<...>::ReadFrom(&mmio).Poll(...) or loop with zx::nanosleep",
+        rust_analogue="polling loop with fuchsia_async::Timer",
+        directly_translatable=False,
+        differences="Target-local polling in proxy driver dispatcher without host round trips per attempt.",
+        target_local_timing=True,
+        experiment_only=False,
+    )
+
+    snapshot32_metadata = TranslationMetadata(
+        cpp_analogue="bounded read loop",
+        rust_analogue="bounded read loop",
+        directly_translatable=False,
+        differences="Convenience batched read operation for experiment snapshotting.",
+        target_local_timing=False,
+        experiment_only=True,
+    )
+
+    def __init__(
+        self,
+        resource: ResourceInfo,
+        session: ProxySession,
+        audit_drainer: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        self._resource = resource
+        self._session = session
+        self._audit_drainer = audit_drainer
+
+    @property
+    def name(self) -> str:
+        """Name of the logical resource."""
+        return self._resource.name
+
+    @property
+    def id(self) -> int:
+        """Numeric ID of the resource."""
+        return self._resource.id
+
+    @property
+    def logical_size(self) -> int:
+        """Logical size in bytes."""
+        return self._resource.logical_size
+
+    @property
+    def digest(self) -> str:
+        """Resource digest."""
+        return self._resource.digest
+
+    def _validate_offset(self, offset: int) -> None:
+        if offset < 0 or offset + 4 > self._resource.logical_size:
+            raise ValueError(
+                f"Offset {hex(offset)} out of logical bounds [0, {hex(self._resource.logical_size)}) for {self.name}"
+            )
+        if offset % 4 != 0:
+            raise ValueError(
+                f"Misaligned 32-bit register access at offset {hex(offset)} (must be 4-byte aligned)"
+            )
+
+    async def read32(self, offset: int) -> int:
+        """Reads a 32-bit register at byte offset."""
+        self._validate_offset(offset)
+        outcome = await self._session.read32(self.id, offset)
+        return outcome.value
+
+    async def write32(
+        self,
+        offset: int,
+        value: int,
+        *,
+        mask: int = 0xFFFF_FFFF,
+        expected_before: int | None = None,
+        expected_mask: int | None = 0xFFFF_FFFF,
+        require_readback: bool = True,
+    ) -> WriteOutcome:
+        """Writes a 32-bit register with optional mask, precondition, and readback."""
+        self._validate_offset(offset)
+        precondition_tuple: tuple[int, int] | None = None
+        if expected_before is not None:
+            precondition_tuple = (
+                expected_before,
+                expected_mask if expected_mask is not None else 0xFFFF_FFFF,
+            )
+        outcome = await self._session.write32(
+            resource=self.id,
+            offset=offset,
+            value=value,
+            write_mask=mask,
+            precondition=precondition_tuple,
+            readback=require_readback,
+        )
+        if self._audit_drainer is not None:
+            await self._audit_drainer()
+        return outcome
+
+    async def poll32(
+        self,
+        offset: int,
+        *,
+        expected: int,
+        mask: int = 0xFFFF_FFFF,
+        interval_s: float = 0.001,
+        timeout_s: float = 1.0,
+    ) -> PollOutcome:
+        """Polls a 32-bit register until (value & mask) == (expected & mask) or timeout."""
+        self._validate_offset(offset)
+        interval_ns = max(1, int(interval_s * 1e9))
+        timeout_ns = max(1, int(timeout_s * 1e9))
+        outcome = await self._session.poll32(
+            resource=self.id,
+            offset=offset,
+            expected=expected,
+            mask=mask,
+            interval_ns=interval_ns,
+            timeout_ns=timeout_ns,
+        )
+        return outcome
+
+    async def snapshot32(self, offsets: Sequence[int]) -> list[int]:
+        """Reads multiple 32-bit registers in a single bounded batch."""
+        for off in offsets:
+            self._validate_offset(off)
+        items = [SnapshotItem(resource=self.id, offset=off) for off in offsets]
+        outcome = await self._session.snapshot(items)
+        if not outcome.complete:
+            raise OperationDenied(Denial.BACKEND_FAULT)
+        return [r.value for r in outcome.results if r.ok]
+
+
+class ProtocolProxy:
+    """Direct published FIDL protocol client adapter."""
+
+    def __init__(self, session: DirectSession, protocol_name: str) -> None:
+        self._session = session
+        self._protocol_name = protocol_name
+
+    @property
+    def protocol_name(self) -> str:
+        return self._protocol_name
+
+    async def call(
+        self, method: str, args: Mapping[str, object] | None = None
+    ) -> FidlCallOutcome:
+        """Invokes a method on the published protocol."""
+        return await self._session.call_fidl(method, args)
+
+    def __getattr__(self, name: str) -> Any:
+        async def _caller(**kwargs: object) -> FidlCallOutcome:
+            return await self.call(name, kwargs)
+
+        return _caller
+
+
+class Gpio:
+    """Thin shape-preserving adapter for fuchsia.hardware.gpio protocol."""
+
+    def __init__(
+        self, session: DirectSession, resource_name: str = "gpio"
+    ) -> None:
+        self._session = session
+        self._resource_name = resource_name
+
+    async def read(self) -> bool:
+        outcome = await self._session.call_fidl(
+            "read", {"resource": self._resource_name}
+        )
+        return bool(outcome.response.get("value", False))
+
+    async def write(self, value: bool) -> None:
+        await self._session.call_fidl(
+            "write", {"resource": self._resource_name, "value": value}
+        )
+
+    async def set_direction(self, direction: str) -> None:
+        await self._session.call_fidl(
+            "set_direction",
+            {"resource": self._resource_name, "direction": direction},
+        )
+
+
+class I2c:
+    """Thin shape-preserving adapter for fuchsia.hardware.i2c protocol."""
+
+    def __init__(
+        self, session: DirectSession, resource_name: str = "i2c"
+    ) -> None:
+        self._session = session
+        self._resource_name = resource_name
+
+    async def transfer(self, write_data: bytes, read_length: int = 0) -> bytes:
+        outcome = await self._session.call_fidl(
+            "transfer",
+            {
+                "resource": self._resource_name,
+                "write_data": list(write_data),
+                "read_length": read_length,
+            },
+        )
+        data = outcome.response.get("read_data", b"")
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data)
+        if isinstance(data, list):
+            return bytes(data)
+        return b""
+
+
+class Spi:
+    """Thin shape-preserving adapter for fuchsia.hardware.spi protocol."""
+
+    def __init__(
+        self, session: DirectSession, resource_name: str = "spi"
+    ) -> None:
+        self._session = session
+        self._resource_name = resource_name
+
+    async def transmit(self, tx_data: bytes) -> bytes:
+        outcome = await self._session.call_fidl(
+            "transmit",
+            {
+                "resource": self._resource_name,
+                "tx_data": list(tx_data),
+            },
+        )
+        data = outcome.response.get("rx_data", b"")
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data)
+        if isinstance(data, list):
+            return bytes(data)
+        return b""
+
+
+class Serial:
+    """Thin shape-preserving adapter for serial stream protocol."""
+
+    def __init__(
+        self, session: DirectSession, resource_name: str = "serial"
+    ) -> None:
+        self._session = session
+        self._resource_name = resource_name
+
+    async def write(self, data: bytes) -> int:
+        outcome = await self._session.call_fidl(
+            "write",
+            {"resource": self._resource_name, "data": list(data)},
+        )
+        val = outcome.response.get("bytes_written")
+        if isinstance(val, int):
+            return val
+        return len(data)
+
+    async def read(self, max_bytes: int) -> bytes:
+        outcome = await self._session.call_fidl(
+            "read",
+            {"resource": self._resource_name, "max_bytes": max_bytes},
+        )
+        data = outcome.response.get("data", b"")
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data)
+        if isinstance(data, list):
+            return bytes(data)
+        return b""
+
+
+class Clock:
+    """Thin shape-preserving adapter for clock control protocol."""
+
+    def __init__(
+        self, session: DirectSession, resource_name: str = "clock"
+    ) -> None:
+        self._session = session
+        self._resource_name = resource_name
+
+    async def enable(self) -> None:
+        await self._session.call_fidl(
+            "enable", {"resource": self._resource_name}
+        )
+
+    async def disable(self) -> None:
+        await self._session.call_fidl(
+            "disable", {"resource": self._resource_name}
+        )
+
+
+class Reset:
+    """Thin shape-preserving adapter for reset control protocol."""
+
+    def __init__(
+        self, session: DirectSession, resource_name: str = "reset"
+    ) -> None:
+        self._session = session
+        self._resource_name = resource_name
+
+    async def assert_reset(self) -> None:
+        await self._session.call_fidl(
+            "assert_reset", {"resource": self._resource_name}
+        )
+
+    async def deassert_reset(self) -> None:
+        await self._session.call_fidl(
+            "deassert_reset", {"resource": self._resource_name}
+        )
+
+
+class Interrupt:
+    """Thin shape-preserving adapter for interrupt observation."""
+
+    def __init__(
+        self, session: DirectSession, resource_name: str = "interrupt"
+    ) -> None:
+        self._session = session
+        self._resource_name = resource_name
+
+    async def wait(self, timeout_s: float = 1.0) -> int:
+        outcome = await self._session.call_fidl(
+            "wait",
+            {
+                "resource": self._resource_name,
+                "timeout_ns": int(timeout_s * 1e9),
+            },
+        )
+        val = outcome.response.get("timestamp_ns")
+        if isinstance(val, int):
+            return val
+        return 0
+
+
+class HardwareSession:
+    """Unified driver-shaped session facade for hardware exploration (Spec Sections 6.1, 9)."""
+
+    def __init__(
+        self,
+        *,
+        capabilities: SessionCapabilities,
+        proxy_session: ProxySession | None = None,
+        direct_session: DirectSession | None = None,
+        proxy_description: ProxyDescription | None = None,
+        direct_description: DirectDescription | None = None,
+        audit_drainer: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        self._capabilities = capabilities
+        self._proxy_session = proxy_session
+        self._direct_session = direct_session
+        self._proxy_description = proxy_description
+        self._direct_description = direct_description
+        self._audit_drainer = audit_drainer
+        self._closed = False
+
+    @property
+    def capabilities(self) -> SessionCapabilities:
+        """The explicit capabilities and degradation guarantees of this session."""
+        return self._capabilities
+
+    @property
+    def mode(self) -> str:
+        """Session mode ('proxy' or 'direct')."""
+        return self._capabilities.mode
+
+    @property
+    def is_closed(self) -> bool:
+        """Whether this session has been closed."""
+        return self._closed
+
+    def _check_not_closed(self) -> None:
+        if self._closed:
+            raise UnsupportedCapabilityError("HardwareSession is closed")
+
+    async def mmio(self, resource: str) -> MmioRegion:
+        """Acquires a named MMIO region. Fails closed in direct mode."""
+        self._check_not_closed()
+        self._capabilities.check_support("mmio")
+        if self._proxy_session is None or self._proxy_description is None:
+            raise UnsupportedCapabilityError("Proxy session is not available")
+        info = self._proxy_description.resource_named(resource)
+        if info is None:
+            available = [r.name for r in self._proxy_description.resources]
+            raise ValueError(
+                f"Unknown MMIO resource '{resource}'. Available: {available}"
+            )
+        return MmioRegion(
+            resource=info,
+            session=self._proxy_session,
+            audit_drainer=self._audit_drainer,
+        )
+
+    async def protocol(self, protocol_name: str) -> ProtocolProxy:
+        """Connects to a published FIDL protocol. Fails in proxy mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "Direct published FIDL protocols are only supported in direct mode"
+            )
+        return ProtocolProxy(self._direct_session, protocol_name)
+
+    async def gpio(self, resource: str = "gpio") -> Gpio:
+        """Acquires a GPIO protocol adapter in direct mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "GPIO protocol is only supported in direct mode"
+            )
+        return Gpio(self._direct_session, resource)
+
+    async def i2c(self, resource: str = "i2c") -> I2c:
+        """Acquires an I2C protocol adapter in direct mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "I2C protocol is only supported in direct mode"
+            )
+        return I2c(self._direct_session, resource)
+
+    async def spi(self, resource: str = "spi") -> Spi:
+        """Acquires a SPI protocol adapter in direct mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "SPI protocol is only supported in direct mode"
+            )
+        return Spi(self._direct_session, resource)
+
+    async def serial(self, resource: str = "serial") -> Serial:
+        """Acquires a Serial protocol adapter in direct mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "Serial protocol is only supported in direct mode"
+            )
+        return Serial(self._direct_session, resource)
+
+    async def clock(self, resource: str = "clock") -> Clock:
+        """Acquires a Clock protocol adapter in direct mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "Clock protocol is only supported in direct mode"
+            )
+        return Clock(self._direct_session, resource)
+
+    async def reset(self, resource: str = "reset") -> Reset:
+        """Acquires a Reset protocol adapter in direct mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "Reset protocol is only supported in direct mode"
+            )
+        return Reset(self._direct_session, resource)
+
+    async def interrupt(self, resource: str = "interrupt") -> Interrupt:
+        """Acquires an Interrupt adapter in direct mode."""
+        self._check_not_closed()
+        if self._direct_session is None:
+            raise UnsupportedCapabilityError(
+                "Interrupt observation is only supported in direct mode"
+            )
+        return Interrupt(self._direct_session, resource)
+
+    async def sequence(
+        self, operations: Sequence[SequenceItem]
+    ) -> SequenceOutcome:
+        """Executes a target-local sequence of operations (Spec Section 9)."""
+        self._check_not_closed()
+        self._capabilities.check_support("sequence")
+        if self._proxy_session is None:
+            raise UnsupportedCapabilityError("Proxy session is not available")
+        outcome = await self._proxy_session.execute_sequence(tuple(operations))
+        if self._audit_drainer is not None:
+            await self._audit_drainer()
+        return outcome
+
+    async def close(self) -> None:
+        """Closes the session, drains remaining audit, and releases target resources."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if self._audit_drainer is not None:
+                await self._audit_drainer()
+        except (asyncio.CancelledError, Exception):
+            pass
+        finally:
+            if self._proxy_session is not None:
+                await self._proxy_session.close()
+            if self._direct_session is not None:
+                await self._direct_session.close()
+
+    async def __aenter__(self) -> "HardwareSession":
+        self._check_not_closed()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        await self.close()
+
+
+__all__ = [
+    "AccessRequirements",
+    "Clock",
+    "Gpio",
+    "HardwareSession",
+    "I2c",
+    "Interrupt",
+    "MmioRegion",
+    "PollResult",
+    "ProtocolProxy",
+    "Reset",
+    "SequenceOutcome",
+    "Serial",
+    "SessionCapabilities",
+    "Spi",
+    "TranslationMetadata",
+    "UnsupportedCapabilityError",
+    "WriteResult",
+]
