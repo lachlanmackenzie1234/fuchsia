@@ -5,6 +5,7 @@
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -517,6 +518,49 @@ class BazelTestsUtilsTest(unittest.TestCase):
             self.bazel_paths.ninja_build_dir, ["obj/bar/package_manifest.json"]
         )
         self.assertNotEqual(packages_list.stat().st_mtime, 1000)
+
+    def test_generate_tests_json_preserves_gn_targets_when_unchanged(
+        self,
+    ) -> None:
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(stdout="")
+        bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        gn_targets_dir = (
+            self.bazel_paths.ninja_build_dir
+            / "build/bazel/tests_json.gn_targets"
+        )
+        module_bazel = gn_targets_dir / "MODULE.bazel"
+        os.utime(module_bazel, (1000, 1000))
+
+        gn_targets_symlink = (
+            self.bazel_paths.workspace
+            / "fuchsia_build_generated/gn_targets_dir"
+        )
+        self.assertTrue(gn_targets_symlink.is_symlink())
+        self.assertEqual(gn_targets_symlink.resolve(), gn_targets_dir.resolve())
+        symlink_ino = gn_targets_symlink.lstat().st_ino
+
+        mock_runner.push_result(stdout="")
+        bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        self.assertEqual(module_bazel.stat().st_mtime, 1000)
+        self.assertEqual(gn_targets_symlink.lstat().st_ino, symlink_ino)
+        self.assertTrue((gn_targets_dir / "all_licenses.spdx.json").exists())
+
+        # Deleting `tests_json.gn_targets` while leaving its
+        # `.generated-info.json` intact must still repopulate the directory.
+        shutil.rmtree(gn_targets_dir)
+        mock_runner.push_result(stdout="")
+        bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+        self.assertTrue(module_bazel.is_file())
+        self.assertTrue((gn_targets_dir / "all_licenses.spdx.json").exists())
 
 
 if __name__ == "__main__":

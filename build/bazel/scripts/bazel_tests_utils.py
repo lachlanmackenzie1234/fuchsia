@@ -4,7 +4,6 @@
 
 """Utility functions for working with Bazel test targets."""
 
-import contextlib
 import json
 import os
 import sys
@@ -43,6 +42,19 @@ def generate_tests_json(
     """
     if not command_runner:
         command_runner = build_utils.CommandRunner()
+
+    # `fx build --fuchsia_platform <label>` runs `bazel build` outside of Ninja
+    # and points @gn_targets at this directory (see tools/devshell/build), so
+    # it has to exist even if the GN graph has no Bazel device tests.
+    # Otherwise that command would fail for any target that uses cmc or
+    # package-tool, e.g. any `fx_package()`.
+    #
+    # Point the workspace's `@gn_targets` symlink at this directory before
+    # running either `cquery` (and leave it pointing there afterward) so that
+    # Bazel does not see the `@gn_targets` local_path_override change between
+    # the host and device queries or across consecutive regenerations.
+    gn_targets_dir = _write_target_tests_gn_targets_dir(bazel_paths)
+    bazel_action_utils.update_gn_targets_symlink(bazel_paths, gn_targets_dir)
 
     host_tests_json, host_inputs = _generate_host_tests_json(
         bazel_paths, command_runner, quiet
@@ -307,13 +319,6 @@ def _generate_device_tests_json(
     )
     suites = bazel_test_suites_file.read_text().splitlines()
 
-    # `fx build --fuchsia_platform <label>` runs `bazel build` outside of Ninja
-    # and points @gn_targets at this directory (see tools/devshell/build), so
-    # it has to exist even if the GN graph has no Bazel device tests.
-    # Otherwise that command would fail for any target that uses cmc or
-    # package-tool, e.g. any `fx_package()`.
-    gn_targets_dir = _write_target_tests_gn_targets_dir(bazel_paths)
-
     if not suites:
         # Skip running `bazel cquery` to get the full list of tests if no Bazel
         # device tests are included in the build graph, to save time on regen.
@@ -327,33 +332,26 @@ def _generate_device_tests_json(
             f"in your GN graph."
         )
 
-    # `fx_test()` targets wrap `fx_package()` targets that implicitly depend on
-    # GN-built tools (`cmc` and `package-tool`) exposed through the @gn_targets
-    # repository, whose content is specific to whichever `bazel_action()` last
-    # ran. Point it at the @gn_targets inputs declared on
-    # `//build/bazel/target_tests` so the query below sees the exact same GN
-    # inputs that building the tests will see.
-    with _symlink_gn_targets_for_target_tests(bazel_paths, gn_targets_dir):
-        with tempfile.NamedTemporaryFile(mode="w") as query_file:
-            # TODO(https://fxbug.dev/564574581): `tests()` silently discards
-            # non-test targets, so e.g. a bare `fx_package()` listed in
-            # `target_tests` is dropped from tests.json instead of hitting the
-            # "Wrap them with fx_test()" error below. Report requested labels
-            # that are neither `test_suite()`s nor matched by `tests()`. The
-            # host test path above has the same gap.
-            query_file.write("tests(set(" + " ".join(suites) + "))")
-            query_file.flush()
+    with tempfile.NamedTemporaryFile(mode="w") as query_file:
+        # TODO(https://fxbug.dev/564574581): `tests()` silently discards
+        # non-test targets, so e.g. a bare `fx_package()` listed in
+        # `target_tests` is dropped from tests.json instead of hitting the
+        # "Wrap them with fx_test()" error below. Report requested labels
+        # that are neither `test_suite()`s nor matched by `tests()`. The
+        # host test path above has the same gap.
+        query_file.write("tests(set(" + " ".join(suites) + "))")
+        query_file.flush()
 
-            ret = bazel_launcher.run_query(
-                "cquery",
-                [
-                    "--config=fuchsia_platform",
-                    "--output=starlark",
-                    f"--starlark:file={starlark_input}",
-                    f"--query_file={query_file.name}",
-                ],
-                False,
-            )
+        ret = bazel_launcher.run_query(
+            "cquery",
+            [
+                "--config=fuchsia_platform",
+                "--output=starlark",
+                f"--starlark:file={starlark_input}",
+                f"--query_file={query_file.name}",
+            ],
+            False,
+        )
     if ret.returncode != 0:
         raise RuntimeError(f"Failed to run bazel query: {ret.stderr}")
 
@@ -472,9 +470,8 @@ def _main_workspace_build_files(
 
 
 # TODO(https://fxbug.dev/519243783, https://fxbug.dev/519244675): Remove
-# `_write_target_tests_gn_targets_dir` and `_symlink_gn_targets_for_target_tests`
-# once `cmc` and `package-tool` are migrated to Bazel and `fx_package()` no
-# longer depends on `@gn_targets`.
+# `_write_target_tests_gn_targets_dir` once `cmc` and `package-tool` are
+# migrated to Bazel and `fx_package()` no longer depends on `@gn_targets`.
 def _write_target_tests_gn_targets_dir(bazel_paths: BazelPaths) -> Path:
     """Populate `build/bazel/tests_json.gn_targets` from `//build/bazel/target_tests`."""
     target_infos_file = bazel_paths.ninja_build_dir / "bazel_target_infos.json"
@@ -499,14 +496,18 @@ def _write_target_tests_gn_targets_dir(bazel_paths: BazelPaths) -> Path:
         bazel_paths.ninja_build_dir / "build/bazel/tests_json.gn_targets"
     )
     # LINT.ThenChange(//tools/devshell/build:tests_json_gn_targets_dir)
-    # `update_gn_targets_symlink()` symlinks `all_licenses.spdx.json` to this
-    # file, so it cannot use that name or it would point at itself.
-    licenses_file = gn_targets_dir / "placeholder_licenses.spdx.json"
-    licenses_file.parent.mkdir(parents=True, exist_ok=True)
-    licenses_file.write_text(
+    # `record_gn_targets_dir_from_entries()` requires this file to exist and
+    # symlinks `all_licenses.spdx.json` to it. Place it outside `gn_targets_dir`
+    # so creating it does not make `gn_targets_dir.is_dir()` true before
+    # `update_if_needed()` runs.
+    licenses_file = Path(f"{gn_targets_dir}.placeholder_licenses.spdx.json")
+    licenses_content = (
         "This is a placeholder file, only used to satisfy Bazel analysis of "
         "test packages during `tests.json` generation."
     )
+    if not licenses_file.exists():
+        licenses_file.parent.mkdir(parents=True, exist_ok=True)
+        licenses_file.write_text(licenses_content)
 
     # Parse `//build/bazel/target_tests`'s manifest into the entry map expected
     # by `record_gn_targets_dir_from_entries()`.
@@ -518,42 +519,13 @@ def _write_target_tests_gn_targets_dir(bazel_paths: BazelPaths) -> Path:
         entries,
         licenses_file,
     )
-    generated.write(gn_targets_dir)
+    # Only rewrite the directory when its contents change, so consecutive
+    # regenerations do not bump `MODULE.bazel`'s mtime and force Bazel to
+    # re-run Bzlmod module resolution during `cquery`.
+    generated.update_if_needed(
+        gn_targets_dir, Path(f"{gn_targets_dir}.generated-info.json")
+    )
     return gn_targets_dir
-
-
-@contextlib.contextmanager
-def _symlink_gn_targets_for_target_tests(
-    bazel_paths: BazelPaths,
-    gn_targets_dir: Path,
-) -> T.Iterator[None]:
-    """Temporarily point the @gn_targets symlink at `//build/bazel/target_tests`'s inputs.
-
-    Each `bazel_action()` GN target owns a @gn_targets directory holding just
-    the GN artifacts that action exposes to Bazel, and the (singular) workspace
-    symlink is repointed at it right before the action runs. Pointing the
-    symlink at `//build/bazel/target_tests`'s manifest during `cquery` ensures
-    that `tests.json` generation sees the exact same `@gn_targets` entries that
-    building the test packages will see.
-
-    The previous symlink target is restored on exit to avoid invalidating the
-    @gn_targets repository rule for the next `bazel_action()` that runs.
-
-    Args:
-        bazel_paths: The BazelPaths object to use for path resolution.
-        gn_targets_dir: The directory written by
-            `_write_target_tests_gn_targets_dir()`.
-    """
-    symlink = bazel_paths.workspace / bazel_action_utils.GN_TARGETS_SYMLINK_PATH
-    previous_target = os.readlink(symlink) if symlink.is_symlink() else None
-    bazel_action_utils.update_gn_targets_symlink(bazel_paths, gn_targets_dir)
-    try:
-        yield
-    finally:
-        if previous_target is not None:
-            build_utils.force_raw_symlink(symlink, previous_target)
-        else:
-            symlink.unlink(missing_ok=True)
 
 
 def write_bazel_test_packages_list(
