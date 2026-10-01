@@ -90,14 +90,14 @@ pub use event_pair_dispatcher::EventPairDispatcher;
 pub use fifo_dispatcher::FifoDispatcher;
 pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
-pub use handle::{HandleOwner, HandleRef, HandleValue, KernelHandle};
+pub use handle::{HandleRef, HandleValue, KernelHandle};
 pub use io_buffer_dispatcher::IoBufferDispatcher;
 pub use io_buffer_shared_region_dispatcher::IoBufferSharedRegionDispatcher;
 pub use iommu_dispatcher::IommuDispatcher;
 pub use job_dispatcher::*;
 pub use job_policy::{JobPolicy, JobPolicyCollection, Policy};
 pub use log_dispatcher::*;
-pub use message_packet::{FidlHeader, MessagePacket, MessagePacketPtr};
+pub use message_packet::{MessagePacket, MessagePacketPtr};
 pub use msi_allocation::MsiAllocation;
 pub use msi_dispatcher::MsiDispatcher;
 pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
@@ -118,11 +118,7 @@ pub use stream_dispatcher::*;
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
 pub use thread_dispatcher::{AutoBlocked, Blocked, CurrentMessageWaiter, ThreadDispatcher};
 pub use timer_dispatcher::TimerDispatcher;
-pub use user_handles::{
-    MAX_MESSAGE_HANDLES, RawHandleDisposition, UserHandles, get_handle_for_message_locked,
-    get_handle_for_message_locked_disposition, get_user_handles_to_consume,
-    get_user_handles_to_consume_disposition, remove_user_handles,
-};
+pub use user_handles::{ReadHandles, WriteHandles};
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
 pub use vm_object_dispatcher::{InitialMutability, VmObjectDispatcher};
 pub use wait_signal_observer::WaitSignalObserver;

@@ -11,8 +11,6 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
-#include <kernel/deadline.h>
-#include <kernel/ffi.h>
 #include <kernel/owned_wait_queue.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
@@ -24,13 +22,6 @@ class ChannelDispatcher;
 DECLARE_PEERED_DISPATCHER_RUST_PROTOS(ChannelDispatcher, rust_channel_dispatcher)
 
 extern "C" {
-zx_status_t cpp_channel_dispatcher_create(
-    void* holder, ffi::Uninitialized<KernelHandle<ChannelDispatcher>>* handle_out);
-void cpp_message_waiter_begin_wait(OwnedWaitQueue* wait_queue, bool* signaled_out);
-void cpp_message_waiter_signal(OwnedWaitQueue* wait_queue, bool* signaled_out);
-zx_status_t cpp_message_waiter_wait(OwnedWaitQueue* wait_queue, const bool* signaled,
-                                    const Deadline* deadline);
-
 zx_status_t rust_channel_dispatcher_create(KernelHandle<ChannelDispatcher>* handle0,
                                            KernelHandle<ChannelDispatcher>* handle1,
                                            zx_rights_t* rights);

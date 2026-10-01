@@ -18,7 +18,8 @@
 
 extern "C" {
 
-zx_status_t cpp_channel_dispatcher_create(
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_channel_dispatcher_create(
     void* holder, ffi::Uninitialized<KernelHandle<ChannelDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
   auto disp = fbl::AdoptRef(new (&ac) ChannelDispatcher(holder));
@@ -29,7 +30,9 @@ zx_status_t cpp_channel_dispatcher_create(
   return ZX_OK;
 }
 
-void cpp_message_waiter_begin_wait(OwnedWaitQueue* wait_queue, bool* signaled_out) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_message_waiter_begin_wait(OwnedWaitQueue* wait_queue,
+                                                     bool* signaled_out) {
   const auto do_transaction =
       [&] TA_REQ(chainlock_transaction_token) -> ChainLockTransaction::Result<> {
     ChainLockGuard guard(wait_queue->get_lock());
@@ -40,7 +43,8 @@ void cpp_message_waiter_begin_wait(OwnedWaitQueue* wait_queue, bool* signaled_ou
                                   CLT_TAG("OwnedWaitQueue::BeginWait"), do_transaction);
 }
 
-void cpp_message_waiter_signal(OwnedWaitQueue* wait_queue, bool* signaled_out) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_message_waiter_signal(OwnedWaitQueue* wait_queue, bool* signaled_out) {
   // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
   auto& wake_hooks = OwnedWaitQueue::default_wake_hooks();
   const auto do_transaction = [&] TA_REQ(chainlock_transaction_token,
@@ -62,8 +66,10 @@ void cpp_message_waiter_signal(OwnedWaitQueue* wait_queue, bool* signaled_out) {
                                   CLT_TAG("OwnedWaitQueue::Signal"), do_transaction);
 }
 
-zx_status_t cpp_message_waiter_wait(OwnedWaitQueue* wait_queue, const bool* signaled,
-                                    const Deadline* deadline) {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_message_waiter_wait(OwnedWaitQueue* wait_queue,
+                                                      const bool* signaled,
+                                                      const Deadline* deadline) {
   // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
   Thread* current_thread = Thread::Current::Get();
   const auto do_transaction =

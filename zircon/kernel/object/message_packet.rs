@@ -53,17 +53,6 @@ static_assert_size_and_align!(
     align_of::<zx_channel_iovec_t>()
 );
 
-#[repr(C)]
-#[derive(Copy, Clone, Default, FromBytes)]
-pub struct FidlHeader {
-    pub txid: zx_txid_t,
-    pub flags: [u8; 3],
-    pub magic: u8,
-    pub ordinal: u64,
-}
-
-static_assert!(size_of::<FidlHeader>() == 2 * size_of::<u64>());
-
 // MessagePackets have special allocation requirements because they can contain a variable number of
 // handles and a variable size payload.
 //
@@ -197,6 +186,7 @@ impl MessagePacket {
         Ok(new_msg)
     }
 
+    /// Returns payload data size in bytes.
     #[inline]
     pub fn data_size(&self) -> usize {
         self.data_size as usize
@@ -219,13 +209,14 @@ impl MessagePacket {
         unsafe { self.buffer_chain.as_ref() }.copy_out(buf, self.payload_offset(), data_size)
     }
 
+    /// Returns the number of handles attached to this message packet.
     #[inline]
     pub fn num_handles(&self) -> usize {
         self.num_handles as usize
     }
 
-    // zx_channel_call treats the leading bytes of the payload as
-    // a transaction id of type zx_txid_t.
+    /// Returns the transaction ID stored in the payload header (`zx_channel_call` treats the
+    /// leading bytes of the payload as a transaction ID of type `zx_txid_t`).
     #[inline]
     pub fn get_txid(&self) -> zx_txid_t {
         // The first few bytes of the payload are a zx_txid_t.
@@ -235,6 +226,7 @@ impl MessagePacket {
             .unwrap_or(0)
     }
 
+    /// Sets the transaction ID in the payload header.
     #[inline]
     pub fn set_txid(&mut self, txid: zx_txid_t) {
         if let Some(dst) =
@@ -242,16 +234,6 @@ impl MessagePacket {
         {
             *dst = txid.to_ne_bytes();
         }
-    }
-
-    #[inline]
-    pub fn fidl_header(&self) -> FidlHeader {
-        let payload = self.start_of_payload();
-        if payload.len() >= size_of::<FidlHeader>() {
-            let (header, _) = FidlHeader::read_from_prefix(payload).unwrap();
-            return header;
-        }
-        FidlHeader::default()
     }
 
     // A private destructor helps to make sure that only our custom deleter is ever used to destroy
@@ -362,6 +344,7 @@ impl MessagePacket {
         cmp::min(CONTIGUOUS_SIZE - self.payload_offset(), self.data_size as usize)
     }
 
+    /// Returns a const pointer to the array of handle pointers attached to this message packet.
     #[inline]
     pub fn handles(&self) -> *const *mut c_void {
         // SAFETY: Handles are stored immediately after `MessagePacket` at `HANDLES_OFFSET`
@@ -369,6 +352,7 @@ impl MessagePacket {
         unsafe { ptr::from_ref(self).cast::<u8>().add(HANDLES_OFFSET).cast() }
     }
 
+    /// Returns a mutable pointer to the array of handle pointers attached to this message packet.
     #[inline]
     pub fn handles_mut(&mut self) -> *mut *mut c_void {
         // SAFETY: Handles are stored immediately after `MessagePacket` at `HANDLES_OFFSET`
@@ -376,15 +360,17 @@ impl MessagePacket {
         unsafe { ptr::from_mut(self).cast::<u8>().add(HANDLES_OFFSET).cast() }
     }
 
+    /// Sets whether this packet owns its attached handles and should delete them on recycle.
     #[inline]
     pub fn set_owns_handles(&mut self, owns_handles: bool) {
         self.owns_handles = owns_handles;
     }
 
-    // The first chunk of payload.
-    // Eventually we'd want to actually get the whole message out.
+    /// Returns a slice referencing the first chunk of payload stored contiguously in the first
+    /// buffer backing the message packet.
     #[inline]
     pub fn start_of_payload(&self) -> &[u8] {
+        // The first chunk of payload. Eventually we'd want to actually get the whole message out.
         // SAFETY: `self` is at the start of the first buffer's data, which contains at least
         // `payload_offset() + contiguous_payload_size()` contiguous bytes.
         unsafe {

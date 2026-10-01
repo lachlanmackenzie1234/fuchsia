@@ -9,12 +9,13 @@ use super::dispatcher::{
     DispatcherOps, PeerHolder, PeerHolderMuClass, PeeredState, PeeredStateMuGuard,
     impl_peered_dispatcher_facade_with_state,
 };
-use super::handle::{HandleRef, KernelHandle};
+use super::handle::KernelHandle;
 use super::message_packet::{MessagePacket, MessagePacketPtr};
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher::{AutoBlocked, Blocked, ThreadDispatcher};
+use super::user_handles::msg_handle_refs;
 use crate::counters::define_kcounter;
-use crate::kernel::deadline::{Deadline, InstantUnknown};
+use crate::kernel::deadline::Deadline;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use crate::kernel::thread::signal_policy_exception;
 use crate::ktrace_rs::{
@@ -37,14 +38,14 @@ use object_constants_rs::{
     kMessageWaiterAlign, kMessageWaiterSize,
 };
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx_status::Status;
 use zx_types::{
     ZX_CHANNEL_PEER_CLOSED, ZX_CHANNEL_READABLE, ZX_CHANNEL_WRITABLE,
     ZX_EXCP_POLICY_CODE_CHANNEL_FULL_WRITE, ZX_OBJ_TYPE_CHANNEL, ZX_RIGHT_INSPECT, ZX_RIGHT_READ,
     ZX_RIGHT_SIGNAL, ZX_RIGHT_SIGNAL_PEER, ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT, ZX_RIGHT_WRITE,
-    ZX_TASK_RETCODE_VDSO_KILL, ZX_USER_SIGNAL_ALL, zx_instant_mono_t, zx_koid_t, zx_obj_type_t,
-    zx_rights_t, zx_txid_t,
+    ZX_TASK_RETCODE_VDSO_KILL, ZX_USER_SIGNAL_ALL, zx_koid_t, zx_obj_type_t, zx_rights_t,
+    zx_txid_t,
 };
 
 /// Default rights assigned to a newly created ChannelDispatcher handle.
@@ -112,6 +113,17 @@ enum MessageOp {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Default, FromBytes)]
+struct FidlHeader {
+    txid: zx_txid_t,
+    flags: [u8; 3],
+    magic: u8,
+    ordinal: u64,
+}
+
+zr::static_assert!(size_of::<FidlHeader>() == 2 * size_of::<u64>());
+
+#[repr(C)]
 #[derive(Copy, Clone, IntoBytes, Immutable)]
 struct RawInfoHandleBasic {
     koid: zx_koid_t,
@@ -132,7 +144,7 @@ fn is_kernel_generated_txid(txid: zx_txid_t) -> bool {
     txid >= MIN_KERNEL_GENERATED_TXID
 }
 
-// 64-bit to 32-bit hash using the multilinear hash family `ax + by + c`.
+/// 64-bit to 32-bit hash using the multilinear hash family `ax + by + c`.
 #[inline]
 fn hash_value(a: u64, b: u64, c: u64, value: u64) -> u32 {
     let x = value as u32 as u64;
@@ -140,12 +152,13 @@ fn hash_value(a: u64, b: u64, c: u64, value: u64) -> u32 {
     ((a.wrapping_mul(x)).wrapping_add(b.wrapping_mul(y)).wrapping_add(c) >> 32) as u32
 }
 
-// Hash functions using randomly generated coefficients.
+/// First hash function using randomly generated coefficients.
 #[inline]
 fn hash_a(value: u64) -> u32 {
     hash_value(HASH_COEFFICIENTS[0], HASH_COEFFICIENTS[1], HASH_COEFFICIENTS[2], value)
 }
 
+/// Second hash function using randomly generated coefficients.
 #[inline]
 fn hash_b(value: u64) -> u32 {
     hash_value(HASH_COEFFICIENTS[3], HASH_COEFFICIENTS[4], HASH_COEFFICIENTS[5], value)
@@ -156,181 +169,40 @@ fn hash_b_pair(high: u32, low: u32) -> u32 {
     hash_b(((high as u64) << 32) | (low as u64))
 }
 
-// Generates a flow id using a universal hash function of the minimum endpoint koid and the txid or
-// message packet address, depending on whether the txid is non-zero.
-//
-// In general, koids are guaranteed to be unique over the lifetime of a particular system boot.
-// Using the min endpoint koid ensures both endpoints use the same hash input. A txid is shared
-// between sender and receiver is expected to be unique (guaranteed for kernel-generated txids)
-// among the set of txids for messages pending in a particular channel. Likewise, the message packet
-// address is shared between the sender and receiver and is guaranteed to be unique among the set of
-// pointers to pending messages.
-//
-// Given that the (koid, txid) or (koid, &msg) pair is likely to be unique over the span of the
-// flow, the likelihood of id confusion is equivalent to the likelihood of hash collisions by
-// temporally overlapping flows.
-fn channel_message_flow_id(msg: &MessagePacket, channel: &ChannelDispatcher) -> u64 {
+/// Generates a flow id using a universal hash function of the minimum endpoint koid and the txid
+/// or message packet address, depending on whether the txid is kernel-generated.
+///
+/// In general, koids are guaranteed to be unique over the lifetime of a particular system boot.
+/// Using the min endpoint koid ensures both endpoints use the same hash input. A txid shared
+/// between sender and receiver is expected to be unique (guaranteed for kernel-generated txids)
+/// among the set of txids for messages pending in a particular channel. Likewise, the message
+/// packet address is shared between the sender and receiver and is guaranteed to be unique among
+/// the set of pointers to pending messages.
+///
+/// Given that the `(koid, txid)` or `(koid, &msg)` pair is likely to be unique over the span of
+/// the flow, the likelihood of id confusion is equivalent to the likelihood of hash collisions by
+/// temporally overlapping flows.
+fn channel_message_flow_id(
+    msg: &MessagePacket,
+    txid: zx_txid_t,
+    channel: &ChannelDispatcher,
+) -> u64 {
     let min_koid = cmp::min(channel.get_koid(), channel.get_related_koid());
 
-    // Use the top bit of the message id to indicate whether the input was a txid, which can be used
-    // to correlate a later response message, or a message pointer, which cannot. The 32 bit txid is
-    // combined with the bottom 32 bits of the channel koid as inputs to HashB to improve the
-    // uniqueness of the message id.
+    // Use the top bit of the message id to indicate whether the input was a txid, which can be
+    // used to correlate a later response message, or a message pointer, which cannot. The 32-bit
+    // txid is combined with the bottom 32 bits of the channel koid as inputs to `hash_b_pair` to
+    // improve the uniqueness of the message id.
     let is_txid_mask = 1u32 << 31;
-    let message_id = if !is_kernel_generated_txid(msg.fidl_header().txid) {
+    let message_id = if !is_kernel_generated_txid(txid) {
         hash_b(ptr::from_ref(msg).addr() as u64) & !is_txid_mask
     } else {
-        hash_b_pair(msg.fidl_header().txid, min_koid as u32) | is_txid_mask
+        hash_b_pair(txid, min_koid as u32) | is_txid_mask
     };
 
     let high = hash_a(min_koid) as u64;
     let low = message_id as u64;
     (high << 32) | low
-}
-
-#[inline]
-fn trace_message(msg: &MessagePacket, channel: &ChannelDispatcher, message_op: MessageOp) {
-    if !category_enabled!("kernel:ipc") {
-        return;
-    }
-
-    // We emit these trace events non-standardly to work around some compatibility issues:
-    //
-    // 1) We partially inline the trace macro so that we can purposely emit 0-length durations.
-    //
-    //    chrome://tracing requires flow events to be contained in a duration. Perfetto requires
-    //    flows events to be attached to a "slice". However, the Perfetto viewer treats instant
-    //    events as 0-length slices. This means that we can assign flows to them, and they get a
-    //    special easy to click on arrow instead of a tiny duration bar. Using a 0-length duration
-    //    gets us nice instant events in the Perfetto viewer, while still supporting flows in
-    //    chrome://tracing.
-    //
-    // 2) Even though we know exactly when the duration ends, we emit a Begin/End pair instead of
-    //    using a duration-complete event.
-    //
-    //    Because we do so little work between creating the duration-complete scope and then
-    //    emitting the flow event, if we emit a duration-complete event, the two events may be
-    //    created with the same timestamp. Since the duration-complete event is only written when
-    //    the scope ends, it is written _after_ the flow event in the trace, causing the flow to not
-    //    be associated with the previous event, not it. By using a Begin/End pair, we ensure that
-    //    though the events have the same timestamp, they will be read in the correct order and the
-    //    flow events will be associated correctly.
-
-    let ts = KTrace::timestamp();
-
-    if cfg!(channel_message_body_tracing_enabled) {
-        let mut handle_info = [MaybeUninit::<RawInfoHandleBasic>::uninit(); MAX_TRACE_HANDLES];
-        let mut get_handle_info = || -> &[u8] {
-            let num_handles = cmp::min(msg.num_handles(), MAX_TRACE_HANDLES);
-            let handles_ptr = msg.handles();
-            for (i, info) in handle_info[..num_handles].iter_mut().enumerate() {
-                // SAFETY: `i < msg.num_handles()` and `msg` holds valid non-null `Handle*` pointers.
-                let handle =
-                    unsafe { HandleRef::from_raw(NonNull::new_unchecked(*handles_ptr.add(i))) };
-                let disp = handle.dispatcher_ref();
-                info.write(RawInfoHandleBasic {
-                    koid: disp.get_koid(),
-                    rights: handle.rights(),
-                    type_: disp.get_type(),
-                    related_koid: disp.get_related_koid(),
-                    reserved: 0,
-                    padding1: [0; 4],
-                });
-            }
-            // SAFETY: The first `num_handles` elements of `handle_info` were initialized above.
-            let slice = unsafe {
-                slice::from_raw_parts(
-                    handle_info.as_ptr().cast::<RawInfoHandleBasic>(),
-                    num_handles,
-                )
-            };
-            IntoBytes::as_bytes(slice)
-        };
-
-        if message_op == MessageOp::Write || message_op == MessageOp::ChannelCallWriteRequest {
-            // Record message body when sending.
-            duration_begin_timestamp!(
-                "kernel:ipc",
-                "ChannelMessage",
-                ts,
-                "ordinal" => msg.fidl_header().ordinal,
-                "bytes" => msg.start_of_payload(),
-                "handles" => get_handle_info(),
-            );
-        } else {
-            // Don't record message body when receiving.
-            duration_begin_timestamp!(
-                "kernel:ipc",
-                "ChannelMessage",
-                ts,
-                "ordinal" => msg.fidl_header().ordinal,
-            );
-        }
-    } else {
-        duration_begin_timestamp!(
-            "kernel:ipc",
-            "ChannelMessage",
-            ts,
-            "ordinal" => msg.fidl_header().ordinal,
-        );
-    }
-
-    // When the txid is kernel-generated, Read and Write message ops are just steps in the overall
-    // flow that is bounded by ChannelCallWriteRequest and ChannelCallReadResponse message ops.
-    match message_op {
-        MessageOp::Write => {
-            if is_kernel_generated_txid(msg.fidl_header().txid) {
-                flow_step_timestamp!(
-                    "kernel:ipc",
-                    "ChannelFlow",
-                    ts,
-                    channel_message_flow_id(msg, channel),
-                );
-            } else {
-                flow_begin_timestamp!(
-                    "kernel:ipc",
-                    "ChannelFlow",
-                    ts,
-                    channel_message_flow_id(msg, channel),
-                );
-            }
-        }
-        MessageOp::ChannelCallWriteRequest => {
-            flow_begin_timestamp!(
-                "kernel:ipc",
-                "ChannelFlow",
-                ts,
-                channel_message_flow_id(msg, channel),
-            );
-        }
-        MessageOp::Read => {
-            if is_kernel_generated_txid(msg.fidl_header().txid) {
-                flow_step_timestamp!(
-                    "kernel:ipc",
-                    "ChannelFlow",
-                    ts,
-                    channel_message_flow_id(msg, channel),
-                );
-            } else {
-                flow_end_timestamp!(
-                    "kernel:ipc",
-                    "ChannelFlow",
-                    ts,
-                    channel_message_flow_id(msg, channel),
-                );
-            }
-        }
-        MessageOp::ChannelCallReadResponse => {
-            flow_end_timestamp!(
-                "kernel:ipc",
-                "ChannelFlow",
-                ts,
-                channel_message_flow_id(msg, channel),
-            );
-        }
-    }
-
-    duration_end_timestamp!("kernel:ipc", "ChannelMessage", ts);
 }
 
 /// Internal state of a `ChannelDispatcher`, synchronized via `channel_lock` and peer holder mutex.
@@ -453,12 +325,13 @@ impl_peered_dispatcher_facade_with_state!(
 zr::static_assert!(size_of::<ChannelDispatcher>() == 0);
 
 impl ChannelDispatcher {
-    // Returns the number of times a channel reached the max pending message count,
-    // `MAX_PENDING_MESSAGE_COUNT`.
+    /// Returns the number of times a channel reached the max pending message count,
+    /// [`MAX_PENDING_MESSAGE_COUNT`].
     pub(super) fn get_channel_full_count() -> i64 {
         CHANNEL_FULL.sum_across_all_cpus()
     }
 
+    /// Creates a new `ChannelDispatcher` pair and returns their kernel handles and rights.
     pub fn create() -> Result<(KernelHandle<Self>, KernelHandle<Self>, zx_rights_t), Status> {
         let holder0 = PeerHolder::<Self>::create().map_err(|_| Status::NO_MEMORY)?;
         let holder1 = holder0.clone();
@@ -476,24 +349,23 @@ impl ChannelDispatcher {
                 }
             };
 
-        let new_handle0 = create_single(holder0)?;
-        let new_handle1 = create_single(holder1)?;
+        let handle0 = create_single(holder0)?;
+        let handle1 = create_single(holder1)?;
 
-        new_handle0.dispatcher().init_peer(new_handle1.dispatcher().clone());
-        new_handle1.dispatcher().init_peer(new_handle0.dispatcher().clone());
+        handle0.dispatcher().init_peer(handle1.dispatcher().clone());
+        handle1.dispatcher().init_peer(handle0.dispatcher().clone());
 
-        Ok((new_handle0, new_handle1, DEFAULT_RIGHTS))
+        Ok((handle0, handle1, DEFAULT_RIGHTS))
     }
 
-    // Read from this endpoint's message queue.
-    // `owner` is the handle table koid of the process attempting to read from the channel.
-    // `msg_size` and `msg_handle_count` are in-out parameters. As input, they specify the maximum
-    // size and handle count, respectively. On ZX_OK or ZX_ERR_BUFFER_TOO_SMALL, they specify the
-    // actual size and handle count of the next message. The next message is returned in `*msg` on
-    // ZX_OK and also on ZX_ERR_BUFFER_TOO_SMALL when `may_discard` is set.
-    //
-    // This method should never acquire `get_lock()`. See the comment at `channel_lock_` for
-    // details.
+    /// Read from this endpoint's message queue. `owner` is the handle table koid of the process
+    /// attempting to read from the channel. `msg_size` and `msg_handle_count` are in-out
+    /// parameters. As input, they specify the maximum size and handle count, respectively. On `Ok`
+    /// or `Err(Status::BUFFER_TOO_SMALL)`, they specify the actual size and handle count of the
+    /// next message. The next message is returned on `Ok`, or popped and discarded on
+    /// `Err(Status::BUFFER_TOO_SMALL)` when `may_discard` is set.
+    // This method should never acquire the peer holder lock (`self.state().peered.lock()`). See
+    // the comment at `channel_lock` for details.
     pub fn read(
         &self,
         owner: zx_koid_t,
@@ -510,8 +382,8 @@ impl ChannelDispatcher {
         ksync::lock!(let mut guard = state.channel_lock.lock());
         let mut g = state.guard_channel_lock_mut(guard.token_mut());
 
-        // SAFETY: Holding `channel_lock` is sufficient to read `owner` as `set_owner` holds both
-        // the peer holder lock and `channel_lock` when mutating `owner`.
+        // SAFETY: Holding `channel_lock` is sufficient to read `owner` (writing requires holding
+        // both the peer holder lock and `channel_lock`).
         if owner != unsafe { *state.owner.get() } {
             return Err(Status::BAD_HANDLE);
         }
@@ -529,74 +401,66 @@ impl ChannelDispatcher {
 
         *msg_size = front.data_size() as u32;
         *msg_handle_count = front.num_handles() as u32;
-        let mut rv = Ok(());
-        if *msg_size > max_size || *msg_handle_count > max_handle_count {
-            if !may_discard {
-                return Err(Status::BUFFER_TOO_SMALL);
-            }
-            rv = Err(Status::BUFFER_TOO_SMALL);
+        let too_small = *msg_size > max_size || *msg_handle_count > max_handle_count;
+        if too_small && !may_discard {
+            return Err(Status::BUFFER_TOO_SMALL);
         }
 
         let msg = messages.pop_front().unwrap();
-
         if messages.is_empty() {
             self.clear_signals(ZX_CHANNEL_READABLE);
         }
+        if too_small {
+            return Err(Status::BUFFER_TOO_SMALL);
+        }
 
-        // If status is OK then we popped a non-null message from messages_.
-        rv?;
-        trace_message(&msg, self, MessageOp::Read);
-
+        // If we reach here, we popped a non-empty message from `messages` with `Status::OK`.
+        self.trace_message(&msg, MessageOp::Read);
         Ok(msg)
     }
 
-    // Write to the opposing endpoint's message queue. `owner` is the handle table koid of the
-    // process attempting to write to the channel, or ZX_KOID_INVALID if kernel is doing it.
+    /// Write to the opposing endpoint's message queue. `owner` is the handle table koid of the
+    /// process attempting to write to the channel, or `ZX_KOID_INVALID` if kernel is doing it.
     pub fn write(&self, owner: zx_koid_t, msg: MessagePacketPtr) -> Result<(), Status> {
         let state = self.state();
         state.canary.assert();
 
-        ksync::lock!(let mut guard = self.get_lock().lock());
+        ksync::lock!(let mut guard = state.peered.lock());
 
-        trace_message(&msg, self, MessageOp::Write);
+        self.trace_message(&msg, MessageOp::Write);
 
-        // Failing this test is only possible if this process has two threads racing:
-        // one thread is issuing channel_write() and one thread is moving the handle
-        // to another process.
-        // SAFETY: Holding the peer holder lock (`guard`) is sufficient to read `owner` as
-        // `set_owner` holds both the peer holder lock and `channel_lock` when mutating `owner`.
+        // Failing this test is only possible if this process has two threads racing: one thread is
+        // issuing channel_write() and one thread is moving the handle to another process.
+        // SAFETY: Holding the peer holder lock (`peered`) is sufficient to read `owner` (writing
+        // requires holding both the peer holder lock and `channel_lock`).
         if owner != unsafe { *state.owner.get() } {
             return Err(Status::BAD_HANDLE);
         }
 
-        let Some(peer) = self.peer(&guard) else {
-            return Err(Status::PEER_CLOSED);
-        };
+        let peer = self.peer(&guard).ok_or(Status::PEER_CLOSED)?;
 
-        let Err(msg) = peer.try_write_to_message_waiter(guard.as_mut().token_mut(), msg) else {
-            return Ok(());
-        };
-
-        peer.write_self_locked(guard.as_mut().token_mut(), msg, None);
+        if let Err(msg) = peer.try_write_to_message_waiter(guard.as_mut().token_mut(), msg) {
+            peer.write_self_locked(guard.as_mut().token_mut(), msg, None);
+        }
 
         Ok(())
     }
 
-    // Perform a transacted Write + Read. `owner` is the handle table koid of the process
-    // attempting to write to the channel, or ZX_KOID_INVALID if kernel is doing it.
+    /// Perform a transacted Write + Read. `owner` is the handle table koid of the process
+    /// attempting to write to the channel, or `ZX_KOID_INVALID` if kernel is doing it.
     pub fn call(
         &self,
         owner: zx_koid_t,
         mut msg: MessagePacketPtr,
-        deadline: zx_instant_mono_t,
+        deadline: Deadline,
     ) -> Result<MessagePacketPtr, Status> {
         let state = self.state();
         state.canary.assert();
 
         let waiter = ThreadDispatcher::get_current_message_waiter();
         if waiter.begin_wait(self).is_err() {
-            // If a thread tries BeginWait'ing twice, the VDSO contract around retrying
-            // channel calls has been violated.  Shoot the misbehaving process.
+            // If a thread tries BeginWait'ing twice, the VDSO contract around retrying channel
+            // calls has been violated. Shoot the misbehaving process.
             ProcessDispatcher::get_current().kill(ZX_TASK_RETCODE_VDSO_KILL);
             return Err(Status::BAD_STATE);
         }
@@ -638,11 +502,11 @@ impl ChannelDispatcher {
             // PeeredDispatchers. See https://fxbug.dev/42050802. TL;DR - someday, when we have had
             // the time to carefully refactor the locking here, come back and remove the use of
             // CriticalMutex.
-            ksync::lock!(let mut guard = self.get_lock().lock());
+            ksync::lock!(let mut guard = state.peered.lock());
 
-            // See Write() for an explanation of this test.
-            // SAFETY: Holding the peer holder lock (`guard`) is sufficient to read `owner` as
-            // `set_owner` holds both the peer holder lock and `channel_lock` when mutating `owner`.
+            // See write() for an explanation of this test.
+            // SAFETY: Holding the peer holder lock (`peered`) is sufficient to read `owner`
+            // (writing requires holding both the peer holder lock and `channel_lock`).
             if owner != unsafe { *state.owner.get() } {
                 let _ = waiter.end_wait();
                 return Err(Status::BAD_HANDLE);
@@ -653,29 +517,15 @@ impl ChannelDispatcher {
                 return Err(Status::PEER_CLOSED);
             };
 
-            let txid = 'alloc_txid: loop {
-                let txid = self.generate_txid(guard.as_mut().token_mut());
-                // If there are waiting messages, ensure we have not allocated a txid
-                // that's already in use.  This is unlikely.  It's atypical for multiple
-                // threads to be invoking channel_call() on the same channel at once, so
-                // the waiter list is most commonly empty.
-                let token = guard.token();
-                for waiter_ref in state.guard_mu(token).waiters().iter() {
-                    if waiter_ref.get_txid() == txid {
-                        continue 'alloc_txid;
-                    }
-                }
-                break txid;
-            };
+            let txid = self.allocate_txid_locked(guard.as_mut().token_mut());
 
-            // Install our txid in the waiter and the outbound message
+            // Install our txid in the waiter and the outbound message.
             waiter.set_txid(txid);
             msg.set_txid(txid);
 
-            trace_message(&msg, self, MessageOp::ChannelCallWriteRequest);
+            self.trace_message(&msg, MessageOp::ChannelCallWriteRequest);
 
-            // (0) Before writing the outbound message and waiting, add our
-            // waiter to the list.
+            // (0) Before writing the outbound message and waiting, add our waiter to the list.
             // SAFETY: `waiter` is embedded in the current `ThreadDispatcher`, which outlives this
             // call.
             unsafe {
@@ -686,17 +536,12 @@ impl ChannelDispatcher {
             peer.write_self_locked(guard.as_mut().token_mut(), msg, Some(&waiter.wait_queue));
         }
 
-        let process = ProcessDispatcher::get_current();
-        let slack_deadline =
-            Deadline::new(InstantUnknown(deadline), process.get_timer_slack_policy());
-
-        // Reuse the code from the half-call used for retrying a Call after thread
-        // suspend.
-        self.resume_interrupted_call(&waiter, slack_deadline)
+        // Reuse the code from the half-call used for retrying a Call after thread suspend.
+        self.resume_interrupted_call(&waiter, deadline)
     }
 
-    // Performs the wait-then-read half of Call.  This is meant for retrying
-    // after an interruption caused by suspending.
+    /// Performs the wait-then-read half of `call`. This is meant for retrying after an interruption
+    /// caused by suspending.
     pub fn resume_interrupted_call(
         &self,
         waiter: &MessageWaiter,
@@ -705,48 +550,45 @@ impl ChannelDispatcher {
         let state = self.state();
         state.canary.assert();
 
-        // (2) Wait for notification via waiter's event or for the
-        // deadline to hit.
+        // (2) Wait for notification via waiter's event or for the deadline to hit.
         {
             let _auto_blocked = AutoBlocked::new(Blocked::CHANNEL);
-            let status = waiter.wait(deadline);
-            if status == Err(Status::INTERRUPTED_RETRY) {
-                // If we got interrupted, return out to usermode, but
-                // do not clear the waiter.
+            if waiter.wait(deadline) == Err(Status::INTERRUPTED_RETRY) {
+                // If we got interrupted, return out to usermode, but do not clear the waiter.
                 return Err(Status::INTERRUPTED_RETRY);
             }
         }
 
-        // (3) see (3A), (3B) above or (3C) below for paths where
-        // the waiter could be signaled and removed from the list.
+        // (3) see (3A), (3B) in on_zero_handles_locked/on_peer_zero_handles_locked or (3C) in
+        // try_write_to_message_waiter for paths where the waiter could be signaled and removed from
+        // the list.
         //
-        // If the deadline hits, the waiter is not removed
-        // from the list *but* another thread could still
-        // cause (3A), (3B), or (3C) before the lock below.
-        ksync::lock!(let mut guard = self.get_lock().lock());
+        // If the deadline hits, the waiter is not removed from the list *but* another thread could
+        // still cause (3A), (3B), or (3C) before the lock below.
+        ksync::lock!(let mut guard = state.peered.lock());
 
-        // (4) If any of (3A), (3B), or (3C) have occurred,
-        // we were removed from the waiters list already
-        // and EndWait() returns a non-TIMED_OUT status.
-        // Otherwise, the status is TIMED_OUT and it
-        // is our job to remove the waiter from the list.
-        let status = waiter.end_wait();
-        if matches!(status, Err(Status::TIMED_OUT)) {
+        // (4) If any of (3A), (3B), or (3C) have occurred, we were removed from the waiters list
+        // already and end_wait() returns a non-TIMED_OUT status. Otherwise, the status is TIMED_OUT
+        // and it is our job to remove the waiter from the list.
+        let end_status = waiter.end_wait();
+        if matches!(end_status, Err(Status::TIMED_OUT)) {
             // SAFETY: `waiter` was added during `call` and is erased here on timeout.
             unsafe {
                 let _ = self.waiters_mut(guard.as_mut().token_mut()).erase(waiter);
             }
         }
 
-        if let Ok(ref reply) = status {
-            trace_message(reply, self, MessageOp::ChannelCallReadResponse);
+        if let Ok(ref packet) = end_status {
+            self.trace_message(packet, MessageOp::ChannelCallReadResponse);
         }
 
-        status
+        end_status
     }
 
-    // Attempt to deliver the message to a waiting MessageWaiter. Returns true and takes ownership
-    // of `msg` iff the message was delivered.
+    /// Attempt to deliver the message to a waiting `MessageWaiter`.
+    ///
+    /// Returns `Ok(())` and takes ownership of `msg` iff the message was delivered; otherwise
+    /// returns `Err(msg)`.
     fn try_write_to_message_waiter(
         &self,
         token: &mut ksync::LockToken<'_, PeerHolderMuClass<Self>>,
@@ -769,25 +611,24 @@ impl ChannelDispatcher {
             return Err(msg);
         }
 
-        for waiter_ref in waiters.iter() {
-            // (3C) Deliver message to waiter.
-            // Remove waiter from list.
-            if waiter_ref.get_txid() == txid {
-                let waiter_ptr = NonNull::from(waiter_ref);
-                // SAFETY: `waiter_ptr` was obtained from `waiters` while holding the lock and is in
-                // `waiters`.
-                unsafe {
-                    let waiter = waiter_ptr.as_ref();
-                    let _ = self.waiters_mut(token).erase(waiter);
-                    waiter.deliver(msg);
-                }
-                return Ok(());
+        if let Some(waiter_ptr) = waiters.iter().find(|w| w.get_txid() == txid).map(NonNull::from) {
+            // (3C) Deliver message to waiter. Remove waiter from list.
+            // SAFETY: `waiter_ptr` was obtained from `waiters` while holding the lock and is in
+            // `waiters`.
+            unsafe {
+                let waiter = waiter_ptr.as_ref();
+                let _ = self.waiters_mut(token).erase(waiter);
+                waiter.deliver(msg);
             }
+            return Ok(());
         }
 
         Err(msg)
     }
 
+    /// Queues a message on this channel endpoint and notifies observers.
+    ///
+    /// Must be called with the peer holder lock held.
     fn write_self_locked(
         &self,
         token: &mut ksync::LockToken<'_, PeerHolderMuClass<Self>>,
@@ -797,23 +638,23 @@ impl ChannelDispatcher {
         let state = self.state();
         state.canary.assert();
 
-        // Once we've acquired the channel_lock_ we're going to make a copy of the previously active
+        // Once we've acquired the channel_lock we're going to make a copy of the previously active
         // signals and raise the READABLE signal before dropping the lock. After we've dropped the
         // lock, we'll notify observers using the previously active signals plus READABLE.
         //
         // There are several things to note about this sequence:
         //
-        // 1. We must hold channel_lock_ while updating the stored signals (RaiseSignalsLocked) to
+        // 1. We must hold channel_lock while updating the stored signals (raise_signals_locked) to
         // synchronize with thread adding, removing, or canceling observers otherwise we may create
         // a spurious READABLE signal (see NoSpuriousReadableSignalWhenRacing test).
         //
-        // 2. We must release the channel_lock_ before notifying observers to ensure that Read can
-        // execute concurrently with NotifyObserversLocked, which is a potentially long running
-        // call.
+        // 2. We must release the channel_lock before notifying observers to ensure that Read can
+        // execute concurrently with notify_observers_locked_with_queue, which is a potentially long
+        // running call.
         //
-        // 3. We can skip the call to NotifyObserversLocked if the previously active signals
-        // contained READABLE (because there can't be any observers still waiting for READABLE if
-        // that signal is already active).
+        // 3. We can skip the call to notify_observers_locked_with_queue if the previously active
+        // signals contained READABLE (because there can't be any observers still waiting for
+        // READABLE if that signal is already active).
         let previous_signals = {
             ksync::lock!(let mut guard = state.channel_lock.lock());
             let mut g = state.guard_channel_lock_mut(guard.token_mut());
@@ -824,49 +665,11 @@ impl ChannelDispatcher {
             messages.push_back(msg);
             let previous_signals = self.raise_signals_locked(token, ZX_CHANNEL_READABLE);
             let size = messages.len();
-            if size as u64 > *g.max_message_count() {
-                *g.max_message_count_mut() = size as u64;
-            }
+            *g.max_message_count_mut() = cmp::max(size as u64, *g.max_message_count());
 
-            // TODO(cpu): Remove this hack. See comment in kMaxPendingMessageCount definition.
+            // TODO(cpu): Remove this hack. See comment in MAX_PENDING_MESSAGE_COUNT definition.
             if size >= WARN_PENDING_MESSAGE_COUNT {
-                let mut pname = [0u8; zx_types::ZX_MAX_NAME_LEN];
-                debug_assert!(ProcessDispatcher::get_current().get_name(&mut pname).is_ok());
-                let len = pname.iter().position(|&b| b == 0).unwrap_or(pname.len());
-                let name = str::from_utf8(&pname[..len]).unwrap_or("<unknown>");
-                // SAFETY: Holding the peer holder lock (`token`) is sufficient to read the peer's
-                // `owner`.
-                let peer_owner = unsafe {
-                    *self
-                        .state()
-                        .peered
-                        .guard_mu(token)
-                        .peer()
-                        .as_ref()
-                        .unwrap()
-                        .state()
-                        .owner
-                        .get()
-                };
-                if size == WARN_PENDING_MESSAGE_COUNT {
-                    kprint::kprintln!(
-                        "KERN: warning! channel ({:u}) has {:u} messages ({:s}) (peer: {:u}) (write).",
-                        self.get_koid(),
-                        size,
-                        name,
-                        peer_owner
-                    );
-                } else if size > MAX_PENDING_MESSAGE_COUNT {
-                    kprint::kprintln!(
-                        "KERN: channel ({:u}) has {:u} messages ({:s}) (peer: {:u}) (write). Raising exception.",
-                        self.get_koid(),
-                        size,
-                        name,
-                        peer_owner
-                    );
-                    signal_policy_exception(ZX_EXCP_POLICY_CODE_CHANNEL_FULL_WRITE, 0);
-                    CHANNEL_FULL.add(1);
-                }
+                self.check_message_count(token, size);
             }
             previous_signals
         };
@@ -881,20 +684,71 @@ impl ChannelDispatcher {
         }
     }
 
-    // Generate a unique txid to be used in a channel call.
-    fn generate_txid(
+    #[cold]
+    fn check_message_count(
+        &self,
+        token: &ksync::LockToken<'_, PeerHolderMuClass<Self>>,
+        size: usize,
+    ) {
+        // TODO(cpu): Remove this hack. See comment in MAX_PENDING_MESSAGE_COUNT definition.
+        if size != WARN_PENDING_MESSAGE_COUNT && size <= MAX_PENDING_MESSAGE_COUNT {
+            return;
+        }
+        let mut pname = [0u8; zx_types::ZX_MAX_NAME_LEN];
+        debug_assert!(ProcessDispatcher::get_current().get_name(&mut pname).is_ok());
+        let len = pname.iter().position(|&b| b == 0).unwrap_or(pname.len());
+        let name = str::from_utf8(&pname[..len]).unwrap_or("<unknown>");
+        // SAFETY: Holding the peer holder lock (`token`) is sufficient to read the peer's `owner`.
+        let peer_owner = unsafe {
+            *self.state().peered.guard_mu(token).peer().as_ref().unwrap().state().owner.get()
+        };
+        if size == WARN_PENDING_MESSAGE_COUNT {
+            kprint::kprintln!(
+                "KERN: warning! channel ({:u}) has {:u} messages ({:s}) (peer: {:u}) (write).",
+                self.get_koid(),
+                size,
+                name,
+                peer_owner
+            );
+        } else {
+            kprint::kprintln!(
+                "KERN: channel ({:u}) has {:u} messages ({:s}) (peer: {:u}) (write). Raising exception.",
+                self.get_koid(),
+                size,
+                name,
+                peer_owner
+            );
+            signal_policy_exception(ZX_EXCP_POLICY_CODE_CHANNEL_FULL_WRITE, 0);
+            CHANNEL_FULL.add(1);
+        }
+    }
+
+    /// Generate a unique txid to be used in a channel call.
+    fn allocate_txid_locked(
         &self,
         token: &mut ksync::LockToken<'_, PeerHolderMuClass<Self>>,
-    ) -> zx_txid_t {
-        let mut g = self.state().guard_mu_mut(token);
-        // Values 1..kMinKernelGeneratedTxid are reserved for userspace.
-        *g.txid_mut() = g.txid().wrapping_add(1);
-        *g.txid() | MIN_KERNEL_GENERATED_TXID
+    ) -> u32 {
+        let state = self.state();
+        loop {
+            let candidate = {
+                let mut g = state.guard_mu_mut(token);
+                // Values 1..MIN_KERNEL_GENERATED_TXID are reserved for userspace.
+                *g.txid_mut() = g.txid().wrapping_add(1);
+                *g.txid() | MIN_KERNEL_GENERATED_TXID
+            };
+            // If there are waiting messages, ensure we have not allocated a txid that's already in
+            // use. This is unlikely. It's atypical for multiple threads to be invoking
+            // channel_call() on the same channel at once, so the waiter list is most commonly
+            // empty.
+            if state.guard_mu(token).waiters().iter().all(|w| w.get_txid() != candidate) {
+                return candidate;
+            }
+        }
     }
 
     /// Cancels any channel_call message waiters waiting on this endpoint.
-    pub fn cancel_message_waiters(&self) {
-        ksync::lock!(let mut guard = self.get_lock().lock());
+    pub(super) fn cancel_message_waiters(&self) {
+        ksync::lock!(let mut guard = self.state().peered.lock());
         self.cancel_message_waiters_locked(guard.as_mut().token_mut(), Status::CANCELED);
     }
 
@@ -913,10 +767,11 @@ impl ChannelDispatcher {
         }
     }
 
+    /// Removes a specific waiter from this channel's waiters list.
     fn remove_waiter(&self, waiter: &MessageWaiter) {
         let state = self.state();
         state.canary.assert();
-        ksync::lock!(let mut guard = self.get_lock().lock());
+        ksync::lock!(let mut guard = state.peered.lock());
         if waiter.node.in_container() {
             // SAFETY: `waiter` is confirmed to be in a container, and `guard` holds the peer holder
             // mutex protecting the waiters list.
@@ -926,10 +781,10 @@ impl ChannelDispatcher {
         }
     }
 
+    /// Sets the owning process KOID for this channel endpoint.
     pub(super) fn set_owner(&self, new_owner: zx_koid_t) {
-        // Testing for ZX_KOID_INVALID is an optimization so we don't
-        // pay the cost of grabbing the lock when the endpoint moves
-        // from the process to channel; the one that we must get right
+        // Testing for ZX_KOID_INVALID is an optimization so we don't pay the cost of grabbing the
+        // lock when the endpoint moves from the process to channel; the one that we must get right
         // is from channel to new owner.
         if new_owner == zx_types::ZX_KOID_INVALID {
             return;
@@ -937,18 +792,19 @@ impl ChannelDispatcher {
 
         let state = self.state();
         state.canary.assert();
-        ksync::lock!(self.get_lock().lock());
+        ksync::lock!(state.peered.lock());
         ksync::lock!(state.channel_lock.lock());
-        // SAFETY: Both the peer holder lock and `channel_lock` are held, giving exclusive access
-        // to `owner`.
+        // SAFETY: Both the peer holder lock (`peered`) and `channel_lock` are held, giving
+        // exclusive access to `owner`.
         unsafe {
             *state.owner.get() = new_owner;
         }
     }
 
-    // PeerHasClosed() may be called from any thread, with or without any locks held.
-    // It adds no synchronization guarantees and its result could easily be out of date before it is
-    // returned or used.
+    /// Returns whether the peer endpoint has closed.
+    ///
+    /// Locking this endpoint's `channel_lock` is sufficient because `peer_has_closed` is set on
+    /// this endpoint under `channel_lock` when the peer drops its handles.
     pub(super) fn peer_has_closed(&self) -> bool {
         let state = self.state();
         state.canary.assert();
@@ -956,17 +812,13 @@ impl ChannelDispatcher {
         *state.guard_channel_lock(guard.token()).peer_has_closed()
     }
 
+    /// Returns the current and maximum pending message counts for this endpoint.
     pub(super) fn get_message_counts(&self) -> (usize, u64) {
         let state = self.state();
         state.canary.assert();
         ksync::lock!(let guard = state.channel_lock.lock());
         let g = state.guard_channel_lock(guard.token());
         (g.messages().len(), *g.max_message_count())
-    }
-
-    #[inline]
-    fn get_lock(&self) -> &PeeredState<Self> {
-        &self.state().peered
     }
 
     fn peer<'a>(
@@ -991,17 +843,14 @@ impl ChannelDispatcher {
     fn on_zero_handles_locked(&self, token: &mut ksync::LockToken<'_, PeerHolderMuClass<Self>>) {
         self.state().canary.assert();
 
-        // (3A) Abort any waiting Call operations
-        // because we've been canceled by reason
-        // of our local handle going away.
-        // Remove waiter from list.
+        // (3A) Abort any waiting Call operations because we've been canceled by reason of our local
+        // handle going away.
         self.cancel_message_waiters_locked(token, Status::CANCELED);
     }
 
-    // This requires holding the shared channel lock. The thread analysis
-    // can reason about repeated calls to get_lock() on the shared object,
-    // but cannot reason about the aliasing between left->get_lock() and
-    // right->get_lock(), which occurs above in on_zero_handles.
+    // This requires holding the shared channel lock. The thread analysis can reason about repeated
+    // calls to get_lock() on the shared object, but cannot reason about the aliasing between
+    // left->get_lock() and right->get_lock(), which occurs above in on_zero_handles.
     fn on_peer_zero_handles_locked(
         &self,
         token: &mut ksync::LockToken<'_, PeerHolderMuClass<Self>>,
@@ -1013,25 +862,119 @@ impl ChannelDispatcher {
             *state.guard_channel_lock_mut(guard.token_mut()).peer_has_closed_mut() = true;
         }
         self.update_state_locked(token, ZX_CHANNEL_WRITABLE, ZX_CHANNEL_PEER_CLOSED);
-        // (3B) Abort any waiting Call operations
-        // because we've been canceled by reason
-        // of the opposing endpoint going away.
-        // Remove waiter from list.
+        // (3B) Abort any waiting Call operations because we've been canceled by reason of the
+        // opposing endpoint going away.
         self.cancel_message_waiters_locked(token, Status::PEER_CLOSED);
+    }
+
+    /// Emits `kernel:ipc` duration and flow trace events (`ChannelMessage` / `ChannelFlow`) for a
+    /// channel message operation when IPC tracing is enabled.
+    #[inline]
+    fn trace_message(&self, msg: &MessagePacket, op: MessageOp) {
+        if category_enabled!("kernel:ipc") {
+            self.trace_message_slow(msg, op);
+        }
+    }
+
+    #[cold]
+    fn trace_message_slow(&self, msg: &MessagePacket, op: MessageOp) {
+        // We emit these trace events non-standardly to work around some compatibility issues:
+        //
+        // 1) We partially inline the trace macro so that we can purposely emit 0-length durations.
+        //
+        //    chrome://tracing requires flow events to be contained in a duration. Perfetto requires
+        //    flow events to be attached to a "slice". However, the Perfetto viewer treats instant
+        //    events as 0-length slices. This means that we can assign flows to them, and they get a
+        //    special easy to click on arrow instead of a tiny duration bar. Using a 0-length
+        //    duration gets us nice instant events in the Perfetto viewer, while still supporting
+        //    flows in chrome://tracing.
+        //
+        // 2) Even though we know exactly when the duration ends, we emit a Begin/End pair instead
+        //    of using a duration-complete event.
+        //
+        //    Because we do so little work between creating the duration-complete scope and then
+        //    emitting the flow event, if we emit a duration-complete event, the two events may be
+        //    created with the same timestamp. Since the duration-complete event is only written
+        //    when the scope ends, it is written _after_ the flow event in the trace, causing the
+        //    flow to be associated with the previous event, not it. By using a Begin/End pair, we
+        //    ensure that though the events have the same timestamp, they will be read in the
+        //    correct order and the flow events will be associated correctly.
+        let payload = msg.start_of_payload();
+        let header = FidlHeader::read_from_prefix(payload).map(|(h, _)| h).unwrap_or_default();
+        let txid = header.txid;
+        let ordinal = header.ordinal;
+
+        let ts = KTrace::timestamp();
+
+        if cfg!(channel_message_body_tracing_enabled)
+            && matches!(op, MessageOp::Write | MessageOp::ChannelCallWriteRequest)
+        {
+            let num_handles = cmp::min(msg.num_handles(), MAX_TRACE_HANDLES);
+            let mut handle_info = [MaybeUninit::<RawInfoHandleBasic>::uninit(); MAX_TRACE_HANDLES];
+            for (info, handle_ref) in handle_info.iter_mut().zip(msg_handle_refs(msg)) {
+                let disp = handle_ref.dispatcher_ref();
+                info.write(RawInfoHandleBasic {
+                    koid: disp.get_koid(),
+                    rights: handle_ref.rights(),
+                    type_: disp.get_type(),
+                    related_koid: disp.get_related_koid(),
+                    reserved: 0,
+                    padding1: [0; 4],
+                });
+            }
+            // SAFETY: The first `num_handles` elements of `handle_info` were initialized above.
+            let handle_info = unsafe {
+                slice::from_raw_parts(
+                    handle_info.as_ptr().cast::<RawInfoHandleBasic>(),
+                    num_handles,
+                )
+            };
+            let handle_bytes = IntoBytes::as_bytes(handle_info);
+            // Record message body when sending.
+            duration_begin_timestamp!(
+                "kernel:ipc",
+                "ChannelMessage",
+                ts,
+                "ordinal" => ordinal,
+                "bytes" => payload,
+                "handles" => handle_bytes,
+            );
+        } else {
+            // Don't record message body when receiving.
+            duration_begin_timestamp!("kernel:ipc", "ChannelMessage", ts, "ordinal" => ordinal);
+        }
+
+        // When the txid is kernel-generated, Read and Write message ops are just steps in the
+        // overall flow that is bounded by ChannelCallWriteRequest and ChannelCallReadResponse
+        // message ops.
+        let flow_id = channel_message_flow_id(msg, txid, self);
+        match op {
+            MessageOp::Write | MessageOp::Read if is_kernel_generated_txid(txid) => {
+                flow_step_timestamp!("kernel:ipc", "ChannelFlow", ts, flow_id);
+            }
+            MessageOp::Write | MessageOp::ChannelCallWriteRequest => {
+                flow_begin_timestamp!("kernel:ipc", "ChannelFlow", ts, flow_id);
+            }
+            MessageOp::Read | MessageOp::ChannelCallReadResponse => {
+                flow_end_timestamp!("kernel:ipc", "ChannelFlow", ts, flow_id);
+            }
+        }
+
+        duration_end_timestamp!("kernel:ipc", "ChannelMessage", ts);
     }
 }
 
-// Per-thread structure used while waiting in a ChannelDispatcher::Call.
-//
-// MessageWaiter's state is guarded by the lock of the
-// owning ChannelDispatcher, and Deliver(), Signal(), Cancel(),
-// and EndWait() methods must only be called under that lock.
-//
-// MessageWaiters are embedded in ThreadDispatchers, and the channel_ pointer
-// can only be manipulated by their thread (via BeginWait() or EndWait()), and
-// only transitions to nullptr while holding the ChannelDispatcher's lock.
-//
-// See also: comments in ChannelDispatcher::Call()
+/// Per-thread structure used while waiting in a `ChannelDispatcher::call`.
+///
+/// `MessageWaiter`'s state is guarded by the lock of the owning `ChannelDispatcher`, and
+/// `deliver()`, `signal()`, `cancel()`, and `end_wait()` methods must only be called under
+/// that lock.
+///
+/// `MessageWaiter`s are embedded in `ThreadDispatcher`s, and the `channel` pointer can only be
+/// manipulated by their thread (via `begin_wait()` or `end_wait()`), and only transitions to `None`
+/// while holding the `ChannelDispatcher`'s lock.
+///
+/// See also: comments in `ChannelDispatcher::call()`.
 #[derive(DoublyLinkedListContainable)]
 #[pin_data(PinnedDrop)]
 #[repr(C)]
@@ -1040,8 +983,7 @@ pub struct MessageWaiter {
     node: DoublyLinkedListNode<MessageWaiter>,
     channel: UnsafeCell<Option<RefPtr<ChannelDispatcher>>>,
     result: UnsafeCell<Result<MessagePacketPtr, Status>>,
-    // TODO(teisenbe/swetland): Investigate hoisting this outside to reduce
-    // userthread size.
+    // TODO(teisenbe/swetland): Investigate hoisting this outside to reduce userthread size.
     #[pin]
     wait_queue: OwnedWaitQueue,
     // Logically guarded by `wait_queue`'s lock.
@@ -1052,6 +994,7 @@ pub struct MessageWaiter {
 zr::static_assert_size_and_align!(MessageWaiter, kMessageWaiterSize, kMessageWaiterAlign);
 
 impl MessageWaiter {
+    /// In-place initialization for `MessageWaiter` called during `ThreadDispatcher` construction.
     pub(super) fn init() -> impl PinInit<Self, Infallible> {
         pin_init!(Self {
             node: DoublyLinkedListNode::new(),
@@ -1063,6 +1006,7 @@ impl MessageWaiter {
         })
     }
 
+    /// Begins a wait on `channel`.
     fn begin_wait(&self, channel: &ChannelDispatcher) -> Result<(), Status> {
         // SAFETY: `begin_wait` is only called on the owning thread (`ThreadDispatcher`). When
         // `channel` is `None`, the waiter is not in any channel's `waiters` list and no other
@@ -1080,23 +1024,27 @@ impl MessageWaiter {
         Ok(())
     }
 
-    // Returns any delivered message via out and the status.
+    /// Returns any delivered message and the status.
     fn end_wait(&self) -> Result<MessagePacketPtr, Status> {
         // SAFETY: `end_wait` is called on the owning thread while holding the owning
-        // `ChannelDispatcher`'s lock, which serializes access to `result` with `deliver` and
-        // `cancel`.
+        // `ChannelDispatcher`'s lock, which synchronizes access to `channel` and `result` with
+        // `deliver` and `cancel`.
         unsafe {
-            let Some(_channel) = (*self.channel.get()).take() else {
-                return Err(Status::BAD_STATE);
-            };
-            // TODO(https://fxbug.dev/513440159): Resetting the owner due to an interrupted channel call
-            // breaks the PI chain in a way that cannot be re-connected when the call is resumed. Figure
-            // out a way to preserve the PI chain, while addressing https://fxbug.dev/512083099.
+            (*self.channel.get()).take().ok_or(Status::BAD_STATE)?;
+            // TODO(https://fxbug.dev/513440159): Resetting the owner due to an interrupted channel
+            // call breaks the PI chain in a way that cannot be re-connected when the call is
+            // resumed. Figure out a way to preserve the PI chain, while addressing
+            // https://fxbug.dev/512083099.
             self.wait_queue.reset_owner_if_no_waiters();
             mem::replace(&mut *self.result.get(), Err(Status::BAD_STATE))
         }
     }
 
+    /// Waits on the internal wait queue until deadline or signaled.
+    ///
+    /// Returns the outcome of waiting on the queue (such as `Ok(())`, or `Err(Status::TIMED_OUT)`).
+    /// Note that `wait()` only returns the wait queue outcome, while `end_wait()` retrieves the
+    /// delivered status under the channel lock.
     fn wait(&self, deadline: Deadline) -> Result<(), Status> {
         debug_assert!(self.get_channel().is_some());
         // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
@@ -1121,8 +1069,10 @@ impl MessageWaiter {
         }
     }
 
+    /// Delivers a reply message to this waiter and signals the waiting thread.
     fn deliver(&self, msg: MessagePacketPtr) {
-        // SAFETY: Called under the owning `ChannelDispatcher`'s lock while the waiter is active.
+        // SAFETY: Called under the owning `ChannelDispatcher`'s lock after removing `self` from
+        // `waiters`, synchronizing access to `channel` and `result`.
         unsafe {
             debug_assert!((*self.channel.get()).is_some());
             *self.result.get() = Ok(msg);
@@ -1130,9 +1080,11 @@ impl MessageWaiter {
         self.signal();
     }
 
+    /// Cancels this waiter with `status` and signals the waiting thread.
     fn cancel(&self, status: Status) {
         debug_assert!(!self.node.in_container());
-        // SAFETY: Called under the owning `ChannelDispatcher`'s lock while the waiter is active.
+        // SAFETY: Called under the owning `ChannelDispatcher`'s lock after removing `self` from
+        // `waiters`, synchronizing access to `channel` and `result`.
         unsafe {
             debug_assert!((*self.channel.get()).is_some());
             *self.result.get() = Err(status);
@@ -1140,23 +1092,27 @@ impl MessageWaiter {
         self.signal();
     }
 
+    /// Returns the transaction ID assigned to this waiter.
     fn get_txid(&self) -> zx_txid_t {
-        // SAFETY: Called under the owning `ChannelDispatcher`'s lock after `set_txid` has been
-        // called under that same lock.
+        // SAFETY: Called under the owning `ChannelDispatcher`'s lock, which synchronizes access
+        // with `set_txid`.
         unsafe { *self.txid.get() }
     }
 
+    /// Sets the transaction ID for this waiter.
     fn set_txid(&self, txid: zx_txid_t) {
         // SAFETY: Called on the owning thread under the owning `ChannelDispatcher`'s lock before
-        // inserting the waiter into `waiters`.
+        // inserting `self` into `waiters`.
         unsafe {
             *self.txid.get() = txid;
         }
     }
 
+    /// Returns the channel associated with this waiter, if any.
     pub fn get_channel(&self) -> Option<RefPtr<ChannelDispatcher>> {
-        // SAFETY: `get_channel` is only called on the owning thread, and `channel` is only ever
-        // mutated on the owning thread (`begin_wait`, `end_wait`, and `drop`).
+        // SAFETY: `self.channel` is only ever mutated on the owning thread (`begin_wait`,
+        // `end_wait`, and `drop`), so reading and cloning it on the owning thread cannot race with
+        // any concurrent mutation.
         unsafe { (*self.channel.get()).clone() }
     }
 }
