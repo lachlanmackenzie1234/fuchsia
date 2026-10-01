@@ -11,37 +11,128 @@
 //! driver cannot acquire fails acquisition -- a partially acquired device
 //! would misrepresent the resource identity the digests promise.
 
+#[cfg(feature = "fdf_driver")]
 use crate::fuchsia_backends::{
     FuchsiaClock, FuchsiaGpio, FuchsiaI2c, FuchsiaReset, FuchsiaSerial, FuchsiaSpi, LiveBackend,
 };
+#[cfg(feature = "fdf_driver")]
 use fidl_fuchsia_hardware_clock as fclock;
+#[cfg(feature = "fdf_driver")]
 use fidl_fuchsia_hardware_gpio as fgpio;
+#[cfg(feature = "fdf_driver")]
 use fidl_fuchsia_hardware_i2c as fi2c;
+#[cfg(feature = "fdf_driver")]
 use fidl_fuchsia_hardware_reset as freset;
+#[cfg(feature = "fdf_driver")]
 use fidl_fuchsia_hardware_serial as fserial;
+#[cfg(feature = "fdf_driver")]
 use fidl_fuchsia_hardware_spi as fspi;
+#[cfg(feature = "fdf_driver")]
 use fidl_next_fuchsia_hardware_platform_device as fpdev;
+#[cfg(feature = "fdf_driver")]
 use lab_proxy_core::access_policy::{
     MmioResource, ProtocolCeiling, ResourceCeiling, ResourceId, ResourceKind,
 };
 use lab_proxy_core::hardware_backend::{BackendError, MmioBackend};
+#[cfg(feature = "fdf_driver")]
 use lab_proxy_core::provider::ProvidedResources;
+#[cfg(feature = "fdf_driver")]
 use log::info;
+#[cfg(feature = "fdf_driver")]
 use mmio::Mmio as _;
+#[cfg(feature = "fdf_driver")]
 use mmio::region::MmioRegion;
+#[cfg(feature = "fdf_driver")]
 use mmio::vmo::{VmoMapping, VmoMemory};
+#[cfg(feature = "fdf_driver")]
 use pdev::PlatformDevice;
 
 /// Provider kind recorded in resource digests.
 pub const PROVIDER: &str = "platform";
 
+#[cfg(not(feature = "fdf_driver"))]
+struct RawVmoMapping {
+    map_addr: usize,
+    map_size: usize,
+    base_addr: usize,
+    len: usize,
+}
+
+#[cfg(not(feature = "fdf_driver"))]
+impl RawVmoMapping {
+    fn map(offset: usize, size: usize, vmo: zx::Vmo) -> Result<Self, zx::Status> {
+        if size == 0 || size > isize::MAX as usize {
+            return Err(zx::Status::OUT_OF_RANGE);
+        }
+        let page_size = zx::system_get_page_size() as usize;
+        let page_offset = offset % page_size;
+        let aligned_offset = (offset - page_offset) as u64;
+        let map_size = size
+            .checked_add(page_offset)
+            .ok_or(zx::Status::OUT_OF_RANGE)?
+            .next_multiple_of(page_size);
+
+        let info = vmo.info()?;
+        if aligned_offset.saturating_add(map_size as u64) > info.size_bytes {
+            return Err(zx::Status::OUT_OF_RANGE);
+        }
+
+        let root_self = fuchsia_runtime::vmar_root_self();
+        let map_addr = root_self.map(
+            0,
+            &vmo,
+            aligned_offset,
+            map_size,
+            zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE | zx::VmarFlags::MAP_RANGE,
+        )?;
+        Ok(Self { map_addr, map_size, base_addr: map_addr + page_offset, len: size })
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn try_load32(&self, offset: usize) -> Result<u32, BackendError> {
+        if !offset.is_multiple_of(4) || offset.checked_add(4).is_none_or(|end| end > self.len) {
+            return Err(BackendError::Fault);
+        }
+        let ptr = std::ptr::with_exposed_provenance::<u32>(self.base_addr + offset);
+        // SAFETY: `offset + 4 <= self.len` and `offset` is 4-byte aligned within the VMAR mapping.
+        Ok(unsafe { std::ptr::read_volatile(ptr) })
+    }
+
+    fn try_store32(&mut self, offset: usize, value: u32) -> Result<(), BackendError> {
+        if !offset.is_multiple_of(4) || offset.checked_add(4).is_none_or(|end| end > self.len) {
+            return Err(BackendError::Fault);
+        }
+        let ptr = std::ptr::with_exposed_provenance_mut::<u32>(self.base_addr + offset);
+        // SAFETY: `offset + 4 <= self.len` and `offset` is 4-byte aligned within the VMAR mapping.
+        unsafe { std::ptr::write_volatile(ptr, value) };
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "fdf_driver"))]
+impl Drop for RawVmoMapping {
+    fn drop(&mut self) {
+        let root_self = fuchsia_runtime::vmar_root_self();
+        // SAFETY: `self.map_addr` and `self.map_size` were returned by `root_self.map` and are
+        // only accessed while `self` is alive.
+        let _ = unsafe { root_self.unmap(self.map_addr, self.map_size) };
+    }
+}
+
 /// Volatile access to one locally mapped MMIO region.
 pub struct MappedMmio {
+    #[cfg(feature = "fdf_driver")]
     region: MmioRegion<VmoMemory>,
+    #[cfg(not(feature = "fdf_driver"))]
+    region: RawVmoMapping,
 }
 
 impl MappedMmio {
     /// Wraps an already-mapped [`MmioRegion`].
+    #[cfg(feature = "fdf_driver")]
     pub fn from_region(region: MmioRegion<VmoMemory>) -> Self {
         Self { region }
     }
@@ -54,9 +145,17 @@ impl MappedMmio {
     /// mapped a second time without failing on `zx_vmo_set_cache_policy`.
     pub fn from_vmo(vmo: &zx::Vmo, offset: usize, size: usize) -> Result<Self, zx::Status> {
         let dup_vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-        let cache_policy = dup_vmo.info()?.cache_policy();
-        let region = VmoMapping::map_with_cache_policy(offset, size, dup_vmo, cache_policy)?;
-        Ok(Self { region })
+        #[cfg(feature = "fdf_driver")]
+        {
+            let cache_policy = dup_vmo.info()?.cache_policy();
+            let region = VmoMapping::map_with_cache_policy(offset, size, dup_vmo, cache_policy)?;
+            Ok(Self { region })
+        }
+        #[cfg(not(feature = "fdf_driver"))]
+        {
+            let region = RawVmoMapping::map(offset, size, dup_vmo)?;
+            Ok(Self { region })
+        }
     }
 
     /// Returns the mapped byte length of the region.
@@ -108,6 +207,7 @@ impl lab_proxy_core::protocol_resource_adapter::ResourceBackend for MappedMmio {
 
 /// Why acquisition failed. Driver start fails on any of these: serving
 /// a partially acquired device would break resource-identity promises.
+#[cfg(feature = "fdf_driver")]
 #[derive(Debug)]
 pub enum AcquireError {
     /// The device reported an MMIO the driver could not fetch or map.
@@ -122,6 +222,7 @@ pub enum AcquireError {
     },
 }
 
+#[cfg(feature = "fdf_driver")]
 impl std::fmt::Display for AcquireError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -131,6 +232,7 @@ impl std::fmt::Display for AcquireError {
     }
 }
 
+#[cfg(feature = "fdf_driver")]
 fn connect_instance(
     context: &fdf_component::DriverContext,
     instance: &str,
@@ -149,6 +251,7 @@ fn connect_instance(
 /// Acquires the bound node's platform-device and protocol resources.
 ///
 /// Returns an empty bundle when the node offers no reachable resources.
+#[cfg(feature = "fdf_driver")]
 pub async fn acquire(
     context: &fdf_component::DriverContext,
     node_identity: &str,

@@ -1205,7 +1205,7 @@ Changesets continue the global numbering:
 - [x] CS30 `[driver-lab] In-situ live-target conformance test suite`
 - [x] CS34 `[driver-lab] Expose FIDL and debug shard to Bazel`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
+- [x] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
       (in //src/devices/driver-lab/SPEC.md).
 - [ ] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
       (in //src/devices/driver-lab/SPEC.md).

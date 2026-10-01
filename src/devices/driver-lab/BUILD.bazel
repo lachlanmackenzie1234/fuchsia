@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_prebuilt_package")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -12,6 +13,65 @@ package(
 exports_files(
     ["meta/debug.shard.cml"],
     visibility = ["//visibility:public"],
+)
+
+rustc_library(
+    name = "core",
+    srcs = [
+        "src/access_policy.rs",
+        "src/audit_ring.rs",
+        "src/config.rs",
+        "src/core.rs",
+        "src/digest.rs",
+        "src/executor.rs",
+        "src/hardware_backend.rs",
+        "src/interrupt.rs",
+        "src/protocol_resource_adapter.rs",
+        "src/provider.rs",
+        "src/session.rs",
+        "src/state_bank.rs",
+        "src/target_policy.rs",
+    ],
+    crate_name = "lab_proxy_core",
+    crate_root = "src/core.rs",
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:sha2",
+    ],
+)
+
+rustc_library(
+    name = "driver_lab_rust",
+    srcs = [
+        "src/driver_lab_lib.rs",
+        "src/embedded.rs",
+        "src/fuchsia_backends.rs",
+        "src/platform_provider.rs",
+        "src/server.rs",
+    ],
+    crate_features = ["driver_lab_enabled"],
+    crate_name = "driver_lab_rust",
+    crate_root = "src/driver_lab_lib.rs",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":core",
+        "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust",
+        "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust",
+        "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
+        "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust",
+        "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
+        "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
+        "//sdk/rust/zx",
+        "//src/devices/driver-lab/fidl:fuchsia.driver.lab_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
 )
 
 fuchsia_prebuilt_package(

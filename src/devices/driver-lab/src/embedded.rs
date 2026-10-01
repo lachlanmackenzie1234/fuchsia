@@ -23,8 +23,11 @@ use fidl_fuchsia_hardware_reset as freset;
 use fidl_fuchsia_hardware_serial as fserial;
 use fidl_fuchsia_hardware_spi as fspi;
 use fuchsia_async as fasync;
+#[cfg(feature = "fdf_driver")]
 use fuchsia_component::server::{ServiceFs, ServiceObj, ServiceObjLocal};
-use lab_proxy_core::access_policy::{ProtocolCeiling, ResourceCeiling, ResourceId, ResourceKind};
+use lab_proxy_core::access_policy::{
+    ProtocolCeiling, ResourceCeiling, ResourceId, ResourceKind, WritableRegister,
+};
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
 use lab_proxy_core::config::{AccessLimitEnforcer, ProxyConfig};
 use lab_proxy_core::executor::{ExecLimits, Executor};
@@ -34,6 +37,7 @@ use lab_proxy_core::session::{ProxyIdentity, QuiesceHook, SessionManager};
 pub use lab_proxy_core::state_bank::{StateBank, StateEntry, StateSlotHandle};
 use lab_proxy_core::target_policy::TargetPolicyManifest;
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -42,7 +46,7 @@ fn now_ns() -> i64 {
 }
 
 /// Builder for configuring and instantiating an [`EmbeddedLabServer`] inside
-/// an existing DFv2 Rust driver.
+/// an existing DFv2 driver.
 pub struct DriverLabBuilder {
     bundle: ProvidedResources<LiveBackend>,
     next_id: ResourceId,
@@ -66,6 +70,7 @@ impl DriverLabBuilder {
     }
 
     /// Creates a new builder extracting the node identity from `DriverContext`.
+    #[cfg(feature = "fdf_driver")]
     pub fn from_context(context: &fdf_component::DriverContext) -> Self {
         let identity = context
             .start_args
@@ -243,6 +248,26 @@ impl DriverLabBuilder {
             LiveBackend::State(bank),
         );
         id
+    }
+
+    /// Configures the permitted 32-bit writable registers on an existing MMIO
+    /// resource's target ceiling.
+    pub fn set_writable_registers(
+        &mut self,
+        resource_id: ResourceId,
+        writable_registers: Vec<WritableRegister>,
+    ) {
+        if let Some(ceiling) = self.bundle.ceiling.get_mut(&resource_id) {
+            ceiling.writable_registers = writable_registers;
+        }
+    }
+
+    /// Configures the hard-denied byte offset ranges on an existing MMIO
+    /// resource's target ceiling.
+    pub fn set_hard_denied_ranges(&mut self, resource_id: ResourceId, ranges: Vec<Range<u64>>) {
+        if let Some(ceiling) = self.bundle.ceiling.get_mut(&resource_id) {
+            ceiling.hard_denied = ranges;
+        }
     }
 
     /// Registers a GPIO protocol resource.
@@ -459,6 +484,7 @@ impl EmbeddedLabServer {
     ///
     /// When disabled (`enable_driver_lab = false`), this is a no-op and omits
     /// outgoing service handlers (Spec Phase 2 Section 4.1).
+    #[cfg(feature = "fdf_driver")]
     pub fn publish(
         &self,
         outgoing: &mut ServiceFs<ServiceObj<'static, ()>>,
@@ -487,6 +513,7 @@ impl EmbeddedLabServer {
     ///
     /// When disabled (`enable_driver_lab = false`), this is a no-op and omits
     /// outgoing service handlers (Spec Phase 2 Section 4.1).
+    #[cfg(feature = "fdf_driver")]
     pub fn publish_local(
         &self,
         outgoing: &mut ServiceFs<ServiceObjLocal<'static, ()>>,
@@ -517,6 +544,12 @@ impl EmbeddedLabServer {
     ) {
         let state = self.state.clone();
         scope_handle.spawn(server::serve_proxy(state, scope_handle.clone(), stream));
+    }
+
+    /// Spawns a single `fuchsia.driver.lab.Proxy` channel server-end on `scope_handle`.
+    pub fn serve_proxy_channel(&self, scope_handle: fasync::ScopeHandle, channel: zx::Channel) {
+        let stream = fidl::endpoints::ServerEnd::<flab::Proxy_Marker>::new(channel).into_stream();
+        self.serve_proxy_stream(scope_handle, stream);
     }
 
     /// Returns a reference to the underlying shared proxy state.

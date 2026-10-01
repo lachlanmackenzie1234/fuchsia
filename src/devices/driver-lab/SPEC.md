@@ -1298,7 +1298,7 @@ Changesets continue the global numbering from Phase 1:
 - [x] CS30 `[driver-lab] In-situ live-target conformance test suite`
       (in //tools/driver-lab/SPEC.md).
 - [x] CS34 `[driver-lab] Expose FIDL and debug shard to Bazel`
-- [ ] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
+- [x] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
 - [ ] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
 - [ ] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
 - [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
@@ -1362,10 +1362,13 @@ handle.
 
 #### 3.1 Phase 2a: Rust driver library (`driver_lab_rust`)
 
-Prioritized for immediate support across Fuchsia's DFv2 Rust driver stack.
+Prioritized for immediate support across Fuchsia's DFv2 Rust driver stack in
+both GN and Bazel builds.
 - Links directly against `lab_proxy_core`.
 - Native integration with `fdf_component::DriverContext`, `ServiceFs`, and
-  `fuchsia_async::Scope`.
+  `fuchsia_async::Scope` (with GN-only driver crates feature-gated under
+  `fdf_driver` and a pure-`zx` root VMAR mapping fallback for native Bazel
+  compilation).
 - First reference integration: synthetic platform driver in `testing/` (CS28).
 
 #### 3.2 Phase 2b: Lightweight C++ driver library (`driver_lab_cpp`) (Deferred)
