@@ -58,7 +58,6 @@ rustc_library("fbl") {
   # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
   if (is_kernel) {
     features = [ "kernel" ]
-    configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
     configs += [ "//zircon/kernel/switch:allow-let-unit-value" ]
     configs += [ "//zircon/kernel/switch:allow-type-complexity" ]
     configs += [ "//zircon/kernel/switch:allow-new-without-default" ]

@@ -261,15 +261,15 @@ impl<'a> EntryPoint<'a> {
 
     /// Attempts to parse and validate an `EntryPoint` from a byte slice.
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, Status> {
-        if let Ok((v2, _)) = EntryPoint2_1::ref_from_prefix(bytes) {
-            if v2.is_valid() {
-                return Ok(Self { inner: EntryPointType::V2_1(v2) });
-            }
+        if let Ok((v2, _)) = EntryPoint2_1::ref_from_prefix(bytes)
+            && v2.is_valid()
+        {
+            return Ok(Self { inner: EntryPointType::V2_1(v2) });
         }
-        if let Ok((v3, _)) = EntryPoint3_0::ref_from_prefix(bytes) {
-            if v3.is_valid() {
-                return Ok(Self { inner: EntryPointType::V3_0(v3) });
-            }
+        if let Ok((v3, _)) = EntryPoint3_0::ref_from_prefix(bytes)
+            && v3.is_valid()
+        {
+            return Ok(Self { inner: EntryPointType::V3_0(v3) });
         }
         Err(Status::IO_DATA_INTEGRITY)
     }

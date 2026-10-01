@@ -1128,11 +1128,9 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let met = self.front.current == self.back.current;
         let item = self.front.next();
-        if item.is_some() {
-            if met {
-                self.front.current = crate::make_sentinel_null();
-                self.back.current = crate::make_sentinel_null();
-            }
+        if item.is_some() && met {
+            self.front.current = crate::make_sentinel_null();
+            self.back.current = crate::make_sentinel_null();
         }
         item
     }
@@ -1146,11 +1144,9 @@ where
     fn next_back(&mut self) -> Option<Self::Item> {
         let met = self.front.current == self.back.current;
         let item = self.back.next();
-        if item.is_some() {
-            if met {
-                self.front.current = crate::make_sentinel_null();
-                self.back.current = crate::make_sentinel_null();
-            }
+        if item.is_some() && met {
+            self.front.current = crate::make_sentinel_null();
+            self.back.current = crate::make_sentinel_null();
         }
         item
     }
