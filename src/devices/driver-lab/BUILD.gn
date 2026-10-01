@@ -30,6 +30,7 @@ rustc_library("core") {
   sources = [
     "src/access_policy.rs",
     "src/audit_ring.rs",
+    "src/config.rs",
     "src/core.rs",
     "src/digest.rs",
     "src/executor.rs",
@@ -61,6 +62,7 @@ fuchsia_rust_driver("driver") {
   ]
   deps = [
     ":core",
+    ":lab_proxy_config",
     "fidl:fuchsia.driver.lab_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
@@ -79,10 +81,36 @@ fuchsia_rust_driver("driver") {
   test_deps = [ "//src/lib/fuchsia" ]
 }
 
-fuchsia_driver_component("component") {
+fuchsia_component_manifest("lab_proxy_manifest") {
   testonly = true
   component_name = "lab_proxy"
   manifest = "meta/lab_proxy.cml"
+}
+
+fuchsia_structured_config_rust_lib("lab_proxy_config") {
+  testonly = true
+  cm_label = ":lab_proxy_manifest"
+}
+
+fuchsia_structured_config_values("lab_proxy_config_values") {
+  testonly = true
+  cm_label = ":lab_proxy_manifest"
+  values = {
+    enabled = true
+    audit_capacity = 1024
+    max_snapshot_items = 64
+    max_sequence_items = 64
+    max_delay_ns = 1000000000
+    max_sequence_duration_ns = 1000000000
+    max_deadline_ns = 1000000000
+    max_ops_per_second = 0
+  }
+}
+
+fuchsia_driver_component("component") {
+  testonly = true
+  component_name = "lab_proxy"
+  cm_label = ":lab_proxy_manifest"
   deps = [
     ":bind",
     ":driver",
@@ -94,6 +122,7 @@ fuchsia_driver_package("pkg") {
   testonly = true
   package_name = "lab_proxy"
   driver_components = [ ":component" ]
+  deps = [ ":lab_proxy_config_values" ]
   export_to_bazel = true
 }
 
@@ -124,6 +153,7 @@ fuchsia_unittest_package("lab_proxy-realm-test-pkg") {
   package_name = "lab_proxy-realm-test"
   deps = [
     ":component",
+    ":lab_proxy_config_values",
     ":realm_test",
     "testing:component",
     "//src/devices/misc/drivers/test-parent",

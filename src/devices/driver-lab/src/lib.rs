@@ -18,22 +18,6 @@ use server::{ProxyState, SharedState, ZxClock};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-/// Number of audit entries retained before the ring wraps. This moves into
-/// the immutable target ceiling once policy loading exists.
-const AUDIT_CAPACITY: usize = 1024;
-
-/// Maximum snapshot items accepted, within the wire-contract bound.
-const MAX_SNAPSHOT_ITEMS: usize = 64;
-
-/// Maximum sequence items accepted, within the wire-contract bound.
-const MAX_SEQUENCE_ITEMS: usize = 64;
-
-/// Maximum delay accepted in a single sequence step (1 second).
-const MAX_DELAY_NS: i64 = 1_000_000_000;
-
-/// Maximum duration of an entire sequence (1 second bound).
-const MAX_SEQUENCE_DURATION_NS: i64 = 1_000_000_000;
-
 struct LabProxy {
     _node: Node,
     _scope: fasync::Scope,
@@ -101,23 +85,58 @@ impl Driver for LabProxy {
                 interrupts.register(*id);
             }
         }
-        let sessions = SessionManager::new(
+
+        let config = match context.take_config::<lab_proxy_config::Config>() {
+            Ok(raw) => {
+                let parsed = lab_proxy_core::config::ProxyConfig {
+                    enabled: raw.enabled,
+                    audit_capacity: raw.audit_capacity,
+                    max_snapshot_items: raw.max_snapshot_items,
+                    max_sequence_items: raw.max_sequence_items,
+                    max_delay_ns: raw.max_delay_ns,
+                    max_sequence_duration_ns: raw.max_sequence_duration_ns,
+                    max_deadline_ns: raw.max_deadline_ns,
+                    max_ops_per_second: raw.max_ops_per_second,
+                };
+                match lab_proxy_core::config::ProxyConfig::default().narrow_with(&parsed) {
+                    Ok(narrowed) => narrowed,
+                    Err(err) => {
+                        warn!(
+                            "structured config widened baseline: {err}; falling back to defaults"
+                        );
+                        lab_proxy_core::config::ProxyConfig::default()
+                    }
+                }
+            }
+            Err(_) => lab_proxy_core::config::ProxyConfig::default(),
+        };
+
+        let limit_enforcer = lab_proxy_core::config::AccessLimitEnforcer::new(
+            config.max_ops_per_second,
+            config.max_deadline_ns,
+        );
+        let mut sessions = SessionManager::with_limits(
             identity,
             bundle.resources,
             manifest.to_ceiling_map(),
             manifest.allow_mutating_sessions,
+            limit_enforcer,
         );
+        if !config.enabled {
+            sessions.reject_new_sessions();
+        }
+
         let executor = Executor::new(
             bundle.backends,
             ZxClock,
             ExecLimits {
-                max_snapshot_items: MAX_SNAPSHOT_ITEMS,
-                max_sequence_items: MAX_SEQUENCE_ITEMS,
-                max_delay_ns: MAX_DELAY_NS,
-                max_sequence_duration_ns: MAX_SEQUENCE_DURATION_NS,
+                max_snapshot_items: config.max_snapshot_items as usize,
+                max_sequence_items: config.max_sequence_items as usize,
+                max_delay_ns: config.max_delay_ns as i64,
+                max_sequence_duration_ns: config.max_sequence_duration_ns as i64,
             },
         );
-        let mut audit = AuditRing::new(AUDIT_CAPACITY);
+        let mut audit = AuditRing::new(config.audit_capacity as usize);
         audit.append(AuditRecord::lifecycle("driver_start", now_ns()));
         let state: SharedState = Arc::new(server::SharedStateData {
             inner: Mutex::new(ProxyState {
@@ -126,6 +145,7 @@ impl Driver for LabProxy {
                 audit,
                 resource_digests,
                 interrupts,
+                config,
             }),
             abort_token: std::sync::atomic::AtomicBool::new(false),
         });

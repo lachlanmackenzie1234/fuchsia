@@ -444,6 +444,9 @@ class FakeProxyTarget:
         self.open_attempts = 0
         self.sessions_opened = 0
         self.reject_open: OpenRejection | None = None
+        self.enabled: bool = True
+        self.max_ops_per_second: int = 0
+        self.max_deadline_ns: int = 1_000_000_000
         self.active_mutating_session: int | None = None
         self._interrupt_sequence: dict[int, int] = {}
         self._interrupt_count: dict[int, int] = {}
@@ -550,7 +553,9 @@ class FakeProxyTarget:
         description = self._description
         rejection: OpenRejection | None = self.reject_open
         if rejection is None:
-            if expectations.boot_id != description.boot_id:
+            if not self.enabled:
+                rejection = OpenRejection.NOT_ACCEPTING
+            elif expectations.boot_id != description.boot_id:
                 rejection = OpenRejection.STALE_BOOT_ID
             elif expectations.proxy_generation != description.proxy_generation:
                 rejection = OpenRejection.STALE_PROXY_GENERATION
@@ -631,6 +636,28 @@ class _FakeSession:
         self._session = session_id
         self._rules = rules
         self._mode = mode
+        self._rate_limiters: dict[AccessClass, list[int]] = {}
+
+    def _check_rate_limit(
+        self, operation: str, resource: int, offset: int, access: AccessClass
+    ) -> None:
+        target = self._target
+        if target.max_ops_per_second > 0:
+            now = target._now_ns
+            limiter = self._rate_limiters.setdefault(access, [now, 0])
+            if now - limiter[0] >= 1_000_000_000:
+                limiter[0] = now
+                limiter[1] = 0
+            if limiter[1] >= target.max_ops_per_second:
+                self._deny(operation, resource, offset, Denial.LIMIT_EXCEEDED)
+            limiter[1] += 1
+
+    def _check_deadline(
+        self, operation: str, resource: int, offset: int, timeout_ns: int
+    ) -> None:
+        target = self._target
+        if timeout_ns > target.max_deadline_ns:
+            self._deny(operation, resource, offset, Denial.LIMIT_EXCEEDED)
 
     def _deny(
         self, operation: str, resource: int, offset: int, denial: Denial
@@ -658,6 +685,7 @@ class _FakeSession:
             self._deny(operation, resource, offset, Denial.UNKNOWN_RESOURCE)
         if (resource, offset, access) not in self._rules:
             self._deny(operation, resource, offset, Denial.NOT_IN_ALLOWLIST)
+        self._check_rate_limit(operation, resource, offset, access)
         timestamp = target._tick()
         if (resource, offset) in target._faults:
             target._append(
@@ -705,6 +733,7 @@ class _FakeSession:
                     item.offset,
                     Denial.NOT_IN_ALLOWLIST,
                 )
+        self._check_rate_limit("snapshot", 0, 0, AccessClass.SNAPSHOT)
         results: list[SnapshotItemOutcome] = []
         complete = True
         for item in items:
@@ -781,6 +810,7 @@ class _FakeSession:
             self._deny("write32", resource, offset, Denial.UNKNOWN_RESOURCE)
         if (resource, offset, AccessClass.WRITE) not in self._rules:
             self._deny("write32", resource, offset, Denial.NOT_IN_ALLOWLIST)
+        self._check_rate_limit("write32", resource, offset, AccessClass.WRITE)
         current = target._values.get((resource, offset), 0)
         if precondition is not None:
             expected, mask = precondition
@@ -834,6 +864,8 @@ class _FakeSession:
             self._deny("poll32", resource, offset, Denial.UNKNOWN_RESOURCE)
         if (resource, offset, AccessClass.POLL) not in self._rules:
             self._deny("poll32", resource, offset, Denial.NOT_IN_ALLOWLIST)
+        self._check_deadline("poll32", resource, offset, timeout_ns)
+        self._check_rate_limit("poll32", resource, offset, AccessClass.POLL)
         timestamp = target._tick()
         if (resource, offset) in target._faults:
             target._append(
@@ -889,6 +921,7 @@ class _FakeSession:
             and (resource, 0, AccessClass.SEQUENCE) not in self._rules
         ):
             self._deny("gpio_read", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        self._check_rate_limit("gpio_read", resource, 0, AccessClass.PROTOCOL)
         timestamp = target._tick()
         val = target._gpio_values.get(resource, False)
         seq = target._append(
@@ -916,6 +949,7 @@ class _FakeSession:
             and (resource, 0, AccessClass.SEQUENCE) not in self._rules
         ):
             self._deny("gpio_write", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        self._check_rate_limit("gpio_write", resource, 0, AccessClass.PROTOCOL)
         timestamp = target._tick()
         target._gpio_values[resource] = value
         target._gpio_writes.append((resource, value))
@@ -947,6 +981,9 @@ class _FakeSession:
             and (resource, 0, AccessClass.WRITE) not in self._rules
         ):
             self._deny("i2c_transfer", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        self._check_rate_limit(
+            "i2c_transfer", resource, 0, AccessClass.PROTOCOL
+        )
         timestamp = target._tick()
         target._i2c_transfers.append((resource, write_data, read_length))
         data = target._i2c_responses.get(resource, b"")
@@ -981,6 +1018,9 @@ class _FakeSession:
             and (resource, 0, AccessClass.WRITE) not in self._rules
         ):
             self._deny("spi_transmit", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        self._check_rate_limit(
+            "spi_transmit", resource, 0, AccessClass.PROTOCOL
+        )
         timestamp = target._tick()
         target._spi_transmits.append((resource, tx_data))
         data = target._spi_responses.get(resource, b"")
@@ -1230,6 +1270,7 @@ class _FakeSession:
                         }
                     )
                     raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
+        self._check_rate_limit("sequence", 0, 0, AccessClass.SEQUENCE)
         results: list[SequenceItemOutcome] = []
         complete = True
         for index, item in enumerate(items):
@@ -1553,6 +1594,11 @@ class _FakeSession:
             self._deny(
                 "wait_for_interrupt", resource, 0, Denial.NOT_IN_ALLOWLIST
             )
+        timeout_ns = int(timeout_s * 1_000_000_000)
+        self._check_deadline("wait_for_interrupt", resource, 0, timeout_ns)
+        self._check_rate_limit(
+            "wait_for_interrupt", resource, 0, AccessClass.INTERRUPT
+        )
 
         curr_seq = target._interrupt_sequence.get(resource, 0)
         if curr_seq > after_sequence:

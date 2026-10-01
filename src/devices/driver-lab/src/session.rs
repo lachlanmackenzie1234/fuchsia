@@ -13,6 +13,7 @@
 use crate::access_policy::{
     AccessPolicy, AccessRule, Denial, MmioResource, ResourceCeiling, ResourceId,
 };
+use crate::config::{AccessLimitEnforcer, BASELINE_MAX_DEADLINE_NS};
 use std::collections::BTreeMap;
 
 /// Host-supplied run context recorded with each session. Values are
@@ -85,6 +86,8 @@ pub struct Session {
     pub context: RunContext,
     /// The validated per-session policy engine.
     pub policy: AccessPolicy,
+    /// Enforcer for access rate and deadline limits (Spec 12.1 step 9).
+    pub limit_enforcer: AccessLimitEnforcer,
 }
 
 /// Tracks open sessions, identity staleness, and the mutation lease.
@@ -98,6 +101,7 @@ pub struct SessionManager {
     sessions: BTreeMap<u64, Session>,
     mutating: Option<u64>,
     accepting: bool,
+    limit_enforcer: AccessLimitEnforcer,
 }
 
 impl SessionManager {
@@ -108,6 +112,23 @@ impl SessionManager {
         ceiling: BTreeMap<ResourceId, ResourceCeiling>,
         allow_mutating_sessions: bool,
     ) -> Self {
+        Self::with_limits(
+            identity,
+            resources,
+            ceiling,
+            allow_mutating_sessions,
+            AccessLimitEnforcer::new(0, BASELINE_MAX_DEADLINE_NS),
+        )
+    }
+
+    /// Creates a manager with explicit access limit enforcer.
+    pub fn with_limits(
+        identity: ProxyIdentity,
+        resources: BTreeMap<ResourceId, MmioResource>,
+        ceiling: BTreeMap<ResourceId, ResourceCeiling>,
+        allow_mutating_sessions: bool,
+        limit_enforcer: AccessLimitEnforcer,
+    ) -> Self {
         Self {
             identity,
             resources,
@@ -117,6 +138,7 @@ impl SessionManager {
             sessions: BTreeMap::new(),
             mutating: None,
             accepting: true,
+            limit_enforcer,
         }
     }
 
@@ -171,8 +193,28 @@ impl SessionManager {
         if mode == SessionMode::Mutating {
             self.mutating = Some(id);
         }
-        self.sessions.insert(id, Session { id, mode, context, policy });
+        self.sessions.insert(
+            id,
+            Session { id, mode, context, policy, limit_enforcer: self.limit_enforcer.clone() },
+        );
         Ok(id)
+    }
+
+    /// Enforces access-class rate limit for `session_id`.
+    pub fn check_access(
+        &mut self,
+        session_id: u64,
+        class: crate::access_policy::AccessClass,
+        now_ns: i64,
+    ) -> Result<(), Denial> {
+        let session = self.sessions.get_mut(&session_id).ok_or(Denial::UnknownResource)?;
+        session.limit_enforcer.check_access(class, now_ns)
+    }
+
+    /// Enforces deadline limit for `session_id`.
+    pub fn check_deadline(&self, session_id: u64, requested_timeout_ns: i64) -> Result<(), Denial> {
+        let session = self.sessions.get(&session_id).ok_or(Denial::UnknownResource)?;
+        session.limit_enforcer.check_deadline(requested_timeout_ns)
     }
 
     /// The session with `id`, if open.
@@ -364,5 +406,24 @@ mod tests {
         assert_eq!(open(&mut manager, SessionMode::Mutating), Err(OpenError::MutationNotPermitted));
         // Read-only sessions still work.
         assert!(open(&mut manager, SessionMode::ReadOnly).is_ok());
+    }
+
+    #[test]
+    fn session_rate_and_deadline_limits() {
+        let mut mgr = manager();
+        mgr.limit_enforcer = AccessLimitEnforcer::new(2, 500_000_000);
+        let id = open(&mut mgr, SessionMode::ReadOnly).unwrap();
+
+        let t0 = 1_000_000_000;
+        assert!(mgr.check_access(id, AccessClass::ReadOnce, t0).is_ok());
+        assert!(mgr.check_access(id, AccessClass::ReadOnce, t0 + 100).is_ok());
+        assert_eq!(
+            mgr.check_access(id, AccessClass::ReadOnce, t0 + 200),
+            Err(Denial::LimitExceeded)
+        );
+
+        // Deadline check
+        assert!(mgr.check_deadline(id, 400_000_000).is_ok());
+        assert_eq!(mgr.check_deadline(id, 600_000_000), Err(Denial::LimitExceeded));
     }
 }

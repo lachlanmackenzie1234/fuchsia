@@ -11,6 +11,7 @@
 
 pub mod access_policy;
 pub mod audit_ring;
+pub mod config;
 pub mod digest;
 pub mod executor;
 pub mod hardware_backend;

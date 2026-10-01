@@ -91,9 +91,6 @@ impl lab_proxy_core::hardware_backend::Timer for ZxClock {
     }
 }
 
-/// Maximum sequence duration in nanoseconds (1 second bound).
-pub const MAX_SEQUENCE_DURATION_NS: i64 = 1_000_000_000;
-
 /// Shared proxy state behind one lock and cancellation token.
 #[derive(Debug)]
 pub struct ProxyState {
@@ -108,6 +105,8 @@ pub struct ProxyState {
     pub resource_digests: std::collections::BTreeMap<u32, String>,
     /// Interrupt manager coordinating interrupt observations.
     pub interrupts: InterruptManager,
+    /// Structured configuration bounds.
+    pub config: lab_proxy_core::config::ProxyConfig,
 }
 
 /// Handle to the shared proxy state and cancellation token.
@@ -397,15 +396,66 @@ async fn serve_session(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(id) {
+                    let check = match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .read32(&session.policy, audit, id, resource, offset)
-                            .map(|outcome| (outcome.value, outcome.audit_seq, outcome.timestamp_ns))
-                            .map_err(|error| match error {
-                                ReadError::Denied { denial, .. } => denial_to_fidl(denial),
-                                ReadError::Backend { .. } => flab::OperationError::BackendFault,
-                            }),
+                        Some(session) => session
+                            .policy
+                            .check_read32(resource, offset, AccessClass::ReadOnce)
+                            .map_err(denial_to_fidl),
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .read32(&session.policy, audit, id, resource, offset)
+                                .map(|outcome| {
+                                    (outcome.value, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    ReadError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ReadError::Backend { .. } => flab::OperationError::BackendFault,
+                                })
+                        }
+                        Ok(()) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::ReadOnce, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "read32",
+                                        offset: Some(offset),
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .read32(&session.policy, audit, id, resource, offset)
+                                        .map(|outcome| {
+                                            (outcome.value, outcome.audit_seq, outcome.timestamp_ns)
+                                        })
+                                        .map_err(|error| match error {
+                                            ReadError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ReadError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(result);
@@ -422,33 +472,58 @@ async fn serve_session(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(id) {
-                        None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .snapshot(&session.policy, audit, id, &items)
-                            .map(|outcome| {
-                                let results: Vec<flab::SnapshotItemResult> = outcome
-                                    .results
-                                    .iter()
-                                    .map(|result| flab::SnapshotItemResult {
-                                        item: flab::SnapshotItem {
-                                            resource: result.item.resource,
-                                            offset: result.item.offset,
-                                        },
-                                        ok: result.value.is_ok(),
-                                        value: result.value.unwrap_or(0),
-                                        audit_seq: result.audit_seq,
-                                        timestamp_ns: result.timestamp_ns,
+                    if sessions.session(id).is_none() {
+                        Err(flab::OperationError::StaleIdentity)
+                    } else {
+                        let now = now_ns();
+                        match sessions.check_access(id, AccessClass::Snapshot, now) {
+                            Err(denial) => {
+                                let record = AuditRecord {
+                                    session: Some(id),
+                                    resource: None,
+                                    operation: "snapshot",
+                                    offset: None,
+                                    decision: Decision::Denied(denial),
+                                    status: OpStatus::Rejected,
+                                    value: None,
+                                    timestamp_ns: now,
+                                    run_id: None,
+                                    item_index: None,
+                                };
+                                audit.append(record);
+                                Err(denial_to_fidl(denial))
+                            }
+                            Ok(()) => {
+                                let session = sessions.session(id).unwrap();
+                                executor
+                                    .snapshot(&session.policy, audit, id, &items)
+                                    .map(|outcome| {
+                                        let results: Vec<flab::SnapshotItemResult> = outcome
+                                            .results
+                                            .iter()
+                                            .map(|result| flab::SnapshotItemResult {
+                                                item: flab::SnapshotItem {
+                                                    resource: result.item.resource,
+                                                    offset: result.item.offset,
+                                                },
+                                                ok: result.value.is_ok(),
+                                                value: result.value.unwrap_or(0),
+                                                audit_seq: result.audit_seq,
+                                                timestamp_ns: result.timestamp_ns,
+                                            })
+                                            .collect();
+                                        (results, outcome.complete)
                                     })
-                                    .collect();
-                                (results, outcome.complete)
-                            })
-                            .map_err(|error| match error {
-                                SnapshotError::TooManyItems { .. } => {
-                                    flab::OperationError::LimitExceeded
-                                }
-                                SnapshotError::Rejected { denial, .. } => denial_to_fidl(denial),
-                            }),
+                                    .map_err(|error| match error {
+                                        SnapshotError::TooManyItems { .. } => {
+                                            flab::OperationError::LimitExceeded
+                                        }
+                                        SnapshotError::Rejected { denial, .. } => {
+                                            denial_to_fidl(denial)
+                                        }
+                                    })
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(
@@ -476,27 +551,96 @@ async fn serve_session(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(id) {
+                    let check = match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .write32(
-                                &session.policy,
-                                audit,
-                                id,
-                                resource,
-                                offset,
-                                value,
-                                write_mask,
-                                precondition,
-                                readback,
-                            )
-                            .map(|outcome| {
-                                (outcome.readback_value, outcome.audit_seq, outcome.timestamp_ns)
-                            })
-                            .map_err(|error| match error {
-                                WriteError::Denied { denial, .. } => denial_to_fidl(denial),
-                                WriteError::Backend { .. } => flab::OperationError::BackendFault,
-                            }),
+                        Some(session) => session
+                            .policy
+                            .check_write32(resource, offset, write_mask, precondition.as_ref())
+                            .map_err(denial_to_fidl),
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .write32(
+                                    &session.policy,
+                                    audit,
+                                    id,
+                                    resource,
+                                    offset,
+                                    value,
+                                    write_mask,
+                                    precondition,
+                                    readback,
+                                )
+                                .map(|outcome| {
+                                    (
+                                        outcome.readback_value,
+                                        outcome.audit_seq,
+                                        outcome.timestamp_ns,
+                                    )
+                                })
+                                .map_err(|error| match error {
+                                    WriteError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    WriteError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Write, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "write32",
+                                        offset: Some(offset),
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .write32(
+                                            &session.policy,
+                                            audit,
+                                            id,
+                                            resource,
+                                            offset,
+                                            value,
+                                            write_mask,
+                                            precondition,
+                                            readback,
+                                        )
+                                        .map(|outcome| {
+                                            (
+                                                outcome.readback_value,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            WriteError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            WriteError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(result);
@@ -531,7 +675,43 @@ async fn serve_session(
                                 interval_ns,
                                 timeout_ns,
                             ) {
-                                Ok(()) => Ok(()),
+                                Ok(()) => {
+                                    if let Err(denial) = sessions.check_deadline(id, timeout_ns) {
+                                        let record = AuditRecord {
+                                            session: Some(id),
+                                            resource: Some(resource),
+                                            operation: "poll32",
+                                            offset: Some(offset),
+                                            decision: Decision::Denied(denial),
+                                            status: OpStatus::Rejected,
+                                            value: None,
+                                            timestamp_ns: now_ns(),
+                                            run_id: None,
+                                            item_index: None,
+                                        };
+                                        audit.append(record);
+                                        Err(denial_to_fidl(denial))
+                                    } else if let Err(denial) =
+                                        sessions.check_access(id, AccessClass::Poll, now_ns())
+                                    {
+                                        let record = AuditRecord {
+                                            session: Some(id),
+                                            resource: Some(resource),
+                                            operation: "poll32",
+                                            offset: Some(offset),
+                                            decision: Decision::Denied(denial),
+                                            status: OpStatus::Rejected,
+                                            value: None,
+                                            timestamp_ns: now_ns(),
+                                            run_id: None,
+                                            item_index: None,
+                                        };
+                                        audit.append(record);
+                                        Err(denial_to_fidl(denial))
+                                    } else {
+                                        Ok(())
+                                    }
+                                }
                                 Err(denial) => {
                                     let record = AuditRecord {
                                         session: Some(id),
@@ -688,7 +868,29 @@ async fn serve_session(
                                 Err(flab::OperationError::LimitExceeded)
                             } else {
                                 match executor.prevalidate_sequence(&session.policy, &core_items) {
-                                    Ok(()) => Ok(()),
+                                    Ok(()) => {
+                                        let now = now_ns();
+                                        match sessions.check_access(id, AccessClass::Sequence, now)
+                                        {
+                                            Err(denial) => {
+                                                let record = AuditRecord {
+                                                    session: Some(id),
+                                                    resource: None,
+                                                    operation: "sequence",
+                                                    offset: None,
+                                                    decision: Decision::Denied(denial),
+                                                    status: OpStatus::Rejected,
+                                                    value: None,
+                                                    timestamp_ns: now,
+                                                    run_id: None,
+                                                    item_index: None,
+                                                };
+                                                audit.append(record);
+                                                Err(denial_to_fidl(denial))
+                                            }
+                                            Ok(()) => Ok(()),
+                                        }
+                                    }
                                     Err((idx, denial)) => {
                                         let record = AuditRecord {
                                             session: Some(id),
@@ -736,7 +938,11 @@ async fn serve_session(
                         break;
                     }
 
-                    if now_ns().saturating_sub(seq_start_ts) > MAX_SEQUENCE_DURATION_NS {
+                    let max_sequence_duration = {
+                        let guard = state.inner.lock().unwrap();
+                        guard.config.max_sequence_duration_ns as i64
+                    };
+                    if now_ns().saturating_sub(seq_start_ts) > max_sequence_duration {
                         let guard = &mut *state.inner.lock().unwrap();
                         let ProxyState { audit, .. } = guard;
                         let record = AuditRecord {
@@ -990,8 +1196,7 @@ async fn serve_session(
                                 if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
                                     break Err(flab::OperationError::NotAccepting);
                                 }
-                                if now_ns().saturating_sub(seq_start_ts) > MAX_SEQUENCE_DURATION_NS
-                                {
+                                if now_ns().saturating_sub(seq_start_ts) > max_sequence_duration {
                                     let guard = &mut *state.inner.lock().unwrap();
                                     let ProxyState { sessions, executor, audit, .. } = guard;
                                     if sessions.session(id).is_none() {
@@ -1359,15 +1564,67 @@ async fn serve_session(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(id) {
+                    let check = match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .gpio_read(&session.policy, audit, id, resource)
-                            .map(|outcome| (outcome.value, outcome.audit_seq, outcome.timestamp_ns))
-                            .map_err(|error| match error {
-                                GpioReadError::Denied { denial, .. } => denial_to_fidl(denial),
-                                GpioReadError::Backend { .. } => flab::OperationError::BackendFault,
-                            }),
+                        Some(session) => {
+                            session.policy.check_gpio_read(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .gpio_read(&session.policy, audit, id, resource)
+                                .map(|outcome| {
+                                    (outcome.value, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    GpioReadError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    GpioReadError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "gpio_read",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .gpio_read(&session.policy, audit, id, resource)
+                                        .map(|outcome| {
+                                            (outcome.value, outcome.audit_seq, outcome.timestamp_ns)
+                                        })
+                                        .map_err(|error| match error {
+                                            GpioReadError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            GpioReadError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(result);
@@ -1380,17 +1637,63 @@ async fn serve_session(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(id) {
+                    let check = match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .gpio_write(&session.policy, audit, id, resource, value)
-                            .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
-                            .map_err(|error| match error {
-                                GpioWriteError::Denied { denial, .. } => denial_to_fidl(denial),
-                                GpioWriteError::Backend { .. } => {
-                                    flab::OperationError::BackendFault
+                        Some(session) => {
+                            session.policy.check_gpio_write(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .gpio_write(&session.policy, audit, id, resource, value)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    GpioWriteError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    GpioWriteError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "gpio_write",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
                                 }
-                            }),
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .gpio_write(&session.policy, audit, id, resource, value)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            GpioWriteError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            GpioWriteError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(result);
@@ -1403,26 +1706,88 @@ async fn serve_session(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(id) {
+                    let check = match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .i2c_transfer(
-                                &session.policy,
-                                audit,
-                                id,
-                                resource,
-                                &write_data,
-                                read_length,
-                            )
-                            .map(|outcome| {
-                                (outcome.read_data, outcome.audit_seq, outcome.timestamp_ns)
-                            })
-                            .map_err(|error| match error {
-                                I2cTransferError::Denied { denial, .. } => denial_to_fidl(denial),
-                                I2cTransferError::Backend { .. } => {
-                                    flab::OperationError::BackendFault
+                        Some(session) => session
+                            .policy
+                            .check_i2c_transfer(resource, write_data.len(), read_length as usize)
+                            .map_err(denial_to_fidl),
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .i2c_transfer(
+                                    &session.policy,
+                                    audit,
+                                    id,
+                                    resource,
+                                    &write_data,
+                                    read_length,
+                                )
+                                .map(|outcome| {
+                                    (outcome.read_data, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    I2cTransferError::Denied { denial, .. } => {
+                                        denial_to_fidl(denial)
+                                    }
+                                    I2cTransferError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "i2c_transfer",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
                                 }
-                            }),
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .i2c_transfer(
+                                            &session.policy,
+                                            audit,
+                                            id,
+                                            resource,
+                                            &write_data,
+                                            read_length,
+                                        )
+                                        .map(|outcome| {
+                                            (
+                                                outcome.read_data,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            I2cTransferError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            I2cTransferError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(
@@ -1440,19 +1805,80 @@ async fn serve_session(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(id) {
+                    let check = match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .spi_transmit(&session.policy, audit, id, resource, &tx_data)
-                            .map(|outcome| {
-                                (outcome.rx_data, outcome.audit_seq, outcome.timestamp_ns)
-                            })
-                            .map_err(|error| match error {
-                                SpiTransmitError::Denied { denial, .. } => denial_to_fidl(denial),
-                                SpiTransmitError::Backend { .. } => {
-                                    flab::OperationError::BackendFault
+                        Some(session) => session
+                            .policy
+                            .check_spi_transmit(resource, tx_data.len())
+                            .map_err(denial_to_fidl),
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .spi_transmit(&session.policy, audit, id, resource, &tx_data)
+                                .map(|outcome| {
+                                    (outcome.rx_data, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    SpiTransmitError::Denied { denial, .. } => {
+                                        denial_to_fidl(denial)
+                                    }
+                                    SpiTransmitError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "spi_transmit",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
                                 }
-                            }),
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .spi_transmit(
+                                            &session.policy,
+                                            audit,
+                                            id,
+                                            resource,
+                                            &tx_data,
+                                        )
+                                        .map(|outcome| {
+                                            (
+                                                outcome.rx_data,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            SpiTransmitError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            SpiTransmitError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(
@@ -1606,30 +2032,64 @@ async fn serve_session(
                                 Err(denial_to_fidl(denial))
                             }
                             Ok(()) => {
-                                match interrupts.wait_for_interrupt(
-                                    resource,
-                                    after_sequence,
-                                    Box::new(move |event| {
-                                        let _ = tx.send(event);
-                                    }),
-                                ) {
-                                    Ok(Some(event)) => Ok(Some(event)),
-                                    Ok(None) => Ok(None),
-                                    Err(denial) => {
-                                        let record = AuditRecord {
-                                            session: Some(id),
-                                            resource: Some(resource),
-                                            operation: "wait_for_interrupt",
-                                            offset: None,
-                                            decision: Decision::Denied(denial),
-                                            status: OpStatus::Rejected,
-                                            value: None,
-                                            timestamp_ns: now_ns(),
-                                            run_id: None,
-                                            item_index: None,
-                                        };
-                                        audit.append(record);
-                                        Err(denial_to_fidl(denial))
+                                if let Err(denial) = sessions.check_deadline(id, timeout_ns) {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "wait_for_interrupt",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now_ns(),
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                } else if let Err(denial) =
+                                    sessions.check_access(id, AccessClass::Interrupt, now_ns())
+                                {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "wait_for_interrupt",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now_ns(),
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                } else {
+                                    match interrupts.wait_for_interrupt(
+                                        resource,
+                                        after_sequence,
+                                        Box::new(move |event| {
+                                            let _ = tx.send(event);
+                                        }),
+                                    ) {
+                                        Ok(Some(event)) => Ok(Some(event)),
+                                        Ok(None) => Ok(None),
+                                        Err(denial) => {
+                                            let record = AuditRecord {
+                                                session: Some(id),
+                                                resource: Some(resource),
+                                                operation: "wait_for_interrupt",
+                                                offset: None,
+                                                decision: Decision::Denied(denial),
+                                                status: OpStatus::Rejected,
+                                                value: None,
+                                                timestamp_ns: now_ns(),
+                                                run_id: None,
+                                                item_index: None,
+                                            };
+                                            audit.append(record);
+                                            Err(denial_to_fidl(denial))
+                                        }
                                     }
                                 }
                             }
@@ -1739,15 +2199,67 @@ async fn serve_gpio_endpoint(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(session_id) {
+                    let check = match sessions.session(session_id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .gpio_read(&session.policy, audit, session_id, resource)
-                            .map(|outcome| (outcome.value, outcome.audit_seq, outcome.timestamp_ns))
-                            .map_err(|error| match error {
-                                GpioReadError::Denied { denial, .. } => denial_to_fidl(denial),
-                                GpioReadError::Backend { .. } => flab::OperationError::BackendFault,
-                            }),
+                        Some(session) => {
+                            session.policy.check_gpio_read(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(session_id).unwrap();
+                            executor
+                                .gpio_read(&session.policy, audit, session_id, resource)
+                                .map(|outcome| {
+                                    (outcome.value, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    GpioReadError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    GpioReadError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(session_id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(session_id),
+                                        resource: Some(resource),
+                                        operation: "gpio_read",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(session_id).unwrap();
+                                    executor
+                                        .gpio_read(&session.policy, audit, session_id, resource)
+                                        .map(|outcome| {
+                                            (outcome.value, outcome.audit_seq, outcome.timestamp_ns)
+                                        })
+                                        .map_err(|error| match error {
+                                            GpioReadError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            GpioReadError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(result);
@@ -1760,17 +2272,69 @@ async fn serve_gpio_endpoint(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(session_id) {
+                    let check = match sessions.session(session_id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .gpio_write(&session.policy, audit, session_id, resource, value)
-                            .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
-                            .map_err(|error| match error {
-                                GpioWriteError::Denied { denial, .. } => denial_to_fidl(denial),
-                                GpioWriteError::Backend { .. } => {
-                                    flab::OperationError::BackendFault
+                        Some(session) => {
+                            session.policy.check_gpio_write(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(session_id).unwrap();
+                            executor
+                                .gpio_write(&session.policy, audit, session_id, resource, value)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    GpioWriteError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    GpioWriteError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(session_id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(session_id),
+                                        resource: Some(resource),
+                                        operation: "gpio_write",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
                                 }
-                            }),
+                                Ok(()) => {
+                                    let session = sessions.session(session_id).unwrap();
+                                    executor
+                                        .gpio_write(
+                                            &session.policy,
+                                            audit,
+                                            session_id,
+                                            resource,
+                                            value,
+                                        )
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            GpioWriteError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            GpioWriteError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(result);
@@ -1796,26 +2360,88 @@ async fn serve_i2c_endpoint(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(session_id) {
+                    let check = match sessions.session(session_id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .i2c_transfer(
-                                &session.policy,
-                                audit,
-                                session_id,
-                                resource,
-                                &write_data,
-                                read_length,
-                            )
-                            .map(|outcome| {
-                                (outcome.read_data, outcome.audit_seq, outcome.timestamp_ns)
-                            })
-                            .map_err(|error| match error {
-                                I2cTransferError::Denied { denial, .. } => denial_to_fidl(denial),
-                                I2cTransferError::Backend { .. } => {
-                                    flab::OperationError::BackendFault
+                        Some(session) => session
+                            .policy
+                            .check_i2c_transfer(resource, write_data.len(), read_length as usize)
+                            .map_err(denial_to_fidl),
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(session_id).unwrap();
+                            executor
+                                .i2c_transfer(
+                                    &session.policy,
+                                    audit,
+                                    session_id,
+                                    resource,
+                                    &write_data,
+                                    read_length,
+                                )
+                                .map(|outcome| {
+                                    (outcome.read_data, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    I2cTransferError::Denied { denial, .. } => {
+                                        denial_to_fidl(denial)
+                                    }
+                                    I2cTransferError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(session_id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(session_id),
+                                        resource: Some(resource),
+                                        operation: "i2c_transfer",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
                                 }
-                            }),
+                                Ok(()) => {
+                                    let session = sessions.session(session_id).unwrap();
+                                    executor
+                                        .i2c_transfer(
+                                            &session.policy,
+                                            audit,
+                                            session_id,
+                                            resource,
+                                            &write_data,
+                                            read_length,
+                                        )
+                                        .map(|outcome| {
+                                            (
+                                                outcome.read_data,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            I2cTransferError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            I2cTransferError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(
@@ -1846,19 +2472,86 @@ async fn serve_spi_endpoint(
                 let result = {
                     let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
-                    match sessions.session(session_id) {
+                    let check = match sessions.session(session_id) {
                         None => Err(flab::OperationError::StaleIdentity),
-                        Some(session) => executor
-                            .spi_transmit(&session.policy, audit, session_id, resource, &tx_data)
-                            .map(|outcome| {
-                                (outcome.rx_data, outcome.audit_seq, outcome.timestamp_ns)
-                            })
-                            .map_err(|error| match error {
-                                SpiTransmitError::Denied { denial, .. } => denial_to_fidl(denial),
-                                SpiTransmitError::Backend { .. } => {
-                                    flab::OperationError::BackendFault
+                        Some(session) => session
+                            .policy
+                            .check_spi_transmit(resource, tx_data.len())
+                            .map_err(denial_to_fidl),
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(session_id).unwrap();
+                            executor
+                                .spi_transmit(
+                                    &session.policy,
+                                    audit,
+                                    session_id,
+                                    resource,
+                                    &tx_data,
+                                )
+                                .map(|outcome| {
+                                    (outcome.rx_data, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    SpiTransmitError::Denied { denial, .. } => {
+                                        denial_to_fidl(denial)
+                                    }
+                                    SpiTransmitError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(session_id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(session_id),
+                                        resource: Some(resource),
+                                        operation: "spi_transmit",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
                                 }
-                            }),
+                                Ok(()) => {
+                                    let session = sessions.session(session_id).unwrap();
+                                    executor
+                                        .spi_transmit(
+                                            &session.policy,
+                                            audit,
+                                            session_id,
+                                            resource,
+                                            &tx_data,
+                                        )
+                                        .map(|outcome| {
+                                            (
+                                                outcome.rx_data,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            SpiTransmitError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            SpiTransmitError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
                     }
                 };
                 let _ = responder.send(

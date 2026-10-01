@@ -28,6 +28,8 @@ from driver_lab.transport import (
     DirectDescription,
     FakeDirectTarget,
     FakeProxyTarget,
+    OpenRejection,
+    OpenSessionRejected,
     OperationDenied,
     ProxyDescription,
     ResourceInfo,
@@ -649,6 +651,55 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ts, 12345)
 
         await session.close()
+
+    async def test_disabled_target_rejected(self) -> None:
+        self.fake_proxy.enabled = False
+        lab = DriverLab(
+            self.fake_proxy,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope="target-1",
+            node_id="node-1",
+        )
+        with self.assertRaises(OpenSessionRejected) as cm:
+            await lab.attach("node-1", mode="proxy")
+        self.assertEqual(cm.exception.reason, OpenRejection.NOT_ACCEPTING)
+
+    async def test_rate_limit_exceeded(self) -> None:
+        self.fake_proxy.max_ops_per_second = 2
+        self.fake_proxy.set_value(1, 0x10, 42)
+        lab = DriverLab(
+            self.fake_proxy,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope="target-1",
+            node_id="node-1",
+        )
+        async with await lab.attach("node-1", mode="proxy") as session:
+            mmio = await session.mmio("control")
+            val1 = await mmio.read32(0x10)
+            self.assertEqual(val1, 42)
+            val2 = await mmio.read32(0x10)
+            self.assertEqual(val2, 42)
+            with self.assertRaises(OperationDenied) as cm:
+                await mmio.read32(0x10)
+            self.assertEqual(cm.exception.denial, Denial.LIMIT_EXCEEDED)
+
+    async def test_deadline_exceeded(self) -> None:
+        self.fake_proxy.max_deadline_ns = 50_000_000
+        self.fake_proxy.set_value(1, 0x10, 42)
+        lab = DriverLab(
+            self.fake_proxy,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope="target-1",
+            node_id="node-1",
+        )
+        async with await lab.attach("node-1", mode="proxy") as session:
+            mmio = await session.mmio("control")
+            with self.assertRaises(OperationDenied) as cm:
+                await mmio.poll32(0x10, expected=42, timeout_s=0.1)
+            self.assertEqual(cm.exception.denial, Denial.LIMIT_EXCEEDED)
 
 
 if __name__ == "__main__":

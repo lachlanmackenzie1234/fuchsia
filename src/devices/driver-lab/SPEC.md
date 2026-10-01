@@ -67,7 +67,8 @@ Remaining phase 1 work:
       verification (7.1, 25).
 - [x] CS20 `[driver-lab] Interrupt observation and local acknowledgement`
       (11.7, 17; milestone P5).
-- [ ] Structured configuration (22) and per-class rate limits (12.1).
+- [x] CS21 `[driver-lab] Structured configuration and per-class rate limits`
+      (12.1, 22).
 
 Phase: 1 -- new-driver development. The proxy binds to unclaimed nodes through
 existing Driver Framework mechanisms. Managed takeover is specified in the
