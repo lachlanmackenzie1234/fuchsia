@@ -1528,9 +1528,7 @@ impl NetstackSeed {
             // do not outlive the services stream.
             .map(move |s| match s {
                 Service::Stack(stack) => services_handle
-                    .spawn_request_stream_handler(stack, |rs| {
-                        stack_fidl_worker::StackFidlWorker::serve(netstack.clone(), rs)
-                    }),
+                    .spawn_request_stream_handler(stack, |rs| stack_fidl_worker::serve(rs)),
                 Service::Socket(socket) => sockets_scope
                     .spawn_request_stream_handler(socket, |rs| {
                         socket::serve(netstack.ctx.clone(), rs)
