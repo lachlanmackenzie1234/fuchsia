@@ -140,6 +140,51 @@ class UsbVideoTest : public zxtest::Test {
     }
   }
 
+  void SetupSuccessfulSetFormatShort(size_t probe_len) {
+    usb_video_vc_probe_and_commit_controls proposal;
+    memset(&proposal, 0, sizeof(proposal));
+    proposal.bmHint = fdescriptor::kVideoBmHintFrameInterval;
+    proposal.bFormatIndex = 1;
+    proposal.bFrameIndex = 1;
+    proposal.dwFrameInterval = 333333;
+
+    std::vector<uint8_t> proposal_bytes(reinterpret_cast<uint8_t*>(&proposal),
+                                        reinterpret_cast<uint8_t*>(&proposal) + sizeof(proposal));
+
+    usb_.ExpectControlOut(
+        ZX_OK, kClassInterfaceOut, fidl::ToUnderlying(fdescriptor::VideoRequest::kSetCur),
+        usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kProbeControl), 1,
+        ZX_TIME_INFINITE, proposal_bytes);
+
+    usb_video_vc_probe_and_commit_controls response;
+    memset(&response, 0, sizeof(response));
+    response.bmHint = fdescriptor::kVideoBmHintFrameInterval;
+    response.bFormatIndex = 1;
+    response.bFrameIndex = 1;
+    response.dwFrameInterval = 333333;
+    response.dwMaxVideoFrameSize = 10240;  // 10KB max frame size
+    response.dwMaxPayloadTransferSize = 1024;
+
+    std::vector<uint8_t> response_bytes(reinterpret_cast<uint8_t*>(&response),
+                                        reinterpret_cast<uint8_t*>(&response) + probe_len);
+    std::vector<uint8_t> commit_bytes(reinterpret_cast<uint8_t*>(&response),
+                                      reinterpret_cast<uint8_t*>(&response) + sizeof(response));
+
+    usb_.ExpectControlIn(ZX_OK, kClassInterfaceIn,
+                         fidl::ToUnderlying(fdescriptor::VideoRequest::kGetCur),
+                         usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kProbeControl),
+                         1, ZX_TIME_INFINITE, response_bytes);
+
+    usb_.ExpectControlOut(
+        ZX_OK, kClassInterfaceOut, fidl::ToUnderlying(fdescriptor::VideoRequest::kSetCur),
+        usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kCommitControl), 1,
+        ZX_TIME_INFINITE, commit_bytes);
+
+    for (int i = 0; i < 8; ++i) {
+      usb_.ExpectGetRequestSize(sizeof(usb_request_t));
+    }
+  }
+
   // Mocks the calls that occur when the driver activates streaming.
   // Configures the mock to expect:
   // * A set-interface call to activate the alternate streaming setting.
@@ -247,6 +292,82 @@ TEST_F(UsbVideoTest, CreateStream_FailPhysicalSizeTooSmall) {
 
   // Verify the channel failed to be created.
   EXPECT_TRUE(UsbVideoTest::IsChannelClosed(stream_handle.channel(), zx::sec(1)));
+}
+
+// Verifies that stream creation fails if the device returns a short read on the control transfer.
+TEST_F(UsbVideoTest, ShortControlReadRejection) {
+  usb_video_vc_probe_and_commit_controls proposal;
+  memset(&proposal, 0, sizeof(proposal));
+  proposal.bmHint = fdescriptor::kVideoBmHintFrameInterval;
+  proposal.bFormatIndex = 1;
+  proposal.bFrameIndex = 1;
+  proposal.dwFrameInterval = 333333;
+
+  std::vector<uint8_t> proposal_bytes(reinterpret_cast<uint8_t*>(&proposal),
+                                      reinterpret_cast<uint8_t*>(&proposal) + sizeof(proposal));
+
+  usb().ExpectControlOut(ZX_OK, kClassInterfaceOut,
+                         fidl::ToUnderlying(fdescriptor::VideoRequest::kSetCur),
+                         usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kProbeControl),
+                         1, ZX_TIME_INFINITE, proposal_bytes);
+
+  // Return a short control read (10 bytes instead of 34).
+  std::vector<uint8_t> short_response_bytes(10, 0);
+  usb().ExpectControlIn(ZX_OK, kClassInterfaceIn,
+                        fidl::ToUnderlying(fdescriptor::VideoRequest::kGetCur),
+                        usb_descriptor_w_value(fdescriptor::VideoVsControlSelector::kProbeControl),
+                        1, ZX_TIME_INFINITE, short_response_bytes);
+
+  auto stream = CreateStream();
+  auto buffer_collection = CreateBufferCollection(10240, 10240);
+  auto stream_handle =
+      CallCreateStream(stream.get(), std::move(buffer_collection), zx::eventpair{});
+
+  EXPECT_TRUE(UsbVideoTest::IsChannelClosed(stream_handle.channel(), zx::sec(1)));
+}
+
+TEST_F(UsbVideoTest, CreateStream_Success26ByteProbe) {
+  SetupSuccessfulSetFormatShort(26);
+  SetupSuccessfulStartStreaming();
+  SetupSuccessfulStopStreaming();
+  auto stream = CreateStream();
+
+  zx::eventpair client_token, server_token;
+  ASSERT_OK(zx::eventpair::create(0, &client_token, &server_token));
+  auto buffer_collection = CreateBufferCollection(10240, 10240);
+  auto stream_handle =
+      CallCreateStream(stream.get(), std::move(buffer_collection), std::move(server_token));
+
+  EXPECT_FALSE(UsbVideoTest::IsChannelClosed(stream_handle.channel()));
+  stream_handle = {};
+
+  zx_signals_t observed = 0;
+  zx_status_t status =
+      client_token.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::deadline_after(zx::sec(20)), &observed);
+  EXPECT_OK(status);
+  EXPECT_TRUE(observed & ZX_EVENTPAIR_PEER_CLOSED);
+}
+
+TEST_F(UsbVideoTest, CreateStream_Success34ByteProbe) {
+  SetupSuccessfulSetFormatShort(34);
+  SetupSuccessfulStartStreaming();
+  SetupSuccessfulStopStreaming();
+  auto stream = CreateStream();
+
+  zx::eventpair client_token, server_token;
+  ASSERT_OK(zx::eventpair::create(0, &client_token, &server_token));
+  auto buffer_collection = CreateBufferCollection(10240, 10240);
+  auto stream_handle =
+      CallCreateStream(stream.get(), std::move(buffer_collection), std::move(server_token));
+
+  EXPECT_FALSE(UsbVideoTest::IsChannelClosed(stream_handle.channel()));
+  stream_handle = {};
+
+  zx_signals_t observed = 0;
+  zx_status_t status =
+      client_token.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::deadline_after(zx::sec(20)), &observed);
+  EXPECT_OK(status);
+  EXPECT_TRUE(observed & ZX_EVENTPAIR_PEER_CLOSED);
 }
 
 }  // namespace

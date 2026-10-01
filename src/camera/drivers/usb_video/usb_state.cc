@@ -115,10 +115,10 @@ zx::result<usb_video_vc_probe_and_commit_controls> ProbeAndCommit(usb_protocol_t
   // Fields after dwMaxPayloadTransferSize are optional, only 26 bytes are
   // guaranteed.
   if (out_length < 26) {
-    zxlogf(ERROR, "usb_video_negotiate_probe: got length %lu, want >= 26", out_length);
-  } else {
-    print_controls(result);
+    status = ZX_ERR_IO;
+    return ClearIfIoErrors(status, usb);
   }
+  print_controls(result);
 
   uint32_t dwMaxPayloadTransferSize = result.dwMaxPayloadTransferSize;
 
