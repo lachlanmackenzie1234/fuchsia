@@ -74,11 +74,15 @@ zx_status_t RndisHost::ReceiveControlMessage(uint32_t request_id) {
       kClassInterfaceIn, fidl::ToUnderlying(fdescriptor::CdcRequest::kGetEncapsulatedResponse), 0,
       control_intf_, RNDIS_CONTROL_TIMEOUT, control_receive_buffer_,
       sizeof(control_receive_buffer_), &len_read);
-  if (len_read == 0) {
-    zxlogf(ERROR, "rndishost received a zero-length response on the control channel");
-    return ZX_ERR_IO_REFUSED;
+  if (status != ZX_OK) {
+    return status;
   }
   const auto* header = reinterpret_cast<rndis_header*>(control_receive_buffer_);
+  if (len_read < sizeof(rndis_header) || header->msg_length < sizeof(rndis_header) ||
+      header->msg_length > len_read) {
+    zxlogf(ERROR, "rndishost received short or truncated response on the control channel");
+    return ZX_ERR_IO;
+  }
   if (header->request_id != request_id) {
     zxlogf(ERROR, "rndishost received wrong packet ID on control channel: got %d, wanted %d",
            header->request_id, request_id);
