@@ -674,6 +674,73 @@ kernel_bindgen_crate("vm-fault-bindings") {
   expect_lints = [ "non_camel_case_types" ]
 }
 
+kernel_bindgen_crate("arch-vm-aspace-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/arch_vm_aspace_ffi.h" ]
+  non_rust_deps = [ ":vm" ]
+  output_name = "arch_vm_aspace_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_arch_vm_aspace_accessed_since_last_check",
+    "cpp_arch_vm_aspace_arch_table_phys",
+    "cpp_arch_vm_aspace_destroy",
+    "cpp_arch_vm_aspace_disable_updates",
+    "cpp_arch_vm_aspace_harvest_accessed",
+    "cpp_arch_vm_aspace_init",
+    "cpp_arch_vm_aspace_init_restricted",
+    "cpp_arch_vm_aspace_init_shared",
+    "cpp_arch_vm_aspace_init_unified",
+    "cpp_arch_vm_aspace_map",
+    "cpp_arch_vm_aspace_map_contiguous",
+    "cpp_arch_vm_aspace_mark_accessed",
+    "cpp_arch_vm_aspace_pick_spot",
+    "cpp_arch_vm_aspace_protect",
+    "cpp_arch_vm_aspace_query",
+    "cpp_arch_vm_aspace_unmap",
+    "cpp_arch_vm_aspace_unmap_only_enlarge_on_oom",
+  ]
+  var_allowlist = [
+    "ARCH_ASPACE_FLAG_.*",
+    "ARCH_MMU_FLAG_.*",
+  ]
+  type_allowlist = [
+    "ArchVmAspace",
+    "ArchVmAspaceInterface_ArchUnmapOptions",
+    "ArchVmAspaceInterface_ExistingEntryAction",
+    "ArchVmAspaceInterface_NonTerminalAction",
+    "ArchVmAspaceInterface_TerminalAction",
+    "arch_mmu_flags_t",
+  ]
+  opaque_types = [ "ArchVmAspace" ]
+  function_blocklist = [ "ArchVmAspace_.*" ]
+  type_blocklist = [
+    "ArchVmAspace_.*",
+    "paddr_t",
+    "vaddr_t",
+    "zx_paddr_t",
+    "zx_status_t",
+    "zx_vaddr_t",
+  ]
+  additional_bindgen_flags = [
+    "--no-recursive-allowlist",
+    "--newtype-enum=ArchVmAspaceInterface_ExistingEntryAction",
+    "--newtype-enum=ArchVmAspaceInterface_NonTerminalAction",
+    "--newtype-enum=ArchVmAspaceInterface_TerminalAction",
+  ]
+  deps = [ "//sdk/rust/zx-types" ]
+  edition = "2024"
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::{zx_paddr_t as paddr_t, zx_status_t, zx_vaddr_t as vaddr_t};",
+  ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+}
+
 kernel_bindgen_crate("vm-aspace-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_aspace_ffi.h" ]
@@ -1493,6 +1560,7 @@ kernel_rust_mod("vm-rs") {
 
   deps = [
     ":anonymous-page-request-bindings",
+    ":arch-vm-aspace-bindings",
     ":attribution-bindings",
     ":compression-bindings",
     ":compressor-bindings",
