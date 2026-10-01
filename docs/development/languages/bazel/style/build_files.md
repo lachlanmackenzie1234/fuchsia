@@ -116,6 +116,20 @@ Note: This exception does not apply to legacy macros where
 target except that they are public by default. Always specify `visibility` for
 these even though Bazel does not require it.
 
+## target_compatible_with
+
+### Host targets
+
+Host targets (such as host tools, host tests, and host-only libraries) should
+specify `target_compatible_with = HOST_OS_CONSTRAINTS` (loaded from
+`//build/bazel/platforms:constraints.bzl`). This restricts compatibility to the
+host operating system independent of the CPU architecture, which allows
+developers to cross-compile tools and is necessary for host tools in the IDK
+and their dependencies.
+
+`HOST_CONSTRAINTS` from `@platforms//host:constraints.bzl` should not be used
+except by the Build team in very rare cases.
+
 <!-- Reference links -->
 
 [bazel-official-build-style]: https://bazel.build/build/style-guide
