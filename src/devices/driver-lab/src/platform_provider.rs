@@ -36,6 +36,7 @@ fn engineering_ceiling() -> ResourceCeiling {
         allow_unknown_reads: true,
         allow_poll: false,
         writable_registers: vec![],
+        protocol: None,
     }
 }
 
@@ -63,6 +64,20 @@ impl MmioBackend for MappedMmio {
 
     fn barrier(&mut self) {
         std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl lab_proxy_core::protocol_resource_adapter::ResourceBackend for MappedMmio {
+    fn read32(&mut self, offset: u64) -> Result<u32, BackendError> {
+        MmioBackend::read32(self, offset)
+    }
+
+    fn write32(&mut self, offset: u64, value: u32) -> Result<(), BackendError> {
+        MmioBackend::write32(self, offset, value)
+    }
+
+    fn barrier(&mut self) {
+        MmioBackend::barrier(self);
     }
 }
 
@@ -139,10 +154,7 @@ pub async fn acquire(
             AcquireError::Mmio { id }
         })?;
         let size = region.len() as u64;
-        bundle.resources.insert(
-            id,
-            MmioResource { name: format!("mmio{id}"), logical_size: size, mapped_size: size },
-        );
+        bundle.resources.insert(id, MmioResource::mmio(format!("mmio{id}"), size, size));
         bundle.ceiling.insert(id, engineering_ceiling());
         bundle.backends.insert(id, MappedMmio { region });
     }

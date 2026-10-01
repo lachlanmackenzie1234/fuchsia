@@ -36,7 +36,7 @@ from driver_lab.discovery import (
     ProxyActivator,
 )
 from driver_lab.evidence import EvidenceRecorder
-from driver_lab.models import AccessClass, AccessRequest
+from driver_lab.models import AccessClass, AccessRequest, ResourceKind
 from driver_lab.permissions import (
     GrantStoreError,
     Outcome,
@@ -500,52 +500,84 @@ class DriverLab:
             rules = list(allowlist)
         else:
             for res in proxy_desc.resources:
-                for off in range(0, min(res.logical_size, 256), 4):
+                if res.kind != ResourceKind.MMIO:
+                    width = 1 if res.kind == ResourceKind.GPIO else 32
                     rules.append(
                         AllowRule(
                             resource=res.id,
-                            offset=off,
-                            width=4,
-                            access=AccessClass.READ_ONCE,
+                            offset=0,
+                            width=width,
+                            access=AccessClass.PROTOCOL,
                         )
                     )
                     rules.append(
                         AllowRule(
                             resource=res.id,
-                            offset=off,
-                            width=4,
-                            access=AccessClass.SNAPSHOT,
-                        )
-                    )
-                    rules.append(
-                        AllowRule(
-                            resource=res.id,
-                            offset=off,
-                            width=4,
-                            access=AccessClass.POLL,
-                        )
-                    )
-                    rules.append(
-                        AllowRule(
-                            resource=res.id,
-                            offset=off,
-                            width=4,
+                            offset=0,
+                            width=width,
                             access=AccessClass.SEQUENCE,
                         )
                     )
-                    if session_mode == SessionMode.MUTATING:
+                    continue
+
+            mmio_resources = [
+                res
+                for res in proxy_desc.resources
+                if res.kind == ResourceKind.MMIO
+            ]
+            max_mmio_rules = 250 - len(rules)
+            if mmio_resources and max_mmio_rules > 0:
+                rules_per_res = max(10, max_mmio_rules // len(mmio_resources))
+                for res in mmio_resources:
+                    res_rules = 0
+                    for off in range(0, min(res.logical_size, 256), 4):
                         rules.append(
                             AllowRule(
                                 resource=res.id,
                                 offset=off,
                                 width=4,
-                                access=AccessClass.WRITE,
+                                access=AccessClass.READ_ONCE,
                             )
                         )
+                        rules.append(
+                            AllowRule(
+                                resource=res.id,
+                                offset=off,
+                                width=4,
+                                access=AccessClass.SNAPSHOT,
+                            )
+                        )
+                        rules.append(
+                            AllowRule(
+                                resource=res.id,
+                                offset=off,
+                                width=4,
+                                access=AccessClass.POLL,
+                            )
+                        )
+                        rules.append(
+                            AllowRule(
+                                resource=res.id,
+                                offset=off,
+                                width=4,
+                                access=AccessClass.SEQUENCE,
+                            )
+                        )
+                        res_rules += 4
+                        if session_mode == SessionMode.MUTATING:
+                            rules.append(
+                                AllowRule(
+                                    resource=res.id,
+                                    offset=off,
+                                    width=4,
+                                    access=AccessClass.WRITE,
+                                )
+                            )
+                            res_rules += 1
+                        if res_rules >= rules_per_res or len(rules) >= 250:
+                            break
                     if len(rules) >= 250:
                         break
-                if len(rules) >= 250:
-                    break
 
         proxy_ctx = context or SessionContext(
             run_id=f"proxy-{node_id}",

@@ -24,6 +24,7 @@ class AccessClass(enum.Enum):
     POLL = "poll"
     WRITE = "write"
     SEQUENCE = "sequence"
+    PROTOCOL = "protocol"
     PROTOCOL_TRANSACTION = "protocol_transaction"
 
 
@@ -171,3 +172,47 @@ class WritePrecondition:
             raise ValueError("expected must be a 32-bit unsigned integer")
         if not (0 <= self.mask <= 0xFFFF_FFFF):
             raise ValueError("mask must be a 32-bit unsigned integer")
+
+
+class ResourceKind(str, enum.Enum):
+    """Resource kind identifying MMIO registers or peripheral protocol endpoints."""
+
+    MMIO = "mmio"
+    GPIO = "gpio"
+    I2C = "i2c"
+    SPI = "spi"
+
+
+@dataclasses.dataclass(frozen=True)
+class GpioReadOutcome:
+    """The outcome of a policy-checked, audited GPIO read."""
+
+    value: bool
+    audit_seq: int
+    timestamp_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class GpioWriteOutcome:
+    """The outcome of a policy-checked, audited GPIO write."""
+
+    audit_seq: int
+    timestamp_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class I2cTransferOutcome:
+    """The outcome of a policy-checked, audited I2C transfer."""
+
+    read_data: bytes
+    audit_seq: int
+    timestamp_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class SpiTransmitOutcome:
+    """The outcome of a policy-checked, audited SPI transmit."""
+
+    rx_data: bytes
+    audit_seq: int
+    timestamp_ns: int

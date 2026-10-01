@@ -23,7 +23,7 @@ import fidl_fuchsia_driver_lab as fdl
 from driver_lab.api import EXIT_OPERATION, EXIT_STALE, DriverLab
 from driver_lab.consent import ConsentDecision
 from driver_lab.fidl_transport import FidlProxyTransport
-from driver_lab.models import AccessClass, Decision, ReadGrant
+from driver_lab.models import AccessClass, Decision, ReadGrant, ResourceKind
 from driver_lab.permissions import save_grants
 from driver_lab.transport import (
     AllowRule,
@@ -198,6 +198,79 @@ class _BridgeSessionServer(fdl.SessionServer):
             timestamp_ns=outcome.timestamp_ns,
         )
 
+    async def gpio_read(self, request: Any) -> Any:
+        try:
+            outcome = await self._session.gpio_read(request.resource)
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        return fdl.GpioReadResult(
+            value=outcome.value,
+            audit_seq=outcome.audit_seq,
+            timestamp_ns=outcome.timestamp_ns,
+        )
+
+    async def gpio_write(self, request: Any) -> Any:
+        try:
+            outcome = await self._session.gpio_write(
+                request.resource, request.value
+            )
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        return fdl.GpioWriteResult(
+            audit_seq=outcome.audit_seq,
+            timestamp_ns=outcome.timestamp_ns,
+        )
+
+    async def i2c_transfer(self, request: Any) -> Any:
+        try:
+            outcome = await self._session.i2c_transfer(
+                request.resource,
+                write_data=bytes(request.write_data),
+                read_length=request.read_length,
+            )
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        return fdl.I2cTransferResult(
+            read_data=list(outcome.read_data),
+            audit_seq=outcome.audit_seq,
+            timestamp_ns=outcome.timestamp_ns,
+        )
+
+    async def spi_transmit(self, request: Any) -> Any:
+        try:
+            outcome = await self._session.spi_transmit(
+                request.resource,
+                tx_data=bytes(request.tx_data),
+            )
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        return fdl.SpiTransmitResult(
+            rx_data=list(outcome.rx_data),
+            audit_seq=outcome.audit_seq,
+            timestamp_ns=outcome.timestamp_ns,
+        )
+
+    async def open_gpio(self, request: Any) -> Any:
+        return fdl.SessionOpenGpioResponse()
+
+    async def open_i2c(self, request: Any) -> Any:
+        return fdl.SessionOpenI2cResponse()
+
+    async def open_spi(self, request: Any) -> Any:
+        return fdl.SessionOpenSpiResponse()
+
     async def execute_sequence(self, request: Any) -> Any:
         host_items: list[SequenceItem] = []
         for item in request.items:
@@ -247,6 +320,38 @@ class _BridgeSessionServer(fdl.SessionServer):
                 host_items.append(
                     SequenceItem(kind="barrier", barrier="memory")
                 )
+            elif item.gpio_read is not None:
+                host_items.append(
+                    SequenceItem(
+                        kind="gpio_read",
+                        resource=item.gpio_read.resource,
+                    )
+                )
+            elif item.gpio_write is not None:
+                host_items.append(
+                    SequenceItem(
+                        kind="gpio_write",
+                        resource=item.gpio_write.resource,
+                        value=item.gpio_write.value,
+                    )
+                )
+            elif item.i2c_transfer is not None:
+                host_items.append(
+                    SequenceItem(
+                        kind="i2c_transfer",
+                        resource=item.i2c_transfer.resource,
+                        write_data=bytes(item.i2c_transfer.write_data),
+                        read_length=item.i2c_transfer.read_length,
+                    )
+                )
+            elif item.spi_transmit is not None:
+                host_items.append(
+                    SequenceItem(
+                        kind="spi_transmit",
+                        resource=item.spi_transmit.resource,
+                        tx_data=bytes(item.spi_transmit.tx_data),
+                    )
+                )
         try:
             outcome = await self._session.execute_sequence(host_items)
         except Exception as error:  # OperationDenied
@@ -292,6 +397,37 @@ class _BridgeSessionServer(fdl.SessionServer):
                 item_outcome = fdl.SequenceItemOutcome(delay_ns=fdl.DelayNs())
             elif res.kind == "barrier":
                 item_outcome = fdl.SequenceItemOutcome(barrier=fdl.Barrier())
+            elif res.kind == "gpio_read":
+                item_outcome = fdl.SequenceItemOutcome(
+                    gpio_read=fdl.GpioReadResult(
+                        value=bool(res.value),
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "gpio_write":
+                item_outcome = fdl.SequenceItemOutcome(
+                    gpio_write=fdl.GpioWriteResult(
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "i2c_transfer":
+                item_outcome = fdl.SequenceItemOutcome(
+                    i2c_transfer=fdl.I2cTransferResult(
+                        read_data=list(res.data),
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "spi_transmit":
+                item_outcome = fdl.SequenceItemOutcome(
+                    spi_transmit=fdl.SpiTransmitResult(
+                        rx_data=list(res.data),
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
             else:
                 item_outcome = fdl.SequenceItemOutcome(
                     error=fdl.OperationError.NOT_ACCEPTING
@@ -307,6 +443,14 @@ class _BridgeSessionServer(fdl.SessionServer):
             results=fidl_results,
             complete=outcome.complete,
         )
+
+
+_RESOURCE_KIND_TO_FIDL = {
+    ResourceKind.MMIO: fdl.ResourceKind.MMIO,
+    ResourceKind.GPIO: fdl.ResourceKind.GPIO,
+    ResourceKind.I2C: fdl.ResourceKind.I2_C,
+    ResourceKind.SPI: fdl.ResourceKind.SPI,
+}
 
 
 class _BridgeProxyServer(fdl.ProxyServer):
@@ -335,7 +479,9 @@ class _BridgeProxyServer(fdl.ProxyServer):
                 fdl.ResourceDescription(
                     id_=resource.id,
                     name=resource.name,
-                    kind=fdl.ResourceKind.MMIO,
+                    kind=_RESOURCE_KIND_TO_FIDL.get(
+                        resource.kind, fdl.ResourceKind.MMIO
+                    ),
                     logical_size=resource.logical_size,
                     digest=resource.digest,
                 )
@@ -644,6 +790,131 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seq.results[4].kind, "poll32")
         self.assertEqual(seq.results[4].value, 0xFEED_FACE)
         self.assertEqual(self.fake.get_value(1, 0x3C), 0xFEED_FACE)
+
+    async def test_protocol_methods_over_real_fidl(self) -> None:
+        desc = ProxyDescription(
+            protocol_major=1,
+            protocol_minor=0,
+            proxy_generation=7,
+            boot_id="boot-1",
+            resource_digest=DESCRIPTION_DIGEST,
+            policy_digest=POLICY_DIGEST,
+            resources=(
+                ResourceInfo(
+                    id=1, name="control", logical_size=0x100, digest=CTRL_DIGEST
+                ),
+                ResourceInfo(
+                    id=2,
+                    name="pin0",
+                    kind=ResourceKind.GPIO,
+                    logical_size=1,
+                    digest="sha256:" + "01" * 32,
+                ),
+                ResourceInfo(
+                    id=3,
+                    name="i2c-bus",
+                    kind=ResourceKind.I2C,
+                    logical_size=32,
+                    digest="sha256:" + "02" * 32,
+                ),
+                ResourceInfo(
+                    id=4,
+                    name="spi-bus",
+                    kind=ResourceKind.SPI,
+                    logical_size=32,
+                    digest="sha256:" + "03" * 32,
+                ),
+            ),
+            max_snapshot_items=64,
+            audit_capacity=1024,
+        )
+        self.fake = FakeProxyTarget(desc)
+        self.fake.set_i2c_response(3, b"\xca\xfe")
+        self.fake.set_spi_response(4, b"\xba\xbe")
+
+        context = Context(target="")
+        client_channel, server_channel = context.channel_create()
+        proxy_server = _BridgeProxyServer(server_channel, self.fake, self.tasks)
+        self.tasks.append(
+            asyncio.get_running_loop().create_task(proxy_server.serve())
+        )
+        transport = FidlProxyTransport(
+            fdl.ProxyClient(client_channel), context.channel_create
+        )
+
+        expectations = Expectations(
+            boot_id="boot-1",
+            proxy_generation=7,
+            resource_digest=DESCRIPTION_DIGEST,
+            policy_digest=POLICY_DIGEST,
+        )
+        session_ctx = SessionContext(
+            run_id="run-proto",
+            case_id="case-proto",
+            plan_digest="digest-proto",
+        )
+        allowlist = [
+            AllowRule(
+                resource=2, offset=0, width=1, access=AccessClass.PROTOCOL
+            ),
+            AllowRule(
+                resource=3, offset=0, width=32, access=AccessClass.PROTOCOL
+            ),
+            AllowRule(
+                resource=4, offset=0, width=32, access=AccessClass.PROTOCOL
+            ),
+        ]
+        session = await transport.open_session(
+            session_ctx, expectations, allowlist, mode=SessionMode.MUTATING
+        )
+
+        # Gpio write & read
+        w_out = await session.gpio_write(2, True)
+        self.assertGreater(w_out.audit_seq, 0)
+        r_out = await session.gpio_read(2)
+        self.assertTrue(r_out.value)
+        self.assertGreater(r_out.audit_seq, 0)
+
+        # I2C transfer
+        i2c_out = await session.i2c_transfer(
+            3, write_data=b"\x01", read_length=2
+        )
+        self.assertEqual(i2c_out.read_data, b"\xca\xfe")
+        self.assertGreater(i2c_out.audit_seq, 0)
+
+        # SPI transmit
+        spi_out = await session.spi_transmit(4, tx_data=b"\x02\x03")
+        self.assertEqual(spi_out.rx_data, b"\xba\xbe")
+        self.assertGreater(spi_out.audit_seq, 0)
+
+        # Heterogeneous sequence over real FIDL
+        seq_items = [
+            SequenceItem(kind="gpio_write", resource=2, value=False),
+            SequenceItem(kind="gpio_read", resource=2),
+            SequenceItem(kind="delay_ns", delay_ns=500),
+            SequenceItem(kind="barrier", barrier="memory"),
+            SequenceItem(
+                kind="i2c_transfer",
+                resource=3,
+                write_data=b"\x05",
+                read_length=2,
+            ),
+            SequenceItem(kind="spi_transmit", resource=4, tx_data=b"\x06"),
+        ]
+        seq_out = await session.execute_sequence(seq_items)
+        self.assertTrue(seq_out.complete)
+        self.assertEqual(len(seq_out.results), 6)
+        self.assertEqual(seq_out.results[0].kind, "gpio_write")
+        self.assertEqual(seq_out.results[1].kind, "gpio_read")
+        self.assertEqual(seq_out.results[1].value, 0)
+        self.assertEqual(seq_out.results[2].kind, "delay_ns")
+        self.assertEqual(seq_out.results[3].kind, "barrier")
+        self.assertEqual(seq_out.results[4].kind, "i2c_transfer")
+        self.assertEqual(seq_out.results[4].data, b"\xca\xfe")
+        self.assertEqual(seq_out.results[5].kind, "spi_transmit")
+        self.assertEqual(seq_out.results[5].data, b"\xba\xbe")
+
+        await session.close()
 
 
 if __name__ == "__main__":

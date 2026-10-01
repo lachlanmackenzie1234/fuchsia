@@ -14,6 +14,7 @@ run whose evidence cannot be finalized is not successful.
 from __future__ import annotations
 
 import datetime
+import enum
 import hashlib
 import json
 import os
@@ -34,6 +35,14 @@ class EvidenceError(Exception):
 
 def _utc_now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
+
+
+def _json_default(obj: object) -> object:
+    if isinstance(obj, enum.Enum):
+        return obj.value
+    raise TypeError(
+        f"Object of type {type(obj).__name__} is not JSON serializable"
+    )
 
 
 class EvidenceRecorder:
@@ -84,7 +93,10 @@ class EvidenceRecorder:
 
     def write_json(self, name: str, payload: object) -> None:
         """Writes one artifact as canonical, sorted, indented JSON."""
-        text = json.dumps(payload, sort_keys=True, indent=2) + "\n"
+        text = (
+            json.dumps(payload, sort_keys=True, indent=2, default=_json_default)
+            + "\n"
+        )
         self.write_bytes(name, text.encode())
 
     def write_jsonl(
@@ -92,7 +104,13 @@ class EvidenceRecorder:
     ) -> None:
         """Writes one artifact as JSON lines, one row per line."""
         lines = "".join(
-            json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+            json.dumps(
+                row,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=_json_default,
+            )
+            + "\n"
             for row in rows
         )
         self.write_bytes(name, lines.encode())

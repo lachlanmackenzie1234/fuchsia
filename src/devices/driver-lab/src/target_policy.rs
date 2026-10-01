@@ -189,6 +189,7 @@ impl ResourcePolicyManifest {
                 .iter()
                 .map(|w| w.to_writable_register())
                 .collect(),
+            protocol: None,
         }
     }
 }

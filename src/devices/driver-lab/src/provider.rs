@@ -113,7 +113,12 @@ mod tests {
     use crate::hardware_backend::FakeMmio;
 
     fn resource(logical: u64, mapped: u64) -> MmioResource {
-        MmioResource { name: "ctrl".to_string(), logical_size: logical, mapped_size: mapped }
+        MmioResource {
+            name: "ctrl".to_string(),
+            kind: crate::access_policy::ResourceKind::Mmio,
+            logical_size: logical,
+            mapped_size: mapped,
+        }
     }
 
     fn bundle() -> ProvidedResources<FakeMmio> {
@@ -126,6 +131,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 writable_registers: vec![],
+                protocol: None,
             },
         );
         bundle.backends.insert(1, FakeMmio::new());
@@ -158,6 +164,7 @@ mod tests {
                 allow_unknown_reads: false,
                 allow_poll: false,
                 writable_registers: vec![],
+                protocol: None,
             },
         );
         assert_eq!(

@@ -17,6 +17,7 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
+from driver_lab.models import ResourceKind
 from driver_lab.transport import (
     Denial,
     DirectDescription,
@@ -279,81 +280,218 @@ class ProtocolProxy:
 
 
 class Gpio:
-    """Thin shape-preserving adapter for fuchsia.hardware.gpio protocol."""
+    """Thin shape-preserving adapter for GPIO pin protocol (Spec Sections 8.1, 9.5, 12)."""
+
+    read_metadata = TranslationMetadata(
+        cpp_analogue="gpio.Read() / ddk::GpioProtocolClient::Read() / fuchsia::hardware::pin::Pin::Read()",
+        rust_analogue="gpio.read().await / fuchsia_hardware_pin::PinProxy::read()",
+        directly_translatable=True,
+        differences="Target-side GPIO read mediated by proxy driver with audit log entry and policy check.",
+        target_local_timing=False,
+        experiment_only=False,
+    )
+
+    write_metadata = TranslationMetadata(
+        cpp_analogue="gpio.Write(value) / ddk::GpioProtocolClient::Write(value) / fuchsia::hardware::pin::Pin::SetBufferMode()",
+        rust_analogue="gpio.write(value).await / fuchsia_hardware_pin::PinProxy::set_buffer_mode()",
+        directly_translatable=True,
+        differences="Target-side GPIO write mediated by proxy driver with audit log entry and policy check.",
+        target_local_timing=False,
+        experiment_only=False,
+    )
 
     def __init__(
-        self, session: DirectSession, resource_name: str = "gpio"
+        self,
+        session: DirectSession | ProxySession,
+        resource_name: str = "gpio",
+        resource_info: ResourceInfo | None = None,
+        audit_drainer: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._session = session
         self._resource_name = resource_name
+        self._resource_info = resource_info
+        self._audit_drainer = audit_drainer
+
+    @property
+    def name(self) -> str:
+        return self._resource_name
+
+    @property
+    def id(self) -> int | None:
+        return (
+            self._resource_info.id if self._resource_info is not None else None
+        )
 
     async def read(self) -> bool:
-        outcome = await self._session.call_fidl(
-            "read", {"resource": self._resource_name}
-        )
-        return bool(outcome.response.get("value", False))
+        if self._resource_info is not None and hasattr(
+            self._session, "gpio_read"
+        ):
+            outcome = await self._session.gpio_read(self._resource_info.id)
+            if self._audit_drainer is not None:
+                await self._audit_drainer()
+            return outcome.value
+        if hasattr(self._session, "call_fidl"):
+            outcome = await self._session.call_fidl(
+                "read", {"resource": self._resource_name}
+            )
+            return bool(outcome.response.get("value", False))
+        raise UnsupportedCapabilityError("Session does not support GPIO read")
 
     async def write(self, value: bool) -> None:
-        await self._session.call_fidl(
-            "write", {"resource": self._resource_name, "value": value}
-        )
+        if self._resource_info is not None and hasattr(
+            self._session, "gpio_write"
+        ):
+            await self._session.gpio_write(self._resource_info.id, value)
+            if self._audit_drainer is not None:
+                await self._audit_drainer()
+            return
+        if hasattr(self._session, "call_fidl"):
+            await self._session.call_fidl(
+                "write", {"resource": self._resource_name, "value": value}
+            )
+            return
+        raise UnsupportedCapabilityError("Session does not support GPIO write")
 
     async def set_direction(self, direction: str) -> None:
-        await self._session.call_fidl(
-            "set_direction",
-            {"resource": self._resource_name, "direction": direction},
+        if hasattr(self._session, "call_fidl"):
+            await self._session.call_fidl(
+                "set_direction",
+                {"resource": self._resource_name, "direction": direction},
+            )
+            return
+        raise UnsupportedCapabilityError(
+            "GPIO set_direction is only supported in direct mode"
         )
 
 
 class I2c:
-    """Thin shape-preserving adapter for fuchsia.hardware.i2c protocol."""
+    """Thin shape-preserving adapter for I2C bus protocol (Spec Sections 8.1, 9.5, 12)."""
+
+    transfer_metadata = TranslationMetadata(
+        cpp_analogue="i2c.Transfer(...) / fuchsia::hardware::i2c::Device::Transfer()",
+        rust_analogue="i2c.transfer(...).await / fuchsia_hardware_i2c::DeviceProxy::transfer()",
+        directly_translatable=True,
+        differences="I2C transaction executed by target proxy driver via underlying FIDL/DDK protocol with bounded payload and audit logging.",
+        target_local_timing=False,
+        experiment_only=False,
+    )
 
     def __init__(
-        self, session: DirectSession, resource_name: str = "i2c"
+        self,
+        session: DirectSession | ProxySession,
+        resource_name: str = "i2c",
+        resource_info: ResourceInfo | None = None,
+        audit_drainer: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._session = session
         self._resource_name = resource_name
+        self._resource_info = resource_info
+        self._audit_drainer = audit_drainer
+
+    @property
+    def name(self) -> str:
+        return self._resource_name
+
+    @property
+    def id(self) -> int | None:
+        return (
+            self._resource_info.id if self._resource_info is not None else None
+        )
 
     async def transfer(self, write_data: bytes, read_length: int = 0) -> bytes:
-        outcome = await self._session.call_fidl(
-            "transfer",
-            {
-                "resource": self._resource_name,
-                "write_data": list(write_data),
-                "read_length": read_length,
-            },
+        if self._resource_info is not None and hasattr(
+            self._session, "i2c_transfer"
+        ):
+            outcome = await self._session.i2c_transfer(
+                self._resource_info.id,
+                write_data=write_data,
+                read_length=read_length,
+            )
+            if self._audit_drainer is not None:
+                await self._audit_drainer()
+            return outcome.read_data
+        if hasattr(self._session, "call_fidl"):
+            outcome = await self._session.call_fidl(
+                "transfer",
+                {
+                    "resource": self._resource_name,
+                    "write_data": list(write_data),
+                    "read_length": read_length,
+                },
+            )
+            data = outcome.response.get("read_data", b"")
+            if isinstance(data, (bytes, bytearray)):
+                return bytes(data)
+            if isinstance(data, list):
+                return bytes(data)
+            return b""
+        raise UnsupportedCapabilityError(
+            "Session does not support I2C transfer"
         )
-        data = outcome.response.get("read_data", b"")
-        if isinstance(data, (bytes, bytearray)):
-            return bytes(data)
-        if isinstance(data, list):
-            return bytes(data)
-        return b""
 
 
 class Spi:
-    """Thin shape-preserving adapter for fuchsia.hardware.spi protocol."""
+    """Thin shape-preserving adapter for SPI bus protocol (Spec Sections 8.1, 9.5, 12)."""
+
+    transmit_metadata = TranslationMetadata(
+        cpp_analogue="spi.Transmit(...) / fuchsia::hardware::spi::Device::Transmit()",
+        rust_analogue="spi.transmit(...).await / fuchsia_hardware_spi::DeviceProxy::transmit()",
+        directly_translatable=True,
+        differences="SPI full-duplex / transmit transaction executed by target proxy driver with bounded payload and audit logging.",
+        target_local_timing=False,
+        experiment_only=False,
+    )
 
     def __init__(
-        self, session: DirectSession, resource_name: str = "spi"
+        self,
+        session: DirectSession | ProxySession,
+        resource_name: str = "spi",
+        resource_info: ResourceInfo | None = None,
+        audit_drainer: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._session = session
         self._resource_name = resource_name
+        self._resource_info = resource_info
+        self._audit_drainer = audit_drainer
+
+    @property
+    def name(self) -> str:
+        return self._resource_name
+
+    @property
+    def id(self) -> int | None:
+        return (
+            self._resource_info.id if self._resource_info is not None else None
+        )
 
     async def transmit(self, tx_data: bytes) -> bytes:
-        outcome = await self._session.call_fidl(
-            "transmit",
-            {
-                "resource": self._resource_name,
-                "tx_data": list(tx_data),
-            },
+        if self._resource_info is not None and hasattr(
+            self._session, "spi_transmit"
+        ):
+            outcome = await self._session.spi_transmit(
+                self._resource_info.id,
+                tx_data=tx_data,
+            )
+            if self._audit_drainer is not None:
+                await self._audit_drainer()
+            return outcome.rx_data
+        if hasattr(self._session, "call_fidl"):
+            outcome = await self._session.call_fidl(
+                "transmit",
+                {
+                    "resource": self._resource_name,
+                    "tx_data": list(tx_data),
+                },
+            )
+            data = outcome.response.get("rx_data", b"")
+            if isinstance(data, (bytes, bytearray)):
+                return bytes(data)
+            if isinstance(data, list):
+                return bytes(data)
+            return b""
+        raise UnsupportedCapabilityError(
+            "Session does not support SPI transmit"
         )
-        data = outcome.response.get("rx_data", b"")
-        if isinstance(data, (bytes, bytearray)):
-            return bytes(data)
-        if isinstance(data, list):
-            return bytes(data)
-        return b""
 
 
 class Serial:
@@ -519,31 +657,109 @@ class HardwareSession:
         return ProtocolProxy(self._direct_session, protocol_name)
 
     async def gpio(self, resource: str = "gpio") -> Gpio:
-        """Acquires a GPIO protocol adapter in direct mode."""
+        """Acquires a GPIO protocol adapter in proxy or direct mode."""
         self._check_not_closed()
-        if self._direct_session is None:
-            raise UnsupportedCapabilityError(
-                "GPIO protocol is only supported in direct mode"
+        if (
+            self._proxy_session is not None
+            and self._proxy_description is not None
+        ):
+            info = self._proxy_description.resource_named(resource)
+            if info is None:
+                gpio_res = [
+                    r
+                    for r in self._proxy_description.resources
+                    if r.kind == ResourceKind.GPIO
+                ]
+                if resource == "gpio" and gpio_res:
+                    info = gpio_res[0]
+                else:
+                    available = [
+                        r.name for r in self._proxy_description.resources
+                    ]
+                    raise ValueError(
+                        f"Unknown GPIO resource '{resource}'. Available: {available}"
+                    )
+            return Gpio(
+                self._proxy_session,
+                resource_name=info.name,
+                resource_info=info,
+                audit_drainer=self._audit_drainer,
             )
-        return Gpio(self._direct_session, resource)
+        if self._direct_session is not None:
+            return Gpio(self._direct_session, resource)
+        raise UnsupportedCapabilityError(
+            "GPIO protocol is not supported in current session"
+        )
 
     async def i2c(self, resource: str = "i2c") -> I2c:
-        """Acquires an I2C protocol adapter in direct mode."""
+        """Acquires an I2C protocol adapter in proxy or direct mode."""
         self._check_not_closed()
-        if self._direct_session is None:
-            raise UnsupportedCapabilityError(
-                "I2C protocol is only supported in direct mode"
+        if (
+            self._proxy_session is not None
+            and self._proxy_description is not None
+        ):
+            info = self._proxy_description.resource_named(resource)
+            if info is None:
+                i2c_res = [
+                    r
+                    for r in self._proxy_description.resources
+                    if r.kind == ResourceKind.I2C
+                ]
+                if resource == "i2c" and i2c_res:
+                    info = i2c_res[0]
+                else:
+                    available = [
+                        r.name for r in self._proxy_description.resources
+                    ]
+                    raise ValueError(
+                        f"Unknown I2C resource '{resource}'. Available: {available}"
+                    )
+            return I2c(
+                self._proxy_session,
+                resource_name=info.name,
+                resource_info=info,
+                audit_drainer=self._audit_drainer,
             )
-        return I2c(self._direct_session, resource)
+        if self._direct_session is not None:
+            return I2c(self._direct_session, resource)
+        raise UnsupportedCapabilityError(
+            "I2C protocol is not supported in current session"
+        )
 
     async def spi(self, resource: str = "spi") -> Spi:
-        """Acquires a SPI protocol adapter in direct mode."""
+        """Acquires a SPI protocol adapter in proxy or direct mode."""
         self._check_not_closed()
-        if self._direct_session is None:
-            raise UnsupportedCapabilityError(
-                "SPI protocol is only supported in direct mode"
+        if (
+            self._proxy_session is not None
+            and self._proxy_description is not None
+        ):
+            info = self._proxy_description.resource_named(resource)
+            if info is None:
+                spi_res = [
+                    r
+                    for r in self._proxy_description.resources
+                    if r.kind == ResourceKind.SPI
+                ]
+                if resource == "spi" and spi_res:
+                    info = spi_res[0]
+                else:
+                    available = [
+                        r.name for r in self._proxy_description.resources
+                    ]
+                    raise ValueError(
+                        f"Unknown SPI resource '{resource}'. Available: {available}"
+                    )
+            return Spi(
+                self._proxy_session,
+                resource_name=info.name,
+                resource_info=info,
+                audit_drainer=self._audit_drainer,
             )
-        return Spi(self._direct_session, resource)
+        if self._direct_session is not None:
+            return Spi(self._direct_session, resource)
+        raise UnsupportedCapabilityError(
+            "SPI protocol is not supported in current session"
+        )
 
     async def serial(self, resource: str = "serial") -> Serial:
         """Acquires a Serial protocol adapter in direct mode."""

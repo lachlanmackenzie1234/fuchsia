@@ -17,7 +17,14 @@ import enum
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
-from driver_lab.models import AccessClass
+from driver_lab.models import (
+    AccessClass,
+    GpioReadOutcome,
+    GpioWriteOutcome,
+    I2cTransferOutcome,
+    ResourceKind,
+    SpiTransmitOutcome,
+)
 
 
 class Denial(enum.Enum):
@@ -46,6 +53,8 @@ class Denial(enum.Enum):
     READ_ONLY_SESSION = "read_only_session"
     WRITE_NOT_PERMITTED = "write_not_permitted"
     POLL_NOT_PERMITTED = "poll_not_permitted"
+    UNSUPPORTED_METHOD = "unsupported_method"
+    TRANSFER_TOO_LARGE = "transfer_too_large"
 
 
 class SessionMode(enum.Enum):
@@ -106,6 +115,7 @@ class ResourceInfo:
     name: str
     logical_size: int
     digest: str
+    kind: ResourceKind = ResourceKind.MMIO
 
 
 @dataclasses.dataclass(frozen=True)
@@ -212,7 +222,7 @@ class BarrierVariant(enum.Enum):
 class SequenceItem:
     """One item in an ordered sequence."""
 
-    kind: str  # "mmio_read32", "mmio_write32", "mmio_poll32", "delay_ns", "barrier"
+    kind: str  # "mmio_read32", "mmio_write32", "mmio_poll32", "delay_ns", "barrier", "gpio_read", "gpio_write", "i2c_transfer", "spi_transmit"
     resource: int = 0
     offset: int = 0
     value: int = 0
@@ -225,6 +235,9 @@ class SequenceItem:
     timeout_ns: int = 100_000_000
     delay_ns: int = 0
     barrier: str = "memory"
+    write_data: bytes = b""
+    read_length: int = 0
+    tx_data: bytes = b""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -238,6 +251,7 @@ class SequenceItemOutcome:
     readback_value: int | None = None
     audit_seq: int = 0
     timestamp_ns: int = 0
+    data: bytes = b""
     error: Denial | None = None
 
 
@@ -351,6 +365,26 @@ class ProxySession(Protocol):
         """Bounded ordered sequence of operations with prevalidation."""
         ...
 
+    async def gpio_read(self, resource: int) -> GpioReadOutcome:
+        """One policy-checked, audited GPIO read."""
+        ...
+
+    async def gpio_write(self, resource: int, value: bool) -> GpioWriteOutcome:
+        """One policy-checked, audited GPIO write."""
+        ...
+
+    async def i2c_transfer(
+        self, resource: int, write_data: bytes, read_length: int = 0
+    ) -> I2cTransferOutcome:
+        """One policy-checked, audited I2C transfer."""
+        ...
+
+    async def spi_transmit(
+        self, resource: int, tx_data: bytes
+    ) -> SpiTransmitOutcome:
+        """One policy-checked, audited SPI transmit."""
+        ...
+
     async def read_audit(self, cursor: int, limit: int) -> AuditPage:
         """Reads a bounded audit page for incremental draining."""
         ...
@@ -385,6 +419,12 @@ class FakeProxyTarget:
     def __init__(self, description: ProxyDescription) -> None:
         self._description = description
         self._values: dict[tuple[int, int], int] = {}
+        self._gpio_values: dict[int, bool] = {}
+        self._i2c_responses: dict[int, bytes] = {}
+        self._spi_responses: dict[int, bytes] = {}
+        self._gpio_writes: list[tuple[int, bool]] = []
+        self._i2c_transfers: list[tuple[int, bytes, int]] = []
+        self._spi_transmits: list[tuple[int, bytes]] = []
         self._faults: set[tuple[int, int]] = set()
         self._audit: list[AuditEntry] = []
         self._next_seq = 0
@@ -394,6 +434,22 @@ class FakeProxyTarget:
         self.sessions_opened = 0
         self.reject_open: OpenRejection | None = None
         self.active_mutating_session: int | None = None
+
+    def set_gpio(self, resource: int, value: bool) -> None:
+        """Sets the state of a GPIO pin."""
+        self._gpio_values[resource] = value
+
+    def get_gpio(self, resource: int) -> bool:
+        """Returns the state of a GPIO pin."""
+        return self._gpio_values.get(resource, False)
+
+    def set_i2c_response(self, resource: int, data: bytes) -> None:
+        """Sets the read response returned for I2C transfers."""
+        self._i2c_responses[resource] = data
+
+    def set_spi_response(self, resource: int, data: bytes) -> None:
+        """Sets the receive response returned for SPI transmits."""
+        self._spi_responses[resource] = data
 
     def set_value(self, resource: int, offset: int, value: int) -> None:
         """Programs the value returned for reads at (resource, offset)."""
@@ -453,12 +509,26 @@ class FakeProxyTarget:
             ):
                 rejection = OpenRejection.MUTATION_LEASE_HELD
         if rejection is None:
-            known = {resource.id for resource in description.resources}
-            if any(
-                rule.resource not in known or rule.width != 4
-                for rule in allowlist
-            ):
-                rejection = OpenRejection.REJECTED_ALLOWLIST
+            known = {
+                resource.id: resource for resource in description.resources
+            }
+            for rule in allowlist:
+                res = known.get(rule.resource)
+                if res is None:
+                    rejection = OpenRejection.REJECTED_ALLOWLIST
+                    break
+                if rule.access == AccessClass.PROTOCOL:
+                    if res.kind == ResourceKind.MMIO:
+                        rejection = OpenRejection.REJECTED_ALLOWLIST
+                        break
+                elif rule.access == AccessClass.SEQUENCE:
+                    if res.kind == ResourceKind.MMIO and rule.width != 4:
+                        rejection = OpenRejection.REJECTED_ALLOWLIST
+                        break
+                else:
+                    if rule.width != 4:
+                        rejection = OpenRejection.REJECTED_ALLOWLIST
+                        break
         if rejection is not None:
             self._append(
                 {
@@ -749,6 +819,126 @@ class _FakeSession:
         )
         raise OperationDenied(Denial.TIMEOUT)
 
+    async def gpio_read(self, resource: int) -> GpioReadOutcome:
+        """See `ProxySession.gpio_read`."""
+        target = self._target
+        if all(info.id != resource for info in target._description.resources):
+            self._deny("gpio_read", resource, 0, Denial.UNKNOWN_RESOURCE)
+        if (
+            (resource, 0, AccessClass.PROTOCOL) not in self._rules
+            and (resource, 0, AccessClass.READ_ONCE) not in self._rules
+            and (resource, 0, AccessClass.SEQUENCE) not in self._rules
+        ):
+            self._deny("gpio_read", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        timestamp = target._tick()
+        val = target._gpio_values.get(resource, False)
+        seq = target._append(
+            {
+                "operation": "gpio_read",
+                "session": self._session,
+                "resource": resource,
+                "offset": 0,
+                "value": int(val),
+                "timestamp_ns": timestamp,
+            }
+        )
+        return GpioReadOutcome(value=val, audit_seq=seq, timestamp_ns=timestamp)
+
+    async def gpio_write(self, resource: int, value: bool) -> GpioWriteOutcome:
+        """See `ProxySession.gpio_write`."""
+        target = self._target
+        if self._mode != SessionMode.MUTATING:
+            self._deny("gpio_write", resource, 0, Denial.READ_ONLY_SESSION)
+        if all(info.id != resource for info in target._description.resources):
+            self._deny("gpio_write", resource, 0, Denial.UNKNOWN_RESOURCE)
+        if (
+            (resource, 0, AccessClass.PROTOCOL) not in self._rules
+            and (resource, 0, AccessClass.WRITE) not in self._rules
+            and (resource, 0, AccessClass.SEQUENCE) not in self._rules
+        ):
+            self._deny("gpio_write", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        timestamp = target._tick()
+        target._gpio_values[resource] = value
+        target._gpio_writes.append((resource, value))
+        seq = target._append(
+            {
+                "operation": "gpio_write",
+                "session": self._session,
+                "resource": resource,
+                "offset": 0,
+                "value": int(value),
+                "timestamp_ns": timestamp,
+            }
+        )
+        return GpioWriteOutcome(audit_seq=seq, timestamp_ns=timestamp)
+
+    async def i2c_transfer(
+        self, resource: int, write_data: bytes, read_length: int = 0
+    ) -> I2cTransferOutcome:
+        """See `ProxySession.i2c_transfer`."""
+        target = self._target
+        if len(write_data) > 0 and self._mode != SessionMode.MUTATING:
+            self._deny("i2c_transfer", resource, 0, Denial.READ_ONLY_SESSION)
+        if all(info.id != resource for info in target._description.resources):
+            self._deny("i2c_transfer", resource, 0, Denial.UNKNOWN_RESOURCE)
+        if (
+            (resource, 0, AccessClass.PROTOCOL) not in self._rules
+            and (resource, 0, AccessClass.SEQUENCE) not in self._rules
+            and (resource, 0, AccessClass.READ_ONCE) not in self._rules
+            and (resource, 0, AccessClass.WRITE) not in self._rules
+        ):
+            self._deny("i2c_transfer", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        timestamp = target._tick()
+        target._i2c_transfers.append((resource, write_data, read_length))
+        data = target._i2c_responses.get(resource, b"")
+        if read_length > 0 and len(data) > read_length:
+            data = data[:read_length]
+        seq = target._append(
+            {
+                "operation": "i2c_transfer",
+                "session": self._session,
+                "resource": resource,
+                "offset": 0,
+                "value": len(data),
+                "timestamp_ns": timestamp,
+            }
+        )
+        return I2cTransferOutcome(
+            read_data=data, audit_seq=seq, timestamp_ns=timestamp
+        )
+
+    async def spi_transmit(
+        self, resource: int, tx_data: bytes
+    ) -> SpiTransmitOutcome:
+        """See `ProxySession.spi_transmit`."""
+        target = self._target
+        if self._mode != SessionMode.MUTATING:
+            self._deny("spi_transmit", resource, 0, Denial.READ_ONLY_SESSION)
+        if all(info.id != resource for info in target._description.resources):
+            self._deny("spi_transmit", resource, 0, Denial.UNKNOWN_RESOURCE)
+        if (
+            (resource, 0, AccessClass.PROTOCOL) not in self._rules
+            and (resource, 0, AccessClass.SEQUENCE) not in self._rules
+            and (resource, 0, AccessClass.WRITE) not in self._rules
+        ):
+            self._deny("spi_transmit", resource, 0, Denial.NOT_IN_ALLOWLIST)
+        timestamp = target._tick()
+        target._spi_transmits.append((resource, tx_data))
+        data = target._spi_responses.get(resource, b"")
+        seq = target._append(
+            {
+                "operation": "spi_transmit",
+                "session": self._session,
+                "resource": resource,
+                "offset": 0,
+                "value": len(data),
+                "timestamp_ns": timestamp,
+            }
+        )
+        return SpiTransmitOutcome(
+            rx_data=data, audit_seq=seq, timestamp_ns=timestamp
+        )
+
     async def execute_sequence(
         self, items: Sequence[SequenceItem]
     ) -> SequenceOutcome:
@@ -846,6 +1036,141 @@ class _FakeSession:
                         }
                     )
                     raise OperationDenied(Denial.LIMIT_EXCEEDED)
+            elif item.kind == "gpio_read":
+                if (
+                    (item.resource, 0, AccessClass.PROTOCOL) not in self._rules
+                    and (item.resource, 0, AccessClass.SEQUENCE)
+                    not in self._rules
+                    and (item.resource, 0, AccessClass.READ_ONCE)
+                    not in self._rules
+                ):
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": 0,
+                            "decision": "denied",
+                            "denial": Denial.NOT_IN_ALLOWLIST.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
+            elif item.kind == "gpio_write":
+                if self._mode != SessionMode.MUTATING:
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": 0,
+                            "decision": "denied",
+                            "denial": Denial.READ_ONLY_SESSION.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.READ_ONLY_SESSION)
+                if (
+                    (item.resource, 0, AccessClass.PROTOCOL) not in self._rules
+                    and (item.resource, 0, AccessClass.SEQUENCE)
+                    not in self._rules
+                    and (item.resource, 0, AccessClass.WRITE) not in self._rules
+                ):
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": 0,
+                            "decision": "denied",
+                            "denial": Denial.NOT_IN_ALLOWLIST.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
+            elif item.kind == "i2c_transfer":
+                if (
+                    len(item.write_data) > 0
+                    and self._mode != SessionMode.MUTATING
+                ):
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": 0,
+                            "decision": "denied",
+                            "denial": Denial.READ_ONLY_SESSION.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.READ_ONLY_SESSION)
+                if (
+                    (item.resource, 0, AccessClass.PROTOCOL) not in self._rules
+                    and (item.resource, 0, AccessClass.SEQUENCE)
+                    not in self._rules
+                    and (item.resource, 0, AccessClass.READ_ONCE)
+                    not in self._rules
+                    and (item.resource, 0, AccessClass.WRITE) not in self._rules
+                ):
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": 0,
+                            "decision": "denied",
+                            "denial": Denial.NOT_IN_ALLOWLIST.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
+            elif item.kind == "spi_transmit":
+                if self._mode != SessionMode.MUTATING:
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": 0,
+                            "decision": "denied",
+                            "denial": Denial.READ_ONLY_SESSION.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.READ_ONLY_SESSION)
+                if (
+                    (item.resource, 0, AccessClass.PROTOCOL) not in self._rules
+                    and (item.resource, 0, AccessClass.SEQUENCE)
+                    not in self._rules
+                    and (item.resource, 0, AccessClass.WRITE) not in self._rules
+                ):
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": 0,
+                            "decision": "denied",
+                            "denial": Denial.NOT_IN_ALLOWLIST.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
         results: list[SequenceItemOutcome] = []
         complete = True
         for index, item in enumerate(items):
@@ -1044,6 +1369,106 @@ class _FakeSession:
                         index=index,
                         ok=True,
                         kind="barrier",
+                        timestamp_ns=timestamp,
+                    )
+                )
+            elif item.kind == "gpio_read":
+                val = target._gpio_values.get(item.resource, False)
+                seq = target._append(
+                    {
+                        "operation": "sequence_gpio_read",
+                        "session": self._session,
+                        "resource": item.resource,
+                        "offset": 0,
+                        "value": int(val),
+                        "item_index": index,
+                        "timestamp_ns": timestamp,
+                    }
+                )
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="gpio_read",
+                        value=int(val),
+                        audit_seq=seq,
+                        timestamp_ns=timestamp,
+                    )
+                )
+            elif item.kind == "gpio_write":
+                val = bool(item.value)
+                target._gpio_values[item.resource] = val
+                target._gpio_writes.append((item.resource, val))
+                seq = target._append(
+                    {
+                        "operation": "sequence_gpio_write",
+                        "session": self._session,
+                        "resource": item.resource,
+                        "offset": 0,
+                        "value": int(val),
+                        "item_index": index,
+                        "timestamp_ns": timestamp,
+                    }
+                )
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="gpio_write",
+                        value=int(val),
+                        audit_seq=seq,
+                        timestamp_ns=timestamp,
+                    )
+                )
+            elif item.kind == "i2c_transfer":
+                target._i2c_transfers.append(
+                    (item.resource, item.write_data, item.read_length)
+                )
+                data = target._i2c_responses.get(item.resource, b"")
+                if item.read_length > 0 and len(data) > item.read_length:
+                    data = data[: item.read_length]
+                seq = target._append(
+                    {
+                        "operation": "sequence_i2c_transfer",
+                        "session": self._session,
+                        "resource": item.resource,
+                        "offset": 0,
+                        "value": len(data),
+                        "item_index": index,
+                        "timestamp_ns": timestamp,
+                    }
+                )
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="i2c_transfer",
+                        data=data,
+                        audit_seq=seq,
+                        timestamp_ns=timestamp,
+                    )
+                )
+            elif item.kind == "spi_transmit":
+                target._spi_transmits.append((item.resource, item.tx_data))
+                data = target._spi_responses.get(item.resource, b"")
+                seq = target._append(
+                    {
+                        "operation": "sequence_spi_transmit",
+                        "session": self._session,
+                        "resource": item.resource,
+                        "offset": 0,
+                        "value": len(data),
+                        "item_index": index,
+                        "timestamp_ns": timestamp,
+                    }
+                )
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="spi_transmit",
+                        data=data,
+                        audit_seq=seq,
                         timestamp_ns=timestamp,
                     )
                 )

@@ -59,11 +59,12 @@ Remaining phase 1 work:
 - [x] CS16 `[driver-lab] Driver-shaped public Python API` (in
       //tools/driver-lab/SPEC.md).
 - [x] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
-- [ ] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
+- [x] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
       (in //tools/driver-lab/SPEC.md).
+- [x] CS19 `[driver-lab] Protocol resources, typed endpoints, and heterogeneous sequence`
+      (8.1, 8.4, 9.5, 11.5, 11.6, 12, 14.2; milestone P4).
 - [ ] Engineering assembly inclusion and production-absence
       verification (7.1, 25).
-- [ ] Protocol-resource adapters (8.1, 9.5, 11.6; milestone P4).
 - [ ] Interrupt observation (11.7, 17; milestone P5).
 - [ ] Structured configuration (22) and per-class rate limits (12.1).
 

@@ -106,6 +106,7 @@ async fn describe_reports_real_identity_and_resources() -> Result<()> {
     assert_eq!(resource.id, Some(0));
     assert_eq!(resource.name.as_deref(), Some("mmio0"));
     assert_eq!(resource.logical_size, Some(MMIO_SIZE));
+    assert_eq!(resource.kind, Some(flab::ResourceKind::Mmio));
     assert!(resource.digest.as_deref().unwrap_or("").starts_with("sha256:"));
     assert_ne!(description.resource_digest, description.policy_digest);
     Ok(())

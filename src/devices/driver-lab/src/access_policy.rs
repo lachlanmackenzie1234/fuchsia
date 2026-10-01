@@ -42,19 +42,50 @@ pub enum AccessClass {
     Write,
     /// An operation within a bounded sequence.
     Sequence,
+    /// An operation on a protocol-backed resource (GPIO, I2C, SPI).
+    Protocol,
 }
 
-/// Description of an MMIO resource offered by the parent node. Descriptions
+/// The kind of hardware resource offered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResourceKind {
+    Mmio,
+    Gpio,
+    I2c,
+    Spi,
+}
+
+/// Description of a resource offered by the parent node. Descriptions
 /// never contain physical addresses or raw handles.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MmioResource {
     /// Stable logical name.
     pub name: String,
+    /// Resource kind.
+    pub kind: ResourceKind,
     /// Size of the logical resource in bytes.
     pub logical_size: u64,
     /// Size of the actual backing mapping in bytes. Accesses must fit both
     /// the logical and the mapped size.
     pub mapped_size: u64,
+}
+
+impl MmioResource {
+    pub fn mmio(name: impl Into<String>, logical_size: u64, mapped_size: u64) -> Self {
+        Self { name: name.into(), kind: ResourceKind::Mmio, logical_size, mapped_size }
+    }
+
+    pub fn gpio(name: impl Into<String>) -> Self {
+        Self { name: name.into(), kind: ResourceKind::Gpio, logical_size: 1, mapped_size: 1 }
+    }
+
+    pub fn i2c(name: impl Into<String>) -> Self {
+        Self { name: name.into(), kind: ResourceKind::I2c, logical_size: 0, mapped_size: 0 }
+    }
+
+    pub fn spi(name: impl Into<String>) -> Self {
+        Self { name: name.into(), kind: ResourceKind::Spi, logical_size: 0, mapped_size: 0 }
+    }
 }
 
 /// Target ceiling specification for one writable register.
@@ -89,6 +120,41 @@ pub struct WritePrecondition {
     pub mask: u32,
 }
 
+/// Target ceiling policy for a protocol-backed resource (GPIO, I2C, SPI).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolCeiling {
+    /// Allowed method names (e.g. "read", "write", "transfer", "transmit").
+    pub allowed_methods: BTreeSet<String>,
+    /// Maximum transfer or transmit size in bytes.
+    pub max_transfer_size: u32,
+    /// Whether mutating operations are permitted.
+    pub allow_mutating: bool,
+}
+
+impl ProtocolCeiling {
+    pub fn default_for(kind: ResourceKind) -> Self {
+        let mut allowed_methods = BTreeSet::new();
+        match kind {
+            ResourceKind::Gpio => {
+                allowed_methods.insert("read".to_string());
+                allowed_methods.insert("write".to_string());
+                Self { allowed_methods, max_transfer_size: 1, allow_mutating: true }
+            }
+            ResourceKind::I2c => {
+                allowed_methods.insert("transfer".to_string());
+                Self { allowed_methods, max_transfer_size: 8192, allow_mutating: true }
+            }
+            ResourceKind::Spi => {
+                allowed_methods.insert("transmit".to_string());
+                Self { allowed_methods, max_transfer_size: 8192, allow_mutating: true }
+            }
+            ResourceKind::Mmio => {
+                Self { allowed_methods, max_transfer_size: 0, allow_mutating: false }
+            }
+        }
+    }
+}
+
 /// Immutable per-resource read ceiling. A resource with no ceiling entry
 /// permits nothing.
 #[derive(Clone, Debug, Default)]
@@ -103,6 +169,8 @@ pub struct ResourceCeiling {
     pub allow_poll: bool,
     /// Exact writable registers permitted by immutable target policy.
     pub writable_registers: Vec<WritableRegister>,
+    /// Protocol-specific ceiling when the resource is protocol-backed.
+    pub protocol: Option<ProtocolCeiling>,
 }
 
 impl ResourceCeiling {
@@ -180,6 +248,10 @@ pub enum Denial {
     ReadOnlySession,
     /// A write was attempted to an offset or bits not permitted by target policy.
     WriteNotPermitted,
+    /// A requested protocol method is not permitted by target policy.
+    UnsupportedMethod,
+    /// A requested protocol transfer exceeds maximum allowed size.
+    TransferTooLarge,
 }
 
 /// The validated policy engine for one session.
@@ -221,6 +293,11 @@ impl AccessPolicy {
     /// IDs of every resource this policy knows about.
     pub fn resource_ids(&self) -> impl Iterator<Item = ResourceId> {
         self.resources.keys().copied()
+    }
+
+    /// Returns the descriptor for `id`, if known.
+    pub fn resource(&self, id: ResourceId) -> Option<&MmioResource> {
+        self.resources.get(&id)
     }
 
     /// Immediately-before-access validation for a 32-bit read. This covers
@@ -348,6 +425,14 @@ impl AccessPolicy {
             }
             AccessClass::Sequence => {
                 let desc = self.resources.get(&rule.resource).ok_or(Denial::UnknownResource)?;
+                if desc.kind != ResourceKind::Mmio {
+                    let ceiling =
+                        self.ceiling.get(&rule.resource).ok_or(Denial::NotPermittedByCeiling)?;
+                    if ceiling.protocol.is_none() {
+                        return Err(Denial::NotPermittedByCeiling);
+                    }
+                    return Ok(());
+                }
                 if rule.width != WIDTH32 {
                     return Err(Denial::UnsupportedWidth);
                 }
@@ -373,7 +458,126 @@ impl AccessPolicy {
                 }
                 Ok(())
             }
+            AccessClass::Protocol => {
+                let desc = self.resources.get(&rule.resource).ok_or(Denial::UnknownResource)?;
+                if desc.kind == ResourceKind::Mmio {
+                    return Err(Denial::UnsupportedAccessClass);
+                }
+                let ceiling =
+                    self.ceiling.get(&rule.resource).ok_or(Denial::NotPermittedByCeiling)?;
+                if ceiling.protocol.is_none() {
+                    return Err(Denial::NotPermittedByCeiling);
+                }
+                Ok(())
+            }
         }
+    }
+
+    /// Immediately-before-access validation for a GPIO read.
+    pub fn check_gpio_read(&self, resource: ResourceId) -> Result<(), Denial> {
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Gpio {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allowed_methods.contains("read") {
+            return Err(Denial::UnsupportedMethod);
+        }
+        if !self.is_protocol_allowed(resource, false) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for a GPIO write. Requires mutation lease.
+    pub fn check_gpio_write(&self, resource: ResourceId) -> Result<(), Denial> {
+        if self.mode != SessionMode::Mutating {
+            return Err(Denial::ReadOnlySession);
+        }
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Gpio {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allow_mutating || !proto.allowed_methods.contains("write") {
+            return Err(Denial::WriteNotPermitted);
+        }
+        if !self.is_protocol_allowed(resource, true) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for an I2C transfer.
+    pub fn check_i2c_transfer(
+        &self,
+        resource: ResourceId,
+        write_len: usize,
+        read_len: usize,
+    ) -> Result<(), Denial> {
+        let is_mutating = write_len > 0;
+        if is_mutating && self.mode != SessionMode::Mutating {
+            return Err(Denial::ReadOnlySession);
+        }
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::I2c {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allowed_methods.contains("transfer") {
+            return Err(Denial::UnsupportedMethod);
+        }
+        if is_mutating && !proto.allow_mutating {
+            return Err(Denial::WriteNotPermitted);
+        }
+        let total_len = write_len.saturating_add(read_len);
+        if total_len as u32 > proto.max_transfer_size {
+            return Err(Denial::TransferTooLarge);
+        }
+        if !self.is_protocol_allowed(resource, is_mutating) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for a SPI transmit. Requires mutation lease.
+    pub fn check_spi_transmit(&self, resource: ResourceId, tx_len: usize) -> Result<(), Denial> {
+        if self.mode != SessionMode::Mutating {
+            return Err(Denial::ReadOnlySession);
+        }
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Spi {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allowed_methods.contains("transmit") {
+            return Err(Denial::UnsupportedMethod);
+        }
+        if !proto.allow_mutating {
+            return Err(Denial::WriteNotPermitted);
+        }
+        if tx_len as u32 > proto.max_transfer_size {
+            return Err(Denial::TransferTooLarge);
+        }
+        if !self.is_protocol_allowed(resource, true) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    fn is_protocol_allowed(&self, resource: ResourceId, is_mutating: bool) -> bool {
+        self.allowlist.iter().any(|r| {
+            r.resource == resource
+                && (r.class == AccessClass::Protocol
+                    || r.class == AccessClass::Sequence
+                    || (is_mutating && r.class == AccessClass::Write)
+                    || (!is_mutating
+                        && (r.class == AccessClass::ReadOnce || r.class == AccessClass::Snapshot)))
+        })
     }
 
     /// Structural and ceiling checks shared by rule prevalidation and
@@ -449,12 +653,18 @@ mod tests {
         BTreeMap::from([
             (
                 CTRL,
-                MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x1000 },
+                MmioResource {
+                    name: "ctrl".to_string(),
+                    kind: ResourceKind::Mmio,
+                    logical_size: 0x100,
+                    mapped_size: 0x1000,
+                },
             ),
             (
                 LOCKED,
                 MmioResource {
                     name: "locked".to_string(),
+                    kind: ResourceKind::Mmio,
                     logical_size: 0x100,
                     mapped_size: 0x100,
                 },
@@ -463,6 +673,7 @@ mod tests {
                 NO_CEILING,
                 MmioResource {
                     name: "no-ceiling".to_string(),
+                    kind: ResourceKind::Mmio,
                     logical_size: 0x100,
                     mapped_size: 0x100,
                 },
@@ -471,6 +682,7 @@ mod tests {
                 SHORT_MAP,
                 MmioResource {
                     name: "short-map".to_string(),
+                    kind: ResourceKind::Mmio,
                     logical_size: 0x2000,
                     mapped_size: 0x10,
                 },
@@ -506,6 +718,7 @@ mod tests {
                             readback: true,
                         },
                     ],
+                    protocol: None,
                 },
             ),
             (
@@ -515,6 +728,7 @@ mod tests {
                     allow_unknown_reads: false,
                     allow_poll: false,
                     writable_registers: vec![],
+                    protocol: None,
                 },
             ),
             (
@@ -524,6 +738,7 @@ mod tests {
                     allow_unknown_reads: true,
                     allow_poll: false,
                     writable_registers: vec![],
+                    protocol: None,
                 },
             ),
         ])
@@ -753,5 +968,76 @@ mod tests {
         let rule = read_rule(CTRL, 0x200);
         let denied = AccessPolicy::new(SessionMode::ReadOnly, resources(), ceiling(), [rule]);
         assert_eq!(denied.unwrap_err(), (rule, Denial::OutOfLogicalBounds));
+    }
+
+    #[test]
+    fn protocol_policy_gpio_and_i2c_and_spi() {
+        const GPIO_ID: ResourceId = 10;
+        const I2C_ID: ResourceId = 11;
+        const SPI_ID: ResourceId = 12;
+
+        let mut res = BTreeMap::new();
+        res.insert(GPIO_ID, MmioResource::gpio("gpio-a"));
+        res.insert(I2C_ID, MmioResource::i2c("i2c-sensor"));
+        res.insert(SPI_ID, MmioResource::spi("spi-flash"));
+
+        let mut ceil = BTreeMap::new();
+        let mut gpio_ceil = ResourceCeiling::default();
+        gpio_ceil.protocol = Some(ProtocolCeiling::default_for(ResourceKind::Gpio));
+        ceil.insert(GPIO_ID, gpio_ceil);
+
+        let mut i2c_ceil = ResourceCeiling::default();
+        i2c_ceil.protocol = Some(ProtocolCeiling::default_for(ResourceKind::I2c));
+        ceil.insert(I2C_ID, i2c_ceil);
+
+        let mut spi_ceil = ResourceCeiling::default();
+        spi_ceil.protocol = Some(ProtocolCeiling::default_for(ResourceKind::Spi));
+        ceil.insert(SPI_ID, spi_ceil);
+
+        let proto_rule =
+            |r| AccessRule { resource: r, offset: 0, width: 0, class: AccessClass::Protocol };
+
+        // Read-only session
+        let ro_policy = AccessPolicy::new(
+            SessionMode::ReadOnly,
+            res.clone(),
+            ceil.clone(),
+            [proto_rule(GPIO_ID), proto_rule(I2C_ID), proto_rule(SPI_ID)],
+        )
+        .expect("policy creation ok");
+
+        // GPIO read ok in read-only
+        assert!(ro_policy.check_gpio_read(GPIO_ID).is_ok());
+        // GPIO write rejected in read-only session
+        assert_eq!(ro_policy.check_gpio_write(GPIO_ID), Err(Denial::ReadOnlySession));
+
+        // I2C read-only transfer (write_len=0, read_len=4) ok
+        assert!(ro_policy.check_i2c_transfer(I2C_ID, 0, 4).is_ok());
+        // I2C write transfer (write_len=2) rejected in read-only
+        assert_eq!(ro_policy.check_i2c_transfer(I2C_ID, 2, 4), Err(Denial::ReadOnlySession));
+
+        // SPI transmit (mutating) rejected in read-only
+        assert_eq!(ro_policy.check_spi_transmit(SPI_ID, 4), Err(Denial::ReadOnlySession));
+
+        // Mutating session
+        let mut_policy = AccessPolicy::new(
+            SessionMode::Mutating,
+            res,
+            ceil,
+            [proto_rule(GPIO_ID), proto_rule(I2C_ID), proto_rule(SPI_ID)],
+        )
+        .expect("policy creation ok");
+
+        // Now mutating operations succeed
+        assert!(mut_policy.check_gpio_write(GPIO_ID).is_ok());
+        assert!(mut_policy.check_i2c_transfer(I2C_ID, 2, 4).is_ok());
+        assert!(mut_policy.check_spi_transmit(SPI_ID, 4).is_ok());
+
+        // Transfer exceeding max transfer size rejected
+        assert_eq!(
+            mut_policy.check_i2c_transfer(I2C_ID, 5000, 5000),
+            Err(Denial::TransferTooLarge)
+        );
+        assert_eq!(mut_policy.check_spi_transmit(SPI_ID, 10000), Err(Denial::TransferTooLarge));
     }
 }

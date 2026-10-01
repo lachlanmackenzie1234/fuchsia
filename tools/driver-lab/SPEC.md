@@ -71,11 +71,12 @@ Remaining phase 1 work:
       `HardwareSession`, `MmioRegion`, and representative protocol resources
       (6.1, 9; milestone H4).
 - [x] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
-- [ ] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
+- [x] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
       (8.3, 12, 14.2; milestone H3 remainder).
+- [x] CS19 `[driver-lab] Protocol resources, typed endpoints, and heterogeneous sequence`
+      (8.1, 8.4, 9.5, 11.5, 11.6, 12, 14.2; milestone P4).
 - [ ] Engineering assembly inclusion and production-absence verification
       (7.1, 25).
-- [ ] Protocol-resource adapters (8.1, 9.5, 11.6; milestone P4).
 - [ ] Interrupt observation (11.7, 17; milestone P5).
 - [ ] Serial capture and independent recovery integration (3, 14.1; milestone H5).
 - [ ] Register-metadata-backed consent expansion (10.2; open decision 8).

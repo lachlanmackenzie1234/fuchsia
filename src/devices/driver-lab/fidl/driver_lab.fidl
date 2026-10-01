@@ -18,6 +18,7 @@ const MAX_AUDIT_PAGE_ENTRIES uint32 = 64;
 const MAX_NAME_LENGTH uint32 = 64;
 const MAX_STRING_LENGTH uint32 = 128;
 const MAX_OPERATION_LENGTH uint32 = 32;
+const MAX_TRANSFER_SIZE uint32 = 8192;
 
 /// Access classes distinguished by policy. A grant for one class never
 /// authorizes another.
@@ -27,6 +28,7 @@ type AccessClass = strict enum : uint32 {
     WRITE = 3;
     POLL = 4;
     SEQUENCE = 5;
+    PROTOCOL = 6;
 };
 
 /// Machine-readable reason an operation, allowlist rule, or session open
@@ -59,6 +61,8 @@ type OperationError = flexible enum : uint32 {
     READ_ONLY_SESSION = 21;
     WRITE_NOT_PERMITTED = 22;
     POLL_NOT_PERMITTED = 23;
+    UNSUPPORTED_METHOD = 24;
+    TRANSFER_TOO_LARGE = 25;
 };
 
 /// One exact session allowlist rule. Wildcards do not exist.
@@ -73,6 +77,9 @@ type AccessRule = struct {
 
 type ResourceKind = flexible enum : uint32 {
     MMIO = 1;
+    GPIO = 2;
+    I2C = 3;
+    SPI = 4;
 };
 
 /// Logical description of one offered resource. Never contains physical
@@ -262,6 +269,29 @@ type BarrierVariant = flexible enum : uint32 {
     MEMORY = 1;
 };
 
+type GpioReadResult = struct {
+    value bool;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type GpioWriteResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type I2cTransferResult = struct {
+    read_data vector<uint8>:MAX_TRANSFER_SIZE;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type SpiTransmitResult = struct {
+    rx_data vector<uint8>:MAX_TRANSFER_SIZE;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
 type SequenceItem = flexible union {
     1: read32 struct {
         resource uint32;
@@ -285,6 +315,22 @@ type SequenceItem = flexible union {
     };
     4: delay_ns int64;
     5: barrier BarrierVariant;
+    6: gpio_read struct {
+        resource uint32;
+    };
+    7: gpio_write struct {
+        resource uint32;
+        value bool;
+    };
+    8: i2c_transfer struct {
+        resource uint32;
+        write_data vector<uint8>:MAX_TRANSFER_SIZE;
+        read_length uint32;
+    };
+    9: spi_transmit struct {
+        resource uint32;
+        tx_data vector<uint8>:MAX_TRANSFER_SIZE;
+    };
 };
 
 type SequenceItemOutcome = flexible union {
@@ -294,6 +340,10 @@ type SequenceItemOutcome = flexible union {
     4: delay_ns struct {};
     5: barrier struct {};
     6: error OperationError;
+    7: gpio_read GpioReadResult;
+    8: gpio_write GpioWriteResult;
+    9: i2c_transfer I2cTransferResult;
+    10: spi_transmit SpiTransmitResult;
 };
 
 type SequenceItemResult = struct {
@@ -305,6 +355,29 @@ type SequenceItemResult = struct {
 type SequenceResult = struct {
     results vector<SequenceItemResult>:MAX_SEQUENCE_ITEMS;
     complete bool;
+};
+
+/// Typed endpoint for a GPIO protocol resource.
+open protocol GpioEndpoint {
+    flexible Read() -> (GpioReadResult) error OperationError;
+    flexible Write(struct {
+        value bool;
+    }) -> (GpioWriteResult) error OperationError;
+};
+
+/// Typed endpoint for an I2C protocol resource.
+open protocol I2cEndpoint {
+    flexible Transfer(struct {
+        write_data vector<uint8>:MAX_TRANSFER_SIZE;
+        read_length uint32;
+    }) -> (I2cTransferResult) error OperationError;
+};
+
+/// Typed endpoint for a SPI protocol resource.
+open protocol SpiEndpoint {
+    flexible Transmit(struct {
+        tx_data vector<uint8>:MAX_TRANSFER_SIZE;
+    }) -> (SpiTransmitResult) error OperationError;
 };
 
 /// One experiment session. Closing the channel closes the session,
@@ -355,6 +428,48 @@ open protocol Session {
     flexible ExecuteSequence(struct {
         items vector<SequenceItem>:MAX_SEQUENCE_ITEMS;
     }) -> (SequenceResult) error OperationError;
+
+    /// One policy-checked, audited GPIO read.
+    flexible GpioRead(struct {
+        resource uint32;
+    }) -> (GpioReadResult) error OperationError;
+
+    /// One policy-checked, audited GPIO write. Requires mutation lease.
+    flexible GpioWrite(struct {
+        resource uint32;
+        value bool;
+    }) -> (GpioWriteResult) error OperationError;
+
+    /// One policy-checked, audited I2C transfer. Non-empty write requires mutation lease.
+    flexible I2cTransfer(struct {
+        resource uint32;
+        write_data vector<uint8>:MAX_TRANSFER_SIZE;
+        read_length uint32;
+    }) -> (I2cTransferResult) error OperationError;
+
+    /// One policy-checked, audited SPI transmit. Requires mutation lease.
+    flexible SpiTransmit(struct {
+        resource uint32;
+        tx_data vector<uint8>:MAX_TRANSFER_SIZE;
+    }) -> (SpiTransmitResult) error OperationError;
+
+    /// Opens a typed GPIO endpoint bound to this session.
+    flexible OpenGpio(resource struct {
+        resource uint32;
+        endpoint server_end:GpioEndpoint;
+    }) -> () error OperationError;
+
+    /// Opens a typed I2C endpoint bound to this session.
+    flexible OpenI2c(resource struct {
+        resource uint32;
+        endpoint server_end:I2cEndpoint;
+    }) -> () error OperationError;
+
+    /// Opens a typed SPI endpoint bound to this session.
+    flexible OpenSpi(resource struct {
+        resource uint32;
+        endpoint server_end:SpiEndpoint;
+    }) -> () error OperationError;
 };
 
 @discoverable

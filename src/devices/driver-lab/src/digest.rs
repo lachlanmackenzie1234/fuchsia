@@ -11,7 +11,7 @@
 //! grants on unrelated resources. Dynamic values (mapping addresses, boot
 //! IDs, handles, and the actual mapped size) are excluded.
 
-use crate::access_policy::{MmioResource, ResourceCeiling, ResourceId, WIDTH32};
+use crate::access_policy::{MmioResource, ResourceCeiling, ResourceId, ResourceKind, WIDTH32};
 use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -89,6 +89,16 @@ pub fn resource_digest(inputs: &DigestInputs<'_>) -> Sha256Digest {
     put_bytes(&mut hasher, "provider", inputs.provider.as_bytes());
     put_u64(&mut hasher, "id", u64::from(inputs.id));
     put_bytes(&mut hasher, "name", inputs.resource.name.as_bytes());
+    put_bytes(
+        &mut hasher,
+        "kind",
+        match inputs.resource.kind {
+            ResourceKind::Mmio => b"mmio",
+            ResourceKind::Gpio => b"gpio",
+            ResourceKind::I2c => b"i2c",
+            ResourceKind::Spi => b"spi",
+        },
+    );
     put_u64(&mut hasher, "logical_size", inputs.resource.logical_size);
     put_u64(&mut hasher, "width", u64::from(WIDTH32));
     match inputs.ceiling {
@@ -104,6 +114,16 @@ pub fn resource_digest(inputs: &DigestInputs<'_>) -> Sha256Digest {
             for (start, end) in denied {
                 put_u64(&mut hasher, "deny_start", start);
                 put_u64(&mut hasher, "deny_end", end);
+            }
+            if let Some(proto) = &ceiling.protocol {
+                put_u64(&mut hasher, "protocol_ceiling", 1);
+                put_u64(&mut hasher, "max_transfer_size", u64::from(proto.max_transfer_size));
+                put_u64(&mut hasher, "allow_mutating", u64::from(proto.allow_mutating));
+                for method in &proto.allowed_methods {
+                    put_bytes(&mut hasher, "method", method.as_bytes());
+                }
+            } else {
+                put_u64(&mut hasher, "protocol_ceiling", 0);
             }
         }
     }
@@ -173,7 +193,12 @@ mod tests {
     use super::*;
 
     fn resource() -> MmioResource {
-        MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x1000 }
+        MmioResource {
+            name: "ctrl".to_string(),
+            kind: ResourceKind::Mmio,
+            logical_size: 0x100,
+            mapped_size: 0x1000,
+        }
     }
 
     fn ceiling() -> ResourceCeiling {
@@ -182,6 +207,7 @@ mod tests {
             allow_unknown_reads: true,
             allow_poll: false,
             writable_registers: vec![],
+            protocol: None,
         }
     }
 
@@ -275,6 +301,7 @@ mod tests {
             allow_unknown_reads: true,
             allow_poll: false,
             writable_registers: vec![],
+            protocol: None,
         };
         assert_eq!(
             digest_of(&resource(), Some(&reordered)),
@@ -344,6 +371,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 writable_registers: vec![],
+                protocol: None,
             },
         )]);
         assert_eq!(policy_digest(&reordered_denies), policy_digest(&one));

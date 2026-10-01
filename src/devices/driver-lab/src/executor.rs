@@ -11,7 +11,8 @@
 
 use crate::access_policy::{AccessClass, AccessPolicy, Denial, ResourceId, WritePrecondition};
 use crate::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
-use crate::hardware_backend::{BackendError, Clock, MmioBackend, Timer};
+use crate::hardware_backend::{BackendError, Clock, Timer};
+use crate::protocol_resource_adapter::ResourceBackend;
 use std::collections::BTreeMap;
 
 /// Instance-wide execution limits, derived from the target ceiling.
@@ -137,8 +138,67 @@ pub enum PollError {
     },
 }
 
-/// An operation within a bounded sequence.
+/// The outcome of a completed GPIO read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpioReadOutcome {
+    pub value: bool,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// Why a GPIO read did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpioReadError {
+    Denied { denial: Denial, audit_seq: u64 },
+    Backend { error: BackendError, audit_seq: u64 },
+}
+
+/// The outcome of a completed GPIO write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpioWriteOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// Why a GPIO write did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpioWriteError {
+    Denied { denial: Denial, audit_seq: u64 },
+    Backend { error: BackendError, audit_seq: u64 },
+}
+
+/// The outcome of a completed I2C transfer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct I2cTransferOutcome {
+    pub read_data: Vec<u8>,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// Why an I2C transfer did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum I2cTransferError {
+    Denied { denial: Denial, audit_seq: u64 },
+    Backend { error: BackendError, audit_seq: u64 },
+}
+
+/// The outcome of a completed SPI transmit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpiTransmitOutcome {
+    pub rx_data: Vec<u8>,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// Why a SPI transmit did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpiTransmitError {
+    Denied { denial: Denial, audit_seq: u64 },
+    Backend { error: BackendError, audit_seq: u64 },
+}
+
+/// An operation within a bounded sequence.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SequenceItem {
     Read32 {
         resource: ResourceId,
@@ -162,10 +222,26 @@ pub enum SequenceItem {
     },
     DelayNs(i64),
     Barrier,
+    GpioRead {
+        resource: ResourceId,
+    },
+    GpioWrite {
+        resource: ResourceId,
+        value: bool,
+    },
+    I2cTransfer {
+        resource: ResourceId,
+        write_data: Vec<u8>,
+        read_length: u32,
+    },
+    SpiTransmit {
+        resource: ResourceId,
+        tx_data: Vec<u8>,
+    },
 }
 
 /// The outcome of one sequence item that completed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SequenceItemOutcome {
     Read32(ReadOutcome),
     Write32(WriteOutcome),
@@ -174,10 +250,14 @@ pub enum SequenceItemOutcome {
     Barrier,
     Error(Denial),
     Backend(BackendError),
+    GpioRead(GpioReadOutcome),
+    GpioWrite(GpioWriteOutcome),
+    I2cTransfer(I2cTransferOutcome),
+    SpiTransmit(SpiTransmitOutcome),
 }
 
 /// Result of one sequence item that began execution.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SequenceItemResult {
     pub index: u32,
     pub ok: bool,
@@ -252,7 +332,7 @@ pub struct Executor<B, C> {
     limits: ExecLimits,
 }
 
-impl<B: MmioBackend, C: Clock> Executor<B, C> {
+impl<B: ResourceBackend, C: Clock> Executor<B, C> {
     /// Creates an executor over the instance's backends.
     pub fn new(backends: BTreeMap<ResourceId, B>, clock: C, limits: ExecLimits) -> Self {
         Self { backends, clock, limits }
@@ -701,6 +781,20 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
                     }
                 }
                 SequenceItem::Barrier => {}
+                SequenceItem::GpioRead { resource } => {
+                    policy.check_gpio_read(*resource).map_err(|d| (index, d))?;
+                }
+                SequenceItem::GpioWrite { resource, .. } => {
+                    policy.check_gpio_write(*resource).map_err(|d| (index, d))?;
+                }
+                SequenceItem::I2cTransfer { resource, write_data, read_length } => {
+                    policy
+                        .check_i2c_transfer(*resource, write_data.len(), *read_length as usize)
+                        .map_err(|d| (index, d))?;
+                }
+                SequenceItem::SpiTransmit { resource, tx_data } => {
+                    policy.check_spi_transmit(*resource, tx_data.len()).map_err(|d| (index, d))?;
+                }
             }
         }
         Ok(())
@@ -787,9 +881,359 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
         }
         Ok(SnapshotOutcome { results, complete })
     }
+
+    /// Performs one policy-checked, audited GPIO read.
+    pub fn gpio_read(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<GpioReadOutcome, GpioReadError> {
+        self.gpio_read_internal(policy, audit, session, resource, None)
+    }
+
+    /// Internal GPIO read implementation supporting sequence item indexing.
+    pub fn gpio_read_internal(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        item_index: Option<u32>,
+    ) -> Result<GpioReadOutcome, GpioReadError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_gpio_read(resource) {
+            let mut record = op_record(
+                session,
+                resource,
+                "gpio_read",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(GpioReadError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let mut record = op_record(
+                session,
+                resource,
+                "gpio_read",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(GpioReadError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.gpio_read() {
+            Ok(value) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "gpio_read",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(value as u32),
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Ok(GpioReadOutcome { value, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "gpio_read",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Err(GpioReadError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    /// Performs one policy-checked, audited GPIO write.
+    pub fn gpio_write(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        value: bool,
+    ) -> Result<GpioWriteOutcome, GpioWriteError> {
+        self.gpio_write_internal(policy, audit, session, resource, value, None)
+    }
+
+    /// Internal GPIO write implementation supporting sequence item indexing.
+    pub fn gpio_write_internal(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        value: bool,
+        item_index: Option<u32>,
+    ) -> Result<GpioWriteOutcome, GpioWriteError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_gpio_write(resource) {
+            let mut record = op_record(
+                session,
+                resource,
+                "gpio_write",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                Some(value as u32),
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(GpioWriteError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let mut record = op_record(
+                session,
+                resource,
+                "gpio_write",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                Some(value as u32),
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(GpioWriteError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.gpio_write(value) {
+            Ok(()) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "gpio_write",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(value as u32),
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Ok(GpioWriteOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "gpio_write",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    Some(value as u32),
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Err(GpioWriteError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    /// Performs one policy-checked, audited I2C transfer.
+    pub fn i2c_transfer(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        write_data: &[u8],
+        read_length: u32,
+    ) -> Result<I2cTransferOutcome, I2cTransferError> {
+        self.i2c_transfer_internal(policy, audit, session, resource, write_data, read_length, None)
+    }
+
+    /// Internal I2C transfer implementation supporting sequence item indexing.
+    pub fn i2c_transfer_internal(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        write_data: &[u8],
+        read_length: u32,
+        item_index: Option<u32>,
+    ) -> Result<I2cTransferOutcome, I2cTransferError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) =
+            policy.check_i2c_transfer(resource, write_data.len(), read_length as usize)
+        {
+            let mut record = op_record(
+                session,
+                resource,
+                "i2c_transfer",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(I2cTransferError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let mut record = op_record(
+                session,
+                resource,
+                "i2c_transfer",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(I2cTransferError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.i2c_transfer(write_data, read_length as usize) {
+            Ok(read_data) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "i2c_transfer",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(read_data.len() as u32),
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Ok(I2cTransferOutcome { read_data, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "i2c_transfer",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Err(I2cTransferError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    /// Performs one policy-checked, audited SPI transmit.
+    pub fn spi_transmit(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        tx_data: &[u8],
+    ) -> Result<SpiTransmitOutcome, SpiTransmitError> {
+        self.spi_transmit_internal(policy, audit, session, resource, tx_data, None)
+    }
+
+    /// Internal SPI transmit implementation supporting sequence item indexing.
+    pub fn spi_transmit_internal(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        tx_data: &[u8],
+        item_index: Option<u32>,
+    ) -> Result<SpiTransmitOutcome, SpiTransmitError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_spi_transmit(resource, tx_data.len()) {
+            let mut record = op_record(
+                session,
+                resource,
+                "spi_transmit",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(SpiTransmitError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let mut record = op_record(
+                session,
+                resource,
+                "spi_transmit",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(SpiTransmitError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.spi_transmit(tx_data) {
+            Ok(rx_data) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "spi_transmit",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(rx_data.len() as u32),
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Ok(SpiTransmitOutcome { rx_data, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "spi_transmit",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                Err(SpiTransmitError::Backend { error, audit_seq })
+            }
+        }
+    }
 }
 
-impl<B: MmioBackend, C: Timer> Executor<B, C> {
+impl<B: ResourceBackend, C: Timer> Executor<B, C> {
     /// Performs an asynchronous 32-bit poll with an optional abort token.
     pub async fn poll32_with_abort(
         &mut self,
@@ -1309,6 +1753,144 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
                         outcome: SequenceItemOutcome::Barrier,
                     });
                 }
+                SequenceItem::GpioRead { resource } => {
+                    match self.gpio_read_internal(policy, audit, session, *resource, Some(idx)) {
+                        Ok(outcome) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: true,
+                                outcome: SequenceItemOutcome::GpioRead(outcome),
+                            });
+                        }
+                        Err(GpioReadError::Denied { denial, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Error(denial),
+                            });
+                            complete = false;
+                            break;
+                        }
+                        Err(GpioReadError::Backend { error, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Backend(error),
+                            });
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                SequenceItem::GpioWrite { resource, value } => {
+                    match self.gpio_write_internal(
+                        policy,
+                        audit,
+                        session,
+                        *resource,
+                        *value,
+                        Some(idx),
+                    ) {
+                        Ok(outcome) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: true,
+                                outcome: SequenceItemOutcome::GpioWrite(outcome),
+                            });
+                        }
+                        Err(GpioWriteError::Denied { denial, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Error(denial),
+                            });
+                            complete = false;
+                            break;
+                        }
+                        Err(GpioWriteError::Backend { error, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Backend(error),
+                            });
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                SequenceItem::I2cTransfer { resource, write_data, read_length } => {
+                    match self.i2c_transfer_internal(
+                        policy,
+                        audit,
+                        session,
+                        *resource,
+                        write_data,
+                        *read_length,
+                        Some(idx),
+                    ) {
+                        Ok(outcome) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: true,
+                                outcome: SequenceItemOutcome::I2cTransfer(outcome),
+                            });
+                        }
+                        Err(I2cTransferError::Denied { denial, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Error(denial),
+                            });
+                            complete = false;
+                            break;
+                        }
+                        Err(I2cTransferError::Backend { error, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Backend(error),
+                            });
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                SequenceItem::SpiTransmit { resource, tx_data } => {
+                    match self.spi_transmit_internal(
+                        policy,
+                        audit,
+                        session,
+                        *resource,
+                        tx_data,
+                        Some(idx),
+                    ) {
+                        Ok(outcome) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: true,
+                                outcome: SequenceItemOutcome::SpiTransmit(outcome),
+                            });
+                        }
+                        Err(SpiTransmitError::Denied { denial, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Error(denial),
+                            });
+                            complete = false;
+                            break;
+                        }
+                        Err(SpiTransmitError::Backend { error, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Backend(error),
+                            });
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
             }
         }
         Ok(SequenceOutcome { results, complete })
@@ -1357,10 +1939,8 @@ mod tests {
     fn make_executor(
         rules: &[AccessRule],
     ) -> (Executor<FakeMmio, FakeClock>, AccessPolicy, AuditRing) {
-        let resources = BTreeMap::from([(
-            CTRL,
-            MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x100 },
-        )]);
+        let resources =
+            BTreeMap::from([(CTRL, MmioResource::mmio("ctrl".to_string(), 0x100, 0x100))]);
         let ceiling = BTreeMap::from([(
             CTRL,
             ResourceCeiling {
@@ -1368,6 +1948,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 writable_registers: vec![],
+                protocol: None,
             },
         )]);
         let policy =
@@ -1396,10 +1977,8 @@ mod tests {
         writable_registers: Vec<WritableRegister>,
         rules: &[AccessRule],
     ) -> (Executor<FakeMmio, FakeClock>, AccessPolicy, AuditRing) {
-        let resources = BTreeMap::from([(
-            CTRL,
-            MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x100 },
-        )]);
+        let resources =
+            BTreeMap::from([(CTRL, MmioResource::mmio("ctrl".to_string(), 0x100, 0x100))]);
         let ceiling = BTreeMap::from([(
             CTRL,
             ResourceCeiling {
@@ -1407,6 +1986,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: true,
                 writable_registers,
+                protocol: None,
             },
         )]);
         let policy =
@@ -1576,10 +2156,8 @@ mod tests {
 
     #[test]
     fn missing_backend_is_an_audited_fault() {
-        let resources = BTreeMap::from([(
-            CTRL,
-            MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x100 },
-        )]);
+        let resources =
+            BTreeMap::from([(CTRL, MmioResource::mmio("ctrl".to_string(), 0x100, 0x100))]);
         let ceiling = BTreeMap::from([(
             CTRL,
             ResourceCeiling {
@@ -1587,6 +2165,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 writable_registers: vec![],
+                protocol: None,
             },
         )]);
         let policy = AccessPolicy::new(
@@ -2069,5 +2648,235 @@ mod tests {
             panic!("expected denial, got {error:?}");
         };
         assert_eq!(denial, Denial::NotAccepting);
+    }
+
+    #[test]
+    fn protocol_gpio_standalone_read_and_write() {
+        use crate::access_policy::ProtocolCeiling;
+        let gpio_id = 2;
+        let resources = BTreeMap::from([(gpio_id, MmioResource::gpio("gpio_pin".to_string()))]);
+        let ceiling = BTreeMap::from([(
+            gpio_id,
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: true,
+                allow_poll: false,
+                writable_registers: vec![],
+                protocol: Some(ProtocolCeiling::default_for(
+                    crate::access_policy::ResourceKind::Gpio,
+                )),
+            },
+        )]);
+        let policy_ro = AccessPolicy::new(
+            SessionMode::ReadOnly,
+            resources.clone(),
+            ceiling.clone(),
+            [AccessRule { resource: gpio_id, offset: 0, width: 0, class: AccessClass::Protocol }],
+        )
+        .unwrap();
+        let policy_rw = AccessPolicy::new(
+            SessionMode::Mutating,
+            resources,
+            ceiling,
+            [AccessRule { resource: gpio_id, offset: 0, width: 0, class: AccessClass::Protocol }],
+        )
+        .unwrap();
+
+        let fake_gpio = crate::protocol_resource_adapter::FakeGpio::new(true);
+        let backends = BTreeMap::from([(gpio_id, fake_gpio)]);
+        let clock = FakeClock::new(1000, 10);
+        let mut executor = Executor::new(
+            backends,
+            clock,
+            ExecLimits {
+                max_snapshot_items: 4,
+                max_sequence_items: 4,
+                max_delay_ns: 5_000_000_000,
+                max_sequence_duration_ns: 1_000_000_000,
+            },
+        );
+        let mut audit = AuditRing::new(32);
+
+        // Read in ReadOnly mode succeeds
+        let read_outcome = executor.gpio_read(&policy_ro, &mut audit, SESSION, gpio_id).unwrap();
+        assert_eq!(read_outcome.value, true);
+
+        // Write in ReadOnly mode is denied (requires mutation)
+        let write_err =
+            executor.gpio_write(&policy_ro, &mut audit, SESSION, gpio_id, false).unwrap_err();
+        assert_eq!(
+            write_err,
+            GpioWriteError::Denied { denial: Denial::ReadOnlySession, audit_seq: 1 }
+        );
+
+        // Write in Mutating mode succeeds
+        let write_outcome =
+            executor.gpio_write(&policy_rw, &mut audit, SESSION, gpio_id, false).unwrap();
+        assert_eq!(write_outcome.audit_seq, 2);
+
+        // Read back new value
+        let read_outcome2 = executor.gpio_read(&policy_rw, &mut audit, SESSION, gpio_id).unwrap();
+        assert_eq!(read_outcome2.value, false);
+    }
+
+    #[test]
+    fn heterogeneous_sequence_executes_mmio_and_protocols() {
+        use crate::access_policy::ProtocolCeiling;
+        let mmio_id = 1;
+        let gpio_id = 2;
+        let i2c_id = 3;
+        let spi_id = 4;
+
+        let resources = BTreeMap::from([
+            (mmio_id, MmioResource::mmio("mmio".to_string(), 0x100, 0x100)),
+            (gpio_id, MmioResource::gpio("gpio".to_string())),
+            (i2c_id, MmioResource::i2c("i2c".to_string())),
+            (spi_id, MmioResource::spi("spi".to_string())),
+        ]);
+        let ceiling = BTreeMap::from([
+            (
+                mmio_id,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: true,
+                    allow_poll: false,
+                    writable_registers: vec![],
+                    protocol: None,
+                },
+            ),
+            (
+                gpio_id,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: false,
+                    allow_poll: false,
+                    writable_registers: vec![],
+                    protocol: Some(ProtocolCeiling::default_for(
+                        crate::access_policy::ResourceKind::Gpio,
+                    )),
+                },
+            ),
+            (
+                i2c_id,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: false,
+                    allow_poll: false,
+                    writable_registers: vec![],
+                    protocol: Some(ProtocolCeiling::default_for(
+                        crate::access_policy::ResourceKind::I2c,
+                    )),
+                },
+            ),
+            (
+                spi_id,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: false,
+                    allow_poll: false,
+                    writable_registers: vec![],
+                    protocol: Some(ProtocolCeiling::default_for(
+                        crate::access_policy::ResourceKind::Spi,
+                    )),
+                },
+            ),
+        ]);
+        let rules = [
+            AccessRule {
+                resource: mmio_id,
+                offset: 0x10,
+                width: WIDTH32,
+                class: AccessClass::Sequence,
+            },
+            AccessRule { resource: gpio_id, offset: 0, width: 0, class: AccessClass::Sequence },
+            AccessRule { resource: i2c_id, offset: 0, width: 0, class: AccessClass::Sequence },
+            AccessRule { resource: spi_id, offset: 0, width: 0, class: AccessClass::Sequence },
+        ];
+        let policy = AccessPolicy::new(SessionMode::Mutating, resources, ceiling, rules).unwrap();
+
+        let mut mmio = FakeMmio::new();
+        mmio.set(0x10, 0xaabb_ccdd);
+
+        let gpio = crate::protocol_resource_adapter::FakeGpio::new(false);
+
+        let mut i2c = crate::protocol_resource_adapter::FakeI2c::new();
+        i2c.set_read_response(vec![0x11, 0x22]);
+
+        let mut spi = crate::protocol_resource_adapter::FakeSpi::new();
+        spi.set_rx_response(vec![0x33, 0x44]);
+
+        use crate::protocol_resource_adapter::DeviceBackend;
+        let backends: BTreeMap<
+            ResourceId,
+            DeviceBackend<
+                FakeMmio,
+                crate::protocol_resource_adapter::FakeGpio,
+                crate::protocol_resource_adapter::FakeI2c,
+                crate::protocol_resource_adapter::FakeSpi,
+            >,
+        > = BTreeMap::from([
+            (mmio_id, DeviceBackend::new_mmio(mmio)),
+            (gpio_id, DeviceBackend::new_gpio(gpio)),
+            (i2c_id, DeviceBackend::new_i2c(i2c)),
+            (spi_id, DeviceBackend::new_spi(spi)),
+        ]);
+
+        let clock = FakeClock::new(1000, 10);
+        let mut executor = Executor::new(
+            backends,
+            clock,
+            ExecLimits {
+                max_snapshot_items: 4,
+                max_sequence_items: 10,
+                max_delay_ns: 5_000_000_000,
+                max_sequence_duration_ns: 1_000_000_000,
+            },
+        );
+        let mut audit = AuditRing::new(32);
+
+        let sequence = [
+            SequenceItem::Read32 { resource: mmio_id, offset: 0x10 },
+            SequenceItem::GpioWrite { resource: gpio_id, value: true },
+            SequenceItem::DelayNs(100),
+            SequenceItem::I2cTransfer { resource: i2c_id, write_data: vec![0x55], read_length: 2 },
+            SequenceItem::SpiTransmit { resource: spi_id, tx_data: vec![0xaa, 0xbb] },
+            SequenceItem::GpioRead { resource: gpio_id },
+            SequenceItem::Barrier,
+        ];
+
+        let outcome = futures::executor::block_on(
+            executor.execute_sequence(&policy, &mut audit, SESSION, &sequence),
+        )
+        .unwrap();
+
+        assert!(outcome.complete);
+        assert_eq!(outcome.results.len(), 7);
+        assert!(outcome.results.iter().all(|r| r.ok));
+
+        match &outcome.results[0].outcome {
+            SequenceItemOutcome::Read32(r) => assert_eq!(r.value, 0xaabb_ccdd),
+            other => panic!("expected Read32, got {other:?}"),
+        }
+        assert!(matches!(outcome.results[1].outcome, SequenceItemOutcome::GpioWrite(_)));
+        assert_eq!(outcome.results[2].outcome, SequenceItemOutcome::DelayNs);
+        match &outcome.results[3].outcome {
+            SequenceItemOutcome::I2cTransfer(t) => assert_eq!(t.read_data, vec![0x11, 0x22]),
+            other => panic!("expected I2cTransfer, got {other:?}"),
+        }
+        match &outcome.results[4].outcome {
+            SequenceItemOutcome::SpiTransmit(t) => assert_eq!(t.rx_data, vec![0x33, 0x44]),
+            other => panic!("expected SpiTransmit, got {other:?}"),
+        }
+        match &outcome.results[5].outcome {
+            SequenceItemOutcome::GpioRead(r) => assert_eq!(r.value, true),
+            other => panic!("expected GpioRead, got {other:?}"),
+        }
+        assert_eq!(outcome.results[6].outcome, SequenceItemOutcome::Barrier);
+
+        let entries = &audit.read(0, 10).entries;
+        assert_eq!(entries.len(), 7);
+        for (i, entry) in entries.iter().enumerate() {
+            assert_eq!(entry.record.item_index, Some(i as u32));
+        }
     }
 }

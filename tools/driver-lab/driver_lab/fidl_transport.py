@@ -17,7 +17,14 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import fidl_fuchsia_driver_lab as fdl
-from driver_lab.models import AccessClass
+from driver_lab.models import (
+    AccessClass,
+    GpioReadOutcome,
+    GpioWriteOutcome,
+    I2cTransferOutcome,
+    ResourceKind,
+    SpiTransmitOutcome,
+)
 from driver_lab.transport import (
     AllowRule,
     AuditEntry,
@@ -49,7 +56,23 @@ _ACCESS_TO_FIDL = {
     AccessClass.POLL: fdl.AccessClass.POLL,
     AccessClass.WRITE: fdl.AccessClass.WRITE,
     AccessClass.SEQUENCE: fdl.AccessClass.SEQUENCE,
+    AccessClass.PROTOCOL: fdl.AccessClass.PROTOCOL,
 }
+
+_RESOURCE_KIND_FROM_FIDL = {
+    fdl.ResourceKind.MMIO: ResourceKind.MMIO,
+    fdl.ResourceKind.GPIO: ResourceKind.GPIO,
+    fdl.ResourceKind.I2_C: ResourceKind.I2C,
+    fdl.ResourceKind.SPI: ResourceKind.SPI,
+}
+
+
+def _to_resource_kind(val: Any) -> ResourceKind:
+    if val is None:
+        return ResourceKind.MMIO
+    if isinstance(val, int):
+        val = fdl.ResourceKind(val)
+    return _RESOURCE_KIND_FROM_FIDL.get(val, ResourceKind.MMIO)
 
 
 def _unwrap(result: Any) -> Any:
@@ -150,6 +173,7 @@ class FidlProxyTransport:
             ResourceInfo(
                 id=resource.id_ or 0,
                 name=resource.name or "",
+                kind=_to_resource_kind(resource.kind),
                 logical_size=resource.logical_size or 0,
                 digest=resource.digest or "",
             )
@@ -316,6 +340,60 @@ class _FidlProxySession:
             timestamp_ns=response.timestamp_ns,
         )
 
+    async def gpio_read(self, resource: int) -> GpioReadOutcome:
+        """See `ProxySession.gpio_read`."""
+        result = await self._session.gpio_read(resource=resource)
+        _check_denied(result)
+        response = _unwrap(result)
+        return GpioReadOutcome(
+            value=response.value,
+            audit_seq=response.audit_seq,
+            timestamp_ns=response.timestamp_ns,
+        )
+
+    async def gpio_write(self, resource: int, value: bool) -> GpioWriteOutcome:
+        """See `ProxySession.gpio_write`."""
+        result = await self._session.gpio_write(resource=resource, value=value)
+        _check_denied(result)
+        response = _unwrap(result)
+        return GpioWriteOutcome(
+            audit_seq=response.audit_seq,
+            timestamp_ns=response.timestamp_ns,
+        )
+
+    async def i2c_transfer(
+        self, resource: int, write_data: bytes = b"", read_length: int = 0
+    ) -> I2cTransferOutcome:
+        """See `ProxySession.i2c_transfer`."""
+        result = await self._session.i2c_transfer(
+            resource=resource,
+            write_data=list(write_data),
+            read_length=read_length,
+        )
+        _check_denied(result)
+        response = _unwrap(result)
+        return I2cTransferOutcome(
+            read_data=bytes(response.read_data),
+            audit_seq=response.audit_seq,
+            timestamp_ns=response.timestamp_ns,
+        )
+
+    async def spi_transmit(
+        self, resource: int, tx_data: bytes
+    ) -> SpiTransmitOutcome:
+        """See `ProxySession.spi_transmit`."""
+        result = await self._session.spi_transmit(
+            resource=resource,
+            tx_data=list(tx_data),
+        )
+        _check_denied(result)
+        response = _unwrap(result)
+        return SpiTransmitOutcome(
+            rx_data=bytes(response.rx_data),
+            audit_seq=response.audit_seq,
+            timestamp_ns=response.timestamp_ns,
+        )
+
     async def execute_sequence(
         self, items: Sequence[SequenceItem]
     ) -> SequenceOutcome:
@@ -368,6 +446,39 @@ class _FidlProxySession:
                 fidl_items.append(
                     fdl.SequenceItem(barrier=fdl.BarrierVariant.MEMORY)
                 )
+            elif item.kind == "gpio_read":
+                fidl_items.append(
+                    fdl.SequenceItem(
+                        gpio_read=fdl.GpioRead(resource=item.resource)
+                    )
+                )
+            elif item.kind == "gpio_write":
+                fidl_items.append(
+                    fdl.SequenceItem(
+                        gpio_write=fdl.GpioWrite(
+                            resource=item.resource, value=bool(item.value)
+                        )
+                    )
+                )
+            elif item.kind == "i2c_transfer":
+                fidl_items.append(
+                    fdl.SequenceItem(
+                        i2c_transfer=fdl.I2cTransfer(
+                            resource=item.resource,
+                            write_data=list(item.write_data),
+                            read_length=item.read_length,
+                        )
+                    )
+                )
+            elif item.kind == "spi_transmit":
+                fidl_items.append(
+                    fdl.SequenceItem(
+                        spi_transmit=fdl.SpiTransmit(
+                            resource=item.resource,
+                            tx_data=list(item.tx_data),
+                        )
+                    )
+                )
         result = await self._session.execute_sequence(items=fidl_items)
         _check_denied(result)
         response = _unwrap(result)
@@ -377,6 +488,7 @@ class _FidlProxySession:
             kind = "unknown"
             val = None
             rb = None
+            data = b""
             audit_seq = 0
             ts_ns = 0
             err = None
@@ -399,6 +511,25 @@ class _FidlProxySession:
                 kind = "delay_ns"
             elif outcome.barrier:
                 kind = "barrier"
+            elif outcome.gpio_read:
+                kind = "gpio_read"
+                val = 1 if outcome.gpio_read.value else 0
+                audit_seq = outcome.gpio_read.audit_seq
+                ts_ns = outcome.gpio_read.timestamp_ns
+            elif outcome.gpio_write:
+                kind = "gpio_write"
+                audit_seq = outcome.gpio_write.audit_seq
+                ts_ns = outcome.gpio_write.timestamp_ns
+            elif outcome.i2c_transfer:
+                kind = "i2c_transfer"
+                data = bytes(outcome.i2c_transfer.read_data)
+                audit_seq = outcome.i2c_transfer.audit_seq
+                ts_ns = outcome.i2c_transfer.timestamp_ns
+            elif outcome.spi_transmit:
+                kind = "spi_transmit"
+                data = bytes(outcome.spi_transmit.rx_data)
+                audit_seq = outcome.spi_transmit.audit_seq
+                ts_ns = outcome.spi_transmit.timestamp_ns
             elif outcome.error:
                 kind = "error"
                 err = _to_denial(outcome.error)
@@ -409,6 +540,7 @@ class _FidlProxySession:
                     kind=kind,
                     value=val,
                     readback_value=rb,
+                    data=data,
                     audit_seq=audit_seq,
                     timestamp_ns=ts_ns,
                     error=err,

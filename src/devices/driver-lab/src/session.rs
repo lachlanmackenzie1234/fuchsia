@@ -226,7 +226,12 @@ mod tests {
     fn manager() -> SessionManager {
         let resources = BTreeMap::from([(
             CTRL,
-            MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x100 },
+            MmioResource {
+                name: "ctrl".to_string(),
+                kind: crate::access_policy::ResourceKind::Mmio,
+                logical_size: 0x100,
+                mapped_size: 0x100,
+            },
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
@@ -235,6 +240,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 writable_registers: vec![],
+                protocol: None,
             },
         )]);
         SessionManager::new(identity(), resources, ceiling, true)
@@ -335,7 +341,12 @@ mod tests {
     fn mutating_session_rejected_when_not_permitted() {
         let resources = BTreeMap::from([(
             CTRL,
-            MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x100 },
+            MmioResource {
+                name: "ctrl".to_string(),
+                kind: crate::access_policy::ResourceKind::Mmio,
+                logical_size: 0x100,
+                mapped_size: 0x100,
+            },
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
@@ -344,6 +355,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 writable_registers: vec![],
+                protocol: None,
             },
         )]);
         let mut manager = SessionManager::new(identity(), resources, ceiling, false);

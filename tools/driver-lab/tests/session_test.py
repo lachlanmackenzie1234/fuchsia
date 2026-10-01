@@ -10,12 +10,15 @@ from typing import Any
 
 from driver_lab.api import DriverLab, DriverLabError
 from driver_lab.consent import ConsentDecision
-from driver_lab.models import AccessRequest
+from driver_lab.models import AccessRequest, ResourceKind
 from driver_lab.session import (
     AccessRequirements,
+    Gpio,
     HardwareSession,
+    I2c,
     MmioRegion,
     SessionCapabilities,
+    Spi,
     TranslationMetadata,
     UnsupportedCapabilityError,
 )
@@ -27,6 +30,7 @@ from driver_lab.transport import (
     OperationDenied,
     ProxyDescription,
     ResourceInfo,
+    SequenceItem,
     SessionMode,
 )
 
@@ -64,6 +68,55 @@ def make_proxy_description() -> ProxyDescription:
                 name="status",
                 logical_size=0x80,
                 digest="sha256:" + "44" * 32,
+            ),
+        ),
+        max_snapshot_items=64,
+        audit_capacity=256,
+        node_moniker="sample/hardware/node",
+    )
+
+
+def make_extended_proxy_description() -> ProxyDescription:
+    return ProxyDescription(
+        protocol_major=1,
+        protocol_minor=0,
+        proxy_generation=1,
+        boot_id="boot-test-1",
+        resource_digest="sha256:" + "33" * 32,
+        policy_digest=POLICY_DIGEST,
+        resources=(
+            ResourceInfo(
+                id=1,
+                name="control",
+                logical_size=0x100,
+                digest=CTRL_DIGEST,
+            ),
+            ResourceInfo(
+                id=2,
+                name="status",
+                logical_size=0x80,
+                digest="sha256:" + "44" * 32,
+            ),
+            ResourceInfo(
+                id=3,
+                name="pin0",
+                kind=ResourceKind.GPIO,
+                logical_size=1,
+                digest="sha256:" + "55" * 32,
+            ),
+            ResourceInfo(
+                id=4,
+                name="i2c-bus",
+                kind=ResourceKind.I2C,
+                logical_size=32,
+                digest="sha256:" + "66" * 32,
+            ),
+            ResourceInfo(
+                id=5,
+                name="spi-bus",
+                kind=ResourceKind.SPI,
+                logical_size=32,
+                digest="sha256:" + "77" * 32,
             ),
         ),
         max_snapshot_items=64,
@@ -215,6 +268,18 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(MmioRegion.snapshot32_metadata.experiment_only)
 
+        # Protocol adapter translation metadata
+        self.assertIsInstance(Gpio.read_metadata, TranslationMetadata)
+        self.assertTrue(Gpio.read_metadata.directly_translatable)
+        self.assertIsInstance(Gpio.write_metadata, TranslationMetadata)
+        self.assertTrue(Gpio.write_metadata.directly_translatable)
+
+        self.assertIsInstance(I2c.transfer_metadata, TranslationMetadata)
+        self.assertTrue(I2c.transfer_metadata.directly_translatable)
+
+        self.assertIsInstance(Spi.transmit_metadata, TranslationMetadata)
+        self.assertTrue(Spi.transmit_metadata.directly_translatable)
+
     async def test_direct_mode_capabilities_and_protocols(self) -> None:
         # Register handlers on fake direct target
         gpio_state = {"value": True, "direction": "output"}
@@ -275,7 +340,122 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
                 await session.protocol("fuchsia.hardware.gpio/Device")
 
             with self.assertRaises(UnsupportedCapabilityError):
-                await session.gpio()
+                await session.serial("serial")
+
+            with self.assertRaises(UnsupportedCapabilityError):
+                await session.clock("clock")
+
+            with self.assertRaises(UnsupportedCapabilityError):
+                await session.reset("reset")
+
+            with self.assertRaises(UnsupportedCapabilityError):
+                await session.interrupt("interrupt")
+
+            # Gpio request on proxy that has no GPIO resource raises ValueError
+            with self.assertRaises(ValueError):
+                await session.gpio("gpio")
+
+    async def test_proxy_mode_protocol_adapters(self) -> None:
+        fake = FakeProxyTarget(make_extended_proxy_description())
+        fake.set_i2c_response(4, b"\xde\xad")
+        fake.set_spi_response(5, b"\xbe\xef")
+
+        lab = DriverLab(
+            fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope="target-1",
+            node_id="node-1",
+        )
+        prompt = ScriptedPrompt(ConsentDecision.ALLOW_ONCE)
+        async with await lab.attach(
+            "node-1",
+            mode="proxy",
+            session_mode=SessionMode.MUTATING,
+            consent=prompt,
+        ) as session:
+            # GPIO adapter in proxy mode
+            gpio = await session.gpio("pin0")
+            self.assertEqual(gpio.name, "pin0")
+            self.assertEqual(gpio.id, 3)
+            await gpio.write(True)
+            self.assertTrue(await gpio.read())
+            self.assertTrue(fake.get_gpio(3))
+            await gpio.write(False)
+            self.assertFalse(await gpio.read())
+            self.assertFalse(fake.get_gpio(3))
+
+            # I2C adapter in proxy mode
+            i2c = await session.i2c("i2c-bus")
+            self.assertEqual(i2c.name, "i2c-bus")
+            self.assertEqual(i2c.id, 4)
+            rx_i2c = await i2c.transfer(b"\x01\x02", read_length=2)
+            self.assertEqual(rx_i2c, b"\xde\xad")
+
+            # SPI adapter in proxy mode
+            spi = await session.spi("spi-bus")
+            self.assertEqual(spi.name, "spi-bus")
+            self.assertEqual(spi.id, 5)
+            rx_spi = await spi.transmit(b"\x03\x04")
+            self.assertEqual(rx_spi, b"\xbe\xef")
+
+    async def test_heterogeneous_sequence_proxy_mode(self) -> None:
+        fake = FakeProxyTarget(make_extended_proxy_description())
+        fake.set_value(1, 0x10, 0x1111_2222)
+        fake.set_i2c_response(4, b"\xca\xfe")
+        fake.set_spi_response(5, b"\xba\xbe")
+
+        lab = DriverLab(
+            fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope="target-1",
+            node_id="node-1",
+        )
+        prompt = ScriptedPrompt(ConsentDecision.ALLOW_ONCE)
+        async with await lab.attach(
+            "node-1",
+            mode="proxy",
+            session_mode=SessionMode.MUTATING,
+            consent=prompt,
+        ) as session:
+            seq_items = [
+                SequenceItem(kind="read32", resource=1, offset=0x10),
+                SequenceItem(
+                    kind="write32",
+                    resource=1,
+                    offset=0x14,
+                    value=0x9999,
+                    readback=True,
+                ),
+                SequenceItem(kind="delay_ns", delay_ns=1000),
+                SequenceItem(kind="barrier", barrier="memory"),
+                SequenceItem(kind="gpio_write", resource=3, value=True),
+                SequenceItem(kind="gpio_read", resource=3),
+                SequenceItem(
+                    kind="i2c_transfer",
+                    resource=4,
+                    write_data=b"\x01",
+                    read_length=2,
+                ),
+                SequenceItem(kind="spi_transmit", resource=5, tx_data=b"\x02"),
+            ]
+            outcome = await session.sequence(seq_items)
+            self.assertTrue(outcome.complete)
+            self.assertEqual(len(outcome.results), 8)
+            self.assertEqual(outcome.results[0].kind, "read32")
+            self.assertEqual(outcome.results[0].value, 0x1111_2222)
+            self.assertEqual(outcome.results[1].kind, "write32")
+            self.assertEqual(outcome.results[1].readback_value, 0x9999)
+            self.assertEqual(outcome.results[2].kind, "delay_ns")
+            self.assertEqual(outcome.results[3].kind, "barrier")
+            self.assertEqual(outcome.results[4].kind, "gpio_write")
+            self.assertEqual(outcome.results[5].kind, "gpio_read")
+            self.assertEqual(outcome.results[5].value, 1)
+            self.assertEqual(outcome.results[6].kind, "i2c_transfer")
+            self.assertEqual(outcome.results[6].data, b"\xca\xfe")
+            self.assertEqual(outcome.results[7].kind, "spi_transmit")
+            self.assertEqual(outcome.results[7].data, b"\xba\xbe")
 
     async def test_selection_rules_in_attach(self) -> None:
         lab_proxy = DriverLab(

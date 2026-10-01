@@ -12,8 +12,8 @@ use futures::TryStreamExt;
 use lab_proxy_core::access_policy::{AccessClass, AccessRule, Denial, WritePrecondition};
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
 use lab_proxy_core::executor::{
-    Executor, PollError, ReadError, SequenceItem as CoreSequenceItem, SnapshotError, SnapshotItem,
-    WriteError,
+    Executor, GpioReadError, GpioWriteError, I2cTransferError, PollError, ReadError,
+    SequenceItem as CoreSequenceItem, SnapshotError, SnapshotItem, SpiTransmitError, WriteError,
 };
 use lab_proxy_core::hardware_backend::Clock;
 use lab_proxy_core::session::{OpenError, ProxyIdentity, RunContext, SessionManager, SessionMode};
@@ -45,6 +45,21 @@ fn fidl_to_core_sequence_item(item: &flab::SequenceItem) -> Option<CoreSequenceI
         }),
         flab::SequenceItem::DelayNs(delay) => Some(CoreSequenceItem::DelayNs(*delay)),
         flab::SequenceItem::Barrier(_) => Some(CoreSequenceItem::Barrier),
+        flab::SequenceItem::GpioRead(read) => {
+            Some(CoreSequenceItem::GpioRead { resource: read.resource })
+        }
+        flab::SequenceItem::GpioWrite(write) => {
+            Some(CoreSequenceItem::GpioWrite { resource: write.resource, value: write.value })
+        }
+        flab::SequenceItem::I2cTransfer(transfer) => Some(CoreSequenceItem::I2cTransfer {
+            resource: transfer.resource,
+            write_data: transfer.write_data.clone(),
+            read_length: transfer.read_length,
+        }),
+        flab::SequenceItem::SpiTransmit(transmit) => Some(CoreSequenceItem::SpiTransmit {
+            resource: transmit.resource,
+            tx_data: transmit.tx_data.clone(),
+        }),
         _ => None,
     }
 }
@@ -128,6 +143,8 @@ fn denial_to_fidl(denial: Denial) -> flab::OperationError {
         Denial::Timeout => flab::OperationError::Timeout,
         Denial::ReadOnlySession => flab::OperationError::ReadOnlySession,
         Denial::WriteNotPermitted => flab::OperationError::WriteNotPermitted,
+        Denial::UnsupportedMethod => flab::OperationError::UnsupportedMethod,
+        Denial::TransferTooLarge => flab::OperationError::TransferTooLarge,
     }
 }
 
@@ -170,7 +187,12 @@ fn describe(state: &SharedState) -> flab::ProxyDescription {
         .map(|(id, resource)| flab::ResourceDescription {
             id: Some(*id),
             name: Some(resource.name.clone()),
-            kind: Some(flab::ResourceKind::Mmio),
+            kind: Some(match resource.kind {
+                lab_proxy_core::access_policy::ResourceKind::Mmio => flab::ResourceKind::Mmio,
+                lab_proxy_core::access_policy::ResourceKind::Gpio => flab::ResourceKind::Gpio,
+                lab_proxy_core::access_policy::ResourceKind::I2c => flab::ResourceKind::I2C,
+                lab_proxy_core::access_policy::ResourceKind::Spi => flab::ResourceKind::Spi,
+            }),
             logical_size: Some(resource.logical_size),
             digest: state.resource_digests.get(id).cloned(),
             ..Default::default()
@@ -265,6 +287,7 @@ fn open_session(
                 flab::AccessClass::Write => AccessClass::Write,
                 flab::AccessClass::Poll => AccessClass::Poll,
                 flab::AccessClass::Sequence => AccessClass::Sequence,
+                flab::AccessClass::Protocol => AccessClass::Protocol,
             },
         })
         .collect();
@@ -334,7 +357,12 @@ pub async fn serve_proxy(
                 responder,
             } => match open_session(&state, context, mode, expectations, allowlist) {
                 Ok(id) => {
-                    scope.spawn(serve_session(state.clone(), id, session.into_stream()));
+                    scope.spawn(serve_session(
+                        state.clone(),
+                        id,
+                        session.into_stream(),
+                        scope.clone(),
+                    ));
                     let _ = responder.send(Ok(id));
                 }
                 Err(error) => {
@@ -346,7 +374,12 @@ pub async fn serve_proxy(
     }
 }
 
-async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionRequestStream) {
+async fn serve_session(
+    state: SharedState,
+    id: u64,
+    mut stream: flab::SessionRequestStream,
+    scope: ScopeHandle,
+) {
     while let Ok(Some(request)) = stream.try_next().await {
         match request {
             flab::SessionRequest::Read32 { resource, offset, responder } => {
@@ -1070,6 +1103,193 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                                 }
                             }
                         }
+                        CoreSequenceItem::GpioRead { resource } => {
+                            let step = {
+                                let guard = &mut *state.inner.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(session) => match executor.gpio_read_internal(
+                                        &session.policy,
+                                        audit,
+                                        id,
+                                        *resource,
+                                        Some(idx),
+                                    ) {
+                                        Ok(outcome) => Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::GpioRead(
+                                                flab::GpioReadResult {
+                                                    value: outcome.value,
+                                                    audit_seq: outcome.audit_seq,
+                                                    timestamp_ns: outcome.timestamp_ns,
+                                                },
+                                            ),
+                                        }),
+                                        Err(GpioReadError::Denied { denial, .. }) => {
+                                            Err(denial_to_fidl(denial))
+                                        }
+                                        Err(GpioReadError::Backend { .. }) => {
+                                            Err(flab::OperationError::BackendFault)
+                                        }
+                                    },
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                        CoreSequenceItem::GpioWrite { resource, value } => {
+                            let step = {
+                                let guard = &mut *state.inner.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(session) => match executor.gpio_write_internal(
+                                        &session.policy,
+                                        audit,
+                                        id,
+                                        *resource,
+                                        *value,
+                                        Some(idx),
+                                    ) {
+                                        Ok(outcome) => Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::GpioWrite(
+                                                flab::GpioWriteResult {
+                                                    audit_seq: outcome.audit_seq,
+                                                    timestamp_ns: outcome.timestamp_ns,
+                                                },
+                                            ),
+                                        }),
+                                        Err(GpioWriteError::Denied { denial, .. }) => {
+                                            Err(denial_to_fidl(denial))
+                                        }
+                                        Err(GpioWriteError::Backend { .. }) => {
+                                            Err(flab::OperationError::BackendFault)
+                                        }
+                                    },
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                        CoreSequenceItem::I2cTransfer { resource, write_data, read_length } => {
+                            let step = {
+                                let guard = &mut *state.inner.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(session) => match executor.i2c_transfer_internal(
+                                        &session.policy,
+                                        audit,
+                                        id,
+                                        *resource,
+                                        write_data,
+                                        *read_length,
+                                        Some(idx),
+                                    ) {
+                                        Ok(outcome) => Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::I2cTransfer(
+                                                flab::I2cTransferResult {
+                                                    read_data: outcome.read_data,
+                                                    audit_seq: outcome.audit_seq,
+                                                    timestamp_ns: outcome.timestamp_ns,
+                                                },
+                                            ),
+                                        }),
+                                        Err(I2cTransferError::Denied { denial, .. }) => {
+                                            Err(denial_to_fidl(denial))
+                                        }
+                                        Err(I2cTransferError::Backend { .. }) => {
+                                            Err(flab::OperationError::BackendFault)
+                                        }
+                                    },
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                        CoreSequenceItem::SpiTransmit { resource, tx_data } => {
+                            let step = {
+                                let guard = &mut *state.inner.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(session) => match executor.spi_transmit_internal(
+                                        &session.policy,
+                                        audit,
+                                        id,
+                                        *resource,
+                                        tx_data,
+                                        Some(idx),
+                                    ) {
+                                        Ok(outcome) => Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::SpiTransmit(
+                                                flab::SpiTransmitResult {
+                                                    rx_data: outcome.rx_data,
+                                                    audit_seq: outcome.audit_seq,
+                                                    timestamp_ns: outcome.timestamp_ns,
+                                                },
+                                            ),
+                                        }),
+                                        Err(SpiTransmitError::Denied { denial, .. }) => {
+                                            Err(denial_to_fidl(denial))
+                                        }
+                                        Err(SpiTransmitError::Backend { .. }) => {
+                                            Err(flab::OperationError::BackendFault)
+                                        }
+                                    },
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1124,6 +1344,225 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                     page.next_cursor,
                 );
             }
+            flab::SessionRequest::GpioRead { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .gpio_read(&session.policy, audit, id, resource)
+                            .map(|outcome| (outcome.value, outcome.audit_seq, outcome.timestamp_ns))
+                            .map_err(|error| match error {
+                                GpioReadError::Denied { denial, .. } => denial_to_fidl(denial),
+                                GpioReadError::Backend { .. } => flab::OperationError::BackendFault,
+                            }),
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::GpioWrite { resource, value, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .gpio_write(&session.policy, audit, id, resource, value)
+                            .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                            .map_err(|error| match error {
+                                GpioWriteError::Denied { denial, .. } => denial_to_fidl(denial),
+                                GpioWriteError::Backend { .. } => {
+                                    flab::OperationError::BackendFault
+                                }
+                            }),
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::I2cTransfer { resource, write_data, read_length, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .i2c_transfer(
+                                &session.policy,
+                                audit,
+                                id,
+                                resource,
+                                &write_data,
+                                read_length,
+                            )
+                            .map(|outcome| {
+                                (outcome.read_data, outcome.audit_seq, outcome.timestamp_ns)
+                            })
+                            .map_err(|error| match error {
+                                I2cTransferError::Denied { denial, .. } => denial_to_fidl(denial),
+                                I2cTransferError::Backend { .. } => {
+                                    flab::OperationError::BackendFault
+                                }
+                            }),
+                    }
+                };
+                let _ = responder.send(
+                    result
+                        .as_ref()
+                        .map(|(data, seq, ts)| (data.as_slice(), *seq, *ts))
+                        .map_err(|err| *err),
+                );
+            }
+            flab::SessionRequest::SpiTransmit { resource, tx_data, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .spi_transmit(&session.policy, audit, id, resource, &tx_data)
+                            .map(|outcome| {
+                                (outcome.rx_data, outcome.audit_seq, outcome.timestamp_ns)
+                            })
+                            .map_err(|error| match error {
+                                SpiTransmitError::Denied { denial, .. } => denial_to_fidl(denial),
+                                SpiTransmitError::Backend { .. } => {
+                                    flab::OperationError::BackendFault
+                                }
+                            }),
+                    }
+                };
+                let _ = responder.send(
+                    result
+                        .as_ref()
+                        .map(|(data, seq, ts)| (data.as_slice(), *seq, *ts))
+                        .map_err(|err| *err),
+                );
+            }
+            flab::SessionRequest::OpenGpio { resource, endpoint, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let check = {
+                    let guard = state.inner.lock().unwrap();
+                    match guard.sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => match session.policy.resource(resource) {
+                            None => Err(flab::OperationError::UnknownResource),
+                            Some(res) => {
+                                if res.kind != lab_proxy_core::access_policy::ResourceKind::Gpio {
+                                    Err(flab::OperationError::UnsupportedMethod)
+                                } else {
+                                    Ok(())
+                                }
+                            }
+                        },
+                    }
+                };
+                match check {
+                    Ok(()) => {
+                        scope.spawn(serve_gpio_endpoint(
+                            state.clone(),
+                            id,
+                            resource,
+                            endpoint.into_stream(),
+                        ));
+                        let _ = responder.send(Ok(()));
+                    }
+                    Err(err) => {
+                        let _ = responder.send(Err(err));
+                    }
+                }
+            }
+            flab::SessionRequest::OpenI2c { resource, endpoint, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let check = {
+                    let guard = state.inner.lock().unwrap();
+                    match guard.sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => match session.policy.resource(resource) {
+                            None => Err(flab::OperationError::UnknownResource),
+                            Some(res) => {
+                                if res.kind != lab_proxy_core::access_policy::ResourceKind::I2c {
+                                    Err(flab::OperationError::UnsupportedMethod)
+                                } else {
+                                    Ok(())
+                                }
+                            }
+                        },
+                    }
+                };
+                match check {
+                    Ok(()) => {
+                        scope.spawn(serve_i2c_endpoint(
+                            state.clone(),
+                            id,
+                            resource,
+                            endpoint.into_stream(),
+                        ));
+                        let _ = responder.send(Ok(()));
+                    }
+                    Err(err) => {
+                        let _ = responder.send(Err(err));
+                    }
+                }
+            }
+            flab::SessionRequest::OpenSpi { resource, endpoint, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let check = {
+                    let guard = state.inner.lock().unwrap();
+                    match guard.sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => match session.policy.resource(resource) {
+                            None => Err(flab::OperationError::UnknownResource),
+                            Some(res) => {
+                                if res.kind != lab_proxy_core::access_policy::ResourceKind::Spi {
+                                    Err(flab::OperationError::UnsupportedMethod)
+                                } else {
+                                    Ok(())
+                                }
+                            }
+                        },
+                    }
+                };
+                match check {
+                    Ok(()) => {
+                        scope.spawn(serve_spi_endpoint(
+                            state.clone(),
+                            id,
+                            resource,
+                            endpoint.into_stream(),
+                        ));
+                        let _ = responder.send(Ok(()));
+                    }
+                    Err(err) => {
+                        let _ = responder.send(Err(err));
+                    }
+                }
+            }
             flab::SessionRequest::_UnknownMethod { .. } => {}
         }
     }
@@ -1135,5 +1574,155 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
         let mut record = AuditRecord::lifecycle("session_closed", now_ns());
         record.session = Some(id);
         state.audit.append(record);
+    }
+}
+
+async fn serve_gpio_endpoint(
+    state: SharedState,
+    session_id: u64,
+    resource: u32,
+    mut stream: flab::GpioEndpointRequestStream,
+) {
+    while let Ok(Some(request)) = stream.try_next().await {
+        match request {
+            flab::GpioEndpointRequest::Read { responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(session_id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .gpio_read(&session.policy, audit, session_id, resource)
+                            .map(|outcome| (outcome.value, outcome.audit_seq, outcome.timestamp_ns))
+                            .map_err(|error| match error {
+                                GpioReadError::Denied { denial, .. } => denial_to_fidl(denial),
+                                GpioReadError::Backend { .. } => flab::OperationError::BackendFault,
+                            }),
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::GpioEndpointRequest::Write { value, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(session_id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .gpio_write(&session.policy, audit, session_id, resource, value)
+                            .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                            .map_err(|error| match error {
+                                GpioWriteError::Denied { denial, .. } => denial_to_fidl(denial),
+                                GpioWriteError::Backend { .. } => {
+                                    flab::OperationError::BackendFault
+                                }
+                            }),
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::GpioEndpointRequest::_UnknownMethod { .. } => {}
+        }
+    }
+}
+
+async fn serve_i2c_endpoint(
+    state: SharedState,
+    session_id: u64,
+    resource: u32,
+    mut stream: flab::I2cEndpointRequestStream,
+) {
+    while let Ok(Some(request)) = stream.try_next().await {
+        match request {
+            flab::I2cEndpointRequest::Transfer { write_data, read_length, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(session_id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .i2c_transfer(
+                                &session.policy,
+                                audit,
+                                session_id,
+                                resource,
+                                &write_data,
+                                read_length,
+                            )
+                            .map(|outcome| {
+                                (outcome.read_data, outcome.audit_seq, outcome.timestamp_ns)
+                            })
+                            .map_err(|error| match error {
+                                I2cTransferError::Denied { denial, .. } => denial_to_fidl(denial),
+                                I2cTransferError::Backend { .. } => {
+                                    flab::OperationError::BackendFault
+                                }
+                            }),
+                    }
+                };
+                let _ = responder.send(
+                    result
+                        .as_ref()
+                        .map(|(data, seq, ts)| (data.as_slice(), *seq, *ts))
+                        .map_err(|err| *err),
+                );
+            }
+            flab::I2cEndpointRequest::_UnknownMethod { .. } => {}
+        }
+    }
+}
+
+async fn serve_spi_endpoint(
+    state: SharedState,
+    session_id: u64,
+    resource: u32,
+    mut stream: flab::SpiEndpointRequestStream,
+) {
+    while let Ok(Some(request)) = stream.try_next().await {
+        match request {
+            flab::SpiEndpointRequest::Transmit { tx_data, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(session_id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .spi_transmit(&session.policy, audit, session_id, resource, &tx_data)
+                            .map(|outcome| {
+                                (outcome.rx_data, outcome.audit_seq, outcome.timestamp_ns)
+                            })
+                            .map_err(|error| match error {
+                                SpiTransmitError::Denied { denial, .. } => denial_to_fidl(denial),
+                                SpiTransmitError::Backend { .. } => {
+                                    flab::OperationError::BackendFault
+                                }
+                            }),
+                    }
+                };
+                let _ = responder.send(
+                    result
+                        .as_ref()
+                        .map(|(data, seq, ts)| (data.as_slice(), *seq, *ts))
+                        .map_err(|err| *err),
+                );
+            }
+            flab::SpiEndpointRequest::_UnknownMethod { .. } => {}
+        }
     }
 }

@@ -34,6 +34,7 @@ rustc_library("core") {
     "src/digest.rs",
     "src/executor.rs",
     "src/hardware_backend.rs",
+    "src/protocol_resource_adapter.rs",
     "src/provider.rs",
     "src/session.rs",
     "src/target_policy.rs",
