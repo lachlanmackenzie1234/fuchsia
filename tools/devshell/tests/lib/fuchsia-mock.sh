@@ -26,7 +26,6 @@ btf::setup_fx() {
   # Fake fuchsia dir configuration.
   BT_ASSERT_FILE_EXISTS "${_FUCHSIA_DIR}/tools/devshell/lib/vars.sh"
   BT_ASSERT_FILE_EXISTS "${_FUCHSIA_DIR}/tools/devshell/lib/platform.sh"
-  BT_ASSERT_FILE_EXISTS "${_FUCHSIA_DIR}/tools/devshell/lib/fx-optional-features.sh"
   touch "${_FUCHSIA_DIR}/.ssh/fuchsia_ed25519" "${_FUCHSIA_DIR}/.ssh/fuchsia_authorized_keys"
   echo -e "${_FUCHSIA_DIR}/.ssh/fuchsia_ed25519\n${_FUCHSIA_DIR}/.ssh/fuchsia_authorized_keys" > "${_FUCHSIA_DIR}/.fx-ssh-path"
 
@@ -55,6 +54,14 @@ btf::setup_fx() {
     "needs_reproxy": false,
     "needs_auth": false
   }
+}
+EOF
+
+  # Mock credentials.sh to avoid executing real credentials isolation in unit tests
+  btf::make_mock "${_FUCHSIA_DIR}/tools/devshell/lib/credentials.sh"
+  cat > "${_FUCHSIA_DIR}/tools/devshell/lib/credentials.sh.mock_side_effects" <<EOF
+function fx-setup-isolated-adc {
+  :
 }
 EOF
 

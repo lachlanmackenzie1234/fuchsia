@@ -25,6 +25,7 @@ from unittest import mock
 
 import main_build
 import signal_utils
+from build.auth import gcloud
 from build.rbe import rbe_settings
 
 _FAKE_RBE_SETTINGS = rbe_settings.RbeSettings(
@@ -72,9 +73,18 @@ class MainBuildTestBase(unittest.TestCase):
         )
         self.mock_rbe_settings_load = self.rbe_settings_load_patcher.start()
 
+        # Mock credential isolation by default as it is not the focus of core context/invocation tests
+        self.isolate_creds_patcher = mock.patch.object(
+            main_build.FuchsiaBuildContext,
+            "_isolate_gcloud_credentials",
+            return_value=None,
+        )
+        self.isolate_creds_patcher.start()
+
     def tearDown(self) -> None:
         self.read_json_patcher.stop()
         self.rbe_settings_load_patcher.stop()
+        self.isolate_creds_patcher.stop()
 
     @contextmanager
     def mock_invocation_context(
@@ -100,7 +110,12 @@ class MainBuildTestBase(unittest.TestCase):
                         yield mock_mkdir, mock_write
 
     def create_context(
-        self, env: dict[str, str] | None = None, **config_kwargs: Any
+        self,
+        env: dict[str, str] | None = None,
+        source_dir: pathlib.Path | None = None,
+        out_dir: pathlib.Path | None = None,
+        build_dir: pathlib.Path | None = None,
+        **config_kwargs: Any,
     ) -> main_build.FuchsiaBuildContext:
         """Helper to create a FuchsiaBuildContext with specific config."""
         config_vals: dict[str, Any] = {
@@ -121,9 +136,9 @@ class MainBuildTestBase(unittest.TestCase):
             env_vals.update(env)
 
         return main_build.FuchsiaBuildContext(
-            source_dir=pathlib.Path("/tmp/fuchsia"),
-            out_dir=pathlib.Path("/tmp/out"),
-            build_dir=pathlib.Path("/tmp/out/default"),
+            source_dir=source_dir or pathlib.Path("/tmp/fuchsia"),
+            out_dir=out_dir or pathlib.Path("/tmp/out"),
+            build_dir=build_dir or pathlib.Path("/tmp/out/default"),
             env=env_vals,
             config=config,
         )
@@ -591,7 +606,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             self.assertEqual(env["USER"], "custom-user")
             self.assertEqual(
                 env["GOOGLE_APPLICATION_CREDENTIALS"],
-                "/mock/home/.config/gcloud/application_default_credentials.json",
+                str(pathlib.Path("/mock/home") / gcloud.ADC_SUBPATH),
             )
 
     @mock.patch.object(
@@ -618,7 +633,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             self.assertEqual(env["USER"], "builder")
             self.assertEqual(
                 env["GOOGLE_APPLICATION_CREDENTIALS"],
-                "/mock/home/.config/gcloud/application_default_credentials.json",
+                str(pathlib.Path("/mock/home") / gcloud.ADC_SUBPATH),
             )
 
     @mock.patch.object(
@@ -645,7 +660,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             self.assertEqual(env["USER"], "custom-bot")
             self.assertEqual(
                 env["GOOGLE_APPLICATION_CREDENTIALS"],
-                "/mock/home/.config/gcloud/application_default_credentials.json",
+                str(pathlib.Path("/mock/home") / gcloud.ADC_SUBPATH),
             )
 
     def test_auth_env_home_raises_runtime_error(self) -> None:
@@ -668,6 +683,152 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             self.assertEqual(env["FX_BUILD_LOAS_TYPE"], "skip")
             self.assertEqual(env["USER"], "builder")
             self.assertNotIn("GOOGLE_APPLICATION_CREDENTIALS", env)
+
+    def test_auth_env_isolates_google_application_credentials(self) -> None:
+        """Verifies that auth_env isolates the ADC by generating a local copy in the out directory."""
+        import tempfile
+
+        self.isolate_creds_patcher.stop()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = pathlib.Path(temp_dir)
+                out_dir = temp_path / "out"
+                out_dir.mkdir()
+
+                # Create a mock global ADC file
+                adc_src = temp_path / "global_adc.json"
+                adc_src.write_text(
+                    json.dumps(
+                        {
+                            "client_id": "foo",
+                            "type": "authorized_user",
+                            "quota_project_id": "old-project",
+                        }
+                    )
+                )
+
+                workspace_root = (
+                    pathlib.Path(__file__).resolve().parent.parent.parent
+                )
+                context = self.create_context(
+                    out_dir=out_dir,
+                    source_dir=workspace_root,
+                    resultstore="all",
+                )
+                context.env = {"GOOGLE_APPLICATION_CREDENTIALS": str(adc_src)}
+
+                with mock.patch.object(
+                    main_build.FuchsiaBuildContext,
+                    "needs_auth",
+                    new_callable=mock.PropertyMock,
+                    return_value=True,
+                ), mock.patch.object(
+                    getpass, "getuser", return_value="custom-user"
+                ), mock.patch.object(
+                    main_build.FuchsiaBuildContext,
+                    "rbe_instance",
+                    new_callable=mock.PropertyMock,
+                    return_value="projects/fake-project/instances/default",
+                ):
+                    env = context.auth_env
+
+                    local_adc_path = (
+                        out_dir / "application_default_credentials.json"
+                    )
+                    self.assertEqual(
+                        env["GOOGLE_APPLICATION_CREDENTIALS"],
+                        str(local_adc_path),
+                    )
+                    self.assertTrue(local_adc_path.is_file())
+
+                    # Check contents of the isolated copy
+                    data = json.loads(local_adc_path.read_text())
+                    self.assertEqual(data["client_id"], "foo")
+                    self.assertEqual(data["type"], "authorized_user")
+                    self.assertEqual(data["quota_project_id"], "fake-project")
+        finally:
+            self.isolate_creds_patcher.start()
+
+    def test_rbe_quota_project_fallback_when_no_config(self) -> None:
+        """Verifies that rbe_quota_project falls back to empty string when config is missing."""
+        context = self.create_context()
+        self.assertEqual(context.rbe_quota_project, "")
+
+    def test_rbe_quota_project_parses_reproxy_cfg(self) -> None:
+        """Verifies that rbe_quota_project dynamically parses the active reproxy config file."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            build_dir = temp_path / "build"
+            build_dir.mkdir()
+
+            # Create a mock rbe_config.json
+            rbe_config = build_dir / "rbe_config.json"
+            rbe_config.write_text('[{"path": "reproxy.cfg"}]')
+
+            # Create a mock reproxy.cfg specifying a custom project
+            reproxy_cfg = build_dir / "reproxy.cfg"
+            reproxy_cfg.write_text(
+                "service=remotebuildexecution.googleapis.com:443\n"
+                "instance=projects/custom-rbe-project/instances/default\n"
+            )
+
+            context = self.create_context(
+                build_dir=build_dir,
+                source_dir=temp_path,
+                rbe=True,
+            )
+            # Set the mocked read_json to return our config path entry
+            self.mock_read_json.return_value = [{"path": "reproxy.cfg"}]
+
+            # Monkeypatch rbe_config_json to point to our mock file
+            with mock.patch.object(
+                main_build.FuchsiaBuildContext,
+                "rbe_config_json",
+                new_callable=mock.PropertyMock,
+                return_value=rbe_config,
+            ):
+                self.assertEqual(
+                    context.rbe_quota_project, "custom-rbe-project"
+                )
+
+    def test_resultstore_quota_project_parses_cfg(self) -> None:
+        """Verifies that resultstore_quota_project dynamically parses the resultstore config file."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+
+            # Create the build/resultstore/fuchsia-resultstore.cfg structure
+            cfg_dir = temp_path / "build" / "resultstore"
+            cfg_dir.mkdir(parents=True)
+            rs_cfg = cfg_dir / "fuchsia-resultstore.cfg"
+            rs_cfg.write_text(
+                "rs_service=resultstore.googleapis.com:443\n"
+                "rs_instance=projects/custom-rs-project/instances/default\n"
+            )
+
+            context = self.create_context(
+                source_dir=temp_path, resultstore="all"
+            )
+            self.assertEqual(
+                context.resultstore_quota_project, "custom-rs-project"
+            )
+
+    def test_rbe_quota_project_prioritizes_cli_override(self) -> None:
+        """Verifies that rbe_quota_project prioritizes the CLI config override over files on disk."""
+        context = self.create_context(
+            rbe_instance="projects/flag-rbe-project/instances/default"
+        )
+        self.assertEqual(context.rbe_quota_project, "flag-rbe-project")
+
+    def test_resultstore_quota_project_prioritizes_cli_override(self) -> None:
+        """Verifies that resultstore_quota_project prioritizes the CLI config override over files."""
+        context = self.create_context(
+            resultstore_instance="projects/flag-rs-project/instances/default"
+        )
+        self.assertEqual(context.resultstore_quota_project, "flag-rs-project")
 
     def test_resolved_auth_mode_explicit_none(self) -> None:
         """Verifies that auth_mode 'none' always resolves to 'none'."""
@@ -1277,6 +1438,31 @@ class StrToBoolTest(unittest.TestCase):
             main_build.str_to_bool("maybe")
 
 
+class ParseCfgTest(unittest.TestCase):
+    def test_parse_cfg_text_empty(self) -> None:
+        self.assertEqual(main_build._parse_cfg_text(""), {})
+        self.assertEqual(main_build._parse_cfg_text("   \n# comment\n\n"), {})
+
+    def test_parse_cfg_text_valid(self) -> None:
+        cfg = "key=value\n# comment\n  another_key  =   another_value  \n"
+        expected = {"key": "value", "another_key": "another_value"}
+        self.assertEqual(main_build._parse_cfg_text(cfg), expected)
+
+    def test_extract_project_id_from_instance(self) -> None:
+        self.assertIsNone(main_build._extract_project_id_from_instance(""))
+        self.assertIsNone(
+            main_build._extract_project_id_from_instance("default")
+        )
+
+        # Valid format
+        self.assertEqual(
+            main_build._extract_project_id_from_instance(
+                "projects/custom-proj/instances/default"
+            ),
+            "custom-proj",
+        )
+
+
 class CheckRbeEnvVarsTest(unittest.TestCase):
     def test_no_rbe_vars(self) -> None:
         f = io.StringIO()
@@ -1334,7 +1520,7 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         with mock.patch.multiple(
             main_build.FuchsiaBuildContext,
             rbe_enabled=mock.PropertyMock(return_value=True),
-            get_rbe_reproxy_configs=lambda s: [pathlib.Path("cfg")],
+            get_reproxy_configs=lambda s: [pathlib.Path("cfg")],
         ):
             with self.mock_invocation_context():
                 invocation = main_build.BuildInvocation(context)

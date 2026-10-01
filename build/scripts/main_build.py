@@ -42,6 +42,7 @@ _FUCHSIA_ROOT = pathlib.Path(__file__).parent.parent.parent
 if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
+from build.auth import gcloud
 from build.rbe import rbe_settings
 
 _JSONPrimitive = str | int | float | bool | None
@@ -74,6 +75,52 @@ def ts_msg(
         print(f"[{time.time():.9f}] [{_SCRIPT.name}]: {text}", file=file)
 
 
+def _parse_cfg_text(text: str) -> dict[str, str]:
+    """Parses a key-value .cfg string into a dictionary.
+
+    Lines starting with '#' or empty lines are ignored.
+    """
+    cfg_data: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Key-value lines are formatted as 'key=value'
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key:
+            cfg_data[key] = value.strip()
+    return cfg_data
+
+
+def _parse_cfg_file(config_path: pathlib.Path) -> dict[str, str]:
+    """Safely reads a key-value .cfg file and parses it into a dictionary."""
+    try:
+        if config_path.is_file():
+            return _parse_cfg_text(config_path.read_text())
+    except Exception as e:
+        # Speculative configuration parsing of user cfg files is non-critical to
+        # core build orchestration. Print a diagnostic warning but proceed.
+        msg(
+            f"Warning: Failed to read RBE/ResultStore config file {config_path}: {e}",
+            file=sys.stderr,
+        )
+    return {}
+
+
+def _extract_project_id_from_instance(instance_val: str) -> str | None:
+    """Extracts the GCP project ID from an RBE/ResultStore instance string.
+
+    Format expected: 'projects/<project-id>/instances/...'
+    """
+    if instance_val.startswith("projects/"):
+        _, _, projects_tail = instance_val.partition("projects/")
+        project_id, _, _ = projects_tail.partition("/")
+        if project_id:
+            return project_id
+    return None
+
+
 GLOBAL_RESULTSTORE_CONFIG = pathlib.Path(".fx/config/resultstore")
 LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
 DEFAULT_RBE_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
@@ -93,33 +140,6 @@ BAZEL_CRED_HELPER = pathlib.Path(
 @dataclasses.dataclass
 class BuildResult(object):
     return_code: int
-
-
-def _parse_cfg_text(text: str) -> dict[str, str]:
-    """Parses key-value pairs from a raw .cfg string, ignoring comments and stripping lines."""
-    cfg_data = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            key, sep, value = line.partition("=")
-            if sep:
-                cfg_data[key.strip()] = value.strip()
-    return cfg_data
-
-
-def _parse_cfg_file(config_path: pathlib.Path) -> dict[str, str]:
-    """Safely reads a .cfg file and parses it into a dictionary of key-value pairs."""
-    try:
-        if config_path.is_file():
-            return _parse_cfg_text(config_path.read_text())
-    except Exception as e:
-        # Speculative configuration parsing of user cfg files is non-critical to
-        # core build orchestration. Print a diagnostic warning but proceed.
-        msg(
-            f"Warning: Failed to read RBE/ResultStore config file {config_path}: {e}",
-            file=sys.stderr,
-        )
-    return {}
 
 
 class BuildConfigurationError(Exception):
@@ -327,8 +347,7 @@ def read_json(path: pathlib.Path) -> Any:
             f"{path} does not exist. Make sure you have run 'fx set'."
         )
     try:
-        with open(path) as f:
-            return json.load(f)
+        return json.loads(path.read_text())
     except json.JSONDecodeError as e:
         raise BuildConfigurationError(f"Failed to parse {path}: {e}")
     except Exception as e:
@@ -583,6 +602,122 @@ class FuchsiaBuildContext(object):
             user = "builder"
         return user
 
+    @functools.cached_property
+    def rbe_instance(self) -> str | None:
+        """Returns the active RBE instance name, prioritizing CLI flag over configs."""
+        if self.config.rbe_instance:
+            return self.config.rbe_instance
+
+        if not self.rbe_enabled:
+            return None
+
+        for config_path in self.get_reproxy_configs():
+            cfg_dict = _parse_cfg_file(config_path)
+            instance = cfg_dict.get("instance")
+            if instance:
+                return instance
+        return None
+
+    @functools.cached_property
+    def resultstore_instance(self) -> str | None:
+        """Returns the active ResultStore instance name, prioritizing CLI flag over configs."""
+        if self.config.resultstore_instance:
+            return self.config.resultstore_instance
+
+        if not self.needs_auth:
+            return None
+
+        for config_path in self.get_rsproxy_configs():
+            cfg_dict = _parse_cfg_file(config_path)
+            instance = cfg_dict.get("rs_instance")
+            if instance:
+                return instance
+        return None
+
+    @functools.cached_property
+    def cas_instance(self) -> str | None:
+        """Returns the active CAS instance name, prioritizing CLI flag over configs."""
+        if self.config.cas_instance:
+            return self.config.cas_instance
+
+        if not self.needs_auth:
+            return None
+
+        for config_path in self.get_rsproxy_configs():
+            cfg_dict = _parse_cfg_file(config_path)
+            instance = cfg_dict.get("cas_instance")
+            if instance:
+                return instance
+        return None
+
+    @functools.cached_property
+    def rbe_quota_project(self) -> str:
+        """Returns the GCP project ID used for RBE quota billing.
+
+        Infers from the active RBE instance name.
+        """
+        if self.rbe_instance:
+            project_id = _extract_project_id_from_instance(self.rbe_instance)
+            if project_id:
+                return project_id
+        return ""
+
+    @functools.cached_property
+    def resultstore_quota_project(self) -> str:
+        """Returns the GCP project ID used for ResultStore quota billing.
+
+        Infers from the active ResultStore instance name.
+        """
+        if self.resultstore_instance:
+            project_id = _extract_project_id_from_instance(
+                self.resultstore_instance
+            )
+            if project_id:
+                return project_id
+        return ""
+
+    def _isolate_gcloud_credentials(self) -> pathlib.Path | None:
+        """Invokes the credential isolation script to isolate Google Application Credentials.
+
+        Returns:
+            The Path to the isolated credentials file, or None if isolation failed
+            or was bypassed.
+        """
+        if self.resolved_auth_mode in ("machine", "none"):
+            return None
+
+        isolate_script = self.gcloud_creds_script
+        if not is_executable(isolate_script):
+            raise BuildConfigurationError(
+                f"Required in-tree credentials management script is missing or unreadable: {isolate_script}"
+            )
+
+        quota_project = self.rbe_quota_project
+        if not quota_project:
+            return None
+
+        try:
+            output = subprocess.check_output(
+                [
+                    str(PYTHON_BIN),
+                    str(isolate_script),
+                    "isolate",
+                    "--out-dir",
+                    str(self.out_dir),
+                    "--quota-project",
+                    quota_project,
+                ],
+                text=True,
+                stderr=None,
+                env=self.env,
+            ).strip()
+            if output:
+                return pathlib.Path(output)
+        except subprocess.CalledProcessError:
+            pass
+
+        return None
+
     @property
     def auth_env(self) -> dict[str, str]:
         """Returns a dictionary of authentication-related environment variables."""
@@ -594,17 +729,17 @@ class FuchsiaBuildContext(object):
 
         env["FX_BUILD_LOAS_TYPE"] = self.loas_type
 
-        # Forward Google Application Credentials if present or fallback to defaults safely
-        if "GOOGLE_APPLICATION_CREDENTIALS" in self.env:
+        # Isolate Google Application Credentials to avoid global quota_project_id contamination.
+        local_adc_path = self._isolate_gcloud_credentials()
+        if local_adc_path:
+            env["GOOGLE_APPLICATION_CREDENTIALS"] = str(local_adc_path)
+        elif "GOOGLE_APPLICATION_CREDENTIALS" in self.env:
             env["GOOGLE_APPLICATION_CREDENTIALS"] = self.env[
                 "GOOGLE_APPLICATION_CREDENTIALS"
             ]
         elif self.resolved_auth_mode != "machine":
             try:
-                default_adc = (
-                    pathlib.Path.home()
-                    / ".config/gcloud/application_default_credentials.json"
-                )
+                default_adc = pathlib.Path.home() / gcloud.ADC_SUBPATH
                 env["GOOGLE_APPLICATION_CREDENTIALS"] = str(default_adc)
             except (RuntimeError, KeyError):
                 pass
@@ -649,16 +784,16 @@ class FuchsiaBuildContext(object):
         #   //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_socket_env_vars
         # )
 
-        # Forward ResultStore/CAS instance names passed from CLI arguments unconditionally.
+        # Forward ResultStore/CAS instance names unconditionally.
         # These RS_ variables directly drive/influence the rsproxy daemon.
-        if self.config.resultstore_instance:
-            env["RS_rs_instance"] = self.config.resultstore_instance
-        if self.config.cas_instance:
-            env["RS_cas_instance"] = self.config.cas_instance
+        if self.resultstore_instance:
+            env["RS_rs_instance"] = self.resultstore_instance
+        if self.cas_instance:
+            env["RS_cas_instance"] = self.cas_instance
 
-        # Forward RBE instance name passed from CLI arguments unconditionally.
-        if self.config.rbe_instance:
-            env["RBE_instance"] = self.config.rbe_instance
+        # Forward RBE instance name unconditionally.
+        if self.rbe_instance:
+            env["RBE_instance"] = self.rbe_instance
 
         return env
 
@@ -847,6 +982,10 @@ class FuchsiaBuildContext(object):
         return self.source_dir / "build/auth/check_loas_restrictions.sh"
 
     @property
+    def gcloud_creds_script(self) -> pathlib.Path:
+        return self.source_dir / "build/auth/gcloud_creds.py"
+
+    @property
     def top_build_wrapper(self) -> pathlib.Path:
         return self.source_dir / "build/scripts/top_build_wrap.sh"
 
@@ -872,13 +1011,20 @@ class FuchsiaBuildContext(object):
     def ninja_edge_weights_csv(self) -> pathlib.Path:
         return self.build_dir / "ninja_edge_weights.csv"
 
-    def get_rbe_reproxy_configs(self) -> Iterable[pathlib.Path]:
+    def get_reproxy_configs(self) -> Iterable[pathlib.Path]:
         """Yields the paths to the RBE reproxy configuration files."""
         for cfg in self._rbe_config_data:
-            yield self.build_dir / cfg["path"]
+            path_val = cfg.get("path")
+            if isinstance(path_val, str):
+                yield self.build_dir / path_val
+
+    def get_rsproxy_configs(self) -> Iterable[pathlib.Path]:
+        """Yields the paths to the ResultStore/rsproxy configuration files."""
+        yield self.source_dir / "build/resultstore/fuchsia-resultstore.cfg"
+        yield self.source_dir / "build/resultstore/fuchsia-resultstore-gcertauth.cfg"
 
     @functools.cached_property
-    def _rbe_config_data(self) -> Iterable[dict[str, Any]]:
+    def _rbe_config_data(self) -> Iterable[JSONObject]:
         """Read and parse RBE config data."""
         data = read_json(self.rbe_config_json)
         if isinstance(data, list):
@@ -1061,9 +1207,7 @@ class BuildInvocation(object):
 
         try:
             mkdir(output_path.parent)
-            with open(output_path, "w") as f:
-                json.dump(metadata, f, indent=2)
-                f.write("\n")
+            output_path.write_text(json.dumps(metadata, indent=2) + "\n")
         except Exception as e:
             msg(f"Failed to write metadata JSON: {e}", file=sys.stderr)
 
@@ -1140,7 +1284,7 @@ class BuildInvocation(object):
 
         if context.rbe_enabled:
             yield "--rbe"
-            for cfg_path in context.get_rbe_reproxy_configs():
+            for cfg_path in context.get_reproxy_configs():
                 yield "--reproxy-cfg"
                 yield str(cfg_path)
 

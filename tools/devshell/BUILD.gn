@@ -169,6 +169,9 @@ host_script_test_data("fx_bash_tests") {
       target_base_dir = "build"
       files = [
         "//build/api/client",
+        "//build/auth/apt.py",
+        "//build/auth/gcloud.py",
+        "//build/auth/gcloud_creds.py",
         "//build/regenerator",
         "//build/scripts/main_build.py",
         "//build/scripts/signal_utils.py",
@@ -220,6 +223,7 @@ host_script_test_data("fx_bash_tests") {
         "//tools/devshell/lib/get_fuchsia_subdir_git_revision.sh",
         "//tools/devshell/lib/build_api_client.sh",
         "//tools/devshell/lib/disktools.sh",
+        "//tools/devshell/lib/credentials.sh",
         "//tools/devshell/lib/fvm.sh",
         "//tools/devshell/lib/fx-cmd-locator.sh",
         "//tools/devshell/lib/fx-flash.sh",

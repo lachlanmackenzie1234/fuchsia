@@ -68,6 +68,8 @@ source "${devshell_lib_dir}/fx-optional-features.sh"
 source "${devshell_lib_dir}/generate-ssh-config.sh"
 # shellcheck source=/dev/null
 source "${devshell_lib_dir}/is_invoked_by_agent.sh"
+# shellcheck source=/dev/null
+[[ ! -f "${devshell_lib_dir}/credentials.sh" ]] || source "${devshell_lib_dir}/credentials.sh"
 unset devshell_lib_dir
 
 # Subcommands can use this directory to cache artifacts and state that should
