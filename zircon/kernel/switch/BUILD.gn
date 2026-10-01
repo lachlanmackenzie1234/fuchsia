@@ -643,7 +643,6 @@ clippy_lints = [
   "collapsible-if",
   "crate-in-macro-def",
   "doc-lazy-continuation",
-  "empty-line-after-doc-comments",
   "let-unit-value",
   "manual-non-exhaustive",
   "new-without-default",
