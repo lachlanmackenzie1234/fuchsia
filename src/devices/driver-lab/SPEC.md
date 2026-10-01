@@ -1288,7 +1288,7 @@ Changesets continue the global numbering from Phase 1:
 - [x] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
 - [x] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
       (in //tools/driver-lab/SPEC.md).
-- [ ] CS30 `[driver-lab] In-situ live-target conformance test suite`
+- [x] CS30 `[driver-lab] In-situ live-target conformance test suite`
       (in //tools/driver-lab/SPEC.md).
 
 Phase: 2 -- existing-driver in-situ inspection and live debugging via embedded library.

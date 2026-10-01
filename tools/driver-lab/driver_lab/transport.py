@@ -448,6 +448,10 @@ class FakeProxyTarget:
         self.max_ops_per_second: int = 0
         self.max_deadline_ns: int = 1_000_000_000
         self.active_mutating_session: int | None = None
+        self.is_quiesced: bool = False
+        self._quiesce_hook: Callable[[bool], None] | None = None
+        self._hard_denied_ranges: dict[int, list[tuple[int, int]]] = {}
+        self._writable_registers: dict[int, set[int]] = {}
         self._interrupt_sequence: dict[int, int] = {}
         self._interrupt_count: dict[int, int] = {}
         self._interrupt_timestamps: dict[int, int] = {}
@@ -455,6 +459,22 @@ class FakeProxyTarget:
         self._interrupt_waiters: dict[
             int, list[tuple[int, asyncio.Future[InterruptOutcome]]]
         ] = {}
+
+    def set_quiesce_hook(self, hook: Callable[[bool], None] | None) -> None:
+        """Registers a cooperative quiesce callback invoked on mutating session open/close."""
+        self._quiesce_hook = hook
+
+    def set_hard_denied_ranges(
+        self, resource: int, ranges: Sequence[tuple[int, int]]
+    ) -> None:
+        """Configures hard-denied register byte ranges for a resource ceiling."""
+        self._hard_denied_ranges[resource] = list(ranges)
+
+    def set_writable_registers(
+        self, resource: int, offsets: Sequence[int]
+    ) -> None:
+        """Configures writable register byte offsets for a resource ceiling."""
+        self._writable_registers[resource] = set(offsets)
 
     def trigger_interrupt(
         self, resource: int, timestamp_ns: int | None = None
@@ -466,6 +486,14 @@ class FakeProxyTarget:
         self._interrupt_sequence[resource] = seq
         self._interrupt_count[resource] = count
         self._interrupt_timestamps[resource] = ts
+        self._append(
+            {
+                "operation": "interrupt_triggered",
+                "resource": resource,
+                "value": seq,
+                "timestamp_ns": ts,
+            }
+        )
 
         waiters = self._interrupt_waiters.get(resource, [])
         satisfied = []
@@ -516,6 +544,11 @@ class FakeProxyTarget:
     def get_value(self, resource: int, offset: int) -> int:
         """Returns the current stored value at (resource, offset)."""
         return self._values.get((resource, offset), 0)
+
+    @property
+    def audit_entries(self) -> tuple[AuditEntry, ...]:
+        """Returns the recorded audit entries."""
+        return tuple(self._audit)
 
     def fail_at(self, resource: int, offset: int) -> None:
         """Makes reads at (resource, offset) fail as a backend fault."""
@@ -593,6 +626,24 @@ class FakeProxyTarget:
                     if rule.width != 4:
                         rejection = OpenRejection.REJECTED_ALLOWLIST
                         break
+                    for start, end in self._hard_denied_ranges.get(
+                        rule.resource, []
+                    ):
+                        if rule.offset < end and (rule.offset + 4) > start:
+                            rejection = OpenRejection.REJECTED_ALLOWLIST
+                            break
+                    if rejection is not None:
+                        break
+                    if (
+                        rule.access == AccessClass.WRITE
+                        and rule.resource in self._writable_registers
+                    ):
+                        if (
+                            rule.offset
+                            not in self._writable_registers[rule.resource]
+                        ):
+                            rejection = OpenRejection.REJECTED_ALLOWLIST
+                            break
         if rejection is not None:
             self._append(
                 {
@@ -608,8 +659,6 @@ class FakeProxyTarget:
         session_id = self._next_session
         self._next_session += 1
         self.sessions_opened += 1
-        if mode == SessionMode.MUTATING:
-            self.active_mutating_session = session_id
         self._append(
             {
                 "operation": "open_session",
@@ -618,6 +667,19 @@ class FakeProxyTarget:
                 "run_id": context.run_id,
             }
         )
+        if mode == SessionMode.MUTATING:
+            self.active_mutating_session = session_id
+            self.is_quiesced = True
+            if self._quiesce_hook is not None:
+                self._quiesce_hook(True)
+            self._append(
+                {
+                    "operation": "quiesce_engaged",
+                    "session": session_id,
+                    "timestamp_ns": self._tick(),
+                    "run_id": context.run_id,
+                }
+            )
         rules = {
             (rule.resource, rule.offset, rule.access) for rule in allowlist
         }
@@ -1653,6 +1715,16 @@ class _FakeSession:
             and target.active_mutating_session == self._session
         ):
             target.active_mutating_session = None
+            target.is_quiesced = False
+            if target._quiesce_hook is not None:
+                target._quiesce_hook(False)
+            target._append(
+                {
+                    "operation": "quiesce_released",
+                    "session": self._session,
+                    "timestamp_ns": target._tick(),
+                }
+            )
         target._append(
             {
                 "operation": "session_closed",

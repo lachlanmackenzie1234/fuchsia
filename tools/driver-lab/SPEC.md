@@ -1199,7 +1199,7 @@ Changesets continue the global numbering:
 - [x] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
 - [x] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
 - [x] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
-- [ ] CS30 `[driver-lab] In-situ live-target conformance test suite`
+- [x] CS30 `[driver-lab] In-situ live-target conformance test suite`
 
 Phase: 2 -- in-situ driver debugging workflow.
 Extends: the Phase 1 section of this document. The wire client, transport adapters,
