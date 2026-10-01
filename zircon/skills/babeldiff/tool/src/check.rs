@@ -1574,7 +1574,9 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
                 Severity::Note
             };
             let msg = if next_as_variant {
-                format!("C++ returns {ra} with an out-parameter, Rust returns a value in its place; check that callers treat it as NEXT")
+                format!(
+                    "C++ returns {ra} with an out-parameter, Rust returns a value in its place; check that callers treat it as NEXT"
+                )
             } else {
                 format!("C++ returns {ra}, Rust returns {rb}")
             };
@@ -1762,6 +1764,19 @@ fn condition_diff(i: usize, j: usize, cpp: &Function, rust: &Function, notes: &m
     {
         return;
     }
+    // A C++ `do { ... } while (cond);` continues when `cond` holds, while
+    // Rust's `loop { ... if !cond { break; } }` breaks when `!cond` holds;
+    // De Morgan's law flips each comparison unless `!(` wraps the whole test.
+    let do_while = unit_text(cpp, a)
+        .trim_start()
+        .trim_start_matches('}')
+        .trim_start()
+        .starts_with("while");
+    let breaks = rust
+        .units
+        .get(j + 1)
+        .is_some_and(|u| u.kind == UnitKind::Break && u.depth > b.depth);
+    let flip = do_while && breaks && !condition_text(rust, b).starts_with("!(");
     // Tests of the same names with different comparisons (`x == 0` and
     // `x > MAX`) are different tests.
     let same = |x: &crate::model::Conjunct, y: &crate::model::Conjunct| {
@@ -1770,7 +1785,8 @@ fn condition_diff(i: usize, j: usize, cpp: &Function, rust: &Function, notes: &m
         let names = crate::normalize::jaccard(&x.names, &y.names) >= 0.5
             || covered(&x.names, &y.names)
             || covered(&y.names, &x.names);
-        let (ox, oy) = (comparison(&x.text), comparison(&y.text));
+        let ox = comparison(&x.text).map(|op| if flip { negate_cmp(op) } else { op });
+        let oy = comparison(&y.text);
         names && (ox.is_none() || oy.is_none() || ox == oy)
     };
     let (near_a, near_b) = (nearby_conjuncts(cpp, i), nearby_conjuncts(rust, j));
@@ -1841,6 +1857,15 @@ fn comparison(text: &str) -> Option<&'static str> {
         "<" | ">" => "lt",
         _ => "le",
     })
+}
+
+fn negate_cmp(op: &'static str) -> &'static str {
+    match op {
+        "eq" => "ne",
+        "ne" => "eq",
+        "lt" => "le",
+        _ => "lt",
+    }
 }
 
 fn sorted(v: &[String]) -> Vec<String> {

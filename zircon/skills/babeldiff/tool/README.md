@@ -283,7 +283,8 @@ on narrow screens, and prints cleanly.
    `if (!ac.check()) return ZX_ERR_NO_MEMORY;` after an allocation reads as
    `try_new(..).ok_or(NO_MEMORY)?`;
    `return c ? A : B;` as `if c { A } else { B }`,
-   `*out = x; return ZX_OK;` as `Ok(x)`, and `case A: case B:` as `A | B =>`.
+   `*out = x; return ZX_OK;` as `Ok(x)`, `do { ... } while (c);` as
+   `loop { ... if !c { break; } }`, and `case A: case B:` as `A | B =>`.
    Declarations with no initializer, pure bindings such as
    `let state = self.state();`, out-parameter writes and thread-safety
    assertions are bookkeeping, not steps.

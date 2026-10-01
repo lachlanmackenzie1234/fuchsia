@@ -400,7 +400,7 @@ impl<'a> Ctx<'a> {
             "preproc_if" | "preproc_ifdef" | "preproc_else" | "preproc_elif"
             | "preproc_elifdef" => self.preproc(n, depth, b),
             "if_statement" => self.if_statement(n, depth, false, b),
-            "for_statement" | "for_range_loop" | "while_statement" | "do_statement" => {
+            "for_statement" | "for_range_loop" | "while_statement" => {
                 let body = n.child_by_field_name("body");
                 let header_end = body.map_or(ts::end_line(n), |bd| ts::line(bd));
                 let skip: Vec<Node> = body.into_iter().collect();
@@ -408,6 +408,32 @@ impl<'a> Ctx<'a> {
                 b.push(UnitKind::Loop, line, header_end, depth, f);
                 if let Some(bd) = body {
                     self.body(bd, depth + 1, b);
+                }
+            }
+            "do_statement" => {
+                let body = n.child_by_field_name("body");
+                let cond = n.child_by_field_name("condition");
+                let header_end = body.map_or(line, |bd| ts::line(bd));
+                b.push(UnitKind::Loop, line, header_end, depth, Features::default());
+                if let Some(bd) = body {
+                    self.body(bd, depth + 1, b);
+                }
+                if let Some(c) = cond {
+                    let cond_start = body
+                        .filter(|bd| bd.kind() == "compound_statement")
+                        .map_or(ts::line(c), |bd| ts::end_line(bd))
+                        .min(ts::line(c));
+                    let cond_end = ts::end_line(n);
+                    let mut f = self.features(c, &[]);
+                    self.conjuncts(c, &mut f.conjuncts);
+                    b.push(UnitKind::If, cond_start, cond_end, depth + 1, f);
+                    b.push(
+                        UnitKind::Break,
+                        cond_end,
+                        cond_end,
+                        depth + 2,
+                        Features::default(),
+                    );
                 }
             }
             "switch_statement" => {

@@ -653,7 +653,9 @@ impl<'a> Ctx<'a> {
     /// The names each top-level `&&` or `||` operand of a condition mentions.
     fn conjuncts(&self, n: Node, out: &mut Vec<crate::model::Conjunct>) {
         let mut n = n;
-        while n.kind() == "parenthesized_expression" {
+        while n.kind() == "parenthesized_expression"
+            || (n.kind() == "unary_expression" && self.text(n).trim_start().starts_with("!("))
+        {
             match ts::named_children(n).into_iter().next() {
                 Some(c) => n = c,
                 None => break,

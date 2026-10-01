@@ -683,6 +683,42 @@ fn is_err_early_return_matches_cpp_is_error_check() {
     assert!(found.is_empty(), "{found:?}");
 }
 
+#[test]
+fn do_while_matches_loop_break() {
+    let cpp = "void wait_for_event(Lamp* lamp, uint32_t prev_seq, uint32_t prev_idx) {\n  do {\n    lamp->poll();\n  } while (prev_seq != lamp->seq() || lamp->idx() != prev_idx);\n}\n";
+    let rust = "pub fn wait_for_event(lamp: &mut Lamp, prev_seq: u32, prev_idx: u32) {\n    loop {\n        lamp.poll();\n        if prev_seq == lamp.seq() && lamp.idx() == prev_idx {\n            break;\n        }\n    }\n}\n";
+    let cs = ChangeSet::from_files(&[
+        ("lamp.cc".into(), cpp.into()),
+        ("lamp.rs".into(), rust.into()),
+    ]);
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 1);
+    let p = &report.pairs[0];
+    assert!(p.findings.is_empty(), "{:?}", p.findings);
+    for (_, a, b) in &p.summary.flow {
+        assert_eq!(a, b, "flow counts should match: {:?}", p.summary.flow);
+    }
+    let rendered = render(
+        &report,
+        &RenderOptions {
+            layout: Layout::Stacked,
+            ..RenderOptions::default()
+        },
+    );
+    assert!(
+        rendered.contains("} while (prev_seq != lamp->seq() || lamp->idx() != prev_idx);"),
+        "stacked output should include trailing while line:\n{rendered}"
+    );
+
+    // Dropping one of the loop-exit checks is still reported as an issue.
+    let dropped = "pub fn wait_for_event(lamp: &mut Lamp, prev_seq: u32, prev_idx: u32) {\n    loop {\n        lamp.poll();\n        if prev_seq == lamp.seq() {\n            break;\n        }\n    }\n}\n";
+    let issues = only_issues(cpp, dropped);
+    assert!(
+        issues.iter().any(|m| m.contains("condition tests")),
+        "{issues:?}"
+    );
+}
+
 fn version(path: &str, text: &str) -> babeldiff::input::Version {
     babeldiff::input::Version {
         path: path.into(),
