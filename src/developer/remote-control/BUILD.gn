@@ -24,6 +24,7 @@ group("tests") {
     ":remote-control-bin-tests",
     ":remote-control-lib-tests",
     "usb:tests",
+    "//src/developer/remote-control/fdomain-uart-driver:tests",
     "//src/developer/remote-control/identify-host:tests",
     "//src/developer/remote-control/runner:tests",
     "//src/developer/remote-control/test:fdomain-connection-test",
@@ -163,6 +164,7 @@ fuchsia_package("remote-control-package") {
     ":remote-control-component",
     "//build/validate:non_production_tag",
     "//src/developer/remote-control/fdomain-runner:bin",
+    "//src/developer/remote-control/fdomain-uart-driver:component",
     "//src/developer/remote-control/identify-host:bin",
     "//src/developer/remote-control/runner:bin",
   ]
