@@ -12,6 +12,9 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <array>
+#include <optional>
+#include <span>
 #include <string_view>
 
 namespace boot_shim {
@@ -26,11 +29,41 @@ class BootProperties {
   // Precedence: Bootconfig first, then command line.
   zx::result<std::string_view> GetProperty(std::string_view key) const;
 
+  // Extract multiple properties at once.  This is not only a shorthand for
+  // calling GetProperty N times conveniently, but is more efficient.  e.g.
+  // ```
+  // auto [a, b, c] = bp.GetProperties("a", "b", "c");
+  // if (a) { ... }
+  // if (b) { ... }
+  // if (c) { ... }
+  // ```
+  auto GetProperties(std::convertible_to<std::string_view> auto&&... keys)
+      -> std::array<std::optional<std::string_view>, sizeof...(keys)> {
+    std::array<std::string_view, sizeof...(keys)> keys_array = {keys...};
+    std::array<std::optional<std::string_view>, keys_array.size()> result;
+    std::array<bool, result.size()> flags{};
+    GetPropertiesImpl(keys_array, result, flags);
+    return result;
+  }
+
+  // This is the same, except it yields for each key just a std::string_view
+  // that's "" for a missing property, not std::optional<std::string_view> that
+  // distinguishes std::nullopt (missing) from "" (present with empty value).
+  auto GetPropertiesOrEmpty(std::convertible_to<std::string_view> auto&&... keys)
+      -> std::array<std::string_view, sizeof...(keys)> {
+    std::array<std::string_view, sizeof...(keys)> keys_array = {keys...};
+    std::array<std::string_view, keys_array.size()> result;
+    std::array<bool, result.size()> flags{};
+    GetPropertiesOrEmptyImpl(keys_array, result, flags);
+    return result;
+  }
+
   // Invokes a callback for all matching property definitions/appends for a key.
   //
-  // BootConfig is small enough that it's worthwhile to parse the entirety for each key we care
-  // about to keep the API for each given item straightforward. We could refactor this to scan once,
-  // but the ergonomics change to Item classes wouldn't be worth it.
+  // BootConfig is small enough that it's worthwhile to parse the entirety for
+  // each key we care about to keep the API for each given item
+  // straightforward. We could refactor this to scan once, but the ergonomics
+  // change to Item classes wouldn't be worth it.
   void EnumerateProperty(std::string_view key, auto&& cb) const {
     bool found_in_bootconfig = false;
     std::ignore = bootconfig_.Parse(
@@ -48,6 +81,12 @@ class BootProperties {
   }
 
  private:
+  void GetPropertiesImpl(std::span<std::string_view> keys,
+                         std::span<std::optional<std::string_view>> results,
+                         std::span<bool> flags) const;
+  void GetPropertiesOrEmptyImpl(std::span<std::string_view> keys,
+                                std::span<std::string_view> results, std::span<bool> flags) const;
+
   zx::result<std::string_view> GetFromCmdline(std::string_view key) const;
 
   std::string_view cmdline_;
