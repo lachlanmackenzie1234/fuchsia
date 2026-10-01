@@ -10,10 +10,10 @@ host tooling specification lives at `//tools/driver-lab/SPEC.md`.
 
 The specification is delivered in two phases. Phase 1 -- unclaimed-node
 binding through existing Driver Framework mechanisms, with no Driver Manager
-changes -- is delivered first. Its contracts are designed takeover-ready so
-that phase 2 -- managed takeover, in which Driver Manager temporarily
-replaces a node's normal driver with the proxy and later restores it --
-requires no major version change.
+changes -- is delivered first. Phase 2 -- in-situ cooperative debugging via an
+embedded driver-lab library -- extends the architecture to existing, active drivers
+without managed takeover or Driver Manager modifications, allowing live register
+inspection while preserving device state.
 
 ## Phase 1: unclaimed-node proxy
 
@@ -73,9 +73,8 @@ Remaining phase 1 work:
       (in //tools/driver-lab/SPEC.md; milestone H5).
 
 Phase: 1 -- new-driver development. The proxy binds to unclaimed nodes through
-existing Driver Framework mechanisms. Managed takeover is specified in the
-Phase 2 section of this document; the wire contract here reserves the fields
-it requires.
+existing Driver Framework mechanisms. Existing-driver debugging via an embedded
+library is specified in the Phase 2 section of this document.
 
 Scope: standalone proxy driver, target policy, resource execution, audit, and
 lifecycle.
@@ -90,16 +89,15 @@ locally on the target, maps only resources offered to its device node, executes
 bounded operations, enforces a target ceiling and session allowlist, and
 records a target-side audit trail.
 
-The proxy will ultimately support two deployment situations:
+The driver-lab capability supports two deployment situations:
 
-1. it is selected as the driver for an unclaimed device node during
-   new-driver exploration (phase 1, specified here); or
-2. Driver Manager temporarily replaces the node's normal driver with the
-   proxy during managed takeover (phase 2).
+1. it is selected as the standalone proxy driver for an unclaimed device node
+   during new-driver exploration (phase 1, specified here); or
+2. its core functionality is embedded as a library in an existing, active driver
+   for in-situ live debugging (phase 2).
 
-The same proxy implementation serves both situations; this section specifies
-the first and keeps the contract takeover-ready. Embedding the proxy as a
-library in a production driver is not part of the baseline design.
+The core policy, execution, audit, and wire contracts serve both situations.
+Phase 1 specifies the standalone driver; Phase 2 specifies the embedded library.
 
 ### 2. Normative language
 
@@ -186,25 +184,23 @@ Host tooling
     v
 Driver Manager control plane
   discovery: fuchsia.driver.development
-  takeover (phase 2): engineering-only protocol
     |
-    | bind fixed proxy / route channel
+    | bind proxy (phase 1) / connect embedded endpoint (phase 2)
     v
-Resource-scoped proxy in isolated driver host
+Target Component (standalone lab_proxy in phase 1, active driver in phase 2)
     |
     +-- policy and session server
     +-- MMIO executor
     +-- protocol-resource adapters
-    +-- interrupt tracker
+    +-- interrupt tracker / event tap
     +-- audit ring
     |
     v
-Resources offered by the selected device node
+Hardware resources mapped to the target driver
 ```
 
-Driver Manager owns discovery and, in phase 2, takeover and restoration. The
-proxy owns only the experimental session and hardware execution after it is
-bound.
+Driver Manager owns discovery (`fuchsia.driver.development`). The session server
+owns the experimental session and bounded hardware execution after connection.
 
 ### 6. Design invariants
 
@@ -214,14 +210,12 @@ The proxy can access only resources offered to its bound node. It must use the
 parent's normal platform, PCI, or bus protocol. It must not obtain a global
 resource and reconstruct mappings from host input.
 
-#### 6.2 Exclusive ownership
+#### 6.2 Hardware safety and concurrency
 
-The normal driver and proxy must never independently own or operate the same
-hardware block at the same time. In phase 1 the proxy binds only to nodes with
-no bound driver; during managed takeover (phase 2), the normal driver is fully
-stopped and unbound before the proxy obtains resources.
-
-Bind order is not an ownership mechanism.
+In phase 1 the standalone proxy binds only to nodes with no bound driver. In
+phase 2 the embedded library runs inside the active driver and enforces safety
+through cooperative locking, quiesce hooks for mutating sequences, and ceiling
+denials on destructive reads.
 
 #### 6.3 Target ceiling is authoritative
 
@@ -312,17 +306,16 @@ unsuitable) and is specified in the Phase 2 section of this document.
 #### 7.3 Direct selection during development
 
 For hardware without a normal driver, an engineering product or explicit
-developer action selects the proxy at initial bind. This is the phase 1
-activation path. It uses the same policy, FIDL, evidence, and session
-implementation that managed takeover (phase 2) will reuse.
+developer action selects the proxy at initial bind. This is the phase 1 activation path. It uses the same policy, FIDL,
+evidence, and session implementation that the embedded library (phase 2) reuses.
 
-#### 7.4 Managed takeover (phase 2)
+#### 7.4 Embedded library in-situ debugging (phase 2)
 
-Managed takeover -- stale-expectation checks, the exclusive takeover lease,
-orderly stop/unbind of the original driver, restoration, and how the proxy
-receives run/takeover identity -- is specified in the Phase 2 section of this
-document. The phase 1 wire contract reserves the takeover-identity fields so
-that flow requires no major version change.
+In-situ debugging -- embedding the driver-lab server into an active driver,
+sharing mapped MMIO via VMO duplication, coordinating concurrency via quiesce
+hooks, and tapping interrupts -- is specified in the Phase 2 section of this
+document. The phase 1 wire contract serves both standalone and embedded
+deployments with no major version change.
 
 ### 8. Resource model
 
@@ -1282,147 +1275,112 @@ takeover, subtree teardown) live in the Phase 2 section of this document.
 - [Structured configuration](https://fuchsia.dev/fuchsia-src/development/components/configuration/structured_config)
 - [Build configuration and product assembly](https://fuchsia.dev/fuchsia-src/development/build/software_assembly/build_configuration)
 
-## Phase 2: managed takeover
+## Phase 2: embedded driver library & in-situ debugging
 
 ### Implementation status
 
-No phase 2 changesets are scheduled: phase 2 is deferred pending
-phase 1 completion and driver-framework team review of the takeover
-mechanism (section 2 below). When changesets are scheduled they will
-be listed here with the same global numbering used in phase 1.
+Changesets continue the global numbering from Phase 1:
 
-Phase: 2 -- existing-driver exploration through managed takeover. Deferred
-pending phase 1 completion and driver-framework team review of the takeover
-mechanism.
+- [ ] CS24 `[driver-lab] Core library extraction & pre-mapped MMIO adapter`
+- [ ] CS25 `[driver-lab] Embedded Rust driver library with ServiceFs integration`
+- [ ] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
+- [ ] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
+- [ ] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
+- [ ] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
+      (in //tools/driver-lab/SPEC.md).
+- [ ] CS30 `[driver-lab] In-situ live-target conformance test suite`
+      (in //tools/driver-lab/SPEC.md).
 
-Extends: Phase 1 of this document. All phase 1 requirements apply unchanged;
-this section adds the Driver Manager takeover protocol's target-side behavior
-and the proxy's takeover-specific obligations.
+Phase: 2 -- existing-driver in-situ inspection and live debugging via embedded library.
+Extends: Phase 1 of this document. The wire contract (`fuchsia.driver.lab`), policy
+models, audit ring, and bounded executor apply unchanged.
 
-Companion specification: host tooling at `//tools/driver-lab/SPEC.md`
+Companion specification: host tooling at `//tools/driver-lab/SPEC.md`.
 
 ### 1. Purpose
 
-Phase 2 lets Driver Manager temporarily replace a node's normal driver with
-the proxy and later restore it. The proxy implementation is the phase 1
-driver unchanged except where stated here: the same policy, sessions,
-executor, audit, and wire contract serve both activation paths, and the
-phase 1 contract already reserves the takeover-identity fields.
+Phase 2 enables empirical hardware exploration and live debugging of existing,
+bound drivers without stopping them or tearing down their child subtrees.
 
-### 2. Prerequisites
+A driver incorporates the `driver_lab` library during compilation (in engineering
+and debug builds), shares its mapped hardware resources with the embedded server,
+and serves `fuchsia.driver.lab.Service` from its outgoing directory. Host tooling
+connects directly to the driver's moniker, enabling register inspection, bounded
+probing, and timing-sensitive sequences while the driver remains alive and active.
 
-Phase 2 implementation must not begin until:
+### 2. Architecture & library model
 
-1. phase 1 is complete and in use;
-2. the driver-framework team has reviewed the node-scoped force-bind and
-   restoration design; and
-3. the open decisions in section 8 of this phase have accepted answers.
+#### 2.1 Capability sharing via VMO duplication
 
-### 3. Driver Manager responsibilities
+The embedded library does not request root capabilities or acquire new resources
+from the parent node:
+- The driver duplicates its existing MMIO VMO handle (`zx::Rights::SAME_RIGHTS`).
+- The library creates an independent local mapping (`MappedMmio`) within the same
+  driver host process address space.
+- The driver's internal data structures, register types, and private memory
+  remain unperturbed.
 
-Before proxy start, Driver Manager is responsible for:
+#### 2.2 Concurrency and cooperative interlocking
 
-- checking staleness expectations (expected bound-driver URL and driver-host
-  koid, or an explicit topology generation if one is provided);
-- acquiring the exclusive takeover lease;
-- orderly stop and unbind of the original driver, including its descendant
-  subtree;
-- recording the original driver's identity for restoration (never taken from
-  plan JSON);
-- confirming that the device node persists; and
-- binding the configured proxy through the new node-scoped force-bind
-  mechanism.
+Because both the driver's normal dispatch loops and the host's probe sequences
+have access to hardware registers, unsynchronized mutations must be prevented:
+- **Read operations**: Scalar reads and snapshots to known read-safe registers
+  are permitted concurrently. Destructive registers (clear-on-read interrupt
+  status, FIFO data registers) must be marked `hard_denied` in the target
+  ceiling manifest unless explicitly authorized by an exact allowlist.
+- **Mutating sequences and quiescing**: Opening a mutating session acquires an
+  exclusive mutation lease. The library invokes an optional driver-registered
+  synchronous `quiesce_hook(bool paused)` callback, allowing the driver's state
+  machine or worker threads to pause background register polling while host
+  mutations and sequences execute. If complex driver dispatchers require
+  asynchronous coordination in the future, this interface may be extended to
+  support an async stream/channel notification.
 
-The force-bind mechanism is new Driver Manager work: it must be node-scoped,
-and the existing `DisableDriver` (global by URL) is unsuitable. It must be
-validated in the selected Driver Framework revision.
+#### 2.3 Interrupt observation via event tapping
 
-After proxy access ends, Driver Manager stops and unbinds the proxy, rebinds
-the recorded original driver, and verifies its identity and generation.
-Restoration failure is recorded as a queryable terminal state; Driver Manager
-never reports it as success.
+In Zircon, a `zx::interrupt` object can only be bound to a single dispatcher or
+thread. The library therefore does not attempt to steal or bind the raw interrupt
+handle.
+- The driver instruments its existing interrupt service routine to ping the
+  library: `lab.notify_interrupt(resource_id)`.
+- The library increments the sequence counter, appends to the audit ring, and
+  satisfies pending host `WaitForInterrupt` hanging gets.
 
-On host-channel loss, Driver Manager stops accepting new work and attempts
-the configured bounded restoration policy (defined jointly with the host
-tooling specification at `//tools/driver-lab/SPEC.md`).
+### 3. Language roadmap
 
-The takeover integration follows Driver Manager's existing implementation
-language and conventions (C++); the proxy itself remains the phase 1 Rust
-driver.
+#### 3.1 Phase 2a: Rust driver library (`driver_lab_rust`)
 
-### 4. Proxy obligations during takeover
+Prioritized for immediate support across Fuchsia's DFv2 Rust driver stack.
+- Links directly against `lab_proxy_core`.
+- Native integration with `fdf_component::DriverContext`, `ServiceFs`, and
+  `fuchsia_async::Scope`.
+- First reference integration: synthetic platform driver in `testing/` (CS28).
 
-- The proxy receives run/takeover identity in immutable start metadata or
-  during its first control handshake, and populates the reserved takeover
-  fields of `Describe`.
-- The proxy does not restore the original driver itself.
-- `PrepareStop` must complete within the Driver Manager takeover deadline so
-  restoration is never blocked by pending experimental work.
-- An interrupt storm or hung protocol backend must not starve stop or
-  restoration.
+#### 3.2 Phase 2b: Lightweight C++ driver library (`driver_lab_cpp`) (Deferred)
 
-### 5. Subtree teardown
+Supports DFv2 C++ drivers. Deferred to a future milestone beyond the initial
+Phase 2 scope.
+- Implements `fuchsia_driver_lab::Proxy` and `Session` using the C++ Driver SDK
+  (`@fuchsia_sdk//pkg/driver_component_cpp` and `fdf::MmioBuffer`).
+- Avoids cross-language runtime mismatches, async executor bridging, and linking
+  overhead.
 
-Unbinding a non-leaf node tears down descendant nodes and stops their
-drivers. How takeover eligibility, consent display, and restoration
-verification account for the affected subtree -- including descendants'
-power-framework participation -- is an open design area (section 8 of this
-phase). Takeover of a node with safety-relevant descendants must be
-ineligible until that design exists.
+### 4. Production absence and security gating
 
-### 6. Production absence
+The embedded debug library must never be active in production (`user`) builds:
+1. **Compilation gating**: Gated by build argument (`enable_driver_lab = is_debug`).
+   In release builds, library types compile to zero-sized no-ops and outgoing
+   service handlers are omitted.
+2. **Component manifest sharding**: Driver manifests import a common shard
+   `//src/devices/driver-lab/meta/debug.shard.cml` that exposes
+   `fuchsia.driver.lab.Service`.
+3. **Product assembly verification**: Platform assembly golden checks verify that
+   no production package or bootfs driver exposes `fuchsia.driver.lab.Service`.
 
-Production images must not offer the takeover protocol, and the build must
-verify this. The verification mechanism (Driver Manager binary variant, or
-config gating with capability-route verification) is owned by platform
-assembly; this specification requires only that the chosen mechanism be
-verifiable at build time.
+### 5. Open design decisions resolved
 
-### 7. Testing and milestone
-
-Takeover integration tests, with a synthetic normal driver and persistent
-node:
-
-1. bind normal driver;
-2. request takeover;
-3. stop/unbind it;
-4. bind proxy;
-5. execute read-only plan;
-6. stop proxy;
-7. rebind normal driver; and
-8. verify generation changes and restoration reporting.
-
-Inject failure at every transition. The Driver Manager portion is tested
-jointly with the host tooling specification (`//tools/driver-lab/SPEC.md`).
-
-Additional fault-injection rows beyond the phase 1 table:
-
-| Fault | Required result |
-|---|---|
-| Host disconnect mid-takeover | bounded restoration; queryable outcome |
-| Driver stop failure | takeover aborted; state recorded |
-| Original-driver rebind failure | terminal restoration failure; out-of-band recovery |
-
-Security-negative additions: rejection of a takeover request carrying an
-arbitrary driver URL, and of concurrent ownership with the normal driver.
-
-Milestone exit: synthetic replacement/restoration succeeds and every injected
-transition failure is visible.
-
-### 8. Open decisions
-
-Before implementation, resolve:
-
-1. The exact node-scoped force-bind and restore APIs.
-2. Which node classes persist safely after their driver is unbound.
-3. Subtree teardown: descendant enumeration, eligibility, consent display,
-   restoration verification, and power-framework element handling.
-4. How restoration timeout and Driver Manager recovery state are persisted.
-5. Whether automatic driver-host restart is disabled during an active
-   takeover.
-6. Takeover-protocol packaging (binary variant versus config gating) and its
-   build-time verification, owned by platform assembly.
-7. Whether nodes whose parents offer resources only over driver-transport
-   (`fdf`) FIDL remain ineligible for takeover -- the isolated-host
-   requirement implies they are -- or a colocated proxy mode is introduced,
-   with its Rust `fdf`-transport binding implications.
+1. *Takeover unbind/force-bind APIs*: Obsoleted. No Driver Manager changes required.
+2. *Subtree teardown and power framework*: Obsoleted. Drivers remain bound;
+   subtrees and power topologies remain undisturbed.
+3. *ARM64 clock/power gating panics*: Resolved. The running driver maintains its
+   votes for power domains and clocks throughout the debug session.
