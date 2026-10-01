@@ -16,7 +16,7 @@ use core::sync::atomic::{self, AtomicU16};
 use derivative::Derivative;
 use explicit::ResultExt as _;
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
-use log::{debug, trace};
+use log::{debug, error, trace};
 use net_types::ip::{
     GenericOverIp, Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Ipv6SourceAddr, Mtu, Subnet,
 };
@@ -40,8 +40,8 @@ use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
     FilterBindingsTypes, FilterHandler as _, FilterIpContext, FilterIpExt, FilterIpMetadata,
     FilterIpPacket, FilterPacketMetadata, FilterTimerId, ForwardedPacket, IpPacket, MarkAction,
-    MaybeTransportPacket as _, RejectType, SocketInfo, TransportPacketSerializer, Tuple,
-    WeakConnectionError, WeakConntrackConnection,
+    MaybeTransportPacket as _, ProofOfEgressCheck, RejectType, SocketInfo,
+    TransportPacketSerializer, Tuple, WeakConnectionError, WeakConntrackConnection,
 };
 use netstack3_hashmap::HashMap;
 use packet::{
@@ -69,6 +69,9 @@ use crate::internal::fragmentation::{FragmentableIpSerializer, FragmentationIpEx
 use crate::internal::gmp::GmpQueryHandler;
 use crate::internal::gmp::igmp::IgmpCounters;
 use crate::internal::gmp::mld::MldCounters;
+use crate::internal::gso::{
+    GsoError, GsoIpExt, MaybeSegmentableIpSerializer, MaybeSegmentableTransportSerializer,
+};
 use crate::internal::icmp::counters::IcmpCountersIpExt;
 use crate::internal::icmp::{
     IcmpBindingsTypes, IcmpError, IcmpErrorHandler, IcmpHandlerIpExt, Icmpv4Error, Icmpv4State,
@@ -873,6 +876,7 @@ pub trait IpLayerIpExt:
     + IcmpHandlerIpExt
     + FilterIpExt
     + FragmentationIpExt
+    + GsoIpExt
     + IpDeviceIpExt
     + IpCountersIpExt
     + IcmpCountersIpExt
@@ -1767,7 +1771,7 @@ where
         packet_metadata: IpLayerPacketMetadata<I, CC::WeakAddressId, BC>,
     ) -> Result<(), IpSendFrameError<S>>
     where
-        S: TransportPacketSerializer<I>,
+        S: TransportPacketSerializer<I> + MaybeSegmentableTransportSerializer,
         S::Buffer: BufferMut,
     {
         send_ip_packet_from_device(self, bindings_ctx, meta.into(), body, packet_metadata)
@@ -3295,7 +3299,9 @@ where
     I: IpLayerIpExt,
     BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes + MarksBindingsContext,
     CC: IpLayerEgressContext<I, BC> + IpDeviceMtuContext<I> + IpDeviceAddressIdContext<I>,
-    S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>,
+    S: FragmentableIpSerializer<I, Buffer: BufferMut>
+        + MaybeSegmentableIpSerializer<I>
+        + FilterIpPacket<I>,
 {
     let (verdict, proof) = core_ctx.filter_handler().egress_hook(
         bindings_ctx,
@@ -3314,10 +3320,7 @@ where
     // If the packet is leaving through the loopback device, attempt to extract a
     // weak reference to the packet's conntrack entry to plumb that through the
     // device layer so it can be reused on ingress to the IP layer.
-    // TODO(https://fxbug.dev/452980285): Split a frame carrying GSO metadata
-    // back into `gso_size` segments here. A coalesced frame is larger than the
-    // MTU by construction, so until then it is sent (and fragmented) whole.
-    let (conntrack_connection_and_direction, tx_metadata, marks, _socket_cookie, _gso_info) =
+    let (conntrack_connection_and_direction, tx_metadata, marks, _socket_cookie, gso_info) =
         packet_metadata.into_parts();
     let conntrack_entry = if device.is_loopback() {
         conntrack_connection_and_direction
@@ -3351,6 +3354,160 @@ where
     // Use the minimum MTU between the target device and the requested mtu.
     let mtu = limit_mtu.min(core_ctx.get_mtu(device));
 
+    let Some(gso_info) = gso_info else {
+        // Transport-layer segmentation isn't required. Check if we need to
+        // fragment and then send.
+        return send_ip_frame_possibly_fragmented(
+            core_ctx,
+            bindings_ctx,
+            device,
+            destination,
+            body,
+            device_ip_layer_metadata,
+            mtu,
+            proof,
+        );
+    };
+
+    match send_ip_frame_segmented(
+        core_ctx,
+        bindings_ctx,
+        device,
+        destination.clone(),
+        &body,
+        gso_info,
+        device_ip_layer_metadata,
+        mtu,
+        proof,
+    ) {
+        Ok(()) => Ok(()),
+        Err(SendIpFrameSegmentedError::NotSegmentable(error, device_ip_layer_metadata, proof)) => {
+            // GRO and GSO should always produce packets that can be
+            // resegmented. If that's not the case, we want to know about it. In
+            // production, however, we'll attempt to send with fragmentation for
+            // robustness' sake.
+            debug_assert!(
+                false,
+                "GRO or GSO produced a packet that can't be resegmented: {error:?}"
+            );
+            error!("GRO or GSO produced a packet that can't be resegmented: {error:?}");
+            send_ip_frame_possibly_fragmented(
+                core_ctx,
+                bindings_ctx,
+                device,
+                destination,
+                body,
+                device_ip_layer_metadata,
+                mtu,
+                proof,
+            )
+        }
+        Err(SendIpFrameSegmentedError::Send(error)) => {
+            Err(IpSendFrameError { serializer: body, error })
+        }
+    }
+}
+
+/// The error type for [`send_ip_frame_segmented`].
+enum SendIpFrameSegmentedError<BT: TxMetadataBindingsTypes> {
+    /// The packet can't be segmented in software.
+    ///
+    /// Nothing was sent, so the caller's metadata and egress proof are handed
+    /// back untouched.
+    NotSegmentable(GsoError, DeviceIpLayerMetadata<BT>, ProofOfEgressCheck),
+    /// A segment couldn't be sent.
+    Send(IpSendFrameErrorReason),
+}
+
+/// Splits `body` into `gso_info`-sized segments and sends each one out of
+/// `device`, fragmenting any segment that doesn't fit in `mtu`.
+///
+/// Takes `body` by reference: segments borrow from the packet's builders and
+/// payload, and keeping the borrow inside this function is what allows the
+/// caller to hand `body` back to *its* caller on error.
+fn send_ip_frame_segmented<I, CC, BC, S>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    device: &CC::DeviceId,
+    destination: IpPacketDestination<I, &CC::DeviceId>,
+    body: &S,
+    gso_info: GsoInfo,
+    device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
+    mtu: Mtu,
+    proof: ProofOfEgressCheck,
+) -> Result<(), SendIpFrameSegmentedError<BC>>
+where
+    I: IpLayerIpExt,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes + MarksBindingsContext,
+    CC: IpLayerEgressContext<I, BC>,
+    S: FragmentableIpSerializer<I, Buffer: BufferMut> + MaybeSegmentableIpSerializer<I>,
+{
+    let segmenter = match body.try_segmenter(gso_info) {
+        Ok(segmenter) => segmenter,
+        Err(error) => {
+            return Err(SendIpFrameSegmentedError::NotSegmentable(
+                error,
+                device_ip_layer_metadata,
+                proof,
+            ));
+        }
+    };
+
+    let mut device_ip_layer_metadata = device_ip_layer_metadata;
+    let mut proof = proof;
+
+    for (segment, has_more) in segmenter {
+        let (segment_metadata, segment_proof, remaining) = if has_more {
+            let SplitDeviceIpLayerMetadata { primary, secondary } =
+                device_ip_layer_metadata.split_for_multiple_frames();
+            (secondary, proof.clone_for_multiple_frames(), Some((primary, proof)))
+        } else {
+            (device_ip_layer_metadata, proof, None)
+        };
+
+        send_ip_frame_possibly_fragmented(
+            core_ctx,
+            bindings_ctx,
+            device,
+            destination.clone(),
+            segment,
+            segment_metadata,
+            mtu,
+            segment_proof,
+        )
+        .map_err(|IpSendFrameError { serializer: _, error }| {
+            SendIpFrameSegmentedError::Send(error)
+        })?;
+
+        match remaining {
+            Some((m, p)) => {
+                device_ip_layer_metadata = m;
+                proof = p;
+            }
+            None => break,
+        }
+    }
+
+    Ok(())
+}
+
+/// Sends `body` out of `device`, fragmenting it if it doesn't fit in `mtu`.
+fn send_ip_frame_possibly_fragmented<I, CC, BC, S>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    device: &CC::DeviceId,
+    destination: IpPacketDestination<I, &CC::DeviceId>,
+    body: S,
+    device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
+    mtu: Mtu,
+    proof: ProofOfEgressCheck,
+) -> Result<(), IpSendFrameError<S>>
+where
+    I: IpLayerIpExt,
+    BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes + MarksBindingsContext,
+    CC: IpLayerEgressContext<I, BC>,
+    S: FragmentableIpSerializer<I, Buffer: BufferMut>,
+{
     let body = body.with_size_limit(mtu.into());
 
     let fits_mtu = match body.serialize_new_buf(
@@ -5101,7 +5258,7 @@ impl<I: IpExt, D> From<SendIpPacketMeta<I, D, SpecifiedAddr<I::Addr>>>
 ///
 /// NOTE: Due to filtering rules, it is possible that the device provided in
 /// `meta` will not be the device that final IP packet is actually sent from.
-pub trait IpLayerHandler<I: IpExt + FragmentationIpExt + FilterIpExt, BC>:
+pub trait IpLayerHandler<I: IpExt + FragmentationIpExt + GsoIpExt + FilterIpExt, BC>:
     DeviceIdContext<AnyDevice>
 {
     /// Encapsulate and send the provided transport packet and from the device
@@ -5113,7 +5270,7 @@ pub trait IpLayerHandler<I: IpExt + FragmentationIpExt + FilterIpExt, BC>:
         body: S,
     ) -> Result<(), IpSendFrameError<S>>
     where
-        S: TransportPacketSerializer<I>,
+        S: TransportPacketSerializer<I> + MaybeSegmentableTransportSerializer,
         S::Buffer: BufferMut;
 
     /// Send an IP packet that doesn't require the encapsulation and other
@@ -5130,7 +5287,9 @@ pub trait IpLayerHandler<I: IpExt + FragmentationIpExt + FilterIpExt, BC>:
         body: S,
     ) -> Result<(), IpSendFrameError<S>>
     where
-        S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>;
+        S: FragmentableIpSerializer<I, Buffer: BufferMut>
+            + MaybeSegmentableIpSerializer<I>
+            + FilterIpPacket<I>;
 }
 
 impl<I, BC, CC> IpLayerHandler<I, BC> for CC
@@ -5146,7 +5305,7 @@ where
         body: S,
     ) -> Result<(), IpSendFrameError<S>>
     where
-        S: TransportPacketSerializer<I>,
+        S: TransportPacketSerializer<I> + MaybeSegmentableTransportSerializer,
         S::Buffer: BufferMut,
     {
         send_ip_packet_from_device(
@@ -5166,7 +5325,9 @@ where
         body: S,
     ) -> Result<(), IpSendFrameError<S>>
     where
-        S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>,
+        S: FragmentableIpSerializer<I, Buffer: BufferMut>
+            + MaybeSegmentableIpSerializer<I>
+            + FilterIpPacket<I>,
     {
         send_ip_frame(
             self,
@@ -5201,7 +5362,7 @@ where
     I: IpLayerIpExt,
     BC: FilterBindingsContext<CC::DeviceId> + TxMetadataBindingsTypes + MarksBindingsContext,
     CC: IpLayerEgressContext<I, BC> + IpDeviceEgressStateContext<I> + IpDeviceMtuContext<I>,
-    S: TransportPacketSerializer<I>,
+    S: TransportPacketSerializer<I> + MaybeSegmentableTransportSerializer,
     S::Buffer: BufferMut,
 {
     let SendIpPacketMeta { device, src_ip, dst_ip, destination, proto, ttl, mtu, dscp_and_ecn } =

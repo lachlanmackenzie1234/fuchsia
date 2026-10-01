@@ -1377,7 +1377,7 @@ pub mod options {
     /// Note, for options that are small (< 16 bytes), this type will hold owned
     /// copies, as they're cheaper than storing a `Ref<B, _>`.
     #[derive(Derivative)]
-    #[derivative(Debug(bound = "B: ByteSlice"))]
+    #[derivative(Debug(bound = "B: ByteSlice"), Clone(bound = "B: CloneableByteSlice"))]
     pub struct TcpOptionsRef<B> {
         #[derivative(Debug = "ignore")]
         bytes: B,
