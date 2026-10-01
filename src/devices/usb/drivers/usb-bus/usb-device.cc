@@ -1016,7 +1016,7 @@ zx_status_t UsbDevice::Init(async_dispatcher_t* dispatcher) {
 zx_status_t UsbDevice::Reinitialize() {
   fbl::AutoLock lock(&state_lock_);
 
-  if (resetting_) {
+  if (!resetting_) {
     zxlogf(ERROR, "%s: resetting_ not set", __func__);
     return ZX_ERR_BAD_STATE;
   }
@@ -1038,12 +1038,12 @@ zx_status_t UsbDevice::Reinitialize() {
   return ZX_OK;
 }
 
-zx_status_t UsbDevice::GetDescriptor(uint16_t type, uint16_t index, uint16_t language, void* data,
+zx_status_t UsbDevice::GetDescriptor(uint16_t type, uint8_t index, uint16_t language, void* data,
                                      size_t length, size_t* out_actual) {
   return UsbControlIn(kStandardDeviceIn,
                       fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
-                      usb_descriptor_w_value(type, static_cast<uint8_t>(index)), language,
-                      ZX_TIME_INFINITE, reinterpret_cast<uint8_t*>(data), length, out_actual);
+                      usb_descriptor_w_value(type, index), language, ZX_TIME_INFINITE,
+                      reinterpret_cast<uint8_t*>(data), length, out_actual);
 }
 
 }  // namespace usb_bus

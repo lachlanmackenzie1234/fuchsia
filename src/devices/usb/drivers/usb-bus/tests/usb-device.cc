@@ -513,6 +513,11 @@ TEST_F(DeviceTest, FidlSetConfiguration) {
   ASSERT_EQ(get_configuration(), 2);
 }
 
+TEST_F(DeviceTest, ReinitializeWithoutResettingFails) {
+  auto& device = get_device();
+  EXPECT_EQ(device.Reinitialize(), ZX_ERR_BAD_STATE);
+}
+
 // A fake HCI that pretends to be a device that does dodgy things with
 // configuration descriptors: namely, changing the size they claim to be
 // depending on how many requests for config descriptors have been made

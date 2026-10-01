@@ -146,10 +146,10 @@ class UsbDevice : public UsbDeviceType,
   void SetHubInterface(const usb_hub_interface_protocol_t* hub_intf);
   zx_status_t HubResetPort(uint32_t port);
 
-  zx_status_t GetDescriptor(uint16_t type, uint16_t index, uint16_t language, void* data,
+  zx_status_t GetDescriptor(uint16_t type, uint8_t index, uint16_t language, void* data,
                             size_t length, size_t* out_actual);
   zx_status_t GetDescriptor(fuchsia_hardware_usb_descriptor::DescriptorType desc_type,
-                            uint16_t index, uint16_t language, void* data, size_t length,
+                            uint8_t index, uint16_t language, void* data, size_t length,
                             size_t* out_actual) {
     return GetDescriptor(static_cast<uint16_t>(fidl::ToUnderlying(desc_type)), index, language,
                          data, length, out_actual);
