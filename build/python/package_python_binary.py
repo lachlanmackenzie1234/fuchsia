@@ -124,6 +124,11 @@ def main() -> int:
             f"""
 import sys
 import inspect
+import warnings
+
+# TODO(https://fxbug.dev/401351334): Remove once //third_party/mako SyntaxWarning fixes roll.
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=r".*[/\\\\]mako[/\\\\].*")
+
 from {main_module} import *
 
 if inspect.iscoroutinefunction({args.main_callable}):

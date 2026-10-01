@@ -76,7 +76,12 @@ def main() -> int:
     # If command is a Python script, invoke it through the same interpreter.
     tool = cmd_args[0]
     if tool.endswith((".py", ".pyz")):
-        cmd_args = [sys.executable, "-S"] + cmd_args
+        cmd_args = [
+            sys.executable,
+            "-S",
+            "-W",
+            "error::SyntaxWarning",
+        ] + cmd_args
 
     # Run the command.
     try:
