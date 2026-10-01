@@ -1435,7 +1435,7 @@ Changesets continue the global numbering from Phase 2:
 - [x] CS31 `[driver-lab] Software state banks, runtime knobs, and diagnostic triggers`
 - [x] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
       (in //tools/driver-lab/SPEC.md).
-- [ ] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
+- [x] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
       (in //tools/driver-lab/SPEC.md).
 
 Phase: 3 -- single-build in-situ software state observation, runtime knobs, and

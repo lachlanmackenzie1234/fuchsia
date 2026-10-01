@@ -1325,7 +1325,7 @@ Changesets continue the global numbering:
 - [x] CS31 `[driver-lab] Software state banks, runtime knobs, and diagnostic triggers`
       (in //src/devices/driver-lab/SPEC.md).
 - [x] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
-- [ ] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
+- [x] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
 
 Phase: 3 -- software state, runtime knobs, and adaptive verification workflow.
 Extends: Phases 1 and 2 of this document.
@@ -1386,3 +1386,35 @@ Evidence bundles (`operations.jsonl`) preserve the exact semantic operation
 - `await state.write_knob(offset, value, ..., require_readback=True) -> WriteOutcome`
 - `await state.trigger(offset, arg=1, ..., require_readback=False) -> WriteOutcome`
 - `await state.snapshot32(offsets) -> list[int]`
+
+### 3. Adaptive Mode A/B/C verification workflow (`autoda-fix`, CS33)
+
+The `autoda-fix` skill (`//src/devices/skills/autoda-fix`)
+and companion `driver-lab` skill (`//src/devices/skills/driver-lab`) classify
+driver bugs during Phase 0 reconnaissance into one of three verification modes:
+
+1. **Mode A: Hardware Register / Interrupt Loop (`in-situ` MMIO/IRQ)**:
+   - Used for bugs involving hardware register configuration, bitfields, clocks,
+     FIFOs, or interrupts.
+   - Verifies live register values and interrupt delivery via `mmio_read32`,
+     `mmio_write32`, `mmio_poll32`, and `wait_for_interrupt` with hashed
+     evidence bundles.
+2. **Mode B: In-Situ Software State & Knob Loop (`in-situ` `StateBank`)**:
+   - Used for concurrency/race bugs, state-machine bugs, and retry/timeout
+     tuning on live hardware.
+   - **Phase 1 (Single Instrumentation Build)**: Instruments suspect code paths
+     with a `"state0"` `StateBank` (`define_state_slot`, `define_knob` for fault
+     and fix toggles, `define_trigger`) and deploys once (preferring
+     `ffx driver restart <driver_url>` for reloadable non-bootfs drivers).
+   - **Phase 2 (Zero-Compile Experimentation Loop)**: Executes a **Repro Plan**
+     (`knob_write32` with fix knob = `0`, `trigger_write32`, `state_read32`)
+     followed in the same boot by a **Fix Proof Plan** (`knob_write32` with fix
+     knob = `1`, `trigger_write32`, `state_read32` / `state_poll32`).
+   - **Phase 3 (Clean Final Patch)**: Replaces temporary knobs with the clean,
+     unconditional production fix and adds a permanent unit/realm regression
+     test.
+3. **Mode C: Hermetic Test & Log Verification Loop (No `driver-lab` Required)**:
+   - Used for pure logic, protocol/message parsing, or deterministic lifecycle
+     bugs reproducible via `fx test` (unit/realm tests) or `ffx log`.
+   - Explicitly forbids shoe-horning `driver-lab` into Mode C bugs when a unit
+     test or log assertion is faster and more direct.
