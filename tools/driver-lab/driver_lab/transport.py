@@ -12,6 +12,7 @@ staleness rejection, exact-allowlist enforcement, and audit sequencing.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import enum
 from collections.abc import Callable, Mapping, Sequence
@@ -22,6 +23,7 @@ from driver_lab.models import (
     GpioReadOutcome,
     GpioWriteOutcome,
     I2cTransferOutcome,
+    InterruptOutcome,
     ResourceKind,
     SpiTransmitOutcome,
 )
@@ -385,6 +387,15 @@ class ProxySession(Protocol):
         """One policy-checked, audited SPI transmit."""
         ...
 
+    async def wait_for_interrupt(
+        self,
+        resource: int,
+        after_sequence: int = 0,
+        timeout_s: float = 1.0,
+    ) -> InterruptOutcome:
+        """Observes an interrupt event."""
+        ...
+
     async def read_audit(self, cursor: int, limit: int) -> AuditPage:
         """Reads a bounded audit page for incremental draining."""
         ...
@@ -434,6 +445,50 @@ class FakeProxyTarget:
         self.sessions_opened = 0
         self.reject_open: OpenRejection | None = None
         self.active_mutating_session: int | None = None
+        self._interrupt_sequence: dict[int, int] = {}
+        self._interrupt_count: dict[int, int] = {}
+        self._interrupt_timestamps: dict[int, int] = {}
+        self._interrupt_coalesced: dict[int, int] = {}
+        self._interrupt_waiters: dict[
+            int, list[tuple[int, asyncio.Future[InterruptOutcome]]]
+        ] = {}
+
+    def trigger_interrupt(
+        self, resource: int, timestamp_ns: int | None = None
+    ) -> InterruptOutcome:
+        """Triggers an interrupt on the given resource (Spec Section 17)."""
+        ts = timestamp_ns if timestamp_ns is not None else self._tick()
+        seq = self._interrupt_sequence.get(resource, 0) + 1
+        count = self._interrupt_count.get(resource, 0) + 1
+        self._interrupt_sequence[resource] = seq
+        self._interrupt_count[resource] = count
+        self._interrupt_timestamps[resource] = ts
+
+        waiters = self._interrupt_waiters.get(resource, [])
+        satisfied = []
+        remaining = []
+        for after_seq, fut in waiters:
+            if seq > after_seq and not fut.done():
+                satisfied.append(fut)
+            elif not fut.done():
+                remaining.append((after_seq, fut))
+        self._interrupt_waiters[resource] = remaining
+
+        coalesced = (
+            0 if satisfied else self._interrupt_coalesced.get(resource, 0) + 1
+        )
+        self._interrupt_coalesced[resource] = coalesced
+
+        outcome = InterruptOutcome(
+            resource=resource,
+            sequence=seq,
+            count=count,
+            timestamp_ns=ts,
+            coalesced_count=coalesced,
+        )
+        for fut in satisfied:
+            fut.set_result(outcome)
+        return outcome
 
     def set_gpio(self, resource: int, value: bool) -> None:
         """Sets the state of a GPIO pin."""
@@ -519,6 +574,10 @@ class FakeProxyTarget:
                     break
                 if rule.access == AccessClass.PROTOCOL:
                     if res.kind == ResourceKind.MMIO:
+                        rejection = OpenRejection.REJECTED_ALLOWLIST
+                        break
+                elif rule.access == AccessClass.INTERRUPT:
+                    if res.kind != ResourceKind.INTERRUPT:
                         rejection = OpenRejection.REJECTED_ALLOWLIST
                         break
                 elif rule.access == AccessClass.SEQUENCE:
@@ -1473,6 +1532,72 @@ class _FakeSession:
                     )
                 )
         return SequenceOutcome(results=tuple(results), complete=complete)
+
+    async def wait_for_interrupt(
+        self,
+        resource: int,
+        after_sequence: int = 0,
+        timeout_s: float = 1.0,
+    ) -> InterruptOutcome:
+        """See `ProxySession.wait_for_interrupt`."""
+        target = self._target
+        if all(info.id != resource for info in target._description.resources):
+            self._deny(
+                "wait_for_interrupt", resource, 0, Denial.UNKNOWN_RESOURCE
+            )
+        if (resource, 0, AccessClass.INTERRUPT) not in self._rules and (
+            resource,
+            0,
+            AccessClass.PROTOCOL,
+        ) not in self._rules:
+            self._deny(
+                "wait_for_interrupt", resource, 0, Denial.NOT_IN_ALLOWLIST
+            )
+
+        curr_seq = target._interrupt_sequence.get(resource, 0)
+        if curr_seq > after_sequence:
+            ts = target._interrupt_timestamps.get(resource, target._now_ns)
+            count = target._interrupt_count.get(resource, 0)
+            coalesced = target._interrupt_coalesced.get(resource, 0)
+            target._append(
+                {
+                    "operation": "wait_for_interrupt",
+                    "session": self._session,
+                    "resource": resource,
+                    "offset": 0,
+                    "value": count,
+                    "timestamp_ns": ts,
+                }
+            )
+            return InterruptOutcome(
+                resource=resource,
+                sequence=curr_seq,
+                count=count,
+                timestamp_ns=ts,
+                coalesced_count=coalesced,
+            )
+
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[InterruptOutcome] = loop.create_future()
+        target._interrupt_waiters.setdefault(resource, []).append(
+            (after_sequence, fut)
+        )
+        try:
+            outcome = await asyncio.wait_for(fut, timeout=timeout_s)
+            target._append(
+                {
+                    "operation": "wait_for_interrupt",
+                    "session": self._session,
+                    "resource": resource,
+                    "offset": 0,
+                    "value": outcome.count,
+                    "timestamp_ns": outcome.timestamp_ns,
+                }
+            )
+            return outcome
+        except asyncio.TimeoutError:
+            self._deny("wait_for_interrupt", resource, 0, Denial.TIMEOUT)
+            raise OperationDenied(Denial.TIMEOUT)
 
     async def close(self) -> None:
         """See `ProxySession.close`."""

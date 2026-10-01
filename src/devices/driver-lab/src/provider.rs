@@ -132,6 +132,7 @@ mod tests {
                 allow_poll: false,
                 writable_registers: vec![],
                 protocol: None,
+                allow_interrupt: false,
             },
         );
         bundle.backends.insert(1, FakeMmio::new());
@@ -165,6 +166,7 @@ mod tests {
                 allow_poll: false,
                 writable_registers: vec![],
                 protocol: None,
+                allow_interrupt: false,
             },
         );
         assert_eq!(

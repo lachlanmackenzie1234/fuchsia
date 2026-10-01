@@ -77,7 +77,8 @@ Remaining phase 1 work:
       (8.1, 8.4, 9.5, 11.5, 11.6, 12, 14.2; milestone P4).
 - [ ] Engineering assembly inclusion and production-absence verification
       (7.1, 25).
-- [ ] Interrupt observation (11.7, 17; milestone P5).
+- [x] CS20 `[driver-lab] Interrupt observation and local acknowledgement`
+      (11.7, 17; milestone P5).
 - [ ] Serial capture and independent recovery integration (3, 14.1; milestone H5).
 - [ ] Register-metadata-backed consent expansion (10.2; open decision 8).
 

@@ -26,6 +26,7 @@ class AccessClass(enum.Enum):
     SEQUENCE = "sequence"
     PROTOCOL = "protocol"
     PROTOCOL_TRANSACTION = "protocol_transaction"
+    INTERRUPT = "interrupt"
 
 
 class Decision(enum.Enum):
@@ -181,6 +182,7 @@ class ResourceKind(str, enum.Enum):
     GPIO = "gpio"
     I2C = "i2c"
     SPI = "spi"
+    INTERRUPT = "interrupt"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -216,3 +218,33 @@ class SpiTransmitOutcome:
     rx_data: bytes
     audit_seq: int
     timestamp_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class InterruptOutcome:
+    """The outcome of an interrupt observation."""
+
+    resource: int
+    sequence: int
+    count: int
+    timestamp_ns: int
+    coalesced_count: int = 0
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, int):
+            return self.timestamp_ns == other
+        if isinstance(other, InterruptOutcome):
+            return (
+                self.resource == other.resource
+                and self.sequence == other.sequence
+                and self.count == other.count
+                and self.timestamp_ns == other.timestamp_ns
+                and self.coalesced_count == other.coalesced_count
+            )
+        return False
+
+    def __int__(self) -> int:
+        return self.timestamp_ns
+
+    def __index__(self) -> int:
+        return self.timestamp_ns

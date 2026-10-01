@@ -17,7 +17,7 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
-from driver_lab.models import ResourceKind
+from driver_lab.models import InterruptOutcome, ResourceKind
 from driver_lab.transport import (
     Denial,
     DirectDescription,
@@ -567,26 +567,75 @@ class Reset:
 
 
 class Interrupt:
-    """Thin shape-preserving adapter for interrupt observation."""
+    """Thin shape-preserving adapter for interrupt observation (Spec Sections 11.7, 17)."""
+
+    wait_metadata = TranslationMetadata(
+        cpp_analogue="zx::interrupt::wait(&timestamp) / fdf::WireAsyncEventHandler",
+        rust_analogue="fuchsia_async::OnSignals::new(&interrupt, zx::Signals::INTERRUPT).await",
+        directly_translatable=True,
+        differences="Bounded hanging request to target proxy with sequence tracking, coalescing metrics, and target monotonic timestamping.",
+        target_local_timing=True,
+        experiment_only=False,
+    )
 
     def __init__(
-        self, session: DirectSession, resource_name: str = "interrupt"
+        self,
+        session: DirectSession | ProxySession,
+        resource_name: str = "interrupt",
+        resource_info: ResourceInfo | None = None,
+        audit_drainer: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._session = session
         self._resource_name = resource_name
+        self._resource_info = resource_info
+        self._audit_drainer = audit_drainer
 
-    async def wait(self, timeout_s: float = 1.0) -> int:
-        outcome = await self._session.call_fidl(
-            "wait",
-            {
-                "resource": self._resource_name,
-                "timeout_ns": int(timeout_s * 1e9),
-            },
+    @property
+    def name(self) -> str:
+        return self._resource_name
+
+    @property
+    def id(self) -> int | None:
+        return (
+            self._resource_info.id if self._resource_info is not None else None
         )
-        val = outcome.response.get("timestamp_ns")
-        if isinstance(val, int):
-            return val
-        return 0
+
+    async def wait(
+        self,
+        timeout_s: float = 1.0,
+        after_sequence: int = 0,
+    ) -> InterruptOutcome:
+        """Observes an interrupt event (Spec Sections 11.7, 17)."""
+        if self._resource_info is not None and isinstance(
+            self._session, ProxySession
+        ):
+            outcome = await self._session.wait_for_interrupt(
+                self._resource_info.id,
+                after_sequence=after_sequence,
+                timeout_s=timeout_s,
+            )
+            if self._audit_drainer is not None:
+                await self._audit_drainer()
+            return outcome
+
+        if isinstance(self._session, DirectSession):
+            outcome_fidl = await self._session.call_fidl(
+                "wait",
+                {
+                    "resource": self._resource_name,
+                    "timeout_ns": int(timeout_s * 1e9),
+                },
+            )
+            val = outcome_fidl.response.get("timestamp_ns")
+            ts = val if isinstance(val, int) else 0
+            return InterruptOutcome(
+                resource=self._resource_info.id if self._resource_info else 0,
+                sequence=1,
+                count=1,
+                timestamp_ns=ts,
+                coalesced_count=0,
+            )
+        raise RuntimeError("Session does not support wait_for_interrupt")
 
 
 class HardwareSession:
@@ -789,13 +838,44 @@ class HardwareSession:
         return Reset(self._direct_session, resource)
 
     async def interrupt(self, resource: str = "interrupt") -> Interrupt:
-        """Acquires an Interrupt adapter in direct mode."""
+        """Acquires an Interrupt adapter in proxy or direct mode (Spec Sections 11.7, 17)."""
         self._check_not_closed()
-        if self._direct_session is None:
-            raise UnsupportedCapabilityError(
-                "Interrupt observation is only supported in direct mode"
+        if self._proxy_session is not None:
+            if self._proxy_description is None:
+                raise UnsupportedCapabilityError("Missing proxy description")
+            info = None
+            for r in self._proxy_description.resources:
+                if (
+                    r.name == resource or str(r.id) == resource
+                ) and r.kind == ResourceKind.INTERRUPT:
+                    info = r
+                    break
+            if info is None:
+                irq_res = [
+                    r
+                    for r in self._proxy_description.resources
+                    if r.kind == ResourceKind.INTERRUPT
+                ]
+                if resource == "interrupt" and irq_res:
+                    info = irq_res[0]
+                else:
+                    available = [
+                        r.name for r in self._proxy_description.resources
+                    ]
+                    raise ValueError(
+                        f"Unknown interrupt resource '{resource}'. Available: {available}"
+                    )
+            return Interrupt(
+                self._proxy_session,
+                resource_name=info.name,
+                resource_info=info,
+                audit_drainer=self._audit_drainer,
             )
-        return Interrupt(self._direct_session, resource)
+        if self._direct_session is not None:
+            return Interrupt(self._direct_session, resource)
+        raise UnsupportedCapabilityError(
+            "Interrupt observation is not supported in current session"
+        )
 
     async def sequence(
         self, operations: Sequence[SequenceItem]

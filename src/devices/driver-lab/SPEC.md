@@ -65,7 +65,8 @@ Remaining phase 1 work:
       (8.1, 8.4, 9.5, 11.5, 11.6, 12, 14.2; milestone P4).
 - [ ] Engineering assembly inclusion and production-absence
       verification (7.1, 25).
-- [ ] Interrupt observation (11.7, 17; milestone P5).
+- [x] CS20 `[driver-lab] Interrupt observation and local acknowledgement`
+      (11.7, 17; milestone P5).
 - [ ] Structured configuration (22) and per-class rate limits (12.1).
 
 Phase: 1 -- new-driver development. The proxy binds to unclaimed nodes through

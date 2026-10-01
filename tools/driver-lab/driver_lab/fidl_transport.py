@@ -22,6 +22,7 @@ from driver_lab.models import (
     GpioReadOutcome,
     GpioWriteOutcome,
     I2cTransferOutcome,
+    InterruptOutcome,
     ResourceKind,
     SpiTransmitOutcome,
 )
@@ -57,6 +58,7 @@ _ACCESS_TO_FIDL = {
     AccessClass.WRITE: fdl.AccessClass.WRITE,
     AccessClass.SEQUENCE: fdl.AccessClass.SEQUENCE,
     AccessClass.PROTOCOL: fdl.AccessClass.PROTOCOL,
+    AccessClass.INTERRUPT: fdl.AccessClass.INTERRUPT,
 }
 
 _RESOURCE_KIND_FROM_FIDL = {
@@ -64,6 +66,7 @@ _RESOURCE_KIND_FROM_FIDL = {
     fdl.ResourceKind.GPIO: ResourceKind.GPIO,
     fdl.ResourceKind.I2_C: ResourceKind.I2C,
     fdl.ResourceKind.SPI: ResourceKind.SPI,
+    fdl.ResourceKind.INTERRUPT: ResourceKind.INTERRUPT,
 }
 
 
@@ -580,6 +583,29 @@ class _FidlProxySession:
             entries=entries,
             oldest_retained=oldest,
             next_cursor=response.next_cursor,
+        )
+
+    async def wait_for_interrupt(
+        self,
+        resource: int,
+        after_sequence: int = 0,
+        timeout_s: float = 1.0,
+    ) -> InterruptOutcome:
+        """See `ProxySession.wait_for_interrupt`."""
+        timeout_ns = int(timeout_s * 1_000_000_000)
+        result = await self._session.wait_for_interrupt(
+            resource=resource,
+            after_sequence=after_sequence,
+            timeout_ns=timeout_ns,
+        )
+        _check_denied(result)
+        response = _unwrap(result)
+        return InterruptOutcome(
+            resource=response.resource,
+            sequence=response.sequence,
+            count=response.count,
+            timestamp_ns=response.timestamp_ns,
+            coalesced_count=response.coalesced_count,
         )
 
     async def close(self) -> None:

@@ -44,6 +44,8 @@ pub enum AccessClass {
     Sequence,
     /// An operation on a protocol-backed resource (GPIO, I2C, SPI).
     Protocol,
+    /// An interrupt observation.
+    Interrupt,
 }
 
 /// The kind of hardware resource offered.
@@ -53,6 +55,7 @@ pub enum ResourceKind {
     Gpio,
     I2c,
     Spi,
+    Interrupt,
 }
 
 /// Description of a resource offered by the parent node. Descriptions
@@ -85,6 +88,10 @@ impl MmioResource {
 
     pub fn spi(name: impl Into<String>) -> Self {
         Self { name: name.into(), kind: ResourceKind::Spi, logical_size: 0, mapped_size: 0 }
+    }
+
+    pub fn interrupt(name: impl Into<String>) -> Self {
+        Self { name: name.into(), kind: ResourceKind::Interrupt, logical_size: 0, mapped_size: 0 }
     }
 }
 
@@ -148,6 +155,10 @@ impl ProtocolCeiling {
                 allowed_methods.insert("transmit".to_string());
                 Self { allowed_methods, max_transfer_size: 8192, allow_mutating: true }
             }
+            ResourceKind::Interrupt => {
+                allowed_methods.insert("wait".to_string());
+                Self { allowed_methods, max_transfer_size: 0, allow_mutating: false }
+            }
             ResourceKind::Mmio => {
                 Self { allowed_methods, max_transfer_size: 0, allow_mutating: false }
             }
@@ -171,6 +182,8 @@ pub struct ResourceCeiling {
     pub writable_registers: Vec<WritableRegister>,
     /// Protocol-specific ceiling when the resource is protocol-backed.
     pub protocol: Option<ProtocolCeiling>,
+    /// Whether interrupt observation may be authorized by session allowlist.
+    pub allow_interrupt: bool,
 }
 
 impl ResourceCeiling {
@@ -470,7 +483,36 @@ impl AccessPolicy {
                 }
                 Ok(())
             }
+            AccessClass::Interrupt => {
+                let desc = self.resources.get(&rule.resource).ok_or(Denial::UnknownResource)?;
+                if desc.kind != ResourceKind::Interrupt {
+                    return Err(Denial::UnsupportedAccessClass);
+                }
+                let ceiling =
+                    self.ceiling.get(&rule.resource).ok_or(Denial::NotPermittedByCeiling)?;
+                if !ceiling.allow_interrupt {
+                    return Err(Denial::NotPermittedByCeiling);
+                }
+                Ok(())
+            }
         }
+    }
+
+    /// Immediately-before-access validation for an interrupt observation.
+    pub fn check_interrupt(&self, resource: ResourceId) -> Result<(), Denial> {
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Interrupt {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        if !ceiling.allow_interrupt {
+            return Err(Denial::NotPermittedByCeiling);
+        }
+        let rule = AccessRule { resource, offset: 0, width: 0, class: AccessClass::Interrupt };
+        if !self.allowlist.contains(&rule) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
     }
 
     /// Immediately-before-access validation for a GPIO read.
@@ -719,6 +761,7 @@ mod tests {
                         },
                     ],
                     protocol: None,
+                    allow_interrupt: false,
                 },
             ),
             (
@@ -729,6 +772,7 @@ mod tests {
                     allow_poll: false,
                     writable_registers: vec![],
                     protocol: None,
+                    allow_interrupt: false,
                 },
             ),
             (
@@ -739,6 +783,7 @@ mod tests {
                     allow_poll: false,
                     writable_registers: vec![],
                     protocol: None,
+                    allow_interrupt: false,
                 },
             ),
         ])

@@ -14,6 +14,7 @@ pub mod audit_ring;
 pub mod digest;
 pub mod executor;
 pub mod hardware_backend;
+pub mod interrupt;
 pub mod protocol_resource_adapter;
 pub mod provider;
 pub mod session;

@@ -37,6 +37,7 @@ fn engineering_ceiling() -> ResourceCeiling {
         allow_poll: false,
         writable_registers: vec![],
         protocol: None,
+        allow_interrupt: false,
     }
 }
 

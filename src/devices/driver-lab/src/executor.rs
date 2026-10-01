@@ -1949,6 +1949,7 @@ mod tests {
                 allow_poll: false,
                 writable_registers: vec![],
                 protocol: None,
+                allow_interrupt: false,
             },
         )]);
         let policy =
@@ -1987,6 +1988,7 @@ mod tests {
                 allow_poll: true,
                 writable_registers,
                 protocol: None,
+                allow_interrupt: false,
             },
         )]);
         let policy =
@@ -2166,6 +2168,7 @@ mod tests {
                 allow_poll: false,
                 writable_registers: vec![],
                 protocol: None,
+                allow_interrupt: false,
             },
         )]);
         let policy = AccessPolicy::new(
@@ -2665,6 +2668,7 @@ mod tests {
                 protocol: Some(ProtocolCeiling::default_for(
                     crate::access_policy::ResourceKind::Gpio,
                 )),
+                allow_interrupt: false,
             },
         )]);
         let policy_ro = AccessPolicy::new(
@@ -2742,6 +2746,7 @@ mod tests {
                     allow_poll: false,
                     writable_registers: vec![],
                     protocol: None,
+                    allow_interrupt: false,
                 },
             ),
             (
@@ -2754,6 +2759,7 @@ mod tests {
                     protocol: Some(ProtocolCeiling::default_for(
                         crate::access_policy::ResourceKind::Gpio,
                     )),
+                    allow_interrupt: false,
                 },
             ),
             (
@@ -2766,6 +2772,7 @@ mod tests {
                     protocol: Some(ProtocolCeiling::default_for(
                         crate::access_policy::ResourceKind::I2c,
                     )),
+                    allow_interrupt: false,
                 },
             ),
             (
@@ -2778,6 +2785,7 @@ mod tests {
                     protocol: Some(ProtocolCeiling::default_for(
                         crate::access_policy::ResourceKind::Spi,
                     )),
+                    allow_interrupt: false,
                 },
             ),
         ]);

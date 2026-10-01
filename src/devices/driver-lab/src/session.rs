@@ -241,6 +241,7 @@ mod tests {
                 allow_poll: false,
                 writable_registers: vec![],
                 protocol: None,
+                allow_interrupt: false,
             },
         )]);
         SessionManager::new(identity(), resources, ceiling, true)
@@ -356,6 +357,7 @@ mod tests {
                 allow_poll: false,
                 writable_registers: vec![],
                 protocol: None,
+                allow_interrupt: false,
             },
         )]);
         let mut manager = SessionManager::new(identity(), resources, ceiling, false);

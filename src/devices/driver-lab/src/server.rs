@@ -8,7 +8,7 @@
 use crate::platform_provider::MappedMmio;
 use fidl_fuchsia_driver_lab as flab;
 use fuchsia_async::ScopeHandle;
-use futures::TryStreamExt;
+use futures::{FutureExt as _, TryStreamExt};
 use lab_proxy_core::access_policy::{AccessClass, AccessRule, Denial, WritePrecondition};
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
 use lab_proxy_core::executor::{
@@ -16,6 +16,7 @@ use lab_proxy_core::executor::{
     SequenceItem as CoreSequenceItem, SnapshotError, SnapshotItem, SpiTransmitError, WriteError,
 };
 use lab_proxy_core::hardware_backend::Clock;
+use lab_proxy_core::interrupt::InterruptManager;
 use lab_proxy_core::session::{OpenError, ProxyIdentity, RunContext, SessionManager, SessionMode};
 use std::sync::{Arc, Mutex};
 
@@ -105,6 +106,8 @@ pub struct ProxyState {
     /// Per-resource description digests, reported by `Describe` for
     /// persistent grant matching.
     pub resource_digests: std::collections::BTreeMap<u32, String>,
+    /// Interrupt manager coordinating interrupt observations.
+    pub interrupts: InterruptManager,
 }
 
 /// Handle to the shared proxy state and cancellation token.
@@ -192,6 +195,9 @@ fn describe(state: &SharedState) -> flab::ProxyDescription {
                 lab_proxy_core::access_policy::ResourceKind::Gpio => flab::ResourceKind::Gpio,
                 lab_proxy_core::access_policy::ResourceKind::I2c => flab::ResourceKind::I2C,
                 lab_proxy_core::access_policy::ResourceKind::Spi => flab::ResourceKind::Spi,
+                lab_proxy_core::access_policy::ResourceKind::Interrupt => {
+                    flab::ResourceKind::Interrupt
+                }
             }),
             logical_size: Some(resource.logical_size),
             digest: state.resource_digests.get(id).cloned(),
@@ -288,6 +294,7 @@ fn open_session(
                 flab::AccessClass::Poll => AccessClass::Poll,
                 flab::AccessClass::Sequence => AccessClass::Sequence,
                 flab::AccessClass::Protocol => AccessClass::Protocol,
+                flab::AccessClass::Interrupt => AccessClass::Interrupt,
             },
         })
         .collect();
@@ -1563,6 +1570,144 @@ async fn serve_session(
                     }
                 }
             }
+            flab::SessionRequest::WaitForInterrupt {
+                resource,
+                after_sequence,
+                timeout_ns,
+                responder,
+            } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+
+                let (tx, rx) = futures::channel::oneshot::channel();
+
+                let wait_init = {
+                    let mut guard = state.inner.lock().unwrap();
+                    let ProxyState { sessions, interrupts, audit, .. } = &mut *guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => match session.policy.check_interrupt(resource) {
+                            Err(denial) => {
+                                let record = AuditRecord {
+                                    session: Some(id),
+                                    resource: Some(resource),
+                                    operation: "wait_for_interrupt",
+                                    offset: None,
+                                    decision: Decision::Denied(denial),
+                                    status: OpStatus::Rejected,
+                                    value: None,
+                                    timestamp_ns: now_ns(),
+                                    run_id: None,
+                                    item_index: None,
+                                };
+                                audit.append(record);
+                                Err(denial_to_fidl(denial))
+                            }
+                            Ok(()) => {
+                                match interrupts.wait_for_interrupt(
+                                    resource,
+                                    after_sequence,
+                                    Box::new(move |event| {
+                                        let _ = tx.send(event);
+                                    }),
+                                ) {
+                                    Ok(Some(event)) => Ok(Some(event)),
+                                    Ok(None) => Ok(None),
+                                    Err(denial) => {
+                                        let record = AuditRecord {
+                                            session: Some(id),
+                                            resource: Some(resource),
+                                            operation: "wait_for_interrupt",
+                                            offset: None,
+                                            decision: Decision::Denied(denial),
+                                            status: OpStatus::Rejected,
+                                            value: None,
+                                            timestamp_ns: now_ns(),
+                                            run_id: None,
+                                            item_index: None,
+                                        };
+                                        audit.append(record);
+                                        Err(denial_to_fidl(denial))
+                                    }
+                                }
+                            }
+                        },
+                    }
+                };
+
+                let event_result = match wait_init {
+                    Err(err) => Err(err),
+                    Ok(Some(event)) => Ok(event),
+                    Ok(None) => {
+                        if timeout_ns <= 0 {
+                            Err(flab::OperationError::Timeout)
+                        } else {
+                            futures::select! {
+                                res = rx.fuse() => {
+                                    match res {
+                                        Ok(event) => Ok(event),
+                                        Err(_) => Err(flab::OperationError::NotAccepting),
+                                    }
+                                }
+                                _ = fuchsia_async::Timer::new(zx::MonotonicInstant::after(
+                                    zx::Duration::from_nanos(timeout_ns),
+                                )).fuse() => {
+                                    Err(flab::OperationError::Timeout)
+                                }
+                            }
+                        }
+                    }
+                };
+
+                let fidl_res = match event_result {
+                    Ok(event) => {
+                        let mut guard = state.inner.lock().unwrap();
+                        let record = AuditRecord {
+                            session: Some(id),
+                            resource: Some(resource),
+                            operation: "wait_for_interrupt",
+                            offset: None,
+                            decision: Decision::Allowed,
+                            status: OpStatus::Ok,
+                            value: Some(event.count as u32),
+                            timestamp_ns: event.timestamp_ns,
+                            run_id: None,
+                            item_index: None,
+                        };
+                        guard.audit.append(record);
+                        Ok((
+                            event.resource,
+                            event.sequence,
+                            event.count,
+                            event.timestamp_ns,
+                            event.coalesced_count,
+                        ))
+                    }
+                    Err(err) => {
+                        if err == flab::OperationError::Timeout {
+                            let mut guard = state.inner.lock().unwrap();
+                            let record = AuditRecord {
+                                session: Some(id),
+                                resource: Some(resource),
+                                operation: "wait_for_interrupt",
+                                offset: None,
+                                decision: Decision::Denied(Denial::Timeout),
+                                status: OpStatus::Rejected,
+                                value: None,
+                                timestamp_ns: now_ns(),
+                                run_id: None,
+                                item_index: None,
+                            };
+                            guard.audit.append(record);
+                        }
+                        Err(err)
+                    }
+                };
+
+                let _ = responder.send(fidl_res);
+            }
             flab::SessionRequest::_UnknownMethod { .. } => {}
         }
     }
@@ -1570,6 +1715,7 @@ async fn serve_session(
     // Channel closed: close the session, release the mutation lease, and
     // audit the closure.
     let mut state = state.inner.lock().unwrap();
+    state.interrupts.cancel_waiters();
     if state.sessions.close_session(id) {
         let mut record = AuditRecord::lifecycle("session_closed", now_ns());
         record.session = Some(id);

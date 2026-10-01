@@ -444,12 +444,33 @@ class _BridgeSessionServer(fdl.SessionServer):
             complete=outcome.complete,
         )
 
+    async def wait_for_interrupt(self, request: Any) -> Any:
+        try:
+            outcome = await self._session.wait_for_interrupt(
+                request.resource,
+                after_sequence=request.after_sequence,
+                timeout_s=request.timeout_ns / 1_000_000_000,
+            )
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        return fdl.InterruptResult(
+            resource=outcome.resource,
+            sequence=outcome.sequence,
+            count=outcome.count,
+            timestamp_ns=outcome.timestamp_ns,
+            coalesced_count=outcome.coalesced_count,
+        )
+
 
 _RESOURCE_KIND_TO_FIDL = {
     ResourceKind.MMIO: fdl.ResourceKind.MMIO,
     ResourceKind.GPIO: fdl.ResourceKind.GPIO,
     ResourceKind.I2C: fdl.ResourceKind.I2_C,
     ResourceKind.SPI: fdl.ResourceKind.SPI,
+    ResourceKind.INTERRUPT: fdl.ResourceKind.INTERRUPT,
 }
 
 
@@ -832,14 +853,14 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
         self.fake.set_i2c_response(3, b"\xca\xfe")
         self.fake.set_spi_response(4, b"\xba\xbe")
 
-        context = Context(target="")
-        client_channel, server_channel = context.channel_create()
+        self._context = Context(target="")
+        client_channel, server_channel = self._context.channel_create()
         proxy_server = _BridgeProxyServer(server_channel, self.fake, self.tasks)
         self.tasks.append(
             asyncio.get_running_loop().create_task(proxy_server.serve())
         )
         transport = FidlProxyTransport(
-            fdl.ProxyClient(client_channel), context.channel_create
+            fdl.ProxyClient(client_channel), self._context.channel_create
         )
 
         expectations = Expectations(
@@ -913,6 +934,71 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seq_out.results[4].data, b"\xca\xfe")
         self.assertEqual(seq_out.results[5].kind, "spi_transmit")
         self.assertEqual(seq_out.results[5].data, b"\xba\xbe")
+
+        await session.close()
+
+    async def test_interrupt_over_real_fidl(self) -> None:
+        desc = ProxyDescription(
+            protocol_major=1,
+            protocol_minor=0,
+            proxy_generation=7,
+            boot_id="boot-1",
+            resource_digest=DESCRIPTION_DIGEST,
+            policy_digest=POLICY_DIGEST,
+            resources=(
+                ResourceInfo(
+                    id=5,
+                    name="irq0",
+                    kind=ResourceKind.INTERRUPT,
+                    logical_size=0,
+                    digest="sha256:" + "05" * 32,
+                ),
+            ),
+            max_snapshot_items=64,
+            audit_capacity=1024,
+        )
+        self.fake = FakeProxyTarget(desc)
+        self.fake.trigger_interrupt(5, timestamp_ns=123_456)
+
+        self._context = Context(target="")
+        client_channel, server_channel = self._context.channel_create()
+        proxy_server = _BridgeProxyServer(server_channel, self.fake, self.tasks)
+        self.tasks.append(
+            asyncio.get_running_loop().create_task(proxy_server.serve())
+        )
+        transport = FidlProxyTransport(
+            fdl.ProxyClient(client_channel), self._context.channel_create
+        )
+
+        expectations = Expectations(
+            boot_id="boot-1",
+            proxy_generation=7,
+            resource_digest=DESCRIPTION_DIGEST,
+            policy_digest=POLICY_DIGEST,
+        )
+        session_ctx = SessionContext(
+            run_id="run-irq",
+            case_id="case-irq",
+            plan_digest="digest-irq",
+        )
+        allowlist = [
+            AllowRule(
+                resource=5, offset=0, width=0, access=AccessClass.INTERRUPT
+            ),
+        ]
+        session = await transport.open_session(
+            session_ctx, expectations, allowlist, mode=SessionMode.READ_ONLY
+        )
+
+        outcome = await session.wait_for_interrupt(
+            5, after_sequence=0, timeout_s=1.0
+        )
+        self.assertEqual(outcome.resource, 5)
+        self.assertEqual(outcome.sequence, 1)
+        self.assertEqual(outcome.count, 1)
+        self.assertEqual(outcome.timestamp_ns, 123_456)
+        self.assertEqual(outcome.coalesced_count, 1)
+        self.assertEqual(int(outcome), 123_456)
 
         await session.close()
 

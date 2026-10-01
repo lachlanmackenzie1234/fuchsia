@@ -16,6 +16,7 @@ from driver_lab.session import (
     Gpio,
     HardwareSession,
     I2c,
+    Interrupt,
     MmioRegion,
     SessionCapabilities,
     Spi,
@@ -117,6 +118,13 @@ def make_extended_proxy_description() -> ProxyDescription:
                 kind=ResourceKind.SPI,
                 logical_size=32,
                 digest="sha256:" + "77" * 32,
+            ),
+            ResourceInfo(
+                id=6,
+                name="irq0",
+                kind=ResourceKind.INTERRUPT,
+                logical_size=0,
+                digest="sha256:" + "88" * 32,
             ),
         ),
         max_snapshot_items=64,
@@ -280,6 +288,9 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(Spi.transmit_metadata, TranslationMetadata)
         self.assertTrue(Spi.transmit_metadata.directly_translatable)
 
+        self.assertIsInstance(Interrupt.wait_metadata, TranslationMetadata)
+        self.assertTrue(Interrupt.wait_metadata.directly_translatable)
+
     async def test_direct_mode_capabilities_and_protocols(self) -> None:
         # Register handlers on fake direct target
         gpio_state = {"value": True, "direction": "output"}
@@ -348,12 +359,13 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(UnsupportedCapabilityError):
                 await session.reset("reset")
 
-            with self.assertRaises(UnsupportedCapabilityError):
-                await session.interrupt("interrupt")
-
             # Gpio request on proxy that has no GPIO resource raises ValueError
             with self.assertRaises(ValueError):
                 await session.gpio("gpio")
+
+            # Interrupt request on proxy that has no interrupt resource raises ValueError
+            with self.assertRaises(ValueError):
+                await session.interrupt("interrupt")
 
     async def test_proxy_mode_protocol_adapters(self) -> None:
         fake = FakeProxyTarget(make_extended_proxy_description())
@@ -398,6 +410,33 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(spi.id, 5)
             rx_spi = await spi.transmit(b"\x03\x04")
             self.assertEqual(rx_spi, b"\xbe\xef")
+
+            # Interrupt adapter in proxy mode
+            irq = await session.interrupt("irq0")
+            self.assertEqual(irq.name, "irq0")
+            self.assertEqual(irq.id, 6)
+
+            # Immediate wait when after_sequence < sequence
+            fake.trigger_interrupt(6, timestamp_ns=500_000)
+            irq_res = await irq.wait(after_sequence=0)
+            self.assertEqual(irq_res.resource, 6)
+            self.assertEqual(irq_res.sequence, 1)
+            self.assertEqual(irq_res.count, 1)
+            self.assertEqual(irq_res.timestamp_ns, 500_000)
+            self.assertEqual(irq_res.coalesced_count, 1)
+
+            # Asynchronous wait satisfied by trigger_interrupt
+            wait_task = asyncio.create_task(
+                irq.wait(after_sequence=1, timeout_s=1.0)
+            )
+            await asyncio.sleep(0)
+            fake.trigger_interrupt(6, timestamp_ns=600_000)
+            irq_res2 = await wait_task
+            self.assertEqual(irq_res2.resource, 6)
+            self.assertEqual(irq_res2.sequence, 2)
+            self.assertEqual(irq_res2.count, 2)
+            self.assertEqual(irq_res2.timestamp_ns, 600_000)
+            self.assertEqual(irq_res2.coalesced_count, 0)
 
     async def test_heterogeneous_sequence_proxy_mode(self) -> None:
         fake = FakeProxyTarget(make_extended_proxy_description())

@@ -11,7 +11,9 @@
 //!
 //! Manifests are canonicalized and digested via SHA-256 (Spec 9.6).
 
-use crate::access_policy::{MmioResource, ResourceCeiling, ResourceId, WritableRegister};
+use crate::access_policy::{
+    MmioResource, ResourceCeiling, ResourceId, ResourceKind, WritableRegister,
+};
 use crate::digest::Sha256Digest;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest as _, Sha256};
@@ -127,6 +129,9 @@ impl WritableRegisterDto {
 /// Fields are declared in alphabetical order to produce deterministic canonical JSON.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourcePolicyManifest {
+    /// Whether interrupt observation may be authorized by session allowlist.
+    #[serde(default)]
+    pub allow_interrupt: bool,
     /// Whether polling reads may be authorized by session allowlist.
     pub allow_poll: bool,
     /// Whether operator-authorized unknown reads may be enabled.
@@ -190,6 +195,7 @@ impl ResourcePolicyManifest {
                 .map(|w| w.to_writable_register())
                 .collect(),
             protocol: None,
+            allow_interrupt: self.allow_interrupt,
         }
     }
 }
@@ -219,6 +225,7 @@ impl TargetPolicyManifest {
             .map(|(id, res)| ResourcePolicyManifest {
                 id: *id,
                 name: res.name.clone(),
+                allow_interrupt: res.kind == ResourceKind::Interrupt,
                 allow_unknown_reads: true,
                 allow_poll: false,
                 hard_denied: vec![],
@@ -347,6 +354,11 @@ impl TargetPolicyManifest {
                 return Err(NarrowingError::WidenedPoll(runtime_res.id));
             }
 
+            // Cannot enable interrupt observation if baseline disallows.
+            if !base_res.allow_interrupt && runtime_res.allow_interrupt {
+                return Err(NarrowingError::WidenedInterrupt(runtime_res.id));
+            }
+
             // Runtime MUST preserve all hard-denied bytes from baseline.
             // Every base range must be fully covered by a runtime range.
             for base_range in &base_res.hard_denied {
@@ -461,6 +473,7 @@ pub enum NarrowingError {
     ResourceNameMismatch { id: ResourceId, baseline: String, runtime: String },
     WidenedUnknownReads(ResourceId),
     WidenedPoll(ResourceId),
+    WidenedInterrupt(ResourceId),
     ReducedHardDenial { id: ResourceId, unconstrained_start: u64, unconstrained_end: u64 },
     WidenedWritableRegister { id: ResourceId, offset: u64 },
     WidenedWritableRegisterMask { id: ResourceId, offset: u64 },
@@ -520,6 +533,9 @@ impl std::fmt::Display for NarrowingError {
                 write!(f, "cannot enable unknown reads on resource {id}")
             }
             Self::WidenedPoll(id) => write!(f, "cannot enable polling on resource {id}"),
+            Self::WidenedInterrupt(id) => {
+                write!(f, "cannot enable interrupt observation on resource {id}")
+            }
             Self::ReducedHardDenial { id, unconstrained_start, unconstrained_end } => {
                 write!(
                     f,
@@ -580,6 +596,7 @@ mod tests {
             resources: vec![ResourcePolicyManifest {
                 id: 0,
                 name: "mmio0".to_string(),
+                allow_interrupt: false,
                 allow_unknown_reads: true,
                 allow_poll: false,
                 hard_denied: vec![RangeDto::new(64, 68).unwrap()],
@@ -591,13 +608,13 @@ mod tests {
         let json_str = manifest.to_canonical_json().unwrap();
         assert_eq!(
             json_str,
-            "{\"allow_mutating_sessions\":false,\"audit_capacity\":1024,\"max_snapshot_items\":64,\"resources\":[{\"allow_poll\":false,\"allow_unknown_reads\":true,\"hard_denied\":[[64,68]],\"id\":0,\"name\":\"mmio0\"}],\"schema_version\":1}"
+            "{\"allow_mutating_sessions\":false,\"audit_capacity\":1024,\"max_snapshot_items\":64,\"resources\":[{\"allow_interrupt\":false,\"allow_poll\":false,\"allow_unknown_reads\":true,\"hard_denied\":[[64,68]],\"id\":0,\"name\":\"mmio0\"}],\"schema_version\":1}"
         );
 
         let digest = manifest.policy_digest();
         assert_eq!(
             digest.to_string(),
-            "sha256:8cf98e1811195e15a4db3ee2f71874f6d6b77f900e5c66938b5a532883e12fbd"
+            "sha256:5511f2b70b6fcd8ed519f7e57d31e0becb17083e7f0004d48abfd7ab88034b4d"
         );
     }
 
@@ -611,6 +628,7 @@ mod tests {
             resources: vec![ResourcePolicyManifest {
                 id: 0,
                 name: "mmio0".to_string(),
+                allow_interrupt: true,
                 allow_unknown_reads: true,
                 allow_poll: true,
                 hard_denied: vec![RangeDto::new(64, 68).unwrap()],
@@ -627,6 +645,7 @@ mod tests {
             resources: vec![ResourcePolicyManifest {
                 id: 0,
                 name: "mmio0".to_string(),
+                allow_interrupt: false,
                 allow_unknown_reads: false,
                 allow_poll: false,
                 hard_denied: vec![RangeDto::new(64, 68).unwrap(), RangeDto::new(128, 144).unwrap()],
@@ -640,6 +659,7 @@ mod tests {
         assert!(!narrowed.allow_mutating_sessions);
         assert!(!narrowed.resources[0].allow_unknown_reads);
         assert!(!narrowed.resources[0].allow_poll);
+        assert!(!narrowed.resources[0].allow_interrupt);
         assert_eq!(narrowed.resources[0].hard_denied.len(), 2);
     }
 
@@ -653,6 +673,7 @@ mod tests {
             resources: vec![ResourcePolicyManifest {
                 id: 0,
                 name: "mmio0".to_string(),
+                allow_interrupt: false,
                 allow_unknown_reads: false,
                 allow_poll: false,
                 hard_denied: vec![RangeDto::new(64, 128).unwrap()],
@@ -691,7 +712,12 @@ mod tests {
         widened.resources[0].allow_poll = true;
         assert_eq!(baseline.narrow_with(&widened), Err(NarrowingError::WidenedPoll(0)));
 
-        // 6. Reducing hard denial (shrinking [64, 128) to [64, 100))
+        // 6. Enabling interrupt
+        let mut widened = baseline.clone();
+        widened.resources[0].allow_interrupt = true;
+        assert_eq!(baseline.narrow_with(&widened), Err(NarrowingError::WidenedInterrupt(0)));
+
+        // 7. Reducing hard denial (shrinking [64, 128) to [64, 100))
         let mut widened = baseline.clone();
         widened.resources[0].hard_denied = vec![RangeDto::new(64, 100).unwrap()];
         assert_eq!(
@@ -723,6 +749,7 @@ mod tests {
             resources: vec![ResourcePolicyManifest {
                 id: 0,
                 name: "mmio0".to_string(),
+                allow_interrupt: false,
                 allow_unknown_reads: true,
                 allow_poll: false,
                 hard_denied: vec![],

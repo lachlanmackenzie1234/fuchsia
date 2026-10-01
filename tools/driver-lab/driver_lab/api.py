@@ -500,6 +500,16 @@ class DriverLab:
             rules = list(allowlist)
         else:
             for res in proxy_desc.resources:
+                if res.kind == ResourceKind.INTERRUPT:
+                    rules.append(
+                        AllowRule(
+                            resource=res.id,
+                            offset=0,
+                            width=0,
+                            access=AccessClass.INTERRUPT,
+                        )
+                    )
+                    continue
                 if res.kind != ResourceKind.MMIO:
                     width = 1 if res.kind == ResourceKind.GPIO else 32
                     rules.append(

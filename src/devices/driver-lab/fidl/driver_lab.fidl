@@ -29,6 +29,7 @@ type AccessClass = strict enum : uint32 {
     POLL = 4;
     SEQUENCE = 5;
     PROTOCOL = 6;
+    INTERRUPT = 7;
 };
 
 /// Machine-readable reason an operation, allowlist rule, or session open
@@ -80,6 +81,7 @@ type ResourceKind = flexible enum : uint32 {
     GPIO = 2;
     I2C = 3;
     SPI = 4;
+    INTERRUPT = 5;
 };
 
 /// Logical description of one offered resource. Never contains physical
@@ -292,6 +294,14 @@ type SpiTransmitResult = struct {
     timestamp_ns int64;
 };
 
+type InterruptResult = struct {
+    resource uint32;
+    sequence uint64;
+    count uint64;
+    timestamp_ns int64;
+    coalesced_count uint64;
+};
+
 type SequenceItem = flexible union {
     1: read32 struct {
         resource uint32;
@@ -470,6 +480,14 @@ open protocol Session {
         resource uint32;
         endpoint server_end:SpiEndpoint;
     }) -> () error OperationError;
+
+    /// Observes an interrupt event. Bounded hanging request that yields when
+    /// the interrupt sequence exceeds `after_sequence` or upon timeout.
+    flexible WaitForInterrupt(struct {
+        resource uint32;
+        after_sequence uint64;
+        timeout_ns int64;
+    }) -> (InterruptResult) error OperationError;
 };
 
 @discoverable

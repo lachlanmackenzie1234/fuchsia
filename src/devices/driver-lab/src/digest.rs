@@ -97,6 +97,7 @@ pub fn resource_digest(inputs: &DigestInputs<'_>) -> Sha256Digest {
             ResourceKind::Gpio => b"gpio",
             ResourceKind::I2c => b"i2c",
             ResourceKind::Spi => b"spi",
+            ResourceKind::Interrupt => b"interrupt",
         },
     );
     put_u64(&mut hasher, "logical_size", inputs.resource.logical_size);
@@ -107,6 +108,7 @@ pub fn resource_digest(inputs: &DigestInputs<'_>) -> Sha256Digest {
             put_u64(&mut hasher, "ceiling", 1);
             put_u64(&mut hasher, "allow_unknown_reads", u64::from(ceiling.allow_unknown_reads));
             put_u64(&mut hasher, "allow_poll", u64::from(ceiling.allow_poll));
+            put_u64(&mut hasher, "allow_interrupt", u64::from(ceiling.allow_interrupt));
             let mut denied: Vec<(u64, u64)> =
                 ceiling.hard_denied.iter().map(|range| (range.start, range.end)).collect();
             denied.sort_unstable();
@@ -176,6 +178,7 @@ pub fn policy_digest(ceiling: &BTreeMap<ResourceId, ResourceCeiling>) -> Sha256D
         put_u64(&mut hasher, "id", u64::from(*id));
         put_u64(&mut hasher, "allow_unknown_reads", u64::from(entry.allow_unknown_reads));
         put_u64(&mut hasher, "allow_poll", u64::from(entry.allow_poll));
+        put_u64(&mut hasher, "allow_interrupt", u64::from(entry.allow_interrupt));
         let mut denied: Vec<(u64, u64)> =
             entry.hard_denied.iter().map(|range| (range.start, range.end)).collect();
         denied.sort_unstable();
@@ -208,6 +211,7 @@ mod tests {
             allow_poll: false,
             writable_registers: vec![],
             protocol: None,
+            allow_interrupt: false,
         }
     }
 
@@ -302,6 +306,7 @@ mod tests {
             allow_poll: false,
             writable_registers: vec![],
             protocol: None,
+            allow_interrupt: false,
         };
         assert_eq!(
             digest_of(&resource(), Some(&reordered)),
@@ -372,6 +377,7 @@ mod tests {
                 allow_poll: false,
                 writable_registers: vec![],
                 protocol: None,
+                allow_interrupt: false,
             },
         )]);
         assert_eq!(policy_digest(&reordered_denies), policy_digest(&one));
@@ -380,5 +386,10 @@ mod tests {
         poll_allowed.allow_poll = true;
         let poll_changed = BTreeMap::from([(1, poll_allowed)]);
         assert_ne!(policy_digest(&poll_changed), policy_digest(&one));
+
+        let mut interrupt_allowed = ceiling();
+        interrupt_allowed.allow_interrupt = true;
+        let interrupt_changed = BTreeMap::from([(1, interrupt_allowed)]);
+        assert_ne!(policy_digest(&interrupt_changed), policy_digest(&one));
     }
 }

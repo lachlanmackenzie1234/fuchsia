@@ -95,6 +95,12 @@ impl Driver for LabProxy {
         };
         let resource_digests: BTreeMap<u32, String> =
             digests.iter().map(|(id, digest)| (*id, digest.to_string())).collect();
+        let mut interrupts = lab_proxy_core::interrupt::InterruptManager::new();
+        for (id, res) in &bundle.resources {
+            if res.kind == lab_proxy_core::access_policy::ResourceKind::Interrupt {
+                interrupts.register(*id);
+            }
+        }
         let sessions = SessionManager::new(
             identity,
             bundle.resources,
@@ -114,7 +120,13 @@ impl Driver for LabProxy {
         let mut audit = AuditRing::new(AUDIT_CAPACITY);
         audit.append(AuditRecord::lifecycle("driver_start", now_ns()));
         let state: SharedState = Arc::new(server::SharedStateData {
-            inner: Mutex::new(ProxyState { sessions, executor, audit, resource_digests }),
+            inner: Mutex::new(ProxyState {
+                sessions,
+                executor,
+                audit,
+                resource_digests,
+                interrupts,
+            }),
             abort_token: std::sync::atomic::AtomicBool::new(false),
         });
 
@@ -148,6 +160,7 @@ impl Driver for LabProxy {
         self.state.abort_token.store(true, std::sync::atomic::Ordering::SeqCst);
         let mut state = self.state.inner.lock().unwrap();
         state.sessions.reject_new_sessions();
+        state.interrupts.cancel_waiters();
         let seq = state.audit.append(AuditRecord::lifecycle("driver_stop", now_ns()));
         info!("LabProxy::stop() audit seq {seq}");
     }
