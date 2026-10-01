@@ -22,7 +22,8 @@ mod aspace_rs {
     use crate::kernel::types::VAddr;
     use crate::user_memory::UserMemory;
     use crate::vm::arch_vm_aspace::{
-        ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ArchMmuFlags,
+        ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ArchMmuFlags, NonTerminalAction,
+        TerminalAction,
     };
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm::vaddr_to_paddr;
@@ -36,12 +37,13 @@ mod aspace_rs {
         make_committed_pager_vmo,
     };
     use core::mem::{MaybeUninit, size_of, size_of_val};
+    use core::sync::atomic::Ordering;
     use fbl::RefPtr;
     use kprint::kprintln;
     use page::SIZE as PAGE_SIZE_USIZE;
     use unittest::{
-        assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_false, expect_ok,
-        expect_true, unwrap_ok, unwrap_some,
+        assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_false, expect_ne,
+        expect_ok, expect_true, subtest, unwrap_ok, unwrap_some,
     };
     use zx_status::Status;
 
@@ -276,6 +278,131 @@ mod aspace_rs {
 
         // drop the ref held by this pointer
         drop(aspace.take());
+    }
+
+    /// Wrapper for harvesting access bits that informs the page queues.
+    fn harvest_access_bits(
+        non_terminal_action: NonTerminalAction,
+        terminal_action: TerminalAction,
+    ) {
+        let _scanner_disable = AutoVmScannerDisable::new();
+        VmAspace::harvest_all_user_accessed_bits(non_terminal_action, terminal_action);
+    }
+
+    /// Consume the (scalar) value, ensuring that the operation to calculate the value can not be
+    /// optimized out/ deemed as unused by the compiler. I.e. this function can be used as a wrapper
+    /// to a calculation to ensure it will be in the binary.
+    fn consume_value<T>(value: T) {
+        // The compiler must materialize the value into a register, since it doesn't
+        // know that the register's value isn't actually used.
+        core::hint::black_box(value);
+    }
+
+    /// Touch mappings in an aspace and ensure we can correctly harvest the accessed bits.
+    /// This test takes an optional tag that is placed in the top byte of the address when
+    /// performing a user_copy.
+    fn vmaspace_accessed_test(tag: u8) -> bool {
+        let run = subtest!(|tag: u8| {
+            let _scanner_disable = AutoVmScannerDisable::new();
+
+            // Create some memory we can map touch to test accessed tracking on. Needs to be created
+            // from user pager backed memory as harvesting is allowed to be limited to just that.
+            let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo::<1>(
+                /*trap_dirty=*/ false, /*resizable=*/ false,
+            ));
+            let mem = unwrap_some!(UserMemory::create_from_vmo(
+                VmObjectPaged::into_vm_object(vmo),
+                tag,
+                0
+            ));
+
+            assert_ok!(mem.commit_and_map(0..PAGE_SIZE_USIZE));
+
+            // Initial accessed state is undefined, so harvest it away.
+            harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+
+            // Grab the current queue for the page and then rotate the page queues. This means any
+            // future, correct, access harvesting should result in a new page queue.
+            // SAFETY: `page` is valid and attached to a VM object.
+            let mut current_queue =
+                unsafe { page.as_ref().get_page_queue_ref().load(Ordering::SeqCst) };
+            pmm::page_queues().rotate_reclaim_queues();
+
+            // Read from the mapping to (hopefully) set the accessed bit.
+            consume_value(unwrap_ok!(mem.get::<i32>(0)));
+            // Harvest it to move it in the page queue.
+            harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+
+            // SAFETY: `page` is valid and attached to a VM object.
+            expect_ne!(current_queue, unsafe {
+                page.as_ref().get_page_queue_ref().load(Ordering::SeqCst)
+            });
+            // SAFETY: `page` is valid and attached to a VM object.
+            current_queue = unsafe { page.as_ref().get_page_queue_ref().load(Ordering::SeqCst) };
+
+            // Rotating and harvesting again should not make the queue change since we have not
+            // accessed it.
+            pmm::page_queues().rotate_reclaim_queues();
+            harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+            // SAFETY: `page` is valid and attached to a VM object.
+            expect_eq!(current_queue, unsafe {
+                page.as_ref().get_page_queue_ref().load(Ordering::SeqCst)
+            });
+
+            // Set the accessed bit again, and make sure it does now harvest.
+            pmm::page_queues().rotate_reclaim_queues();
+            consume_value(unwrap_ok!(mem.get::<i32>(0)));
+            harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+            // SAFETY: `page` is valid and attached to a VM object.
+            expect_ne!(current_queue, unsafe {
+                page.as_ref().get_page_queue_ref().load(Ordering::SeqCst)
+            });
+
+            // Set the accessed bit and update age without harvesting.
+            consume_value(unwrap_ok!(mem.get::<i32>(0)));
+            harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAge);
+            // SAFETY: `page` is valid and attached to a VM object.
+            current_queue = unsafe { page.as_ref().get_page_queue_ref().load(Ordering::SeqCst) };
+
+            // Now if we rotate and update again, we should re-age the page.
+            pmm::page_queues().rotate_reclaim_queues();
+            harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAge);
+            // SAFETY: `page` is valid and attached to a VM object.
+            expect_ne!(current_queue, unsafe {
+                page.as_ref().get_page_queue_ref().load(Ordering::SeqCst)
+            });
+            // SAFETY: `page` is valid and attached to a VM object.
+            current_queue = unsafe { page.as_ref().get_page_queue_ref().load(Ordering::SeqCst) };
+            pmm::page_queues().rotate_reclaim_queues();
+            harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAge);
+            // SAFETY: `page` is valid and attached to a VM object.
+            expect_ne!(current_queue, unsafe {
+                page.as_ref().get_page_queue_ref().load(Ordering::SeqCst)
+            });
+        });
+        run(tag)
+    }
+
+    /// Touch mappings in an aspace and ensure accessed bits are correctly harvested.
+    #[test]
+    fn vmaspace_accessed_test_untagged() {
+        expect_true!(vmaspace_accessed_test(0));
+    }
+
+    /// Reruns the accessed-bit test with tagged user pointers.
+    #[test]
+    fn vmaspace_accessed_test_tagged() {
+        // Rerun the `vmaspace_accessed_test` tests with tags in the top byte of user pointers. This
+        // tests that the subsequent accessed faults are handled successfully, even if the FAR
+        // contains a tag.
+
+        // TODO(ethanws): Make this entire test conditional on #[cfg!(target_arch = "aarch64")] when
+        // lib/unittest gets this functionality.
+        if cfg!(target_arch = "aarch64") {
+            expect_true!(vmaspace_accessed_test(0xAB));
+        } else {
+            kprintln!("Skipping vmaspace_accessed_test_tagged; not aarch64.");
+        }
     }
 
     /// Tests sparse VM mappings with an empty backing VMO.
