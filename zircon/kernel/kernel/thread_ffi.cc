@@ -80,6 +80,8 @@ bool cpp_thread_is_running(const Thread* thread);
 const char* cpp_thread_name(const Thread* thread);
 void cpp_thread_process_pending_signals(void* frame);
 
+void cpp_thread_current_memory_allocation_state_enable();
+void cpp_thread_current_memory_allocation_state_disable();
 bool cpp_thread_current_memory_allocation_state_is_enabled();
 void cpp_thread_current_signal_policy_exception(uint32_t policy_exception_code,
                                                 uint32_t policy_exception_data);
@@ -276,6 +278,16 @@ FFI_ALWAYS_INLINE bool cpp_thread_is_in_restricted_mode(Thread* thread) {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE VmAspace* cpp_thread_current_active_aspace() {
   return Thread::Current::active_aspace();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_memory_allocation_state_enable() {
+  return Thread::Current::memory_allocation_state().Enable();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_memory_allocation_state_disable() {
+  return Thread::Current::memory_allocation_state().Disable();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

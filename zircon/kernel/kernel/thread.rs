@@ -75,6 +75,8 @@ unsafe extern "C" {
     fn cpp_thread_current_set_restricted_state(raw_rs: *mut RestrictedState);
     fn cpp_thread_current_is_signaled() -> bool;
     fn cpp_thread_current_check_for_restricted_kick() -> bool;
+    fn cpp_thread_current_memory_allocation_state_enable();
+    fn cpp_thread_current_memory_allocation_state_disable();
     fn cpp_thread_current_memory_allocation_state_is_enabled() -> bool;
     fn cpp_thread_current_signal_policy_exception(
         policy_exception_code: u32,
@@ -403,6 +405,26 @@ impl Drop for AutoExpiringPreemptDisabler {
         if self.should_clear {
             preempt_clear_timeslice_extension();
         }
+    }
+}
+
+/// RAII helper to enforce that a block of code does not allocate memory.
+///
+/// See |Thread::Current::memory_allocation_state()|.
+pub struct ScopedMemoryAllocationDisabled;
+
+impl ScopedMemoryAllocationDisabled {
+    pub fn new() -> Self {
+        // SAFETY: Disables memory allocations on the current thread.
+        unsafe { cpp_thread_current_memory_allocation_state_disable() };
+        Self
+    }
+}
+
+impl Drop for ScopedMemoryAllocationDisabled {
+    fn drop(&mut self) {
+        // SAFETY: Re-enables memory allocations on the current thread when the guard drops.
+        unsafe { cpp_thread_current_memory_allocation_state_enable() };
     }
 }
 
