@@ -1049,5 +1049,46 @@ TEST_F(RndisFunctionTest, OidVendorDescription) {
   EXPECT_STREQ(description, "Google");
 }
 
+TEST_F(RndisFunctionTest, QueryOutOfBoundsBuffer) {
+  rndis_query query{
+      .msg_type = RNDIS_QUERY_MSG,
+      .msg_length = static_cast<uint32_t>(sizeof(rndis_query)),
+      .request_id = 42,
+      .oid = OID_GEN_VENDOR_DESCRIPTION,
+      .info_buffer_length = 10,
+      .info_buffer_offset = sizeof(rndis_query),
+      .reserved = 0,
+  };
+  WriteCommand(&query, sizeof(query));
+
+  rndis_query_complete response;
+  ReadResponse(&response, sizeof(response));
+
+  EXPECT_EQ(response.msg_type, static_cast<uint32_t>(RNDIS_QUERY_CMPLT));
+  EXPECT_EQ(response.request_id, 42u);
+  EXPECT_EQ(response.status, static_cast<uint32_t>(RNDIS_STATUS_NOT_SUPPORTED));
+  EXPECT_EQ(response.info_buffer_length, 0u);
+}
+
+TEST_F(RndisFunctionTest, SetOutOfBoundsBuffer) {
+  rndis_set set{
+      .msg_type = RNDIS_SET_MSG,
+      .msg_length = static_cast<uint32_t>(sizeof(rndis_set)),
+      .request_id = 42,
+      .oid = OID_GEN_CURRENT_PACKET_FILTER,
+      .info_buffer_length = 4,
+      .info_buffer_offset = sizeof(rndis_set),
+      .reserved = 0,
+  };
+  WriteCommand(&set, sizeof(set));
+
+  rndis_set_complete response;
+  ReadResponse(&response, sizeof(response));
+
+  EXPECT_EQ(response.msg_type, static_cast<uint32_t>(RNDIS_SET_CMPLT));
+  EXPECT_EQ(response.request_id, 42u);
+  EXPECT_EQ(response.status, static_cast<uint32_t>(RNDIS_STATUS_INVALID_DATA));
+}
+
 }  // namespace
 }  // namespace rndis_function

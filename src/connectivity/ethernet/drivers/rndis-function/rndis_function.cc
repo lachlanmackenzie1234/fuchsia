@@ -399,7 +399,17 @@ zx_status_t RndisFunction::HandleCommand(const void* buffer, size_t size) {
       }
 
       auto query = static_cast<const rndis_query*>(buffer);
-      auto oid_response = QueryOid(query->oid, nullptr, 0);
+      size_t offset = offsetof(rndis_query, request_id) + query->info_buffer_offset;
+      if (query->info_buffer_offset > size - offsetof(rndis_query, request_id) ||
+          query->info_buffer_length > size - offset) {
+        response.emplace(QueryResponse(query->request_id, std::nullopt));
+        break;
+      }
+
+      void* input = query->info_buffer_length > 0
+                        ? const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(buffer) + offset)
+                        : nullptr;
+      auto oid_response = QueryOid(query->oid, input, query->info_buffer_length);
       response.emplace(QueryResponse(query->request_id, oid_response));
       break;
     }
@@ -416,7 +426,8 @@ zx_status_t RndisFunction::HandleCommand(const void* buffer, size_t size) {
       }
 
       size_t offset = offsetof(rndis_set, request_id) + set->info_buffer_offset;
-      if (offset + set->info_buffer_length > size) {
+      if (set->info_buffer_offset > size - offsetof(rndis_set, request_id) ||
+          set->info_buffer_length > size - offset) {
         response.emplace(SetResponse(set->request_id, RNDIS_STATUS_INVALID_DATA));
         break;
       }
