@@ -458,7 +458,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   // Current configuration number selected via StandardRequest::SET_CONFIGURATION
   // (will be 0 or 1 since we currently do not support multiple configurations).
   // 0 indicates that the device is unconfigured and should not accept USB requests
-  // other than StandardRequest::SET_CONFIGURATION or requests targetting descriptors
+  // other than StandardRequest::SET_CONFIGURATION or requests targeting descriptors
   uint8_t configuration_ = 0;
   // USB connection speed.
   usb_speed_t speed_ = 0;
@@ -483,7 +483,6 @@ class UsbPeripheral : public fdf::DriverBase2,
   UsbDciInterfaceServer intf_srv_{this};
 
   std::optional<async::Executor> executor_;
-  fpromise::scope scope_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_peripheral::Device> bindings_;
   fdf::OwnedChildNode child_;
@@ -512,6 +511,9 @@ class UsbPeripheral : public fdf::DriverBase2,
   };
   std::optional<PendingSetConfiguration> pending_set_configuration_ __TA_GUARDED(lock_);
   bool clearing_functions_ __TA_GUARDED(lock_) = false;
+
+  // Must be last so promises bound to this scope are destroyed before other members.
+  fpromise::scope scope_;
 };
 
 }  // namespace usb_peripheral

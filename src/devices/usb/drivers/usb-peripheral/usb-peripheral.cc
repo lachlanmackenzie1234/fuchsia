@@ -548,7 +548,6 @@ zx_status_t UsbPeripheral::CheckAndStartController() {
         config_desc->b_num_interfaces = 0;
         config_desc->b_configuration_value = static_cast<uint8_t>(1 + config_idx);
         config_desc->i_configuration = 0;
-        config_desc->b_length = sizeof(*config_desc);
         config_desc->bm_attributes =
             fdescriptor::kConfigurationSelfPowered | fdescriptor::kConfigurationReserved7;
         config_desc->b_max_power = 0;
@@ -558,6 +557,21 @@ zx_status_t UsbPeripheral::CheckAndStartController() {
         auto& function = GetFunction(function_index);
         size_t descriptors_length;
         auto* descriptors = function.GetDescriptors(&descriptors_length);
+        const uint8_t* ptr = reinterpret_cast<const uint8_t*>(descriptors);
+        const uint8_t* end = ptr + descriptors_length;
+        while (ptr < end) {
+          if (ptr + sizeof(usb_descriptor_header_t) > end) {
+            fdf::error("Descriptor header extends past buffer in CheckAndStartController");
+            return ZX_ERR_INVALID_ARGS;
+          }
+          auto* header = reinterpret_cast<const usb_descriptor_header_t*>(ptr);
+          if (header->b_length < sizeof(usb_descriptor_header_t) || ptr + header->b_length > end) {
+            fdf::error("Invalid descriptor b_length in CheckAndStartController: {}",
+                       header->b_length);
+            return ZX_ERR_INVALID_ARGS;
+          }
+          ptr += header->b_length;
+        }
         auto old_size = config_desc_bytes.size();
         config_desc_bytes.resize(old_size + descriptors_length);
         memcpy(config_desc_bytes.data() + old_size, descriptors, descriptors_length);
@@ -1390,7 +1404,8 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
               }
             }
             completer(final_status);
-          });
+          })
+          .wrap_with(scope_);
 
   executor_->schedule_task(std::move(join_task).wrap_with(scope_));
 }
