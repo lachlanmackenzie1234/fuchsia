@@ -58,8 +58,8 @@ pub fn node_to_device_property_no_autobind(
     node_properties: &Vec<fdf::NodeProperty2>,
 ) -> Result<DeviceProperties, zx_status_t> {
     let mut properties = node_to_device_property(node_properties)?;
-    if properties.contains_key(&BIND_AUTOBIND_KEY) {
-        properties.remove(&BIND_AUTOBIND_KEY);
+    if properties.contains_key(&*BIND_AUTOBIND_KEY) {
+        properties.remove(&*BIND_AUTOBIND_KEY);
     }
     properties.insert(BIND_AUTOBIND_KEY.clone(), Symbol::NumberValue(0));
     Ok(properties)

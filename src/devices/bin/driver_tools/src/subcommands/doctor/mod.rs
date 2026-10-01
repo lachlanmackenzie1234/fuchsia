@@ -355,7 +355,7 @@ fn diagnose_composite_match<P: DiagnosableParent>(
                     continue;
                 }
                 let props = parent.to_properties();
-                let score = driver_keys.iter().filter(|k| props.contains_key(k)).count();
+                let score = driver_keys.iter().filter(|k| props.contains_key(*k)).count();
                 if score >= best_score {
                     best_score = score;
                     best_parent = Some(p_idx);
