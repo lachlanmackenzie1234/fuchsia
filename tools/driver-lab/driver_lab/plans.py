@@ -113,6 +113,26 @@ def _parse_offset(value: object, what: str) -> int:
     return offset
 
 
+def _require_uint32(value: object, what: str) -> int:
+    if isinstance(value, bool):
+        raise PlanError(f"{what} must be an integer or hex string")
+    if isinstance(value, int):
+        val = value
+    elif isinstance(value, str):
+        text = value.strip().lower()
+        try:
+            val = int(text, 16) if text.startswith("0x") else int(text, 10)
+        except ValueError as error:
+            raise PlanError(
+                f"{what} is not a valid integer: {value!r}"
+            ) from error
+    else:
+        raise PlanError(f"{what} must be an integer or hex string")
+    if not (0 <= val <= 0xFFFF_FFFF):
+        raise PlanError(f"{what} must be in range [0, 0xffffffff]")
+    return val
+
+
 def _validate_operation(operation: object, index: int) -> dict[str, Any]:
     what = f"operations[{index}]"
     if not isinstance(operation, Mapping):
@@ -149,6 +169,313 @@ def _validate_operation(operation: object, index: int) -> dict[str, Any]:
                 }
             )
         return {"kind": "mmio_snapshot32", "items": canonical_items}
+    if kind == "mmio_write32":
+        _require_keys(
+            operation,
+            {
+                "kind",
+                "resource",
+                "offset",
+                "value",
+                "write_mask",
+                "precondition",
+                "readback",
+            },
+            what,
+        )
+        resource = _require_str(operation.get("resource"), f"{what}.resource")
+        offset = _parse_offset(operation.get("offset"), f"{what}.offset")
+        if "value" not in operation:
+            raise PlanError(f"{what}.value is required")
+        value = _require_uint32(operation.get("value"), f"{what}.value")
+        write_mask = (
+            _require_uint32(operation.get("write_mask"), f"{what}.write_mask")
+            if "write_mask" in operation
+            else 0xFFFF_FFFF
+        )
+        precondition = None
+        if (
+            "precondition" in operation
+            and operation["precondition"] is not None
+        ):
+            prec = operation["precondition"]
+            prec_what = f"{what}.precondition"
+            if not isinstance(prec, Mapping):
+                raise PlanError(f"{prec_what} must be an object")
+            _require_keys(prec, {"expected", "mask"}, prec_what)
+            if "expected" not in prec:
+                raise PlanError(f"{prec_what}.expected is required")
+            p_expected = _require_uint32(
+                prec.get("expected"), f"{prec_what}.expected"
+            )
+            p_mask = (
+                _require_uint32(prec.get("mask"), f"{prec_what}.mask")
+                if "mask" in prec
+                else 0xFFFF_FFFF
+            )
+            precondition = {"expected": p_expected, "mask": p_mask}
+        readback = (
+            _require_bool(operation.get("readback"), f"{what}.readback")
+            if "readback" in operation
+            else True
+        )
+        res_write: dict[str, Any] = {
+            "kind": "mmio_write32",
+            "resource": resource,
+            "offset": offset,
+            "value": value,
+            "write_mask": write_mask,
+            "readback": readback,
+        }
+        if precondition is not None:
+            res_write["precondition"] = precondition
+        return res_write
+    if kind == "mmio_poll32":
+        _require_keys(
+            operation,
+            {
+                "kind",
+                "resource",
+                "offset",
+                "expected",
+                "mask",
+                "interval_ns",
+                "timeout_ns",
+                "interval_s",
+                "timeout_s",
+            },
+            what,
+        )
+        resource = _require_str(operation.get("resource"), f"{what}.resource")
+        offset = _parse_offset(operation.get("offset"), f"{what}.offset")
+        if "expected" not in operation:
+            raise PlanError(f"{what}.expected is required")
+        expected = _require_uint32(
+            operation.get("expected"), f"{what}.expected"
+        )
+        mask = (
+            _require_uint32(operation.get("mask"), f"{what}.mask")
+            if "mask" in operation
+            else 0xFFFF_FFFF
+        )
+        if "interval_ns" in operation:
+            interval_ns = int(operation["interval_ns"])
+        elif "interval_s" in operation:
+            interval_ns = int(float(operation["interval_s"]) * 1e9)
+        else:
+            interval_ns = 1_000_000
+        if interval_ns < 0:
+            raise PlanError(f"{what}.interval_ns must be non-negative")
+
+        if "timeout_ns" in operation:
+            timeout_ns = int(operation["timeout_ns"])
+        elif "timeout_s" in operation:
+            timeout_ns = int(float(operation["timeout_s"]) * 1e9)
+        else:
+            raise PlanError(f"{what} requires timeout_ns or timeout_s")
+        if timeout_ns <= 0:
+            raise PlanError(f"{what}.timeout_ns must be positive")
+        if timeout_ns > 10_000_000_000:
+            raise PlanError(f"{what}.timeout_ns exceeds 10s ceiling")
+
+        return {
+            "kind": "mmio_poll32",
+            "resource": resource,
+            "offset": offset,
+            "expected": expected,
+            "mask": mask,
+            "interval_ns": interval_ns,
+            "timeout_ns": timeout_ns,
+        }
+    if kind == "sequence":
+        _require_keys(operation, {"kind", "items"}, what)
+        items = operation.get("items")
+        if not isinstance(items, list) or not items:
+            raise PlanError(f"{what}.items must be a non-empty list")
+        if len(items) > 64:
+            raise PlanError(f"{what}.items exceeds maximum of 64 items")
+        canonical_items = []
+        for item_index, item in enumerate(items):
+            item_what = f"{what}.items[{item_index}]"
+            if not isinstance(item, Mapping):
+                raise PlanError(f"{item_what} must be an object")
+            item_kind = item.get("kind")
+            if item_kind == "mmio_read32":
+                _require_keys(item, {"kind", "resource", "offset"}, item_what)
+                canonical_items.append(
+                    {
+                        "kind": "mmio_read32",
+                        "resource": _require_str(
+                            item.get("resource"), f"{item_what}.resource"
+                        ),
+                        "offset": _parse_offset(
+                            item.get("offset"), f"{item_what}.offset"
+                        ),
+                    }
+                )
+            elif item_kind == "mmio_write32":
+                _require_keys(
+                    item,
+                    {
+                        "kind",
+                        "resource",
+                        "offset",
+                        "value",
+                        "write_mask",
+                        "precondition",
+                        "readback",
+                    },
+                    item_what,
+                )
+                if "value" not in item:
+                    raise PlanError(f"{item_what}.value is required")
+                item_write: dict[str, Any] = {
+                    "kind": "mmio_write32",
+                    "resource": _require_str(
+                        item.get("resource"), f"{item_what}.resource"
+                    ),
+                    "offset": _parse_offset(
+                        item.get("offset"), f"{item_what}.offset"
+                    ),
+                    "value": _require_uint32(
+                        item.get("value"), f"{item_what}.value"
+                    ),
+                    "write_mask": (
+                        _require_uint32(
+                            item.get("write_mask"), f"{item_what}.write_mask"
+                        )
+                        if "write_mask" in item
+                        else 0xFFFF_FFFF
+                    ),
+                    "readback": (
+                        _require_bool(
+                            item.get("readback"), f"{item_what}.readback"
+                        )
+                        if "readback" in item
+                        else True
+                    ),
+                }
+                if "precondition" in item and item["precondition"] is not None:
+                    p = item["precondition"]
+                    if not isinstance(p, Mapping):
+                        raise PlanError(
+                            f"{item_what}.precondition must be an object"
+                        )
+                    _require_keys(
+                        p, {"expected", "mask"}, f"{item_what}.precondition"
+                    )
+                    if "expected" not in p:
+                        raise PlanError(
+                            f"{item_what}.precondition.expected is required"
+                        )
+                    item_write["precondition"] = {
+                        "expected": _require_uint32(
+                            p.get("expected"),
+                            f"{item_what}.precondition.expected",
+                        ),
+                        "mask": (
+                            _require_uint32(
+                                p.get("mask"), f"{item_what}.precondition.mask"
+                            )
+                            if "mask" in p
+                            else 0xFFFF_FFFF
+                        ),
+                    }
+                canonical_items.append(item_write)
+            elif item_kind == "mmio_poll32":
+                _require_keys(
+                    item,
+                    {
+                        "kind",
+                        "resource",
+                        "offset",
+                        "expected",
+                        "mask",
+                        "interval_ns",
+                        "timeout_ns",
+                        "interval_s",
+                        "timeout_s",
+                    },
+                    item_what,
+                )
+                if "expected" not in item:
+                    raise PlanError(f"{item_what}.expected is required")
+                if "interval_ns" in item:
+                    int_ns = int(item["interval_ns"])
+                elif "interval_s" in item:
+                    int_ns = int(float(item["interval_s"]) * 1e9)
+                else:
+                    int_ns = 1_000_000
+                if "timeout_ns" in item:
+                    tout_ns = int(item["timeout_ns"])
+                elif "timeout_s" in item:
+                    tout_ns = int(float(item["timeout_s"]) * 1e9)
+                else:
+                    raise PlanError(
+                        f"{item_what} requires timeout_ns or timeout_s"
+                    )
+                if tout_ns <= 0 or tout_ns > 10_000_000_000:
+                    raise PlanError(f"{item_what}.timeout_ns out of range")
+                canonical_items.append(
+                    {
+                        "kind": "mmio_poll32",
+                        "resource": _require_str(
+                            item.get("resource"), f"{item_what}.resource"
+                        ),
+                        "offset": _parse_offset(
+                            item.get("offset"), f"{item_what}.offset"
+                        ),
+                        "expected": _require_uint32(
+                            item.get("expected"), f"{item_what}.expected"
+                        ),
+                        "mask": (
+                            _require_uint32(
+                                item.get("mask"), f"{item_what}.mask"
+                            )
+                            if "mask" in item
+                            else 0xFFFF_FFFF
+                        ),
+                        "interval_ns": int_ns,
+                        "timeout_ns": tout_ns,
+                    }
+                )
+            elif item_kind == "delay_ns":
+                _require_keys(item, {"kind", "duration_ns"}, item_what)
+                duration = int(item.get("duration_ns", 0))
+                if duration < 0 or duration > 1_000_000_000:
+                    raise PlanError(
+                        f"{item_what}.duration_ns must be between 0 and 1s (1_000_000_000 ns)"
+                    )
+                canonical_items.append(
+                    {"kind": "delay_ns", "duration_ns": duration}
+                )
+            elif item_kind == "barrier":
+                _require_keys(item, {"kind", "variant"}, item_what)
+                variant = item.get("variant", "memory")
+                if variant != "memory":
+                    raise PlanError(
+                        f"{item_what}.variant {variant!r} is unsupported"
+                    )
+                canonical_items.append({"kind": "barrier", "variant": variant})
+            else:
+                raise PlanError(
+                    f"{item_what}.kind is unsupported: {item_kind!r}"
+                )
+        return {"kind": "sequence", "items": canonical_items}
+    if kind == "delay_ns":
+        _require_keys(operation, {"kind", "duration_ns"}, what)
+        duration = int(operation.get("duration_ns", 0))
+        if duration < 0 or duration > 1_000_000_000:
+            raise PlanError(
+                f"{what}.duration_ns must be between 0 and 1s (1_000_000_000 ns)"
+            )
+        return {"kind": "delay_ns", "duration_ns": duration}
+    if kind == "barrier":
+        _require_keys(operation, {"kind", "variant"}, what)
+        variant = operation.get("variant", "memory")
+        if variant != "memory":
+            raise PlanError(f"{what}.variant {variant!r} is unsupported")
+        return {"kind": "barrier", "variant": variant}
     if kind == "fidl_call":
         _require_keys(operation, {"kind", "method", "args"}, what)
         method = _require_str(operation.get("method"), f"{what}.method")
@@ -264,3 +591,26 @@ def canonical_json(plan: Mapping[str, object]) -> bytes:
 def plan_digest(plan: Mapping[str, object]) -> str:
     """The canonical plan digest, as `sha256:<hex>`."""
     return "sha256:" + hashlib.sha256(canonical_json(plan)).hexdigest()
+
+
+def is_mutating_plan(plan: Mapping[str, object]) -> bool:
+    """Whether `plan` contains any mutating operations."""
+    operations = plan.get("operations")
+    if not isinstance(operations, list):
+        return False
+    for op in operations:
+        if not isinstance(op, Mapping):
+            continue
+        kind = op.get("kind")
+        if kind == "mmio_write32":
+            return True
+        if kind == "sequence":
+            items = op.get("items")
+            if isinstance(items, list):
+                for item in items:
+                    if (
+                        isinstance(item, Mapping)
+                        and item.get("kind") == "mmio_write32"
+                    ):
+                        return True
+    return False

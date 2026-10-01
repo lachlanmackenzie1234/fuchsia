@@ -24,6 +24,11 @@ READ_WARNING = (
     "data, acknowledge events, or fault when hardware dependencies are "
     "disabled."
 )
+WRITE_WARNING = (
+    "Writing to a hardware register modifies hardware state and can "
+    "cause system crashes, bus hangs, or permanent damage. Mutations "
+    "require explicit operator confirmation."
+)
 
 
 class ConsentDecision(enum.Enum):

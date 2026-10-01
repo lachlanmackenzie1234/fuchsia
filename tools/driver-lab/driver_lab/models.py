@@ -23,6 +23,7 @@ class AccessClass(enum.Enum):
     SNAPSHOT = "snapshot"
     POLL = "poll"
     WRITE = "write"
+    SEQUENCE = "sequence"
     PROTOCOL_TRANSACTION = "protocol_transaction"
 
 
@@ -104,8 +105,11 @@ class ReadGrant:
                 f"unsupported grant schema version {self.schema_version}"
             )
         _check_common(self.resource_digest, self.offset, self.width)
-        if self.access is AccessClass.WRITE:
-            raise ValueError("persistent write grants are not supported")
+        if self.access in (AccessClass.WRITE, AccessClass.SEQUENCE):
+            raise ValueError(
+                f"persistent {self.access.value} grants are not supported"
+            )
+
         has_poll_limits = (
             self.max_poll_hz is not None or self.max_poll_timeout_s is not None
         )
@@ -153,3 +157,17 @@ class ReadGrant:
     def matches(self, request: AccessRequest) -> bool:
         """Whether this grant exactly matches `request`."""
         return self.match_key == request.match_key
+
+
+@dataclasses.dataclass(frozen=True)
+class WritePrecondition:
+    """A required 32-bit register value prior to a write."""
+
+    expected: int
+    mask: int = 0xFFFF_FFFF
+
+    def __post_init__(self) -> None:
+        if not (0 <= self.expected <= 0xFFFF_FFFF):
+            raise ValueError("expected must be a 32-bit unsigned integer")
+        if not (0 <= self.mask <= 0xFFFF_FFFF):
+            raise ValueError("mask must be a 32-bit unsigned integer")

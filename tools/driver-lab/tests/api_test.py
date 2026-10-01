@@ -19,6 +19,7 @@ from driver_lab.api import (
     EXIT_UNSUPPORTED,
     DriverLab,
 )
+from driver_lab.consent import WRITE_WARNING, ConsentDecision
 from driver_lab.discovery import FakeNodeDiscovery, NodeDescription
 from driver_lab.evidence import EvidenceError
 from driver_lab.models import AccessClass, Decision, ReadGrant
@@ -661,6 +662,359 @@ class RunPlanTest(unittest.IsolatedAsyncioTestCase):
         for row in rows:
             self.assertEqual(row["boot_id"], "boot-1")
             self.assertEqual(row["proxy_generation"], 7)
+
+    async def test_write32_execution_with_readback(self) -> None:
+        class Prompt:
+            def __init__(self) -> None:
+                self.warnings: list[str] = []
+
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                self.warnings.append(warning)
+                return ConsentDecision.ALLOW_ONCE
+
+        prompt = Prompt()
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            consent=prompt,
+        )
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0xCAFE_BABE,
+                    "readback": True,
+                }
+            ]
+        )
+        result = await lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(len(result.writes), 1)
+        self.assertEqual(result.writes[0].value, 0xCAFE_BABE)
+        self.assertEqual(result.writes[0].readback_value, 0xCAFE_BABE)
+        self.assertEqual(self.fake.get_value(1, 0x3C), 0xCAFE_BABE)
+        self.assertEqual(prompt.warnings, [WRITE_WARNING])
+        self.assertIsNone(self.fake.active_mutating_session)
+
+        # Confirm audit draining captured the write.
+        audit_ops = [
+            json.loads(line)["operation"]
+            for line in (result.evidence_dir / "target-audit.jsonl")
+            .read_text()
+            .splitlines()
+        ]
+        self.assertIn("write32", audit_ops)
+
+    async def test_write32_precondition_success_and_failure(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            consent=Prompt(),
+        )
+        # 1. Matching precondition succeeds
+        plan_good = make_plan(
+            run_id="run-precond-good",
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0x1111_2222,
+                    "precondition": {
+                        "expected": 0xDEAD_BEEF,
+                        "mask": 0xFFFF_FFFF,
+                    },
+                }
+            ],
+        )
+        result_good = await lab.run_plan(plan_good)
+        self.assertTrue(result_good.ok, result_good.failure)
+        self.assertEqual(self.fake.get_value(1, 0x3C), 0x1111_2222)
+
+        # 2. Mismatched precondition fails and does not mutate
+        plan_bad = make_plan(
+            run_id="run-precond-bad",
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0x9999_9999,
+                    "precondition": {
+                        "expected": 0x0000_0000,
+                        "mask": 0xFFFF_FFFF,
+                    },
+                }
+            ],
+        )
+        result_bad = await lab.run_plan(plan_bad)
+        self.assertEqual(result_bad.exit_category, EXIT_OPERATION)
+        self.assertEqual(result_bad.failure, "precondition_failed")
+        self.assertEqual(self.fake.get_value(1, 0x3C), 0x1111_2222)
+
+    async def test_poll32_execution_success_and_timeout(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            consent=Prompt(),
+        )
+        # Success
+        plan_good = make_plan(
+            run_id="run-poll-good",
+            operations=[
+                {
+                    "kind": "mmio_poll32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "expected": 0xDEAD_BEEF,
+                    "mask": 0xFFFF_FFFF,
+                    "interval_ns": 1000,
+                    "timeout_ns": 100_000,
+                }
+            ],
+        )
+        result_good = await lab.run_plan(plan_good)
+        self.assertTrue(result_good.ok, result_good.failure)
+        self.assertEqual(result_good.polls[0].value, 0xDEAD_BEEF)
+
+        # Timeout
+        plan_timeout = make_plan(
+            run_id="run-poll-timeout",
+            operations=[
+                {
+                    "kind": "mmio_poll32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "expected": 0x1234_0000,
+                    "mask": 0xFFFF_FFFF,
+                    "interval_ns": 1000,
+                    "timeout_ns": 10_000,
+                }
+            ],
+        )
+        result_timeout = await lab.run_plan(plan_timeout)
+        self.assertEqual(result_timeout.exit_category, EXIT_OPERATION)
+        self.assertEqual(result_timeout.failure, "timeout")
+
+    async def test_sequence_execution(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            consent=Prompt(),
+        )
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "sequence",
+                    "items": [
+                        {
+                            "kind": "mmio_read32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                        },
+                        {"kind": "delay_ns", "duration_ns": 1000},
+                        {"kind": "barrier", "variant": "memory"},
+                        {
+                            "kind": "mmio_write32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                            "value": 0x5555_AAAA,
+                            "readback": True,
+                        },
+                        {
+                            "kind": "mmio_poll32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                            "expected": 0x5555_AAAA,
+                            "interval_ns": 1000,
+                            "timeout_ns": 100_000,
+                        },
+                    ],
+                }
+            ]
+        )
+        result = await lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(len(result.sequences), 1)
+        seq = result.sequences[0]
+        self.assertTrue(seq.complete)
+        self.assertEqual(len(seq.results), 5)
+        self.assertEqual(seq.results[0].value, 0xDEAD_BEEF)
+        self.assertEqual(seq.results[3].readback_value, 0x5555_AAAA)
+        self.assertEqual(seq.results[4].value, 0x5555_AAAA)
+        self.assertEqual(self.fake.get_value(1, 0x3C), 0x5555_AAAA)
+
+    async def test_mutation_lease_contention_rejected(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            consent=Prompt(),
+        )
+        self.fake.active_mutating_session = 999
+
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0x1234,
+                }
+            ]
+        )
+        result = await lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_ACTIVATION)
+        self.assertEqual(
+            result.failure, "session rejected: mutation_lease_held"
+        )
+
+    async def test_unattended_mutation_fails_closed(self) -> None:
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0x1234,
+                }
+            ]
+        )
+        result = await self.lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_PERMISSION)
+        self.assertEqual(
+            result.failure,
+            "consent required; unattended operation fails closed",
+        )
+        self.assertEqual(self.fake.open_attempts, 0)
+
+    async def test_interactive_write_always_allow_rejected(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALWAYS_ALLOW
+
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            consent=Prompt(),
+        )
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0x1234,
+                }
+            ]
+        )
+        result = await lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_PERMISSION)
+        self.assertEqual(
+            result.failure, "persistent write grants are not supported"
+        )
+        self.assertFalse(self.grants_path.exists())
+        self.assertEqual(self.fake.open_attempts, 0)
+
+    async def test_direct_mode_rejects_mutation_and_sequence(self) -> None:
+        fake_direct = FakeDirectTarget()
+        direct_lab = DriverLab(
+            fake_direct,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+        )
+        plan_write = {
+            "schema_version": 1,
+            "run_id": "direct-write",
+            "case_id": "case-write",
+            "target": {"selector": "lab-target"},
+            "node": {"id": NODE_ID},
+            "access": {"mode": "direct"},
+            "operations": [
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": 0x3C,
+                    "value": 0x1234,
+                }
+            ],
+        }
+        result_write = await direct_lab.run_plan(plan_write)
+        self.assertEqual(result_write.exit_category, EXIT_UNSUPPORTED)
+        self.assertEqual(
+            result_write.failure,
+            "direct mode does not provide private MMIO access",
+        )
+
+        plan_seq = {
+            "schema_version": 1,
+            "run_id": "direct-seq",
+            "case_id": "case-seq",
+            "target": {"selector": "lab-target"},
+            "node": {"id": NODE_ID},
+            "access": {"mode": "direct"},
+            "operations": [
+                {
+                    "kind": "sequence",
+                    "items": [{"kind": "delay_ns", "duration_ns": 100}],
+                }
+            ],
+        }
+        result_seq = await direct_lab.run_plan(plan_seq)
+        self.assertEqual(result_seq.exit_category, EXIT_UNSUPPORTED)
+        self.assertEqual(
+            result_seq.failure,
+            "direct mode does not provide private MMIO access",
+        )
 
 
 if __name__ == "__main__":

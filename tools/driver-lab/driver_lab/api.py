@@ -22,6 +22,7 @@ from typing import Any
 
 from driver_lab.consent import (
     READ_WARNING,
+    WRITE_WARNING,
     ConsentDecision,
     ConsentPrompt,
     grant_from_decision,
@@ -42,7 +43,7 @@ from driver_lab.permissions import (
     load_grants,
     resolve,
 )
-from driver_lab.plans import plan_digest, validate_plan
+from driver_lab.plans import is_mutating_plan, plan_digest, validate_plan
 from driver_lab.transport import (
     STALE_REJECTIONS,
     AllowRule,
@@ -52,7 +53,9 @@ from driver_lab.transport import (
     ProxyDescription,
     ProxyTransport,
     ResourceInfo,
+    SequenceItem,
     SessionContext,
+    SessionMode,
     SnapshotItem,
     TransportError,
 )
@@ -126,6 +129,57 @@ class ReadRecord:
 
 
 @dataclasses.dataclass(frozen=True)
+class WriteRecord:
+    """One completed 32-bit write from a plan run."""
+
+    operation_index: int
+    resource: str
+    offset: int
+    value: int
+    write_mask: int
+    readback_value: int | None
+    audit_seq: int
+    timestamp_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class PollRecord:
+    """One completed 32-bit poll from a plan run."""
+
+    operation_index: int
+    resource: str
+    offset: int
+    expected: int
+    mask: int
+    value: int
+    audit_seq: int
+    timestamp_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class SequenceItemRecord:
+    """Outcome of one item executed in a sequence."""
+
+    index: int
+    ok: bool
+    kind: str
+    value: int | None = None
+    readback_value: int | None = None
+    audit_seq: int = 0
+    timestamp_ns: int = 0
+    error: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class SequenceRecord:
+    """One executed sequence from a plan run."""
+
+    operation_index: int
+    results: tuple[SequenceItemRecord, ...]
+    complete: bool
+
+
+@dataclasses.dataclass(frozen=True)
 class RunResult:
     """The outcome of one plan run. Evidence is always finalized."""
 
@@ -133,6 +187,9 @@ class RunResult:
     evidence_dir: Path
     plan_digest: str
     reads: tuple[ReadRecord, ...] = ()
+    writes: tuple[WriteRecord, ...] = ()
+    polls: tuple[PollRecord, ...] = ()
+    sequences: tuple[SequenceRecord, ...] = ()
     calls: tuple[Mapping[str, Any], ...] = ()
     failure: str | None = None
 
@@ -153,6 +210,35 @@ class _ReadOp:
 class _SnapshotOp:
     index: int
     items: tuple[tuple[ResourceInfo, int], ...]
+
+
+@dataclasses.dataclass(frozen=True)
+class _WriteOp:
+    index: int
+    resource: ResourceInfo
+    offset: int
+    value: int
+    write_mask: int
+    precondition: tuple[int, int] | None
+    readback: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class _PollOp:
+    index: int
+    resource: ResourceInfo
+    offset: int
+    expected: int
+    mask: int
+    interval_ns: int
+    timeout_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class _SequenceOp:
+    index: int
+    items: tuple[SequenceItem, ...]
+    has_mutation: bool
 
 
 class _StaleResource(Exception):
@@ -203,8 +289,13 @@ class DriverLab:
 
     def _derive(
         self, canonical: Mapping[str, Any], description: ProxyDescription
-    ) -> tuple[list[_ReadOp | _SnapshotOp], list[tuple[int, AccessRequest]]]:
-        operations: list[_ReadOp | _SnapshotOp] = []
+    ) -> tuple[
+        list[_ReadOp | _SnapshotOp | _WriteOp | _PollOp | _SequenceOp],
+        list[tuple[int, AccessRequest]],
+    ]:
+        operations: list[
+            _ReadOp | _SnapshotOp | _WriteOp | _PollOp | _SequenceOp
+        ] = []
         requests: list[tuple[int, AccessRequest]] = []
 
         def lookup(name: str) -> ResourceInfo:
@@ -227,7 +318,8 @@ class DriverLab:
             )
 
         for index, operation in enumerate(canonical["operations"]):
-            if operation["kind"] == "mmio_read32":
+            kind = operation["kind"]
+            if kind == "mmio_read32":
                 resource = lookup(operation["resource"])
                 offset = operation["offset"]
                 operations.append(
@@ -236,7 +328,7 @@ class DriverLab:
                 requests.append(
                     (index, request(resource, offset, AccessClass.READ_ONCE))
                 )
-            else:
+            elif kind == "mmio_snapshot32":
                 items = tuple(
                     (lookup(item["resource"]), item["offset"])
                     for item in operation["items"]
@@ -245,6 +337,132 @@ class DriverLab:
                 requests.extend(
                     (index, request(resource, offset, AccessClass.SNAPSHOT))
                     for resource, offset in items
+                )
+            elif kind == "mmio_write32":
+                resource = lookup(operation["resource"])
+                offset = operation["offset"]
+                precondition = None
+                if (
+                    "precondition" in operation
+                    and operation["precondition"] is not None
+                ):
+                    precondition = (
+                        operation["precondition"]["expected"],
+                        operation["precondition"]["mask"],
+                    )
+                operations.append(
+                    _WriteOp(
+                        index=index,
+                        resource=resource,
+                        offset=offset,
+                        value=operation["value"],
+                        write_mask=operation.get("write_mask", 0xFFFF_FFFF),
+                        precondition=precondition,
+                        readback=operation.get("readback", True),
+                    )
+                )
+                requests.append(
+                    (index, request(resource, offset, AccessClass.WRITE))
+                )
+            elif kind == "mmio_poll32":
+                resource = lookup(operation["resource"])
+                offset = operation["offset"]
+                operations.append(
+                    _PollOp(
+                        index=index,
+                        resource=resource,
+                        offset=offset,
+                        expected=operation["expected"],
+                        mask=operation.get("mask", 0xFFFF_FFFF),
+                        interval_ns=operation["interval_ns"],
+                        timeout_ns=operation["timeout_ns"],
+                    )
+                )
+                requests.append(
+                    (index, request(resource, offset, AccessClass.POLL))
+                )
+            elif kind == "sequence":
+                seq_items: list[SequenceItem] = []
+                has_mutation = False
+                for item in operation["items"]:
+                    ikind = item["kind"]
+                    if ikind == "mmio_read32":
+                        res = lookup(item["resource"])
+                        off = item["offset"]
+                        seq_items.append(
+                            SequenceItem(
+                                kind="read32",
+                                resource=res.id,
+                                offset=off,
+                            )
+                        )
+                        requests.append(
+                            (index, request(res, off, AccessClass.SEQUENCE))
+                        )
+                    elif ikind == "mmio_write32":
+                        res = lookup(item["resource"])
+                        off = item["offset"]
+                        has_mutation = True
+                        p = None
+                        if (
+                            "precondition" in item
+                            and item["precondition"] is not None
+                        ):
+                            p = (
+                                item["precondition"]["expected"],
+                                item["precondition"]["mask"],
+                            )
+                        seq_items.append(
+                            SequenceItem(
+                                kind="write32",
+                                resource=res.id,
+                                offset=off,
+                                value=item["value"],
+                                write_mask=item.get("write_mask", 0xFFFF_FFFF),
+                                precondition=p,
+                                readback=item.get("readback", True),
+                            )
+                        )
+                        requests.append(
+                            (index, request(res, off, AccessClass.WRITE))
+                        )
+                    elif ikind == "mmio_poll32":
+                        res = lookup(item["resource"])
+                        off = item["offset"]
+                        seq_items.append(
+                            SequenceItem(
+                                kind="poll32",
+                                resource=res.id,
+                                offset=off,
+                                expected=item["expected"],
+                                mask=item.get("mask", 0xFFFF_FFFF),
+                                interval_ns=item["interval_ns"],
+                                timeout_ns=item["timeout_ns"],
+                            )
+                        )
+                        requests.append(
+                            (index, request(res, off, AccessClass.POLL))
+                        )
+                    elif ikind == "delay_ns":
+                        seq_items.append(
+                            SequenceItem(
+                                kind="delay_ns",
+                                delay_ns=item["duration_ns"],
+                            )
+                        )
+                    elif ikind == "barrier":
+                        seq_items.append(
+                            SequenceItem(
+                                kind="barrier",
+                                barrier=item.get("variant", "memory"),
+                            )
+                        )
+                operations.append(
+                    _SequenceOp(
+                        index=index,
+                        items=tuple(seq_items),
+                        has_mutation=has_mutation,
+                    )
                 )
         return operations, requests
 
@@ -346,6 +564,9 @@ class DriverLab:
         )
 
         reads: list[ReadRecord] = []
+        writes: list[WriteRecord] = []
+        polls: list[PollRecord] = []
+        sequences: list[SequenceRecord] = []
         calls: list[Mapping[str, Any]] = []
 
         def finish(exit_category: int, failure: str | None) -> RunResult:
@@ -366,6 +587,9 @@ class DriverLab:
                 evidence_dir=recorder.directory,
                 plan_digest=digest,
                 reads=tuple(reads),
+                writes=tuple(writes),
+                polls=tuple(polls),
+                sequences=tuple(sequences),
                 calls=tuple(calls),
                 failure=failure,
             )
@@ -412,7 +636,14 @@ class DriverLab:
 
         if requested_mode == "direct":
             if any(
-                op["kind"] in ("mmio_read32", "mmio_snapshot32")
+                op["kind"]
+                in (
+                    "mmio_read32",
+                    "mmio_snapshot32",
+                    "mmio_write32",
+                    "mmio_poll32",
+                    "sequence",
+                )
                 for op in canonical["operations"]
             ):
                 return finish(
@@ -527,20 +758,34 @@ class DriverLab:
         ] = {}
         if not persistent_denied and undecided and self._consent is not None:
             for access_request in undecided.values():
+                warning = (
+                    WRITE_WARNING
+                    if access_request.access == AccessClass.WRITE
+                    else READ_WARNING
+                )
                 decision = await self._consent.request_consent(
-                    access_request, READ_WARNING
+                    access_request, warning
                 )
                 prompted[access_request.match_key] = decision
                 if decision in (
                     ConsentDecision.ALWAYS_ALLOW,
                     ConsentDecision.ALWAYS_DENY,
                 ):
+                    if (
+                        decision == ConsentDecision.ALWAYS_ALLOW
+                        and access_request.access
+                        in (AccessClass.WRITE, AccessClass.SEQUENCE)
+                    ):
+                        return finish(
+                            EXIT_PERMISSION,
+                            f"persistent {access_request.access.value} grants are not supported",
+                        )
                     try:
                         add_grant(
                             self._grants_path,
                             grant_from_decision(access_request, decision),
                         )
-                    except GrantStoreError as error:
+                    except (GrantStoreError, ValueError) as error:
                         return finish(
                             EXIT_PERMISSION, f"grant store error: {error}"
                         )
@@ -606,8 +851,12 @@ class DriverLab:
             key=lambda rule: (rule.resource, rule.offset, rule.access.value),
         )
 
-        # Execute: open the session with the exact allowlist, run the
-        # bounded operations in order, then drain audit before closing.
+        # Execute: open the session with the exact allowlist and session mode,
+        # run the bounded operations in order, then drain audit before closing.
+        mutating = is_mutating_plan(canonical)
+        session_mode = (
+            SessionMode.MUTATING if mutating else SessionMode.READ_ONLY
+        )
         context = SessionContext(
             run_id=canonical["run_id"],
             case_id=canonical["case_id"],
@@ -615,7 +864,10 @@ class DriverLab:
         )
         try:
             session = await self._transport.open_session(
-                context, description.expectations(), allowlist
+                context,
+                description.expectations(),
+                allowlist,
+                mode=session_mode,
             )
         except OpenSessionRejected as error:
             category = (
@@ -630,10 +882,22 @@ class DriverLab:
         exit_category = EXIT_SUCCESS
         failure: str | None = None
         operation_rows: list[dict[str, object]] = []
+        audit_rows: list[dict[str, object]] = []
+        cursor = 0
+
+        async def drain_audit() -> None:
+            nonlocal cursor
+            while True:
+                page = await session.read_audit(cursor, 64)
+                if not page.entries:
+                    break
+                audit_rows.extend(entry.to_json() for entry in page.entries)
+                cursor = page.next_cursor
+
         for operation in operations:
             try:
                 if isinstance(operation, _ReadOp):
-                    outcome = await session.read32(
+                    read_outcome = await session.read32(
                         operation.resource.id, operation.offset
                     )
                     operation_rows.append(
@@ -642,9 +906,9 @@ class DriverLab:
                             "kind": "mmio_read32",
                             "resource": operation.resource.name,
                             "offset": operation.offset,
-                            "value": outcome.value,
-                            "audit_seq": outcome.audit_seq,
-                            "timestamp_ns": outcome.timestamp_ns,
+                            "value": read_outcome.value,
+                            "audit_seq": read_outcome.audit_seq,
+                            "timestamp_ns": read_outcome.timestamp_ns,
                         }
                     )
                     reads.append(
@@ -652,12 +916,12 @@ class DriverLab:
                             operation_index=operation.index,
                             resource=operation.resource.name,
                             offset=operation.offset,
-                            value=outcome.value,
-                            audit_seq=outcome.audit_seq,
-                            timestamp_ns=outcome.timestamp_ns,
+                            value=read_outcome.value,
+                            audit_seq=read_outcome.audit_seq,
+                            timestamp_ns=read_outcome.timestamp_ns,
                         )
                     )
-                else:
+                elif isinstance(operation, _SnapshotOp):
                     items = [
                         SnapshotItem(resource=resource.id, offset=offset)
                         for resource, offset in operation.items
@@ -673,9 +937,9 @@ class DriverLab:
                                     "resource": result.item.resource,
                                     "offset": result.item.offset,
                                     "ok": result.ok,
-                                    "value": result.value
-                                    if result.ok
-                                    else None,
+                                    "value": (
+                                        result.value if result.ok else None
+                                    ),
                                     "audit_seq": result.audit_seq,
                                     "timestamp_ns": result.timestamp_ns,
                                 }
@@ -687,20 +951,171 @@ class DriverLab:
                         exit_category = EXIT_OPERATION
                         failure = "snapshot stopped at a backend failure"
                         break
+                elif isinstance(operation, _WriteOp):
+                    write_outcome = await session.write32(
+                        operation.resource.id,
+                        operation.offset,
+                        operation.value,
+                        write_mask=operation.write_mask,
+                        precondition=operation.precondition,
+                        readback=operation.readback,
+                    )
+                    operation_rows.append(
+                        {
+                            "operation": operation.index,
+                            "kind": "mmio_write32",
+                            "resource": operation.resource.name,
+                            "offset": operation.offset,
+                            "value": operation.value,
+                            "write_mask": operation.write_mask,
+                            "readback_value": write_outcome.readback_value,
+                            "audit_seq": write_outcome.audit_seq,
+                            "timestamp_ns": write_outcome.timestamp_ns,
+                        }
+                    )
+                    writes.append(
+                        WriteRecord(
+                            operation_index=operation.index,
+                            resource=operation.resource.name,
+                            offset=operation.offset,
+                            value=operation.value,
+                            write_mask=operation.write_mask,
+                            readback_value=write_outcome.readback_value,
+                            audit_seq=write_outcome.audit_seq,
+                            timestamp_ns=write_outcome.timestamp_ns,
+                        )
+                    )
+                    # Spec 14.2 step 6: drain audit immediately after each write.
+                    await drain_audit()
+                elif isinstance(operation, _PollOp):
+                    poll_outcome = await session.poll32(
+                        operation.resource.id,
+                        operation.offset,
+                        operation.expected,
+                        mask=operation.mask,
+                        interval_ns=operation.interval_ns,
+                        timeout_ns=operation.timeout_ns,
+                    )
+                    operation_rows.append(
+                        {
+                            "operation": operation.index,
+                            "kind": "mmio_poll32",
+                            "resource": operation.resource.name,
+                            "offset": operation.offset,
+                            "expected": operation.expected,
+                            "mask": operation.mask,
+                            "value": poll_outcome.value,
+                            "audit_seq": poll_outcome.audit_seq,
+                            "timestamp_ns": poll_outcome.timestamp_ns,
+                        }
+                    )
+                    polls.append(
+                        PollRecord(
+                            operation_index=operation.index,
+                            resource=operation.resource.name,
+                            offset=operation.offset,
+                            expected=operation.expected,
+                            mask=operation.mask,
+                            value=poll_outcome.value,
+                            audit_seq=poll_outcome.audit_seq,
+                            timestamp_ns=poll_outcome.timestamp_ns,
+                        )
+                    )
+                elif isinstance(operation, _SequenceOp):
+                    seq_outcome = await session.execute_sequence(
+                        operation.items
+                    )
+                    item_records = [
+                        SequenceItemRecord(
+                            index=res.index,
+                            ok=res.ok,
+                            kind=res.kind,
+                            value=res.value,
+                            readback_value=res.readback_value,
+                            audit_seq=res.audit_seq,
+                            timestamp_ns=res.timestamp_ns,
+                            error=res.error.value
+                            if res.error is not None
+                            else None,
+                        )
+                        for res in seq_outcome.results
+                    ]
+                    seq_record = SequenceRecord(
+                        operation_index=operation.index,
+                        results=tuple(item_records),
+                        complete=seq_outcome.complete,
+                    )
+                    sequences.append(seq_record)
+                    operation_rows.append(
+                        {
+                            "operation": operation.index,
+                            "kind": "sequence",
+                            "complete": seq_outcome.complete,
+                            "results": [
+                                {
+                                    "index": r.index,
+                                    "ok": r.ok,
+                                    "kind": r.kind,
+                                    "value": r.value,
+                                    "readback_value": r.readback_value,
+                                    "audit_seq": r.audit_seq,
+                                    "timestamp_ns": r.timestamp_ns,
+                                    "error": r.error,
+                                }
+                                for r in item_records
+                            ],
+                        }
+                    )
+                    if operation.has_mutation:
+                        # Spec 14.2 step 6: drain audit immediately after mutating sequence.
+                        await drain_audit()
+                    if not seq_outcome.complete:
+                        exit_category = EXIT_OPERATION
+                        failure = "sequence stopped at an item failure"
+                        break
             except OperationDenied as error:
+                kind = "unknown"
+                if isinstance(operation, _ReadOp):
+                    kind = "mmio_read32"
+                elif isinstance(operation, _SnapshotOp):
+                    kind = "mmio_snapshot32"
+                elif isinstance(operation, _WriteOp):
+                    kind = "mmio_write32"
+                elif isinstance(operation, _PollOp):
+                    kind = "mmio_poll32"
+                elif isinstance(operation, _SequenceOp):
+                    kind = "sequence"
                 operation_rows.append(
                     {
                         "operation": operation.index,
-                        "kind": (
-                            "mmio_read32"
-                            if isinstance(operation, _ReadOp)
-                            else "mmio_snapshot32"
-                        ),
+                        "kind": kind,
                         "error": error.denial.value,
                     }
                 )
                 exit_category = EXIT_OPERATION
                 failure = error.denial.value
+                break
+            except TransportError as error:
+                kind = "unknown"
+                if isinstance(operation, _ReadOp):
+                    kind = "mmio_read32"
+                elif isinstance(operation, _SnapshotOp):
+                    kind = "mmio_snapshot32"
+                elif isinstance(operation, _WriteOp):
+                    kind = "mmio_write32"
+                elif isinstance(operation, _PollOp):
+                    kind = "mmio_poll32"
+                elif isinstance(operation, _SequenceOp):
+                    kind = "sequence"
+                operation_rows.append(
+                    {
+                        "operation": operation.index,
+                        "kind": kind,
+                        "error": str(error),
+                    }
+                )
+                exit_category = EXIT_TRANSPORT
+                failure = f"operation failed: {error}"
                 break
             except (KeyboardInterrupt, asyncio.CancelledError):
                 # Operator cancellation stops execution but never skips
@@ -712,15 +1127,8 @@ class DriverLab:
 
         # Drain audit and close even after an operation failure or a
         # cancellation so partial runs still produce complete evidence.
-        audit_rows: list[dict[str, object]] = []
-        cursor = 0
         try:
-            while True:
-                page = await session.read_audit(cursor, 64)
-                if not page.entries:
-                    break
-                audit_rows.extend(entry.to_json() for entry in page.entries)
-                cursor = page.next_cursor
+            await drain_audit()
             await session.close()
         except (
             TransportError,

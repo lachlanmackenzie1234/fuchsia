@@ -171,8 +171,29 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(PlanError):
             validate_plan(plan)
 
-    def test_write_operations_rejected(self) -> None:
-        plan = make_plan(
+    def test_write_operation_validates(self) -> None:
+        good = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0x1234_5678,
+                    "write_mask": 0xFFFF_0000,
+                    "precondition": {"expected": 0x0, "mask": 0xFF},
+                    "readback": True,
+                }
+            ]
+        )
+        validated = validate_plan(good)
+        op = validated["operations"][0]
+        self.assertEqual(op["kind"], "mmio_write32")
+        self.assertEqual(op["value"], 0x1234_5678)
+        self.assertEqual(op["write_mask"], 0xFFFF_0000)
+        self.assertEqual(op["precondition"], {"expected": 0, "mask": 0xFF})
+        self.assertTrue(op["readback"])
+
+        missing_value = make_plan(
             operations=[
                 {
                     "kind": "mmio_write32",
@@ -182,7 +203,97 @@ class ValidationTest(unittest.TestCase):
             ]
         )
         with self.assertRaises(PlanError):
-            validate_plan(plan)
+            validate_plan(missing_value)
+
+    def test_poll_operation_validates(self) -> None:
+        good = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_poll32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "expected": 0x1,
+                    "mask": 0x1,
+                    "interval_ns": 1000,
+                    "timeout_ns": 50000,
+                }
+            ]
+        )
+        validated = validate_plan(good)
+        op = validated["operations"][0]
+        self.assertEqual(op["kind"], "mmio_poll32")
+        self.assertEqual(op["expected"], 1)
+        self.assertEqual(op["mask"], 1)
+        self.assertEqual(op["interval_ns"], 1000)
+        self.assertEqual(op["timeout_ns"], 50000)
+
+        missing_expected = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_poll32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "interval_ns": 1000,
+                    "timeout_ns": 50000,
+                }
+            ]
+        )
+        with self.assertRaises(PlanError):
+            validate_plan(missing_expected)
+
+    def test_sequence_operation_validates(self) -> None:
+        good = make_plan(
+            operations=[
+                {
+                    "kind": "sequence",
+                    "items": [
+                        {
+                            "kind": "mmio_read32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                        },
+                        {"kind": "delay_ns", "duration_ns": 1000},
+                        {"kind": "barrier", "variant": "memory"},
+                        {
+                            "kind": "mmio_write32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                            "value": 0x42,
+                        },
+                        {
+                            "kind": "mmio_poll32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                            "expected": 0x42,
+                            "interval_ns": 1000,
+                            "timeout_ns": 5000,
+                        },
+                    ],
+                }
+            ]
+        )
+        validated = validate_plan(good)
+        op = validated["operations"][0]
+        self.assertEqual(op["kind"], "sequence")
+        self.assertEqual(len(op["items"]), 5)
+
+        empty_items = make_plan(operations=[{"kind": "sequence", "items": []}])
+        with self.assertRaises(PlanError):
+            validate_plan(empty_items)
+
+        too_many_items = make_plan(
+            operations=[
+                {
+                    "kind": "sequence",
+                    "items": [
+                        {"kind": "delay_ns", "duration_ns": 100}
+                        for _ in range(65)
+                    ],
+                }
+            ]
+        )
+        with self.assertRaises(PlanError):
+            validate_plan(too_many_items)
 
     def test_empty_operations_rejected(self) -> None:
         with self.assertRaises(PlanError):

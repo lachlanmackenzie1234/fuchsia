@@ -21,6 +21,7 @@ from typing import Any
 
 import fidl_fuchsia_driver_lab as fdl
 from driver_lab.api import EXIT_OPERATION, EXIT_STALE, DriverLab
+from driver_lab.consent import ConsentDecision
 from driver_lab.fidl_transport import FidlProxyTransport
 from driver_lab.models import AccessClass, Decision, ReadGrant
 from driver_lab.permissions import save_grants
@@ -33,7 +34,9 @@ from driver_lab.transport import (
     ProxyDescription,
     ProxySession,
     ResourceInfo,
+    SequenceItem,
     SessionContext,
+    SessionMode,
     SnapshotItem,
 )
 from fidl import DomainError
@@ -148,19 +151,162 @@ class _BridgeSessionServer(fdl.SessionServer):
         )
 
     async def write32(self, request: Any) -> Any:
-        if hasattr(self._session, "write32"):
-            return await self._session.write32(request)
-        return DomainError(error=fdl.OperationError.NOT_PERMITTED_BY_CEILING)
+        precondition = None
+        if request.precondition is not None:
+            precondition = (
+                request.precondition.expected,
+                request.precondition.mask,
+            )
+        try:
+            outcome = await self._session.write32(
+                request.resource,
+                request.offset,
+                request.value,
+                write_mask=request.write_mask,
+                precondition=precondition,
+                readback=request.readback,
+            )
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        return fdl.WriteResult(
+            readback_value=outcome.readback_value or 0,
+            audit_seq=outcome.audit_seq,
+            timestamp_ns=outcome.timestamp_ns,
+        )
 
     async def poll32(self, request: Any) -> Any:
-        if hasattr(self._session, "poll32"):
-            return await self._session.poll32(request)
-        return DomainError(error=fdl.OperationError.NOT_PERMITTED_BY_CEILING)
+        try:
+            outcome = await self._session.poll32(
+                request.resource,
+                request.offset,
+                request.expected,
+                mask=request.mask,
+                interval_ns=request.interval_ns,
+                timeout_ns=request.timeout_ns,
+            )
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        return fdl.PollResult(
+            value=outcome.value,
+            audit_seq=outcome.audit_seq,
+            timestamp_ns=outcome.timestamp_ns,
+        )
 
     async def execute_sequence(self, request: Any) -> Any:
-        if hasattr(self._session, "execute_sequence"):
-            return await self._session.execute_sequence(request)
-        return DomainError(error=fdl.OperationError.NOT_PERMITTED_BY_CEILING)
+        host_items: list[SequenceItem] = []
+        for item in request.items:
+            if item.read32 is not None:
+                host_items.append(
+                    SequenceItem(
+                        kind="read32",
+                        resource=item.read32.resource,
+                        offset=item.read32.offset,
+                    )
+                )
+            elif item.write32 is not None:
+                p = None
+                if item.write32.precondition is not None:
+                    p = (
+                        item.write32.precondition.expected,
+                        item.write32.precondition.mask,
+                    )
+                host_items.append(
+                    SequenceItem(
+                        kind="write32",
+                        resource=item.write32.resource,
+                        offset=item.write32.offset,
+                        value=item.write32.value,
+                        write_mask=item.write32.write_mask,
+                        precondition=p,
+                        readback=item.write32.readback,
+                    )
+                )
+            elif item.poll32 is not None:
+                host_items.append(
+                    SequenceItem(
+                        kind="poll32",
+                        resource=item.poll32.resource,
+                        offset=item.poll32.offset,
+                        expected=item.poll32.expected,
+                        mask=item.poll32.mask,
+                        interval_ns=item.poll32.interval_ns,
+                        timeout_ns=item.poll32.timeout_ns,
+                    )
+                )
+            elif item.delay_ns is not None:
+                host_items.append(
+                    SequenceItem(kind="delay_ns", delay_ns=item.delay_ns)
+                )
+            elif item.barrier is not None:
+                host_items.append(
+                    SequenceItem(kind="barrier", barrier="memory")
+                )
+        try:
+            outcome = await self._session.execute_sequence(host_items)
+        except Exception as error:  # OperationDenied
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+
+        fidl_results: list[fdl.SequenceItemResult] = []
+        for res in outcome.results:
+            if not res.ok:
+                err_name = (
+                    res.error.name if res.error is not None else "NOT_ACCEPTING"
+                )
+                item_outcome = fdl.SequenceItemOutcome(
+                    error=getattr(fdl.OperationError, err_name)
+                )
+            elif res.kind == "read32":
+                item_outcome = fdl.SequenceItemOutcome(
+                    read32=fdl.ReadResult(
+                        value=res.value or 0,
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "write32":
+                item_outcome = fdl.SequenceItemOutcome(
+                    write32=fdl.WriteResult(
+                        readback_value=res.readback_value or 0,
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "poll32":
+                item_outcome = fdl.SequenceItemOutcome(
+                    poll32=fdl.PollResult(
+                        value=res.value or 0,
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "delay_ns":
+                item_outcome = fdl.SequenceItemOutcome(delay_ns=fdl.DelayNs())
+            elif res.kind == "barrier":
+                item_outcome = fdl.SequenceItemOutcome(barrier=fdl.Barrier())
+            else:
+                item_outcome = fdl.SequenceItemOutcome(
+                    error=fdl.OperationError.NOT_ACCEPTING
+                )
+            fidl_results.append(
+                fdl.SequenceItemResult(
+                    index=res.index,
+                    ok=res.ok,
+                    outcome=item_outcome,
+                )
+            )
+        return fdl.SequenceResult(
+            results=fidl_results,
+            complete=outcome.complete,
+        )
 
 
 class _BridgeProxyServer(fdl.ProxyServer):
@@ -231,9 +377,15 @@ class _BridgeProxyServer(fdl.ProxyServer):
             case_id=request.context.case_id or "",
             plan_digest=request.context.plan_digest or "",
         )
+        mode_val = getattr(request, "mode", None)
+        mode = (
+            SessionMode.MUTATING
+            if mode_val == fdl.SessionMode.MUTATING
+            else SessionMode.READ_ONLY
+        )
         try:
             session = await self._fake.open_session(
-                context, expectations, allowlist
+                context, expectations, allowlist, mode=mode
             )
         except OpenSessionRejected as error:
             return DomainError(
@@ -313,7 +465,7 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
         if self._orig_device_addr is not None:
             os.environ["FUCHSIA_DEVICE_ADDR"] = self._orig_device_addr
 
-    def make_lab(self) -> DriverLab:
+    def make_lab(self, consent: Any = None) -> DriverLab:
         context = Context(target="")
         (client_channel, server_channel) = context.channel_create()
         self._context = context
@@ -330,6 +482,7 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
             evidence_root=self.evidence_root,
             target_scope=TARGET_SCOPE,
             node_id=NODE_ID,
+            consent=consent,
         )
 
     async def test_describe_round_trips(self) -> None:
@@ -377,6 +530,120 @@ class FidlRoundTripTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result.failure, "session rejected: stale_proxy_generation"
         )
+
+    async def test_write32_over_real_fidl(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        lab = self.make_lab(consent=Prompt())
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_write32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "value": 0xCAFE_BABE,
+                    "readback": True,
+                }
+            ]
+        )
+        result = await lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(len(result.writes), 1)
+        self.assertEqual(result.writes[0].value, 0xCAFE_BABE)
+        self.assertEqual(result.writes[0].readback_value, 0xCAFE_BABE)
+        self.assertEqual(self.fake.get_value(1, 0x3C), 0xCAFE_BABE)
+        audit_ops = [
+            json.loads(line)["operation"]
+            for line in (result.evidence_dir / "target-audit.jsonl")
+            .read_text()
+            .splitlines()
+        ]
+        self.assertIn("write32", audit_ops)
+
+    async def test_poll32_over_real_fidl(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        lab = self.make_lab(consent=Prompt())
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "mmio_poll32",
+                    "resource": "control",
+                    "offset": "0x3c",
+                    "expected": 0xDEAD_BEEF,
+                    "mask": 0xFFFF_FFFF,
+                    "interval_ns": 1000,
+                    "timeout_ns": 100_000,
+                }
+            ]
+        )
+        result = await lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(len(result.polls), 1)
+        self.assertEqual(result.polls[0].value, 0xDEAD_BEEF)
+
+    async def test_sequence_over_real_fidl(self) -> None:
+        class Prompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        lab = self.make_lab(consent=Prompt())
+        plan = make_plan(
+            operations=[
+                {
+                    "kind": "sequence",
+                    "items": [
+                        {
+                            "kind": "mmio_read32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                        },
+                        {"kind": "delay_ns", "duration_ns": 1000},
+                        {"kind": "barrier", "variant": "memory"},
+                        {
+                            "kind": "mmio_write32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                            "value": 0xFEED_FACE,
+                            "readback": True,
+                        },
+                        {
+                            "kind": "mmio_poll32",
+                            "resource": "control",
+                            "offset": "0x3c",
+                            "expected": 0xFEED_FACE,
+                            "interval_ns": 1000,
+                            "timeout_ns": 100_000,
+                        },
+                    ],
+                }
+            ]
+        )
+        result = await lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(len(result.sequences), 1)
+        seq = result.sequences[0]
+        self.assertTrue(seq.complete)
+        self.assertEqual(len(seq.results), 5)
+        self.assertEqual(seq.results[0].kind, "read32")
+        self.assertEqual(seq.results[0].value, 0xDEAD_BEEF)
+        self.assertEqual(seq.results[1].kind, "delay_ns")
+        self.assertEqual(seq.results[2].kind, "barrier")
+        self.assertEqual(seq.results[3].kind, "write32")
+        self.assertEqual(seq.results[3].readback_value, 0xFEED_FACE)
+        self.assertEqual(seq.results[4].kind, "poll32")
+        self.assertEqual(seq.results[4].value, 0xFEED_FACE)
+        self.assertEqual(self.fake.get_value(1, 0x3C), 0xFEED_FACE)
 
 
 if __name__ == "__main__":

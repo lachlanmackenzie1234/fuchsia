@@ -27,19 +27,28 @@ from driver_lab.transport import (
     OpenRejection,
     OpenSessionRejected,
     OperationDenied,
+    PollOutcome,
     ProxyDescription,
     ReadOutcome,
     ResourceInfo,
+    SequenceItem,
+    SequenceItemOutcome,
+    SequenceOutcome,
     SessionContext,
+    SessionMode,
     SnapshotItem,
     SnapshotItemOutcome,
     SnapshotOutcome,
     TransportError,
+    WriteOutcome,
 )
 
 _ACCESS_TO_FIDL = {
     AccessClass.READ_ONCE: fdl.AccessClass.READ_ONCE,
     AccessClass.SNAPSHOT: fdl.AccessClass.SNAPSHOT,
+    AccessClass.POLL: fdl.AccessClass.POLL,
+    AccessClass.WRITE: fdl.AccessClass.WRITE,
+    AccessClass.SEQUENCE: fdl.AccessClass.SEQUENCE,
 }
 
 
@@ -166,9 +175,15 @@ class FidlProxyTransport:
         context: SessionContext,
         expectations: Expectations,
         allowlist: Sequence[AllowRule],
+        mode: SessionMode = SessionMode.READ_ONLY,
     ) -> "_FidlProxySession":
         """See `ProxyTransport.open_session`."""
         client_channel, server_channel = self._channel_factory()
+        fidl_mode = (
+            fdl.SessionMode.MUTATING
+            if mode == SessionMode.MUTATING
+            else fdl.SessionMode.READ_ONLY
+        )
         result = await self._probe.open_session(
             context=fdl.RunContext(
                 run_id=context.run_id,
@@ -176,7 +191,7 @@ class FidlProxyTransport:
                 plan_digest=context.plan_digest,
                 host_tool_version=context.host_tool_version,
             ),
-            mode=fdl.SessionMode.READ_ONLY,
+            mode=fidl_mode,
             expectations=fdl.Expectations(
                 boot_id=expectations.boot_id,
                 proxy_generation=expectations.proxy_generation,
@@ -241,6 +256,166 @@ class _FidlProxySession:
                 for entry in response.results
             ),
             complete=response.complete,
+        )
+
+    async def write32(
+        self,
+        resource: int,
+        offset: int,
+        value: int,
+        write_mask: int = 0xFFFF_FFFF,
+        precondition: tuple[int, int] | None = None,
+        readback: bool = True,
+    ) -> WriteOutcome:
+        """See `ProxySession.write32`."""
+        precond = None
+        if precondition is not None:
+            precond = fdl.WritePrecondition(
+                expected=precondition[0], mask=precondition[1]
+            )
+        result = await self._session.write32(
+            resource=resource,
+            offset=offset,
+            value=value,
+            write_mask=write_mask,
+            precondition=precond,
+            readback=readback,
+        )
+        _check_denied(result)
+        response = _unwrap(result)
+        rb_val = response.readback_value if readback else None
+        return WriteOutcome(
+            readback_value=rb_val,
+            audit_seq=response.audit_seq,
+            timestamp_ns=response.timestamp_ns,
+        )
+
+    async def poll32(
+        self,
+        resource: int,
+        offset: int,
+        expected: int,
+        mask: int = 0xFFFF_FFFF,
+        interval_ns: int = 1_000_000,
+        timeout_ns: int = 100_000_000,
+    ) -> PollOutcome:
+        """See `ProxySession.poll32`."""
+        result = await self._session.poll32(
+            resource=resource,
+            offset=offset,
+            expected=expected,
+            mask=mask,
+            interval_ns=interval_ns,
+            timeout_ns=timeout_ns,
+        )
+        _check_denied(result)
+        response = _unwrap(result)
+        return PollOutcome(
+            value=response.value,
+            audit_seq=response.audit_seq,
+            timestamp_ns=response.timestamp_ns,
+        )
+
+    async def execute_sequence(
+        self, items: Sequence[SequenceItem]
+    ) -> SequenceOutcome:
+        """See `ProxySession.execute_sequence`."""
+        fidl_items: list[fdl.SequenceItem] = []
+        for item in items:
+            if item.kind in ("mmio_read32", "read32"):
+                fidl_items.append(
+                    fdl.SequenceItem(
+                        read32=fdl.Read32(
+                            resource=item.resource, offset=item.offset
+                        )
+                    )
+                )
+            elif item.kind in ("mmio_write32", "write32"):
+                precond = None
+                if item.precondition is not None:
+                    precond = fdl.WritePrecondition(
+                        expected=item.precondition[0],
+                        mask=item.precondition[1],
+                    )
+                fidl_items.append(
+                    fdl.SequenceItem(
+                        write32=fdl.Write32(
+                            resource=item.resource,
+                            offset=item.offset,
+                            value=item.value,
+                            write_mask=item.write_mask,
+                            precondition=precond,
+                            readback=item.readback,
+                        )
+                    )
+                )
+            elif item.kind in ("mmio_poll32", "poll32"):
+                fidl_items.append(
+                    fdl.SequenceItem(
+                        poll32=fdl.Poll32(
+                            resource=item.resource,
+                            offset=item.offset,
+                            expected=item.expected,
+                            mask=item.mask,
+                            interval_ns=item.interval_ns,
+                            timeout_ns=item.timeout_ns,
+                        )
+                    )
+                )
+            elif item.kind == "delay_ns":
+                fidl_items.append(fdl.SequenceItem(delay_ns=item.delay_ns))
+            elif item.kind == "barrier":
+                fidl_items.append(
+                    fdl.SequenceItem(barrier=fdl.BarrierVariant.MEMORY)
+                )
+        result = await self._session.execute_sequence(items=fidl_items)
+        _check_denied(result)
+        response = _unwrap(result)
+        outcomes: list[SequenceItemOutcome] = []
+        for item_res in response.results:
+            outcome = item_res.outcome
+            kind = "unknown"
+            val = None
+            rb = None
+            audit_seq = 0
+            ts_ns = 0
+            err = None
+            if outcome.read32:
+                kind = "read32"
+                val = outcome.read32.value
+                audit_seq = outcome.read32.audit_seq
+                ts_ns = outcome.read32.timestamp_ns
+            elif outcome.write32:
+                kind = "write32"
+                rb = outcome.write32.readback_value
+                audit_seq = outcome.write32.audit_seq
+                ts_ns = outcome.write32.timestamp_ns
+            elif outcome.poll32:
+                kind = "poll32"
+                val = outcome.poll32.value
+                audit_seq = outcome.poll32.audit_seq
+                ts_ns = outcome.poll32.timestamp_ns
+            elif outcome.delay_ns:
+                kind = "delay_ns"
+            elif outcome.barrier:
+                kind = "barrier"
+            elif outcome.error:
+                kind = "error"
+                err = _to_denial(outcome.error)
+            outcomes.append(
+                SequenceItemOutcome(
+                    index=item_res.index,
+                    ok=item_res.ok,
+                    kind=kind,
+                    value=val,
+                    readback_value=rb,
+                    audit_seq=audit_seq,
+                    timestamp_ns=ts_ns,
+                    error=err,
+                )
+            )
+        return SequenceOutcome(
+            results=tuple(outcomes), complete=response.complete
         )
 
     async def read_audit(self, cursor: int, limit: int) -> AuditPage:

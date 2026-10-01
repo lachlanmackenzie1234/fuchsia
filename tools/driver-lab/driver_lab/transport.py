@@ -40,6 +40,19 @@ class Denial(enum.Enum):
     NOT_ACCEPTING = "not_accepting"
     BACKEND_FAULT = "backend_fault"
     UNSUPPORTED_EXPECTATION = "unsupported_expectation"
+    PRECONDITION_FAILED = "precondition_failed"
+    MISSING_PRECONDITION = "missing_precondition"
+    TIMEOUT = "timeout"
+    READ_ONLY_SESSION = "read_only_session"
+    WRITE_NOT_PERMITTED = "write_not_permitted"
+    POLL_NOT_PERMITTED = "poll_not_permitted"
+
+
+class SessionMode(enum.Enum):
+    """Session access mode: read-only or mutating."""
+
+    READ_ONLY = "read_only"
+    MUTATING = "mutating"
 
 
 class OpenRejection(enum.Enum):
@@ -172,6 +185,71 @@ class ReadOutcome:
 
 
 @dataclasses.dataclass(frozen=True)
+class WriteOutcome:
+    """A completed 32-bit write."""
+
+    readback_value: int | None
+    audit_seq: int
+    timestamp_ns: int
+
+
+@dataclasses.dataclass(frozen=True)
+class PollOutcome:
+    """A completed 32-bit poll."""
+
+    value: int
+    audit_seq: int
+    timestamp_ns: int
+
+
+class BarrierVariant(enum.Enum):
+    """Memory barrier variant."""
+
+    MEMORY = "memory"
+
+
+@dataclasses.dataclass(frozen=True)
+class SequenceItem:
+    """One item in an ordered sequence."""
+
+    kind: str  # "mmio_read32", "mmio_write32", "mmio_poll32", "delay_ns", "barrier"
+    resource: int = 0
+    offset: int = 0
+    value: int = 0
+    write_mask: int = 0xFFFF_FFFF
+    precondition: tuple[int, int] | None = None  # (expected, mask)
+    readback: bool = True
+    expected: int = 0
+    mask: int = 0xFFFF_FFFF
+    interval_ns: int = 1_000_000
+    timeout_ns: int = 100_000_000
+    delay_ns: int = 0
+    barrier: str = "memory"
+
+
+@dataclasses.dataclass(frozen=True)
+class SequenceItemOutcome:
+    """The outcome of one item in a sequence."""
+
+    index: int
+    ok: bool
+    kind: str
+    value: int | None = None
+    readback_value: int | None = None
+    audit_seq: int = 0
+    timestamp_ns: int = 0
+    error: Denial | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class SequenceOutcome:
+    """An executed sequence of operations."""
+
+    results: tuple[SequenceItemOutcome, ...]
+    complete: bool
+
+
+@dataclasses.dataclass(frozen=True)
 class SnapshotItem:
     """One requested snapshot read."""
 
@@ -243,6 +321,36 @@ class ProxySession(Protocol):
         """A bounded snapshot; every item validated before the first read."""
         ...
 
+    async def write32(
+        self,
+        resource: int,
+        offset: int,
+        value: int,
+        write_mask: int = 0xFFFF_FFFF,
+        precondition: tuple[int, int] | None = None,
+        readback: bool = True,
+    ) -> WriteOutcome:
+        """One policy-checked, audited 32-bit write."""
+        ...
+
+    async def poll32(
+        self,
+        resource: int,
+        offset: int,
+        expected: int,
+        mask: int = 0xFFFF_FFFF,
+        interval_ns: int = 1_000_000,
+        timeout_ns: int = 100_000_000,
+    ) -> PollOutcome:
+        """Repeated bounded read until match or timeout."""
+        ...
+
+    async def execute_sequence(
+        self, items: Sequence[SequenceItem]
+    ) -> SequenceOutcome:
+        """Bounded ordered sequence of operations with prevalidation."""
+        ...
+
     async def read_audit(self, cursor: int, limit: int) -> AuditPage:
         """Reads a bounded audit page for incremental draining."""
         ...
@@ -265,6 +373,7 @@ class ProxyTransport(Protocol):
         context: SessionContext,
         expectations: Expectations,
         allowlist: Sequence[AllowRule],
+        mode: SessionMode = SessionMode.READ_ONLY,
     ) -> ProxySession:
         """Opens a session with an exact allowlist."""
         ...
@@ -284,10 +393,15 @@ class FakeProxyTarget:
         self.open_attempts = 0
         self.sessions_opened = 0
         self.reject_open: OpenRejection | None = None
+        self.active_mutating_session: int | None = None
 
     def set_value(self, resource: int, offset: int, value: int) -> None:
         """Programs the value returned for reads at (resource, offset)."""
         self._values[(resource, offset)] = value
+
+    def get_value(self, resource: int, offset: int) -> int:
+        """Returns the current stored value at (resource, offset)."""
+        return self._values.get((resource, offset), 0)
 
     def fail_at(self, resource: int, offset: int) -> None:
         """Makes reads at (resource, offset) fail as a backend fault."""
@@ -318,6 +432,7 @@ class FakeProxyTarget:
         context: SessionContext,
         expectations: Expectations,
         allowlist: Sequence[AllowRule],
+        mode: SessionMode = SessionMode.READ_ONLY,
     ) -> ProxySession:
         """See `ProxyTransport.open_session`; enforces staleness checks."""
         self.open_attempts += 1
@@ -332,6 +447,11 @@ class FakeProxyTarget:
                 rejection = OpenRejection.STALE_RESOURCE_DIGEST
             elif expectations.policy_digest != description.policy_digest:
                 rejection = OpenRejection.STALE_POLICY_DIGEST
+            elif (
+                mode == SessionMode.MUTATING
+                and self.active_mutating_session is not None
+            ):
+                rejection = OpenRejection.MUTATION_LEASE_HELD
         if rejection is None:
             known = {resource.id for resource in description.resources}
             if any(
@@ -354,6 +474,8 @@ class FakeProxyTarget:
         session_id = self._next_session
         self._next_session += 1
         self.sessions_opened += 1
+        if mode == SessionMode.MUTATING:
+            self.active_mutating_session = session_id
         self._append(
             {
                 "operation": "open_session",
@@ -365,7 +487,7 @@ class FakeProxyTarget:
         rules = {
             (rule.resource, rule.offset, rule.access) for rule in allowlist
         }
-        return _FakeSession(self, session_id, rules)
+        return _FakeSession(self, session_id, rules, mode)
 
 
 class _FakeSession:
@@ -374,10 +496,12 @@ class _FakeSession:
         target: FakeProxyTarget,
         session_id: int,
         rules: set[tuple[int, int, AccessClass]],
+        mode: SessionMode = SessionMode.READ_ONLY,
     ) -> None:
         self._target = target
         self._session = session_id
         self._rules = rules
+        self._mode = mode
 
     def _deny(
         self, operation: str, resource: int, offset: int, denial: Denial
@@ -512,9 +636,427 @@ class _FakeSession:
             entries=entries, oldest_retained=oldest, next_cursor=next_cursor
         )
 
+    async def write32(
+        self,
+        resource: int,
+        offset: int,
+        value: int,
+        write_mask: int = 0xFFFF_FFFF,
+        precondition: tuple[int, int] | None = None,
+        readback: bool = True,
+    ) -> WriteOutcome:
+        target = self._target
+        if self._mode != SessionMode.MUTATING:
+            self._deny("write32", resource, offset, Denial.READ_ONLY_SESSION)
+        if all(info.id != resource for info in target._description.resources):
+            self._deny("write32", resource, offset, Denial.UNKNOWN_RESOURCE)
+        if (resource, offset, AccessClass.WRITE) not in self._rules:
+            self._deny("write32", resource, offset, Denial.NOT_IN_ALLOWLIST)
+        current = target._values.get((resource, offset), 0)
+        if precondition is not None:
+            expected, mask = precondition
+            if (current & mask) != (expected & mask):
+                self._deny(
+                    "write32", resource, offset, Denial.PRECONDITION_FAILED
+                )
+        timestamp = target._tick()
+        if (resource, offset) in target._faults:
+            target._append(
+                {
+                    "operation": "write32",
+                    "session": self._session,
+                    "resource": resource,
+                    "offset": offset,
+                    "status": "backend_fault",
+                    "timestamp_ns": timestamp,
+                }
+            )
+            raise OperationDenied(Denial.BACKEND_FAULT)
+        new_val = (current & ~write_mask) | (value & write_mask)
+        target._values[(resource, offset)] = new_val
+        rb_val = target._values.get((resource, offset), 0) if readback else None
+        seq = target._append(
+            {
+                "operation": "write32",
+                "session": self._session,
+                "resource": resource,
+                "offset": offset,
+                "value": new_val,
+                "timestamp_ns": timestamp,
+            }
+        )
+        return WriteOutcome(
+            readback_value=rb_val,
+            audit_seq=seq,
+            timestamp_ns=timestamp,
+        )
+
+    async def poll32(
+        self,
+        resource: int,
+        offset: int,
+        expected: int,
+        mask: int = 0xFFFF_FFFF,
+        interval_ns: int = 1_000_000,
+        timeout_ns: int = 100_000_000,
+    ) -> PollOutcome:
+        target = self._target
+        if all(info.id != resource for info in target._description.resources):
+            self._deny("poll32", resource, offset, Denial.UNKNOWN_RESOURCE)
+        if (resource, offset, AccessClass.POLL) not in self._rules:
+            self._deny("poll32", resource, offset, Denial.NOT_IN_ALLOWLIST)
+        timestamp = target._tick()
+        if (resource, offset) in target._faults:
+            target._append(
+                {
+                    "operation": "poll32",
+                    "session": self._session,
+                    "resource": resource,
+                    "offset": offset,
+                    "status": "backend_fault",
+                    "timestamp_ns": timestamp,
+                }
+            )
+            raise OperationDenied(Denial.BACKEND_FAULT)
+        current = target._values.get((resource, offset), 0)
+        if (current & mask) == (expected & mask):
+            seq = target._append(
+                {
+                    "operation": "poll32",
+                    "session": self._session,
+                    "resource": resource,
+                    "offset": offset,
+                    "value": current,
+                    "timestamp_ns": timestamp,
+                }
+            )
+            return PollOutcome(
+                value=current,
+                audit_seq=seq,
+                timestamp_ns=timestamp,
+            )
+        target._append(
+            {
+                "operation": "poll32",
+                "session": self._session,
+                "resource": resource,
+                "offset": offset,
+                "decision": "denied",
+                "denial": Denial.TIMEOUT.value,
+                "status": "rejected",
+                "timestamp_ns": timestamp,
+            }
+        )
+        raise OperationDenied(Denial.TIMEOUT)
+
+    async def execute_sequence(
+        self, items: Sequence[SequenceItem]
+    ) -> SequenceOutcome:
+        target = self._target
+        if len(items) > 64:
+            self._deny("sequence", 0, 0, Denial.LIMIT_EXCEEDED)
+        # Whole-sequence prevalidation before first hardware access
+        for index, item in enumerate(items):
+            if item.kind in ("mmio_write32", "write32"):
+                if self._mode != SessionMode.MUTATING:
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "decision": "denied",
+                            "denial": Denial.READ_ONLY_SESSION.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.READ_ONLY_SESSION)
+                if (
+                    item.resource,
+                    item.offset,
+                    AccessClass.WRITE,
+                ) not in self._rules:
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "decision": "denied",
+                            "denial": Denial.NOT_IN_ALLOWLIST.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
+            elif item.kind in ("mmio_read32", "read32"):
+                if (
+                    item.resource,
+                    item.offset,
+                    AccessClass.SEQUENCE,
+                ) not in self._rules:
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "decision": "denied",
+                            "denial": Denial.NOT_IN_ALLOWLIST.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
+            elif item.kind in ("mmio_poll32", "poll32"):
+                if (
+                    item.resource,
+                    item.offset,
+                    AccessClass.POLL,
+                ) not in self._rules:
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "decision": "denied",
+                            "denial": Denial.NOT_IN_ALLOWLIST.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
+            elif item.kind == "delay_ns":
+                if item.delay_ns < 0 or item.delay_ns > 1_000_000_000:
+                    target._append(
+                        {
+                            "operation": "sequence",
+                            "session": self._session,
+                            "decision": "denied",
+                            "denial": Denial.LIMIT_EXCEEDED.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": target._tick(),
+                        }
+                    )
+                    raise OperationDenied(Denial.LIMIT_EXCEEDED)
+        results: list[SequenceItemOutcome] = []
+        complete = True
+        for index, item in enumerate(items):
+            timestamp = target._tick()
+            if item.kind in ("mmio_read32", "read32"):
+                if (item.resource, item.offset) in target._faults:
+                    seq = target._append(
+                        {
+                            "operation": "sequence_read32",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "status": "backend_fault",
+                            "item_index": index,
+                            "timestamp_ns": timestamp,
+                        }
+                    )
+                    results.append(
+                        SequenceItemOutcome(
+                            index=index,
+                            ok=False,
+                            kind="read32",
+                            audit_seq=seq,
+                            timestamp_ns=timestamp,
+                            error=Denial.BACKEND_FAULT,
+                        )
+                    )
+                    complete = False
+                    break
+                val = target._values.get((item.resource, item.offset), 0)
+                seq = target._append(
+                    {
+                        "operation": "sequence_read32",
+                        "session": self._session,
+                        "resource": item.resource,
+                        "offset": item.offset,
+                        "value": val,
+                        "item_index": index,
+                        "timestamp_ns": timestamp,
+                    }
+                )
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="read32",
+                        value=val,
+                        audit_seq=seq,
+                        timestamp_ns=timestamp,
+                    )
+                )
+            elif item.kind in ("mmio_write32", "write32"):
+                curr = target._values.get((item.resource, item.offset), 0)
+                if item.precondition is not None:
+                    exp, pmask = item.precondition
+                    if (curr & pmask) != (exp & pmask):
+                        seq = target._append(
+                            {
+                                "operation": "sequence_write32",
+                                "session": self._session,
+                                "resource": item.resource,
+                                "offset": item.offset,
+                                "decision": "denied",
+                                "denial": Denial.PRECONDITION_FAILED.value,
+                                "status": "rejected",
+                                "item_index": index,
+                                "timestamp_ns": timestamp,
+                            }
+                        )
+                        results.append(
+                            SequenceItemOutcome(
+                                index=index,
+                                ok=False,
+                                kind="write32",
+                                audit_seq=seq,
+                                timestamp_ns=timestamp,
+                                error=Denial.PRECONDITION_FAILED,
+                            )
+                        )
+                        complete = False
+                        break
+                if (item.resource, item.offset) in target._faults:
+                    seq = target._append(
+                        {
+                            "operation": "sequence_write32",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "status": "backend_fault",
+                            "item_index": index,
+                            "timestamp_ns": timestamp,
+                        }
+                    )
+                    results.append(
+                        SequenceItemOutcome(
+                            index=index,
+                            ok=False,
+                            kind="write32",
+                            audit_seq=seq,
+                            timestamp_ns=timestamp,
+                            error=Denial.BACKEND_FAULT,
+                        )
+                    )
+                    complete = False
+                    break
+                new_val = (curr & ~item.write_mask) | (
+                    item.value & item.write_mask
+                )
+                target._values[(item.resource, item.offset)] = new_val
+                rb = new_val if item.readback else None
+                seq = target._append(
+                    {
+                        "operation": "sequence_write32",
+                        "session": self._session,
+                        "resource": item.resource,
+                        "offset": item.offset,
+                        "value": new_val,
+                        "item_index": index,
+                        "timestamp_ns": timestamp,
+                    }
+                )
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="write32",
+                        value=new_val,
+                        readback_value=rb,
+                        audit_seq=seq,
+                        timestamp_ns=timestamp,
+                    )
+                )
+            elif item.kind in ("mmio_poll32", "poll32"):
+                curr = target._values.get((item.resource, item.offset), 0)
+                if (curr & item.mask) == (item.expected & item.mask):
+                    seq = target._append(
+                        {
+                            "operation": "sequence_poll32",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "value": curr,
+                            "item_index": index,
+                            "timestamp_ns": timestamp,
+                        }
+                    )
+                    results.append(
+                        SequenceItemOutcome(
+                            index=index,
+                            ok=True,
+                            kind="poll32",
+                            value=curr,
+                            audit_seq=seq,
+                            timestamp_ns=timestamp,
+                        )
+                    )
+                else:
+                    seq = target._append(
+                        {
+                            "operation": "sequence_poll32",
+                            "session": self._session,
+                            "resource": item.resource,
+                            "offset": item.offset,
+                            "decision": "denied",
+                            "denial": Denial.TIMEOUT.value,
+                            "status": "rejected",
+                            "item_index": index,
+                            "timestamp_ns": timestamp,
+                        }
+                    )
+                    results.append(
+                        SequenceItemOutcome(
+                            index=index,
+                            ok=False,
+                            kind="poll32",
+                            audit_seq=seq,
+                            timestamp_ns=timestamp,
+                            error=Denial.TIMEOUT,
+                        )
+                    )
+                    complete = False
+                    break
+            elif item.kind == "delay_ns":
+                target._now_ns += item.delay_ns
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="delay_ns",
+                        timestamp_ns=timestamp,
+                    )
+                )
+            elif item.kind == "barrier":
+                results.append(
+                    SequenceItemOutcome(
+                        index=index,
+                        ok=True,
+                        kind="barrier",
+                        timestamp_ns=timestamp,
+                    )
+                )
+        return SequenceOutcome(results=tuple(results), complete=complete)
+
     async def close(self) -> None:
         """See `ProxySession.close`."""
         target = self._target
+        if (
+            self._mode == SessionMode.MUTATING
+            and target.active_mutating_session == self._session
+        ):
+            target.active_mutating_session = None
         target._append(
             {
                 "operation": "session_closed",
