@@ -7,7 +7,8 @@
 use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use crate::kernel::thread::{FxtRef, ThreadPtr};
 pub use crate::kernel::types::Koid;
-pub use crate::platform_rs::timer::{InstantBootTicks, timer_current_boot_ticks};
+pub use crate::platform_rs::timer::InstantBootTicks;
+use crate::platform_rs::timer::timer_current_boot_ticks;
 use core::cell::UnsafeCell;
 use core::mem::{MaybeUninit, size_of};
 use core::ptr::NonNull;
@@ -309,7 +310,7 @@ impl<'a, const N: usize> KTraceScope<'a, N> {
         context: Context,
         args: [Argument<'a>; N],
     ) -> Self {
-        let timestamp = timer_current_boot_ticks();
+        let timestamp = KTrace::timestamp();
         Self { category, name, timestamp, context, args }
     }
 }
@@ -318,7 +319,7 @@ impl<'a, const N: usize> Drop for KTraceScope<'a, N> {
     #[inline(never)]
     #[cold]
     fn drop(&mut self) {
-        let end_time = timer_current_boot_ticks();
+        let end_time = KTrace::timestamp();
         let ktrace = KTrace::get_instance();
         ktrace.emit_event(
             EventType::DurationComplete,
@@ -486,7 +487,7 @@ impl KTraceBuffer {
 
         match self.buffer_mut().reserve(total_size) {
             Err(status) => {
-                let now = timer_current_boot_ticks();
+                let now = KTrace::timestamp();
                 self.drop_stats_mut().track(now, size);
                 Err(status)
             }
@@ -637,6 +638,12 @@ impl KTrace {
     pub fn get_instance() -> &'static Self {
         // SAFETY: KTrace must be initialized during kernel boot.
         unsafe { &*INSTANCE.0.get().cast::<KTrace>() }
+    }
+
+    /// Returns the current timestamp from the ktrace clock source.
+    #[inline]
+    pub fn timestamp() -> InstantBootTicks {
+        timer_current_boot_ticks()
     }
 
     /// Returns the raw pointer to the KTraceBuffer for the given CPU.
@@ -1623,7 +1630,7 @@ mod tests {
     /// A scope with arguments can be bound to a local variable.
     #[test]
     fn scope_owns_arguments() {
-        let value = timer_current_boot_ticks().0 as u64;
+        let value = KTrace::timestamp().0 as u64;
         let scope = begin_scope!(META_CAT, "scope_owns_arguments", "val" => value);
 
         expect_ne!(scope.timestamp.0, 0);

@@ -64,7 +64,7 @@ macro_rules! instant {
                     crate::ktrace_rs::EventType::Instant,
                     category,
                     $crate::resolve_string!($label),
-                    crate::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::KTrace::timestamp(),
                     $context,
                     None,
                     &[
@@ -134,7 +134,7 @@ macro_rules! duration_begin {
         $crate::duration_begin_timestamp!(
             $category,
             $label,
-            crate::ktrace_rs::timer_current_boot_ticks(),
+            crate::ktrace_rs::KTrace::timestamp(),
             $context
             $(, $key => $val)*
         )
@@ -199,7 +199,7 @@ macro_rules! duration_end {
         $crate::duration_end_timestamp!(
             $category,
             $label,
-            crate::ktrace_rs::timer_current_boot_ticks(),
+            crate::ktrace_rs::KTrace::timestamp(),
             $context
             $(, $key => $val)*
         )
@@ -238,7 +238,7 @@ macro_rules! counter {
                     crate::ktrace_rs::EventType::Counter,
                     category,
                     $crate::resolve_string!($label),
-                    crate::ktrace_rs::timer_current_boot_ticks(),
+                    crate::ktrace_rs::KTrace::timestamp(),
                     crate::ktrace_rs::Context::Thread,
                     Some($counter_id as u64),
                     &[
@@ -287,7 +287,7 @@ macro_rules! flow_begin {
         $crate::flow_begin_timestamp!(
             $category,
             $label,
-            crate::ktrace_rs::timer_current_boot_ticks(),
+            crate::ktrace_rs::KTrace::timestamp(),
             $flow_id
             $(, $key => $val)*
         )
@@ -331,7 +331,7 @@ macro_rules! flow_step {
         $crate::flow_step_timestamp!(
             $category,
             $label,
-            crate::ktrace_rs::timer_current_boot_ticks(),
+            crate::ktrace_rs::KTrace::timestamp(),
             $flow_id
             $(, $key => $val)*
         )
@@ -375,7 +375,7 @@ macro_rules! flow_end {
         $crate::flow_end_timestamp!(
             $category,
             $label,
-            crate::ktrace_rs::timer_current_boot_ticks(),
+            crate::ktrace_rs::KTrace::timestamp(),
             $flow_id
             $(, $key => $val)*
         )
@@ -460,7 +460,7 @@ macro_rules! complete {
                     $crate::resolve_string!($label),
                     $start_timestamp,
                     $context,
-                    Some(crate::ktrace_rs::timer_current_boot_ticks().0 as u64),
+                    Some(crate::ktrace_rs::KTrace::timestamp().0 as u64),
                     &[
                         $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                     ],
