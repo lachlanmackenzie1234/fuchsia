@@ -10,6 +10,7 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
+import("//src/devices/driver-lab/driver_lab.gni")
 
 driver_bind_rules("bind") {
   testonly = true
@@ -54,6 +55,11 @@ rustc_library("driver_lab_rust") {
   name = "driver_lab_rust"
   edition = "2024"
   with_unit_tests = true
+
+  features = []
+  if (enable_driver_lab) {
+    features += [ "driver_lab_enabled" ]
+  }
 
   source_root = "src/driver_lab_lib.rs"
   sources = [

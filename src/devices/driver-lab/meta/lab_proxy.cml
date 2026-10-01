@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
+        "//src/devices/driver-lab/meta/debug.shard.cml",
         "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
         "inspect/client.shard.cml",
@@ -13,9 +14,6 @@
         binary: "driver/lab_proxy.so",
         bind: "meta/bind/lab_proxy.bindbc",
     },
-    capabilities: [
-        { service: "fuchsia.driver.lab.Service" },
-    ],
     use: [
         {
             service: [
@@ -26,12 +24,6 @@
                 "fuchsia.hardware.serial.Service",
                 "fuchsia.hardware.spi.Service",
             ],
-        },
-    ],
-    expose: [
-        {
-            service: "fuchsia.driver.lab.Service",
-            from: "self",
         },
     ],
     config: {

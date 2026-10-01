@@ -53,11 +53,13 @@ pub struct DriverLabBuilder {
 impl DriverLabBuilder {
     /// Creates a new builder for the given stable node/driver identity.
     pub fn new(node_identity: impl Into<String>) -> Self {
+        let mut config = ProxyConfig::default();
+        config.enabled = cfg!(any(feature = "driver_lab_enabled", test));
         Self {
             bundle: ProvidedResources::embedded(&node_identity.into()),
             next_id: 0,
             allow_mutating_sessions: true,
-            config: ProxyConfig::default(),
+            config,
             quiesce_hook: None,
         }
     }
@@ -70,6 +72,14 @@ impl DriverLabBuilder {
             .clone()
             .unwrap_or_else(|| "driver-lab.embedded".to_string());
         Self::new(identity)
+    }
+
+    /// Explicitly enables or disables the embedded debug server (in release
+    /// builds where `enable_driver_lab = false`, this defaults to `false` and
+    /// omits outgoing service handlers).
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.config.enabled = enabled;
+        self
     }
 
     /// Sets whether mutating sessions are permitted on this embedded server.
@@ -402,14 +412,25 @@ pub struct EmbeddedLabServer {
 }
 
 impl EmbeddedLabServer {
+    /// Returns whether the embedded server is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.state.inner.lock().unwrap().config.enabled
+    }
+
     /// Publishes `fuchsia.driver.lab.Service` (`default` instance) onto a
     /// thread-safe driver [`ServiceFs`], spawning connection handlers onto
     /// `scope_handle`.
+    ///
+    /// When disabled (`enable_driver_lab = false`), this is a no-op and omits
+    /// outgoing service handlers (Spec Phase 2 Section 4.1).
     pub fn publish(
         &self,
         outgoing: &mut ServiceFs<ServiceObj<'static, ()>>,
         scope_handle: fasync::ScopeHandle,
     ) {
+        if !self.is_enabled() {
+            return;
+        }
         let state = self.state.clone();
         outgoing.dir("svc").add_fidl_service_instance(
             "default",
@@ -427,11 +448,17 @@ impl EmbeddedLabServer {
     /// Publishes `fuchsia.driver.lab.Service` (`default` instance) onto a
     /// local driver [`ServiceFs`], spawning connection handlers onto
     /// `scope_handle`.
+    ///
+    /// When disabled (`enable_driver_lab = false`), this is a no-op and omits
+    /// outgoing service handlers (Spec Phase 2 Section 4.1).
     pub fn publish_local(
         &self,
         outgoing: &mut ServiceFs<ServiceObjLocal<'static, ()>>,
         scope_handle: fasync::ScopeHandle,
     ) {
+        if !self.is_enabled() {
+            return;
+        }
         let state = self.state.clone();
         outgoing.dir("svc").add_fidl_service_instance(
             "default",

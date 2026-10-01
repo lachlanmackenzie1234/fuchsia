@@ -1196,7 +1196,7 @@ Changesets continue the global numbering:
       (in //src/devices/driver-lab/SPEC.md).
 - [x] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
+- [x] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
 - [ ] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
 - [ ] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
 - [ ] CS30 `[driver-lab] In-situ live-target conformance test suite`
