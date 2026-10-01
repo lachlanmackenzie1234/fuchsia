@@ -131,6 +131,9 @@ zx_status_t Asix88179Ethernet::ReadMac(uint8_t register_address, T* data) {
   zx_status_t status = usb_.ControlIn(
       kVendorDeviceIn, AX88179_REQ_MAC, register_address, register_length, ZX_TIME_INFINITE,
       reinterpret_cast<uint8_t*>(data), register_length, &out_length);
+  if (status == ZX_OK && out_length != register_length) {
+    status = ZX_ERR_IO;
+  }
 
   return status;
 }
@@ -149,7 +152,10 @@ zx_status_t Asix88179Ethernet::ReadPhy(uint8_t register_address, uint16_t* data)
   zx_status_t status = usb_.ControlIn(kVendorDeviceIn, AX88179_REQ_PHY, AX88179_PHY_ID,
                                       register_address, ZX_TIME_INFINITE,
                                       reinterpret_cast<uint8_t*>(data), sizeof(*data), &out_length);
-  if (out_length == sizeof(*data)) {
+  if (status == ZX_OK && out_length != sizeof(*data)) {
+    status = ZX_ERR_IO;
+  }
+  if (status == ZX_OK) {
     zxlogf(TRACE, "ax88179: read phy %#x: %#x", register_address, *data);
   }
   return status;
@@ -403,22 +409,23 @@ void Asix88179Ethernet::InterruptComplete(usb_request_t* usb_request) {
         res.is_ok() && *res == kInterruptRequestSize) {
       bool online = (status[2] & 1) != 0;
       bool was_online = online_;
-      online_ = online;
       if (online && !was_online) {
-        ConfigureMediumMode();
+        if (ConfigureMediumMode() == ZX_OK) {
+          online_ = true;
+          std::optional<usb::Request<>> pending_request;
 
-        std::optional<usb::Request<>> pending_request;
+          size_t request_length = usb::Request<>::RequestSize(parent_req_size_);
+          while ((pending_request = free_read_pool_.Get(request_length))) {
+            usb_.RequestQueue(pending_request->take(), &read_request_complete_);
+          }
 
-        size_t request_length = usb::Request<>::RequestSize(parent_req_size_);
-        while ((pending_request = free_read_pool_.Get(request_length))) {
-          usb_.RequestQueue(pending_request->take(), &read_request_complete_);
-        }
-
-        zxlogf(DEBUG, "ax88179: now online");
-        if (ifc_.is_valid()) {
-          ifc_.Status(ETHERNET_STATUS_ONLINE);
+          zxlogf(DEBUG, "ax88179: now online");
+          if (ifc_.is_valid()) {
+            ifc_.Status(ETHERNET_STATUS_ONLINE);
+          }
         }
       } else if (!online && was_online) {
+        online_ = false;
         zxlogf(DEBUG, "ax88179: now offline");
         if (ifc_.is_valid()) {
           ifc_.Status(0);

@@ -12,6 +12,11 @@ closed protocol Hooks {
     }) -> (struct {
         status zx.Status;
     });
+    strict SetFailShortRead(struct {
+        fail_short_read bool;
+    }) -> (struct {
+        status zx.Status;
+    });
 };
 
 // Added to allow service connection to replace devfs

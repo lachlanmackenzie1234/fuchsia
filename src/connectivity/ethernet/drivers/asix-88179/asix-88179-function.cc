@@ -68,6 +68,8 @@ class FakeUsbAx88179Function
 
   // Hooks:
   void SetOnline(SetOnlineRequestView request, SetOnlineCompleter::Sync& completer) override;
+  void SetFailShortRead(SetFailShortReadRequestView request,
+                        SetFailShortReadCompleter::Sync& completer) override;
 
  private:
   void DevfsConnect(fidl::ServerEnd<fuchsia_hardware_ax88179::Hooks> req);
@@ -98,6 +100,7 @@ class FakeUsbAx88179Function
   fidl::ServerBindingGroup<fuchsia_hardware_ax88179::Hooks> bindings_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_;
   driver_devfs::Connector<fuchsia_hardware_ax88179::Hooks> connector_;
+  bool fail_short_read_ TA_GUARDED(mtx_) = false;
 };
 
 void FakeUsbAx88179Function::SetOnline(SetOnlineRequestView request,
@@ -122,6 +125,13 @@ void FakeUsbAx88179Function::SetOnline(SetOnlineRequestView request,
   reqs.emplace_back(req->take_request());
   ZX_ASSERT(intr_ep_->QueueRequests({std::move(reqs)}).is_ok());
 
+  completer.Reply(ZX_OK);
+}
+
+void FakeUsbAx88179Function::SetFailShortRead(SetFailShortReadRequestView request,
+                                              SetFailShortReadCompleter::Sync& completer) {
+  fbl::AutoLock lock(&mtx_);
+  fail_short_read_ = request->fail_short_read;
   completer.Reply(ZX_OK);
 }
 
@@ -291,7 +301,16 @@ void FakeUsbAx88179Function::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_ax881
 }
 
 void FakeUsbAx88179Function::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
-  completer.Reply(zx::ok(std::vector<uint8_t>{}));
+  fbl::AutoLock lock(&mtx_);
+  if (usb_request_is_in(request.setup().bm_request_type())) {
+    if (fail_short_read_ && request.setup().w_length() > 1) {
+      completer.Reply(zx::ok(std::vector<uint8_t>(1, 0)));
+      return;
+    }
+    completer.Reply(zx::ok(std::vector<uint8_t>(request.setup().w_length(), 0)));
+  } else {
+    completer.Reply(zx::ok(std::vector<uint8_t>{}));
+  }
 }
 
 void FakeUsbAx88179Function::SetConfigured(SetConfiguredRequest& request,
