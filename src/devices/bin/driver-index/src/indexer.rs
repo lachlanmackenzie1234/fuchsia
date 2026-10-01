@@ -332,7 +332,11 @@ impl Indexer {
         &self,
         dependencies: Vec<fdf::ParentSpec2>,
     ) -> Result<fdi::MatchPendingNodeResult, i32> {
-        let parents = dependencies;
+        let Some(parent_properties) =
+            crate::composite_helper::convert_parents_to_device_properties(&dependencies)
+        else {
+            return Err(Status::NOT_FOUND.into_raw());
+        };
 
         self.with_drivers(|driver_list| {
             let composite_drivers = driver_list
@@ -345,7 +349,10 @@ impl Indexer {
 
             for driver in composite_drivers {
                 let matched_composite_result =
-                    crate::composite_helper::match_composite_properties(driver, &parents);
+                    crate::composite_helper::match_composite_device_properties(
+                        driver,
+                        &parent_properties,
+                    );
                 if let Ok(Some(matched_composite)) = matched_composite_result {
                     if driver.fallback {
                         fallback.push(matched_composite);

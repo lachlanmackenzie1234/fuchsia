@@ -7,9 +7,11 @@ use crate::resolved_driver::ResolvedDriver;
 use crate::rkyv_ext;
 use bind::compiler::Symbol;
 use bind::compiler::symbol_table::{get_deprecated_key_identifier, get_deprecated_key_value};
-use bind::interpreter::match_bind::{DeviceProperties, MatchBindData, PropertyKey, match_bind};
+use bind::interpreter::match_bind::{
+    DeviceProperties, MatchBindData, PropertyKey, PropertyKeyLookup, PropertyKeyRef, match_bind,
+};
 use fidl_fuchsia_driver_framework as fdf;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use zx::Status;
 use zx::sys::zx_status_t;
 
@@ -24,12 +26,26 @@ pub struct BindRuleCondition {
     pub values: Vec<Symbol>,
 }
 
+pub fn convert_parents_to_device_properties(
+    parents: &[fdf::ParentSpec2],
+) -> Option<Vec<DeviceProperties>> {
+    if parents.is_empty() {
+        return None;
+    }
+    parents.iter().map(|parent| node_to_device_property(&parent.properties).ok()).collect()
+}
+
 pub fn find_composite_driver_match<'a>(
     parents: &'a Vec<fdf::ParentSpec2>,
     composite_drivers: &Vec<&ResolvedDriver>,
 ) -> Option<fdf::CompositeDriverMatch> {
+    if composite_drivers.is_empty() {
+        return None;
+    }
+    let parent_properties = convert_parents_to_device_properties(parents)?;
     for composite_driver in composite_drivers {
-        let matched_composite = match_composite_properties(composite_driver, parents);
+        let matched_composite =
+            match_composite_device_properties(composite_driver, &parent_properties);
         if let Ok(Some(matched_composite)) = matched_composite {
             return Some(matched_composite);
         }
@@ -37,35 +53,37 @@ pub fn find_composite_driver_match<'a>(
     None
 }
 
+fn device_properties_match_composite_driver(
+    props: &DeviceProperties,
+    bind_rules_node: &Vec<u8>,
+    symbol_table: &HashMap<u32, String>,
+    expected_parent_name: &str,
+) -> bool {
+    if let Some(Symbol::StringValue(val)) =
+        props.get(&PropertyKeyRef::StringKey("fuchsia.NAME") as &dyn PropertyKeyLookup)
+        && val != expected_parent_name
+    {
+        return false;
+    }
+    match_bind(MatchBindData { symbol_table, instructions: bind_rules_node }, props)
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
 pub fn node_matches_composite_driver(
     node: &fdf::ParentSpec2,
     bind_rules_node: &Vec<u8>,
     symbol_table: &HashMap<u32, String>,
     expected_parent_name: &str,
 ) -> bool {
-    for prop in &node.properties {
-        if prop.key == "fuchsia.NAME" {
-            if let fdf::NodePropertyValue::StringValue(ref val) = prop.value {
-                if val != expected_parent_name {
-                    return false;
-                }
-            }
-        }
-    }
-
     match node_to_device_property(&node.properties) {
         Err(_) => false,
-        Ok(props) => {
-            if let Some(Symbol::StringValue(val)) =
-                props.get(&PropertyKey::StringKey("fuchsia.NAME".to_string()))
-            {
-                if val != expected_parent_name {
-                    return false;
-                }
-            }
-            match_bind(MatchBindData { symbol_table, instructions: bind_rules_node }, &props)
-                .unwrap_or(false)
-        }
+        Ok(props) => device_properties_match_composite_driver(
+            &props,
+            bind_rules_node,
+            symbol_table,
+            expected_parent_name,
+        ),
     }
 }
 
@@ -181,7 +199,33 @@ pub fn match_composite_properties<'a>(
     parents: &'a Vec<fdf::ParentSpec2>,
 ) -> Result<Option<fdf::CompositeDriverMatch>, i32> {
     // The spec must have at least 1 node to match a composite driver.
-    if parents.len() < 1 {
+    if parents.is_empty() {
+        return Ok(None);
+    }
+
+    let composite = get_composite_rules_from_composite_driver(composite_driver)?;
+
+    // The composite driver bind rules should have a total node count of more than or equal to the
+    // total node count of the spec, and the spec must have enough nodes for all required parents.
+    if parents.len() < composite.additional_parents.len() + 1
+        || composite.optional_parents.len() + composite.additional_parents.len() + 1 < parents.len()
+    {
+        return Ok(None);
+    }
+
+    let Some(parent_properties) = convert_parents_to_device_properties(parents) else {
+        return Ok(None);
+    };
+
+    match_composite_device_properties(composite_driver, &parent_properties)
+}
+
+pub fn match_composite_device_properties(
+    composite_driver: &ResolvedDriver,
+    parent_properties: &[DeviceProperties],
+) -> Result<Option<fdf::CompositeDriverMatch>, i32> {
+    // The spec must have at least 1 node to match a composite driver.
+    if parent_properties.is_empty() {
         return Ok(None);
     }
 
@@ -190,7 +234,10 @@ pub fn match_composite_properties<'a>(
     // The composite driver bind rules should have a total node count of more than or equal to the
     // total node count of the spec. This is to account for optional nodes in the
     // composite driver bind rules.
-    if composite.optional_parents.len() + composite.additional_parents.len() + 1 < parents.len() {
+    if parent_properties.len() < composite.additional_parents.len() + 1
+        || composite.optional_parents.len() + composite.additional_parents.len() + 1
+            < parent_properties.len()
+    {
         return Ok(None);
     }
 
@@ -198,9 +245,9 @@ pub fn match_composite_properties<'a>(
     let mut primary_parent_index = 0;
     let mut primary_matches = false;
     let primary_name = &composite.symbol_table[&composite.primary_parent.name_id];
-    for i in 0..parents.len() {
-        primary_matches = node_matches_composite_driver(
-            &parents[i],
+    for (i, parent_props) in parent_properties.iter().enumerate() {
+        primary_matches = device_properties_match_composite_driver(
+            parent_props,
             &composite.primary_parent.instructions,
             &composite.symbol_table,
             primary_name,
@@ -236,14 +283,13 @@ pub fn match_composite_properties<'a>(
     // TODO(https://fxbug.dev/42058532): Disallow ambiguity with spec matching. We should log
     // a warning and return false if a spec node matches with multiple composite
     // driver nodes, and vice versa.
-    let mut unmatched_additional_indices =
-        (0..composite.additional_parents.len()).collect::<HashSet<_>>();
-    let mut unmatched_optional_indices =
-        (0..composite.optional_parents.len()).collect::<HashSet<_>>();
+    let mut unmatched_additional = vec![true; composite.additional_parents.len()];
+    let mut remaining_additional = composite.additional_parents.len();
+    let mut unmatched_optional = vec![true; composite.optional_parents.len()];
 
-    let mut parent_names = vec![];
+    let mut parent_names = Vec::with_capacity(parent_properties.len());
 
-    for i in 0..parents.len() {
+    for (i, parent_props) in parent_properties.iter().enumerate() {
         if i == primary_parent_index as usize {
             parent_names.push(composite.symbol_table[&composite.primary_parent.name_id].clone());
             continue;
@@ -254,10 +300,13 @@ pub fn match_composite_properties<'a>(
         let mut from_optional = false;
 
         // First check if any of the additional nodes match it.
-        for &j in &unmatched_additional_indices {
+        for (j, is_unmatched) in unmatched_additional.iter().enumerate() {
+            if !*is_unmatched {
+                continue;
+            }
             let additional_name = &composite.symbol_table[&composite.additional_parents[j].name_id];
-            let matches = node_matches_composite_driver(
-                &parents[i],
+            let matches = device_properties_match_composite_driver(
+                parent_props,
                 &composite.additional_parents[j].instructions,
                 &composite.symbol_table,
                 additional_name,
@@ -271,10 +320,13 @@ pub fn match_composite_properties<'a>(
 
         // If no additional nodes matched it, then look in the optional nodes.
         if matched.is_none() {
-            for &j in &unmatched_optional_indices {
+            for (j, is_unmatched) in unmatched_optional.iter().enumerate() {
+                if !*is_unmatched {
+                    continue;
+                }
                 let optional_name = &composite.symbol_table[&composite.optional_parents[j].name_id];
-                let matches = node_matches_composite_driver(
-                    &parents[i],
+                let matches = device_properties_match_composite_driver(
+                    parent_props,
                     &composite.optional_parents[j].instructions,
                     &composite.symbol_table,
                     optional_name,
@@ -288,21 +340,22 @@ pub fn match_composite_properties<'a>(
             }
         }
 
-        if matched.is_none() {
+        let Some(matched_idx) = matched else {
             return Ok(None);
-        }
+        };
 
         if from_optional {
-            unmatched_optional_indices.remove(&matched.unwrap());
+            unmatched_optional[matched_idx] = false;
         } else {
-            unmatched_additional_indices.remove(&matched.unwrap());
+            unmatched_additional[matched_idx] = false;
+            remaining_additional -= 1;
         }
 
         parent_names.push(matched_name.unwrap());
     }
 
     // If we didn't consume all of the additional nodes in the bind rules then this is not a match.
-    if !unmatched_additional_indices.is_empty() {
+    if remaining_additional > 0 {
         return Ok(None);
     }
 
