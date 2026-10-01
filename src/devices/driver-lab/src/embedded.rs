@@ -25,14 +25,15 @@ use fidl_fuchsia_hardware_spi as fspi;
 use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObj, ServiceObjLocal};
 use lab_proxy_core::access_policy::{ProtocolCeiling, ResourceCeiling, ResourceId, ResourceKind};
-use lab_proxy_core::audit_ring::{AuditRecord, AuditRing};
+use lab_proxy_core::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
 use lab_proxy_core::config::{AccessLimitEnforcer, ProxyConfig};
 use lab_proxy_core::executor::{ExecLimits, Executor};
-use lab_proxy_core::interrupt::InterruptManager;
+use lab_proxy_core::interrupt::{InterruptEvent, InterruptManager};
 use lab_proxy_core::provider::{ProvidedResources, ProviderError};
-use lab_proxy_core::session::{ProxyIdentity, SessionManager};
+use lab_proxy_core::session::{ProxyIdentity, QuiesceHook, SessionManager};
 use lab_proxy_core::target_policy::TargetPolicyManifest;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 fn now_ns() -> i64 {
@@ -46,6 +47,7 @@ pub struct DriverLabBuilder {
     next_id: ResourceId,
     allow_mutating_sessions: bool,
     config: ProxyConfig,
+    quiesce_hook: Option<QuiesceHook>,
 }
 
 impl DriverLabBuilder {
@@ -56,6 +58,7 @@ impl DriverLabBuilder {
             next_id: 0,
             allow_mutating_sessions: true,
             config: ProxyConfig::default(),
+            quiesce_hook: None,
         }
     }
 
@@ -80,6 +83,18 @@ impl DriverLabBuilder {
         if let Ok(narrowed) = ProxyConfig::default().narrow_with(&config) {
             self.config = narrowed;
         }
+        self
+    }
+
+    /// Registers a synchronous quiesce callback (`quiesce_hook(bool paused)`)
+    /// invoked with `true` when a mutating session acquires the mutation lease
+    /// and `false` when the session closes or the driver stops (Spec Phase 2
+    /// Section 2.2).
+    pub fn with_quiesce_hook<F>(&mut self, hook: F) -> &mut Self
+    where
+        F: Fn(bool) + Send + Sync + 'static,
+    {
+        self.quiesce_hook = Some(Arc::new(hook));
         self
     }
 
@@ -180,14 +195,7 @@ impl DriverLabBuilder {
         let id = self.next_id;
         self.next_id += 1;
         let mapped_size = mmio.len() as u64;
-        self.bundle.add_mmio(
-            id,
-            name,
-            logical_size,
-            mapped_size,
-            ceiling,
-            LiveBackend::Mmio(mmio),
-        );
+        self.bundle.add_mmio(id, name, logical_size, mapped_size, ceiling, LiveBackend::Mmio(mmio));
         id
     }
 
@@ -339,10 +347,8 @@ impl DriverLabBuilder {
             }
         }
 
-        let limit_enforcer = AccessLimitEnforcer::new(
-            self.config.max_ops_per_second,
-            self.config.max_deadline_ns,
-        );
+        let limit_enforcer =
+            AccessLimitEnforcer::new(self.config.max_ops_per_second, self.config.max_deadline_ns);
         let mut sessions = SessionManager::with_limits(
             identity,
             self.bundle.resources,
@@ -350,6 +356,10 @@ impl DriverLabBuilder {
             self.allow_mutating_sessions,
             limit_enforcer,
         );
+        if let Some(hook) = self.quiesce_hook {
+            sessions.set_quiesce_hook(hook);
+        }
+        let quiesce_flag = sessions.quiesce_flag();
         if !self.config.enabled {
             sessions.reject_new_sessions();
         }
@@ -376,10 +386,10 @@ impl DriverLabBuilder {
                 interrupts,
                 config: self.config,
             }),
-            abort_token: std::sync::atomic::AtomicBool::new(false),
+            abort_token: AtomicBool::new(false),
         });
 
-        Ok(EmbeddedLabServer { state })
+        Ok(EmbeddedLabServer { state, quiesce_flag })
     }
 }
 
@@ -388,6 +398,7 @@ impl DriverLabBuilder {
 #[derive(Clone)]
 pub struct EmbeddedLabServer {
     state: SharedState,
+    quiesce_flag: Arc<AtomicBool>,
 }
 
 impl EmbeddedLabServer {
@@ -450,10 +461,58 @@ impl EmbeddedLabServer {
         &self.state
     }
 
-    /// Stops accepting new sessions, cancels pending interrupt waiters, and
-    /// appends a stop lifecycle audit record.
+    /// Returns whether the driver is currently quiesced due to an active
+    /// mutating session (lock-free atomic read).
+    pub fn is_quiesced(&self) -> bool {
+        self.quiesce_flag.load(Ordering::SeqCst)
+    }
+
+    /// Returns a cloneable handle to the atomic quiesce flag so driver
+    /// background loops can check quiesce status without locking.
+    pub fn quiesce_flag(&self) -> Arc<AtomicBool> {
+        self.quiesce_flag.clone()
+    }
+
+    /// Taps an interrupt event from the driver's own interrupt service routine
+    /// (`lab.notify_interrupt(resource_id)`) without stealing or binding the
+    /// raw `zx::Interrupt` handle (Spec Phase 2 Section 2.3).
+    ///
+    /// Increments the interrupt sequence and total count, appends to the audit
+    /// ring, and satisfies pending host `WaitForInterrupt` hanging gets.
+    pub fn notify_interrupt(&self, resource_id: ResourceId) -> Option<InterruptEvent> {
+        self.notify_interrupt_with_timestamp(resource_id, now_ns())
+    }
+
+    /// Taps an interrupt event with an explicit timestamp.
+    pub fn notify_interrupt_with_timestamp(
+        &self,
+        resource_id: ResourceId,
+        timestamp_ns: i64,
+    ) -> Option<InterruptEvent> {
+        let mut guard = self.state.inner.lock().unwrap();
+        let event = guard.interrupts.on_interrupt(resource_id, timestamp_ns, None).ok();
+        if let Some(ref ev) = event {
+            guard.audit.append(AuditRecord {
+                session: None,
+                resource: Some(resource_id),
+                operation: "interrupt_tap",
+                offset: None,
+                decision: Decision::Allowed,
+                status: OpStatus::Ok,
+                value: Some(ev.sequence as u32),
+                timestamp_ns,
+                run_id: None,
+                item_index: None,
+            });
+        }
+        event
+    }
+
+    /// Stops accepting new sessions, releases any active mutation lease and
+    /// quiesce hook, cancels pending interrupt waiters, and appends a stop
+    /// lifecycle audit record.
     pub fn stop(&self) {
-        self.state.abort_token.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.state.abort_token.store(true, Ordering::SeqCst);
         let mut state = self.state.inner.lock().unwrap();
         state.sessions.reject_new_sessions();
         state.interrupts.cancel_waiters();
@@ -607,5 +666,132 @@ mod tests {
 
         // 6. Stop rejects new sessions
         server.stop();
+    }
+
+    #[fuchsia::test]
+    async fn embedded_mutating_session_engages_quiesce_and_disconnect_releases_lease() {
+        const SIZE: usize = 4096;
+        let vmo = zx::Vmo::create(SIZE as u64).unwrap();
+        let driver_vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let mut driver_mmio =
+            VmoMapping::map_with_cache_policy(0, SIZE, driver_vmo, CachePolicy::Cached).unwrap();
+        driver_mmio.try_store32(0x08, 0x0000_0001).unwrap();
+
+        let hook_log = Arc::new(Mutex::new(Vec::new()));
+        let hook_log_clone = hook_log.clone();
+
+        let mut builder = DriverLabBuilder::new("sample-driver");
+        builder.with_quiesce_hook(move |paused| {
+            hook_log_clone.lock().unwrap().push(paused);
+        });
+        builder
+            .add_mmio_vmo_with_ceiling(
+                "regs",
+                &vmo,
+                0,
+                0x100,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: true,
+                    allow_poll: true,
+                    writable_registers: vec![WritableRegister {
+                        offset: 0x08,
+                        width: 4,
+                        allow_mask: 0xFFFF_FFFF,
+                        allow_rmw: true,
+                        require_precondition: false,
+                        precondition_mask: 0,
+                        readback: true,
+                    }],
+                    protocol: None,
+                    allow_interrupt: false,
+                },
+            )
+            .unwrap();
+        let irq_id = builder.add_interrupt("irq0");
+        assert_eq!(irq_id, 1);
+
+        let server = builder.build().unwrap();
+        let scope = fasync::Scope::new_with_name("embedded-quiesce-test");
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<flab::Proxy_Marker>();
+        server.serve_proxy_stream(scope.to_handle(), stream);
+
+        let desc = proxy.describe().await.unwrap();
+        assert!(!server.is_quiesced());
+
+        // Open mutating session with write + interrupt access
+        let (session_proxy, session_server) =
+            fidl::endpoints::create_proxy::<flab::SessionMarker>();
+        let open_res = proxy
+            .open_session(
+                &flab::RunContext { run_id: Some("run-cs26".to_string()), ..Default::default() },
+                flab::SessionMode::Mutating,
+                &flab::Expectations {
+                    boot_id: desc.boot_id.clone(),
+                    proxy_generation: desc.proxy_generation,
+                    resource_digest: desc.resource_digest.clone(),
+                    policy_digest: desc.policy_digest.clone(),
+                    ..Default::default()
+                },
+                &[
+                    flab::AccessRule {
+                        resource: 0,
+                        offset: 0x08,
+                        width: 4,
+                        class: flab::AccessClass::Write,
+                    },
+                    flab::AccessRule {
+                        resource: 1,
+                        offset: 0,
+                        width: 0,
+                        class: flab::AccessClass::Interrupt,
+                    },
+                ],
+                session_server,
+            )
+            .await
+            .unwrap();
+        assert!(open_res.is_ok());
+
+        // Driver is now quiesced
+        assert!(server.is_quiesced());
+        assert_eq!(*hook_log.lock().unwrap(), vec![true]);
+
+        // Perform Write32 while quiesced
+        let (readback_val, _, _) = session_proxy
+            .write32(0, 0x08, 0xABCD_EF01, 0xFFFF_FFFF, None, true)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(readback_val, 0xABCD_EF01);
+        assert_eq!(driver_mmio.try_load32(0x08), Ok(0xABCD_EF01));
+
+        // Tap interrupt from driver ISR and verify WaitForInterrupt wakes up
+        let server_for_irq = server.clone();
+        scope.spawn(async move {
+            server_for_irq.notify_interrupt(1);
+        });
+        let (irq_res, irq_seq, _, _, _) =
+            session_proxy.wait_for_interrupt(1, 0, 500_000_000).await.unwrap().unwrap();
+        assert_eq!(irq_res, 1);
+        assert_eq!(irq_seq, 1);
+
+        // Simulate host disconnect by dropping session_proxy
+        drop(session_proxy);
+
+        // Open a second mutating session to prove lease was released and driver unquiesced
+        for _ in 0..50 {
+            if !server.is_quiesced() {
+                break;
+            }
+            fasync::Timer::new(zx::MonotonicInstant::after(zx::Duration::from_millis(5))).await;
+        }
+        assert!(!server.is_quiesced());
+        assert_eq!(*hook_log.lock().unwrap(), vec![true, false]);
+
+        let audit_page = server.state().inner.lock().unwrap().audit.read(0, 100);
+        assert!(audit_page.entries.iter().any(|e| e.record.operation == "quiesce_engaged"));
+        assert!(audit_page.entries.iter().any(|e| e.record.operation == "quiesce_released"));
+        assert!(audit_page.entries.iter().any(|e| e.record.operation == "interrupt_tap"));
     }
 }

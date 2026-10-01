@@ -1194,7 +1194,7 @@ Changesets continue the global numbering:
       (in //src/devices/driver-lab/SPEC.md).
 - [x] CS25 `[driver-lab] Embedded Rust driver library with ServiceFs integration`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
+- [x] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
       (in //src/devices/driver-lab/SPEC.md).
 - [ ] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
 - [ ] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`

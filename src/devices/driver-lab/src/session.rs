@@ -90,8 +90,14 @@ pub struct Session {
     pub limit_enforcer: AccessLimitEnforcer,
 }
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Callback invoked when a mutating session acquires (`true`) or releases
+/// (`false`) the exclusive mutation lease (Spec Phase 2 Section 2.2).
+pub type QuiesceHook = Arc<dyn Fn(bool) + Send + Sync>;
+
 /// Tracks open sessions, identity staleness, and the mutation lease.
-#[derive(Debug)]
 pub struct SessionManager {
     identity: ProxyIdentity,
     resources: BTreeMap<ResourceId, MmioResource>,
@@ -102,6 +108,25 @@ pub struct SessionManager {
     mutating: Option<u64>,
     accepting: bool,
     limit_enforcer: AccessLimitEnforcer,
+    quiesced: Arc<AtomicBool>,
+    quiesce_hook: Option<QuiesceHook>,
+}
+
+impl std::fmt::Debug for SessionManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionManager")
+            .field("identity", &self.identity)
+            .field("resources", &self.resources)
+            .field("ceiling", &self.ceiling)
+            .field("allow_mutating_sessions", &self.allow_mutating_sessions)
+            .field("next_id", &self.next_id)
+            .field("sessions", &self.sessions)
+            .field("mutating", &self.mutating)
+            .field("accepting", &self.accepting)
+            .field("quiesced", &self.quiesced.load(Ordering::SeqCst))
+            .field("has_quiesce_hook", &self.quiesce_hook.is_some())
+            .finish()
+    }
 }
 
 impl SessionManager {
@@ -139,7 +164,27 @@ impl SessionManager {
             mutating: None,
             accepting: true,
             limit_enforcer,
+            quiesced: Arc::new(AtomicBool::new(false)),
+            quiesce_hook: None,
         }
+    }
+
+    /// Registers a synchronous quiesce callback invoked with `true` when a
+    /// mutating session opens and `false` when it closes.
+    pub fn set_quiesce_hook(&mut self, hook: QuiesceHook) {
+        self.quiesce_hook = Some(hook);
+    }
+
+    /// Returns whether the driver is currently quiesced due to an active
+    /// mutating session.
+    pub fn is_quiesced(&self) -> bool {
+        self.quiesced.load(Ordering::SeqCst)
+    }
+
+    /// Returns a cloneable handle to the atomic quiesce flag so driver
+    /// background loops can check quiesce state without locking.
+    pub fn quiesce_flag(&self) -> Arc<AtomicBool> {
+        self.quiesced.clone()
     }
 
     /// The identity `Describe` reports and expectations are checked
@@ -192,6 +237,10 @@ impl SessionManager {
         self.next_id += 1;
         if mode == SessionMode::Mutating {
             self.mutating = Some(id);
+            self.quiesced.store(true, Ordering::SeqCst);
+            if let Some(hook) = &self.quiesce_hook {
+                hook(true);
+            }
         }
         self.sessions.insert(
             id,
@@ -222,20 +271,30 @@ impl SessionManager {
         self.sessions.get(&id)
     }
 
-    /// Closes a session, releasing the mutation lease if it held it.
-    /// Returns whether the session existed.
+    /// Closes a session, releasing the mutation lease and unquiescing the
+    /// driver if it held the lease. Returns whether the session existed.
     pub fn close_session(&mut self, id: u64) -> bool {
         let existed = self.sessions.remove(&id).is_some();
         if existed && self.mutating == Some(id) {
             self.mutating = None;
+            self.quiesced.store(false, Ordering::SeqCst);
+            if let Some(hook) = &self.quiesce_hook {
+                hook(false);
+            }
         }
         existed
     }
 
-    /// Stop path: reject all new sessions. Existing sessions are closed by
-    /// their channels.
+    /// Stop path: reject all new sessions and release any active mutation
+    /// lease / quiesce state.
     pub fn reject_new_sessions(&mut self) {
         self.accepting = false;
+        if self.mutating.take().is_some() {
+            self.quiesced.store(false, Ordering::SeqCst);
+            if let Some(hook) = &self.quiesce_hook {
+                hook(false);
+            }
+        }
     }
 
     /// Whether new sessions are being accepted.
@@ -425,5 +484,51 @@ mod tests {
         // Deadline check
         assert!(mgr.check_deadline(id, 400_000_000).is_ok());
         assert_eq!(mgr.check_deadline(id, 600_000_000), Err(Denial::LimitExceeded));
+    }
+
+    #[test]
+    fn quiesce_hook_engages_on_mutating_session_and_releases_on_close_or_stop() {
+        let mut mgr = manager();
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+        mgr.set_quiesce_hook(Arc::new(move |paused| {
+            events_clone.lock().unwrap().push(paused);
+        }));
+        let flag = mgr.quiesce_flag();
+        assert!(!mgr.is_quiesced());
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // Read-only session does not trigger quiesce
+        let ro_id = open(&mut mgr, SessionMode::ReadOnly).unwrap();
+        assert!(!mgr.is_quiesced());
+        assert!(events.lock().unwrap().is_empty());
+
+        // Mutating session engages quiesce
+        let mut_id = open(&mut mgr, SessionMode::Mutating).unwrap();
+        assert!(mgr.is_quiesced());
+        assert!(flag.load(Ordering::SeqCst));
+        assert_eq!(*events.lock().unwrap(), vec![true]);
+
+        // Second mutating session fails without re-firing quiesce
+        assert_eq!(open(&mut mgr, SessionMode::Mutating), Err(OpenError::MutationLeaseHeld));
+        assert_eq!(*events.lock().unwrap(), vec![true]);
+
+        // Closing read-only session does not release quiesce
+        assert!(mgr.close_session(ro_id));
+        assert!(mgr.is_quiesced());
+        assert_eq!(*events.lock().unwrap(), vec![true]);
+
+        // Closing mutating session releases quiesce
+        assert!(mgr.close_session(mut_id));
+        assert!(!mgr.is_quiesced());
+        assert!(!flag.load(Ordering::SeqCst));
+        assert_eq!(*events.lock().unwrap(), vec![true, false]);
+
+        // Re-opening mutating session and stopping driver also releases quiesce
+        let _mut_id2 = open(&mut mgr, SessionMode::Mutating).unwrap();
+        assert!(mgr.is_quiesced());
+        mgr.reject_new_sessions();
+        assert!(!mgr.is_quiesced());
+        assert_eq!(*events.lock().unwrap(), vec![true, false, true, false]);
     }
 }

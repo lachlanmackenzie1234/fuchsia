@@ -1283,7 +1283,7 @@ Changesets continue the global numbering from Phase 1:
 
 - [x] CS24 `[driver-lab] Core library extraction & pre-mapped MMIO adapter`
 - [x] CS25 `[driver-lab] Embedded Rust driver library with ServiceFs integration`
-- [ ] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
+- [x] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
 - [ ] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
 - [ ] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
 - [ ] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`

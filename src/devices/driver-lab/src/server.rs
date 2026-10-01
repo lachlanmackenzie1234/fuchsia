@@ -342,6 +342,13 @@ fn open_session(
         }
     };
     state.audit.append(record);
+    if let Ok(id) = &result {
+        if mode == SessionMode::Mutating {
+            let mut q_record = AuditRecord::lifecycle("quiesce_engaged", now_ns());
+            q_record.session = Some(*id);
+            state.audit.append(q_record);
+        }
+    }
     result
 }
 
@@ -3052,7 +3059,14 @@ async fn serve_session(
     // audit the closure.
     let mut state = state.inner.lock().unwrap();
     state.interrupts.cancel_waiters();
+    let was_mutating =
+        state.sessions.session(id).map(|s| s.mode == SessionMode::Mutating).unwrap_or(false);
     if state.sessions.close_session(id) {
+        if was_mutating {
+            let mut q_record = AuditRecord::lifecycle("quiesce_released", now_ns());
+            q_record.session = Some(id);
+            state.audit.append(q_record);
+        }
         let mut record = AuditRecord::lifecycle("session_closed", now_ns());
         record.session = Some(id);
         state.audit.append(record);
