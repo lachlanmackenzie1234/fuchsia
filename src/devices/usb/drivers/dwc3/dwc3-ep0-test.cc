@@ -1649,12 +1649,10 @@ TEST_F(UnmanagedTestFixture, TwoStageControlOutThenNextSetupPacket) {
   });
 
   // Verify that the driver decoded the next request
-  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
-      [&]() {
-        return received_request->load() ==
-               fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor);
-      },
-      zx::sec(10)));
+  dut_.runtime().RunUntil([&]() {
+    return received_request->load() ==
+           fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor);
+  });
   EXPECT_EQ(received_request->load(),
             fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor));
 
