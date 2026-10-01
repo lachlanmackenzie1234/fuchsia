@@ -6,12 +6,12 @@ use crate::match_common::{get_composite_rules_from_composite_driver, node_to_dev
 use crate::resolved_driver::ResolvedDriver;
 use crate::rkyv_ext;
 use bind::compiler::Symbol;
-use bind::compiler::symbol_table::{get_deprecated_key_identifier, get_deprecated_key_value};
+use bind::compiler::symbol_table::{get_deprecated_key_identifier_str, get_deprecated_key_value};
 use bind::interpreter::match_bind::{
     DeviceProperties, MatchBindData, PropertyKey, PropertyKeyLookup, PropertyKeyRef, match_bind,
 };
 use fidl_fuchsia_driver_framework as fdf;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, btree_map};
 use zx::Status;
 use zx::sys::zx_status_t;
 
@@ -99,9 +99,9 @@ pub fn convert_fidl_to_bind_rules(
         let key = PropertyKey::StringKey(fidl_rule.key.clone());
 
         // Check if the properties contain duplicate keys.
-        if bind_rules.contains_key(&key) {
+        let btree_map::Entry::Vacant(entry) = bind_rules.entry(key) else {
             return Err(Status::INVALID_ARGS.into_raw());
-        }
+        };
 
         let first_val = fidl_rule.values.first().ok_or_else(|| Status::INVALID_ARGS.into_raw())?;
         let values = fidl_rule
@@ -112,26 +112,23 @@ pub fn convert_fidl_to_bind_rules(
                 if std::mem::discriminant(first_val) != std::mem::discriminant(val) {
                     return Err(Status::INVALID_ARGS.into_raw());
                 }
-                Ok(node_property_to_symbol(val)?)
+                node_property_to_symbol(val)
             })
             .collect::<Result<Vec<Symbol>, zx_status_t>>()?;
 
-        bind_rules
-            .insert(key, BindRuleCondition { condition: fidl_rule.condition, values: values });
+        entry.insert(BindRuleCondition { condition: fidl_rule.condition, values });
     }
     Ok(bind_rules)
 }
 
 pub fn node_property_to_symbol(value: &fdf::NodePropertyValue) -> Result<Symbol, zx_status_t> {
     match value {
-        fdf::NodePropertyValue::IntValue(i) => {
-            Ok(bind::compiler::Symbol::NumberValue(i.clone().into()))
-        }
+        fdf::NodePropertyValue::IntValue(i) => Ok(bind::compiler::Symbol::NumberValue((*i).into())),
         fdf::NodePropertyValue::StringValue(s) => {
             Ok(bind::compiler::Symbol::StringValue(s.clone()))
         }
         fdf::NodePropertyValue::EnumValue(s) => Ok(bind::compiler::Symbol::EnumValue(s.clone())),
-        fdf::NodePropertyValue::BoolValue(b) => Ok(bind::compiler::Symbol::BoolValue(b.clone())),
+        fdf::NodePropertyValue::BoolValue(b) => Ok(bind::compiler::Symbol::BoolValue(*b)),
         _ => Err(Status::INVALID_ARGS.into_raw()),
     }
 }
@@ -147,29 +144,28 @@ pub fn get_driver_url(composite: &fdf::CompositeDriverMatch) -> String {
 
 pub fn match_node(bind_rules: &BindRules, device_properties: &DeviceProperties) -> bool {
     for (key, node_prop_values) in bind_rules.iter() {
-        let mut dev_prop_contains_value = match device_properties.get(key) {
+        let dev_prop_contains_value = match device_properties.get(key) {
             Some(val) => node_prop_values.values.contains(val),
-            None => false,
-        };
-
-        // If the properties don't contain the key, try to convert it to a deprecated
-        // key and check the properties with it.
-        if !dev_prop_contains_value && !device_properties.contains_key(key) {
-            let deprecated_key = match key {
-                PropertyKey::NumberKey(int_key) => get_deprecated_key_identifier(*int_key as u32)
-                    .map(|key| PropertyKey::StringKey(key)),
-                PropertyKey::StringKey(str_key) => {
-                    get_deprecated_key_value(str_key).map(|key| PropertyKey::NumberKey(key as u64))
-                }
-            };
-
-            if let Some(key) = deprecated_key {
-                dev_prop_contains_value = match device_properties.get(&key) {
-                    Some(val) => node_prop_values.values.contains(val),
-                    None => false,
+            None => {
+                // If the properties don't contain the key, try to convert it to a deprecated
+                // key and check the properties with it.
+                let deprecated_val = match key {
+                    PropertyKey::NumberKey(int_key) => {
+                        get_deprecated_key_identifier_str(*int_key as u32).and_then(|dep_key| {
+                            device_properties
+                                .get(&PropertyKeyRef::StringKey(dep_key) as &dyn PropertyKeyLookup)
+                        })
+                    }
+                    PropertyKey::StringKey(str_key) => {
+                        get_deprecated_key_value(str_key).and_then(|dep_key| {
+                            device_properties.get(&PropertyKeyRef::NumberKey(dep_key as u64)
+                                as &dyn PropertyKeyLookup)
+                        })
+                    }
                 };
+                deprecated_val.is_some_and(|val| node_prop_values.values.contains(val))
             }
-        }
+        };
 
         let evaluate_condition = match node_prop_values.condition {
             fdf::Condition::Accept => {

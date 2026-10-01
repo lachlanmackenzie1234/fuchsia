@@ -92,7 +92,8 @@ impl CompositeNodeSpecManager {
         // they're all verified to be valid.
         // TODO(https://fxbug.dev/42056805): Update tests so that we can verify that properties exists in
         // each parent ref.
-        let mut parent_refs: Vec<(BindRules, CompositeParentRef)> = vec![];
+        let mut parent_refs: Vec<(BindRules, CompositeParentRef)> =
+            Vec::with_capacity(parents.len());
         for (idx, parent) in parents.iter().enumerate() {
             let bind_rules = convert_fidl_to_bind_rules(&parent.bind_rules)?;
             parent_refs
@@ -101,10 +102,7 @@ impl CompositeNodeSpecManager {
 
         // Add each parent ref into the map.
         for (bind_rules, parent_ref) in parent_refs {
-            self.parent_refs
-                .entry(bind_rules)
-                .and_modify(|refs| refs.push(parent_ref.clone()))
-                .or_insert_with(|| vec![parent_ref]);
+            self.parent_refs.entry(bind_rules).or_default().push(parent_ref);
         }
 
         let matched_composite_result = find_composite_driver_match(&parents, &composite_drivers);
@@ -136,10 +134,10 @@ impl CompositeNodeSpecManager {
         &self,
         properties: &DeviceProperties,
     ) -> Option<fdi::MatchDriverResult> {
-        let mut matching_refs: Vec<CompositeParentRef> = vec![];
+        let mut matching_refs: Vec<&CompositeParentRef> = vec![];
         for (node_props, parent_ref_list) in self.parent_refs.iter() {
-            if match_node(&node_props, properties) {
-                matching_refs.extend_from_slice(parent_ref_list.as_slice());
+            if match_node(node_props, properties) {
+                matching_refs.extend(parent_ref_list.iter());
             }
         }
 
@@ -149,7 +147,8 @@ impl CompositeNodeSpecManager {
 
         // Put in the matched composite info for this spec that we have stored in
         // |spec_list|.
-        let mut composite_parents_result: Vec<fdf::CompositeParent> = vec![];
+        let mut composite_parents_result: Vec<fdf::CompositeParent> =
+            Vec::with_capacity(matching_refs.len());
         for matching_ref in matching_refs {
             let composite_info = self.spec_list.get(&matching_ref.name);
             match composite_info {
