@@ -129,7 +129,6 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
     }
 
     /// Returns a reference to the underlying raw lock.
-    #[cfg(any(test, ktest))]
     #[inline]
     pub fn raw_mutex(&self) -> &M {
         &self.mutex

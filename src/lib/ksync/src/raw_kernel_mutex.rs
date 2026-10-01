@@ -15,6 +15,7 @@ unsafe extern "C" {
     fn cpp_mutex_destroy(mutex: *mut c_void);
     fn cpp_mutex_acquire(lock: *mut c_void, entry_storage: *mut c_void);
     fn cpp_mutex_release(lock: *mut c_void, entry_storage: *mut c_void);
+    fn cpp_mutex_is_contested(lock: *mut c_void) -> bool;
 
     fn cpp_critical_mutex_destroy(mutex: *mut c_void);
     fn cpp_critical_mutex_acquire(lock: *mut c_void, entry_storage: *mut c_void) -> bool;
@@ -23,6 +24,7 @@ unsafe extern "C" {
         entry_storage: *mut c_void,
         should_clear: bool,
     );
+    fn cpp_critical_mutex_is_contested(lock: *mut c_void) -> bool;
 }
 
 const MUTEX_MAGIC: u32 = 0x6D757478; // 'mutx'
@@ -77,6 +79,16 @@ impl RawMutex {
             class_id: _class_id,
             storage: RawMutexStorage(zr::OpaqueBytes::new(make_mutex_storage())),
         }
+    }
+
+    /// Is the mutex contested i.e. is at least one thread blocked waiting on it?
+    ///
+    /// The contested flag does not track threads which are spin-waiting on the
+    /// Mutex and have yet to enter a blocking phase.
+    #[inline]
+    pub fn is_contested(&self) -> bool {
+        // SAFETY: The FFI call is safe because the lock is initialized
+        unsafe { cpp_mutex_is_contested(self.as_mut_ptr()) }
     }
 
     /// Returns a slice over the raw mutex storage bytes.
@@ -178,6 +190,16 @@ impl RawCriticalMutex {
             class_id: _class_id,
             storage: RawMutexStorage(zr::OpaqueBytes::new(make_mutex_storage())),
         }
+    }
+
+    /// Is the mutex contested i.e. is at least one thread blocked waiting on it?
+    ///
+    /// The contested flag does not track threads which are spin-waiting on the
+    /// Mutex and have yet to enter a blocking phase.
+    #[inline]
+    pub fn is_contested(&self) -> bool {
+        // SAFETY: The FFI call is safe because the lock is initialized
+        unsafe { cpp_critical_mutex_is_contested(self.as_mut_ptr()) }
     }
 
     /// Returns a slice over the raw critical mutex storage bytes.

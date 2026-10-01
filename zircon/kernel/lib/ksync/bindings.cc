@@ -116,10 +116,12 @@ extern "C" {
 void cpp_mutex_destroy(LockPtr<Mutex> mutex);
 void cpp_mutex_acquire(LockPtr<Mutex> lock, void* entry_storage);
 void cpp_mutex_release(LockPtr<Mutex> lock, void* entry_storage);
+bool cpp_mutex_is_contested(LockPtr<Mutex> lock);
 void cpp_critical_mutex_destroy(LockPtr<CriticalMutex> mutex);
 bool cpp_critical_mutex_acquire(LockPtr<CriticalMutex> lock, void* entry_storage);
 void cpp_critical_mutex_release(LockPtr<CriticalMutex> lock, void* entry_storage,
                                 bool should_clear);
+bool cpp_critical_mutex_is_contested(LockPtr<CriticalMutex> lock);
 void cpp_spinlock_init(LockPtr<SpinLock> lock, const void* class_id);
 void cpp_spinlock_destroy(LockPtr<SpinLock> lock);
 interrupt_saved_state_t cpp_spinlock_acquire_irqsave(LockPtr<SpinLock> lock, void* entry_storage);
@@ -189,6 +191,14 @@ FFI_ALWAYS_INLINE void cpp_mutex_release(LockPtr<Mutex> lock,
 #endif
 }
 
+FFI_ALWAYS_INLINE bool cpp_mutex_is_contested(LockPtr<Mutex> lock) {
+#if WITH_LOCK_DEP
+  return lock->lock().IsContested();
+#else
+  return lock->IsContested();
+#endif
+}
+
 FFI_ALWAYS_INLINE void cpp_critical_mutex_destroy(LockPtr<CriticalMutex> lock) {
 #if WITH_LOCK_DEP
   using LockType = lockdep::Lock<CriticalMutex>;
@@ -230,6 +240,14 @@ FFI_ALWAYS_INLINE void cpp_critical_mutex_release(LockPtr<CriticalMutex> lock, v
                                     : CriticalMutex::ShouldClear::No);
 #else
   lock->Release(should_clear ? CriticalMutex::ShouldClear::Yes : CriticalMutex::ShouldClear::No);
+#endif
+}
+
+FFI_ALWAYS_INLINE bool cpp_critical_mutex_is_contested(LockPtr<CriticalMutex> lock) {
+#if WITH_LOCK_DEP
+  return lock->lock().IsContested();
+#else
+  return lock->IsContested();
 #endif
 }
 
