@@ -79,7 +79,6 @@ pub fn main() {
         .add_fidl_service(Service::Control)
         .add_service_connector(Service::DebugDiagnostics)
         .add_fidl_service(Service::DebugInterfaces)
-        .add_fidl_service(Service::DnsServerWatcher)
         .add_fidl_service(Service::FilterControl)
         .add_fidl_service(Service::FilterState)
         .add_fidl_service(Service::HealthCheck)
