@@ -34,7 +34,12 @@ _TOP_KEYS = {
     "access",
     "operations",
 }
-_TARGET_KEYS = {"selector", "expected_boot_id"}
+_TARGET_KEYS = {
+    "selector",
+    "expected_boot_id",
+    "requires_recovery",
+    "requires_serial",
+}
 _NODE_KEYS = {"id", "expected_unclaimed", "expected_resource_digest"} | {
     "expected_bound_driver_url",
     "expected_topology_generation",
@@ -518,6 +523,14 @@ def validate_plan(plan: Mapping[str, object]) -> dict[str, Any]:
     if "expected_boot_id" in target_in:
         target["expected_boot_id"] = _require_str(
             target_in.get("expected_boot_id"), "target.expected_boot_id"
+        )
+    if "requires_recovery" in target_in:
+        target["requires_recovery"] = _require_bool(
+            target_in.get("requires_recovery"), "target.requires_recovery"
+        )
+    if "requires_serial" in target_in:
+        target["requires_serial"] = _require_bool(
+            target_in.get("requires_serial"), "target.requires_serial"
         )
 
     node_in = plan.get("node")

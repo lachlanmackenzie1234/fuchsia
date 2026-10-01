@@ -69,6 +69,8 @@ Remaining phase 1 work:
       (11.7, 17; milestone P5).
 - [x] CS21 `[driver-lab] Structured configuration and per-class rate limits`
       (12.1, 22).
+- [x] CS22 `[driver-lab] Serial capture and independent recovery integration`
+      (in //tools/driver-lab/SPEC.md; milestone H5).
 
 Phase: 1 -- new-driver development. The proxy binds to unclaimed nodes through
 existing Driver Framework mechanisms. Managed takeover is specified in the

@@ -46,6 +46,14 @@ from driver_lab.permissions import (
     resolve,
 )
 from driver_lab.plans import is_mutating_plan, plan_digest, validate_plan
+from driver_lab.recovery import (
+    RecoveryController,
+    SerialCapture,
+    SerialCaptureResult,
+    SerialCaptureSession,
+    detect_panic,
+    extract_panic_summary,
+)
 from driver_lab.session import (
     AccessRequirements,
     HardwareSession,
@@ -206,6 +214,12 @@ class RunResult:
         """Whether the run succeeded completely."""
         return self.exit_category == EXIT_SUCCESS
 
+    def interpret(self) -> dict[str, Any]:
+        """Generates evidence-linked interpretation report per Spec Section 17."""
+        from driver_lab.recovery import interpret_evidence
+
+        return interpret_evidence(self.evidence_dir)
+
 
 @dataclasses.dataclass(frozen=True)
 class _ReadOp:
@@ -267,6 +281,8 @@ class DriverLab:
         consent: ConsentPrompt | None = None,
         discovery: NodeDiscovery | None = None,
         activator: ProxyActivator | None = None,
+        serial_capture: SerialCapture | None = None,
+        recovery: RecoveryController | None = None,
     ) -> None:
         self._transport = transport
         self._grants_path = grants_path
@@ -276,6 +292,28 @@ class DriverLab:
         self._consent = consent
         self._discovery = discovery
         self._activator = activator
+        self._serial_capture = serial_capture
+        self._recovery = recovery
+
+    @property
+    def serial_capture(self) -> SerialCapture | None:
+        return self._serial_capture
+
+    @property
+    def recovery(self) -> RecoveryController | None:
+        return self._recovery
+
+    async def recover_target(self, mode: str = "normal") -> None:
+        """Triggers out-of-band recovery.
+
+        Per Spec Section 14.3: Recovery creates a new run context; it does
+        not resume old mutations or retry failed operations.
+        """
+        if self._recovery is None:
+            raise DriverLabError(
+                "no recovery controller configured for this DriverLab instance"
+            )
+        await self._recovery.reboot(mode=mode)
 
     async def list_nodes(
         self,
@@ -335,6 +373,8 @@ class DriverLab:
         consent: ConsentPrompt | None = None,
         discovery: NodeDiscovery | None = None,
         activator: ProxyActivator | None = None,
+        serial_capture: SerialCapture | None = None,
+        recovery: RecoveryController | None = None,
         proxy_transport: ProxyTransport | None = None,
         direct_transport: DirectTransport | None = None,
     ) -> "DriverLab":
@@ -383,6 +423,8 @@ class DriverLab:
             consent=consent,
             discovery=discovery,
             activator=activator,
+            serial_capture=serial_capture,
+            recovery=recovery,
         )
 
     async def attach(
@@ -928,12 +970,27 @@ class DriverLab:
         polls: list[PollRecord] = []
         sequences: list[SequenceRecord] = []
         calls: list[Mapping[str, Any]] = []
-
+        serial_session: SerialCaptureSession | None = None
+        serial_result: SerialCaptureResult | None = None
         was_proxy_activated = False
         teardown_done = False
 
         async def finish(exit_category: int, failure: str | None) -> RunResult:
-            nonlocal was_proxy_activated, teardown_done
+            nonlocal was_proxy_activated, teardown_done, serial_result
+            if serial_session is not None and serial_result is None:
+                try:
+                    serial_result = await serial_session.stop()
+                    recorder.write_bytes("serial.log", serial_result.data)
+                    if serial_result.contains_panic and failure is None:
+                        exit_category = EXIT_TRANSPORT
+                        failure = (
+                            "target kernel panic detected in serial log: "
+                            f"{serial_result.panic_summary}"
+                        )
+                except Exception as exc:
+                    if failure is None:
+                        failure = f"stopping serial capture failed: {exc}"
+
             if was_proxy_activated and not teardown_done:
                 teardown_done = True
                 node_id = canonical["node"]["id"]
@@ -961,14 +1018,19 @@ class DriverLab:
             for name in _DEFERRED_ARTIFACTS + _NOT_APPLICABLE_ARTIFACTS:
                 if not recorder.recorded(name):
                     recorder.mark_not_applicable(name)
+            manifest_extra: dict[str, Any] = {
+                "run_id": canonical["run_id"],
+                "case_id": canonical["case_id"],
+                "plan_digest": digest,
+                "failure": failure,
+            }
+            if serial_result is not None:
+                manifest_extra[
+                    "serial_capture"
+                ] = serial_result.to_manifest_metadata()
             recorder.finalize(
                 exit_category,
-                {
-                    "run_id": canonical["run_id"],
-                    "case_id": canonical["case_id"],
-                    "plan_digest": digest,
-                    "failure": failure,
-                },
+                manifest_extra,
             )
             return RunResult(
                 exit_category=exit_category,
@@ -1044,6 +1106,45 @@ class DriverLab:
                     EXIT_UNSUPPORTED,
                     "proxy mode in phase 1 does not support fidl_call",
                 )
+
+        # Spec 14.1 Step 9: Verify independent serial/recovery availability.
+        requires_recovery = canonical["target"].get("requires_recovery", False)
+        if requires_recovery:
+            if self._recovery is None:
+                return await finish(
+                    EXIT_UNSUPPORTED,
+                    "target.requires_recovery specified but no recovery controller configured",
+                )
+            if not await self._recovery.is_available():
+                return await finish(
+                    EXIT_ACTIVATION,
+                    "independent recovery channel is unavailable",
+                )
+
+        requires_serial = canonical["target"].get("requires_serial", False)
+        if requires_serial:
+            if self._serial_capture is None:
+                return await finish(
+                    EXIT_UNSUPPORTED,
+                    "target.requires_serial specified but no serial capture configured",
+                )
+            if not await self._serial_capture.is_available():
+                return await finish(
+                    EXIT_ACTIVATION,
+                    "serial capture channel is unavailable",
+                )
+
+        # Spec 14.2 Step 2: Start serial and liveness capture.
+        if self._serial_capture is not None:
+            try:
+                if await self._serial_capture.is_available():
+                    serial_session = await self._serial_capture.start()
+            except Exception as exc:
+                if requires_serial:
+                    return await finish(
+                        EXIT_ACTIVATION,
+                        f"starting serial capture failed: {exc}",
+                    )
 
         if "expected_unclaimed" in canonical["node"] or (
             requested_mode == "proxy"
@@ -1534,6 +1635,25 @@ class DriverLab:
                 )
                 exit_category = EXIT_TRANSPORT
                 failure = f"operation failed: {error}"
+                if serial_session is not None:
+                    try:
+                        curr_log = await serial_session.get_current_log()
+                        if detect_panic(curr_log):
+                            panic_sum = extract_panic_summary(curr_log)
+                            failure = (
+                                "target kernel panic detected: " f"{panic_sum}"
+                            )
+                    except Exception:
+                        pass
+                if self._recovery is not None:
+                    try:
+                        if not await self._recovery.check_liveness():
+                            if "panic" not in str(failure):
+                                failure = (
+                                    f"target liveness check failed: {failure}"
+                                )
+                    except Exception:
+                        pass
                 break
             except (KeyboardInterrupt, asyncio.CancelledError):
                 # Operator cancellation stops execution but never skips

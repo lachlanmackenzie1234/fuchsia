@@ -81,7 +81,8 @@ Remaining phase 1 work:
       (11.7, 17; milestone P5).
 - [x] CS21 `[driver-lab] Structured configuration and per-class rate limits`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] Serial capture and independent recovery integration (3, 14.1; milestone H5).
+- [x] CS22 `[driver-lab] Serial capture and independent recovery integration`
+      (3, 14.1; milestone H5).
 - [ ] Register-metadata-backed consent expansion (10.2; open decision 8).
 
 Phase: 1 -- new-driver development. Covers direct mode and proxy access on

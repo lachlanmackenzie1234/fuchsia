@@ -25,6 +25,7 @@ python_library("driver_lab") {
     "permissions.py",
     "plans.py",
     "policy.py",
+    "recovery.py",
     "session.py",
     "transport.py",
   ]
@@ -82,6 +83,11 @@ if (is_host) {
     libraries = [ ":driver_lab" ]
   }
 
+  python_host_test("driver_lab_recovery_test") {
+    main_source = "tests/recovery_test.py"
+    libraries = [ ":driver_lab" ]
+  }
+
   python_host_test("driver_lab_session_test") {
     main_source = "tests/session_test.py"
     libraries = [ ":driver_lab" ]
@@ -111,6 +117,7 @@ group("tests") {
     ":driver_lab_permissions_test($host_toolchain)",
     ":driver_lab_plans_test($host_toolchain)",
     ":driver_lab_policy_test($host_toolchain)",
+    ":driver_lab_recovery_test($host_toolchain)",
     ":driver_lab_session_test($host_toolchain)",
   ]
 }
