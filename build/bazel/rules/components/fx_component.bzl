@@ -51,7 +51,7 @@ Explicitly setting this is necessary for sandboxed build action execution.""",
         ),
         "_cmc_tool": attr.label(
             doc = "The path to the component manifest compiler (cmc) tool.",
-            default = "@gn_targets//toolchain_host_x64/tools/cmc:cmc",
+            default = "//tools/cmc:cmc",
             executable = True,
             cfg = "exec",
         ),

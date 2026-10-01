@@ -34,7 +34,7 @@ def _build_fuchsia_package_impl(ctx):
         ctx,
         ffx_package = ctx.executable._package_tool,
         ffx_package_is_ffx = False,
-        cmc_tool = ctx.file._cmc_tool,
+        cmc_tool = ctx.executable._cmc_tool,
         fuchsia_debug_symbol_info = fuchsia_debug_symbol_info,
         api_level = ctx.attr._current_api_level[BuildSettingInfo].value,
     )
@@ -55,9 +55,9 @@ _build_fuchsia_package = rule(
             cfg = "exec",
         ),
         "_cmc_tool": attr.label(
-            # TODO(b/519243783): Replace with a Bazel label once `cmc` is migrated to Bazel.
-            default = "@gn_targets//toolchain_host_x64/tools/cmc",
-            allow_single_file = True,
+            default = "//tools/cmc:cmc",
+            executable = True,
+            cfg = "exec",
         ),
         "_current_api_level": attr.label(
             default = "@//build/bazel/versioning:api_level",

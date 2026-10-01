@@ -71,6 +71,7 @@ DATA_ATOMS = [
 
 BUILD_HOST_TOOLS_ATOMS = [
     # buildifier: keep sorted
+    "//tools/cmc:cmc_idk",
     "//tools/fidl/fidlc:fidl-format_idk",
     "//tools/fidl/fidlc:fidlc_idk",
     "//tools/fidl/fidlgen_cpp:fidlgen_cpp_idk",

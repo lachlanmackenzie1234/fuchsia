@@ -14,7 +14,7 @@ if (is_host) {
       "//tools/build",
       "//tools/bundle_fetcher",
       "//tools/clidoc",
-      "//tools/cmc:install",
+      "//tools/cmc",
       "//tools/component_id_index",
       "//tools/component_manager_config",
       "//tools/configc:install",
