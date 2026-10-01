@@ -1192,7 +1192,7 @@ Changesets continue the global numbering:
 
 - [x] CS24 `[driver-lab] Core library extraction & pre-mapped MMIO adapter`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS25 `[driver-lab] Embedded Rust driver library with ServiceFs integration`
+- [x] CS25 `[driver-lab] Embedded Rust driver library with ServiceFs integration`
       (in //src/devices/driver-lab/SPEC.md).
 - [ ] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
       (in //src/devices/driver-lab/SPEC.md).

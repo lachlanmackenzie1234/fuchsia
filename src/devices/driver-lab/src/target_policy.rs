@@ -242,6 +242,68 @@ impl TargetPolicyManifest {
         }
     }
 
+    /// Constructs a canonical target policy manifest from offered resources and
+    /// their configured per-resource ceiling entries (including `hard_denied`
+    /// ranges and `writable_registers`).
+    pub fn from_bundle_ceiling(
+        resources: &BTreeMap<ResourceId, MmioResource>,
+        ceiling: &BTreeMap<ResourceId, ResourceCeiling>,
+        allow_mutating_sessions: bool,
+    ) -> Self {
+        let resource_manifests = resources
+            .iter()
+            .map(|(id, res)| {
+                if let Some(c) = ceiling.get(id) {
+                    ResourcePolicyManifest {
+                        id: *id,
+                        name: res.name.clone(),
+                        allow_interrupt: c.allow_interrupt,
+                        allow_unknown_reads: c.allow_unknown_reads,
+                        allow_poll: c.allow_poll,
+                        hard_denied: c
+                            .hard_denied
+                            .iter()
+                            .filter_map(|r| RangeDto::new(r.start, r.end).ok())
+                            .collect(),
+                        writable_registers: c
+                            .writable_registers
+                            .iter()
+                            .map(|w| WritableRegisterDto {
+                                allow_mask: w.allow_mask,
+                                allow_rmw: w.allow_rmw,
+                                offset: w.offset,
+                                precondition_mask: w.precondition_mask,
+                                readback: w.readback,
+                                require_precondition: w.require_precondition,
+                                width: w.width,
+                            })
+                            .collect(),
+                    }
+                } else {
+                    ResourcePolicyManifest {
+                        id: *id,
+                        name: res.name.clone(),
+                        allow_interrupt: res.kind == ResourceKind::Interrupt,
+                        allow_unknown_reads: false,
+                        allow_poll: false,
+                        hard_denied: vec![],
+                        writable_registers: vec![],
+                    }
+                }
+            })
+            .collect();
+
+        let mut manifest = Self {
+            schema_version: TARGET_POLICY_SCHEMA_VERSION,
+            allow_mutating_sessions,
+            max_snapshot_items: MAX_SNAPSHOT_ITEMS,
+            audit_capacity: 1024,
+            resources: resource_manifests,
+        };
+        let _ = manifest.canonicalize();
+        manifest
+    }
+
     /// Validates and canonicalizes the manifest.
     pub fn canonicalize(&mut self) -> Result<(), PolicyValidationError> {
         if self.schema_version != TARGET_POLICY_SCHEMA_VERSION {

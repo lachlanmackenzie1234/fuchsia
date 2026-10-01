@@ -13,10 +13,12 @@
 //!   Clock, Reset, Serial).
 //! - [`server`]: `fuchsia.driver.lab` FIDL service and session server.
 
+pub mod embedded;
 pub mod fuchsia_backends;
 pub mod platform_provider;
 pub mod server;
 
+pub use embedded::{DriverLabBuilder, EmbeddedLabServer};
 pub use fuchsia_backends::LiveBackend;
 pub use lab_proxy_core as core;
 pub use platform_provider::MappedMmio;

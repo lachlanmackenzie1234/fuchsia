@@ -1282,7 +1282,7 @@ takeover, subtree teardown) live in the Phase 2 section of this document.
 Changesets continue the global numbering from Phase 1:
 
 - [x] CS24 `[driver-lab] Core library extraction & pre-mapped MMIO adapter`
-- [ ] CS25 `[driver-lab] Embedded Rust driver library with ServiceFs integration`
+- [x] CS25 `[driver-lab] Embedded Rust driver library with ServiceFs integration`
 - [ ] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
 - [ ] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
 - [ ] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
