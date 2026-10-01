@@ -1209,7 +1209,7 @@ Changesets continue the global numbering:
       (in //src/devices/driver-lab/SPEC.md).
 - [x] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
+- [x] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
       (in //src/devices/driver-lab/SPEC.md).
 - [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
       (in //src/devices/driver-lab/SPEC.md).

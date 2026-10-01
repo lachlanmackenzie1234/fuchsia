@@ -112,6 +112,29 @@ rustc_staticlib("driver_lab_c") {
   ]
 }
 
+config("driver_lab_cpp_include") {
+  include_dirs = [ "cpp/include" ]
+}
+
+# Idiomatic C++20 wrapper and StateVmoBank over driver_lab_c.
+source_set("driver_lab_cpp") {
+  public = [
+    "cpp/include/lib/driver_lab/driver_lab.h",
+    "cpp/include/lib/driver_lab/driver_lab_c.h",
+  ]
+  sources = [ "cpp/driver_lab.cc" ]
+  public_configs = [ ":driver_lab_cpp_include" ]
+  public_deps = [
+    ":driver_lab_c",
+    "fidl:fuchsia.driver.lab_cpp",
+    "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/driver/outgoing/cpp",
+    "//sdk/lib/fit",
+    "//sdk/lib/stdcompat",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
 fuchsia_rust_driver("driver") {
   testonly = true
   edition = "2024"

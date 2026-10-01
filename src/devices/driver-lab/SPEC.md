@@ -999,7 +999,9 @@ src/devices/driver-lab/
         interrupt_tracker.rs           planned (P5)
     cpp/
         include/lib/driver_lab/
+            driver_lab.h         idiomatic C++20 wrapper and StateVmoBank
             driver_lab_c.h       pure C ABI declarations and global state helpers
+        driver_lab.cc            C++20 wrapper and StateVmoBank implementation
     policy/                            planned: schema and generation
     bind/
 
@@ -1306,7 +1308,7 @@ Changesets continue the global numbering from Phase 1:
 - [x] CS34 `[driver-lab] Expose FIDL and debug shard to Bazel`
 - [x] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
 - [x] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
-- [ ] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
+- [x] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
 - [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
 
 Phase: 2 -- existing-driver in-situ inspection and live debugging via embedded library.
@@ -1391,6 +1393,11 @@ ring buffering, and sequence execution remain single-sourced in Rust:
   and provides process-wide global state/knob helpers
   (`driver_lab_global_set_state_u32` and `driver_lab_global_get_knob_u32`) for
   legacy `.c` files.
+- `driver_lab_cpp` (`cpp/include/lib/driver_lab/driver_lab.h` and
+  `cpp/driver_lab.cc`) provides RAII C++20 wrappers in `namespace driver_lab`:
+  `StateVmoBank` (shared-memory VMO bank for telemetry/state and host-tunable
+  fault-injection knobs), `Builder`, and `EmbeddedServer` (integrating with
+  `fdf::OutgoingDirectory` and `component::OutgoingDirectory`).
 
 ### 4. Production absence and security gating
 

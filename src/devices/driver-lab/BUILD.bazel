@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_prebuilt_package")
 load("@rules_rust//rust:defs.bzl", "rust_static_library")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
@@ -89,6 +90,25 @@ rust_static_library(
         "//sdk/rust/zx",
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+cc_library(
+    name = "driver_lab_cpp",
+    srcs = ["cpp/driver_lab.cc"],
+    hdrs = [
+        "cpp/include/lib/driver_lab/driver_lab.h",
+        "cpp/include/lib/driver_lab/driver_lab_c.h",
+    ],
+    includes = ["cpp/include"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":driver_lab_c",
+        "//sdk/lib/component/outgoing/cpp",
+        "//sdk/lib/fit",
+        "//sdk/lib/stdcompat",
+        "//src/devices/driver-lab/fidl:fuchsia.driver.lab_cpp",
+        "//zircon/system/ulib/zx",
     ],
 )
 
