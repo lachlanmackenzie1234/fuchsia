@@ -11,6 +11,8 @@
 #include <lib/zx/clock.h>
 #include <zircon/utc.h>
 
+#include <cstring>
+
 #include <Weave/Core/WeaveTLV.h>
 
 #include "fake_weave_signer.h"
@@ -19,6 +21,22 @@
 #include "weave_test_fixture.h"
 
 namespace weave::adaptation::testing {
+
+// Helper to access private member WeaveKeyExport::mMsgInfo.
+struct WeaveKeyExportMsgInfoTag {
+  using type = const nl::Weave::WeaveMessageInfo*
+      nl::Weave::Profiles::Security::KeyExport::WeaveKeyExport::*;
+  friend type get(WeaveKeyExportMsgInfoTag);
+};
+
+template <typename Tag, typename Tag::type M>
+struct WeaveKeyExportPrivateMemberAccess {
+  friend typename Tag::type get(Tag) { return M; }
+};
+
+template struct WeaveKeyExportPrivateMemberAccess<
+    WeaveKeyExportMsgInfoTag, &nl::Weave::Profiles::Security::KeyExport::WeaveKeyExport::mMsgInfo>;
+
 namespace {
 
 using nl::Ble::PacketBuffer;
@@ -602,25 +620,35 @@ TEST_F(PlatformAuthDelegateTest, KeyExport_GetNodeCertSetInvalidCert) {
 }
 
 TEST_F(PlatformAuthDelegateTest, KeyExport_HandleCertValidationResult) {
-  constexpr uint8_t kAttrValue[] = "TEST";
+  constexpr uint64_t kPeerNodeId = 12345U;
   WeaveKeyExport key_export;
   ValidationContext valid_ctx;
   WeaveCertificateSet cert_set;
   WeaveCertificateData signing_cert;
+  WeaveCertificateData trust_anchor;
   WeaveCertificateData valid_signing_cert;
+  WeaveCertificateData valid_trust_anchor;
 
-  // Construct valid signing certificate.
+  // Initialize key_export's MessageInfo to mock peer node ID.
+  nl::Weave::WeaveMessageInfo msg_info;
+  msg_info.SourceNodeId = kPeerNodeId;
+
+  key_export.*get(WeaveKeyExportMsgInfoTag{}) = &msg_info;
+
+  // Construct valid trust anchor (Access Token certificate).
+  valid_ctx.TrustAnchor = &trust_anchor;
+  valid_ctx.TrustAnchor->CertFlags |= Security::kCertFlag_IsTrusted;
+  valid_ctx.TrustAnchor->CertType = nl::Weave::kCertType_AccessToken;
+  valid_trust_anchor = trust_anchor;
+
+  // Construct valid signing certificate (Device certificate).
   valid_ctx.SigningCert = &signing_cert;
-  valid_ctx.SigningCert->CertFlags |= Security::kCertFlag_IsTrusted;
-  valid_ctx.SigningCert->SubjectDN.AttrOID = ASN1::kOID_AttributeType_CommonName;
-  valid_ctx.SigningCert->SubjectDN.AttrValue.String.Value = kAttrValue;
-  valid_ctx.SigningCert->SubjectDN.AttrValue.String.Len = sizeof(kAttrValue);
-  valid_ctx.SigningCert->IssuerDN = valid_ctx.SigningCert->SubjectDN;
+  valid_ctx.SigningCert->CertType = nl::Weave::kCertType_Device;
+  valid_ctx.SigningCert->SubjectDN.AttrOID = ASN1::kOID_AttributeType_WeaveDeviceId;
+  valid_ctx.SigningCert->SubjectDN.AttrValue.WeaveId = kPeerNodeId;
   valid_signing_cert = signing_cert;
 
-  valid_ctx.SigningCert->IssuerDN.IsEqual(valid_ctx.SigningCert->SubjectDN);
-
-  // Approve if self-signed, trusted, matching SubjectDN + IssuerDN, CommonName.
+  // Approve if trust anchor is AccessToken, and signing cert is Device matching PeerNodeId.
   EXPECT_EQ(platform_auth_delegate().HandleCertValidationResult(&key_export, valid_ctx, cert_set,
                                                                 WeaveKeyId::kClientRootKey),
             WEAVE_NO_ERROR);
@@ -630,22 +658,43 @@ TEST_F(PlatformAuthDelegateTest, KeyExport_HandleCertValidationResult) {
                                                                 WeaveKeyId::kFabricRootKey),
             WEAVE_ERROR_UNAUTHORIZED_KEY_EXPORT_RESPONSE);
 
-  // Reject if cert flags are not trusted.
-  valid_ctx.SigningCert->CertFlags &= ~Security::kCertFlag_IsTrusted;
+  // Reject if trust anchor is null.
+  valid_ctx.TrustAnchor = nullptr;
+  EXPECT_EQ(platform_auth_delegate().HandleCertValidationResult(&key_export, valid_ctx, cert_set,
+                                                                WeaveKeyId::kClientRootKey),
+            WEAVE_ERROR_UNAUTHORIZED_KEY_EXPORT_RESPONSE);
+  valid_ctx.TrustAnchor = &trust_anchor;
+
+  // Reject if trust anchor is not AccessToken certificate.
+  valid_ctx.TrustAnchor->CertType = nl::Weave::kCertType_Device;
+  EXPECT_EQ(platform_auth_delegate().HandleCertValidationResult(&key_export, valid_ctx, cert_set,
+                                                                WeaveKeyId::kClientRootKey),
+            WEAVE_ERROR_UNAUTHORIZED_KEY_EXPORT_RESPONSE);
+  *valid_ctx.TrustAnchor = valid_trust_anchor;
+
+  // Reject if signing cert is null.
+  valid_ctx.SigningCert = nullptr;
+  EXPECT_EQ(platform_auth_delegate().HandleCertValidationResult(&key_export, valid_ctx, cert_set,
+                                                                WeaveKeyId::kClientRootKey),
+            WEAVE_ERROR_UNAUTHORIZED_KEY_EXPORT_RESPONSE);
+  valid_ctx.SigningCert = &signing_cert;
+
+  // Reject if signing cert type is not Device certificate.
+  valid_ctx.SigningCert->CertType = nl::Weave::kCertType_General;
   EXPECT_EQ(platform_auth_delegate().HandleCertValidationResult(&key_export, valid_ctx, cert_set,
                                                                 WeaveKeyId::kClientRootKey),
             WEAVE_ERROR_UNAUTHORIZED_KEY_EXPORT_RESPONSE);
   *valid_ctx.SigningCert = valid_signing_cert;
 
-  // Reject if SubjectDN doesn't have the CommonName attribute.
-  valid_ctx.SigningCert->SubjectDN.AttrOID = ASN1::kOID_AttributeType_WeaveDeviceId;
+  // Reject if SubjectDN is not WeaveDeviceId.
+  valid_ctx.SigningCert->SubjectDN.AttrOID = ASN1::kOID_AttributeType_CommonName;
   EXPECT_EQ(platform_auth_delegate().HandleCertValidationResult(&key_export, valid_ctx, cert_set,
                                                                 WeaveKeyId::kClientRootKey),
             WEAVE_ERROR_UNAUTHORIZED_KEY_EXPORT_RESPONSE);
   *valid_ctx.SigningCert = valid_signing_cert;
 
-  // Reject if IssuerDN doesn't match SubjectDN.
-  valid_ctx.SigningCert->IssuerDN.AttrOID = ~valid_ctx.SigningCert->SubjectDN.AttrOID;
+  // Reject if WeaveDeviceId does not match peer node ID.
+  valid_ctx.SigningCert->SubjectDN.AttrValue.WeaveId = kPeerNodeId + 1;
   EXPECT_EQ(platform_auth_delegate().HandleCertValidationResult(&key_export, valid_ctx, cert_set,
                                                                 WeaveKeyId::kClientRootKey),
             WEAVE_ERROR_UNAUTHORIZED_KEY_EXPORT_RESPONSE);
