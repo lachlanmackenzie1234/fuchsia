@@ -37,6 +37,7 @@ struct LabRootDriver {
     _node: Node,
     _scope: fasync::Scope,
     _virtual_irq: zx::VirtualInterrupt,
+    _sample_virtual_irq: zx::VirtualInterrupt,
 }
 
 driver_register!(LabRootDriver);
@@ -270,6 +271,34 @@ impl Driver for LabRootDriver {
             },
         );
 
+        let sample_vmo = make_mmio_vmo().map_err(DriverError::Status)?;
+        let mut sample_config = fake_pdev::Config::default();
+        sample_config.mmios.insert(
+            0,
+            fdevice::natural::Mmio {
+                offset: Some(0),
+                size: Some(MMIO_SIZE),
+                vmo: Some(sample_vmo),
+            },
+        );
+        let sample_virtual_irq =
+            zx::VirtualInterrupt::create_virtual().map_err(DriverError::Status)?;
+        let sample_client_irq = zx::Interrupt::from(
+            sample_virtual_irq
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .map_err(DriverError::Status)?
+                .into_handle(),
+        );
+        sample_config.irqs.insert(0, sample_client_irq);
+        sample_config.device_info = Some(fdevice::natural::NodeDeviceInfo {
+            mmio_count: Some(1),
+            irq_count: Some(1),
+            ..Default::default()
+        });
+        let sample_pdev = FakePDev::new();
+        sample_pdev.set_config(sample_config);
+        let sample_offer = sample_pdev.serve(&mut fs, scope.to_handle(), "sample-pdev");
+
         let child = NodeBuilder::new("proxy-target")
             .add_property(bind_fuchsia_driver_lab::PROXY_TARGET, true)
             .add_property(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service")
@@ -283,6 +312,13 @@ impl Driver for LabRootDriver {
             .build();
         node.add_child(child).await?;
 
+        let sample_child = NodeBuilder::new("sample-device")
+            .add_property(bind_fuchsia_driver_lab::SAMPLE_DEVICE, true)
+            .add_property(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service")
+            .add_offer(sample_offer)
+            .build();
+        node.add_child(sample_child).await?;
+
         context.serve_outgoing(&mut fs)?;
         scope.spawn(async move {
             fs.collect::<()>().await;
@@ -290,16 +326,25 @@ impl Driver for LabRootDriver {
 
         let virtual_irq_clone =
             virtual_irq.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(DriverError::Status)?;
+        let sample_irq_clone = sample_virtual_irq
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .map_err(DriverError::Status)?;
         scope.spawn(async move {
             loop {
                 fasync::Timer::new(fasync::MonotonicInstant::after(zx::Duration::from_millis(50)))
                     .await;
                 let _ = virtual_irq_clone.trigger(zx::BootInstant::from_nanos(0));
+                let _ = sample_irq_clone.trigger(zx::BootInstant::from_nanos(0));
             }
         });
 
-        info!("lab_root added proxy-target node with MMIO, IRQ, GPIO, I2C, SPI");
-        Ok(Self { _node: node, _scope: scope, _virtual_irq: virtual_irq })
+        info!("lab_root added proxy-target and sample-device nodes with MMIO, IRQ, GPIO, I2C, SPI");
+        Ok(Self {
+            _node: node,
+            _scope: scope,
+            _virtual_irq: virtual_irq,
+            _sample_virtual_irq: sample_virtual_irq,
+        })
     }
 
     async fn stop(&self) {}

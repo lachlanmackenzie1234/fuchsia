@@ -19,3 +19,9 @@ bool PROXY_TARGET {
 string LAB_ROOT {
     SELECTED = "selected",
 };
+
+// Set on the synthetic platform child node bound by the reference
+// in-situ sample driver (`lab_sample_driver`).
+bool SAMPLE_DEVICE {
+    SELECTED = true,
+};

@@ -208,6 +208,40 @@ fuchsia_unittest_package("lab_proxy-realm-test-pkg") {
   }
 }
 
+rustc_test("sample_driver_realm_test") {
+  output_name = "lab_sample_driver_realm_test"
+  edition = "2024"
+  testonly = true
+  source_root = "tests/sample_driver_realm_test.rs"
+  sources = [ "tests/sample_driver_realm_test.rs" ]
+  deps = [
+    "fidl:fuchsia.driver.lab_rust",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-component-test",
+    "//third_party/rust_crates:anyhow",
+  ]
+}
+
+fuchsia_unittest_package("lab_sample_driver-realm-test-pkg") {
+  package_name = "lab_sample_driver-realm-test"
+  deps = [
+    ":sample_driver_realm_test",
+    "testing:component",
+    "testing:sample_component",
+    "//src/devices/misc/drivers/test-parent",
+  ]
+
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
 group("tests") {
   testonly = true
   deps = [
@@ -215,6 +249,8 @@ group("tests") {
     ":driver_lab_rust-unit-test-pkg",
     ":lab_proxy-realm-test-pkg",
     ":lab_proxy-unit-test-pkg",
+    ":lab_sample_driver-realm-test-pkg",
     ":pkg",
+    "testing:pkg",
   ]
 }
