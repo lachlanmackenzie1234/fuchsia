@@ -8,6 +8,8 @@
 
 #include <lib/fit/defer.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
+#include <lib/zx/clock.h>
+#include <zircon/utc.h>
 
 #include <Weave/Core/WeaveTLV.h>
 
@@ -370,6 +372,66 @@ TEST_F(PlatformAuthDelegateTest, CASEAuth_BeginValidation) {
   EXPECT_EQ(certs.Certs[1].CertType, Weave::kCertType_CA);
   EXPECT_EQ(valid_ctx.RequiredKeyUsages, Security::kKeyUsageFlag_DigitalSignature);
   EXPECT_EQ(valid_ctx.RequiredKeyPurposes, Security::kKeyPurposeFlag_ServerAuth);
+  platform_auth_delegate().EndValidation(msg_ctx, valid_ctx, certs);
+}
+
+TEST_F(PlatformAuthDelegateTest, CASEAuth_BeginValidation_ClockNotStarted) {
+  // Create an unstarted clock and swap it in.
+  zx::clock clock;
+  ASSERT_EQ(zx::clock::create(0, nullptr, &clock), ZX_OK);
+
+  zx_handle_t prev_clock = ZX_HANDLE_INVALID;
+  ASSERT_EQ(zx_utc_reference_swap(clock.get_handle(), &prev_clock), ZX_OK);
+  auto restore_clock = fit::defer([&] {
+    zx_handle_t dummy;
+    zx_utc_reference_swap(prev_clock, &dummy);
+  });
+
+  BeginSessionContext msg_ctx;
+  ValidationContext valid_ctx;
+  WeaveCertificateSet certs;
+
+  msg_ctx.SetIsInitiator(true);
+  EXPECT_EQ(platform_auth_delegate().BeginValidation(msg_ctx, valid_ctx, certs), WEAVE_NO_ERROR);
+
+  // Since the clock is unstarted, IgnoreNotBefore should be set, and EffectiveTime should be the fallback build time.
+  EXPECT_TRUE(valid_ctx.ValidateFlags & Security::kValidateFlag_IgnoreNotBefore);
+  // Default fallback time is packed representation of May 26, 2023 00:00:00.
+  // Security::SecondsSinceEpochToPackedCertTime(1685059200U)
+  EXPECT_EQ(valid_ctx.EffectiveTime, Security::SecondsSinceEpochToPackedCertTime(1685059200U));
+
+  platform_auth_delegate().EndValidation(msg_ctx, valid_ctx, certs);
+}
+
+TEST_F(PlatformAuthDelegateTest, CASEAuth_BeginValidation_ClockStarted) {
+  // Create a started clock (by updating it) and swap it in.
+  zx::clock clock;
+  ASSERT_EQ(zx::clock::create(0, nullptr, &clock), ZX_OK);
+
+  // Update clock to start it.
+  // 1718064000U is 2024-06-11 00:00:00 UTC.
+  // Value passed to clock.update is in nanoseconds.
+  ASSERT_EQ(clock.update(zx::clock::update_args().set_value(zx::time(1718064000ULL * 1000000000ULL))),
+            ZX_OK);
+
+  zx_handle_t prev_clock = ZX_HANDLE_INVALID;
+  ASSERT_EQ(zx_utc_reference_swap(clock.get_handle(), &prev_clock), ZX_OK);
+  auto restore_clock = fit::defer([&] {
+    zx_handle_t dummy;
+    zx_utc_reference_swap(prev_clock, &dummy);
+  });
+
+  BeginSessionContext msg_ctx;
+  ValidationContext valid_ctx;
+  WeaveCertificateSet certs;
+
+  msg_ctx.SetIsInitiator(true);
+  EXPECT_EQ(platform_auth_delegate().BeginValidation(msg_ctx, valid_ctx, certs), WEAVE_NO_ERROR);
+
+  // Since the clock is started, IgnoreNotBefore should NOT be set, and EffectiveTime should be the clock time.
+  EXPECT_FALSE(valid_ctx.ValidateFlags & Security::kValidateFlag_IgnoreNotBefore);
+  EXPECT_EQ(valid_ctx.EffectiveTime, Security::SecondsSinceEpochToPackedCertTime(1718064000U));
+
   platform_auth_delegate().EndValidation(msg_ctx, valid_ctx, certs);
 }
 

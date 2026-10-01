@@ -6,6 +6,8 @@
 
 #include <fuchsia/weave/cpp/fidl.h>
 #include <lib/fit/defer.h>
+#include <lib/zx/clock.h>
+#include <zircon/utc.h>
 
 #include <Weave/Profiles/security/WeaveSig.h>
 #include <sdk/lib/syslog/cpp/macros.h>
@@ -37,6 +39,18 @@ WEAVE_ERROR GetEffectiveTime(uint32_t& effective_time) {
   // peer's certificate.
   uint64_t now_ms;
   WEAVE_ERROR err = System::Layer::GetClock_RealTimeMS(now_ms);
+
+  // If GetClock_RealTimeMS succeeded, also check if the Fuchsia UTC clock has
+  // actually started. If not, treat the clock as not synchronized.
+  if (err == WEAVE_NO_ERROR) {
+    zx_signals_t pending;
+    zx_status_t status = zx::unowned_clock(zx_utc_reference_get())
+                             ->wait_one(ZX_CLOCK_STARTED, zx::time(0), &pending);
+    if (status != ZX_OK || !(pending & ZX_CLOCK_STARTED)) {
+      err = WEAVE_SYSTEM_ERROR_REAL_TIME_NOT_SYNCED;
+    }
+  }
+
   if (err == WEAVE_NO_ERROR) {
     // TODO(https://fxbug.dev/42129131): The default implementation of GetClock_RealTimeMS only returns
     // not-synced if the value is before Jan 1, 2000. Use the UTC fidl instead
