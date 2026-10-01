@@ -1211,7 +1211,7 @@ Changesets continue the global numbering:
       (in //src/devices/driver-lab/SPEC.md).
 - [x] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
+- [x] CS38 `[driver-lab] Add C++ embedded server unit tests`
       (in //src/devices/driver-lab/SPEC.md).
 
 Phase: 2 -- in-situ driver debugging workflow.

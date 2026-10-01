@@ -11,6 +11,7 @@ import("//build/drivers.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_staticlib.gni")
 import("//build/rust/rustc_test.gni")
+import("//build/test.gni")
 import("//src/devices/driver-lab/driver_lab.gni")
 
 driver_bind_rules("bind") {
@@ -212,6 +213,23 @@ fuchsia_unittest_package("lab_proxy-unit-test-pkg") {
   deps = [ ":driver_test" ]
 }
 
+test("driver_lab_cpp_test_bin") {
+  output_name = "driver_lab_cpp_test"
+  sources = [ "cpp/tests/driver_lab_cpp_test.cc" ]
+  deps = [
+    ":driver_lab_cpp",
+    "fidl:fuchsia.driver.lab_cpp",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+fuchsia_unittest_package("driver_lab_cpp_tests") {
+  package_name = "driver_lab_cpp_tests"
+  deps = [ ":driver_lab_cpp_test_bin" ]
+}
+
 rustc_test("realm_test") {
   output_name = "lab_proxy_realm_test"
   edition = "2024"
@@ -286,6 +304,7 @@ group("tests") {
   testonly = true
   deps = [
     ":core_test($host_toolchain)",
+    ":driver_lab_cpp_tests",
     ":driver_lab_rust-unit-test-pkg",
     ":lab_proxy-realm-test-pkg",
     ":lab_proxy-unit-test-pkg",

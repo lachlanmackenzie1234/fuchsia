@@ -1002,6 +1002,8 @@ src/devices/driver-lab/
             driver_lab.h         idiomatic C++20 wrapper and StateVmoBank
             driver_lab_c.h       pure C ABI declarations and global state helpers
         driver_lab.cc            C++20 wrapper and StateVmoBank implementation
+        tests/
+            driver_lab_cpp_test.cc   C++ embedded server and StateVmoBank unit tests
     policy/                            planned: schema and generation
     bind/
 
@@ -1309,7 +1311,7 @@ Changesets continue the global numbering from Phase 1:
 - [x] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
 - [x] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
 - [x] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
-- [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
+- [x] CS38 `[driver-lab] Add C++ embedded server unit tests`
 
 Phase: 2 -- existing-driver in-situ inspection and live debugging via embedded library.
 Extends: Phase 1 of this document. The wire contract (`fuchsia.driver.lab`), policy
@@ -1398,6 +1400,10 @@ ring buffering, and sequence execution remain single-sourced in Rust:
   `StateVmoBank` (shared-memory VMO bank for telemetry/state and host-tunable
   fault-injection knobs), `Builder`, and `EmbeddedServer` (integrating with
   `fdf::OutgoingDirectory` and `component::OutgoingDirectory`).
+- Unit tests (`driver_lab_cpp_tests` in `cpp/tests/driver_lab_cpp_test.cc`)
+  verify `Describe`, mutating `OpenSession`, `Read32`, `Write32` on
+  `StateVmoBank` knobs, global C state/knob visibility, interrupt tapping,
+  quiesce hooks, `ReadAudit`, and hard-denied range rejection over FIDL.
 
 ### 4. Production absence and security gating
 
