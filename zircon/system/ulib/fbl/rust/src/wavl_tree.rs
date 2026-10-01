@@ -1184,18 +1184,17 @@ where
                 let y_is_2_child = y_ns.rank_parity() == z_ns.rank_parity();
 
                 if !y_is_2_child {
-                    let y_is_22_node;
-                    if y_ns.rank_parity() {
-                        y_is_22_node = (!valid_sentinel_ptr(y_ns.get_left())
+                    let y_is_22_node = if y_ns.rank_parity() {
+                        (!valid_sentinel_ptr(y_ns.get_left())
                             || Self::get_node_ref(y_ns.get_left()).rank_parity())
                             && (!valid_sentinel_ptr(y_ns.get_right())
-                                || Self::get_node_ref(y_ns.get_right()).rank_parity());
+                                || Self::get_node_ref(y_ns.get_right()).rank_parity())
                     } else {
-                        y_is_22_node = valid_sentinel_ptr(y_ns.get_left())
+                        valid_sentinel_ptr(y_ns.get_left())
                             && valid_sentinel_ptr(y_ns.get_right())
                             && !Self::get_node_ref(y_ns.get_left()).rank_parity()
-                            && !Self::get_node_ref(y_ns.get_right()).rank_parity();
-                    }
+                            && !Self::get_node_ref(y_ns.get_right()).rank_parity()
+                    };
 
                     if !y_is_22_node {
                         break;
@@ -1598,18 +1597,13 @@ where
             }
 
             let parent = ns.get_parent();
-            let was_one_child;
-            let was_left_child;
-
             debug_assert!(!parent.is_null());
-            if !is_sentinel_ptr(parent) {
+            let (was_one_child, was_left_child) = if !is_sentinel_ptr(parent) {
                 let parent_ns = Self::get_node_ref(parent);
-                was_one_child = ns.rank_parity() != parent_ns.rank_parity();
-                was_left_child = parent_ns.left.get() == owner;
+                (ns.rank_parity() != parent_ns.rank_parity(), parent_ns.left.get() == owner)
             } else {
-                was_one_child = false;
-                was_left_child = false;
-            }
+                (false, false)
+            };
 
             *owner = core::ptr::null_mut();
 
